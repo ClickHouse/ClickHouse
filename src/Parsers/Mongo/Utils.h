@@ -1,6 +1,8 @@
 #pragma once
 
 #include <optional>
+#include <string>
+#include <vector>
 #include <string_view>
 
 #include <rapidjson/document.h>
@@ -104,6 +106,11 @@ ASTPtr makeFieldSubtreeMatcher(const std::string & path);
 
 /// The field a matcher built by `makeFieldSubtreeMatcher` selects the subtree of, if it is one.
 std::optional<std::string> fieldOfSubtreeMatcher(const IAST & node);
+
+/** The fields whose subtrees a pattern of `|` joined `fieldSubtreePattern` covers - the pattern an
+  * exclusion of fields is built out of - or nothing when the pattern is not one of those.
+  */
+std::optional<std::vector<std::string>> fieldsOfSubtreePattern(const std::string & pattern);
 
 
 class MongoQueryKeyNameExtractor

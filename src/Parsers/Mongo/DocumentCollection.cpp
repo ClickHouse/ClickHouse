@@ -5,6 +5,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -20,6 +21,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
 namespace Mongo
 {
 
@@ -28,12 +34,48 @@ namespace
 
 bool readsDocuments(const ASTSelectQuery & select);
 
+/** The fields an asterisk removes from what it selects, or nothing when its transformers are not
+  * the exclusion of whole fields this translation builds - a `REPLACE`, an `APPLY` or a pattern
+  * written by hand says nothing about which fields of a document survive it.
+  */
+std::optional<std::vector<std::string>> excludedFieldsOfAsterisk(const ASTAsterisk & asterisk)
+{
+    if (!asterisk.transformers || asterisk.transformers->children.empty())
+        return std::vector<std::string>{};
+
+    if (asterisk.transformers->children.size() != 1)
+        return std::nullopt;
+
+    const auto * except = asterisk.transformers->children.front()->as<ASTColumnsExceptTransformer>();
+    if (!except || !except->getPattern())
+        return std::nullopt;
+
+    return fieldsOfSubtreePattern(*except->getPattern());
+}
+
+/** Whether an asterisk hands every stored document on unchanged. The object id is the only column
+  * of a collection of documents besides the document itself, so an exclusion of it still leaves
+  * every field of every document where it was; an exclusion of anything else asks for a document
+  * the column does not hold.
+  */
+bool selectsEveryDocument(const ASTAsterisk & asterisk)
+{
+    const auto excluded = excludedFieldsOfAsterisk(asterisk);
+    if (!excluded)
+        return false;
+    return excluded->empty() || (excluded->size() == 1 && excluded->front() == OBJECT_ID_COLUMN);
+}
+
 /// Whether the select list is the one asterisk that hands the stored document on unchanged, so that
 /// a field of a document is still a path of the `json` column of the rows the select produces.
 bool selectsEveryColumn(const ASTSelectQuery & select)
 {
     const auto select_list = select.select();
-    return select_list && select_list->children.size() == 1 && select_list->children.front()->as<ASTAsterisk>();
+    if (!select_list || select_list->children.size() != 1)
+        return false;
+
+    const auto * asterisk = select_list->children.front()->as<ASTAsterisk>();
+    return asterisk && selectsEveryDocument(*asterisk);
 }
 
 /// Whether a query - the one inside a subquery - produces the stored documents themselves.
@@ -441,16 +483,40 @@ bool selectDocumentsOfCollection(const ASTPtr & query)
       * stages of a pipeline build documents of their own, whose fields are the columns of the
       * result and are turned into a reply the way the columns of any other table are.
       */
-    if (select_list->children.size() != 1 || !select_list->children.front()->as<ASTAsterisk>())
+    if (select_list->children.size() != 1)
         return false;
+
+    const auto * asterisk = select_list->children.front()->as<ASTAsterisk>();
+    if (!asterisk)
+        return false;
+
+    /** An asterisk that removes fields - what an exclusion projection, a `$unset` and a `$project`
+      * of nothing but exclusions are lowered into - cannot be answered with the stored document:
+      * the fields of a document are the paths of one column, and a path of it cannot be left out
+      * of the value the column holds. Only the object id is a column of its own, so only its
+      * exclusion is honoured, and the rest is refused rather than answered with the whole document.
+      */
+    const auto excluded = excludedFieldsOfAsterisk(*asterisk);
+    if (!excluded || !selectsEveryDocument(*asterisk))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "A collection created by this endpoint keeps whole documents in one column, and a field of a stored document cannot be left "
+            "out of it: ask for the fields to keep instead of the ones to remove, or keep the collection in a table created in "
+            "ClickHouse, whose fields are columns of their own");
+
+    const bool keeps_object_id = excluded->empty();
 
     ASTPtr document = make_intrusive<ASTIdentifier>(String(DOCUMENT_COLUMN));
 
     auto new_select_list = make_intrusive<ASTExpressionList>();
 
-    /// The object id of the document, which Mongo returns as the `_id` field of it.
-    auto object_id = make_intrusive<ASTIdentifier>(String(OBJECT_ID_COLUMN));
-    new_select_list->children.push_back(std::move(object_id));
+    /// The object id of the document, which Mongo returns as the `_id` field of it. A projection
+    /// that excludes `_id` - the usual way of asking for a document without it - leaves it out.
+    if (keeps_object_id)
+    {
+        auto object_id = make_intrusive<ASTIdentifier>(String(OBJECT_ID_COLUMN));
+        new_select_list->children.push_back(std::move(object_id));
+    }
 
     auto returned_document = document->clone();
     returned_document->setAlias(String(RETURNED_DOCUMENT_ALIAS));

@@ -357,6 +357,36 @@ std::optional<std::string> fieldOfSubtreeMatcher(const IAST & node)
     return unquoteFromPattern(pattern.substr(1, pattern.size() - 1 - SUBTREE_PATTERN_SUFFIX.size()));
 }
 
+std::optional<std::vector<std::string>> fieldsOfSubtreePattern(const std::string & pattern)
+{
+    /// The pattern is `^<field>(\.|$)` joined by `|`, and a field is quoted so that every
+    /// character that is not a word character is escaped. The suffix therefore cannot appear
+    /// inside a quoted field - its `(` would carry a backslash there - so it delimits the fields.
+    std::vector<std::string> fields;
+    size_t position = 0;
+    while (position < pattern.size())
+    {
+        if (pattern[position] != '^')
+            return std::nullopt;
+        ++position;
+
+        const auto suffix = pattern.find(SUBTREE_PATTERN_SUFFIX, position);
+        if (suffix == std::string::npos)
+            return std::nullopt;
+
+        fields.push_back(unquoteFromPattern(pattern.substr(position, suffix - position)));
+        position = suffix + SUBTREE_PATTERN_SUFFIX.size();
+
+        if (position == pattern.size())
+            break;
+        if (pattern[position] != '|')
+            return std::nullopt;
+        ++position;
+    }
+
+    return fields;
+}
+
 std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begin, const char * end)
 {
     size_t size_str = end - begin;

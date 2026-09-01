@@ -246,11 +246,28 @@ static void applyReplyOutputSettings(ContextMutablePtr & query_context)
     query_context->setSetting("dialect", String("clickhouse"));
 }
 
+/// A write of this endpoint is acknowledged when it has been written, which is the contract every
+/// write command of it answers with. The settings of the authenticated user's profile must not
+/// weaken it into an acknowledgement of a write that is still on its way.
+static void applyAcknowledgedWriteSettings(ContextMutablePtr & query_context)
+{
+    /// An asynchronous insert returns before the row is in the table, so a read that follows the
+    /// successful reply could miss it and a failure of the write would be reported to nobody.
+    query_context->setSetting("async_insert", false);
+    query_context->setSetting("wait_for_async_insert", true);
+    /// An `update` and a `delete` are mutations, and a mutation that is only enqueued would let
+    /// the client read the old rows after the write was acknowledged. Waiting on this server is
+    /// what a write of one table can promise.
+    query_context->setSetting("mutations_sync", Field(UInt64(1)));
+    query_context->setSetting("lightweight_deletes_sync", Field(UInt64(1)));
+}
+
 ContextMutablePtr QueryExecutor::makeQueryContext()
 {
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId(fmt::format("mongo:{:d}", dis(gen)));
     applyReplyOutputSettings(query_context);
+    applyAcknowledgedWriteSettings(query_context);
     return query_context;
 }
 
@@ -291,6 +308,11 @@ void QueryExecutor::executeStreaming(const String & query, const std::function<v
 void QueryExecutor::authenticate(const String & username, const String & password)
 {
     session->authenticate(username, password, address);
+    /// A connection of this endpoint is stateful, so it takes a session context of its own, like
+    /// the other stateful protocols do after a login: it is what counts the connection against
+    /// `max_sessions_for_user` and what applies the settings the authentication server sent.
+    /// Without it every command would build its query context straight from the global one.
+    session->makeSessionContext();
 }
 
 ParserLimits QueryExecutor::getParserLimits() const

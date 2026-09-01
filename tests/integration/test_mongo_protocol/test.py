@@ -2336,6 +2336,50 @@ def test_a_read_command_option_that_is_not_implemented_is_an_error(started_clust
     collection.drop()
 
 
+def test_a_read_option_that_is_accepted_and_ignored(started_cluster):
+    """A `hint` names the index to run a read with and an `allowDiskUse` allows an aggregation to
+    spill: both ask for a way of running a command rather than for a different result, so they are
+    accepted and ignored, and the command answers exactly what it answers without them."""
+    database = make_client()["db"]
+    collection = database["accepted_options"]
+    collection.drop()
+    collection.insert_many([{"id": 1, "value": "a"}, {"id": 2, "value": "b"}])
+
+    plain_find = sorted(
+        document["id"]
+        for document in database.command({"find": "accepted_options", "filter": {}})["cursor"]["firstBatch"]
+    )
+    assert sorted(
+        document["id"]
+        for document in database.command({"find": "accepted_options", "filter": {}, "hint": {"id": 1}})["cursor"]["firstBatch"]
+    ) == plain_find
+    assert sorted(
+        document["id"]
+        for document in database.command({"find": "accepted_options", "filter": {}, "hint": "id_1"})["cursor"]["firstBatch"]
+    ) == plain_find
+
+    assert (
+        database.command({"count": "accepted_options", "query": {}, "hint": {"id": 1}})["n"]
+        == database.command({"count": "accepted_options", "query": {}})["n"]
+    )
+    assert sorted(database.command({"distinct": "accepted_options", "key": "value", "hint": {"id": 1}})["values"]) == sorted(
+        database.command({"distinct": "accepted_options", "key": "value"})["values"]
+    )
+
+    plain_aggregate = sorted(
+        document["id"]
+        for document in database.command({"aggregate": "accepted_options", "pipeline": [], "cursor": {}})["cursor"]["firstBatch"]
+    )
+    assert sorted(
+        document["id"]
+        for document in database.command(
+            {"aggregate": "accepted_options", "pipeline": [], "cursor": {}, "allowDiskUse": True, "hint": {"id": 1}}
+        )["cursor"]["firstBatch"]
+    ) == plain_aggregate
+
+    collection.drop()
+
+
 def test_read_concern_levels(started_cluster):
     """A read here sees everything that was written to the table, which is what `local`, `available`
     and `majority` ask for, so those are answered as a read without one. A `snapshot` and a
@@ -2357,6 +2401,18 @@ def test_read_concern_levels(started_cluster):
             document["id"]
             for document in database.command(
                 {"find": "read_concern", "filter": {}, "readConcern": {"level": level}}
+            )["cursor"]["firstBatch"]
+        ) == [1, 2]
+
+        assert sorted(
+            document["id"]
+            for document in database.command(
+                {
+                    "aggregate": "read_concern",
+                    "pipeline": [],
+                    "cursor": {},
+                    "readConcern": {"level": level},
+                }
             )["cursor"]["firstBatch"]
         ) == [1, 2]
 
@@ -2405,6 +2461,93 @@ def test_a_projection_of_a_field_takes_the_fields_below_it(started_cluster):
     ]
 
     node.query("DROP TABLE db.subtree", password="123")
+
+
+def test_a_set_stage_replaces_the_whole_subdocument(started_cluster):
+    """`$set` names a field, and a field is the whole subdocument it stands for: replacing
+    `profile` with a document of one field leaves none of the fields the old one had, the same way
+    `$project` and `$unset` treat a name as a subtree."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.set_subtree", password="123")
+    node.query(
+        "CREATE TABLE db.set_subtree (id Int64, `profile.name` String, `profile.age` Int64) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+
+    collection = make_client()["db"]["set_subtree"]
+    collection.insert_one({"id": 1, "profile": {"name": "alpha", "age": 30}})
+
+    assert list(collection.aggregate([{"$set": {"profile": {"name": "beta"}}}])) == [
+        {"id": 1, "profile": {"name": "beta"}}
+    ]
+
+    node.query("DROP TABLE db.set_subtree", password="123")
+
+
+def test_an_acknowledged_write_is_visible_to_the_read_that_follows(started_cluster):
+    """A write command answers when the write has been done, so the read that follows it sees it
+    without waiting: an `update` is a mutation and a `delete` is a lightweight delete, and both are
+    run to the end on this server before the reply is written."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.acknowledged", password="123")
+    node.query(
+        "CREATE TABLE db.acknowledged (id Int64, value Int64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+
+    collection = make_client()["db"]["acknowledged"]
+    collection.insert_many([{"id": 1, "value": 1}, {"id": 2, "value": 2}])
+    assert sorted(document["id"] for document in collection.find({})) == [1, 2]
+
+    collection.update_many({"id": 1}, {"$set": {"value": 10}})
+    assert collection.find_one({"id": 1})["value"] == 10
+
+    collection.delete_many({"id": 2})
+    assert sorted(document["id"] for document in collection.find({})) == [1]
+
+    node.query("DROP TABLE db.acknowledged", password="123")
+
+
+def test_an_exclusion_of_a_field_of_a_document_collection(started_cluster):
+    """A collection created by this endpoint keeps whole documents in one column, and a path of a
+    document cannot be left out of the value that column holds. Only `_id` is a column of its own,
+    so only its exclusion is answered; removing any other field is an error rather than a reply
+    that silently kept it."""
+    client = make_client()
+    collection = client["db"]["document_exclusion"]
+    collection.drop()
+    collection.insert_one({"id": 1, "profile": {"name": "alpha"}})
+
+    assert list(collection.find({}, {"_id": 0})) == [{"id": 1, "profile": {"name": "alpha"}}]
+    assert list(collection.aggregate([{"$project": {"_id": 0}}])) == [{"id": 1, "profile": {"name": "alpha"}}]
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.find({}, {"profile": 0}))
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$unset": "profile"}]))
+
+    collection.drop()
+
+
+def test_the_new_root_of_a_replace_root_must_hold_a_field(started_cluster):
+    """A document of no fields is a row of no columns, which a query cannot produce, so an empty
+    new root is refused rather than answered with a document that is not empty."""
+    client = make_client()
+    collection = client["db"]["replace_root_empty"]
+    collection.drop()
+    collection.insert_one({"id": 1, "name": "alpha"})
+
+    assert list(collection.aggregate([{"$replaceRoot": {"newRoot": {"only": "$name"}}}])) == [{"only": "alpha"}]
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$replaceRoot": {"newRoot": {}}}]))
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$replaceWith": {}}]))
+
+    collection.drop()
 
 
 def test_a_write_command_option_that_is_not_implemented_is_an_error(started_cluster):

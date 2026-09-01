@@ -397,10 +397,16 @@ void translateSet(SelectChain & chain, const rapidjson::Value & stage)
     if (chain.select_list || chain.group_by || chain.order_by || chain.limit || chain.offset)
         chain.wrap();
 
+    /** The names of the stage itself are what is replaced, not the leaves they expand into: a
+      * `{$set: {profile: {name: "y"}}}` replaces the whole `profile` subdocument, so the columns
+      * of every field below it - `profile.age` of a row that has one - go away with it, the same
+      * way `$project` and `$unset` treat the name of a field as its whole subtree. Excluding only
+      * the expanded leaves would leave the old siblings of the new document in the result.
+      */
     std::vector<std::string> replaced;
-    replaced.reserve(fields.size());
-    for (const auto & field : fields)
-        replaced.push_back(field.name);
+    replaced.reserve(stage.MemberCount());
+    for (auto it = stage.MemberBegin(); it != stage.MemberEnd(); ++it)
+        replaced.emplace_back(stringView(it->name));
 
     auto select_list = make_intrusive<ASTExpressionList>();
     select_list->children.push_back(makeAsterisk(replaced));
@@ -665,10 +671,17 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
 
 void translateReplaceRoot(SelectChain & chain, const rapidjson::Value & new_root, std::string_view stage_name)
 {
-    if (!new_root.IsObject() || new_root.MemberCount() == 0)
+    if (!new_root.IsObject())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Only a document is supported as the new root of '{}', because a field path names a column rather than a subdocument",
+            stage_name);
+    /// A document of no fields asks for a row of no columns, which a `SELECT` cannot produce.
+    if (new_root.MemberCount() == 0)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The new root of '{}' must be a non empty document: a document of no fields is a row of no columns, which a query has no way "
+            "of producing",
             stage_name);
     if (stringView(new_root.MemberBegin()->name).starts_with("$"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a document is supported as the new root of '{}'", stage_name);
