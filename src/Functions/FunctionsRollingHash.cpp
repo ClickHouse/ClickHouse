@@ -379,13 +379,13 @@ ColumnPtr FunctionContentDefinedChunkOffsetsUTF8::executeImpl(const ColumnsWithT
 
 REGISTER_FUNCTION(RollingHash)
 {
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
     FunctionDocumentation::Category category_cdc = FunctionDocumentation::Category::StringSplitting;
 
     /// Fields map to generated reference (docs website, `system.functions`): description, syntax line, args, notes, return type, examples, version, category.
     FunctionDocumentation::Description cdc_chunks_desc = R"(
 Content-defined chunking: split input using Buzhash; cut when `(hash % reverse_probability) == 0`.
-Min chunk length is `window_size`; max chunk size depends on `reverse_probability` (capped).
+Hash boundaries are only considered after at least `window_size` bytes of the current chunk, so chunks are usually at least `window_size` long, but the whole input or the final suffix may be shorter. Max chunk size depends on `reverse_probability` (capped).
 )";
     FunctionDocumentation::Arguments cdc_args = {
         {"string", "Input string or binary data.", {"String", "FixedString"}},
