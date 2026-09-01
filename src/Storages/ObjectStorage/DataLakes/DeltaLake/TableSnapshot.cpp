@@ -952,11 +952,11 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::buildKernelSn
     }
 
     auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
-        [helper = helper, version_to_build]
+        [kernel_helper = helper, version_to_build]
         {
             /// Simulates a kernel call which never returns (used by tests).
             DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
-            return std::make_shared<KernelSnapshotState>(*helper, version_to_build);
+            return std::make_shared<KernelSnapshotState>(*kernel_helper, version_to_build);
         });
     auto future = task->get_future();
 
