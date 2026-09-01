@@ -50,6 +50,27 @@ static std::optional<String> resolveColumnThroughDAG(const ActionsDAG & dag, con
     return node->result_name;
 }
 
+/// Top-K filtering skips source rows below the sort, so an expression that is lifted
+/// above the sort by `tryExecuteFunctionsAfterSorting` must not be able to observe which
+/// rows were skipped. Stateful functions (`rowNumberInAllBlocks`, `blockNumber`, ...) and
+/// functions that are only deterministic within one scope of a query (`nowInBlock`, ...)
+/// do observe it: they are evaluated per block over the stream that reaches them, so
+/// pruning non-top-K rows changes their visible values. Mirrors `canReplayAfterLimit` in
+/// `optimizeLazyMaterialization.cpp`.
+static bool canObserveOnlyTopKRows(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        if (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+
+    return true;
+}
+
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     /// The dynamic-filtering path injects an internal `__topKFilter` function that
@@ -99,6 +120,11 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         /// discard source rows that are still needed to produce `LIMIT` rows after the
         /// expansion. Bail out, consistent with the same check in `optimizeLazyMaterialization2`.
         if (above_expr->getExpression().hasArrayJoin())
+            return 0;
+        /// The lifted expression is evaluated after the `Limit`, on the top-K rows only.
+        /// If it contains a function whose result depends on the rows that flow through it,
+        /// enabling top-K filtering would change its visible values, so bail out.
+        if (!canObserveOnlyTopKRows(above_expr->getExpression()))
             return 0;
         node = node->children.front();
     }
