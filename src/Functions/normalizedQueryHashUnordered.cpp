@@ -50,18 +50,12 @@ bool isParsingError(int code)
         || code == ErrorCodes::TOO_SLOW_PARSING;
 }
 
-class FunctionNormalizedQueryHashUnordered final : public IFunction
+class FunctionNormalizedQueryHashUnordered final : public IFunction, WithContext
 {
 public:
-    FunctionNormalizedQueryHashUnordered(ContextPtr context, String name_, ErrorHandling error_handling_)
-        : name(std::move(name_)), error_handling(error_handling_)
+    FunctionNormalizedQueryHashUnordered(ContextPtr context_, String name_, ErrorHandling error_handling_)
+        : WithContext(context_), name(std::move(name_)), error_handling(error_handling_)
     {
-        const Settings & settings = context->getSettingsRef();
-        max_query_size = settings[Setting::max_query_size];
-        max_parser_depth = settings[Setting::max_parser_depth];
-        max_parser_backtracks = settings[Setting::max_parser_backtracks];
-        implicit_select = settings[Setting::implicit_select];
-        allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
     }
 
     String getName() const override { return name; }
@@ -69,9 +63,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// the parser settings are read from the session, so another context can hash the same text differently
+    /// the parser settings are read from the context, and SETTINGS can change them per scope, so two
+    /// identical calls in one query must not share a built function - same reason as getSetting
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     /// the adaptor wraps it in Nullable itself, otherwise a Dynamic argument would make the result Dynamic
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt64>(); }
@@ -98,6 +93,14 @@ public:
         const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get());
         if (!col_query_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
+
+        /// read here rather than in the constructor: SETTINGS gives every scope its own parser knobs
+        const Settings & settings = getContext()->getSettingsRef();
+        const UInt64 max_query_size = settings[Setting::max_query_size];
+        const UInt64 max_parser_depth = settings[Setting::max_parser_depth];
+        const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        const bool implicit_select = settings[Setting::implicit_select];
+        const bool allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
 
         ColumnUInt8::MutablePtr col_null_map;
         if (error_handling == ErrorHandling::Null)
@@ -143,12 +146,6 @@ public:
 private:
     String name;
     ErrorHandling error_handling;
-
-    size_t max_query_size;
-    size_t max_parser_depth;
-    size_t max_parser_backtracks;
-    bool implicit_select;
-    bool allow_settings_after_format_in_insert;
 };
 
 }
