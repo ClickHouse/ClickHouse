@@ -277,18 +277,45 @@ public:
 
     ResourceRequest * pop() override
     {
-        if (requests.empty())
-            return nullptr;
-        auto it = requests.begin();
-        ResourceRequest * request = &*it;
-        requests.erase(it);
-        if (auto * ctx = request->scheduling_context)
+        // Lazy re-keying. A request is keyed by `levelOf(attained)` at ENQUEUE, but a query's
+        // attained service grows as its OTHER requests are served, so a waiting request's stored
+        // level goes stale. Attained service only ever grows, so the stored level can only be too
+        // LOW (served too early), never too high. On pop, recompute the front request's level from
+        // the query's CURRENT attained service; if it exceeds the stored level the request is not
+        // actually the least-attained, so defer it — re-key to its true level and re-insert, then
+        // take the next candidate. This restores true (bucketed) LAS when a query has several
+        // requests queued at once (the IO case: concurrent socket ops have independent requests),
+        // and is a no-op when it has one (CPU via CPULeaseAllocation). Bounded churn: geometric
+        // levels mean a request is re-keyed at most ~log2(total_service) times over its lifetime,
+        // and at most once per pop() (attained does not change while this loop runs). The FIFO
+        // sequence tie-break (`scheduling_key.second`) is preserved, so intra-level arrival order
+        // is kept.
+        while (!requests.empty())
         {
-            auto & state = ctx->getResourceState(leaf);
-            state.attained_cost += request->scheduling_cost;
-            state.last_activity_ns = clock_gettime_ns();
+            auto it = requests.begin();
+            ResourceRequest * request = &*it;
+            auto * ctx = request->scheduling_context;
+            if (ctx)
+            {
+                double real_level = levelOf(ctx->getResourceState(leaf).attained_cost);
+                if (real_level > request->scheduling_key.first)
+                {
+                    requests.erase(it);
+                    request->scheduling_key.first = real_level;
+                    requests.insert(*request);
+                    continue;
+                }
+            }
+            requests.erase(it);
+            if (ctx)
+            {
+                auto & state = ctx->getResourceState(leaf);
+                state.attained_cost += request->scheduling_cost;
+                state.last_activity_ns = clock_gettime_ns();
+            }
+            return request;
         }
-        return request;
+        return nullptr;
     }
 
     bool erase(ResourceRequest * request) override

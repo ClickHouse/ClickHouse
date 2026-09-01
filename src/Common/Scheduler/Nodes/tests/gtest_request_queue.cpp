@@ -170,6 +170,27 @@ TEST(RequestQueue, LasFavoursLeastAttained)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{3, 2}));
 }
 
+/// las re-keys a stale request on pop: when a query has several requests queued at once, serving
+/// one advances its attained service, so its remaining requests are deferred to their true (higher)
+/// level instead of being served ahead of a lower-attained query. This is the IO / multi-request
+/// case (concurrent socket ops have independent requests); with one request per query (CPU via
+/// CPULeaseAllocation) it is a no-op.
+TEST(RequestQueue, LasRekeysStaleRequestsOnPop)
+{
+    Fixture f(SchedulerAlgorithm::Las); // IOByte, base = 1 MiB
+    auto * a = f.makeQuery();
+    auto * b = f.makeQuery();
+    const ResourceCost mib = 1'048'576; // one base quantum → serving one lifts A to level 1
+    f.enqueue(1, a, mib); // A1, A2, A3 all queued while A is at level 0
+    f.enqueue(2, a, mib);
+    f.enqueue(3, a, mib);
+    f.enqueue(9, b, 1);   // B1 (level 0)
+    // A1 served → A.attained = 1 MiB → level 1. A2/A3 are now stale (stored level 0); they are
+    // re-keyed to level 1 on pop, so B1 (still level 0) is served before them. Without the recheck
+    // the order would be the stale {1, 2, 3, 9}.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 9, 2, 3}));
+}
+
 /// priority: strict order by the query `priority` setting (1 = highest; 0 = none = lowest).
 TEST(RequestQueue, PriorityStrictOrder)
 {
