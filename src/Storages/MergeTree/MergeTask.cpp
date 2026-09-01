@@ -3576,7 +3576,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// TTL step: still runs after the merge even in vertical TTL mode.
     /// In vertical TTL mode, rows are already filtered by the merging algorithm,
     /// so the TTL step only updates TTL info without removing any rows.
-    if (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
+    /// A blocked patch merge must reach the recalculation step below even when expired columns
+    /// alone would pick the info-only TTL step, which carries the cleared pre-patch infos forward.
+    if (ctx->need_remove_expired_values
+        || (!global_ctx->merging_columns_expired_by_ttl.empty() && !ctx->recalculate_ttl_for_patches))
     {
         auto ttl_step = std::make_unique<TTLStep>(
             merge_parts_query_plan.getCurrentHeader(),
