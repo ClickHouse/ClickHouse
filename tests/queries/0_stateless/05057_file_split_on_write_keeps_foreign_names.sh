@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-DIR="${CLICKHOUSE_TMP}/05054_split_foreign_names"
+DIR="${CLICKHOUSE_TMP}/05057_split_foreign_names"
 rm -rf "${DIR}"
 mkdir -p "${DIR}"
 

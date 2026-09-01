@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-DIR="${CLICKHOUSE_TMP}/05052_split_truncate_cleanup"
+DIR="${CLICKHOUSE_TMP}/05055_split_truncate_cleanup"
 rm -rf "${DIR}"
 mkdir -p "${DIR}"
 
