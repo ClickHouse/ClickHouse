@@ -6093,8 +6093,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
         }
 
-        /// The flag is only ever set in a server process, so the question has no meaning in any other application.
-        if (getApplicationType() == ApplicationType::SERVER && isServerCompletelyStarted())
+        if (isServerCompletelyStarted())
             shared->zookeeper->setServerCompletelyStarted();
         LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
     }
@@ -8385,8 +8384,8 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 
 bool Context::isServerCompletelyStarted() const
 {
+    /// Only the server ever sets the flag, so every other application reads it as "not started yet".
     SharedLockGuard lock(shared->mutex);
-    chassert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
 
