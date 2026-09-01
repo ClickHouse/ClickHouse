@@ -21,8 +21,12 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE protobuf_datetime64_trailing (ts DateTi
 # then the tag of field 1 with wire type LENGTH_DELIMITED (0x0a), then the string length and bytes.
 printf '\x15\x0a\x132024-01-15 10:11:12' \
     | $CLICKHOUSE_CLIENT --query "INSERT INTO protobuf_datetime_trailing SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf"
+# Unlike the `DateTime` serializer, which uses the time zone of the column, the `DateTime64` one
+# parses the text in the session time zone (`readDateTime64Text` without a `DateLUTImpl` in
+# `ProtobufSerializerDecimal`), so pin it to keep the test independent of the randomized setting.
 printf '\x19\x0a\x172024-01-15 10:11:12.500' \
-    | $CLICKHOUSE_CLIENT --query "INSERT INTO protobuf_datetime64_trailing SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf"
+    | $CLICKHOUSE_CLIENT --session_timezone UTC \
+        --query "INSERT INTO protobuf_datetime64_trailing SETTINGS session_timezone = 'UTC', format_schema = '$SCHEMA' FORMAT Protobuf"
 
 $CLICKHOUSE_CLIENT --query "SELECT toString(ts, 'UTC') FROM protobuf_datetime_trailing"
 $CLICKHOUSE_CLIENT --query "SELECT toString(ts, 'UTC') FROM protobuf_datetime64_trailing"
