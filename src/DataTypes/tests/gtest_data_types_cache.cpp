@@ -71,6 +71,27 @@ TEST(DataTypesCache, InvalidatedOnQueryContextChange)
     }
 }
 
+TEST(DataTypesCache, DoesNotPoolNonPoolableSerializations)
+{
+    ThreadStatus thread_status;
+
+    auto query_context = makeQueryContext("data_types_cache_test_non_poolable", "UTC");
+    auto query_scope = QueryScope::create(query_context);
+
+    /// The JSON type itself is an immutable value object and is safe to cache...
+    auto first_type = getDataTypesCache().getType("JSON");
+    auto second_type = getDataTypesCache().getType("JSON");
+    ASSERT_EQ(first_type.get(), second_type.get());
+
+    /// ...but SerializationJSON holds mutable per-use state (`supportsPooling() == false`,
+    /// see the comment in SerializationJSON::create), so even within one query the cache
+    /// must build a fresh serialization on every lookup instead of pooling one instance.
+    auto first_serialization = getDataTypesCache().getSerialization("JSON");
+    auto second_serialization = getDataTypesCache().getSerialization("JSON");
+    ASSERT_FALSE(first_serialization->supportsPooling());
+    ASSERT_NE(first_serialization.get(), second_serialization.get());
+}
+
 TEST(DataTypesCache, InvalidatedOnSessionTimezoneChangeWithinOneContext)
 {
     ThreadStatus thread_status;

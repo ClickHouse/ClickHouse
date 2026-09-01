@@ -67,14 +67,19 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// a type/serialization across queries, because construction depends on the current
 /// query context. For example, `DateTime` without an explicit timezone captures
 /// the query's `session_timezone` setting at construction (see TimezoneMixin and
-/// `DateLUT::instance`), and `JSON` serializations are built against the current
-/// query context and hold mutable per-use state that must not be shared between
-/// queries (see the comment in SerializationJSON::create). Since the cache lives
-/// in a long-lived thread, it must be cleared whenever the thread starts serving
-/// a different query, and also when `session_timezone` is mutated in place on the
-/// same context (clickhouse-client does this between queries of one session);
-/// otherwise a stale entry produces wrong results (e.g. DateTime values rendered
-/// in another query's timezone).
+/// `DateLUT::instance`). Since the cache lives in a long-lived thread, it must be
+/// cleared whenever the thread starts serving a different query, and also when
+/// `session_timezone` is mutated in place on the same context (clickhouse-client
+/// does this between queries of one session); otherwise a stale entry produces
+/// wrong results (e.g. DateTime values rendered in another query's timezone).
+///
+/// Serializations with `supportsPooling() == false` (e.g. SerializationJSON, which
+/// holds mutable per-use state, see the comment in SerializationJSON::create) are
+/// never cached at all, not even within one query: for them only the type is cached
+/// and a fresh serialization is built on every lookup. Note that query-scoped
+/// invalidation alone would not be enough for them anyway: clickhouse-client keeps
+/// one client context attached to the client thread for the whole session, so
+/// consecutive client queries can share one "query scope".
 class DataTypesCache
 {
 public:
@@ -96,6 +101,9 @@ private:
     struct Element
     {
         DataTypePtr type;
+        /// Null if the default serialization of `type` has `supportsPooling() == false`:
+        /// such serializations keep mutable per-use state and must be rebuilt for every use
+        /// instead of being served from the cache.
         SerializationPtr serialization;
     };
 
