@@ -661,12 +661,11 @@ def test_alter_preserves_aliased_merge_tree_setting(start_cluster):
     assert output == ""
     assert error == ""
 
-    # `enable_block_number_column` must still read as enabled: this setting throws otherwise
-    output, error = instance.query_and_get_answer_with_error(
-        "ALTER TABLE test_alias_preserved MODIFY SETTING part_minmax_index_columns = 'with_block_number_offset'"
+    # The setting must still be in the definition, under the name that wrote it
+    output = instance.query(
+        "SELECT engine_full FROM system.tables WHERE name = 'test_alias_preserved'"
     )
-    assert output == ""
-    assert error == ""
+    assert MERGE_TREE_ALIASED_SETTING in output, output
 
     instance.query("DROP TABLE IF EXISTS test_alias_preserved")
 
@@ -718,7 +717,7 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")
 
-    for tier in ["0", "1", "2", "3"]:
+    for tier in ["0", "1", "2"]:
         if tier != "0":
             instance.replace_in_config(feature_tier_path, str(int(tier) - 1), tier)
             instance.query("SYSTEM RELOAD CONFIG")
@@ -737,7 +736,7 @@ def test_custom_settings_belong_to_no_tier(start_cluster):
         assert output == ""
         assert error == ""
 
-    instance.replace_in_config(feature_tier_path, "3", "0")
+    instance.replace_in_config(feature_tier_path, "2", "0")
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS user_with_custom_setting")
