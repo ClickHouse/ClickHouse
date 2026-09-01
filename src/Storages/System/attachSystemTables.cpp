@@ -1256,7 +1256,7 @@ For system tables, the description, examples, and related material are stored in
 
 For SQL statements, the documentation is the same as the one exposed by `system.statements`: it also names the enclosing statement, if any, e.g. the `WHERE` clause is a part of `SELECT`.
 
-The `source` column holds a source path for the entity, relative to the repository root. For most entities it is captured automatically at the place where the documentation object is constructed (the registration site of the component); for system tables it is the table storage implementation, and for kinds documented in a single source file each (such as settings, profile events and current metrics), it is that file.
+The `source` column holds a source path for the entity, relative to the repository root. For most entities it is captured automatically at the place where the documentation object is constructed (the registration site of the component); for system tables it is the file that owns the embedded documentation (such as `attachSystemTables.cpp`, `SystemLog.h`, or a dedicated documentation owner), and for kinds documented in a single source file each (such as settings, profile events and current metrics), it is that file.
 
 .examples
 Read the documentation of a particular entity:
