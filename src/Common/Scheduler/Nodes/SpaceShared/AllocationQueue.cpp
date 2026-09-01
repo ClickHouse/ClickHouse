@@ -248,6 +248,52 @@ void AllocationQueue::consumeSuctionClaim(ResourceAllocation & recovering)
     memory_growth_suspension_changed = true;
 }
 
+bool AllocationQueue::tryPromoteEvictionQueueHead(IncreaseRequest * & preferred_suction)
+{
+    chassert(!increase);
+
+    const auto first_nominated = std::find_if(
+        increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
+        {
+            return allocation.memory_growth_eviction_order != 0;
+        });
+    if (first_nominated == increasing_allocations.end())
+    {
+        suspended_growth = nullptr;
+        return false;
+    }
+
+    const auto queue_policy = first_nominated->getSuctionQueuePolicy();
+    auto next = std::min_element(
+        increasing_allocations.begin(), increasing_allocations.end(), [queue_policy](const ResourceAllocation & lhs, const ResourceAllocation & rhs)
+        {
+            const UInt64 lhs_order = lhs.memory_growth_eviction_order;
+            const UInt64 rhs_order = rhs.memory_growth_eviction_order;
+            if (lhs_order == 0)
+                return false;
+            if (rhs_order == 0)
+                return true;
+            if (queue_policy == ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst
+                && lhs.allocated != rhs.allocated)
+                return lhs.allocated > rhs.allocated;
+            return lhs_order < rhs_order;
+        });
+    chassert(next != increasing_allocations.end() && next->memory_growth_eviction_order != 0);
+    suspended_growth = &*next;
+
+    ResourceAllocation & recovering = *suspended_growth;
+    if (!recovering.memory_growth_recovery_pending
+        || recovering.memory_growth_suspended
+        || !canEnterSuction(recovering))
+        return false;
+
+    recovering.memory_growth_suction_priority = true;
+    consumeSuctionClaim(recovering);
+    if (recovering.increasing_hook.is_linked() && recovering.memory_growth_suction_priority)
+        preferred_suction = &recovering.increase;
+    return true;
+}
+
 void AllocationQueue::retrySuspendedIncreases()
 {
     /// The owning limit may be above policy nodes and sibling queues. Defer the O(n) reset to this
@@ -486,10 +532,28 @@ void AllocationQueue::approveDecrease()
     }
 
     // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
-    if ((is_increasing || retry_suspended_growth) && (setIncrease() || memory_growth_suspension_changed))
+    if (is_increasing || retry_suspended_growth)
     {
+        Update update;
+        IncreaseRequest * preferred_suction = nullptr;
+        bool increase_changed = setIncrease();
+        const bool has_active_suction = ancestor_has_suction
+            || (increase
+                && increase->allocation.memory_growth_suction_priority
+                && !increase->allocation.memory_growth_recovery_pending);
+        const bool suction_changed = !increase
+            && !has_active_suction
+            && tryPromoteEvictionQueueHead(preferred_suction);
+        if (suction_changed)
+            increase_changed = setIncrease(preferred_suction) || increase_changed;
+
+        if (increase_changed || memory_growth_suspension_changed)
+            update.setIncrease(increase);
+        if (suction_changed)
+            update.setSuction(getSuctionAllocation());
         memory_growth_suspension_changed = false;
-        propagate(Update().setIncrease(increase));
+        if (update)
+            propagate(std::move(update));
     }
 
     // Notify allocation
@@ -680,40 +744,11 @@ void AllocationQueue::processActivation()
             suction_changed = true;
         }
 
-        /// The eviction queue is represented by nomination order on the existing increase
-        /// requests. Re-establish its head only after the previous suction has been consumed.
         const bool has_active_suction = preferred_suction
             || (increase
                 && increase->allocation.increasing_hook.is_linked()
                 && increase->allocation.memory_growth_suction_priority
                 && !increase->allocation.memory_growth_recovery_pending);
-        if (!has_active_suction)
-        {
-            const auto first_nominated = std::find_if(
-                increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)
-                {
-                    return allocation.memory_growth_eviction_order != 0;
-                });
-            const auto queue_policy = first_nominated == increasing_allocations.end()
-                ? ResourceAllocation::SuctionQueuePolicy::Fifo
-                : first_nominated->getSuctionQueuePolicy();
-            auto next = std::min_element(
-                increasing_allocations.begin(), increasing_allocations.end(), [queue_policy](const ResourceAllocation & lhs, const ResourceAllocation & rhs)
-                {
-                    const UInt64 lhs_order = lhs.memory_growth_eviction_order;
-                    const UInt64 rhs_order = rhs.memory_growth_eviction_order;
-                    if (lhs_order == 0)
-                        return false;
-                    if (rhs_order == 0)
-                        return true;
-                    if (queue_policy == ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst
-                        && lhs.allocated != rhs.allocated)
-                        return lhs.allocated > rhs.allocated;
-                    return lhs_order < rhs_order;
-                });
-            if (next != increasing_allocations.end() && next->memory_growth_eviction_order != 0)
-                suspended_growth = &*next;
-        }
 
         // Update requests. A completed spill enters suction only after this queue has exhausted
         // every currently visible fitting opportunity. This preserves normal scheduling during
@@ -724,18 +759,11 @@ void AllocationQueue::processActivation()
             /// A completed spill remains in eviction order until every ancestor scope can give it
             /// the single suction slot. This prevents sibling spillers from competing for the same
             /// release.
-            ResourceAllocation * ready_for_suction = suspended_growth;
-            if (ready_for_suction
-                && ready_for_suction->memory_growth_recovery_pending
-                && !ready_for_suction->memory_growth_suspended
-                && canEnterSuction(*ready_for_suction))
+            IncreaseRequest * selected_suction = nullptr;
+            if (!has_active_suction && tryPromoteEvictionQueueHead(selected_suction))
             {
-                ResourceAllocation & recovering = *ready_for_suction;
-                recovering.memory_growth_suction_priority = true;
                 suction_changed = true;
-                consumeSuctionClaim(recovering);
-                if (recovering.increasing_hook.is_linked() && recovering.memory_growth_suction_priority)
-                    preferred_suction = &recovering.increase;
+                preferred_suction = selected_suction;
                 increase_changed = setIncrease(preferred_suction) || increase_changed;
             }
         }

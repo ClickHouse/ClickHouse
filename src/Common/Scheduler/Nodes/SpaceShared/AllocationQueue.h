@@ -58,6 +58,7 @@ private:
     void ensureUsable() const;
     void clearMemoryGrowthSuspension();
     void consumeSuctionClaim(ResourceAllocation & allocation);
+    bool tryPromoteEvictionQueueHead(IncreaseRequest * & preferred_suction);
     bool canEnterSuction(const ResourceAllocation & allocation) const;
 
     /// Protects all the following fields
