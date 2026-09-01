@@ -513,12 +513,13 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             }
         }
 
-        if (!object_info->info.position_deletes_objects.empty())
+        if (object_info->info.hasPositionDeletes())
         {
             LOG_DEBUG(
                 logger,
-                "Finally got {} position delete elements for data file {}",
+                "Finally got {} position delete elements and {} deletion vectors for data file {}",
                 object_info->info.position_deletes_objects.size(),
+                object_info->info.deletion_deletes_objects.size(),
                 object_info->info.data_object_file_path_key);
         }
 

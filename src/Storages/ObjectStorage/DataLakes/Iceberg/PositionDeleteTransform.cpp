@@ -76,12 +76,6 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             continue;
         }
 
-        if (position_deletes_object.isDeletionVector())
-        {
-            readDeletionVector(position_deletes_object);
-            continue;
-        }
-
         auto object_path = position_deletes_object.file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
         auto object_info = RelativePathWithMetadata{object_path, object_metadata};
@@ -130,9 +124,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         delete_sources.push_back(std::move(delete_format));
     }
+
+    for (const auto & deletion_vector_object : iceberg_object_info->info.deletion_deletes_objects)
+        readDeletionVector(deletion_vector_object);
 }
 
-void IcebergPositionDeleteTransform::readDeletionVector(const PositionDeleteObject & deletion_vector_object)
+void IcebergPositionDeleteTransform::readDeletionVector(const DeletionVectorObject & deletion_vector_object)
 {
     if (boost::to_lower_copy(deletion_vector_object.file_format) != "puffin")
     {
@@ -143,8 +140,8 @@ void IcebergPositionDeleteTransform::readDeletionVector(const PositionDeleteObje
             deletion_vector_object.file_format);
     }
 
-    const Int64 content_offset = *deletion_vector_object.content_offset;
-    const Int64 content_size = *deletion_vector_object.content_size_in_bytes;
+    const Int64 content_offset = deletion_vector_object.content_offset;
+    const Int64 content_size = deletion_vector_object.content_size_in_bytes;
 
     auto object_metadata = object_storage->getObjectMetadata(deletion_vector_object.file_path, /*with_tags=*/ false);
     auto object_info = RelativePathWithMetadata{deletion_vector_object.file_path, object_metadata};

@@ -47,7 +47,7 @@ public:
 private:
     void initializeDeleteSources();
 
-    void readDeletionVector(const PositionDeleteObject & deletion_vector_object);
+    void readDeletionVector(const DeletionVectorObject & deletion_vector_object);
 
 protected:
     LoggerPtr log = getLogger("IcebergPositionDeleteTransform");
