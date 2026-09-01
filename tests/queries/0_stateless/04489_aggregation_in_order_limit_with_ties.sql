@@ -37,18 +37,19 @@ SELECT count() FROM (
 
 -- The counts above stay 100 whether the push-down pass matched this plan or never ran, so they
 -- alone do not establish that the WITH TIES guard was reached. This control is the same
--- `GROUP BY a, b` / `ORDER BY a` prefix shape without WITH TIES, where the push-down is expected
+-- `GROUP BY a, b` shape without WITH TIES and with the full-key `ORDER BY a, b` (a strict-prefix
+-- `ORDER BY` no longer admits the push-down, see issue #116849), where the push-down is expected
 -- to fire, and observes it through `read_rows`. The small-block settings expose the effect on a
 -- 1000-row table; `enable_parallel_replicas = 0` is required because `read_rows` is accounted
 -- per reading node.
-SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3
+SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 3
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
          max_threads = 1, max_block_size = 16,
          merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_rows_for_seek = 0,
          enable_parallel_replicas = 0,
          log_comment = '04489_ties_pushdown_on';
 
-SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3
+SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 3
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0,
          max_threads = 1, max_block_size = 16,
          merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_rows_for_seek = 0,

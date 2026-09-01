@@ -66,7 +66,7 @@ static bool expressionPreservesSortColumns(const ExpressionStep & expression, co
 }
 
 /// For LimitStep → SortingStep → AggregatingStep(in-order) where the sort
-/// description is a prefix of the aggregation's group-by sort description,
+/// description matches the aggregation's full group-by sort description,
 /// push the limit into the aggregation step to enable early termination.
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
 {
@@ -122,9 +122,18 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
                     || aggregating_step->isGroupingSets())
                     break;
 
+                /// The sort description must match the full group-by sort description, not just
+                /// a prefix of it. Each in-order stream terminates early at a boundary in full
+                /// group-key order, and a group whose rows span multiple streams may be cut off
+                /// in one stream while another still emits its partial state. With the full key
+                /// the partial group cannot be among the limit smallest (there are at least
+                /// `limit` complete groups strictly before every cut-off point, and full keys
+                /// are distinct so the final sort has no ties). With a strict prefix, groups
+                /// tied on the prefix are interchangeable to the final sort, so it may select
+                /// a group with a partial aggregate value (issue #116849).
                 const auto & sort_desc = sorting_step->getSortDescription();
                 const auto & agg_sort_desc = aggregating_step->getGroupBySortDescription();
-                if (sort_desc.empty() || !agg_sort_desc.hasPrefix(sort_desc))
+                if (sort_desc.empty() || sort_desc.size() != agg_sort_desc.size() || !agg_sort_desc.hasPrefix(sort_desc))
                     break;
 
                 /// Use the smallest limit if multiple LimitSteps point to the same AggregatingStep.
