@@ -320,6 +320,110 @@ TEST(UniqExactParallelMerge, ZeroKeyAcrossMergePaths)
     }
 }
 
+/// Grouped multi-way dispatch: the shape `Aggregator::mergeBucketMultiWayImpl` drives per destination
+/// state of the keyed merge (`enable_multi_way_keyed_merge`) - `parallelizeMergePrepare` (parallel
+/// two-level conversion, internally gated) followed by one `parallelizeMergeMulti` wave. Covers one
+/// destination with several sources of mixed levels, a single-source group (the wave's 2-place
+/// degenerate case), and an empty source set (a 1-place wave must be a no-op). Every result must
+/// equal a serial pairwise reference merge of the same inputs in the same order.
+TEST(UniqExactParallelMerge, GroupedMultiWayDispatch)
+{
+    ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), 4);
+    std::atomic<bool> is_cancelled{false};
+
+    /// Heap-allocated sets throughout (the two-level pointee is heap-allocated anyway, and raw
+    /// TwoLevelSet locals overflow the -Wframe-larger-than=65536 budget).
+    auto build = [](size_t start, size_t count, bool two_level, bool with_zero)
+    {
+        auto set = std::make_unique<TestSet>();
+        if (with_zero)
+        {
+            Key zero = 0;
+            set->insert<Key, SetLevelHint::unknown>(std::move(zero));
+        }
+        fillSet(*set, start, count);
+        if (two_level)
+            set->convertToTwoLevel();
+        return set;
+    };
+
+    /// One destination, 5 sources of mixed levels with overlapping ranges, zero key included.
+    {
+        struct SourceSpec
+        {
+            size_t start;
+            size_t count;
+            bool two_level;
+            bool with_zero;
+        };
+        const std::vector<SourceSpec> specs = {
+            {50'000, 200'000, true, false},
+            {10'000, 30'000, false, false},
+            {200'000, 150'000, true, false},
+            {1, 5'000, false, true},
+            {120'000, 40'000, false, false},
+        };
+
+        auto dst_wave = build(0, 60'000, false, false);
+        auto dst_ref = build(0, 60'000, false, false);
+
+        std::vector<std::unique_ptr<TestSet>> wave_sources;
+        std::vector<std::unique_ptr<TestSet>> ref_sources;
+        for (const auto & spec : specs)
+        {
+            wave_sources.push_back(build(spec.start, spec.count, spec.two_level, spec.with_zero));
+            ref_sources.push_back(build(spec.start, spec.count, spec.two_level, spec.with_zero));
+        }
+
+        /// Serial pairwise reference merge, in source order.
+        for (auto & src : ref_sources)
+            dst_ref->merge(*src);
+
+        VectorWithMemoryTracking<TestSet *> ptrs;
+        ptrs.reserve(1 + wave_sources.size());
+        ptrs.push_back(dst_wave.get());
+        for (auto & src : wave_sources)
+            ptrs.push_back(src.get());
+
+        TestSet::parallelizeMergePrepare(ptrs, [](TestSet * p) { return p; }, pool, is_cancelled);
+        TestSet::parallelizeMergeMulti(ptrs, [](TestSet * p) { return p; }, pool, is_cancelled);
+
+        /// Mixed levels force the parallel conversion, so the wave ran the bucket-parallel path.
+        EXPECT_TRUE(dst_wave->isTwoLevel());
+        EXPECT_EQ(dst_wave->size(), dst_ref->size());
+        EXPECT_EQ(collectKeys(*dst_wave), collectKeys(*dst_ref));
+    }
+
+    /// A single-source group: prepare converts the mixed pair, the wave degenerates to one merge.
+    {
+        auto dst_wave = build(0, 120'000, true, false);
+        auto src_wave = build(60'000, 120'000, false, true);
+        auto dst_ref = build(0, 120'000, true, false);
+        auto src_ref = build(60'000, 120'000, false, true);
+
+        dst_ref->merge(*src_ref);
+
+        VectorWithMemoryTracking<TestSet *> ptrs = {dst_wave.get(), src_wave.get()};
+        TestSet::parallelizeMergePrepare(ptrs, [](TestSet * p) { return p; }, pool, is_cancelled);
+        TestSet::parallelizeMergeMulti(ptrs, [](TestSet * p) { return p; }, pool, is_cancelled);
+
+        EXPECT_EQ(dst_wave->size(), dst_ref->size());
+        EXPECT_EQ(collectKeys(*dst_wave), collectKeys(*dst_ref));
+    }
+
+    /// An empty source set: a wave holding only the destination must not touch it.
+    {
+        auto dst = build(0, 50'000, false, false);
+        const auto keys_before = collectKeys(*dst);
+
+        VectorWithMemoryTracking<TestSet *> ptrs = {dst.get()};
+        TestSet::parallelizeMergeMulti(ptrs, [](TestSet * p) { return p; }, pool, is_cancelled);
+
+        EXPECT_TRUE(dst->isSingleLevel());
+        EXPECT_EQ(collectKeys(*dst), keys_before);
+    }
+}
+
 /// Large-merge differential: deterministic random keys with ~75% overlap (the high-overlap shape the
 /// non-resizing merge-into targets), zero key on both sides. Whatever routing branch fires, the merged
 /// result must equal the reference union exactly, on the sequential, thread-pool, and multi-way paths.

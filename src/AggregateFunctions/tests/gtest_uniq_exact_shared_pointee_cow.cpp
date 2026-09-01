@@ -1,5 +1,7 @@
 #include <AggregateFunctions/UniqExactSet.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/ThreadPool.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -9,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -192,4 +195,83 @@ TEST(UniqExactSharedPointeeCoW, SharedSourceReadOnlyAcrossTwoDestinationMerges)
     EXPECT_EQ(source.size(), P_N + 1);
     EXPECT_EQ(adopter.size(), P_N + 1);
     EXPECT_EQ(collectKeys(source), source_keys_before);
+}
+
+/// The multi-way merge wave (`parallelizeMergeMulti`) materializes every participant through
+/// `asTwoLevelChecked()`, whose `doDeepCopyIfNeeded` silently forks a shared pointee with a serial
+/// 256-sub-table deep copy - exactly the cost the wave must never absorb, so the wave carries a
+/// `chassert` that no participant's pointee is shared (`hasSharedTwoLevelPointee`).
+///
+/// Deliberately NOT a death test: `chassert` aborts only in debug / sanitizer builds
+/// (in RelWithDebInfo it compiles out entirely, so there is nothing to die from), and a gtest
+/// death test around a live ThreadPool is unreliable (the death-test child forks while pool
+/// threads are running). Instead this verifies the invariant predicate the chassert evaluates,
+/// directly, across every ownership transition that matters - so the assertion's trigger
+/// condition itself is pinned in all build types - and, in builds where the chassert compiles
+/// out, additionally that a wave entered by a shared pointee still merges correctly through the
+/// silent deep copy.
+TEST(UniqExactSharedPointeeCoW, SharedPointeeWaveInvariant)
+{
+    constexpr size_t P_N = 130'000;   /// > worthConvertingToTwoLevel threshold (100k)
+
+    /// 1. An exclusively owned two-level state never trips the invariant.
+    auto exclusive = makeTwoLevel(0, P_N);
+    EXPECT_FALSE(exclusive->hasSharedTwoLevelPointee());
+
+    /// 2. Handing the pointee out (`getTwoLevelSet`, the read/merge escape hatch) trips it...
+    {
+        const auto escaped = exclusive->getTwoLevelSet();
+        EXPECT_TRUE(exclusive->hasSharedTwoLevelPointee());
+    }
+    /// ...and it stays tripped after the sibling holder is gone: `is_shared` is sticky (only a
+    /// fork clears the state), which is precisely what must not enter a merge wave.
+    EXPECT_TRUE(exclusive->hasSharedTwoLevelPointee());
+
+    /// 3. The adopt fast path (empty destination merging a two-level source) marks both holders.
+    auto source = makeTwoLevel(P_N * 2, P_N);
+    TestSet adopter;
+    adopter.merge(*source);
+    EXPECT_TRUE(source->hasSharedTwoLevelPointee());
+    EXPECT_TRUE(adopter.hasSharedTwoLevelPointee());
+
+    /// 4. A mutating merge forks the shared pointee (`doDeepCopyIfNeeded`), after which the fork
+    /// is exclusively owned again: the invariant self-heals outside the wave; the wave itself must
+    /// never pay for that serial fork.
+    auto disjoint = makeTwoLevel(P_N * 6, P_N);
+    adopter.merge(*disjoint);
+    EXPECT_FALSE(adopter.hasSharedTwoLevelPointee());
+    EXPECT_TRUE(source->hasSharedTwoLevelPointee());   /// the escaped original stays shared
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    /// Where the chassert compiles out (e.g. RelWithDebInfo), a shared participant entering the
+    /// wave is still merged correctly: `asTwoLevelChecked` forks it inside the wave - the exact
+    /// serial cost the chassert exists to flag in debug builds. In debug / sanitizer builds this
+    /// block is compiled out because the chassert aborts by design.
+    {
+        auto dst = makeTwoLevel(0, P_N);
+        auto src_a = makeTwoLevel(P_N, P_N);
+        auto src_b = makeTwoLevel(P_N * 3, P_N);
+        auto shared_src = makeTwoLevel(P_N * 4, P_N);
+        TestSet holder;
+        holder.merge(*shared_src);   /// adopt: `shared_src`'s pointee escapes into `holder`
+        ASSERT_TRUE(shared_src->hasSharedTwoLevelPointee());
+
+        auto dst_ref = makeTwoLevel(0, P_N);
+        auto ref_a = makeTwoLevel(P_N, P_N);
+        auto ref_b = makeTwoLevel(P_N * 3, P_N);
+        auto ref_shared = makeTwoLevel(P_N * 4, P_N);
+        dst_ref->merge(*ref_a);
+        dst_ref->merge(*ref_b);
+        dst_ref->merge(*ref_shared);
+
+        ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), 4);
+        std::atomic<bool> is_cancelled{false};
+        VectorWithMemoryTracking<TestSet *> ptrs = {dst.get(), src_a.get(), src_b.get(), shared_src.get()};
+        TestSet::parallelizeMergeMulti(ptrs, [](TestSet * p) { return p; }, pool, is_cancelled);
+
+        EXPECT_EQ(collectKeys(*dst), collectKeys(*dst_ref));
+        /// The escaped pointee survives in `holder`, untouched by the wave (the fork copied it).
+        EXPECT_EQ(holder.size(), P_N);
+    }
+#endif
 }
