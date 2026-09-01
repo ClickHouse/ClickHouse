@@ -85,9 +85,7 @@ public:
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
 
-    /// The HTTP method effectively used for reads: POST when `http_method` is POST,
-    /// GET otherwise. PUT in `http_method` applies to writes only (pre-signed upload
-    /// URLs), so reads keep the default GET in that case.
+    /// POST for reads when `http_method` is POST; GET otherwise (PUT applies to writes only).
     static std::string chooseReadMethod(const String & http_method);
 
 protected:
@@ -117,8 +115,7 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
     HTTPHeaderEntries headers;
-    /// Overrides the default HTTP method: POST for reads (default is GET);
-    /// POST or PUT for writes (default is POST). PUT applies to writes only.
+    /// Overrides the default HTTP method: POST for reads (default GET), POST or PUT for writes (default POST).
     String http_method;
     ASTPtr partition_by;
     bool distributed_processing;
@@ -295,7 +292,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
-    /// The HTTP method used for the reads (the result of IStorageURLBase::getReadMethod).
+    /// The effective read method (result of IStorageURLBase::getReadMethod).
     String http_method;
     bool need_only_count;
     StorageID storage_id;
@@ -396,11 +393,6 @@ public:
     {
         std::string url;
         std::string http_method;
-        /// True when `http_method` came from a value STORED in a named collection (not from
-        /// a query-time override and not from the inline key-value argument). Stored values
-        /// are legacy configuration: collections accepted the key for any URL scheme before
-        /// it applied to reads, so scheme dispatch ignores them instead of rejecting.
-        bool http_method_stored_in_collection = false;
         HTTPHeaderEntries headers;
         std::string addresses_expr;
     };
@@ -408,11 +400,8 @@ public:
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// If a `headers(...)` argument is present, parses it and moves it to the end of the array.
-    /// If `out_http_method` is not null and a `http_method = '...'` (or `method = '...'`)
-    /// key-value argument is present, validates it, stores the value into `*out_http_method`,
-    /// and moves the argument to the end of the array as well.
-    /// Returns the number of arguments excluding the key-value arguments moved to the end.
+    /// Moves `headers(...)` and `http_method = '...'` (or `method = '...'`) key-value
+    /// arguments to the end of the array. Returns the count of remaining positional arguments.
     static size_t evalArgsAndCollectHeaders(
         ASTs & url_function_args,
         HTTPHeaderEntries & header_entries,

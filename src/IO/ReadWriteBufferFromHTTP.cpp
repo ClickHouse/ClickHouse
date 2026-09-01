@@ -158,8 +158,7 @@ bool ReadWriteBufferFromHTTP::checkIfActuallySeekable()
 {
     if (!file_info)
         file_info = getFileInfo();
-    /// Non-GET reads are not seekable: a seek would re-issue the request with a Range header
-    /// that servers ignore for POST, degrading into the retry loop (see supportsReadAt()).
+    /// Non-GET reads are not seekable (servers ignore Range for POST).
     return method == Poco::Net::HTTPRequest::HTTP_GET && file_info->seekable;
 }
 
@@ -422,9 +421,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
             /// Retry 200 OK
             if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
             {
-                /// For non-GET reads a ranged retry cannot succeed: servers ignore the Range
-                /// header for POST, so each retry would re-execute the whole request. A plain
-                /// Exception (unlike the HTTPException below) is not retried by doWithRetries().
+                /// Non-GET ranged retry cannot succeed (servers ignore Range for POST).
                 if (method != Poco::Net::HTTPRequest::HTTP_GET)
                     throw Exception(
                         ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
@@ -768,9 +765,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
     if (file_info)
         return *file_info;
 
-    /// A HEAD pre-request describes the GET representation of the URL, not the response to a
-    /// non-GET method: POST-only servers reject it (a wasted round trip), and endpoints that
-    /// execute on HEAD would run the workload twice. Report empty file info without probing.
+    /// HEAD describes the GET representation, not the POST response; skip it for non-GET reads.
     if (method != Poco::Net::HTTPRequest::HTTP_GET)
     {
         file_info = HTTPFileInfo{};

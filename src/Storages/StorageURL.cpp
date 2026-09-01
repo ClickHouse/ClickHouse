@@ -158,10 +158,7 @@ static void validateHTTPMethod(const String & http_method)
             http_method);
 }
 
-/// GET and POST responses for the same URL are unrelated data sources, so the effective
-/// read method is part of the schema cache key. GET keeps the plain URL as the key
-/// (and as the user-visible `source` in system.schema_inference_cache).
-/// StorageXDBC reads are genuine POSTs, so its num-rows cache entries intentionally live in the POST: namespace.
+/// POST and GET responses for the same URL are unrelated, so the read method is part of the schema cache key.
 static String schemaCacheSource(const String & url, const String & read_method)
 {
     if (read_method == Poco::Net::HTTPRequest::HTTP_GET)
@@ -417,7 +414,6 @@ StorageURLSource::StorageURLSource(
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
-    /// Must be the effective read method (the result of getReadMethod): raw "" or "PUT" would create unreachable schema-cache namespaces.
     chassert(http_method_ == Poco::Net::HTTPRequest::HTTP_GET || http_method_ == Poco::Net::HTTPRequest::HTTP_POST);
 
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
@@ -862,8 +858,6 @@ private:
 
 std::string IStorageURLBase::chooseReadMethod(const String & http_method)
 {
-    /// PUT in `http_method` applies to writes only (pre-signed upload URLs, see issue #44326),
-    /// so reads keep the default GET in that case.
     if (http_method == Poco::Net::HTTPRequest::HTTP_POST)
         return Poco::Net::HTTPRequest::HTTP_POST;
     return Poco::Net::HTTPRequest::HTTP_GET;
@@ -1303,10 +1297,7 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    /// A pre-existing table may carry a combination that CREATE now rejects (e.g. a named
-    /// collection edited to a wildcard URL after the table was created): ATTACH deliberately
-    /// keeps loading such tables, so enforce the invariant at use instead of silently
-    /// issuing a POST to the literal `*` URL (plain-URL reads do not expand these wildcards).
+    /// POST reads cannot expand `*`/`**` wildcards from index pages (listing is GET-only).
     if (urlPathHasListableGlobs(uri) && chooseReadMethod(http_method) == Poco::Net::HTTPRequest::HTTP_POST)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -1546,10 +1537,8 @@ void StorageURLWithFailover::read(
 
 SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
-    /// Do not modify the `http_method` member here: this storage instance is shared between
-    /// queries, and `getReadMethod` derives the read method from the member, so persisting
-    /// the write default would flip subsequent reads of a table created without an explicit
-    /// `http_method` from GET to POST (and would race concurrent reads).
+    /// Use a local variable: the storage instance is shared between queries, so mutating
+    /// `http_method` would flip subsequent reads from GET to POST.
     const String write_method = http_method.empty() ? Poco::Net::HTTPRequest::HTTP_POST : http_method;
 
     bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
@@ -1607,9 +1596,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
-    /// The HEAD/GET metadata this probe fetches describes the GET representation of the URL,
-    /// not the POST response, so POST-read cache validation deliberately has no modification
-    /// time and degrades to the `schema_inference_cache_require_modification_time_for_url` rule.
+    /// POST-read cache validation has no modification time (HEAD/GET describes the GET representation).
     if (read_method != Poco::Net::HTTPRequest::HTTP_GET)
         return std::nullopt;
 
@@ -1716,10 +1703,9 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
 size_t StorageURL::evalArgsAndCollectHeaders(
     ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments, String * out_http_method)
 {
-    /// Key-value arguments (`headers(...)`, and `http_method = '...'` when requested by the
-    /// caller) are extracted here and moved to the end of the array, so that the remaining
-    /// arguments keep their positional meaning. The arguments themselves stay in the array
-    /// to survive in the `CREATE` query AST (e.g. for `SHOW CREATE TABLE` and DETACH/ATTACH).
+    /// Key-value arguments (`headers(...)`, `http_method = '...'`) are moved to the end of
+    /// the array so positional arguments keep their meaning; they stay in the array to survive
+    /// in the CREATE AST (SHOW CREATE TABLE, DETACH/ATTACH).
     std::unordered_set<const IAST *> key_value_args;
     bool has_headers_arg = false;
     bool has_http_method_arg = false;
@@ -1774,9 +1760,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 
         if (headers_ast_function && headers_ast_function->name == "equals")
         {
-            /// `http_method = 'POST'` (or `method = 'POST'`) key-value argument, mirroring the
-            /// named collection keys of the same names. Other `key = value` arguments are named
-            /// collection overrides and are handled by tryGetNamedCollectionWithOverrides.
+            /// `http_method = 'POST'` (or `method = 'POST'`), mirroring named collection keys.
             if (out_http_method)
             {
                 const auto * equals_args_expr = assert_cast<const ASTExpressionList *>(headers_ast_function->arguments.get());
@@ -1850,11 +1834,6 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
 
     configuration.http_method = collection.getOrDefault<String>("http_method", collection.getOrDefault<String>("method", ""));
     validateHTTPMethod(configuration.http_method);
-    /// `http_method` takes precedence, so the exemption depends on whether the key that actually
-    /// supplied the value was overridden by the query — not on whether either alias was.
-    const String http_method_key = collection.has("http_method") ? "http_method" : "method";
-    configuration.http_method_stored_in_collection
-        = !configuration.http_method.empty() && !collection.isQueryOverridden(http_method_key);
 
     configuration.format = collection.getOrDefault<String>("format", "auto");
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
@@ -2562,20 +2541,8 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             "The URL engine does not support headers(...) when dispatching to the {} engine (URL '{}')",
             engine_name, configuration.url);
 
-    /// Rejected for fresh definitions only: CREATE, and full-definition ATTACH (new user
-    /// input, unlike short-syntax `ATTACH TABLE t` loading stored metadata) — the pattern
-    /// used by other engines. Values STORED in named collections are exempt even then:
-    /// collections have been accepting `http_method` regardless of the URL scheme, so both
-    /// pre-existing tables and fresh `CREATE ... ENGINE = URL(nc)` over such collections
-    /// keep working — the delegated backend ignores the key, as it always did. Only the
-    /// inline key-value argument and query-time collection overrides are new syntax.
-    const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-    if (!configuration.http_method.empty() && is_fresh_definition && !configuration.http_method_stored_in_collection)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The URL engine does not support http_method when dispatching to the {} engine (URL '{}')",
-            engine_name, configuration.url);
+    /// `http_method` is meaningless for non-HTTP backends; clear it so it's ignored by the delegate.
+    configuration.http_method.clear();
 
     const String & format = configuration.format;
     const String & compression = configuration.compression_method;
@@ -2708,28 +2675,8 @@ void registerStorageURL(StorageFactory & factory)
 
             auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
 
-            /// The index-page listing requests are plain GET; a silent fallback to probing the
-            /// literal `*` URL would read different files, so reject the combination explicitly.
-            /// Only for fresh definitions (CREATE, and full-definition ATTACH, which is new user
-            /// input): pre-existing tables (e.g. with `http_method` coming from a named
-            /// collection) must keep loading on short-syntax ATTACH / server startup / RESTORE
-            /// and fall through to the plain `StorageURL` backend below; their reads enforce
-            /// the same invariant at use time.
-            const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-            if (is_fresh_definition
-                && urlPathHasListableGlobs(config.url)
-                && IStorageURLBase::chooseReadMethod(config.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
-                    config.url);
-
-            /// The engine serves both reads and writes; `http_method='PUT'` exists only for writes,
-            /// and the web object-storage backend behind index-page wildcards cannot write. So a
-            /// configured `http_method` keeps the plain literal-URL `StorageURL` backend exactly as
-            /// before this argument existed. (The read-only `url()` table function routes
-            /// PUT-configured SELECTs to the listing path instead — an intentional asymmetry.)
+            /// A configured `http_method` keeps the plain literal-URL `StorageURL` backend
+            /// (the object-storage wildcard backend cannot write, and POST cannot list index pages).
             const bool use_object_storage = config.http_method.empty() && urlPathHasListableGlobs(config.url);
 
             if (!use_object_storage)
@@ -2750,7 +2697,8 @@ void registerStorageURL(StorageFactory & factory)
                     /* distributed_processing */ false);
             }
 
-            if (is_fresh_definition)
+            if (args.mode <= LoadingStrictnessLevel::CREATE
+                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
                 checkExperimentalURLWildcardFromIndexPages(context);
 
             /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
