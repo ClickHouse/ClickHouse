@@ -85,6 +85,13 @@ namespace
         /// result is discarded anyway.
         bool useDefaultImplementationForNulls() const override { return false; }
 
+        /// The `Dynamic` and `Variant` adaptors default to `useDefaultImplementationForNulls`, so
+        /// turning that off above would disable them as a side effect and leave
+        /// `getReturnTypeForDefaultImplementationForDynamic` unreachable. They dispatch on the concrete
+        /// type held in the column and deal with null rows themselves, so keep them enabled.
+        bool useDefaultImplementationForDynamic() const override { return true; }
+        bool useDefaultImplementationForVariant() const override { return true; }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto col_to = ColumnFloat64::create();

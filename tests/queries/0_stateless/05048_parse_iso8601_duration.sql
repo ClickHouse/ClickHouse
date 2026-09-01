@@ -60,6 +60,11 @@ SELECT parseISO8601Duration(NULL);
 SELECT parseISO8601Duration(CAST(NULL AS Nullable(String)));
 SELECT toTypeName(parseISO8601Duration(CAST('PT1S' AS Nullable(String))));
 
+-- `Dynamic` and `Variant` arguments go through their own adaptors, which default to
+-- `useDefaultImplementationForNulls` and so would have been switched off along with it.
+SELECT parseISO8601Duration(CAST('PT1H30M' AS Dynamic)) = parseISO8601Duration('PT1H30M');
+SELECT parseISO8601Duration(CAST('PT1H30M' AS Variant(String, UInt8))) = parseISO8601Duration('PT1H30M');
+
 -- ISO 8601 also allows a comma as the decimal separator, and RFC 3339 / XSD add signed durations.
 -- Neither is accepted: ClickHouse rejects comma decimals elsewhere, and a sign is not part of the
 -- core grammar.
