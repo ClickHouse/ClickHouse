@@ -125,15 +125,17 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
     const auto & remote_id = target->remote_time_series_storage_id;
     const auto & distributed = typeid_cast<const StorageDistributed &>(storage);
 
+    /// Raw fields: the remote database is legitimately empty when shards use their own defaults.
     WriteBufferFromOwnString key_buf;
-    writeString(target->cluster_name, key_buf);
-    writeString(remote_id.getFullNameNotQuoted(), key_buf);
+    writeStringBinary(target->cluster_name, key_buf);
+    writeStringBinary(remote_id.database_name, key_buf);
+    writeStringBinary(remote_id.table_name, key_buf);
     for (const auto & shard : distributed.getCluster()->getShardsAddresses())
         for (const auto & replica : shard)
         {
-            writeString(replica.host_name, key_buf);
-            writeIntText(replica.port, key_buf);
-            writeString(replica.default_database, key_buf);
+            writeStringBinary(replica.host_name, key_buf);
+            writeIntBinary(replica.port, key_buf);
+            writeStringBinary(replica.default_database, key_buf);
         }
     const auto key = key_buf.str();
 
@@ -156,6 +158,7 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
     /// no cluster grant of its own, and learns nothing it could not already see.
     auto probe_context = Context::createCopy(context->getGlobalContext());
     probe_context->makeQueryContext();
+    probe_context->setCurrentQueryId("");
     probe_context->setSetting("skip_unavailable_shards", false);
 
     auto [probe_ast, probe_io] = executeQuery(probe_query, probe_context, QueryFlags{ .internal = true });
