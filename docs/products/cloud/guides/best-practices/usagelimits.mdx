@@ -49,7 +49,7 @@ Warehouse limits apply to that shared group as a whole — not to each service s
 | **Replicas per warehouse** | 50 (soft)                                      |
 
 The replica limit is the **combined** replica count across all services in the warehouse.
-Because every service in a warehouse shares a single ClickHouse Keeper, this limit exists to protect Keeper stability.
+Because every service in a warehouse shares a single ClickHouse Keeper, this limit exists to protect Keeper stability. 50 is a soft limitation and dependent on your data/workload. The ceiling is higher for those on 26.6+ and we plan to raise this in the future. 
 Contact [support](https://clickhouse.com/support/program) to raise it; for more detail on warehouse scaling, see [warehouses](/products/cloud/features/infrastructure/warehouses#scaling).
 
 There is **no separate cap on the number of services** in a warehouse — it is bounded only by the combined replica limit above.
