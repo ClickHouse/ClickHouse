@@ -27,6 +27,7 @@ CREATE TABLE test_spatial_bbox_deferred
     id UInt32,
     g  Polygon,
     v  Geometry,
+    d  Dynamic,
     w  Polygon,
     INDEX idx_bbox_g g TYPE spatial_bbox GRANULARITY 1
 )
@@ -38,6 +39,7 @@ INSERT INTO test_spatial_bbox_deferred
 VALUES (1,
         [[(100., 100.), (110., 100.), (110., 110.), (100., 110.), (100., 100.)]],
         readWKT('POINT(1 1)'),
+        readWKTPoint('POINT(1 1)'),
         [[(100., 100.), (110., 100.), (110., 110.), (100., 110.), (100., 100.)]]);
 
 -- A `Geometry` CONSTANT holding a kind the predicate refuses: the granule must survive, and the
@@ -78,6 +80,35 @@ SELECT 'strict geometry sibling', extract(explain, '(Parts:.*|Granules:.*)')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_deferred
       WHERE polygonsIntersectCartesian(g, [[(0., 0.), (10., 0.), (10., 10.), (0., 10.), (0., 0.)]])
         AND polygonsIntersectCartesian(v, [[(0., 0.), (10., 0.), (10., 10.), (0., 10.), (0., 0.)]]))
+WHERE explain LIKE '%Granules:%';
+
+-- The same three shapes on a `Dynamic`, which reaches the predicate through
+-- `FunctionDynamicAdaptor` rather than `FunctionVariantAdaptor`. It defers the overload in exactly
+-- the same way, so it must fail closed in exactly the same way -- under `dynamic_throw_on_type_mismatch`
+-- either way, for the same reason `variant_throw_on_type_mismatch` cannot rescue the `Geometry` case
+-- above.
+SELECT 'dynamic polygon const', extract(explain, '(Parts:.*|Granules:.*)')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_deferred
+      WHERE pointInPolygon(CAST(readWKTPolygon('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))') AS Dynamic), g))
+WHERE explain LIKE '%Granules:%';
+
+SELECT count() FROM test_spatial_bbox_deferred
+WHERE pointInPolygon(CAST(readWKTPolygon('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))') AS Dynamic), g); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SET dynamic_throw_on_type_mismatch = 0;
+
+SELECT 'lenient dynamic sibling', extract(explain, '(Parts:.*|Granules:.*)')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_deferred
+      WHERE polygonsIntersectCartesian(g, [[(0., 0.), (10., 0.), (10., 10.), (0., 10.), (0., 0.)]])
+        AND polygonsIntersectCartesian(d, [[(0., 0.), (10., 0.), (10., 10.), (0., 10.), (0., 0.)]]))
+WHERE explain LIKE '%Granules:%';
+
+SET dynamic_throw_on_type_mismatch = 1;
+
+SELECT 'strict dynamic sibling', extract(explain, '(Parts:.*|Granules:.*)')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_deferred
+      WHERE polygonsIntersectCartesian(g, [[(0., 0.), (10., 0.), (10., 10.), (0., 10.), (0., 0.)]])
+        AND polygonsIntersectCartesian(d, [[(0., 0.), (10., 0.), (10., 10.), (0., 10.), (0., 0.)]]))
 WHERE explain LIKE '%Granules:%';
 
 -- Control: a sibling conjunct on a plainly typed column leaves pruning on, so every veto above is a
