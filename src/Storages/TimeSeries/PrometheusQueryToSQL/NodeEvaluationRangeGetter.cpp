@@ -69,7 +69,9 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "end_time is not specified");
         if (*settings_.start_time > *settings_.end_time)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "start_time must not be greater than end_time");
-        if (*settings_.start_time < *settings_.end_time)
+        const bool has_range = *settings_.start_time < *settings_.end_time;
+        const bool is_query_range = settings_.mode == PrometheusQueryEvaluationMode::QUERY_RANGE;
+        if (has_range || is_query_range)
         {
             if (!settings_.step)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "step is not specified");
@@ -78,7 +80,7 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
         }
         range.start_time = *settings_.start_time;
         range.end_time = *settings_.end_time;
-        range.step = (*settings_.start_time < *settings_.end_time) ? *settings_.step : DurationType{0};
+        range.step = (has_range || is_query_range) ? *settings_.step : DurationType{0};
     }
 
     query_start_time = range.start_time;

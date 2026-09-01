@@ -1,9 +1,11 @@
 import argparse
 import csv
+import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import traceback
 import urllib.parse
@@ -11,6 +13,9 @@ from datetime import datetime
 from pathlib import Path
 from threading import Thread
 
+import yaml
+
+from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import download_and_extract_datasets
 from ci.praktika.info import Info
@@ -470,6 +475,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     CONFIGURE = "configure"
     RESTART = "restart"
     TEST = "queries"
+    EXPORT_LOGS = "export_logs"
     REPORT = "report"
     # TODO: stage implement code from the old script as is - refactor and remove
     CHECK_RESULTS = "check_results"
@@ -777,6 +783,190 @@ def get_check_start_time():
     return datetime.now().isoformat(sep=" ").split(".")[0]
 
 
+# --- Export of the system logs to the CI Logs cluster ----------------------
+# Both servers export their `system.*_log` tables the way every other check
+# does it: a materialized view per log table pushes the rows into a
+# `Distributed` table, which sends them to the CI Logs cluster in the
+# background (see ci/jobs/scripts/log_export.py). The only difference is that
+# the sends are held back while the queries are measured - writing the rows
+# into the local files of the `Distributed` tables is cheap, sending them over
+# the network is not - and everything accumulated is sent after the last test,
+# see export_system_logs below.
+#
+# Both servers write into the same destination tables and the extra columns
+# have no field for the server, so the two are told apart by a suffix in
+# `check_name`: '<job name> (left)' is the reference build and
+# '<job name> (right)' is the patched one.
+
+# `system.build_options` reports the full git hash of the build; it is empty
+# only for a build made without git information available (cmake/git.cmake).
+GIT_HASH_RE = re.compile(r"[0-9a-f]{7,40}")
+
+
+def get_server_commit_sha(server):
+    """The commit of the build a server runs, or an empty string if it cannot
+    be read."""
+    sha = (
+        server.ask("SELECT value FROM system.build_options WHERE name = 'GIT_HASH'")
+        or ""
+    ).strip()
+    return sha if GIT_HASH_RE.fullmatch(sha) else ""
+
+
+def write_ci_logs_sender_user(config_dir, binary):
+    """Write the `ci_logs_sender` user, which the export views run as, into a
+    server's users.d - without the settings that build does not know.
+
+    A setting a build does not know is not ignored in a profile: the server
+    refuses to start with `Setting ... is neither a builtin setting nor ...`.
+    The reference server runs an older build, so the first setting added to the
+    shared file would otherwise take the whole check down with it (the same
+    reason the job strips new settings from `keeper_port.xml`).
+    """
+    known_settings = set(
+        Shell.get_output(
+            f'{binary} local --query "SELECT name FROM system.settings"', strict=True
+        ).split()
+    )
+    config = yaml.safe_load(Path(log_export.CI_LOGS_SENDER_USER_CONFIG).read_text())
+    profile = config["profiles"]["ci_logs_sender"]
+    constraints = profile.get("constraints", {})
+    unknown = sorted(
+        {
+            name
+            for name in list(profile) + list(constraints)
+            if name != "constraints" and name not in known_settings
+        }
+    )
+    if unknown:
+        print(
+            f"WARNING: The build of [{binary}] does not know {unknown} - "
+            "dropping them from the ci_logs_sender profile"
+        )
+        for name in unknown:
+            profile.pop(name, None)
+            constraints.pop(name, None)
+    target = Path(config_dir) / "users.d" / "ci_logs_sender.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        f"# Generated from {log_export.CI_LOGS_SENDER_USER_CONFIG}\n"
+        + yaml.dump(config, default_flow_style=False)
+    )
+    return True
+
+
+def create_log_export_configs():
+    """Add the CI Logs cluster, and the user the export views run as, to the
+    config of both servers. Must run before they are started."""
+    if Info().is_local_run:
+        print("Local run - the system logs will not be exported")
+        return True
+    try:
+        host, password = log_export.get_credentials()
+        for config_dir, binary in (
+            (perf_left_config, f"{perf_left}/clickhouse"),
+            (perf_right_config, f"{perf_right}/clickhouse"),
+        ):
+            if not log_export.create_config(config_dir, host, password):
+                print(f"WARNING: Failed to write the log export config into [{config_dir}]")
+                continue
+            write_ci_logs_sender_user(config_dir, binary)
+    except Exception:
+        # Best effort: a job that cannot export its system logs still runs.
+        traceback.print_exc()
+    return True
+
+
+def start_log_export(servers):
+    """Create the export views on both servers and hold the sends back until
+    the tests are over.
+
+    The reference server is skipped when the commit of its build cannot be
+    read: `commit_sha` is what attributes its rows to a build, and the rows
+    would be of no use in the CI Logs cluster without it.
+
+    A server whose export cannot be held back has it torn down instead: the
+    export costs this job its logs when it fails, never its measurements.
+    """
+    info = Info()
+    try:
+        host, password = log_export.get_credentials()
+    except Exception:
+        traceback.print_exc()
+        print("WARNING: No CI Logs cluster credentials, the system logs will not be exported")
+        return True
+    check_start_time = int(os.environ["CHPC_CHECK_START_TIMESTAMP"])
+    for node_name, server in servers:
+        # The patched server runs the build of the commit this check reports
+        # for, like every other check; the reference server runs an older
+        # build and names its own commit.
+        if server.is_left:
+            commit_sha = get_server_commit_sha(server)
+            if not commit_sha:
+                print(
+                    "WARNING: Cannot read the build commit of the reference server, "
+                    "its system logs will not be exported"
+                )
+                continue
+        else:
+            commit_sha = info.sha
+        try:
+            if not log_export.start(
+                check_start_time,
+                host=host,
+                password=password,
+                port=server.port,
+                check_name_suffix=f" ({node_name})",
+                commit_sha=commit_sha,
+            ):
+                print(
+                    f"WARNING: Failed to set up the system log export on the [{node_name}] server"
+                )
+                continue
+            # After the setup, which is what creates the tables the sends are
+            # stopped for.
+            if not log_export.stop_distributed_sends(server.port):
+                # Fail closed. The measured numbers are what this job is for,
+                # the logs are a by-product: an export that cannot be held
+                # back has to go, or it would ship rows over the network while
+                # the queries are measured.
+                print(
+                    f"WARNING: Cannot hold back the log export of the [{node_name}] server "
+                    "for the measured window - tearing the export down, "
+                    "this server will not export its system logs"
+                )
+                log_export.stop(server.port)
+        except Exception:
+            traceback.print_exc()
+            # The same, for a failure raised rather than reported: whatever the
+            # export is in the middle of, it must not outlive this stage.
+            try:
+                log_export.stop(server.port)
+            except Exception:
+                traceback.print_exc()
+    return True
+
+
+def export_system_logs(servers):
+    """Send what the servers accumulated while the tests were running to the
+    CI Logs cluster, and drop the export views.
+
+    Best effort throughout: the measurements are over by now, and a server
+    whose export was torn down in `start_log_export` has nothing left to send.
+    The `SYSTEM FLUSH DISTRIBUTED` of `log_export.stop` sends the accumulated
+    files whatever came of the `START` above (`processFiles(force = true)` does
+    not consult the send lock), so the rows are not lost if it did not take.
+    """
+    for node_name, server in servers:
+        print(f"Export the system logs of the [{node_name}] server")
+        try:
+            log_export.start_distributed_sends(server.port)
+            log_export.stop(server.port)
+        except Exception:
+            traceback.print_exc()
+    return True
+
+
 def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release):
     """Upload one entry from REPORT_UPLOADS to the play cluster.
 
@@ -935,6 +1125,7 @@ class CHServer:
         self.log_file = log_file
         self.port = server_port
         self.server_path = serever_path
+        self.is_left = is_left
         self.name = "Reference" if is_left else "Patched"
 
         # On x86_64 pin both servers to one hyperthread per physical core (the
@@ -1021,7 +1212,7 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/"
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -1035,6 +1226,7 @@ class CHServer:
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} \
                 --profile-seconds 10 \
+                --pr-number {pr_number} \
                 {test_file}",
             verbose=True,
             strip=False,
@@ -1102,25 +1294,248 @@ def find_base_release_build(info, build_type):
 
 
 # The number of distinct "slower" queries that fails the whole performance
-# check. This is the gate that actually decides the Praktika `Check Results`
-# status: `report.py` embeds a status into `report.html`, but `main` below
-# discards it ("always green mode") and recomputes the final status by
-# reparsing the "N slower" message, so the effective gate lives here. The value
-# must stay synchronized with the slower-queries threshold in
-# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
-# "slower" queries is dominated by CI noise (a single bad shard run, frequency
-# scaling, or code-layout artifacts can push several unrelated micro benchmarks
-# over their per-query thresholds at once), while a genuine regression shows up
-# as a small cluster of related queries with large magnitudes that the
-# per-query thresholds catch on their own.
+# check in the commit-to-commit (`master_head`) mode. This is the gate that
+# actually decides the Praktika `Check Results` status: `report.py` embeds a
+# status into `report.html`, but `main` below discards it ("always green mode")
+# and recomputes the final status by reparsing the "N slower" message, so the
+# effective gate lives here. The value must stay synchronized with the
+# slower-queries threshold in `ci/jobs/scripts/perf/report.py`. It is
+# intentionally high: a handful of "slower" queries is dominated by CI noise (a
+# single bad shard run, frequency scaling, or code-layout artifacts can push
+# several unrelated micro benchmarks over their per-query thresholds at once),
+# while a genuine regression shows up as a small cluster of related queries
+# with large magnitudes that the per-query thresholds catch on their own.
 SLOWER_QUERIES_FAIL_THRESHOLD = 10
+
+# The gate for the cumulative `release_base` mode. That comparison accumulates
+# every performance change since the release branch point, so an absolute
+# slower-count gate inevitably drifts into permanent red: once master collects
+# more than SLOWER_QUERIES_FAIL_THRESHOLD slower queries in one shard, the
+# check fails on every commit until the next release resets the baseline, and
+# the status stops pointing at any specific commit. Instead, fail only when
+# the slower count grew by more than this delta compared to the previous
+# master run of the same job - red then blames the commit that introduced the
+# regression and recovers on the next commit by itself. Measured on 10 days of
+# master runs: run-to-run count-delta noise is p90 <= 3 per shard, while real
+# regression landings showed +8..+16 (e.g. the `direct_dictionary` regression,
+# https://github.com/ClickHouse/ClickHouse/issues/115803).
+SLOWER_QUERIES_DELTA_FAIL_THRESHOLD = 5
+
+
+def parse_slower_count(message):
+    match = re.search(r"(|.* )(\d+) slower.*", message)
+    return int(match.group(2).strip()) if match else 0
+
+
+# A genuine perf summary produced by `report.py` is either "See the report"
+# (nothing notable) or a comma-separated list of "<N> too long", "<N> faster",
+# "<N> slower", "<N> unstable" phrases. "<N> errors" is deliberately excluded:
+# a run with errors may have skipped queries, so its slower count would
+# understate the baseline. Everything else - "No status in report.",
+# "No message in report.", "Failed to parse the report.", "Errors while
+# building the report." - is a failure sentinel, not a summary.
+_PERF_SUMMARY_PART_RE = re.compile(r"^\d+ (too long|faster|slower|unstable)$")
+
+
+def is_perf_summary_message(message):
+    """Return True when a lowercased result message is a normal perf summary
+    that can serve as a slower-count baseline."""
+    # A previous run of this job appends "; release base ...; delta vs prev
+    # master run (...)" to its own summary - ignore everything after the
+    # first ";".
+    summary = message.split(";")[0].strip()
+    if summary == "see the report":
+        return True
+    parts = [p.strip() for p in summary.split(",")]
+    return all(_PERF_SUMMARY_PART_RE.match(p) for p in parts)
+
+
+# The marker a `release_base` run appends to its own result message so that the
+# next master run can tell which release baseline the count was measured
+# against. `release_base` is cumulative since the release branch point, so the
+# counts of two runs are comparable only when both used the same baseline.
+_RELEASE_BASE_MARKER = "release base"
+_RELEASE_BASE_RE = re.compile(rf"{_RELEASE_BASE_MARKER} ([0-9a-f]+)")
+
+
+def format_release_base_marker(release_base_sha):
+    return f"; {_RELEASE_BASE_MARKER} {release_base_sha[:12]}"
+
+
+def parse_release_base(message):
+    """Return the release baseline sha recorded in a lowercased result message,
+    or None when the message carries no marker (a run that predates it)."""
+    match = _RELEASE_BASE_RE.search(message)
+    return match.group(1) if match else None
 
 
 def too_many_slow(message):
-    match = re.search(r"(|.* )(\d+) slower.*", message)
-    return (
-        int(match.group(2).strip()) > SLOWER_QUERIES_FAIL_THRESHOLD if match else False
+    return parse_slower_count(message) > SLOWER_QUERIES_FAIL_THRESHOLD
+
+
+# Outcomes of fetching one previous result artifact from S3.
+FETCH_OK = "ok"
+FETCH_MISSING = "missing"
+FETCH_ERROR = "error"
+
+
+def fetch_prev_master_result(link):
+    """Fetch a previous run's `result_*.json` from S3.
+
+    Returns `(FETCH_OK, body)` for an existing object, `(FETCH_MISSING, None)`
+    when the object does not exist, and `(FETCH_ERROR, None)` for a transport
+    failure. The distinction matters: a missing object usually means the commit
+    never ran this job (see `classify_missing_prev_master_run`), while a timeout
+    or a TLS error says nothing about the commit, and silently treating it as a
+    miss would compare the current run against an older baseline.
+
+    Note that the bucket denies `s3:ListBucket`, so S3 answers `403` instead of
+    `404` for a key that does not exist - both codes mean "missing" here."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        body_file = Path(tmp_dir) / "result.json"
+        http_code = Shell.get_output(
+            f"curl -s --compressed --max-time 60 -o {body_file} "
+            f'-w "%{{http_code}}" "{link}"'
+        ).strip()
+        # `Shell.get_output` returns an empty string when curl exits non-zero,
+        # and curl reports "000" when no response was received at all.
+        if http_code in ("", "000"):
+            print(f"WARNING: transport failure while fetching [{link}]")
+            return FETCH_ERROR, None
+        if http_code in ("403", "404"):
+            return FETCH_MISSING, None
+        if http_code != "200":
+            print(f"WARNING: unexpected HTTP {http_code} for [{link}]")
+            return FETCH_ERROR, None
+        return FETCH_OK, body_file.read_text(encoding="utf-8")
+
+
+# Why one commit's missing `result_*.json` is skipped and another one's stops
+# the walk. `MASTER_RUN_NEVER_SCHEDULED` means this job provably never started
+# at that commit, so the commit carries no measurement to miss and the walk may
+# continue to an older one. `MASTER_RUN_INCOMPLETE` means it did start (or was
+# scheduled) and simply has no result to read: continuing past it would compute
+# the delta across that commit's changes too, which is exactly the stale-baseline
+# attribution the delta gate exists to avoid.
+MASTER_RUN_NEVER_SCHEDULED = "never_scheduled"
+MASTER_RUN_INCOMPLETE = "incomplete"
+
+# The workflow-level praktika report of a master run, which lists every job of
+# that run with its status. `check_ci.py` reads the same object.
+MASTER_WORKFLOW_RESULT_FILE = "result_masterci.json"
+
+
+def classify_missing_prev_master_run(job_name, sha):
+    """Tell whether this job was ever scheduled at master commit `sha`, given
+    that its `result_*.json` is missing there.
+
+    A missing result is the common case rather than an anomaly, and it is not a
+    symptom of a broken run:
+
+      * `MasterCI` is a push-triggered workflow, and master commits land
+        seconds apart, so a single push event covers a batch of commits and the
+        workflow runs on the head of the batch only. The other commits of the
+        batch have no `MasterCI` run at all, hence no report object either.
+      * `MasterCI` sets `enable_job_filtering_by_changes`, so even when it does
+        run, a commit that touches nothing the perf job depends on gets it
+        `SKIPPED` ("Not affected by the changed files and not required").
+
+    Both are `MASTER_RUN_NEVER_SCHEDULED`: no measurement was taken and none
+    ever will be, so the walk has to look further back or the delta gate would
+    be unusable on the majority of master runs.
+
+    Everything else is `MASTER_RUN_INCOMPLETE`: the job is `PENDING`/`RUNNING`
+    and its result is still to come, it was `DROPPED`, it reached a terminal
+    status without publishing a result, or the report itself cannot be fetched
+    or parsed. Those all stop the walk, and the caller falls back to the
+    absolute gate for this one run - the next master run finds this run's own
+    result and gets its delta back."""
+    link = (
+        "https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/"
+        f"{sha}/{MASTER_WORKFLOW_RESULT_FILE}"
     )
+    state, out = fetch_prev_master_result(link)
+    if state == FETCH_MISSING:
+        print(f"INFO: master commit {sha} has no {MASTER_WORKFLOW_RESULT_FILE}")
+        return MASTER_RUN_NEVER_SCHEDULED
+    if state == FETCH_ERROR:
+        print(f"WARNING: failed to fetch the master workflow report [{link}]")
+        return MASTER_RUN_INCOMPLETE
+    try:
+        jobs = json.loads(out).get("results") or []
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow report [{link}]")
+        return MASTER_RUN_INCOMPLETE
+    for job in jobs:
+        if not isinstance(job, dict) or job.get("name") != job_name:
+            continue
+        status = job.get("status")
+        if status == Result.Status.SKIPPED:
+            print(f"INFO: [{job_name}] was skipped at master commit {sha}")
+            return MASTER_RUN_NEVER_SCHEDULED
+        print(
+            f"WARNING: [{job_name}] at master commit {sha} is {status} but "
+            "published no result"
+        )
+        return MASTER_RUN_INCOMPLETE
+    # The job is absent from the report: this master run did not schedule it.
+    print(f"INFO: [{job_name}] is not part of the master run of {sha}")
+    return MASTER_RUN_NEVER_SCHEDULED
+
+
+def find_prev_master_slower_count(job_name, commits, release_base_sha):
+    """Find the "slower" query count reported by the most recent valid run of
+    this job on a predecessor master commit. Returns (count, sha), or
+    (None, None) when no usable previous run is found and the caller has to
+    fall back to the absolute gate.
+
+    The walk stops - rather than skipping to an older commit - as soon as a
+    predecessor is found whose result cannot be used as a baseline: a
+    transport failure, a malformed body, a non-summary message (errors,
+    sentinels like "No status in report."), a run measured against a different
+    release baseline, or a run that was scheduled but has no result yet
+    (`MASTER_RUN_INCOMPLETE`). Skipping such a commit would silently compare
+    the current run against an older one, so red would no longer blame the
+    commit that introduced the regression.
+
+    `commits` on master runs is `master_track_commits_sha`, the first-parent
+    chain of master recorded by the `store_data` hook. A missing result on that
+    chain is not by itself a sign of a broken predecessor - most master commits
+    never run this job at all - so each missing result is classified by
+    `classify_missing_prev_master_run` and only a provably never-scheduled one
+    is skipped. The walk has no cutoff: truncating the list could exhaust it
+    before reaching the previous run that did measure this job."""
+    result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
+    for sha in commits:
+        link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
+        state, out = fetch_prev_master_result(link)
+        if state == FETCH_MISSING:
+            if classify_missing_prev_master_run(job_name, sha) == MASTER_RUN_INCOMPLETE:
+                return None, None
+            continue
+        if state == FETCH_ERROR:
+            return None, None
+        try:
+            prev_message = json.loads(out).get("info", "")
+        except Exception:
+            print(f"WARNING: failed to parse previous run result [{link}]")
+            return None, None
+        prev_message = prev_message.lower()
+        if not prev_message or not is_perf_summary_message(prev_message):
+            print(
+                f"WARNING: previous run result for {sha} is not a usable perf "
+                f"summary: {prev_message!r}"
+            )
+            return None, None
+        prev_release_base = parse_release_base(prev_message)
+        if not prev_release_base or not release_base_sha.startswith(prev_release_base):
+            print(
+                f"WARNING: previous run {sha} was measured against release "
+                f"baseline {prev_release_base!r}, not {release_base_sha!r}"
+            )
+            return None, None
+        return parse_slower_count(prev_message), sha
+    return None, None
 
 
 def read_ci_checks_results(path):
@@ -1373,8 +1788,11 @@ def main():
             f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:",
             verbose=True,
         )
+        # The test definitions must stay at the reference vintage (an old server cannot run new
+        # queries), but their runner `perf.py` is driven by this job and must match its version.
         Shell.check(
-            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance",
+            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance"
+            " && git checkout HEAD -- ./tests/performance/scripts/perf.py",
             verbose=True,
             strict=True,
         )
@@ -1406,6 +1824,12 @@ def main():
 
     res = True
     results = []
+
+    # Fix the check start time once, for the whole job: the system log export,
+    # `compare.sh` and the report uploads must all stamp the same run identity,
+    # otherwise the exported `system.*_log` rows cannot be correlated with the
+    # perf report of the same shard on `check_start_time`.
+    os.environ.setdefault("CHPC_CHECK_START_TIMESTAMP", str(int(Utils.timestamp())))
 
     # add right CH location to PATH
     Utils.add_to_PATH(perf_right)
@@ -1552,6 +1976,10 @@ def main():
             f'echo "ATTACH DATABASE default ENGINE=Ordinary" > {db_path}/metadata/default.sql',
             f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
+            # Not to disable `text_log` - it is enabled (see
+            # tests/performance/scripts/config/config.d/zzz-perf-comparison-tweaks-config.xml)
+            # and exported - only to keep its default flush interval instead of
+            # the shorter one this file sets.
             f"rm {perf_right_config}/config.d/text_log.xml ||:",
             # May slow down the server
             f"rm {perf_right_config}/config.d/memory_profiler.yaml ||:",
@@ -1580,12 +2008,15 @@ def main():
             # On x86_64, cap max_threads at the number of pinned physical
             # cores (must run after the right->left config copy above).
             write_max_threads_override,
+            # Same: the CI Logs cluster must be in the config of both servers.
+            create_log_export_configs,
         ]
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
     rightCH = CHServer(is_left=False)
+    log_export_servers = (("left", leftCH), ("right", rightCH))
 
     if res and JobStages.RESTART in stages:
         print("Start Servers")
@@ -1626,6 +2057,19 @@ def main():
             if Path(leftCH.log_file).is_file():
                 logs.append(leftCH.log_file)
             results[-1].set_files(logs)
+
+    if res and JobStages.RESTART in stages and not info.is_local_run:
+        # After both servers are up and before anything is measured: from here
+        # on their system log records are picked up by the export views, and
+        # kept locally until the Export system logs stage below.
+        results.append(
+            Result.from_commands_run(
+                name="Start system log export",
+                command=start_log_export,
+                command_args=[log_export_servers],
+                with_info=True,
+            )
+        )
 
     if res and JobStages.RESTART in stages:
         print("Populate datasets")
@@ -1676,6 +2120,7 @@ def main():
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=max_queries,
+                    pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
                 cleanup_user_files()
@@ -1686,6 +2131,22 @@ def main():
         ]
         results.append(Result.from_commands_run(name="Tests", command=commands))
         res = results[-1].is_ok()
+
+    if JobStages.EXPORT_LOGS in stages and not info.is_local_run:
+        # Release the system log records the two servers accumulated while the
+        # tests were running. Strictly after the Tests stage, so that sending
+        # them does not affect the measurements, and before the Report stage,
+        # which stops the servers (compare.sh::get_profiles). Runs even if the
+        # tests failed - the logs are the most valuable then. Best effort: it
+        # must never fail the job.
+        results.append(
+            Result.from_commands_run(
+                name="Export system logs",
+                command=export_system_logs,
+                command_args=[log_export_servers],
+                with_info=True,
+            )
+        )
 
     # TODO: refactor to use native Praktika report from Result and remove
     if res and JobStages.REPORT in stages:
@@ -1700,7 +2161,8 @@ def main():
             Utils.normalize_string(info.job_name)
         )
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME"] = info.job_name
-        os.environ["CHPC_CHECK_START_TIMESTAMP"] = str(int(Utils.timestamp()))
+        # `CHPC_CHECK_START_TIMESTAMP` is initialized once at the start of the
+        # job - do not reset it here, the export stage has already used it.
 
         commands = [
             f"PR_TO_TEST={info.pr_number} "
@@ -1909,7 +2371,44 @@ def main():
                 message = message_match.group(1).strip()
             # TODO: Remove me, always green mode for the first time, unless errors
             status = Result.Status.OK
-            if "errors" in message.lower() or too_many_slow(message.lower()):
+            if "errors" in message.lower():
+                status = Result.Status.FAIL
+            elif compare_against_release and message:
+                # The release-base comparison is cumulative, so gate on the
+                # delta against the previous master run instead of the
+                # absolute count (see SLOWER_QUERIES_DELTA_FAIL_THRESHOLD).
+                cur_slower = parse_slower_count(message.lower())
+                release_base_sha = (
+                    info.get_kv_data("release_branch_base_sha_with_predecessors")
+                    or [""]
+                )[0]
+                prev_slower, prev_sha = (None, None)
+                if release_base_sha:
+                    # Record the baseline this count was measured against, so
+                    # that the next master run can tell whether its own count
+                    # is comparable (a release cut moves the baseline and
+                    # resets the counts).
+                    message += format_release_base_marker(release_base_sha)
+                    prev_slower, prev_sha = find_prev_master_slower_count(
+                        info.job_name,
+                        info.get_kv_data("master_track_commits_sha") or [],
+                        release_base_sha,
+                    )
+                if prev_slower is None:
+                    print(
+                        "WARNING: no usable previous master run found, "
+                        "falling back to the absolute slower-count gate"
+                    )
+                    if too_many_slow(message.lower()):
+                        status = Result.Status.FAIL
+                else:
+                    delta = cur_slower - prev_slower
+                    message += (
+                        f"; delta vs prev master run ({prev_sha[:8]}): {delta:+d}"
+                    )
+                    if delta > SLOWER_QUERIES_DELTA_FAIL_THRESHOLD:
+                        status = Result.Status.FAIL
+            elif too_many_slow(message.lower()):
                 status = Result.Status.FAIL
             # TODO: Remove until here
         except Exception:

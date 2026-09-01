@@ -29,7 +29,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/Streaming/CursorPromoter.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
 #include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
@@ -889,34 +889,63 @@ public:
     /// If the table contains too many uncompressed bytes in patches, throw an exception.
     void throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_bytes) const;
 
+    /// If the size of the table exceeds any of the limits from the 'max_table_size_rows',
+    /// 'max_table_size_bytes_compressed', 'max_table_size_bytes_uncompressed' settings, throw an exception.
+    /// The limit on the number of rows is checked against active data parts only, while the limits on the
+    /// number of bytes are checked across all active and inactive data parts, because the purpose of these
+    /// settings is to limit disk usage. Parts that are already accepted into the working set by a concurrent
+    /// operation (in the 'PreActive' state) are counted as well.
+    void throwIfTableSizeLimitsExceeded() const;
+
+    /// The same, for an operation that adds a whole batch of parts at once and removes the parts covered by
+    /// 'drop_range' only afterwards: `REPLACE PARTITION FROM` and `ATTACH PARTITION FROM` commit the new parts
+    /// first, with block numbers above the range being dropped, and remove the destination partition later
+    /// through `removePartsInRangeFromWorkingSet`. The parts being replaced are therefore not covered by any of
+    /// the new parts and the per-part check cannot see them. The whole batch is accounted at once, and a
+    /// replacement that is not larger than what it replaces is always allowed, exactly like a size-reducing
+    /// merge or mutation, so that a table that has crossed a limit can be brought back under it.
+    /// 'drop_range' is empty for `ATTACH PARTITION FROM`, which does not remove anything.
+    void throwIfTableSizeLimitsExceededForReplacement(
+        const DataPartsLock & parts_lock,
+        const MutableDataPartsVector & added_parts,
+        const std::optional<MergeTreePartInfo> & drop_range) const;
+
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// Adds the part in the PreActive state (the part will be added to the active set later with out_transaction->commit()).
     /// Returns true if part was added. Returns false if part is covered by bigger part.
+    ///
+    /// If 'check_table_size_limits' is set, throws if the table size exceeds the limits from the
+    /// 'max_table_size_*' settings. It should be unset only when the part does not represent new data,
+    /// e.g. on replicated fetches, which get the data that has been already accepted by another replica.
     bool renameTempPartAndAdd(
         MutableDataPartPtr & part,
         Transaction & transaction,
         DataPartsLock & lock,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
     DataPartsVector renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         DataPartsLock & lock,
         Transaction & out_transaction,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// Unlocked version of previous one. Useful when added multiple parts with a single lock.
     bool renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
         DataPartsLock & lock,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -1185,7 +1214,34 @@ public:
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
-    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
+    /// Returns the set of partition IDs affected by mutation commands.
+    /// nullopt means all partitions are affected. An empty set means zero partitions are affected.
+    /// `commands_run_in_background` tells how the commands will be interpreted: an ALTER mutation
+    /// runs asynchronously with a context derived from the background context, while a lightweight
+    /// update interprets its commands in the foreground with the submitting context. The predicate
+    /// analysis must run in the matching context, otherwise it accepts or rejects predicates the
+    /// execution would treat differently.
+    /// If `analyzed_partition_ids` is not null, it receives the partition IDs whose parts every
+    /// predicate-pruned command actually analyzed (the intersection of the per-command local parts
+    /// snapshots). A caller that widens the result with externally visible partitions must widen
+    /// only with partitions absent from this set: a partition the pruner analyzed and ruled out
+    /// must not be re-added, and a partition it could not have seen must not be skipped.
+    std::optional<std::set<String>> getPartitionIdsAffectedByCommands(
+        const MutationCommands & commands,
+        ContextPtr query_context,
+        bool commands_run_in_background,
+        std::unordered_set<String> * analyzed_partition_ids) const;
+
+    /// Analyze the predicate and return partition IDs that cannot be pruned away.
+    /// Returns nullopt if pruning is not possible (e.g. no partition key, predicate doesn't reference it,
+    /// or an error occurred during analysis). An empty set means zero partitions are affected.
+    /// If `analyzed_partition_ids` is not null, it receives the partition IDs of all parts in the
+    /// snapshot the pruner iterated (both kept and pruned ones).
+    std::optional<std::set<String>> getPartitionIdsPrunedByPredicate(
+        const ASTPtr & predicate,
+        ContextPtr query_context,
+        bool command_runs_in_background,
+        std::unordered_set<String> * analyzed_partition_ids) const;
 
     /// Returns set of partition_ids of all Active parts
     std::unordered_set<String> getAllPartitionIds() const;
@@ -1586,6 +1642,8 @@ protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
 
     void unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings);
+
+    void invalidateColumnAndSecondaryIndexSizesUnlocked() const;
 
     void resetColumnSizes()
     {
@@ -2126,7 +2184,34 @@ private:
         Transaction & out_transaction,
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits);
+
+    /// The same as the public throwIfTableSizeLimitsExceeded, but for the callers that already hold a lock on the parts set.
+    /// The 'covered_parts' are the active parts that the committed 'added_part' replaces: they are not counted,
+    /// because they are removed from the active set when the operation commits. An operation replacing them with
+    /// a not larger part is always allowed, so that a table that has crossed a limit can get back under it.
+    void throwIfTableSizeLimitsExceeded(
+        const DataPartsAnyLock & parts_lock,
+        const IMergeTreeDataPart * added_part,
+        const DataPartsVector & covered_parts) const;
+
+    /// The aggregate size of a set of data parts, as it is accounted by the 'max_table_size_*' limits.
+    struct PartsSize
+    {
+        UInt64 rows = 0;
+        UInt64 bytes_compressed = 0;
+        UInt64 bytes_uncompressed = 0;
+    };
+
+    /// The size of the given parts. Patch parts represent mutations of rows in regular parts,
+    /// not additional table rows, so they do not contribute to the number of rows.
+    static PartsSize calculatePartsSize(const DataPartsVector & parts);
+
+    /// The current size of the table as it is accounted by the 'max_table_size_*' limits: the number of rows
+    /// of the parts that are or are about to become active, and the number of bytes of all the parts that
+    /// occupy the disks, including the inactive ones.
+    PartsSize calculateTableSizeForLimits(const DataPartsAnyLock & parts_lock) const;
 
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acquire them in constructor and remove them in destructor
