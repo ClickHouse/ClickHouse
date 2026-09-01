@@ -194,7 +194,8 @@ DataTypePtr unwrapType(const DataTypePtr & type)
 
 bool usesRegisteredColumnSizeAsPrecision(std::string_view family_name, const XdbcTypeInfoRow & row)
 {
-    return row.numeric || family_name == "Bool" || family_name == "UUID" || family_name == "Date" || family_name == "Date32";
+    return row.numeric || family_name == "Bool" || family_name == "UUID" || family_name == "String" || family_name == "Date"
+        || family_name == "Date32";
 }
 
 std::string getTypeFamilyName(const DataTypePtr & type)

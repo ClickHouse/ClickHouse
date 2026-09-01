@@ -40,6 +40,7 @@ FLIGHT_SQL_TYPE_NAME = b"ARROW:FLIGHT:SQL:TYPE_NAME"
 FLIGHT_SQL_PRECISION = b"ARROW:FLIGHT:SQL:PRECISION"
 FLIGHT_SQL_SCALE = b"ARROW:FLIGHT:SQL:SCALE"
 CLICKHOUSE_TYPE_NAME = b"CLICKHOUSE:TYPE_NAME"
+STRING_PRECISION = b"2147483646"
 
 
 def _field_metadata(field):
@@ -56,7 +57,8 @@ def _ambiguous_type_query(where_clause=""):
             toInt16(2) AS int16_col,
             CAST('one' AS Enum16('one' = 1, 'two' = 2)) AS enum16_col,
             toUInt32(3) AS uint32_col,
-            toDateTime('2024-01-02 03:04:05', 'UTC') AS datetime_col
+            toDateTime('2024-01-02 03:04:05', 'UTC') AS datetime_col,
+            toString('value') AS string_col
         {where_clause}
     """
 
@@ -524,6 +526,7 @@ def test_get_tables_with_schema():
 
     assert _field_metadata(table_schema.field("decimal_col"))[FLIGHT_SQL_PRECISION] == b"18"
     assert _field_metadata(table_schema.field("decimal_col"))[FLIGHT_SQL_SCALE] == b"4"
+    assert _field_metadata(table_schema.field("nullable_col"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
     # The outer protocol schema remains fixed and does not inherit inner table metadata.
     assert all(FLIGHT_SQL_TYPE_NAME not in _field_metadata(field) for field in table.schema)
@@ -580,6 +583,7 @@ def test_statement_query_type_metadata(where_clause):
         "enum16_col": (pa.int16(), None, b"Enum16('one' = 1, 'two' = 2)"),
         "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
         "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
+        "string_col": (pa.string(), b"String", b"String"),
     }
     for name, (arrow_type, type_name, clickhouse_type_name) in expected.items():
         field = table.schema.field(name)
@@ -590,6 +594,8 @@ def test_statement_query_type_metadata(where_clause):
         else:
             assert metadata[FLIGHT_SQL_TYPE_NAME] == type_name
         assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+    assert _field_metadata(table.schema.field("string_col"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
     if not where_clause:
         type_info = client.do_get(client.get_xdbc_type_info().endpoints[0].ticket).read_all()
@@ -640,6 +646,8 @@ def test_wrapped_and_parameterized_type_metadata():
         assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
 
     assert FLIGHT_SQL_PRECISION not in _field_metadata(schema.field("enum_col"))
+    assert _field_metadata(schema.field("low_cardinality_string"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
+    assert _field_metadata(schema.field("nullable_low_cardinality_string"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
     decimal_metadata = _field_metadata(schema.field("decimal_col"))
     assert decimal_metadata[FLIGHT_SQL_PRECISION] == b"18"
@@ -660,13 +668,14 @@ def test_simple_aggregate_function_type_metadata():
         "decimal_col SimpleAggregateFunction(anyLast, Decimal(18, 4)), "
         "datetime64_col SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))), "
         "bool_col SimpleAggregateFunction(anyLast, Bool), "
+        "string_col SimpleAggregateFunction(anyLast, String), "
         "enum8_col SimpleAggregateFunction(anyLast, Enum8('one' = 1, 'two' = 2)), "
         "uint128_col SimpleAggregateFunction(anyLast, UInt128)"
         ") ENGINE = Memory"
     )
     client.execute_update(
         "INSERT INTO mytable VALUES "
-        "(42, 12.3456, '2024-01-02 03:04:05.123', true, 'one', 1)"
+        "(42, 12.3456, '2024-01-02 03:04:05.123', true, 'value', 'one', 1)"
     )
 
     schema_from_get_schema = client.get_schema("SELECT * FROM mytable").schema
@@ -709,6 +718,11 @@ def test_simple_aggregate_function_type_metadata():
             b"Bool",
             b"SimpleAggregateFunction(anyLast, Bool)",
         ),
+        "string_col": (
+            pa.string(),
+            b"String",
+            b"SimpleAggregateFunction(anyLast, String)",
+        ),
         "enum8_col": (
             pa.int8(),
             None,
@@ -746,6 +760,7 @@ def test_simple_aggregate_function_type_metadata():
 
     bool_metadata = _field_metadata(table.schema.field("bool_col"))
     assert bool_metadata[FLIGHT_SQL_PRECISION] == b"1"
+    assert _field_metadata(table.schema.field("string_col"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
 
 def test_type_metadata_preserves_existing_metadata():
@@ -1021,6 +1036,7 @@ def test_poll_flight_info_type_metadata():
     metadata = _field_metadata(table.schema.field("datetime_col"))
     assert metadata[FLIGHT_SQL_TYPE_NAME] == b"DateTime"
     assert metadata[CLICKHOUSE_TYPE_NAME] == b"DateTime('UTC')"
+    assert _field_metadata(table.schema.field("string_col"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
 
 def test_poll_flight_info_with_path_descriptor():
@@ -1534,6 +1550,7 @@ def test_prepared_statement_type_metadata():
         enum8_metadata = _field_metadata(stmt.dataset_schema.field("enum8_col"))
         assert FLIGHT_SQL_TYPE_NAME not in enum8_metadata
         assert enum8_metadata[CLICKHOUSE_TYPE_NAME] == b"Enum8('one' = 1, 'two' = 2)"
+        assert _field_metadata(stmt.dataset_schema.field("string_col"))[FLIGHT_SQL_PRECISION] == STRING_PRECISION
 
         stmt.bind_parameters(
             pa.record_batch([pa.array([1], type=pa.uint32())], names=["param_1"])
