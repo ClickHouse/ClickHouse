@@ -31,4 +31,7 @@ ${CLICKHOUSE_LOCAL} --query "
 cat "${DIR}/data.1.tsv"
 cat "${DIR}/data.3.tsv"
 
+echo '--- The leftovers of the previous insert are kept as well: their names are indistinguishable from the foreign ones'
+ls "${DIR}"
+
 rm -rf "${DIR}"
