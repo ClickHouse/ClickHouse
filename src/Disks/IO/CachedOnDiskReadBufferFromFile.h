@@ -124,7 +124,7 @@ public:
         const size_t local_fs_buffer_size;
         /// Throttler for local filesystem reads (cache file reads).
         const ThrottlerPtr local_throttler;
-        /// How much the query may still write into the cache. Empty when it set no limit.
+        /// How much the query may still write into the cache. Null when it set no limit.
         const FileCacheQueryBudgetPtr query_budget;
 
         /// Non-included range end offset.

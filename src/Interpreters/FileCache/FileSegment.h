@@ -219,7 +219,8 @@ public:
     /// current download offset (e.g. up to read_until_position), so the segment is never reserved
     /// ahead past what the read will consume.
     /// `query_budget` is what the caller's query may still write into this cache; null when the
-    /// query set no limit. Required, so that every caller decides whose budget a write belongs to.
+    /// query set no limit. No default on purpose: every caller must decide whose budget the write
+    /// belongs to.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
@@ -228,8 +229,8 @@ public:
         FileCacheReserveStat * reserve_stat = nullptr,
         size_t reserve_hint = 0);
 
-    /// The budget of the query which reserved last. A background download passes it back to
-    /// `reserve`, so its reservations stay charged to that query.
+    /// The budget of the query which last reserved with a limit. A background download passes it
+    /// back to `reserve`, so its reservations stay charged to that query.
     FileCacheQueryBudgetPtr getQueryBudget() const;
 
     /// Write data into reserved space.
@@ -324,8 +325,9 @@ private:
     struct DownloadState
     {
         DownloaderId downloader_id; /// The one who prepares the download.
-        /// The budget of the query which reserved last, so that a background continuation charges
-        /// it too. A handover replaces it, and each query keeps what its own reservations took.
+        /// The budget of the query which last reserved with a limit, so that a background
+        /// continuation charges it too. A reservation by another query with a limit replaces it,
+        /// and each query keeps what its own reservations took.
         FileCacheQueryBudgetPtr query_budget;
         RemoteFileReaderPtr remote_file_reader;
         LocalCacheWriterPtr cache_writer;

@@ -1,5 +1,4 @@
 #include <Common/ThreadStatus.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -222,22 +221,6 @@ ContextPtr ThreadStatus::tryGetQueryContext() const
 ContextPtr ThreadStatus::getGlobalContext() const
 {
     return global_context.lock();
-}
-
-FileCacheQueryBudgetPtr ThreadGroup::getFilesystemCacheQueryBudget(const FileCache & cache, size_t size_limit)
-{
-    std::lock_guard lock(mutex);
-    auto & budget = filesystem_cache_query_budgets[&cache];
-    if (!budget)
-        budget = std::make_shared<FileCacheQueryBudget>(size_limit);
-    return budget;
-}
-
-FileCacheQueryBudgetPtr ThreadGroup::tryGetFilesystemCacheQueryBudget(const FileCache & cache)
-{
-    std::lock_guard lock(mutex);
-    auto it = filesystem_cache_query_budgets.find(&cache);
-    return it == filesystem_cache_query_budgets.end() ? nullptr : it->second;
 }
 
 void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)

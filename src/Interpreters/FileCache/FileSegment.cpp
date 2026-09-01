@@ -762,7 +762,6 @@ bool FileSegment::reserve(
     }
 
     bool reserved = false;
-    /// Nothing was reserved after all, so the budget must not stay charged for it.
     SCOPE_EXIT({
         if (query_budget && !reserved)
             query_budget->unchargeBytes(size_to_reserve);
@@ -779,7 +778,10 @@ bool FileSegment::reserve(
     }
 
     /// Remembered for the background download, which continues on a thread with no query of its
-    /// own and charges the query which reserved last.
+    /// own and keeps charging the query which last reserved with a limit. Skipping the null budget
+    /// spares the segment lock in the common case, and it keeps a query without a limit from
+    /// clearing a stored budget (the background bytes would then be charged to nobody).
+    if (query_budget)
     {
         auto lk = lock();
         chassert(download_data || download_state == State::DETACHED);

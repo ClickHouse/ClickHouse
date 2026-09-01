@@ -78,6 +78,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -3905,6 +3906,22 @@ MultiVersion<Macros>::Version Context::getMacros() const
 void Context::setMacros(std::unique_ptr<Macros> && macros)
 {
     shared->macros.set(std::move(macros));
+}
+
+FileCacheQueryBudgetPtr Context::getFilesystemCacheQueryBudget(const FileCache & cache, size_t size_limit) const
+{
+    std::lock_guard lock(filesystem_cache_query_budgets_mutex);
+    auto & budget = filesystem_cache_query_budgets[&cache];
+    if (!budget)
+        budget = std::make_shared<FileCacheQueryBudget>(size_limit);
+    return budget;
+}
+
+FileCacheQueryBudgetPtr Context::tryGetFilesystemCacheQueryBudget(const FileCache & cache) const
+{
+    std::lock_guard lock(filesystem_cache_query_budgets_mutex);
+    auto it = filesystem_cache_query_budgets.find(&cache);
+    return it == filesystem_cache_query_budgets.end() ? nullptr : it->second;
 }
 
 ContextMutablePtr Context::getQueryContext() const

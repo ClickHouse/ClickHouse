@@ -5,8 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The budget is per query, not shared: two queries reading the same data each get their own, and a
-# query which reuses the query id of a finished one starts with a fresh budget too.
+# The budget is per query, not shared: two queries each get their own, and a query which reuses
+# the query id of a finished one starts with a fresh budget too.
 
 disk_name="04847_query_limit_per_query_${CLICKHOUSE_DATABASE}"
 limit=524288

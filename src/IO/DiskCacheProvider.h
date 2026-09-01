@@ -83,7 +83,7 @@ private:
     FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
 
     FileCachePtr cache;
-    /// The budget of the query which reads through this provider; null when it set no limit.
+    /// The budget of the query the provider was created for; null when it set no limit.
     FileCacheQueryBudgetPtr query_budget;
     /// The blob's start offset in the logical file (multi-blob files); cache coordinates are blob-local.
     size_t object_file_offset;
@@ -133,7 +133,8 @@ private:
     ThrottlerPtr local_throttler;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
-    /// Keeps the per-query budget context alive; see the constructor.
+    /// The budget of the query which created the provider, passed to each `DiskCacheWriter`;
+    /// see the constructor.
     FileCacheQueryBudgetPtr query_budget;
     /// Keep-alive anchors for recently-used cache-segment readers; see
     /// `ReaderAnchorCache`.

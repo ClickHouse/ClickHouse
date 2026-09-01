@@ -6,13 +6,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `filesystem_cache_query_limit_bytes` limits how much a single query writes into the filesystem
-# cache in total, not how much a single space reservation takes. The two tables hold the same data
+# cache in total, not how much a single space reservation takes. The two tables hold the same amount of data
 # and neither is cached before its read, so the only difference is the limit.
 
 disk_name="04817_query_limit_${CLICKHOUSE_DATABASE}"
 limit=1048576
 
-# Both are randomized in CI and both make a read cache nothing at all, which is the premise here.
+# Both are randomized in CI, and the wrong value of either makes a read cache nothing, so pin them.
 cache_settings="enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0"
 
 $CLICKHOUSE_CLIENT -m --query "

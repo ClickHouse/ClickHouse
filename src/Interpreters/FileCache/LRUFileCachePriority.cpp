@@ -447,10 +447,8 @@ LRUFileCachePriority::iterateImpl(
         {
             stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
             ++it;
-            /// A per-query queue mirrors segments written by one query, and any other thread can
-            /// evict them meanwhile, so a mirror entry may outlive its file segment.
-            /// For all other queues we should have quit earlier in is_evictable_state.
-            chassert(getQueueType() == QueueType::Query);
+            /// We should have quit earlier in is_evictable_state under locked key.
+            chassert(false);
             continue;
         }
 
@@ -610,13 +608,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         const auto & file_segment = segment_metadata->file_segment;
         chassert(file_segment->assertCorrectness());
 
-        /// The evicting flag is kept in the main queue entry, so for a per-query queue (whose
-        /// entries only mirror the main ones) the state of the iterated entry says nothing about
-        /// whether the segment is already being evicted by someone else.
-        const bool evicted_by_someone_else
-            = getQueueType() == QueueType::Query && segment_metadata->isEvictingOrRemoved(locked_key);
-
-        if (segment_metadata->releasable() && !evicted_by_someone_else)
+        if (segment_metadata->releasable())
         {
             res.add(segment_metadata, locked_key);
             stat.update(
@@ -801,9 +793,9 @@ void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
     invalidateImpl();
 
-    /// `Main` drains `invalidated_refs` via the background cleanup task, a per-query queue on the
-    /// next reservation of its query (`FileCacheQueryLimit::QueryContext::removeInvalidatedEntries`).
-    cache_priority->addInvalidatedRef(entry, iterator);
+    /// Only the `Main` priority drains `invalidated_refs` via the background cleanup task.
+    if (cache_priority->getQueueType() == QueueType::Main)
+        cache_priority->addInvalidatedRef(entry, iterator);
 }
 
 void LRUFileCachePriority::LRUIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept

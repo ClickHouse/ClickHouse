@@ -29,9 +29,6 @@ namespace DB
 
 class QueryStatus;
 class ThreadStatus;
-class FileCache;
-class FileCacheQueryBudget;
-using FileCacheQueryBudgetPtr = std::shared_ptr<FileCacheQueryBudget>;
 class QueryProfilerReal;
 class QueryProfilerCPU;
 class QueryThreadLog;
@@ -122,14 +119,6 @@ public:
         ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
 
-    /// How much this query may still write into `cache`, created on the first read buffer which
-    /// needs it and shared by all of them. Null when the query sets no limit. Lives exactly as long
-    /// as the query, so nothing has to clean it up.
-    FileCacheQueryBudgetPtr getFilesystemCacheQueryBudget(const FileCache & cache, size_t size_limit);
-
-    /// The budget of this query for `cache` if it already has one, without creating it.
-    FileCacheQueryBudgetPtr tryGetFilesystemCacheQueryBudget(const FileCache & cache);
-
     SharedData getSharedData()
     {
         /// Critical section for making the copy of shared_data
@@ -165,9 +154,6 @@ private:
 
     /// Set up at creation, no race when reading
     SharedData shared_data TSA_GUARDED_BY(mutex);
-
-    /// One budget per filesystem cache this query reads through.
-    std::unordered_map<const FileCache *, FileCacheQueryBudgetPtr> filesystem_cache_query_budgets TSA_GUARDED_BY(mutex);
 
     /// Set of all thread ids which has been attached to the group
     std::unordered_set<UInt64> thread_ids TSA_GUARDED_BY(mutex);

@@ -148,6 +148,9 @@ class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
+class FileCache;
+class FileCacheQueryBudget;
+using FileCacheQueryBudgetPtr = std::shared_ptr<FileCacheQueryBudget>;
 class FilesystemCacheLog;
 class DistributedCacheLog;
 class DistributedCacheServerLog;
@@ -716,6 +719,9 @@ public:
 protected:
     using SampleBlockCache = std::unordered_map<std::string, SharedHeader>;
     mutable SampleBlockCache sample_block_cache;
+    mutable std::mutex filesystem_cache_query_budgets_mutex;
+    mutable std::unordered_map<const FileCache *, FileCacheQueryBudgetPtr> filesystem_cache_query_budgets;
+
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
@@ -1429,6 +1435,13 @@ public:
 
     ContextMutablePtr getQueryContext() const;
     bool hasQueryContext() const { return !query_context.expired(); }
+
+    /// How much this query may still write into `cache`, see `filesystem_cache_query_limit_bytes`.
+    /// One budget per cache the query reads, created on the first read buffer which needs it and
+    /// living as long as the query, so nothing has to clean it up.
+    FileCacheQueryBudgetPtr getFilesystemCacheQueryBudget(const FileCache & cache, size_t size_limit) const;
+    /// The same budget if it already exists, without creating one.
+    FileCacheQueryBudgetPtr tryGetFilesystemCacheQueryBudget(const FileCache & cache) const;
     bool isInternalSubquery() const;
 
     ContextMutablePtr getSessionContext() const;

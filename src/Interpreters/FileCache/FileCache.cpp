@@ -508,22 +508,29 @@ String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
     return metadata.getKeyPath(key, origin);
 }
 
+namespace
+{
+/// The query context of the calling thread, or null when it does not belong to a query.
+ContextPtr getCurrentQueryContext()
+{
+    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
+        return nullptr;
+    return CurrentThread::get().tryGetQueryContext();
+}
+}
+
 FileCacheQueryBudgetPtr FileCache::getQueryBudget(const FilesystemCacheSettings & settings) const
 {
     if (!query_limit_allowed || settings.query_limit_bytes == 0)
         return nullptr;
 
     /// The budget belongs to a query and dies with it. Work which is not a query (merges,
-    /// background downloads) has none, as before this limit was per query only.
-    if (!CurrentThread::isInitialized() || !CurrentThread::get().tryGetQueryContext()
-        || CurrentThread::getQueryId().empty())
+    /// background downloads) has none: this limit has always been per query.
+    auto query_context = getCurrentQueryContext();
+    if (!query_context)
         return nullptr;
 
-    auto thread_group = CurrentThread::getGroup();
-    if (!thread_group)
-        return nullptr;
-
-    return thread_group->getFilesystemCacheQueryBudget(*this, settings.query_limit_bytes);
+    return query_context->getFilesystemCacheQueryBudget(*this, settings.query_limit_bytes);
 }
 
 FileCacheQueryBudgetPtr FileCache::getQueryBudgetIfExists() const
@@ -531,8 +538,8 @@ FileCacheQueryBudgetPtr FileCache::getQueryBudgetIfExists() const
     if (!query_limit_allowed)
         return nullptr;
 
-    auto thread_group = CurrentThread::getGroup();
-    return thread_group ? thread_group->tryGetFilesystemCacheQueryBudget(*this) : nullptr;
+    auto query_context = getCurrentQueryContext();
+    return query_context ? query_context->tryGetFilesystemCacheQueryBudget(*this) : nullptr;
 }
 
 void FileCache::assertInitialized() const
@@ -1422,8 +1429,6 @@ bool FileCache::doTryReserve(
 
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
-    /// Evicted segments stop counting against the queries which cached them in
-    /// `FileSegment::detach`, together with every other way a segment leaves the cache.
     if (!doEviction(
         *main_eviction_info, origin_info,
         main_priority_iterator, reserve_stat, eviction_candidates, failure_reason))
@@ -1903,9 +1908,6 @@ void FileCache::backgroundCleanupTaskFunc()
         try
         {
             removed = main_priority->removeInvalidatedEntries(invalidated_entries_cleanup_remove_batch);
-
-            /// Contexts of queries which finished without releasing their last holder. Swept here,
-            /// so that no reservation pays for cleaning up after other queries.
         }
         catch (...)
         {

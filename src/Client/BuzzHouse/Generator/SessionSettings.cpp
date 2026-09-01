@@ -1712,7 +1712,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"show_processlist_include_internal", trueOrFalseSettingNoOracle},
     {"show_remote_databases_in_system_tables", trueOrFalseSettingNoOracle},
     {"show_table_uuid_in_table_create_query_if_not_nil", trueOrFalseSettingNoOracle},
-    {"skip_download_if_exceeds_query_cache", trueOrFalseSetting},
     {"skip_redundant_aliases_in_udf", trueOrFalseSettingNoOracle},
     {"skip_unavailable_shards", trueOrFalseSettingNoOracle},
     {"skip_unavailable_shards_mode",

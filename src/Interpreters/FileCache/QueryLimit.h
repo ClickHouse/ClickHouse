@@ -8,10 +8,10 @@ namespace DB
 {
 
 /// How much one query may still write into one filesystem cache.
-/// Created only for a query which sets `filesystem_cache_query_limit_bytes`, and only for the cache
-/// it reads through, so a query without the limit never allocates one. Counts the bytes the query
-/// reserves itself: data it reads from what another query cached is not charged, and eviction of
-/// what it wrote does not give the budget back.
+/// Created only for a query which sets `filesystem_cache_query_limit_bytes`, and only for the
+/// caches it reads through, so a query without the limit never allocates one. Counts the bytes the
+/// query reserves itself: data another query cached and this one only reads is not charged, and
+/// eviction of what it wrote does not give the budget back.
 class FileCacheQueryBudget
 {
 public:
@@ -42,6 +42,7 @@ public:
 
 private:
     const size_t size_limit;
+    /// A plain counter which publishes nothing else, so relaxed ordering is enough everywhere.
     std::atomic<size_t> charged_bytes = 0;
 };
 

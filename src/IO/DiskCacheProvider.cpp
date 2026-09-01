@@ -505,7 +505,7 @@ DiskCacheReader::~DiskCacheReader()
 DiskCacheProvider::DiskCacheProvider(
     FileCachePtr cache_,
     const FilesystemCacheSettings & cache_settings_,
-    const String & /* query_id_ */,
+    const String &, /// the budget comes from the query itself now
     ThrottlerPtr local_throttler_,
     std::optional<FileCacheKey> custom_cache_key_,
     std::optional<FileCacheOriginInfo> custom_origin_)

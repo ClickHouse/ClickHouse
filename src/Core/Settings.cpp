@@ -9172,7 +9172,7 @@ Enable experimental table function `eval`.
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
-    MAKE_OBSOLETE(M, Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true) \
+    ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, skip_download_if_exceeds_query_cache) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_ai_functions, false) \
