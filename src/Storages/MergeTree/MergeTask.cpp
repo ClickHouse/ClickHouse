@@ -242,20 +242,14 @@ private:
 
 static void throwIfPipelineCancelled(const QueryPipeline & pipeline)
 {
-    const auto & process_list_element = pipeline.getProcessListElement();
-    if (!process_list_element)
+    const auto process_list_element = pipeline.getProcessListElement();
+    if (!process_list_element || process_list_element->checkTimeLimitSoft())
         return;
 
-    if (process_list_element->isKilled())
-    {
-        if (process_list_element->getCancelReason() == CancelReason::TIMEOUT)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
-
+    if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-    }
 
-    if (!process_list_element->checkTimeLimitSoft())
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
 }
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.

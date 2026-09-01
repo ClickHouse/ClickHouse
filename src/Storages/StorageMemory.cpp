@@ -338,12 +338,10 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     }
 
     const auto process_list_element = pipeline.getProcessListElement();
-    const bool killed = process_list_element && process_list_element->isKilled();
-    const bool timed_out = process_list_element && !killed && !process_list_element->checkTimeLimitSoft();
-    const bool cancelled = killed || timed_out;
+    const bool cancelled = process_list_element && !process_list_element->checkTimeLimitSoft();
     auto throw_on_cancellation = [&]
     {
-        if (killed && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
+        if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
 
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
