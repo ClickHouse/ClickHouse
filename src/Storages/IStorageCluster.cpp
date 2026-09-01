@@ -244,8 +244,10 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 {
     Settings new_settings{settings};
 
-    /// Cluster table functions should always skip unavailable shards.
-    new_settings[Setting::skip_unavailable_shards] = true;
+    /// Cluster table functions skip unavailable shards by default, but an explicit setting wins:
+    /// generated reads (e.g. a prometheus query over Distributed) pin the wrapper's semantics through it.
+    if (!settings[Setting::skip_unavailable_shards].changed)
+        new_settings[Setting::skip_unavailable_shards] = true;
 
     /// Strip the initiator-only settings (the query-shaping settings, the result-serialisation
     /// settings, and `database`): they are materialized on the initiator and must not be forwarded

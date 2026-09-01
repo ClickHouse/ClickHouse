@@ -35,6 +35,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace
@@ -163,6 +165,8 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     {
         evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
         evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
+        evaluation_settings.skip_unavailable_shards = context->getSettingsRef()[Setting::skip_unavailable_shards];
+        evaluation_settings.skip_unavailable_shards_mode = context->getSettingsRef()[Setting::skip_unavailable_shards_mode].toString();
     }
     evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);
