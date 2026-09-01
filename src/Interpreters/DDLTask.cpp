@@ -295,11 +295,62 @@ void DDLLogEntry::parse(const String & data)
 }
 
 
+std::optional<std::pair<UUID, std::vector<UUID>>> DDLTaskBase::resolveInitiatorUserAndRoles(ContextPtr from_context, bool throw_if_not_found) const
+{
+    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
+    if (!preserve_user || entry.initiator_user.empty())
+        return {};
+
+    const auto & access_control = from_context->getAccessControl();
+
+    /// Find the user by name
+    auto user_id = access_control.find<User>(entry.initiator_user);
+    if (!user_id)
+    {
+        if (throw_if_not_found)
+            throw Exception(ErrorCodes::UNKNOWN_USER, "User '{}' required for executing distributed DDL query is not found on this instance", entry.initiator_user);
+        return {};
+    }
+
+    /// Find all roles by name
+    std::vector<UUID> role_ids;
+    role_ids.reserve(entry.initiator_user_roles.size());
+    for (const auto & role_name : entry.initiator_user_roles)
+    {
+        auto role_id = access_control.find<Role>(role_name);
+        if (!role_id)
+        {
+            if (throw_if_not_found)
+                throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role '{}' required for executing distributed DDL query is not found on this instance", role_name);
+            return {};
+        }
+        role_ids.push_back(*role_id);
+    }
+
+    return std::make_pair(*user_id, std::move(role_ids));
+}
+
+
 void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 {
     const char * begin = entry.query.data();
     const char * end = begin + entry.query.size();
-    const auto & settings = context->getSettingsRef();
+
+    /// The profile that applies to the entry is the one of the user that will actually execute it: with
+    /// `distributed_ddl_use_initial_user_and_roles`, `makeQueryContext` installs the initiator's user and
+    /// roles before clamping `entry.settings`. Resolve them here as well, so that this pre-parse uses the
+    /// same settings and constraints as execution instead of the worker's own profile. A user or a role
+    /// missing on this host is not reported here - the query cannot execute anyway and `makeQueryContext`
+    /// throws `UNKNOWN_USER` / `UNKNOWN_ROLE` for it right after.
+    ContextPtr settings_context = context;
+    if (auto initiator_user_and_roles = resolveInitiatorUserAndRoles(context, /* throw_if_not_found= */ false))
+    {
+        auto initiator_user_context = Context::createCopy(context);
+        initiator_user_context->setUser(initiator_user_and_roles->first, initiator_user_and_roles->second);
+        settings_context = initiator_user_context;
+    }
+
+    const auto & settings = settings_context->getSettingsRef();
 
     UInt64 max_parser_depth = settings[Setting::max_parser_depth];
     UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
@@ -322,8 +373,8 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 
         if (!parser_limit_changes.empty())
         {
-            Settings entry_settings = context->getSettingsCopy();
-            if (const auto constraints_and_profiles = context->getSettingsConstraintsAndCurrentProfiles())
+            Settings entry_settings = settings_context->getSettingsCopy();
+            if (const auto constraints_and_profiles = settings_context->getSettingsConstraintsAndCurrentProfiles())
                 constraints_and_profiles->constraints.clamp(entry_settings, parser_limit_changes, SettingSource::QUERY);
             entry_settings.applyChanges(parser_limit_changes);
             max_parser_depth = entry_settings[Setting::max_parser_depth];
@@ -361,29 +412,8 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     /// `NOT_FOUND_COLUMN_IN_BLOCK`.
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
-    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
-    if (preserve_user && !entry.initiator_user.empty())
-    {
-        const auto & access_control = from_context->getAccessControl();
-
-        /// Find the user by name
-        auto user_id = access_control.find<User>(entry.initiator_user);
-        if (!user_id)
-            throw Exception(ErrorCodes::UNKNOWN_USER, "User '{}' required for executing distributed DDL query is not found on this instance", entry.initiator_user);
-
-        /// Find all roles by name
-        std::vector<UUID> role_ids;
-        role_ids.reserve(entry.initiator_user_roles.size());
-        for (const auto & role_name : entry.initiator_user_roles)
-        {
-            auto role_id = access_control.find<Role>(role_name);
-            if (!role_id)
-                throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role '{}' required for executing distributed DDL query is not found on this instance", role_name);
-            role_ids.push_back(*role_id);
-        }
-
-        query_context->setUser(*user_id, role_ids);
-    }
+    if (auto initiator_user_and_roles = resolveInitiatorUserAndRoles(from_context, /* throw_if_not_found= */ true))
+        query_context->setUser(initiator_user_and_roles->first, initiator_user_and_roles->second);
 
     if (entry.settings)
     {

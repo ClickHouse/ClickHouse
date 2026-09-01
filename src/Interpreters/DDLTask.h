@@ -6,6 +6,9 @@
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
+#include <optional>
+#include <utility>
+#include <vector>
 
 namespace Poco
 {
@@ -131,6 +134,12 @@ struct DDLTaskBase
     virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
+
+    /// The initiator's user and its roles, resolved on this host, when
+    /// `distributed_ddl_use_initial_user_and_roles` preserves them for the execution of the entry.
+    /// `std::nullopt` when that server setting is disabled, when the entry carries no user, or - only if
+    /// `throw_if_not_found` is false - when the user or one of the roles does not exist on this host.
+    std::optional<std::pair<UUID, std::vector<UUID>>> resolveInitiatorUserAndRoles(ContextPtr from_context, bool throw_if_not_found) const;
     void formatRewrittenQuery(ContextPtr context);
 
     virtual String getShardID() const = 0;
