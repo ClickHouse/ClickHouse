@@ -278,6 +278,14 @@ SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE data.value LIKE '%value%'
 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0,
     force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
+WHERE match(data.value, 'value')
+SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0,
+    force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
+WHERE multiSearchAny(data.value, ['value'])
+SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0,
+    force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
 SELECT 'minimum pattern length';
 SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
