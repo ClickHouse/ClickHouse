@@ -2,6 +2,7 @@
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettings.h>
@@ -117,7 +118,7 @@ namespace
 
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. This version supports only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
+    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. ClickHouse versions 26.7 and later support only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -253,6 +254,19 @@ A value of `0` (default) means unlimited.
     DECLARE(Bool, asynchronous_metrics_enable_heavy_metrics, false, R"(Enable the calculation of heavy asynchronous metrics.)", 0) \
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
     DECLARE(Bool, asynchronous_metrics_keeper_metrics_only, false, R"(Make asynchronous metrics calculate the keeper-related metrics only.)", 0) \
+    DECLARE(AsynchronousMetricsKeyValuesMode, asynchronous_metrics_key_values_mode, AsynchronousMetricsKeyValuesMode::KeyValues, R"(
+In which form the key-value asynchronous metrics - those broken down per CPU core, block device, network interface, disk, temperature sensor, memory controller or logging channel - are published to [`system.asynchronous_metrics`](/reference/system-tables/asynchronous_metrics), [`system.asynchronous_metric_log`](/reference/system-tables/asynchronous_metric_log), the Prometheus endpoint and Graphite.
+
+Possible values:
+
+- `key_values` - every family is a single key-value metric: a `Map` in the `key_values` column of `system.asynchronous_metrics`, one row per key in `system.asynchronous_metric_log`, one Prometheus sample per key carrying a label such as `device="sda"`, and a `<prefix>.<Metric>.<key>` Graphite path.
+- `legacy_names` - every key is a separate scalar metric with the key mangled into its name, as it was before version 26.8: `OSUserTimeCPU3`, `CPUFrequencyMHz_0`, `BlockReadBytes_sda`, `NetworkReceiveBytes_eth0`, `DiskTotal_default`, `Temperature0`, `EDAC0_Correctable`, and so on.
+- `both` - both forms are published at once, which is useful while the monitoring is being migrated. Beware of double counting in this mode: an aggregate over metric names matching a prefix, such as `sum(value) ... WHERE metric LIKE 'NetworkReceiveBytes%'`, counts every value twice.
+
+A key-value metric family introduced after version 26.8 has no legacy name and is always published in the key-value form.
+
+The setting is applied on the fly: it is re-read on every update of the asynchronous metrics, so `SYSTEM RELOAD CONFIG` is enough to switch the form without a restart.
+)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, default_session_user, "default", R"(
 The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
@@ -3501,6 +3515,11 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             /// Named collections metadata storage is initialized once, so use its effective startup type.
             {"named_collections_storage_type",
              {context->getServerSettingsCopy()[ServerSetting::named_collections_storage_type].toString(), ChangeableWithoutRestart::No}},
+
+            /// Re-read from the live configuration on every update of the asynchronous metrics.
+            {"asynchronous_metrics_key_values_mode",
+             {SettingFieldAsynchronousMetricsKeyValuesMode(getAsynchronousMetricsKeyValuesMode(context->getConfigRef())).toString(),
+              ChangeableWithoutRestart::Yes}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
             {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
