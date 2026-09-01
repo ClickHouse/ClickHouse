@@ -27,8 +27,6 @@
 #include "Poco/RegularExpression.h"
 #include "Poco/Stopwatch.h"
 #include <Poco/Exception.h>
-#include <cerrno>
-#include <typeinfo>
 #include <sstream>
 
 
@@ -553,8 +551,6 @@ StreamSocket HTTPClientSession::proxyConnect(const SocketAddress * resolvedProxy
 
 	SharedPtr<HTTPClientSession> proxySession (_proxySessionFactory.createClientSession(proxyUri));
 
-	/// Dial the address the caller already resolved: with several A/AAAA records behind the proxy
-	/// name, resolving again here could reach (and report) a different endpoint than the caller's.
 	if (resolvedProxyAddress)
 		proxySession->setResolvedHost(resolvedProxyAddress->host().toString());
 
