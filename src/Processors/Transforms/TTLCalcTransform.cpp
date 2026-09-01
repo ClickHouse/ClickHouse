@@ -1,4 +1,5 @@
 #include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
 
 #include <Processors/Port.h>
 #include <Interpreters/ExpressionActions.h>
@@ -32,7 +33,9 @@ TTLCalcTransform::TTLCalcTransform(
     time_t current_time_,
     bool force_,
     const NamesAndTypesList & expired_columns_)
-    : IAccumulatingTransform(header_, header_)
+    /// Same output header as TTLTransform: a skip index or projection reading a column this merge
+    /// expired still needs it downstream, so the expired columns are re-added as defaults.
+    : IAccumulatingTransform(header_, TTLTransform::addExpiredColumnsToBlock(header_, expired_columns_))
     , expired_columns(expired_columns_)
     , data_part(data_part_)
     , log(getLogger(storage_.getLogName() + " (TTLCalcTransform)"))
