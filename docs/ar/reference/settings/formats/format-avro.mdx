@@ -17,11 +17,11 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
   ## format_avro_schema_registry_connection_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "إعداد جديد للتحكم في مهلة الاتصال (بالثواني) لعميل HTTP الخاص بـ Confluent Schema Registry والمستخدَم مع تنسيق AvroConfluent."}]}]} />
 
-لتنسيق AvroConfluent: مهلة الاتصال، بالثواني، لعميل HTTP الخاص بـ Confluent Schema Registry. تُستخدم لكلٍّ من جلب المخطط وتسجيله. يجب أن تكون أكبر من 0 وأقل من 600 (10 دقائق).
+لتنسيق AvroConfluent: مهلة الاتصال، بالثواني، لعميل HTTP الخاص بـ Confluent Schema Registry. تُستخدم لكلٍّ من جلب المخطط وتسجيله. يجب أن تكون أكبر من 0؛ وأي قيمة تساوي 600 (10 دقائق) أو أكثر تُخفَّض إلى 599.
 
 <div id="format_avro_schema_registry_max_retries">
   ## format_avro_schema_registry_max_retries
@@ -31,37 +31,37 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "إعداد جديد يتحكم في الحد الأقصى لعدد مرات إعادة المحاولة عند حدوث إخفاقات عابرة (مهلات النقل، رفض الاتصال، أخطاء DNS، وأخطاء HTTP ‏5xx/408/429) عند الاتصال بـ Confluent Schema Registry. اضبطه على 0 لتعطيل إعادة المحاولة. ويُحافَظ على السلوك السابق (من دون إعادة محاولات) بواسطة `compatibility = '26.5'`."}]}]} />
 
-بالنسبة إلى تنسيق AvroConfluent: الحد الأقصى لعدد مرات إعادة المحاولة عند حدوث إخفاقات عابرة أثناء الاتصال بـ Confluent Schema Registry (مهلات النقل، رفض الاتصال، أخطاء DNS، وأخطاء HTTP 5xx/408/429). اضبطه على 0 لتعطيل إعادة المحاولة. الحد الأقصى المسموح به هو 20. لا تُعاد المحاولة في أخطاء التحقق من المخطط (HTTP 409، وJSON ‏Avro غير صالح).
+بالنسبة إلى تنسيق AvroConfluent: الحد الأقصى لعدد مرات إعادة المحاولة عند حدوث إخفاقات عابرة أثناء الاتصال بـ Confluent Schema Registry (مهلات النقل، رفض الاتصال، أخطاء DNS، وأخطاء HTTP 5xx/408/429). اضبطه على 0 لتعطيل إعادة المحاولة. أي قيمة أعلى من 20 تُخفَّض إلى 20. لا تُعاد المحاولة في أخطاء التحقق من المخطط (HTTP 409، وJSON ‏Avro غير صالح).
 
 <div id="format_avro_schema_registry_receive_timeout">
   ## format_avro_schema_registry_receive_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "إعداد جديد للتحكم في مهلة الاستلام (بالثواني) لعميل HTTP الخاص بـ Confluent Schema Registry والمستخدَم مع تنسيق AvroConfluent."}]}]} />
 
-لتنسيق AvroConfluent: مهلة الاستلام، بالثواني، لعميل HTTP الخاص بـ Confluent Schema Registry. تُستخدم لكل من جلب المخطط وتسجيل المخطط. يجب أن تكون أكبر من 0 وأقل من 600 (10 دقائق).
+لتنسيق AvroConfluent: مهلة الاستلام، بالثواني، لعميل HTTP الخاص بـ Confluent Schema Registry. تُستخدم لكل من جلب المخطط وتسجيل المخطط. يجب أن تكون أكبر من 0؛ وأي قيمة تساوي 600 (10 دقائق) أو أكثر تُخفَّض إلى 599.
 
 <div id="format_avro_schema_registry_retry_initial_backoff_ms">
   ## format_avro_schema_registry_retry_initial_backoff_ms
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="100" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "إعداد جديد يتحكم في مهلة التراجع الأولية (بالملي ثانية) قبل إعادة محاولة طلب فاشل إلى Confluent Schema Registry. وتتضاعف مهلة التراجع مع كل إعادة محاولة، بحد أقصى 10 ثوانٍ. ولا يكون له أي تأثير عندما تكون `format_avro_schema_registry_max_retries = 0` (وهو السلوك السابق للإصدار 26.6 الذي تمت استعادته بواسطة `compatibility = '26.5'`)."}]}]} />
 
-لتنسيق AvroConfluent: مهلة التراجع الأولية، بالملي ثانية، قبل إعادة محاولة طلب فاشل إلى Confluent Schema Registry. وتتضاعف مهلة التراجع مع كل إعادة محاولة لاحقة، بحد أقصى 10 ثوانٍ. ويجب أن تكون أكبر من 0 وأقل من أو تساوي 60000.
+لتنسيق AvroConfluent: مهلة التراجع الأولية، بالملي ثانية، قبل إعادة محاولة طلب فاشل إلى Confluent Schema Registry. وتتضاعف مهلة التراجع مع كل إعادة محاولة لاحقة، بحد أقصى 10 ثوانٍ. ويجب أن تكون أكبر من 0؛ وأي قيمة تتجاوز 60000 تُخفَّض إلى 60000.
 
 <div id="format_avro_schema_registry_send_timeout">
   ## format_avro_schema_registry_send_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "إعداد جديد للتحكم في مهلة الإرسال (بالثواني) لعميل HTTP الخاص بـ Confluent Schema Registry المستخدم مع تنسيق AvroConfluent."}]}]} />
 
-بالنسبة إلى تنسيق AvroConfluent: مهلة الإرسال، بالثواني، لعميل HTTP الخاص بـ Confluent Schema Registry. ويُستخدم هذا الإعداد لكلٍّ من جلب المخطط وتسجيله. يجب أن تكون القيمة أكبر من 0 وأقل من 600 (10 دقائق).
+بالنسبة إلى تنسيق AvroConfluent: مهلة الإرسال، بالثواني، لعميل HTTP الخاص بـ Confluent Schema Registry. ويُستخدم هذا الإعداد لكلٍّ من جلب المخطط وتسجيله. يجب أن تكون القيمة أكبر من 0؛ وأي قيمة تساوي 600 (10 دقائق) أو أكثر تُخفَّض إلى 599.
 
 <div id="format_avro_schema_registry_url">
   ## format_avro_schema_registry_url

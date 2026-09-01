@@ -17,11 +17,11 @@ Estas configurações são geradas automaticamente a partir do [código-fonte](h
   ## format_avro_schema_registry_connection_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nova configuração para controlar o tempo limite de conexão (em segundos) do cliente HTTP do Confluent Schema Registry usado pelo formato AvroConfluent."}]}]} />
 
-Para o formato AvroConfluent: tempo limite de conexão, em segundos, do cliente HTTP do Confluent Schema Registry. Usado tanto na busca de schema quanto no registro do schema. Deve ser maior que 0 e menor que 600 (10 minutos).
+Para o formato AvroConfluent: tempo limite de conexão, em segundos, do cliente HTTP do Confluent Schema Registry. Usado tanto na busca de schema quanto no registro de schema. Deve ser maior que 0; um valor de 600 (10 minutos) ou mais é reduzido para 599.
 
 <div id="format_avro_schema_registry_max_retries">
   ## format_avro_schema_registry_max_retries
@@ -31,37 +31,37 @@ Para o formato AvroConfluent: tempo limite de conexão, em segundos, do cliente 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "Nova configuração que controla o número máximo de tentativas para falhas transitórias (timeouts de transporte, conexão recusada, erros de DNS, HTTP 5xx\/408\/429) ao se comunicar com o Confluent Schema Registry. Defina como 0 para desativar as tentativas. O comportamento anterior (sem tentativas) é preservado por `compatibility = '26.5'`."}]}]} />
 
-Para o formato AvroConfluent: número máximo de tentativas para falhas transitórias ao se comunicar com o Confluent Schema Registry (timeouts de transporte, conexão recusada, erros de DNS, HTTP 5xx/408/429). Defina como 0 para desativar as tentativas. O valor máximo permitido é 20. Erros de validação de schema (HTTP 409, JSON Avro malformado) não são repetidos.
+Para o formato AvroConfluent: número máximo de tentativas para falhas transitórias ao se comunicar com o Confluent Schema Registry (timeouts de transporte, conexão recusada, erros de DNS, HTTP 5xx/408/429). Defina como 0 para desativar as tentativas. Um valor acima de 20 é reduzido para 20. Erros de validação de schema (HTTP 409, JSON Avro malformado) não são repetidos.
 
 <div id="format_avro_schema_registry_receive_timeout">
   ## format_avro_schema_registry_receive_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nova configuração para controlar o tempo limite de recebimento (em segundos) do cliente HTTP do Confluent Schema Registry usado pelo formato AvroConfluent."}]}]} />
 
-Para o formato AvroConfluent: tempo limite de recebimento, em segundos, do cliente HTTP do Confluent Schema Registry. Usado tanto na busca de schema quanto no registro de schema. Deve ser maior que 0 e menor que 600 (10 minutos).
+Para o formato AvroConfluent: tempo limite de recebimento, em segundos, do cliente HTTP do Confluent Schema Registry. Usado tanto na busca de schema quanto no registro de schema. Deve ser maior que 0; um valor igual ou superior a 600 (10 minutos) é reduzido para 599.
 
 <div id="format_avro_schema_registry_retry_initial_backoff_ms">
   ## format_avro_schema_registry_retry_initial_backoff_ms
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="100" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "Nova configuração que controla o backoff inicial (em milissegundos) antes de repetir uma solicitação com falha ao Confluent Schema Registry. O backoff dobra a cada retry, com limite máximo de 10 segundos. Não tem efeito quando `format_avro_schema_registry_max_retries = 0` (o comportamento anterior à 26.6 é restaurado por `compatibility = '26.5'`)."}]}]} />
 
-Para o formato AvroConfluent: backoff inicial em milissegundos antes de repetir uma solicitação com falha ao Confluent Schema Registry. O backoff dobra a cada retry subsequente, com limite máximo de 10 segundos. Deve ser maior que 0 e menor ou igual a 60000.
+Para o formato AvroConfluent: backoff inicial em milissegundos antes de repetir uma solicitação com falha ao Confluent Schema Registry. O backoff dobra a cada retry subsequente, com limite máximo de 10 segundos. Deve ser maior que 0; um valor acima de 60000 é reduzido para 60000.
 
 <div id="format_avro_schema_registry_send_timeout">
   ## format_avro_schema_registry_send_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nova configuração para controlar o tempo limite de envio (em segundos) do cliente HTTP do Confluent Schema Registry usado pelo formato AvroConfluent."}]}]} />
 
-Para o formato AvroConfluent: tempo limite de envio, em segundos, para o cliente HTTP do Confluent Schema Registry. Usado tanto para a busca de schema quanto para o registro do schema. Deve ser maior que 0 e menor que 600 (10 minutos).
+Para o formato AvroConfluent: tempo limite de envio, em segundos, para o cliente HTTP do Confluent Schema Registry. Usado tanto para a busca de schema quanto para o registro de schema. Deve ser maior que 0; um valor de 600 (10 minutos) ou mais é reduzido para 599.
 
 <div id="format_avro_schema_registry_url">
   ## format_avro_schema_registry_url

@@ -39,16 +39,16 @@ import DataTypesMatching from '/snippets/zh/data-types-matching.mdx';
 
 [//]: # "NOTE 这些设置也可以在会话级别设置，但这种用法并不常见，过于突出地说明这一点可能会让用户感到困惑。"
 
-| Setting                                          | Description                                                                   | Default |
-| ------------------------------------------------ | ----------------------------------------------------------------------------- | ------- |
-| `input_format_avro_allow_missing_fields`         | 当 schema 中找不到某个字段时，是否使用默认值而不是报错。                                              | `0`     |
-| `input_format_avro_null_as_default`              | 当向不可为空的列中插入 `null` 值时，是否使用默认值而不是报错。                                           | `0`     |
-| `format_avro_schema_registry_url`                | Confluent Schema Registry 的 URL。对于基本身份验证，可以将经过 URL 编码的凭据直接包含在 URL 路径中。        |         |
-| `format_avro_schema_registry_connection_timeout` | Schema Registry HTTP 客户端的连接超时时间 (秒) ，用于 schema 拉取和注册。必须大于 0 且小于 600 (10 分钟) 。 | `1`     |
-| `format_avro_schema_registry_send_timeout`       | Schema Registry HTTP 客户端的发送超时时间 (秒) 。必须大于 0 且小于 600 (10 分钟) 。                 | `1`     |
-| `format_avro_schema_registry_receive_timeout`    | Schema Registry HTTP 客户端的接收超时时间 (秒) 。必须大于 0 且小于 600 (10 分钟) 。                 | `1`     |
-| `output_format_avro_confluent_subject`           | 用于输出：schema 在 Schema Registry 中注册时使用的 subject 名称。写入时必填。                       |         |
-| `output_format_avro_string_column_pattern`       | 用于输出：将 String 列序列化为 Avro `string` 的正则表达式 (默认为 `bytes`) 。                      |         |
+| Setting                                          | Description                                                                                 | Default |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------- |
+| `input_format_avro_allow_missing_fields`         | 当 schema 中找不到某个字段时，是否使用默认值而不是报错。                                                            | `0`     |
+| `input_format_avro_null_as_default`              | 当向不可为空的列中插入 `null` 值时，是否使用默认值而不是报错。                                                         | `0`     |
+| `format_avro_schema_registry_url`                | Confluent Schema Registry 的 URL。对于基本身份验证，可以将经过 URL 编码的凭据直接包含在 URL 路径中。                      |         |
+| `format_avro_schema_registry_connection_timeout` | Schema Registry HTTP 客户端的连接超时时间 (秒) ，用于 schema 拉取和注册。必须大于 0；若取值为 600 (10 分钟) 或更大，则会被降为 599。 | `1`     |
+| `format_avro_schema_registry_send_timeout`       | Schema Registry HTTP 客户端的发送超时时间 (秒) 。必须大于 0；若取值为 600 (10 分钟) 或更大，则会被降为 599。                 | `1`     |
+| `format_avro_schema_registry_receive_timeout`    | Schema Registry HTTP 客户端的接收超时时间 (秒) 。必须大于 0；若取值为 600 (10 分钟) 或更大，则会被降为 599。                 | `1`     |
+| `output_format_avro_confluent_subject`           | 用于输出：schema 在 Schema Registry 中注册时使用的 subject 名称。写入时必填。                                     |         |
+| `output_format_avro_string_column_pattern`       | 用于输出：将 String 列序列化为 Avro `string` 的正则表达式 (默认为 `bytes`) 。                                    |         |
 
 <div id="examples">
   ## 示例

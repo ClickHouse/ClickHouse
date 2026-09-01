@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1048576"},{"label": "새로운 설정"}]}]} />
 
-임시 파일 writer의 버퍼 크기입니다. 버퍼 크기가 클수록 시스템 호출은 줄어들지만, 메모리 사용량은 늘어납니다.
+임시 파일 writer의 버퍼 크기입니다. 버퍼 크기가 클수록 시스템 호출은 줄어들지만, 메모리 사용량은 늘어납니다. 1GiB를 초과하는 값은 1GiB로 축소됩니다.
 
 <div id="temporary_files_codec">
   ## temporary_files_codec
