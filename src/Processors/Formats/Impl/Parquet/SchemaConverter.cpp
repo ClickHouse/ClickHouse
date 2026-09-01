@@ -689,7 +689,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
 
     const parq::SchemaElement & first = file_metadata.schema[schema_idx];
     const parq::SchemaElement & second = file_metadata.schema[schema_idx + 1];
-    size_t metadata_child;
+    size_t metadata_child = 0;
     if (is_variant_leaf(first, "metadata") && is_variant_leaf(second, "value"))
         metadata_child = 0;
     else if (is_variant_leaf(first, "value") && is_variant_leaf(second, "metadata"))
@@ -704,7 +704,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     size_t output_start = output_columns.size();
 
     std::optional<size_t> child_output_idx[2];
-    for (size_t i = 0; i < 2; ++i)
+    for (auto & i : child_output_idx)
     {
         TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
         subnode.requested = node.requested;
