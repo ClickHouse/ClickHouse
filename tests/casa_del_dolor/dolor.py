@@ -11,6 +11,11 @@ import time
 import signal
 import sys
 
+# The sibling modules below are imported by bare name, which relies on Python putting this
+# script's own directory on `sys.path`. Praktika's runner exports `PYTHONSAFEPATH=1`, which
+# disables exactly that, so put it back for this entry point.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
