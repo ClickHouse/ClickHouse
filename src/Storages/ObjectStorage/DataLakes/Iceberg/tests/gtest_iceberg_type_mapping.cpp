@@ -1,3 +1,5 @@
+#include <config.h>
+
 #include <gtest/gtest.h>
 
 #if USE_AVRO
