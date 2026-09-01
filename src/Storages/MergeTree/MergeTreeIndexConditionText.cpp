@@ -223,6 +223,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             .column_name = required_columns.front(),
             .max_token_bytes = json_tokenizer.getMaxTokenBytes(),
             .json_type = index_description.data_types.front(),
+            .path_matcher = json_tokenizer.getPathMatcher(),
         };
     }
 
@@ -444,7 +445,8 @@ bool MergeTreeIndexConditionText::canUseQueryWithPartConfiguration(
         || part_configuration->source_type_name != json_path_values_configuration->json_type->getName())
         return false;
 
-    return json_query_paths.contains(query.getHash());
+    auto it = json_query_paths.find(query.getHash());
+    return it != json_query_paths.end() && part_configuration->path_matcher->shouldIndex(it->second);
 }
 
 bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const

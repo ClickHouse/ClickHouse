@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/JSONPathValues.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -19,7 +20,10 @@ namespace DB
 ///   "a.b"            -> "a.b"
 ///   "a.b.:`Int64`"   -> "a.b"
 ///   "a.b.:`Array(Int64)`"  -> "a.b"
-static std::optional<String> extractPathFromSubcolumn(std::string_view subcolumn_name, size_t & array_json_levels)
+static std::optional<String> extractPathFromSubcolumn(
+    std::string_view subcolumn_name,
+    String & escaped_path,
+    size_t & array_json_levels)
 {
     if (subcolumn_name.empty()
         || subcolumn_name.starts_with("^")
@@ -36,10 +40,12 @@ static std::optional<String> extractPathFromSubcolumn(std::string_view subcolumn
         if (type_hint_position == std::string_view::npos)
         {
             path += remaining;
+            escaped_path += JSONPathValues::escapeLiteralPath(remaining);
             break;
         }
 
         path += remaining.substr(0, type_hint_position);
+        escaped_path += JSONPathValues::escapeLiteralPath(remaining.substr(0, type_hint_position));
         ReadBufferFromMemory buffer(remaining.substr(type_hint_position + 2));
         String type_hint;
         if (!tryReadBackQuotedString(type_hint, buffer))
@@ -63,11 +69,17 @@ static std::optional<String> extractPathFromSubcolumn(std::string_view subcolumn
 
         array_json_levels += levels;
         for (size_t level = 0; level != levels; ++level)
+        {
             path += "[]";
+            escaped_path += "[]";
+        }
         if (tail.starts_with('.'))
             tail.remove_prefix(1);
         if (!tail.empty())
+        {
             path += '.';
+            escaped_path += '.';
+        }
         remaining = tail;
     }
 
@@ -87,13 +99,15 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumn(
             continue;
 
         size_t array_json_levels = 0;
-        auto path = extractPathFromSubcolumn(subcolumn_part, array_json_levels);
+        String escaped_path;
+        auto path = extractPathFromSubcolumn(subcolumn_part, escaped_path, array_json_levels);
         if (!path)
             return std::nullopt;
 
         return JSONSubcolumnIndexInfo{
             .json_column_name = String(candidate_col),
             .path = std::move(*path),
+            .escaped_path = std::move(escaped_path),
             .header_position = header_position,
             .array_json_levels = array_json_levels,
         };
@@ -154,13 +168,15 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         return std::nullopt;
 
     size_t array_json_levels = 0;
-    auto path = extractPathFromSubcolumn(matched_subcolumn, array_json_levels);
+    String escaped_path;
+    auto path = extractPathFromSubcolumn(matched_subcolumn, escaped_path, array_json_levels);
     if (!path)
         return std::nullopt;
 
     return JSONSubcolumnIndexInfo{
         .json_column_name = String(matched_json_column),
         .path = std::move(*path),
+        .escaped_path = std::move(escaped_path),
         .header_position = matched_position,
         .array_json_levels = array_json_levels,
     };

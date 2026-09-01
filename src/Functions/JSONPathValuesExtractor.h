@@ -59,18 +59,59 @@ template <typename Consumer>
 class Extractor
 {
 public:
-    Extractor(size_t max_token_bytes_, Consumer & consumer_)
+    Extractor(size_t max_token_bytes_, const PathMatcher & path_matcher_, Consumer & consumer_)
         : max_token_bytes(max_token_bytes_)
+        , path_matcher(path_matcher_)
         , consumer(consumer_)
     {
     }
 
     void consumeNull(std::string_view, bool) {}
+    bool shouldConsumePath(std::string_view path) const { return shouldVisitPath(escapeLiteralPath(path)); }
+    bool shouldConsumeValue(std::string_view path, const IDataType & data_type) const
+    {
+        return shouldIndexPath(escapeLiteralPath(path)) || hasJSONDescendants(data_type);
+    }
     void setRow(size_t row) { consumer.setRow(row); }
     void finishRows(size_t rows) { consumer.finishRows(rows); }
 
     void consumeSharedScalar(std::string_view path, BinaryTypeIndex type_index, std::string_view value)
     {
+        consumeSharedScalar(path, escapeLiteralPath(path), type_index, value);
+    }
+
+    void consumeValue(
+        std::string_view path,
+        const IDataType & data_type,
+        std::string_view type_name,
+        const ISerialization & serialization,
+        const IColumn & source_column,
+        size_t row,
+        bool is_dynamic,
+        const FormatSettings & format_settings)
+    {
+        consumeValue(
+            path,
+            escapeLiteralPath(path),
+            data_type,
+            type_name,
+            serialization,
+            source_column,
+            row,
+            is_dynamic,
+            format_settings);
+    }
+
+private:
+    void consumeSharedScalar(
+        std::string_view path,
+        std::string_view filter_path,
+        BinaryTypeIndex type_index,
+        std::string_view value)
+    {
+        if (!shouldIndexPath(filter_path))
+            return;
+
         const auto & element = getSimpleDataTypesCache().getElement(type_index);
         preparePathType(path, *element.type, element.name);
 
@@ -93,6 +134,7 @@ public:
 
     void consumeValue(
         std::string_view path,
+        std::string_view filter_path,
         const IDataType & data_type,
         std::string_view type_name,
         const ISerialization & serialization,
@@ -101,6 +143,10 @@ public:
         bool is_dynamic,
         const FormatSettings & format_settings)
     {
+        const bool index_path = shouldIndexPath(filter_path);
+        if (!index_path && !hasJSONDescendants(data_type))
+            return;
+
         preparePathType(path, data_type, type_name);
 
         const IColumn * value_column = &source_column;
@@ -111,39 +157,43 @@ public:
         {
             insertArray(
                 path,
+                filter_path,
                 path_type_prefix,
                 *cached_array_type,
                 serialization,
                 *value_column,
                 row,
                 format_settings);
-            if (is_dynamic)
+            if (is_dynamic && index_path)
                 insertDynamicValidation(path);
             return;
         }
 
         if (cached_is_map)
         {
-            if (cached_map_type && !is_dynamic)
+            if (index_path && cached_map_type && !is_dynamic)
                 insertMap(path_type_prefix, *value_column, row);
-            if (is_dynamic)
+            if (is_dynamic && index_path)
                 insertDynamicValidation(path);
             return;
         }
 
         if (cached_base_type->getTypeId() == TypeIndex::Object)
         {
-            PrefixedConsumer nested_consumer(*this, path);
+            PrefixedConsumer nested_consumer(*this, path, filter_path);
             DB::enumerateJSONValues(
                 assert_cast<const ColumnObject &>(*value_column),
                 assert_cast<const DataTypeObject &>(*cached_base_type),
                 nested_consumer,
                 row,
                 1);
-            if (is_dynamic)
+            if (is_dynamic && index_path)
                 insertDynamicValidation(path);
             return;
         }
+
+        if (!index_path)
+            return;
 
         const size_t typed_capacity = valueCapacity(path_type_prefix);
         if (typed_capacity == 0 && path_type_prefix.size() + 1 > max_token_bytes)
@@ -180,19 +230,32 @@ public:
             insertDynamicValidation(path);
     }
 
-private:
+    static bool hasJSONDescendants(const IDataType & data_type)
+    {
+        const auto unwrapped_type = removeLowCardinality(removeNullableOrLowCardinalityNullable(data_type.getPtr()));
+        const auto * unwrapped_array_type = typeid_cast<const DataTypeArray *>(unwrapped_type.get());
+        return unwrapped_type->getTypeId() == TypeIndex::Object
+            || (unwrapped_array_type
+                && removeLowCardinality(removeNullableOrLowCardinalityNullable(unwrapped_array_type->getNestedType()))->getTypeId()
+                    == TypeIndex::Object);
+    }
+
+    bool shouldIndexPath(std::string_view path) const { return path_matcher.shouldIndex(path); }
+    bool shouldVisitPath(std::string_view path) const { return path_matcher.shouldVisit(path); }
+
     class PrefixedConsumer
     {
     public:
-        PrefixedConsumer(Extractor & extractor_, std::string_view prefix_)
+        PrefixedConsumer(Extractor & extractor_, std::string_view prefix_, std::string_view filter_prefix_)
             : extractor(extractor_)
             , prefix(prefix_)
+            , filter_prefix(filter_prefix_)
         {
         }
 
         void consumeSharedScalar(std::string_view path, BinaryTypeIndex type_index, std::string_view value)
         {
-            extractor.consumeSharedScalar(prefixed(path), type_index, value);
+            extractor.consumeSharedScalar(prefixed(path), prefixedFilter(path), type_index, value);
         }
 
         void consumeNull(std::string_view path, bool is_typed_nullable)
@@ -212,6 +275,7 @@ private:
         {
             extractor.consumeValue(
                 prefixed(path),
+                prefixedFilter(path),
                 data_type,
                 type_name,
                 serialization,
@@ -223,6 +287,11 @@ private:
 
         void setRow(size_t) {}
         void finishRows(size_t) {}
+        bool shouldConsumePath(std::string_view path) const { return extractor.shouldVisitPath(prefixedFilter(path)); }
+        bool shouldConsumeValue(std::string_view path, const IDataType & data_type) const
+        {
+            return extractor.shouldIndexPath(prefixedFilter(path)) || hasJSONDescendants(data_type);
+        }
 
     private:
         String prefixed(std::string_view path) const
@@ -233,22 +302,35 @@ private:
             return result;
         }
 
+        String prefixedFilter(std::string_view path) const
+        {
+            String result = filter_prefix;
+            result += '.';
+            result += escapeLiteralPath(path);
+            return result;
+        }
+
         Extractor & extractor;
         String prefix;
+        String filter_prefix;
     };
 
     class ArrayJSONConsumer
     {
     public:
-        ArrayJSONConsumer(Extractor & extractor_, std::string_view prefix_)
+        ArrayJSONConsumer(Extractor & extractor_, std::string_view prefix_, std::string_view filter_prefix_)
             : extractor(extractor_)
             , prefix(prefix_)
+            , filter_prefix(filter_prefix_)
         {
         }
 
         void consumeSharedScalar(std::string_view path, BinaryTypeIndex type_index, std::string_view value)
         {
             const String full_path = prefixed(path);
+            const String full_filter_path = prefixedFilter(path);
+            if (!extractor.shouldIndexPath(full_filter_path))
+                return;
             const auto & element = getSimpleDataTypesCache().getElement(type_index);
             extractor.insertArrayJSONSharedScalar(full_path, *element.type, element.name, value);
         }
@@ -266,13 +348,14 @@ private:
             const FormatSettings & format_settings)
         {
             const String full_path = prefixed(path);
+            const String full_filter_path = prefixedFilter(path);
             const auto base_type = removeLowCardinality(removeNullableOrLowCardinalityNullable(data_type.getPtr()));
             if (base_type->getTypeId() == TypeIndex::Object)
             {
                 const IColumn * value_column = &source_column;
                 if (const auto * nullable = typeid_cast<const ColumnNullable *>(value_column))
                     value_column = &nullable->getNestedColumn();
-                ArrayJSONConsumer nested_consumer(extractor, full_path);
+                ArrayJSONConsumer nested_consumer(extractor, full_path, full_filter_path);
                 DB::enumerateJSONValues(
                     assert_cast<const ColumnObject &>(*value_column),
                     assert_cast<const DataTypeObject &>(*base_type),
@@ -282,12 +365,19 @@ private:
                 return;
             }
 
+            if (!extractor.shouldIndexPath(full_filter_path))
+                return;
             extractor.insertArrayJSONLeaf(
                 full_path, data_type, type_name, serialization, source_column, row, format_settings);
         }
 
         void setRow(size_t) {}
         void finishRows(size_t) {}
+        bool shouldConsumePath(std::string_view path) const { return extractor.shouldVisitPath(prefixedFilter(path)); }
+        bool shouldConsumeValue(std::string_view path, const IDataType & data_type) const
+        {
+            return extractor.shouldIndexPath(prefixedFilter(path)) || hasJSONDescendants(data_type);
+        }
 
     private:
         String prefixed(std::string_view path) const
@@ -298,8 +388,17 @@ private:
             return result;
         }
 
+        String prefixedFilter(std::string_view path) const
+        {
+            String result = filter_prefix;
+            result += '.';
+            result += escapeLiteralPath(path);
+            return result;
+        }
+
         Extractor & extractor;
         String prefix;
+        String filter_prefix;
     };
 
     void preparePathType(std::string_view path, const IDataType & data_type, std::string_view type_name)
@@ -376,6 +475,7 @@ private:
 
     void insertArray(
         std::string_view path,
+        std::string_view filter_path,
         std::string_view prefix,
         const DataTypeArray & array_type,
         const ISerialization & serialization,
@@ -401,7 +501,9 @@ private:
         {
             String array_path(path);
             array_path += "[]";
-            ArrayJSONConsumer nested_consumer(*this, array_path);
+            String array_filter_path(filter_path);
+            array_filter_path += "[]";
+            ArrayJSONConsumer nested_consumer(*this, array_path, array_filter_path);
             if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&nested_column))
             {
                 const auto & object_column = assert_cast<const ColumnObject &>(nullable_column->getNestedColumn());
@@ -560,6 +662,7 @@ private:
     }
 
     size_t max_token_bytes;
+    const PathMatcher & path_matcher;
     std::array<char, 2048> scratch{};
     String serialization_prefix;
     String path_type_prefix;
