@@ -520,7 +520,7 @@ if __name__ == "__main__":
             info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
 
         except Exception as e:
-            print(f"Failed to get merge base via git: {e}")
+            print(f"Failed to get merge base via the GitHub API: {e}")
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
