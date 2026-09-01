@@ -119,6 +119,10 @@ def test_crash_log_extra_fields(started_node, failpoint, trace_column):
 # taken from a partial match.
 BARE_TRACE_MARKERS = ("Job's origin stack trace:", "Stack trace:")
 
+# The fault handler logs this once per fault, at fatal level, ahead of both bare dumps, so it is
+# what separates one fault's dumps from the next one's in a log that accumulates across restarts.
+FAULT_MARKER = "########## Short fault info ############"
+
 
 def bare_trace_tail(line):
     """The text after a bare dump marker, or None if the line carries no marker."""
@@ -145,12 +149,16 @@ def parse_bare_trace(line):
 
 
 def fatal_trace_blocks(log_text):
-    """One entry per bare trace dump: its parsed entries, the addresses of the symbolized lines
-    logged after it, and how many of those lines resolved to a symbol. A fault logs the bare dump
-    twice, so blocks with no symbolized lines after them are the duplicate and carry nothing to
-    compare against."""
+    """One entry per bare trace dump: which fault it belongs to, its parsed entries, the addresses
+    of the symbolized lines logged after it, and how many of those lines resolved to a symbol. A
+    fault logs the bare dump twice, so blocks with no symbolized lines after them are the duplicate
+    and carry nothing to compare against. Faults are numbered from one in the order they were
+    logged."""
     blocks = []
+    fault = 0
     for line in log_text.splitlines():
+        if FAULT_MARKER in line:
+            fault += 1
         tail = bare_trace_tail(line)
         if tail is not None:
             # Other producers log the same marker followed by a symbolized trace on one line, whose
@@ -158,7 +166,14 @@ def fatal_trace_blocks(log_text):
             # token decides; anything else under a marker is not a bare dump and is not a frame line.
             tokens = tail.split()
             if tokens and tokens[0].startswith("0x"):
-                blocks.append({"entries": parse_bare_trace(line), "symbolized": set(), "resolved": 0})
+                blocks.append(
+                    {
+                        "fault": fault,
+                        "entries": parse_bare_trace(line),
+                        "symbolized": set(),
+                        "resolved": 0,
+                    }
+                )
             continue
         if not blocks:
             continue
@@ -194,9 +209,21 @@ def test_bare_stack_trace_uses_the_same_addresses_as_the_symbolized_one(started_
     wait_for_clickhouse_stop(started_node)
     started_node.restart_clickhouse()
 
-    blocks = [b for b in fatal_trace_blocks(read_server_log(started_node)) if b["symbolized"]]
+    log_text = read_server_log(started_node)
 
-    assert blocks, "no fault logged both a bare and a symbolized stack trace"
+    # The log accumulates across restarts and the tests before this one fault the same server, so a
+    # check over all of it can be satisfied by an older crash. The fault this test caused is the
+    # last one recorded, because the faults of the tests that follow have not happened yet. Counting
+    # the faults in the log rather than in the blocks is what makes a fault that logged no bare dump
+    # at all fail here instead of quietly handing the checks below the previous fault's trace.
+    faults = log_text.count(FAULT_MARKER)
+    assert faults, (
+        f"the server log carries no {FAULT_MARKER!r} line, so a bare trace cannot be attributed to "
+        "the fault that produced it and every check below would run over every crash in the log"
+    )
+    blocks = [b for b in fatal_trace_blocks(log_text) if b["fault"] == faults and b["symbolized"]]
+
+    assert blocks, "this fault logged no bare stack trace with symbolized lines after it"
 
     # A frame in the main executable is printed with no object, so the executable itself is what
     # bounds it, and `SymbolIndex` takes that file from `/proc/self/exe`: the running process is the
