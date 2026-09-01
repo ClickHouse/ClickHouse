@@ -1952,13 +1952,6 @@ class SettingsRandomizer:
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
         SettingsRandomizer.adjust_settings_for_autopr(args, tags, random_settings)
-        # function_implementation is picked from the values the server supports (probed at startup);
-        # "" is the adaptive server default, so leave the setting unset when it is chosen (an empty
-        # value would not survive the CLI serialization anyway).
-        if args.function_implementations:
-            impl = random.choice(args.function_implementations)
-            if impl:
-                random_settings["function_implementation"] = impl
         return random_settings
 
 
@@ -5495,22 +5488,6 @@ def collect_changed_merge_tree_settings(args):
     return list(map(lambda s: s.decode(), changed_settings))
 
 
-def collect_supported_function_implementations(args):
-    # function_implementation globally filters every ImplementationSelector-backed function, each with a
-    # different arch-tag set (greatCircleDistance has no x86-64-v3), so a value some function lacks
-    # raises NO_SUITABLE_FUNCTION_IMPLEMENTATION. "" (adaptive) always works; a forced value is safe
-    # only if every function accepts it, so probe a query spanning the narrowest-tag functions.
-    supported = [""]
-    probe = "SELECT ignore(sipHash64(materialize(1)), greatCircleDistance(materialize(0.), 0., 0., 0.))"
-    for impl in ("default", "x86-64-v3", "x86-64-v4"):
-        try:
-            clickhouse_execute(args, probe, settings={"function_implementation": impl})
-            supported.append(impl)
-        except Exception:
-            pass
-    return supported
-
-
 def check_table_column(args, database, table, column):
     return (
         int(
@@ -6147,7 +6124,6 @@ def main(args):
 
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
-    args.function_implementations = collect_supported_function_implementations(args)
 
     print(
         f"build_flags={args.build_flags} "
