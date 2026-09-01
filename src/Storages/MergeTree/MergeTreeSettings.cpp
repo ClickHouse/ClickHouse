@@ -1321,7 +1321,7 @@ Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one re
 compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
 default; this setting will be removed in a future release.
 )", 0) \
-    DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
+    DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
 replica. An inactive replica becomes lost when when this number exceed.
 
