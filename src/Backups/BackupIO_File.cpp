@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_File.h>
+#include <fcntl.h>
 #include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -102,6 +103,16 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
     auto file_path = root_path / file_name;
     fs::create_directories(file_path.parent_path());
     return std::make_unique<WriteBufferFromFile>(file_path, write_buffer_size, -1, write_settings.local_throttler);
+}
+
+std::unique_ptr<WriteBuffer> BackupWriterFile::writeFileIfNotExists(const String & file_name)
+{
+    auto file_path = root_path / file_name;
+    fs::create_directories(file_path.parent_path());
+    /// `O_EXCL` makes the creation atomic: the open either creates the file or fails with `EEXIST`,
+    /// so this never replaces a file another backup has created.
+    return std::make_unique<WriteBufferFromFile>(
+        file_path, write_buffer_size, O_WRONLY | O_CREAT | O_EXCL, write_settings.local_throttler);
 }
 
 void BackupWriterFile::removeFile(const String & file_name)

@@ -979,7 +979,29 @@ void BackupImpl::createLockFile()
             /// checks below decide who owns the destination, and rethrow if they find nothing.
             tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
         }
-        if (lock_contents_match)
+        /// Matching contents identify this attempt's own write only when that write could not have replaced
+        /// somebody else's lock. A writer without conditional-create semantics (`Disk`, `Memory`) writes the
+        /// lock in rewrite mode, so a second backup can clobber the lock of the backup that got to the
+        /// destination first and then read back its own contents here. Treating that as ownership would let
+        /// the second attempt take a destination that is taken, and both would then write to it. On such
+        /// backends the destination stays reported as taken, which is the safe answer.
+        const bool own_write_committed = lock_contents_match && writer->supportsAtomicCreateIfNotExists();
+#if CLICKHOUSE_CLOUD
+        /// A resumable attempt whose own contents are already there falls through, so a later failure lands
+        /// inside `BackupResumer`'s inner try, which reports the lock and keeps its progress. Its contents
+        /// come from the progress record of the very attempt that wrote them, so this does not depend on how
+        /// the lock was written.
+        const bool continues_own_attempt = lock_contents_match && params.resume;
+#else
+        const bool continues_own_attempt = false;
+#endif
+        if (lock_contents_match && !own_write_committed && !continues_own_attempt)
+            throw Exception(
+                ErrorCodes::BACKUP_ALREADY_EXISTS,
+                "A concurrent backup writing to the same destination {} detected",
+                backup_name_for_logging);
+
+        if (own_write_committed)
         {
             /// The write reported a failure after it had committed: a conditional `PutObject` that times
             /// out on the client can still have been applied, and its retry then fails `If-None-Match`
@@ -996,7 +1018,7 @@ void BackupImpl::createLockFile()
             /// The lock has just been read back and it is ours: the caller does not have to check it again.
             lock_file_verified_on_create = true;
         }
-        else
+        else if (!lock_contents_match)
         {
             if (writer->fileExists(lock_file_name))
                 throw Exception(

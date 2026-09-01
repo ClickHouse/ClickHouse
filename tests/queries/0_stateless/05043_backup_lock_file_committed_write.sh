@@ -9,12 +9,17 @@
 # contents, which used to be reported as "A concurrent backup writing to the same destination detected"
 # even though nothing else was writing there.
 
+# The destination is a `File(...)` backup: its lock write is an `O_EXCL` create, which is a real
+# conditional create just like the object-storage one, so the recovery below is active there. Backends
+# that write the lock in rewrite mode (`Disk`, `Memory`) keep reporting the destination as taken - see
+# `05055_backup_lock_file_non_atomic_backend`.
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 backup_id=${CLICKHOUSE_TEST_UNIQUE_NAME}
-backup="Disk('backups', '$backup_id')"
+backup="File('$backup_id')"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS t;
