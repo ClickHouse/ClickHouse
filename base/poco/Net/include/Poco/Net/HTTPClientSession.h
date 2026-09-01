@@ -137,7 +137,8 @@ namespace Net
         /// Returns the port number of the target HTTP server.
 
         std::string getResolvedAddress() const;
-        /// Returns the resolved host name and port of the target HTTP server.
+        /// Returns the resolved host:port of the actually-dialled endpoint
+        /// (the proxy endpoint when a proxy is configured, otherwise the target).
 
         void setProxy(
             const std::string & host,
@@ -399,6 +400,8 @@ namespace Net
 
     inline std::string HTTPClientSession::getResolvedAddress() const
     {
+        if (!_proxyConfig.host.empty())
+            return _resolved_host + ':' + std::to_string(_proxyConfig.port);
         return (_resolved_host.empty() ? _host : _resolved_host) + ':' + std::to_string(_port);
     }
 
