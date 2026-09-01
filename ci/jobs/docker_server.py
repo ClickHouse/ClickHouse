@@ -245,7 +245,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
 # fast on the first attempt. `BUILDX_RETRY_DEADLINE` below, not this count, is what
-# bounds how long the ladder may run for.
+# decides how long further attempts remain eligible to start.
 BUILDX_RETRIES = 4
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
