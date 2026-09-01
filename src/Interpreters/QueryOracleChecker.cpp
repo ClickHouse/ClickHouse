@@ -1613,7 +1613,12 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
     if (thread_local_rng() % 4 != 0)
         return false;
 
-    if (!isSafeForOracle(select))
+    /// DQP runs the IDENTICAL query text on both sides (`formatAST(clone)` under default vs one
+    /// flipped optimizer setting), so CUBE / ROLLUP / TOTALS / GROUPING SETS cannot change the
+    /// relation: the same modifier yields the same rows under any optimizer choice. Relaxing the
+    /// shared modifier gate here re-opens the aggregate-combinator x GROUP-BY-modifier space (the
+    /// historical real-bug recipe) to a differential oracle without a false-positive path.
+    if (!isSafeForOracle(select, GateRelax::AllowGroupingModifiers))
         return false;
 
     if (hasNonDeterministicFunctions(select.clone(), context))
