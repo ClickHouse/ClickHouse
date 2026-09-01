@@ -17,7 +17,7 @@
 # Recovery drops a table that does not store data on disk (DatabaseReplicated.cpp, the
 # `drop_broken_tables || !table->storesDataOnDisk()` branch). StorageTimeSeries has no
 # storesDataOnDisk override, so a diverged TimeSeries table takes that branch. The inner-table
-# special case right below it used to name only MaterializedView and WindowView, and it is the
+# special case right below it used to name only MaterializedView, and it is the
 # only place in recovery that hands a ZooKeeperMetadataTransaction to the inner DROP. Without it
 # the inner DROP was deferred to the background dropTableFinally task, which has no transaction,
 # so the DROP was re-routed into the replicated DDL log and rejected with
