@@ -124,12 +124,14 @@ HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers);
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user = {});
 
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers);
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user = {});
 
 HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
@@ -142,11 +144,13 @@ HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server
 /// @param http_handlers_key - config key for custom http_handlers (default: "http_handlers")
 /// @param protocol_name - composable protocol name this factory serves; used to scope SQL-defined
 ///                        handlers that specify a PROTOCOL. Empty for legacy http_port/https_port.
+/// @param default_session_user - overrides the `default_session_user` server setting for this listener
 HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
     const std::string & name,
     const std::string & http_handlers_key = {},
-    const std::string & protocol_name = {});
+    const std::string & protocol_name = {},
+    const std::optional<String> & default_session_user = {});
 
 }

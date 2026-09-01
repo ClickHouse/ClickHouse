@@ -292,6 +292,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, make_success_response(content))
             return
 
+        if parsed.path == "/v1/chat/no_choices":
+            # A `200` the provider bills for, whose body then fails validation.
+            self._send_json(200, {
+                "id": "chatcmpl-no-choices",
+                "object": "chat.completion",
+                "choices": [],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 0, "total_tokens": 7},
+            })
+            return
+
+        if parsed.path == "/v1/anthropic/no_content":
+            # A `200` the provider bills for, whose body then fails validation. Anthropic reports usage
+            # under different keys than OpenAI.
+            self._send_json(200, {
+                "id": "msg-no-content",
+                "type": "message",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 9, "output_tokens": 0},
+            })
+            return
+
         if parsed.path == "/v1/chat/truncated":
             # A well-formed HTTP 200 response whose body is valid but reports that the model hit the
             # max_tokens limit (`finish_reason="length"`). The returned text is therefore truncated
