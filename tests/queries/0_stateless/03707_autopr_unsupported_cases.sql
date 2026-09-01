@@ -27,11 +27,6 @@ AS SELECT
     number * 2
 FROM numbers_mt(1e5);
 
--- The plan of the outer aggregation has no counterpart in the single-node plan:
--- "Cannot find step with matching hash in single-node plan".
-SELECT AVG(transfer) FROM (SELECT number, SUM(number) AS transfer FROM t GROUP BY number) FORMAT Null
-SETTINGS log_comment='unsupported_aggregation_over_aggregation';
-
 -- "Unsupported steps: Union".
 SELECT * FROM t UNION ALL SELECT * FROM t FORMAT Null
 SETTINGS log_comment='unsupported_union_all';
@@ -56,6 +51,12 @@ SETTINGS optimize_aggregation_in_order=0, optimize_use_projections=1, optimize_u
 -- used to be listed as unsupported, while what the case actually hit was the `LIMIT` above.
 SELECT count() FROM t WHERE number > 5 FORMAT Null
 SETTINGS log_comment='supported_aggregation';
+
+-- The inner aggregation is what runs on the replicas, and matching it used to fail because the two
+-- plan builds name their columns differently (`__table3.number` in one, `__table4.number` in the
+-- other) and those names reached the cache key. They no longer do, so the shape is supported.
+SELECT AVG(transfer) FROM (SELECT number, SUM(number) AS transfer FROM t GROUP BY number) FORMAT Null
+SETTINGS log_comment='supported_aggregation_over_aggregation';
 
 -- `query_plan_optimize_join_order_randomize` is pinned off: the single-node plan and the plan with
 -- parallel replicas are built independently, so a randomized join order makes them diverge and the
