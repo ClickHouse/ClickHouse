@@ -311,6 +311,9 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
         /// The 204 acknowledgement must mean the samples reached the shards: Prometheus never
         /// retries an acknowledged write, so a queued async insert would be silent data loss.
         context_->setSetting("distributed_foreground_insert", true);
+        /// A profile- or URL-provided skip_unavailable_shards would let the sink drop a failed
+        /// shard yet still acknowledge; the 204 contract needs every shard write to count.
+        context_->setSetting("skip_unavailable_shards", false);
     }
 }
 
