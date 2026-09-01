@@ -143,9 +143,8 @@ inline bool buildPolygon(const Array & array, Polygon<CartesianPoint> & out_poly
 /// Extract bbox from a single Field value (not a column).
 /// Handles Tuple (native geometry points), Array (nested geometry collections),
 /// and String (WKB-encoded geometry).
-/// `allow_point_tuple` mirrors `IFunctionBase::treatsConstTupleAsPoint(arg_index)` for the
-/// specific argument this field came from: true only for `pointInPolygon`'s own first (point)
-/// argument, see the `Tuple` branch below.
+/// `allow_point_tuple` says the argument this field came from is DECLARED a `Point`, so a lone
+/// `Tuple(Float64, Float64)` may be read as one; see the `Tuple` branch below.
 static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc, bool allow_point_tuple = false)
 {
     using namespace GeoBboxDetail;
@@ -166,10 +165,9 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
     /// (e.g. a `isSpatialPredicate()` WASM UDF's constant `Tuple(Float64, Float64, Float64,
     /// Float64)` bbox/rect argument with entirely different semantics), fail the extraction
     /// instead so pruning is disabled for it, UNLESS the caller has confirmed (via
-    /// `allow_point_tuple`, derived from `treatsConstTupleAsPoint`) that this specific argument
-    /// position of this specific predicate genuinely treats a lone point as meaningful: then it
-    /// contributes a zero-area bbox at that single coordinate, since `pointInPolygon` can only be
-    /// true for rows whose polygon bbox contains that exact point.
+    /// `allow_point_tuple`, read from the argument's declared type) that this argument really is a
+    /// `Point`: then it contributes a zero-area bbox at that single coordinate, since
+    /// `pointInPolygon` can only be true for rows whose polygon bbox contains that exact point.
     if (type == Field::Types::Tuple)
     {
         if (!allow_point_tuple)
@@ -282,11 +280,9 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
         return acc.found;
     }
 
-    /// String — try WKB parsing. Whether the predicate accepts a WKB payload at this argument
-    /// position at all is decided before this, by `extractSpatialPredicateNodeBbox`'s kind check
-    /// (`constGeoKindName` reports a `String` under the kind name `String`) -- none of the
-    /// builtins accepts one, so only a predicate that does, such as an `isSpatialPredicate()`
-    /// WASM UDF reading raw WKB, ever gets here with a `String`.
+    /// String — try WKB parsing. A predicate that does not accept a WKB payload at this argument
+    /// position rejects it from its own `getReturnTypeImpl`, during analysis, so the exception
+    /// cannot be pruned away and a bbox derived here can only cost pruning, never correctness.
     if (type == Field::Types::String)
     {
         const auto & sv = field.safeGet<String>();
@@ -385,29 +381,18 @@ enum class NodeBboxStatus
     Ok,
 };
 
-/// Get the geometry-domain type name of a constant `ActionsDAG` node, needed to tell whether a
-/// constant is explicitly typed as a kind `IFunctionBase::rejectsColumnGeometryKind` says this
-/// predicate is guaranteed to reject -- either the node's own
-/// custom name (a constant explicitly typed e.g. `LineString`), or, if the node's type is a
-/// `Variant` (e.g. `Geometry`, which is a `Variant` over `Point`/`Ring`/`Polygon`/`LineString`/
-/// `MultiPoint`/`MultiLineString`/`MultiPolygon` with a custom name of its own) or `Dynamic`, the
-/// custom name of the concrete alternative/row type actually stored in the constant's single
-/// row: `ColumnVariant::get`/`ColumnDynamic::get` (used by `tryExtractConstGeoField` above)
-/// return only the active alternative's/row's own flattened value, discarding which
-/// alternative/type it was, so that distinguishing name must be read from the type/discriminator
-/// here, before flattening, rather than guessed from the `Field`'s shape. Returns an empty name
-/// when nothing further can be said (e.g. a raw array literal, which has no custom name and is
-/// interpreted the same, shape-only way by the predicate itself).
+/// The geometry-domain type name a type is DECLARED to carry -- its own custom name (`Point`,
+/// `Ring`, `LineString`, ...), or, for a `Variant` (`Geometry` is a `Variant` over the geometry
+/// kinds) or a `Dynamic`, the custom name of the concrete alternative stored in it. Empty when
+/// nothing further can be said, such as for a raw array literal with no custom name.
 ///
-/// A plain `String` (a WKB payload, the geometry encoding every `Parquet`/`Iceberg` geo column
-/// uses on disk) is reported under the kind name `String`: it has no custom name of its own, yet
-/// it is just as much a declared geometry encoding as `Point` or `Polygon`, and a predicate knows
-/// perfectly well whether it accepts one -- none of the builtins does (`pointInPolygon` raises
-/// `ILLEGAL_TYPE_OF_ARGUMENT`, `polygonsIntersectCartesian`/`polygonsWithinCartesian` raise
-/// `BAD_ARGUMENTS` from `callOnGeometryDataType`'s dispatch), while an `isSpatialPredicate()` WASM
-/// UDF reading raw WKB does, and keeps its default `rejectsColumnGeometryKind` of false. Without
-/// this, the WKB branch of `extractBboxFromFieldValue` derived a bbox from a payload the predicate
-/// is guaranteed to reject at execution time; see the `String` kind's own note there.
+/// `ColumnVariant::get`/`ColumnDynamic::get` return only the active alternative's flattened value
+/// and discard which alternative it was, so the name must be read from the type/discriminator here,
+/// before flattening, rather than guessed from the `Field`'s shape.
+///
+/// Used to tell an argument DECLARED a `Point` -- whose lone `Tuple(Float64, Float64)` constant is
+/// a geometry and carries a zero-area bbox -- from a bare `(0., 0.)` literal or an auxiliary
+/// tuple, which are indistinguishable from it once flattened to a `Field`.
 inline std::string geoKindNameOfType(const IDataType & type)
 {
     /// A declared geometry kind can sit under a `Nullable`/`LowCardinality` wrapper, which carries no
@@ -499,45 +484,6 @@ inline std::string_view structuralGeoKindName(const IDataType & type)
     return kind_names[depth];
 }
 
-/// The REPRESENTATION a geometry kind name reduces to. `DataTypeArray::equals` and
-/// `DataTypeTuple::equals` compare only the nested types, ignoring the outer custom name, so kinds
-/// that differ by name alone are one and the same type to `IDataType::equals`: `Ring`, `LineString`
-/// and `MultiPoint` are all `Array(Tuple(Float64, Float64))`, and `Polygon` and `MultiLineString`
-/// are both one `Array` level above that. A predicate that accepts an argument by comparing types
-/// with `equals` therefore accepts every kind sharing the representation, and must be asked about
-/// the representation rather than the name -- otherwise it would report a rejection for a kind it
-/// runs on perfectly well, costing pruning for a query that cannot raise.
-inline std::string_view geoKindRepresentationName(std::string_view kind_name)
-{
-    if (kind_name == "LineString" || kind_name == "MultiPoint")
-        return "Ring";
-    if (kind_name == "MultiLineString")
-        return "Polygon";
-    return kind_name;
-}
-
-/// The representation (see `geoKindRepresentationName`) a DECLARED argument type stands for, whether
-/// it is spelled with a custom name (`Point`, `Ring`, `LineString`, ...) or structurally
-/// (`Tuple(Float64, Float64)`, `Array(Tuple(Float64, Float64))`, ...). Empty when the type is no
-/// geometry at all.
-///
-/// This is the mirror image of the two lookups above: `geoKindNameOfType` answers for a named type
-/// and `structuralGeoKindName` for an unnamed one, and a declared argument may be written either
-/// way. It lets a predicate whose accepted arguments ARE its declared types -- an
-/// `is_spatial_predicate` `LANGUAGE WASM` UDF, whose `getReturnTypeImpl` raises
-/// `ILLEGAL_TYPE_OF_ARGUMENT` for anything its declared type does not `equals` -- answer
-/// `rejectsColumnGeometryKind` by comparison instead of leaving it at its default `false`.
-inline std::string declaredGeoRepresentationName(const IDataType & type)
-{
-    /// `structuralGeoKindName` already answers in representations: it names an unnamed type by its
-    /// `Array` depth, so it never reports `LineString`/`MultiPoint`/`MultiLineString` in the first
-    /// place.
-    const auto kind_name = geoKindNameOfType(type);
-    if (kind_name.empty())
-        return std::string{structuralGeoKindName(type)};
-    return std::string{geoKindRepresentationName(kind_name)};
-}
-
 /// Whether `type` resolves its geometry kind only at execution time -- a `Dynamic`, or a `Variant`
 /// (`Geometry` is a `Variant` over the geometry kinds).
 ///
@@ -588,48 +534,6 @@ inline bool isNonGeometryType(const IDataType & type)
     }
 }
 
-/// Whether a `Nullable` sits in `type`'s outer wrapper chain (possibly under `LowCardinality`).
-///
-/// This is what defeats the reasoning every fail-OPEN path in `extractSpatialPredicateNodeBbox`
-/// rests on: "the predicate raises from `callOnTwoGeometryDataTypes`/`getReturnTypeImpl`, which
-/// dispatch on argument TYPES and therefore raise even on the zero-row block pruning leaves
-/// behind, so pruning cannot hide the exception". With `useDefaultImplementationForNulls`,
-/// `IFunction::execute` returns an empty result for `input_rows_count == 0` BEFORE the nested
-/// function is built, so the type dispatch never runs at all and the exception the query must
-/// surface becomes a silent `0`.
-inline bool hasNullableWrapper(const IDataType & type)
-{
-    const IDataType * inner = &type;
-    while (true)
-    {
-        if (typeid_cast<const DataTypeNullable *>(inner))
-            return true;
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(inner))
-            inner = low_cardinality_type->getDictionaryType().get();
-        else
-            return false;
-    }
-}
-
-/// Whether `type` is a bare, unnamed two-`Float64` `Tuple` -- the shape `callOnGeometryDataType`
-/// resolves as `Point` by `IDataType::equals`, with no `Point` custom name to report it under.
-/// `geoKindNameOfType` and `constGeoKindName` both return an empty kind for it, so the kind checks
-/// in `extractSpatialPredicateNodeBbox` cannot see it at all and would treat it as harmless.
-inline bool isRawPointTuple(const IDataType & type)
-{
-    const IDataType & inner = unwrapGeoKindWrappers(type);
-    return !inner.getCustomName() && structuralGeoKindName(inner) == "Point";
-}
-
-}
-
-/// The geometry kind a constant node is DECLARED to carry. A `Dynamic`/`Variant` node reports none:
-/// it is vetoed wholesale by `GeoBboxDetail::isDeferredGeometryKindType` before this is consulted.
-inline std::string constGeoKindName(const ActionsDAG::Node & node)
-{
-    if (!node.result_type || GeoBboxDetail::isDeferredGeometryKindType(*node.result_type))
-        return {};
-    return geoKindNameOfType(*node.result_type);
 }
 
 /// Extract the (single) `Field` value of a constant `ActionsDAG` `COLUMN` node, for combining
@@ -693,69 +597,24 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     const ActionsDAG::Node * input_child = nullptr;
     bool has_extra_non_constant = false;
     bool any_extraction_failed = false;
-    bool any_kind_rejected = false;
     bool any_deferred_kind_rejection = false;
-    /// Paired with the argument position it came from, needed by `treatsConstTupleAsPoint` below
-    /// to tell `pointInPolygon`'s own point argument apart from its polygon-component arguments.
+    /// Paired with whether the argument's type resolves to a `Point`, which is what tells
+    /// `pointInPolygon`'s own point argument apart from its polygon-component arguments. Read from
+    /// the type rather than asked of the predicate.
+    ///
+    /// A bare `Tuple(Float64, Float64)` counts, not only a `Point`-named type: `callOnGeometryDataType`
+    /// resolves the unnamed shape to a `Point` too, so the overload that runs is the same one. That
+    /// used to need a veto instead -- a bare tuple in an argument position the predicate refuses would
+    /// have had its `ILLEGAL_TYPE_OF_ARGUMENT` pruned away -- but the areal predicates now reject such
+    /// an argument from `getReturnTypeImpl`, during analysis, where no amount of pruning can reach it.
     struct ConstGeoField
     {
-        size_t arg_index = 0;
+        bool is_point = false;
         Field field;
     };
     std::vector<ConstGeoField> const_fields;
-    size_t arg_index = 0;
     for (const auto * child : node.children)
     {
-        const size_t this_arg_index = arg_index++;
-
-        /// A `Nullable` argument the predicate would REJECT must fail closed, whatever the node
-        /// type: `hasNullableWrapper` explains why none of the fail-open `continue`s below is safe
-        /// for it. Only rejected kinds are vetoed -- an accepted geometry kind under a `Nullable`
-        /// never raises, so it keeps pruning.
-        if (child->result_type && GeoBboxDetail::hasNullableWrapper(*child->result_type))
-        {
-            const IDataType & unwrapped = GeoBboxDetail::unwrapGeoKindWrappers(*child->result_type);
-            auto nullable_kind_name = geoKindNameOfType(unwrapped);
-            if (nullable_kind_name.empty())
-                nullable_kind_name = GeoBboxDetail::structuralGeoKindName(unwrapped);
-
-            /// A predicate that positively accepts the unwrapped type raises nothing here, so it
-            /// keeps its pruning: an `is_spatial_predicate` WASM UDF declaring an auxiliary
-            /// `threshold Int32` takes a `Nullable(Int32)` constant perfectly well. Every native
-            /// builtin leaves `acceptsArgumentType` at its default `false` and so still fails
-            /// closed for every kind it does not accept, including a non-geometry type.
-            if ((nullable_kind_name.empty()
-                 || node.function_base->rejectsColumnGeometryKind(nullable_kind_name, this_arg_index))
-                && !node.function_base->acceptsArgumentType(unwrapped, this_arg_index))
-            {
-                any_kind_rejected = true;
-                continue;
-            }
-        }
-
-        /// Checked for EVERY child, whatever its node type. A bare `Tuple(Float64, Float64)` --
-        /// neither named `Point` nor wrapped in `Geometry`/`Variant`/`Dynamic` -- is invisible to
-        /// every kind check below: `constGeoKindName` reports no kind for it, so a column falls
-        /// through to `accept_input` and a constant is declined by `extractBboxFromFieldValue` as
-        /// "not geometry-shaped" without poisoning `acc.valid`, leaving the node at
-        /// `NoInfo`/`NotApplicable`. `callOnGeometryDataType` nonetheless resolves it as a `Point`
-        /// by `IDataType::equals` and dispatches on that, so a predicate that refuses a `Point`
-        /// (`polygonsIntersectCartesian`, `polygonsWithinCartesian`) raises on it while EXECUTING,
-        /// and a sibling conjunct's bbox could prune every granule away and turn that into a
-        /// silent `0`.
-        ///
-        /// The predicate's own `treatsConstTupleAsPoint` says where a bare point legitimately
-        /// belongs -- `pointInPolygon`'s first argument, a WebAssembly UDF argument declared
-        /// `Point` -- and pruning stays on exactly there. This states no per-function domain: any
-        /// predicate that does not claim the position as a point position fails closed, which
-        /// merely costs pruning.
-        if (child->result_type && !node.function_base->treatsConstTupleAsPoint(this_arg_index)
-            && GeoBboxDetail::isRawPointTuple(*child->result_type))
-        {
-            any_kind_rejected = true;
-            continue;
-        }
-
         if (child->type == ActionsDAG::ActionType::INPUT)
         {
             /// Checked for EVERY input, accepted or not: `accept_input` rejecting a `Dynamic`/
@@ -769,23 +628,6 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
 
             if (!input_child && accept_input(*child))
             {
-                /// A column explicitly typed as a geometry kind this predicate is guaranteed to
-                /// reject at THIS argument position (e.g. a `Point`-typed column as the polygon
-                /// argument of `polygonsIntersectCartesian`, which only accepts `Ring`/`Polygon`/
-                /// `MultiPolygon`) is guaranteed to raise `ILLEGAL_TYPE_OF_ARGUMENT` once evaluated
-                /// on any row. Pruning row groups/granules by this column's bbox instead would
-                /// silently hide that exception on any row group whose bbox happens to be disjoint
-                /// from the query bbox. `constGeoKindName` returns empty for a `Variant`/`Dynamic`
-                /// column (its concrete per-row kind isn't visible from just this `ActionsDAG`
-                /// node) -- that's fine, `accept_input` already excludes those columns separately,
-                /// since a single declared kind can't be checked against a column that may store a
-                /// different kind in every row.
-                const auto kind_name = constGeoKindName(*child);
-                if (!kind_name.empty() && node.function_base->rejectsColumnGeometryKind(kind_name, this_arg_index))
-                {
-                    any_kind_rejected = true;
-                    continue;
-                }
                 input_child = child;
                 continue;
             }
@@ -820,29 +662,6 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
             continue;
         }
 
-        /// A constant explicitly typed as a geometry kind this predicate is guaranteed to reject
-        /// (e.g. a `Point`/`LineString`/`MultiPoint`/`MultiLineString` constant for
-        /// `polygonsIntersectCartesian`, which only accepts `Ring`/`Polygon`/`MultiPolygon`) is
-        /// checked here, before its `Field` is ever interpreted by shape below -- shape alone
-        /// can't tell it apart from an accepted kind (`Ring`/`LineString`/`MultiPoint` all flatten
-        /// to the same `Array(Point)`-shaped `Field`; `Polygon`/`MultiLineString` both flatten to
-        /// `Array(Array(Point))`), so the explicit kind name, read from the `DataType`/discriminator,
-        /// is the only way to know evaluation is guaranteed to raise `ILLEGAL_TYPE_OF_ARGUMENT`.
-        /// This must fail closed like a structural extraction failure below, not be silently
-        /// dropped as "not geometry-shaped": a predicate that genuinely doesn't know whether it
-        /// accepts a given kind (e.g. a WASM UDF) never reaches here, since
-        /// `rejectsColumnGeometryKind` defaults to false for it. Uses the position-aware
-        /// `rejectsColumnGeometryKind`, for the same
-        /// reason as the column check above: `pointInPolygon`'s first argument legitimately
-        /// accepts an explicitly `Point`-typed constant, exactly as it does an explicitly
-        /// `Point`-typed column.
-        const auto kind_name = constGeoKindName(*child);
-        if (!kind_name.empty() && node.function_base->rejectsColumnGeometryKind(kind_name, this_arg_index))
-        {
-            any_kind_rejected = true;
-            continue;
-        }
-
         /// A `Dynamic`/`Variant` constant is vetoed too, for the same reason as the column above.
         if (child->result_type && GeoBboxDetail::isDeferredGeometryKindType(*child->result_type))
         {
@@ -850,11 +669,15 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
             continue;
         }
 
-        const_fields.push_back({this_arg_index, std::move(field)});
+        const_fields.push_back(
+            {child->result_type
+                 && (geoKindNameOfType(GeoBboxDetail::unwrapGeoKindWrappers(*child->result_type)) == "Point"
+                     || GeoBboxDetail::structuralGeoKindName(*child->result_type) == "Point"),
+             std::move(field)});
     }
 
-    /// A constant geometry argument that fails to extract, or is explicitly typed as a kind this
-    /// predicate is guaranteed to reject, is guaranteed to raise on evaluation, regardless of
+    /// A constant geometry argument that fails to extract is guaranteed to raise on evaluation,
+    /// regardless of
     /// whether an accepted-column input is present. This -- and every validation below -- must be
     /// checked unconditionally, before `!input_child` or `has_extra_non_constant` are allowed to
     /// downgrade the result to `NotApplicable`/`NoInfo`: with
@@ -863,7 +686,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     /// *different* geometry column), so an invalid constant geometry here must still veto pruning
     /// for the whole conjunction -- otherwise pruning could proceed using only an unrelated,
     /// valid conjunct's bbox, silently hiding the exception this conjunct is guaranteed to raise.
-    if (any_extraction_failed || any_kind_rejected || any_deferred_kind_rejection)
+    if (any_extraction_failed || any_deferred_kind_rejection)
         return NodeBboxStatus::Failed;
 
     if (const_fields.empty())
@@ -894,7 +717,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         {
             BboxAccumulator field_acc;
             bool extracted = extractBboxFromFieldValue(
-                entry.field, field_acc, node.function_base->treatsConstTupleAsPoint(entry.arg_index));
+                entry.field, field_acc, entry.is_point);
             if (!field_acc.valid)
                 return NodeBboxStatus::Failed;
             if (extracted)
@@ -931,7 +754,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
 
         BboxAccumulator acc;
         bool extracted = extractBboxFromFieldValue(
-            const_fields[0].field, acc, node.function_base->treatsConstTupleAsPoint(const_fields[0].arg_index));
+            const_fields[0].field, acc, const_fields[0].is_point);
         if (!acc.valid)
             return NodeBboxStatus::Failed;
         if (!extracted)

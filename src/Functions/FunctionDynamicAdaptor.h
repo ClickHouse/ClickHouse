@@ -72,30 +72,6 @@ public:
 
     bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
-    /// These delegate to the resolver rather than a per-alternative concrete function: the
-    /// underlying IFunction is already constructed before overload resolution ever wraps it here,
-    /// so the resolver's answer is the same regardless of which Dynamic alternative ends up
-    /// dispatched to at the row level -- there is no dependency on the concrete alternative type,
-    /// only on the constant Field arguments and construction-time settings.
-    ///
-    /// A geometry kind the wrapped function rejects means "evaluating this argument is guaranteed to
-    /// raise `ILLEGAL_TYPE_OF_ARGUMENT`", which is what makes `spatial_bbox` pruning fail closed (see
-    /// `Common/GeoBbox.h`). This forwards it unconditionally, including when
-    /// `dynamic_throw_on_type_mismatch` is off. Leniency is NOT a reason to drop the rejection:
-    /// `ExecutableFunctionDynamicAdaptor::try_execute` swallows only a rejection raised while BUILDING the
-    /// wrapped function for an incompatible alternative, and deliberately re-throws one raised while
-    /// executing it. `polygonsIntersectCartesian`/`polygonsWithinCartesian` reject `Point`,
-    /// `LineString`, `MultiLineString` and `MultiPoint` only in `executeImpl`, so under a lenient
-    /// session they still raise -- and masking the rejection here let a sibling conjunct prune the
-    /// granule away and answer `0` instead of raising. Losing pruning in a lenient session is a cost;
-    /// answering `0` where the query must raise is a wrong result.
-    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
-    {
-        return function_overload_resolver->rejectsColumnGeometryKind(kind_name, arg_index);
-    }
-    bool treatsConstTupleAsPoint(size_t arg_index) const override { return function_overload_resolver->treatsConstTupleAsPoint(arg_index); }
-    bool acceptsArgumentType(const IDataType & type, size_t arg_index) const override { return function_overload_resolver->acceptsArgumentType(type, arg_index); }
-
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;

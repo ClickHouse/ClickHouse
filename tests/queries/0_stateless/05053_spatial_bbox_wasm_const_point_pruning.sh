@@ -6,12 +6,12 @@
 #
 # `tryExtractConstGeoField` (`src/Common/GeoBbox.h`) flattens both `CAST((0., 0.) AS Point)` and a
 # bare `(0., 0.)` literal to the same `Tuple(Float64, Float64)`-shaped `Field`, and
-# `extractBboxFromFieldValue` treats that shape as opaque unless the predicate opts in through
-# `treatsConstTupleAsPoint` -- none of `pointInPolygon`'s polygon-component arguments, nor
-# `polygonsIntersectCartesian`'s, accept a bare point there. `FunctionUserDefinedWasm` never
-# overrode the hook, so a UDF declared `(geom Point, rect Ring)` came back as
-# `NodeBboxStatus::NoInfo` and lost pruning on its indexed `rect` column for every query the runtime
-# accepts perfectly well. The hook is now answered from the declared representation.
+# `extractBboxFromFieldValue` reads that shape as a point only when the argument's declared type
+# resolves to one -- either by name (`Point`) or structurally, as `structuralGeoKindName` reads a
+# bare `Tuple(Float64, Float64)`. This used to be asked of the predicate through a
+# `treatsConstTupleAsPoint` hook that `FunctionUserDefinedWasm` never overrode, so a UDF declared
+# `(geom Point, rect Ring)` came back as `NodeBboxStatus::NoInfo` and lost pruning on its indexed
+# `rect` column for every query the runtime accepts perfectly well.
 #
 # There is deliberately no `Dynamic`/`Variant` constant case here: such an argument vetoes pruning
 # outright (`GeoBboxDetail::isDeferredGeometryKindType`, covered by

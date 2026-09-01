@@ -82,14 +82,11 @@ public:
     }
 
     bool isStateful() const override { return function->isStateful(); }
-    bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
-
-    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function->rejectsColumnGeometryKind(kind_name, arg_index); }
-    bool treatsConstTupleAsPoint(size_t arg_index) const override { return function->treatsConstTupleAsPoint(arg_index); }
-    bool acceptsArgumentType(const IDataType & type, size_t arg_index) const override { return function->acceptsArgumentType(type, arg_index); }
-
 
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }
+
+    /// See `IFunctionBase::isSpatialPredicate`.
+    bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
@@ -140,12 +137,8 @@ public:
     bool isDeterministic() const override { return function->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
     bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
+    /// See `IFunctionBase::isSpatialPredicate`.
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
-
-    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function->rejectsColumnGeometryKind(kind_name, arg_index); }
-    bool treatsConstTupleAsPoint(size_t arg_index) const override { return function->treatsConstTupleAsPoint(arg_index); }
-    bool acceptsArgumentType(const IDataType & type, size_t arg_index) const override { return function->acceptsArgumentType(type, arg_index); }
-
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }

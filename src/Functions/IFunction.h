@@ -221,50 +221,6 @@ public:
       */
     virtual bool isSpatialPredicate() const { return false; }
 
-    /** For a function where `isSpatialPredicate` is true: is a geometry argument at `arg_index`
-      * explicitly typed as `kind_name` (e.g. "Point", "LineString", "MultiPoint",
-      * "MultiLineString" -- one of the `Geometry`/`Variant` alternative names, read from the
-      * argument's actual `DataType`/discriminator, never guessed from its flattened `Field` shape)
-      * guaranteed to make this predicate raise `ILLEGAL_TYPE_OF_ARGUMENT`? Consulted for BOTH a
-      * constant and a non-constant (column) argument -- see `Common/GeoBbox.h`'s
-      * `extractSpatialPredicateNodeBbox` -- because a lone constant conveys pruning information too
-      * (see `treatsConstTupleAsPoint` below), so a kind rejected only at some positions must not be
-      * failed closed for a constant at an accepted position either.
-      *
-      * Used to fail bbox-disjoint pruning closed for such an argument instead of silently treating
-      * it as "no info" and letting an unrelated conjunct's bbox prune every granule away, turning
-      * the exception into a silent `0`.
-      *
-      * A reported rejection must be one raised while BUILDING the function, from the argument's
-      * `DataType`, before a single row is read. The lenient `Variant`/`Dynamic` adaptors rely on
-      * that: under `variant_throw_on_type_mismatch = 0` / `dynamic_throw_on_type_mismatch = 0` they
-      * swallow exactly that build-time `ILLEGAL_TYPE_OF_ARGUMENT` and resolve the incompatible rows
-      * to NULL, so there is no exception left for pruning to hide and they stop reporting the
-      * rejection (see `FunctionVariantAdaptor.h`). Default: false.
-      */
-    virtual bool rejectsColumnGeometryKind(std::string_view /*kind_name*/, size_t /*arg_index*/) const { return false; }
-
-    /** For a function where `isSpatialPredicate` is true: does a constant argument at `arg_index`,
-      * when it has the generic `(Float64, Float64)` `Tuple` shape that `extractBboxFromFieldValue`
-      * (`Common/GeoBbox.h`) otherwise treats as opaque, represent a single point this predicate can
-      * derive a zero-area bbox `(x, y, x, y)` from directly? Default: false.
-      */
-    virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
-
-    /** For a function where `isSpatialPredicate` is true: is an argument of exactly `type` at
-      * `arg_index` guaranteed to be ACCEPTED, so that evaluating the predicate cannot raise on
-      * type grounds? Asked with the `Nullable` wrapper already stripped, exactly as
-      * `useDefaultImplementationForNulls` hands the arguments to `getReturnTypeImpl`.
-      *
-      * `Common/GeoBbox.h` fails bbox pruning closed for a `Nullable` argument it cannot show the
-      * predicate accepts, because `useDefaultImplementationForNulls` returns an empty result for
-      * `input_rows_count == 0` before the nested function is built -- so an exception that would
-      * have been raised from the argument TYPES never fires on a fully pruned granule. A predicate
-      * that positively accepts the type raises nothing there and keeps its pruning. Default: false,
-      * which merely costs pruning.
-      */
-    virtual bool acceptsArgumentType(const IDataType & /*type*/, size_t /*arg_index*/) const { return false; }
-
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -481,15 +437,6 @@ public:
     /// See IFunctionBase::isSpatialPredicate.
     virtual bool isSpatialPredicate() const { return false; }
 
-    /// See IFunctionBase::rejectsColumnGeometryKind.
-    virtual bool rejectsColumnGeometryKind(std::string_view /*kind_name*/, size_t /*arg_index*/) const { return false; }
-
-    /// See IFunctionBase::treatsConstTupleAsPoint.
-    virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
-
-    /// See IFunctionBase::acceptsArgumentType.
-    virtual bool acceptsArgumentType(const IDataType & /*type*/, size_t /*arg_index*/) const { return false; }
-
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.
@@ -705,15 +652,6 @@ public:
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
-
-    /// See IFunctionBase::rejectsColumnGeometryKind.
-    virtual bool rejectsColumnGeometryKind(std::string_view /*kind_name*/, size_t /*arg_index*/) const { return false; }
-
-    /// See IFunctionBase::treatsConstTupleAsPoint.
-    virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
-
-    /// See IFunctionBase::acceptsArgumentType.
-    virtual bool acceptsArgumentType(const IDataType & /*type*/, size_t /*arg_index*/) const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

@@ -1,20 +1,24 @@
--- Regression test: `spatial_bbox` pruning must fail closed for a `polygonsIntersectCartesian` /
--- `polygonsWithinCartesian` argument whose column geometry kind the predicate rejects.
+-- Regression test: a `polygonsIntersectCartesian` / `polygonsWithinCartesian` argument whose
+-- geometry kind the predicate rejects must raise, no matter how much `spatial_bbox` pruning the
+-- query does.
 --
 -- Both functions reject `Point`, `LineString`, `MultiPoint` and `MultiLineString` at ANY argument
--- position, but they reject them inside `callOnTwoGeometryDataTypes` while EXECUTING -- their
--- `getReturnTypeImpl` returns `UInt8` without looking at the arguments at all. Nothing evaluates the
--- predicate before granule selection either: `ActionsDAG::updateHeader` only dry-runs a function
--- when every argument is constant, and here one argument is a column.
+-- position. They used to reject them inside `callOnTwoGeometryDataTypes` while EXECUTING -- their
+-- `getReturnTypeImpl` returned `UInt8` without looking at the arguments at all -- and nothing
+-- evaluates the predicate before granule selection: `ActionsDAG::updateHeader` only dry-runs a
+-- function when every argument is constant, and here one argument is a column. So if the skip index
+-- pruned every granule, `executeImpl` was never reached on a non-empty block and the query answered
+-- `0` instead of raising `ILLEGAL_TYPE_OF_ARGUMENT` -- a wrong answer, not merely a lost
+-- optimisation.
 --
--- So if the skip index prunes every granule, `executeImpl` is never reached on a non-empty block and
--- the query returns `0` instead of raising `ILLEGAL_TYPE_OF_ARGUMENT` -- a wrong answer, not merely a
--- lost optimisation. `extractSpatialPredicateNodeBbox` (`src/Common/GeoBbox.h`) asks
--- `IFunctionBase::rejectsColumnGeometryKind` to fail closed for exactly this case, which both
--- functions must answer.
+-- `checkArealPredicateArgumentTypes` (`src/Functions/geometryConverters.h`) now states that domain
+-- once and both predicates apply it from `getReturnTypeImpl`, so the rejection happens during
+-- analysis -- uniformly with every other function, and out of reach of anything that removes rows.
+-- That is what lets `Common/GeoBbox.h` prune granules for these predicates without restating their
+-- accepted domain.
 --
 -- Every query below uses a constant polygon disjoint from the single stored granule, so a pruning
--- path that does not fail closed prunes it away and answers `0`.
+-- path that does not raise prunes it away and answers `0`.
 
 DROP TABLE IF EXISTS test_spatial_bbox_polygons_point_column;
 DROP TABLE IF EXISTS test_spatial_bbox_polygons_linestring_column;

@@ -1,18 +1,17 @@
--- Regression test: a bare `Tuple(Float64, Float64)` argument -- not wrapped in `Point`,
--- `Geometry`, `Variant` or `Dynamic` -- must fail `spatial_bbox` pruning closed for any argument
--- position the predicate has not declared as a point position.
+-- Regression test: a bare `Tuple(Float64, Float64)` constant -- not wrapped in `Point`, `Geometry`,
+-- `Variant` or `Dynamic` -- must still drive `spatial_bbox` pruning where it is legitimately a point.
 --
--- `callOnGeometryDataType` resolves such a type as `Point` by `IDataType::equals`, so
--- `polygonsIntersectCartesian` raises `ILLEGAL_TYPE_OF_ARGUMENT` for it while executing.
--- `constGeoKindName` (`src/Common/GeoBbox.h`) reports no kind name for it, though, so
--- `extractSpatialPredicateNodeBbox` used to accept the argument as harmless: a constant polygon in
--- the same call, or a sibling conjunct's bbox, could then prune every granule away and the query
--- answered `0` instead of raising.
+-- `callOnGeometryDataType` resolves such a type as `Point` by `IDataType::equals`, so the overload
+-- that runs for it is the same one a `Point`-named argument gets. `geoKindNameOfType`
+-- (`src/Common/GeoBbox.h`) reports no kind name for it, though -- it carries no custom name -- so
+-- `extractSpatialPredicateNodeBbox` reads it through `structuralGeoKindName` instead.
 --
--- The check is the predicate's own `treatsConstTupleAsPoint(arg_index)`: a bare two-`Float64`
--- `Tuple` is legitimate exactly where the predicate says a point belongs (`pointInPolygon`'s first
--- argument, a WebAssembly UDF argument declared `Point`), and fails closed everywhere else. See
--- `05053_spatial_bbox_wasm_const_point_pruning` for the positive half.
+-- This used to fail closed rather than prune: a bare tuple in an argument position the predicate
+-- refuses would have had its `ILLEGAL_TYPE_OF_ARGUMENT` pruned away and the query would have
+-- answered `0`. The areal predicates now reject such an argument from `getReturnTypeImpl`, during
+-- analysis, where pruning cannot reach it -- which is what the second query below pins -- so the
+-- constant is free to prune again. See `05053_spatial_bbox_wasm_const_point_pruning` for the same
+-- spelling reaching a WebAssembly UDF's declared `Point` argument.
 
 DROP TABLE IF EXISTS test_spatial_bbox_raw_tuple_point;
 
@@ -35,22 +34,16 @@ SELECT (100., 100.), [[(100., 100.), (110., 100.), (110., 110.), (100., 100.)]] 
 SET short_circuit_function_evaluation = 'disable';
 SET optimize_move_to_prewhere = 0;
 
--- The indexed raw-tuple COLUMN as the geometry argument: the runtime reads it as a `Point`, which
--- `polygonsIntersectCartesian` refuses. The assertion is the exception itself rather than a granule
--- count, since the constant is rejected while the plan's header is computed on a zero-row block
--- (see `05051_spatial_bbox_empty_geometry_no_validate_pruning`).
-SELECT count() FROM test_spatial_bbox_raw_tuple_point
-WHERE polygonsIntersectCartesian(p, [[(0., 0.), (1., 0.), (1., 1.), (0., 1.), (0., 0.)]]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
--- A raw-tuple CONSTANT in a sibling `AND` conjunct, which used to be downgraded to
--- `NoInfo`/`NotApplicable` and let the `pointInPolygon` conjunct prune the exception away.
+-- A raw-tuple CONSTANT in an argument position `polygonsIntersectCartesian` refuses, alongside a
+-- sibling `pointInPolygon` conjunct whose bbox prunes the only granule away. The rejection happens
+-- during analysis, so the pruning cannot turn it into a silent `0`.
 SELECT count() FROM test_spatial_bbox_raw_tuple_point
 WHERE pointInPolygon((0., 0.), poly)
   AND polygonsIntersectCartesian(poly, (500., 500.)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- `pointInPolygon`'s FIRST argument is declared a point position, so the very same raw-tuple
--- spelling must keep pruning there -- failing closed for every bare tuple would disable the most
--- common spatial query there is.
+-- `pointInPolygon` accepts a point at its first argument, so the very same raw-tuple spelling must
+-- keep pruning there -- refusing to prune for every bare tuple would disable the most common spatial
+-- query there is.
 SELECT 'const point still prunes', extract(explain, '(Parts:.*|Granules:.*)')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_raw_tuple_point
       WHERE pointInPolygon(CAST((0., 0.), 'Tuple(Float64, Float64)'), poly))
@@ -58,5 +51,11 @@ WHERE explain LIKE '%Granules:%';
 
 SELECT count() FROM test_spatial_bbox_raw_tuple_point
 WHERE pointInPolygon(CAST((0., 0.), 'Tuple(Float64, Float64)'), poly);
+
+-- And with no `CAST` at all: a bare tuple literal is the spelling almost every such query uses.
+SELECT 'bare tuple literal still prunes', extract(explain, '(Parts:.*|Granules:.*)')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_raw_tuple_point
+      WHERE pointInPolygon((0., 0.), poly))
+WHERE explain LIKE '%Granules:%';
 
 DROP TABLE test_spatial_bbox_raw_tuple_point;
