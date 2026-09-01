@@ -197,6 +197,7 @@ bool OracleExec::executeStatement(
     }
     catch (...)
     {
+        /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
         /// Fail-close: a fixture/DDL statement that cannot run means the oracle must not proceed.
         return false;
     }

@@ -40,6 +40,7 @@ StoragePtr resolveSingleTableStorage(const ASTSelectQuery & select, const Contex
     }
     catch (...)
     {
+        /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
         return nullptr;
     }
 }
@@ -66,6 +67,7 @@ ResolveMatch referencesTableMatching(
         }
         catch (...)
         {
+            /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
             storage = nullptr;
         }
 
@@ -130,6 +132,7 @@ bool hasTotalOrderKey(
     }
     catch (...)
     {
+        /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
         return false;
     }
 
@@ -142,6 +145,7 @@ bool hasTotalOrderKey(
     }
     catch (...)
     {
+        /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
         return false;
     }
 }
