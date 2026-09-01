@@ -133,6 +133,8 @@ ClickHouse のメイン HTTP ポートで、プレフィックスルーティン
 | `/prometheus/api/v1/read`        | Prometheus リモート読み取り |
 | `/prometheus/api/v1/query`       | インスタント PromQL クエリ   |
 | `/prometheus/api/v1/query_range` | 範囲 PromQL クエリ       |
+| `/prometheus/api/v1/series`      | シリーズのメタデータ          |
+| `/prometheus/api/v1/metadata`    | メトリクスファミリーのメタデータ    |
 
 この例では、ハンドラーに `database` と `table` を指定していません。各リクエストで `table` クエリパラメータを指定する必要があります。また、`database` を指定する、`prometheus.metrics` のような完全修飾テーブル名を使用する、またはデータベースを省略して `default` を使用することもできます。これにより、1 つのハンドラーで複数の `TimeSeries` テーブルを処理できます。
 
@@ -160,7 +162,7 @@ ClickHouse のメイン HTTP ポートで、プレフィックスルーティン
   ### リモート書き込み を使用してメトリクスを取り込む
 </div>
 
-ClickHouse は [Prometheus remote-write プロトコル](https://prometheus.io/docs/specs/remote_write_spec/)をサポートしています。Prometheus がハンドラーに書き込むように設定します。
+ClickHouse は [Prometheus リモート書き込み プロトコル](https://prometheus.io/docs/specs/remote_write_spec/)をサポートしています。Prometheus がハンドラーに書き込むように設定します。
 
 ```yaml
 remote_write:
@@ -171,6 +173,15 @@ remote_write:
 ```
 
 Prometheus はサンプルを `prometheus.metrics` テーブルに送信します。
+
+多数の同時実行 リモート書き込み リクエストからのデータを少ないパーツにまとめるには、URL に `async_insert` 設定を追加する (またはユーザープロファイルで有効にする) ことで、[非同期挿入](/ja/reference/settings/session-settings/async-insert#async_insert)を有効にします。
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
+```
+
+ClickHouse は、[`wait_for_async_insert`](/ja/reference/settings/session-settings/wait-for#wait_for_async_insert) 設定にかかわらず、データが `TimeSeries` テーブルのすべての内部テーブルにフラッシュされた後にのみ、非同期 リモート書き込み リクエストを受理します。リモート書き込み プロトコルでは、受理された書き込みは永続化済みとして扱われます。フラッシュに失敗した場合、リクエストはエラーを返し、Prometheus は再試行します。
 
 <div id="promql-query-support">
   ### PromQL でクエリを実行する
@@ -226,7 +237,7 @@ datasources:
 Grafana は、このベース URL に `/api/v1/query` または `/api/v1/query_range` を付加し、各リクエストに `customQueryParameters` を追加します。
 
 <Note>
-  実装されているのは、クエリエンドポイント `/api/v1/query` と `/api/v1/query_range` のみです。Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用するメタデータエンドポイント (`/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values`) は実装されておらず、エラーを返します。クエリビルダーではなく、コードモードで PromQL 式を記述してください。
+  実装されているのは、クエリエンドポイント `/api/v1/query` と `/api/v1/query_range`、およびメタデータエンドポイント `/api/v1/series`、`/api/v1/labels`、`/api/v1/metadata` のみです。`/api/v1/series` には少なくとも 1 つの `match[]` シリーズセレクターが必要で、任意の `start`、`end`、`limit` パラメータをサポートし、各セレクターに一致するシリーズのユニオンを返します。`/api/v1/labels` は同じパラメータを受け付けますが、`match[]` は任意であり、一致するシリーズのソート済みラベル名を返します (セレクターが指定されていない場合はすべてのシリーズのラベル名を返します) 。Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用するラベル値エンドポイント (`/api/v1/label/<name>/values`) は実装されておらず、エラーを返します。クエリビルダーではなく、コードモードで PromQL 式を記述してください。
 </Note>
 
 <div id="sql-entry-points">
@@ -254,6 +265,28 @@ FROM prometheusQuery(
     'rate(http_requests_total[5m])',
     now()
 );
+```
+
+<div id="metadata">
+  ### メトリクスのメタデータをクエリする
+</div>
+
+`/prometheus/api/v1/metadata` エンドポイントは、`TimeSeries` テーブルの `Metrics` ターゲットテーブルに格納されているメトリクスのメタデータ (各メトリクスファミリーの型、ヘルプテキスト、単位) を返します。URL のクエリ文字列では、次の Prometheus パラメータをサポートしています。
+
+| パラメータ              | 説明                                                         |
+| ------------------ | ---------------------------------------------------------- |
+| `metric`           | 指定したメトリクスファミリーのメタデータのみを返します。                               |
+| `limit`            | 返されるメトリクスファミリーの数を制限します。負の値は無制限を意味し、ゼロの場合はメトリクスファミリーを返しません。 |
+| `limit_per_metric` | 各メトリクスファミリーについて返されるメタデータオブジェクトの数を制限します。ゼロおよび負の値は無制限を意味します。 |
+
+デフォルトの `Metrics` ターゲットテーブルは、メトリクスファミリー名で順序付けられた `ReplacingMergeTree` です。各メトリクスファミリーについて、最後に書き込まれたメタデータエントリを保持します。ファミリーごとに複数のエントリが返されるのは、ターゲットテーブルにそれらが保持されている場合のみです。つまり、パーツがマージされる前、またはそれらを保持するエンジンでテーブルが定義されている場合です。
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
+  --data-urlencode "metric=http_requests_total" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
 ```
 
 <div id="remote-read">
