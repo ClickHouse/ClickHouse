@@ -1000,7 +1000,7 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 
 When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/reference/settings/session-settings/join#join_overflow_mode)
 setting instructs. These two are hard caps and never make a join spill to disk, so setting them at or
-below an explicit `max_bytes_before_external_join` prevents the join from spilling at all.
+below the spill threshold prevents the join from spilling at all.
 
 To let a join keep running by spilling the right side to disk instead of failing, use:
 

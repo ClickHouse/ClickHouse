@@ -232,7 +232,6 @@ TableJoin::TableJoin(
     , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
-    , explicit_max_bytes_before_external_join(settings[Setting::max_bytes_before_external_join])
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , max_memory_usage(settings[Setting::max_memory_usage])
@@ -268,7 +267,6 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
     , legacy_join_size_limits_trigger_spilling(settings.legacy_join_size_limits_trigger_spilling)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
-    , explicit_max_bytes_before_external_join(settings.max_bytes_before_external_join)
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , max_memory_usage(settings.max_bytes_in_join)
@@ -721,6 +719,22 @@ bool TableJoin::needStreamWithNonJoinedRows() const
         strictness() == JoinStrictness::Semi)
         return false;
     return isRightOrFull(kind());
+}
+
+void TableJoin::warnIfSizeLimitPreventsSpilling(size_t external_join_threshold) const
+{
+    const size_t hard_cap = size_limits.max_bytes;
+    if (external_join_threshold == 0 || hard_cap == 0 || hard_cap > external_join_threshold
+        || size_limits.overflow_mode != OverflowMode::THROW)
+        return;
+
+    LOG_WARNING(
+        getLogger("TableJoin"),
+        "max_bytes_in_join ({}) is not above the spill threshold ({}). It is a hard cap on the right side of the JOIN, "
+        "not a spill trigger, so the query fails instead of spilling. Raise max_bytes_in_join above the spill threshold, "
+        "or set it to 0 to rely on spilling alone",
+        hard_cap,
+        external_join_threshold);
 }
 
 static void renameIfNeeded(String & name, const NameToNameMap & renames)

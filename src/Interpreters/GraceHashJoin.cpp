@@ -330,18 +330,7 @@ GraceHashJoin::GraceHashJoin(
             "configured (the ratio is ignored without them). To keep the join in memory instead, use join_algorithm = 'hash' "
             "with both of them at 0");
 
-    /// A cap below the threshold kills the query before it ever spills, which is worth a warning. Look only at
-    /// the explicit setting - the ratio depends on how much memory the machine has.
-    const size_t explicit_threshold = table_join->explicitMaxBytesBeforeExternalJoin();
-    const size_t hard_cap = table_join->sizeLimits().max_bytes;
-    if (explicit_threshold != 0 && hard_cap != 0 && hard_cap <= explicit_threshold)
-        LOG_WARNING(
-            log,
-            "max_bytes_in_join ({}) is not above max_bytes_before_external_join ({}). It is a hard cap on the right side "
-            "of the JOIN, not a spill trigger, so the query fails instead of spilling. Raise max_bytes_in_join above the "
-            "spill threshold, or set it to 0 to rely on spilling alone",
-            hard_cap,
-            explicit_threshold);
+    table_join->warnIfSizeLimitPreventsSpilling(external_join_threshold);
 }
 
 void GraceHashJoin::initBuckets()
@@ -842,6 +831,12 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         accounted_right_bytes += hash_join->getTotalByteCount();
     }
 
+    if (stop_after_current_bucket)
+    {
+        current_bucket = nullptr;
+        return nullptr;
+    }
+
     size_t prev_keys_num = 0;
     if (hash_join && buckets.size() > 1)
     {
@@ -868,9 +863,10 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         hash_join->onBuildPhaseFinish();
 
         /// The same hard cap as during the build phase, now that this bucket's hash table is complete.
-        /// With `join_overflow_mode = 'break'` stop here instead of loading the remaining buckets.
+        /// `join_overflow_mode = 'break'` keeps this bucket, the way `HashJoin` keeps the block that crossed
+        /// the cap, and stops before the next one.
         if (!table_join->legacyJoinSizeLimitsTriggerSpilling() && !checkSizeLimits())
-            return nullptr;
+            stop_after_current_bucket = true;
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
             bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));

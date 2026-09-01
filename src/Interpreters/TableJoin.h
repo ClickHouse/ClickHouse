@@ -170,8 +170,6 @@ private:
     /// Old behaviour of `max_rows_in_join` / `max_bytes_in_join`: they spill instead of capping the right side.
     const bool legacy_join_size_limits_trigger_spilling = false;
     const size_t max_bytes_before_external_join = 0;
-    /// `max_bytes_before_external_join` as the user wrote it, before the ratio is folded in. Diagnostics only.
-    const size_t explicit_max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
 
@@ -354,7 +352,8 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     bool legacyJoinSizeLimitsTriggerSpilling() const { return legacy_join_size_limits_trigger_spilling; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
-    size_t explicitMaxBytesBeforeExternalJoin() const { return explicit_max_bytes_before_external_join; }
+    /// A hard cap at or below the spill threshold fails the query before it ever spills, so say so.
+    void warnIfSizeLimitPreventsSpilling(size_t external_join_threshold) const;
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     void setRowStoreEnabled(bool value) { enable_row_store = value; }

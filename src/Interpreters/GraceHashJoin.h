@@ -177,6 +177,8 @@ private:
     mutable SharedMutex rehash_mutex;
 
     FileBucket * current_bucket = nullptr;
+    /// A bucket crossed the hard cap under `join_overflow_mode = 'break'`: emit it, then stop.
+    bool stop_after_current_bucket = false;
 
     mutable std::mutex current_bucket_mutex;
 

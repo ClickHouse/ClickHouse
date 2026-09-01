@@ -34,6 +34,7 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
+    table_join->warnIfSizeLimitPreventsSpilling(max_bytes_before_external_join);
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
         /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
@@ -59,6 +60,7 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
+    table_join->warnIfSizeLimitPreventsSpilling(max_bytes_before_external_join);
     concurrent_join = std::make_shared<ConcurrentHashJoin>(
         table_join,
         concurrent_slots_,

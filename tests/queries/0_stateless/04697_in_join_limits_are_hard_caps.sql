@@ -102,3 +102,14 @@ SET grace_hash_join_initial_buckets = 4;
 SELECT count() FROM (SELECT number AS k FROM numbers(100000)) AS t1
 INNER JOIN (SELECT number AS k FROM numbers(100000)) AS t2 USING (k)
 SETTINGS join_algorithm = 'grace_hash'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
+-- `break` keeps the bucket that crossed the cap, like `HashJoin` keeps the block that crossed it. Two
+-- buckets and a cap that only trips once the second one is loaded: nothing is dropped.
+SELECT 'break keeps the delayed bucket that crossed the cap';
+SET join_overflow_mode = 'break';
+SET max_rows_in_join = 60000;
+SET grace_hash_join_initial_buckets = 2;
+SET max_bytes_before_external_join = '16M';
+SELECT count() FROM (SELECT number AS k FROM numbers(100000)) AS t1
+INNER JOIN (SELECT number AS k FROM numbers(100000)) AS t2 USING (k)
+SETTINGS join_algorithm = 'grace_hash';

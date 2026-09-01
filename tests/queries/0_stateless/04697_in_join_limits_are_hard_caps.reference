@@ -16,3 +16,5 @@ a NULL right key is not in the hash table, both algorithms
 0
 the cap fires on the key count, both algorithms
 the cap also fires after the right side was partitioned
+break keeps the delayed bucket that crossed the cap
+100000
