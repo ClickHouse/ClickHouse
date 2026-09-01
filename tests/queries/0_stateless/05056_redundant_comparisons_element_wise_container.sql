@@ -1,10 +1,6 @@
--- `optimize_redundant_comparisons` prunes a comparison that another comparison on the same expression
--- implies. It decides that with `FieldAccurateComparison`, a total order that places `NaN` after every
--- ordinary value. A comparison is evaluated in that order only where it ends in `IColumn::compareAt`;
--- a pair of top-level `Tuple`s and a pair of `Array`s with no least supertype are instead decomposed
--- into per-element applications of the comparison function, where a comparison against a `NaN` is
--- false and nothing is ordered. Placing such a comparison on the order therefore pruned a bound that
--- excludes a row, and the row was returned.
+-- `optimize_redundant_comparisons` must not prune a comparison that is evaluated element by element:
+-- a pair of top-level `Tuple`s, or a pair of `Array`s with no least supertype, is not ordered by the
+-- total order the pruning analysis uses, so pruning one dropped a bound that excludes a row.
 --
 -- `optimize_redundant_comparisons` is pinned on every query because it is the setting under test and
 -- every scenario pins both its enabled and its disabled answer; `clickhouse-test` does not randomize
