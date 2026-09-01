@@ -107,7 +107,7 @@ The symbol is usually returned by function `addressToSymbol`.
     {
         "Selecting the first string from the `trace_log` system table",
         R"(
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
         )",
         R"(
 -- The `trace` field contains the stack trace at the moment of sampling.
@@ -126,7 +126,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
         "Getting a function name for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
         )",
         R"(
 Row 1:
@@ -146,7 +146,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
         )",
         R"(
 Row 1:

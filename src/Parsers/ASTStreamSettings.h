@@ -8,7 +8,9 @@ namespace DB
 {
 
 /// Streaming query settings attached to a table expression:
-///   FROM t STREAM [CURSOR '{...}']
+///   FROM t STREAM [BOUNDED]
+///                 [UNORDERED]
+///                 [CURSOR '{...}']
 ///                 [WATERMARK FOR <col> AS <expr> [IDLE TIMEOUT INTERVAL N SECOND]]
 ///
 struct ASTStreamSettings : public IAST
@@ -21,6 +23,7 @@ struct ASTStreamSettings : public IAST
 public:
     String getID(char) const override { return "ASTStreamSettings"; }
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
     bool hasTweaks() const;
 
     void setSubscribeForUpdates(bool subscribe_for_updates_);
