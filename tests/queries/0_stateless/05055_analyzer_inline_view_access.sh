@@ -67,7 +67,23 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT secret FROM v_alias SETTIN
 echo "-- granted ordinary column of the same view is still readable --"
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT k FROM v_alias ORDER BY k SETTINGS analyzer_inline_views = 1"
 
+# SQL SECURITY NONE is the most permissive mode: its body is resolved under a no-user global
+# context, so the inner tables are read unchecked. The caller must still hold SELECT on the view
+# itself, and the inline gate (which runs before the security-type branch) must enforce that.
 ${CLICKHOUSE_CLIENT} --query "
+DROP VIEW IF EXISTS v_none;
+CREATE VIEW v_none SQL SECURITY NONE AS SELECT k, v FROM secrets;
+"
+
+echo "-- SQL SECURITY NONE view without a grant: must be denied even with inlining --"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT * FROM v_none SETTINGS analyzer_inline_views = 1" 2>&1 | grep -o "ACCESS_DENIED" | head -n 1
+
+echo "-- SQL SECURITY NONE view after GRANT SELECT: rows returned (inner table read with no user) --"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.v_none TO ${user}"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT * FROM v_none ORDER BY k SETTINGS analyzer_inline_views = 1"
+
+${CLICKHOUSE_CLIENT} --query "
+DROP VIEW IF EXISTS v_none;
 DROP VIEW IF EXISTS v_alias;
 DROP VIEW IF EXISTS v_def;
 DROP VIEW IF EXISTS v_invoker;
