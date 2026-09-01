@@ -616,7 +616,7 @@ Max number of requests that can be issued simultaneously before hitting request 
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
     DECLARE(UInt64, s3_list_object_parallelism, 1, R"(
-Number of concurrent `ListObjects` requests used to list files of the `s3` table function when the path contains globs.
+Number of concurrent `ListObjects` requests used to list files when the path contains globs, for reads from S3-compatible object storage: the `s3` table function, the `S3` table engine, the `s3Cluster` table function, and the `gcs`, `cosn`, `oss` aliases of them.
 
 When greater than `1`, the matching files are listed by walking the "directory" tree (the common prefixes formed by the `/` delimiter) with this many threads in parallel, instead of paginating the whole prefix in a single serial stream. This can dramatically speed up queries over buckets with millions of objects, especially for hierarchically partitioned layouts (e.g. `year=*/month=*/`), where whole non-matching subtrees are pruned during the walk.
 
