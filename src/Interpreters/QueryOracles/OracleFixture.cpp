@@ -30,6 +30,7 @@ bool environmentAllowsFixtures(const ContextMutablePtr & context)
     }
     catch (...)
     {
+        /// Ok: fail-close: an unusable probe result means the oracle cannot evaluate, so skip.
         return false;
     }
 
