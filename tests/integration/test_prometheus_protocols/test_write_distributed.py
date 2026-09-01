@@ -6,6 +6,7 @@ from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
+    get_response_to_remote_write,
     send_protobuf_to_remote_write,
 )
 
@@ -38,9 +39,39 @@ def start_cluster():
             "CREATE TABLE prom_dist AS shard_0.ts_local "
             "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
         )
+        # Same outer schema, wrong engine: an ordinary INSERT would accept these rows, and no
+        # prometheus read surface could ever return them.
+        node.query(
+            "CREATE TABLE shard_0.mt_bad AS shard_0.ts_local ENGINE = MergeTree ORDER BY tuple()"
+        )
+        node.query(
+            "CREATE TABLE shard_1.mt_bad AS shard_1.ts_local ENGINE = MergeTree ORDER BY tuple()"
+        )
+        node.query(
+            "CREATE TABLE prom_dist_bad AS shard_0.ts_local "
+            "ENGINE = Distributed(two_shards_dist, '', mt_bad, cityHash64(tags['host']))"
+        )
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def test_remote_write_rejects_non_timeseries_shards():
+    """The wrapper declares no remote database, so each shard resolves `mt_bad` in its own default
+    database - the case the initiator cannot answer with its own `currentDatabase()`.
+    """
+    time_series = [({"__name__": "bad_metric", "host": "h0"}, {START_TIME: 1.0})]
+    protobuf = convert_time_series_to_protobuf(time_series)
+    response = get_response_to_remote_write(node.ip_address, 9093, "/bad/write", protobuf)
+    assert response.status_code >= 400
+    assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    # Nothing was written anywhere, on either shard.
+    assert (
+        node.query(
+            "SELECT (SELECT count() FROM shard_0.mt_bad) + (SELECT count() FROM shard_1.mt_bad)"
+        ).strip()
+        == "0"
+    )
 
 
 def test_remote_write_over_distributed():

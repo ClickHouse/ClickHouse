@@ -305,8 +305,10 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
     /// A Distributed target is written through its own sink, exactly like any other INSERT into a
     /// Distributed table: its settings, sharding key and acknowledgement semantics are the caller's
-    /// to choose, and the endpoint does not override them.
-    resolvePrometheusQueryTarget(*time_series_storage);
+    /// to choose, and the endpoint does not override them. What it does check is that the shards
+    /// really hold TimeSeries tables, since the sink would otherwise accept rows no read surface
+    /// can return - the one thing an ordinary INSERT has no reason to catch.
+    checkPrometheusQueryDistributedWrite(*time_series_storage, context_);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
