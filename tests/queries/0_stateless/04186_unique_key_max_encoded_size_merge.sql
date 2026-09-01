@@ -1,4 +1,5 @@
--- Tags: no-random-merge-tree-settings, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- Tags: no-random-merge-tree-settings, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage, no-fasttest
+-- no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
 -- `unique_key_max_encoded_size` admits or refuses an INSERT; it says nothing about rows already on
 -- disk. A merge rebuilds the merged part's dense index from rows the table has already accepted, so
 -- re-applying any cap there would strand a table whose keys were admitted under a roomier one.
