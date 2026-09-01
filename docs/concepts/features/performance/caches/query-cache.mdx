@@ -107,7 +107,8 @@ records) can be configured using different [server configuration options](/refer
 
 It is also possible to limit the cache usage of individual users using [settings profiles](/concepts/features/configuration/settings/settings-profiles) and [settings
 constraints](/concepts/features/configuration/settings/constraints-on-settings). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
-allocate in the query cache and the maximum number of stored query results. For that, first provide configurations
+allocate in the in-memory query cache and the maximum number of stored query results (these limits do not apply to the [query cache on
+disk](#query-cache-on-disk)). For that, first provide configurations
 [query_cache_max_size_in_bytes](/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) and
 [query_cache_max_entries](/reference/settings/session-settings/query-cache#query_cache_max_entries) in a user profile in `users.xml`, then make both settings
 readonly:
@@ -274,9 +275,15 @@ by default). If reads are enabled for both caches, the lookup is attempted first
 are enabled for both caches, the result is stored in both. Entries on disk are compressed with the codec specified by setting
 `query_cache_on_disk_codec` (`ZSTD(3)` by default). All
 other query cache settings (e.g. `query_cache_ttl`, `query_cache_min_query_duration`) apply to the query cache on disk in the same way as
-to the in-memory query cache.
+to the in-memory query cache, with the two exceptions below.
 
-Setting `query_cache_share_between_users` is an exception: it has the same meaning for both backends - an entry written with it is served
+Settings `query_cache_max_size_in_bytes` and `query_cache_max_entries` are per-user limits of the in-memory query cache only. They are
+not enforced on the query cache on disk: entries on disk are bounded by the size of the configured filesystem cache and evicted by its
+rules (see below), so a user with a restrictive settings profile can still store more results on disk than these settings allow in
+memory. This is intentional - the filesystem cache is a shared, size-bounded resource which the query cache on disk does not reserve
+space in.
+
+Setting `query_cache_share_between_users` is another exception: it has the same meaning for both backends - an entry written with it is served
 to every user - but non-shared entries are isolated differently. The in-memory query cache keeps a single entry per query and rejects it
 on read if it belongs to another user, so a non-shared entry of user A shadows the writes of user B until the entry expires or is
 evicted. The query cache on disk instead makes the user and the set of the user's current roles part of the key of a non-shared entry, so
