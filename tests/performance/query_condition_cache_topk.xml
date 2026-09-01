@@ -31,8 +31,8 @@
 
          The table must be a single, fully-merged, merge-frozen part *before*
          the measured runs. QCC entries are keyed on `(table_uuid, part_name,
-         condition_hash)`, so a background merge that consolidates the freshly
-         inserted parts into a new part renames them and silently invalidates
+         condition_hash, time_zone)`, so a background merge that consolidates the
+         freshly inserted parts into a new part renames them and silently invalidates
          every entry the prewarm run populated — the measured runs then read the
          new part, miss the cache, and re-pay the full scan, hiding the speedup.
          `OPTIMIZE TABLE ... FINAL` collapses the table into one stable part and
