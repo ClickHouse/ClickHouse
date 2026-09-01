@@ -55,7 +55,7 @@ export const quickStartsData = [
     "id": "create-your-first-service-on-cloud",
     "title": "첫 번째 Cloud 서비스를 만들고 예시 데이터 불러오기",
     "description": "ClickHouse Cloud 서비스를 만들고 SQL 콘솔을 살펴본 뒤 예시 데이터셋을 로드하여 몇 분 만에 실제 데이터에 쿼리를 실행할 수 있습니다.",
-    "href": "/ko/get-started/quickstarts/create-your-first-service-on-cloud",
+    "href": "/ko/get-started/setup/cloud",
     "useCases": [
       "all"
     ],

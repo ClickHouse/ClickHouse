@@ -27,6 +27,41 @@ import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
+LOCALES = ('ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh')
+
+CLOUD_SETUP_CARD = {
+    'id': 'create-your-first-service-on-cloud',
+    'title': 'Create your first Cloud service and load example data',
+    'description': (
+        'Create a ClickHouse Cloud service, explore the SQL console, and load '
+        'an example dataset to start querying real data in minutes.'
+    ),
+    'useCases': ['All'],
+    'products': ['Cloud'],
+}
+
+
+def add_cloud_setup_card(quickstarts: List[Dict[str, Any]],
+                         locale: Optional[str] = None) -> None:
+    """Add or redirect the Cloud setup card without keeping a duplicate page.
+
+    Localized quickstart trees may still contain the translated legacy page
+    until the translation pipeline catches up. Reuse its translated card copy,
+    but always point it at the localized Cloud setup guide. If the page is no
+    longer present, fall back to the canonical English card metadata.
+    """
+    prefix = f'/{locale}' if locale else ''
+    href = f'{prefix}/get-started/setup/cloud'
+
+    for quickstart in quickstarts:
+        if quickstart['id'] == CLOUD_SETUP_CARD['id']:
+            quickstart['href'] = href
+            return
+
+    quickstarts.append({**CLOUD_SETUP_CARD, 'href': href})
+    quickstarts.sort(key=lambda quickstart: quickstart['id'])
+
+
 def unquote_scalar(value: str) -> str:
     """Unquote a single YAML scalar, honoring the escaping the docs frontmatter
     actually uses.
@@ -374,6 +409,7 @@ def main():
     if not quickstarts:
         print("No valid quick-start data extracted")
         return 1
+    add_cloud_setup_card(quickstarts)
 
     output_path = (project_root / 'snippets' / 'components' / 'QuickStartsGrid'
                    / 'quickstarts-data.jsx')
@@ -385,8 +421,7 @@ def main():
     # (extract_quickstart_data derives the href from the path relative to the
     # project root). Badges are left to the translation pipeline, while the
     # non-translatable searchable flag is normalized here.
-    locales = ['ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh']
-    for locale in locales:
+    for locale in LOCALES:
         locale_dir = project_root / locale / 'get-started' / 'quickstarts'
         if not locale_dir.exists():
             print(f"  - {locale}: no quickstarts directory, skipped")
@@ -398,6 +433,7 @@ def main():
         if not locale_quickstarts:
             print(f"  - {locale}: no valid quick-start data, skipped")
             continue
+        add_cloud_setup_card(locale_quickstarts, locale)
         # Keep useCases/products canonical English: the grid filters match data
         # values against its option lists by string equality, and the
         # translation pipeline translates frontmatter tag values inconsistently.

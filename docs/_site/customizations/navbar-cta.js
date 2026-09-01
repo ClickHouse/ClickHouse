@@ -2,6 +2,7 @@
   'use strict';
 
   var CTA_ID = 'ch-navbar-cta';
+  var SIGN_IN_HREF = 'https://console.clickhouse.cloud/signIn?loc=docs-nav-signIn-cta';
   var CTA_HREF = 'https://clickhouse.cloud/signUp?loc=docs-nav-signUp-cta';
 
   var githubSvg = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">'
@@ -32,11 +33,15 @@
       // Light mode
       + '#' + CTA_ID + ' .ch-gh-stars { color: #374151; }'
       + '#' + CTA_ID + ' .ch-gh-stars:hover { color: #111; }'
+      + '#' + CTA_ID + ' .ch-sign-in { color: #374151; font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; transition: color 0.15s; }'
+      + '#' + CTA_ID + ' .ch-sign-in:hover { color: #111; }'
       + '#' + CTA_ID + ' .ch-cta-btn { background: #1c1c1c; color: #fff; }'
       + '#' + CTA_ID + ' .ch-cta-btn:hover { background: #333; }'
       // Dark mode
       + '.dark #' + CTA_ID + ' .ch-gh-stars { color: #d1d5db; }'
       + '.dark #' + CTA_ID + ' .ch-gh-stars:hover { color: #fff; }'
+      + '.dark #' + CTA_ID + ' .ch-sign-in { color: #d1d5db; }'
+      + '.dark #' + CTA_ID + ' .ch-sign-in:hover { color: #fff; }'
       + '.dark #' + CTA_ID + ' .ch-cta-btn { background: #fdff75; color: #1c1c1c; }'
       + '.dark #' + CTA_ID + ' .ch-cta-btn:hover { background: #eaec6a; }';
     document.head.appendChild(style);
@@ -61,6 +66,12 @@
     ghLink.rel = 'noopener noreferrer';
     ghLink.innerHTML = githubSvg + '<span class="ch-gh-count"></span>';
     container.appendChild(ghLink);
+
+    var signInLink = document.createElement('a');
+    signInLink.className = 'ch-sign-in';
+    signInLink.href = SIGN_IN_HREF;
+    signInLink.textContent = 'Sign in';
+    container.appendChild(signInLink);
 
     var ctaLink = document.createElement('a');
     ctaLink.className = 'ch-cta-btn';

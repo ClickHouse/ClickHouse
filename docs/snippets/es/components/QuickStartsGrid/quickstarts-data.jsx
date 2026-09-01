@@ -55,7 +55,7 @@ export const quickStartsData = [
     "id": "create-your-first-service-on-cloud",
     "title": "Crea tu primer servicio de ClickHouse Cloud y carga datos de ejemplo",
     "description": "Crea un servicio de ClickHouse Cloud, explora la consola SQL y carga un conjunto de datos de ejemplo para empezar a consultar datos reales en minutos.",
-    "href": "/es/get-started/quickstarts/create-your-first-service-on-cloud",
+    "href": "/es/get-started/setup/cloud",
     "useCases": [
       "all"
     ],
