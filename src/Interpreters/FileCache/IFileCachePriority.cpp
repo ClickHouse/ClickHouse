@@ -56,7 +56,10 @@ std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshotAn
         const size_t size = usage->size.load(std::memory_order_relaxed);
         const size_t elements = usage->elements.load(std::memory_order_relaxed);
         if (size != 0 || elements != 0)
-            result.emplace(user_id, FileCacheUsageStat{.size = size, .elements = elements});
+            result.emplace(
+                user_id,
+                FileCacheUsageStat{
+                    .size = size, .elements = elements, .weight = 0, .last_access_time = std::nullopt});
         ++it;
     }
     return result;

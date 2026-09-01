@@ -3911,14 +3911,13 @@ TEST_F(FileCacheTest, UsageSnapshotConsistentDuringSLRUMove)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
-    CachePriorityGuard cache_guard;
 
     auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
     {
         IFileCachePriority::IteratorPtr it;
         {
-            auto write_lock = cache_guard.writeLock();
             auto state_lock = state_guard.lock();
+            auto write_lock = priority.getPriorityGuardForTests().writeLock();
             it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
         }
         const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
@@ -3957,7 +3956,7 @@ TEST_F(FileCacheTest, UsageSnapshotConsistentDuringSLRUMove)
     for (size_t i = 0; i < 500; ++i)
     {
         auto & it = (i % 2 == 0) ? it_b : it_a;
-        ASSERT_TRUE(priority.tryIncreasePriority(*it, true, cache_guard, state_guard));
+        ASSERT_TRUE(priority.tryIncreasePriority(*it, true, state_guard));
     }
 
     done = true;
@@ -3967,6 +3966,87 @@ TEST_F(FileCacheTest, UsageSnapshotConsistentDuringSLRUMove)
     const auto usage = priority.getUsageStatPerClient(state_guard.lock());
     ASSERT_EQ(usage.at(user_id).size, 20);
     ASSERT_EQ(usage.at(user_id).elements, 2);
+}
+
+TEST_F(FileCacheTest, UsageSnapshotNeverExceedsCacheSize)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// Cache decrements are lock-free by design (see the lock order in `Guards.h`: `getSize(Lock)`
+    /// is exact only with respect to concurrent growth), so a sampler holding the state lock
+    /// cannot be excluded from a removal in flight. Every removal site therefore discharges the
+    /// per-client counters *before* the queue state, which makes a concurrent sample lag behind
+    /// the cache instead of over-reporting it. Pin that direction: a snapshot taken while entries
+    /// are being shrunk and removed must never claim more usage than the cache actually holds.
+
+    LRUFileCachePriority priority(
+        IFileCachePriority::QueueType::Main, /* max_size */10000, /* max_elements */100, "usage_snapshot_bound_test");
+    priority.setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+
+    const std::string cache_path = caches_dir / "test_usage_snapshot_bound";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    const auto key = DB::FileCacheKey::fromPath("usage_snapshot_bound_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    std::atomic<bool> done = false;
+    std::atomic<size_t> violations = 0;
+    std::atomic<size_t> samples = 0;
+    std::thread sampler([&]
+    {
+        while (!done.load(std::memory_order_relaxed))
+        {
+            auto lock = state_guard.lock();
+            const auto usage = priority.getUsageStatPerClient(lock);
+
+            size_t usage_size = 0;
+            size_t usage_elements = 0;
+            for (const auto & [ignored_user_id, stat] : usage)
+            {
+                usage_size += stat.size;
+                usage_elements += stat.elements;
+            }
+
+            if (usage_size > priority.getSize(lock) || usage_elements > priority.getElementsCount(lock))
+                violations.fetch_add(1, std::memory_order_relaxed);
+            samples.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    for (size_t i = 0; i < 500; ++i)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, /* offset */i * 10, /* size */10, &state_lock);
+        }
+
+        ASSERT_TRUE(it->getEntry()->tracksUsage());
+
+        /// A lock-free shrink, then a lock-free removal.
+        it->decrementSize(4);
+        {
+            auto write_lock = cache_guard.writeLock();
+            it->remove(write_lock);
+        }
+    }
+
+    done = true;
+    sampler.join();
+
+    ASSERT_GT(samples.load(), 0u);
+    ASSERT_EQ(violations.load(), 0u);
+
+    const auto usage = priority.getUsageStatPerClient(state_guard.lock());
+    const auto it = usage.find(origin.user_id);
+    ASSERT_TRUE(it == usage.end() || (it->second.size == 0 && it->second.elements == 0));
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 0u);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 0u);
 }
 
 TEST_F(FileCacheTest, UsageAccounting)
@@ -3992,10 +4072,9 @@ TEST_F(FileCacheTest, UsageAccounting)
     IFileCachePriority::IteratorPtr it_a;
     IFileCachePriority::IteratorPtr it_b;
     {
-        auto write_lock = cache_guard.writeLock();
         auto state_lock = state_guard.lock();
-        it_a = priority.add(key_metadata_a, 0, 10, write_lock, &state_lock);
-        it_b = priority.add(key_metadata_b, 0, 7, write_lock, &state_lock);
+        it_a = priority.add(key_metadata_a, 0, 10, &state_lock);
+        it_b = priority.add(key_metadata_b, 0, 7, &state_lock);
     }
 
     ASSERT_TRUE(it_a->getEntry()->tracksUsage());

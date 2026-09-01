@@ -450,11 +450,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             cache_name
         );
     }
-    if (expose_usage_metrics_per_user && !main_priority->isOvercommitEviction())
-    {
-        main_priority->setUsageTracker(std::make_shared<FileCacheUsageTracker>());
-    }
-
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
     supports_dynamic_resize = main_priority->supportsDynamicResize();
@@ -470,6 +465,12 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     const bool is_overcommit_policy =
         cache_policy == FileCachePolicy::LRU_OVERCOMMIT || cache_policy == FileCachePolicy::SLRU_OVERCOMMIT;
     client_tracking_possible = is_overcommit_policy && write_cache_per_user_directory;
+
+    /// Overcommit policies keep per-client usage themselves and answer
+    /// `getUsageStatPerClient` from it, so the tracker is only needed for the other policies.
+    if (expose_usage_metrics_per_user && !is_overcommit_policy)
+        main_priority->setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+
     if (write_cache_per_user_directory && idle_client_ttl_sec.load() > 0 && !is_overcommit_policy)
         LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
                          "per-client usage; idle-client eviction is disabled");
@@ -2788,6 +2789,13 @@ std::unordered_map<std::string, FileCache::UsageStat> FileCache::getUsageStatPer
     /// Take the state lock so that a concurrent SLRU queue move (which charges the new
     /// entry before discharging the old one, both under this lock) cannot be observed
     /// in its intermediate state, where the moved segment would be counted twice.
+    ///
+    /// The lock makes the snapshot free of over-reporting, not equal to the cache total at
+    /// every instant: per the lock order in `Guards.h`, cache decrements are lock-free, so
+    /// even `getSize(Lock)` is exact only with respect to concurrent growth. A removal that
+    /// is in flight while this runs discharges the per-client counters before it discharges
+    /// the queue state (see `subTrackedUsage` at every removal site), so the sample can be
+    /// behind the total by the sizes of the removals in flight - never ahead of it.
     auto state_lock = cache_state_guard.lock();
     return main_priority->getUsageStatPerClient(state_lock);
 }

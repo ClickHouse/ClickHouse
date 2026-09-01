@@ -555,12 +555,19 @@ protected:
 
     static const FileCacheUsageCountersPtr & getUsageCounters(const Entry & entry);
 
+    /// Charge the entry's client. Callers must charge here *before* the queue state grows,
+    /// and every growth site holds `CacheStateGuard::Lock`, so a sampler taking that lock
+    /// never sees a charge whose queue-state counterpart is still missing.
     static void addTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)
     {
         if (const auto & counters = getUsageCounters(entry))
             counters->add(size_delta, elements_delta);
     }
 
+    /// Discharge the entry's client. Callers must discharge here *before* the queue state
+    /// shrinks. Shrinking is lock-free by design (see the lock order in `Guards.h`), so a
+    /// sampler cannot be excluded from it; discharging in this order makes the per-client
+    /// sample lag a removal in flight instead of over-reporting it.
     static void subTrackedUsage(const Entry & entry, size_t size_delta, size_t elements_delta)
     {
         if (const auto & counters = getUsageCounters(entry))

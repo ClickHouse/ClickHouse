@@ -81,12 +81,16 @@ namespace
 
 DimensionalMetrics::MetricFamily & filesystem_cache_size_bytes = DimensionalMetrics::Factory::instance().registerMetric(
     "filesystem_cache_size_bytes",
-    "Filesystem cache size in bytes, labelled by cache name and cache client id (`user_id`).",
+    "Filesystem cache size in bytes, labelled by cache name and cache client id (`user_id`). "
+    "Sampled asynchronously, and never larger than the cache really holds: a removal in flight "
+    "is discharged here before it is discharged from the cache total.",
     {"cache_name", "user_id"});
 
 DimensionalMetrics::MetricFamily & filesystem_cache_elements = DimensionalMetrics::Factory::instance().registerMetric(
     "filesystem_cache_elements",
-    "Filesystem cache elements (file segments), labelled by cache name and cache client id (`user_id`).",
+    "Filesystem cache elements (file segments), labelled by cache name and cache client id (`user_id`). "
+    "Sampled asynchronously, and never larger than the cache really holds: a removal in flight "
+    "is discharged here before it is discharged from the cache total.",
     {"cache_name", "user_id"});
 
 template <typename Max, typename T>
