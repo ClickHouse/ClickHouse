@@ -317,6 +317,9 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
         /// A URL- or profile-provided insert_shard_id narrows the sink to one shard (DistributedSink
         /// start/end), bypassing the wrapper's sharding key behind the same 204.
         context_->setSetting("insert_shard_id", UInt64(0));
+        /// And insert_distributed_one_random_shard: on a keyless multi-shard wrapper it sends the
+        /// whole batch to one arbitrary shard where the write should instead fail closed.
+        context_->setSetting("insert_distributed_one_random_shard", false);
     }
 }
 

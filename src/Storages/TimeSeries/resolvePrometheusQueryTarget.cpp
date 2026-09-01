@@ -132,6 +132,28 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     auto storage_id = storage.getStorageID();
     context->checkAccess(AccessType::SELECT, storage_id);
     checkTimeSeriesWrapperReadContract(storage_id, context);
+
+    /// On each shard the generated read resolves the remote table by its short name in the shard's
+    /// default database, where the plain path would apply such a filter but the selector rewrite
+    /// has no table to bind it to: refused until filters are remapped onto the inner reads.
+    if (auto target = resolvePrometheusQueryTarget(storage))
+    {
+        const auto & remote_id = target->remote_time_series_storage_id;
+        for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+        {
+            const auto & name_and_filter = filter_entry.safeGet<Tuple>();
+            const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
+            bool matches = filtered_table == remote_id.table_name
+                || (!remote_id.database_name.empty()
+                    && filtered_table == remote_id.database_name + "." + remote_id.table_name);
+            if (matches && !name_and_filter.at(1).safeGet<String>().empty())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "An additional_table_filters entry for {} is not supported here: on the shards the "
+                    "prometheus read is rewritten to a TimeSeries selector, which cannot apply it",
+                    filtered_table);
+        }
+    }
 }
 
 std::pair<bool, String> effectiveShardSkipSemantics(const IStorage & storage, const ContextPtr & context)
