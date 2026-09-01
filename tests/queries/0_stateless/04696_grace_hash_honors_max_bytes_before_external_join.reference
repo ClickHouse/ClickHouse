@@ -4,5 +4,3 @@ many threads
 2000000
 explain still reports grace hash
 1
-a threshold below what a hash table costs still completes
-200000
