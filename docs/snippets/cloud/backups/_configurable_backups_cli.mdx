@@ -79,7 +79,19 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## Set a backup start time {#set-a-backup-start-time}
 
-`--backup-start-time` takes a daily start time in UTC, on the hour (`HH:00`). Start time and frequency are mutually exclusive; start time takes precedence and requires a backup period of `24` or `48` hours — the CLI rejects any other combination. Setting a start time without passing `--backup-period-hours` defaults the period to 24 hours:
+`--backup-start-time` takes a daily start time in UTC, on the hour (`HH:00`). Start time and frequency are mutually exclusive; start time takes precedence and requires a backup period of `24` or `48` hours. Since `clickhousectl 0.4.2` both rules are enforced on the client, before any API call. A time that is not on the hour — or not zero-padded, such as `2:00` — is rejected by the argument parser with exit code `2`:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
+```
+
+```text
+error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': invalid backup start time '02:30': expected HH:00 with HH from 00 to 23
+```
+
+Passing `--backup-start-time` together with a `--backup-period-hours` other than `24` or `48` is likewise rejected locally, with `--backup-period-hours must be 24 or 48 when --backup-start-time is set`.
+
+A valid combination:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
@@ -96,7 +108,9 @@ clickhousectl cloud service backup-config update "$CH_ID" \
 }
 ```
 
-While a start time is stored, a later update that changes only `--backup-period-hours` to a value other than `24` or `48` fails at the API with `customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set`. Once set, the start time cannot be removed through the CLI or API, only changed to a different time.
+`--backup-period-hours` can be omitted, in which case the service keeps the period it already has — but that stored period must itself be `24` or `48`. On a service still using the default schedule the period is `24`, so a start time on its own is enough; on a service whose period is, say, `12`, the update instead fails at the API with `customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set`. Passing the period explicitly avoids the problem.
+
+The same API error appears when a start time is already stored and a later update changes only `--backup-period-hours` to a value other than `24` or `48`: the client-side check applies only to a start time given in the same command. Once set, the start time cannot be removed through the CLI or API, only changed to a different time.
 
 <Note>
 Changing the backup schedule can cause higher monthly charges for storage as some of the backups might not be covered in the default backups for the service. See ["Understanding backup cost"](/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
