@@ -40,3 +40,30 @@ Syntax error: failed at position 15 (hits): hits.
 Syntax error: failed at position 17 (orders): orders.
 --- SELECT 1 an1 an1
 Syntax error: failed at position 14 (an1): an1.
+
+=== the highlighted message (as printed by the client) marks every reported position once,
+=== even when the parser stops exactly at one of the unmatched brackets
+--- CREATE TABLE t [a UInt32) ENGINE = Memory
+
+Syntax error: failed at position 16 ([):
+
+CREATE TABLE t >[<a UInt32>)< ENGINE = Memory
+
+Unmatched parentheses: ')' at position 25 does not match '[' at position 16.
+
+--- SELECT count(* FROM numbers(10)
+
+Syntax error: failed at position 16 (FROM):
+
+SELECT count>(<* >F<ROM numbers(10)
+
+Unmatched parentheses: '(' at position 13 is never closed.
+
+--- SELECT 1)
+
+Syntax error: failed at position 9 ()):
+
+SELECT 1>)<
+
+Unmatched parentheses: ')' at position 9 has no matching opening bracket.
+

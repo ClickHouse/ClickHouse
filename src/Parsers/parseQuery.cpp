@@ -339,6 +339,15 @@ std::string getUnmatchedParenthesesErrorMessage(
         std::sort(positions_to_hilite.begin(), positions_to_hilite.end(),
             [](const Token & lhs, const Token & rhs) { return lhs.begin < rhs.begin; });
 
+        /// The parser can stop exactly at one of the unmatched brackets, as in
+        ///   CREATE TABLE t [a UInt32) ENGINE = Memory
+        /// where it stops at `[` while the brackets in question are `[` and `)`. The highlighting
+        /// requires strictly ascending positions, so the duplicate has to be removed.
+        positions_to_hilite.erase(
+            std::unique(positions_to_hilite.begin(), positions_to_hilite.end(),
+                [](const Token & lhs, const Token & rhs) { return lhs.begin == rhs.begin; }),
+            positions_to_hilite.end());
+
         writeQueryAroundTheError(out, begin, end, hilite, positions_to_hilite.data(), positions_to_hilite.size());
     }
     else

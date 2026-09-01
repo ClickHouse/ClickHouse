@@ -49,3 +49,21 @@ run "SELECT 1 hits hits"
 run "SELECT 1 orders orders"
 # `an1` is two edits away from `ANY`, and a word with a digit in it is never a mistyped keyword.
 run "SELECT 1 an1 an1"
+
+echo
+echo '=== the highlighted message (as printed by the client) marks every reported position once,'
+echo '=== even when the parser stops exactly at one of the unmatched brackets'
+
+# `--ignore-error` makes the client take the same path as the interactive one, with highlighting on.
+run_hilite()
+{
+    echo "--- $1"
+    ${CLICKHOUSE_LOCAL} --ignore-error --implicit_select 0 --query "$1" 2>&1 \
+        | sed -e 's/\x1b\[41;1m/>/g' -e 's/\x1b\[0m/</g' \
+        | sed -e 's/Expected one of: .*//' -e 's/Expected .*\.$//' -e 's/ (version [^)]*)//' \
+        | sed -e 's/[[:space:]]*$//'
+}
+
+run_hilite "CREATE TABLE t [a UInt32) ENGINE = Memory"
+run_hilite "SELECT count(* FROM numbers(10)"
+run_hilite "SELECT 1)"
