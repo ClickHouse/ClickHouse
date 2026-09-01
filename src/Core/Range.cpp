@@ -25,7 +25,6 @@ Range::Range(const FieldRef & left_, bool left_included_, const FieldRef & right
     , left_included(left_included_)
     , right_included(right_included_)
 {
-    shrinkToIncludedIfPossible();
 }
 
 Range Range::createWholeUniverse()
@@ -53,7 +52,6 @@ Range Range::createRightBounded(const FieldRef & right_point, bool right_include
     Range r = universe;
     r.right = right_point;
     r.right_included = right_included;
-    r.shrinkToIncludedIfPossible();
     // Special case for [-Inf, -Inf]
     if (r.right.isNegativeInfinity() && right_included)
         r.left_included = true;
@@ -70,16 +68,14 @@ Range Range::createLeftBounded(const FieldRef & left_point, bool left_included, 
     Range r = universe;
     r.left = left_point;
     r.left_included = left_included;
-    r.shrinkToIncludedIfPossible();
     // Special case for [+Inf, +Inf]
     if (r.left.isPositiveInfinity() && left_included)
         r.right_included = true;
     return r;
 }
 
-/** Optimize the range. If it has an open boundary and the Field type is "loose"
-  * - then convert it to closed, narrowing by one.
-  * That is, for example, turn (0,2) into [1].
+/** For a key type known to use unit-step integer values, convert open integer boundaries
+  * to closed ones by narrowing them by one. For example, turn (0,2) into [1].
   */
 void Range::shrinkToIncludedIfPossible()
 {

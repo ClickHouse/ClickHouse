@@ -71,9 +71,9 @@ public:
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);
 
-    /** Optimize the range. If it has an open boundary and the Field type is "loose"
-      * - then convert it to closed, narrowing by one.
-      * That is, for example, turn (0,2) into [1].
+    /** For a key type known to use unit-step integer values, convert open integer boundaries
+      * to closed ones by narrowing them by one. For example, turn (0,2) into [1].
+      * The caller must establish the key type; a Field's integer representation is not enough.
       */
     void shrinkToIncludedIfPossible();
 
