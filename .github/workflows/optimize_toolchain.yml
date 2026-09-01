@@ -3,6 +3,7 @@
 name: OptimizeToolchain
 concurrency:
   group: ${{ github.workflow }}
+  queue: max
 on:
   workflow_dispatch:
   workflow_call:

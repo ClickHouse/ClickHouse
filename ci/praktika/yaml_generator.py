@@ -75,6 +75,7 @@ on:
 
 concurrency:
   group: ${{{{{{{{ github.workflow }}}}}}}}
+  queue: max
 
 env:
   PYTHONUNBUFFERED: 1
@@ -95,6 +96,7 @@ jobs:
 name: {NAME}
 concurrency:
   group: ${{{{{{{{ github.workflow }}}}}}}}
+  queue: max
 on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}{WORKFLOW_CALL}
 
