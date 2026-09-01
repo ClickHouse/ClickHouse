@@ -1,3 +1,4 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/117442
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
 
@@ -15,6 +16,10 @@ SELECT c0,
 FROM t_jit_float_cast
 ORDER BY c0;
 
+-- A value the destination cannot hold raises. The non-finite one is built from the column so that
+-- it is not constant folded before execution.
 SELECT CAST(-toFloat64(c0) * 1e9 AS Decimal32(2)) FROM t_jit_float_cast; -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal32(-toFloat64(c0) * 1e9, 2) FROM t_jit_float_cast; -- { serverError DECIMAL_OVERFLOW }
+SELECT toUInt8(toFloat64(c0) / (toFloat64(c0) - toFloat64(c0))) FROM t_jit_float_cast; -- { serverError CANNOT_CONVERT_TYPE }
 
 DROP TABLE t_jit_float_cast;
