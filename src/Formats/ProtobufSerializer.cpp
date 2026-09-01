@@ -2173,8 +2173,19 @@ namespace
             /// `ColumnNullable::insertDefault` goes through `getNestedColumn()` non-const, which dereferences
             /// the nested `WrappedPtr` and triggers the `use_count == 1` assertion; the nested serializer
             /// holds an additional `ColumnPtr` to the same column, so we borrow through pointers instead.
-            borrowColumnRef(column_nullable.getNestedColumnPtr()).insertDefault();
-            assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(true);
+            auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
+            nested_column.insertDefault();
+            /// Mirror `ColumnNullable::insertDefault`: keep the nested column and the null map
+            /// in sync even if appending to the null map throws (e.g. on a memory limit).
+            try
+            {
+                assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(true);
+            }
+            catch (...)
+            {
+                nested_column.popBack(1);
+                throw;
+            }
         }
 
         void insertNestedDefaults(size_t row_num)
@@ -2182,8 +2193,18 @@ namespace
             auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
-            borrowColumnRef(column_nullable.getNestedColumnPtr()).insertDefault();
-            assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(false);
+            auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
+            nested_column.insertDefault();
+            /// Same rollback contract as in `insertDefaults` above.
+            try
+            {
+                assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(false);
+            }
+            catch (...)
+            {
+                nested_column.popBack(1);
+                throw;
+            }
         }
 
         void resetState() override

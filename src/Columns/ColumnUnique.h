@@ -139,6 +139,16 @@ public:
 
     void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
     {
+        /// Restore the invariant even if cloning `nested_null_mask` or `callback` throws,
+        /// so the dictionary does not stay without its nullable view and with a stale
+        /// `reverse_index`. The guard reads the members at exit and keeps no extra
+        /// reference to them, so it does not affect the ownership assertions.
+        SCOPE_EXIT({
+            reverse_index.setColumn(getRawColumnPtr());
+            if (is_nullable)
+                nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+        });
+
         if (is_nullable)
         {
             nested_column_nullable = nullptr;
@@ -146,9 +156,6 @@ public:
         }
 
         callback(column_holder);
-        reverse_index.setColumn(getRawColumnPtr());
-        if (is_nullable)
-            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
     void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
@@ -172,19 +179,21 @@ public:
         /// after the in-place mutations are done. Clone `nested_null_mask` because the
         /// original dictionary's nullable view keeps it shared and `updateNullMask` can
         /// later resize it.
-        if (is_nullable)
-        {
-            nested_column_nullable = nullptr;
-            nested_null_mask = IColumn::mutate(nested_null_mask);
-        }
-
-        /// Restore the invariant even if `callback` or recursive descent throws,
-        /// so the column does not stay in an inconsistent state.
+        /// Restore the invariant even if cloning `nested_null_mask`, `callback` or the
+        /// recursive descent throws, so the column does not stay in an inconsistent state.
+        /// The guard is installed before the nullable view is dropped, so it also covers
+        /// the `nested_null_mask` clone.
         SCOPE_EXIT({
             reverse_index.setColumn(getRawColumnPtr());
             if (is_nullable)
                 nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
         });
+
+        if (is_nullable)
+        {
+            nested_column_nullable = nullptr;
+            nested_null_mask = IColumn::mutate(nested_null_mask);
+        }
 
         callback(*column_holder);
         column_holder->forEachMutableSubcolumnRecursively(callback);
