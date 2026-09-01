@@ -696,12 +696,30 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->ttl_infos.moves_ttl.clear();
         global_ctx->new_data_part->ttl_infos.recompression_ttl.clear();
 
-        /// GROUP BY is the one family the rebuild cannot produce correctly: it recomputes bounds
-        /// without `ttl_finished`, which would put an already-expired part back into the TTL
-        /// selectors forever (the shape 04501 pins). Its pre-patch entries are carried across the
-        /// rebuild instead - stale, but finished-correct and still schedulable.
+        /// GROUP BY is the one family the rebuild cannot produce correctly: TTLUpdateInfoAlgorithm
+        /// recomputes bounds without `ttl_finished`, which would put an already-expired part back
+        /// into the TTL selectors forever (the shape 04501 pins). Only the flag is carried, and it
+        /// is read from the source parts: merging them has already forced every accumulated
+        /// group-by entry to `ttl_finished = false` (MergeTreeDataPartTTLInfo::update), so the
+        /// part's own infos no longer hold it. A rule counts as finished only when every source
+        /// part had finished it.
         if (global_ctx->metadata_snapshot->hasAnyGroupByTTL())
-            global_ctx->preserved_group_by_ttl = global_ctx->new_data_part->ttl_infos.group_by_ttl;
+        {
+            TTLInfoMap preserved;
+            for (const auto & [name, info] : global_ctx->new_data_part->ttl_infos.group_by_ttl)
+            {
+                auto entry = info;
+                entry.ttl_finished = std::all_of(
+                    global_ctx->future_part->parts.begin(), global_ctx->future_part->parts.end(),
+                    [&](const auto & source)
+                    {
+                        auto it = source->ttl_infos.group_by_ttl.find(name);
+                        return it != source->ttl_infos.group_by_ttl.end() && it->second.finished();
+                    });
+                preserved.emplace(name, entry);
+            }
+            global_ctx->preserved_group_by_ttl = std::move(preserved);
+        }
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
@@ -1019,7 +1037,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Pre-patch recompression infos must not pick the output codec (a patch can move the TTL
     /// either way); the recalculated infos let a later recompression merge apply it instead.
     IMergeTreeDataPart::TTLInfos codec_ttl_infos;
-    if (!ctx->recalculate_ttl_for_patches)
+    if (global_ctx->future_part->patch_parts.empty())
         codec_ttl_infos = global_ctx->new_data_part->ttl_infos;
     auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->metadata_snapshot,
@@ -3595,6 +3613,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (ctx->need_remove_expired_values
         || (!global_ctx->merging_columns_expired_by_ttl.empty() && !ctx->recalculate_ttl_for_patches))
     {
+        /// TTLAggregationAlgorithm decides `ttl_finished` itself on this path, from the rows it
+        /// actually aggregated, so the carried flag must not be put back over its answer.
+        global_ctx->preserved_group_by_ttl.reset();
+
         auto ttl_step = std::make_unique<TTLStep>(
             merge_parts_query_plan.getCurrentHeader(),
             global_ctx->context,
