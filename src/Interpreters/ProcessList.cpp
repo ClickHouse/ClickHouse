@@ -506,7 +506,17 @@ ProcessList::EntryPtr ProcessList::insert(
             else
                 query_finished.wait_until(lock, admission_deadline, should_stop);
 
-            return under_limit();
+            /// Post-wakeup liveness recheck, mirroring the FIFO admission wait. The loop above exits as
+            /// soon as `should_stop()` holds, so a client that hung up during the very interval in which
+            /// the finishing query dropped the counter would otherwise slip through and run its query
+            /// while holding the transferred admission slot. Only a successful outcome needs the check:
+            /// if we are still over the limit, the caller throws `TOO_MANY_SIMULTANEOUS_QUERIES` anyway.
+            const bool passes = under_limit();
+            if (passes && is_alive && !is_alive())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                "Query admission cancelled: client disconnected while waiting at a secondary limit");
+
+            return passes;
         };
 
         /// Number of early-released-but-not-yet-destroyed queries of `kind` (see the scoping note above).

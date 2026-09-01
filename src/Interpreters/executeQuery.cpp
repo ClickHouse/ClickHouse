@@ -3970,6 +3970,16 @@ void executeQueryInBackground(std::string_view query, const ASTPtr & ast, Contex
     auto background_context = Context::createCopy(context);
     background_context->makeQueryContext();
 
+    /// A background query outlives the connection that submitted it, so it must not inherit the
+    /// transport-scoped liveness callback installed by the protocol handlers (`HTTPHandler` captures
+    /// the `HTTPServerRequest`, `TCPHandler` / `PostgreSQLHandler` / `MySQLHandler` capture the socket).
+    /// The handler returns as soon as the query is scheduled here, so consulting that callback from
+    /// `ProcessList::insert` — where an admission or `replace_running_query` wait may poll it long after
+    /// the request is gone — would touch dead transport state, and the client hanging up would cancel a
+    /// query that is explicitly detached from the connection. An empty callback makes those waits skip
+    /// the liveness loop, which is exactly the desired behaviour for a detached query.
+    background_context->setConnectionAliveCheck({});
+
     context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context]
     {
         try
