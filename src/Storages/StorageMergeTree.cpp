@@ -2094,13 +2094,14 @@ std::pair<UInt32, Int64> StorageMergeTree::getMaxLevelMutationInBetween(const Pa
         if (it == data_parts_by_info.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left.name, right.name);
 
-        level = std::max(level, (*it)->info.level);
-
         /// An intersecting pair where either side has a rolled back creation is resolved in favour
         /// of the committed one instead of being reported, so such a part cannot be the one that
         /// fails to load and refusing a merge over it only postpones the merge.
-        if ((*it)->version->getInfo().creation_csn != Tx::RolledBackCSN)
-            mutation = std::max(mutation, (*it)->info.mutation);
+        if ((*it)->version->getInfo().creation_csn == Tx::RolledBackCSN)
+            continue;
+
+        level = std::max(level, (*it)->info.level);
+        mutation = std::max(mutation, (*it)->info.mutation);
     }
 
     return {level, mutation};
