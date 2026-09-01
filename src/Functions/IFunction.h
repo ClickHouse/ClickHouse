@@ -251,6 +251,20 @@ public:
       */
     virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
 
+    /** For a function where `isSpatialPredicate` is true: is an argument of exactly `type` at
+      * `arg_index` guaranteed to be ACCEPTED, so that evaluating the predicate cannot raise on
+      * type grounds? Asked with the `Nullable` wrapper already stripped, exactly as
+      * `useDefaultImplementationForNulls` hands the arguments to `getReturnTypeImpl`.
+      *
+      * `Common/GeoBbox.h` fails bbox pruning closed for a `Nullable` argument it cannot show the
+      * predicate accepts, because `useDefaultImplementationForNulls` returns an empty result for
+      * `input_rows_count == 0` before the nested function is built -- so an exception that would
+      * have been raised from the argument TYPES never fires on a fully pruned granule. A predicate
+      * that positively accepts the type raises nothing there and keeps its pruning. Default: false,
+      * which merely costs pruning.
+      */
+    virtual bool acceptsArgumentType(const IDataType & /*type*/, size_t /*arg_index*/) const { return false; }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -473,6 +487,9 @@ public:
     /// See IFunctionBase::treatsConstTupleAsPoint.
     virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
 
+    /// See IFunctionBase::acceptsArgumentType.
+    virtual bool acceptsArgumentType(const IDataType & /*type*/, size_t /*arg_index*/) const { return false; }
+
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.
@@ -694,6 +711,9 @@ public:
 
     /// See IFunctionBase::treatsConstTupleAsPoint.
     virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
+
+    /// See IFunctionBase::acceptsArgumentType.
+    virtual bool acceptsArgumentType(const IDataType & /*type*/, size_t /*arg_index*/) const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

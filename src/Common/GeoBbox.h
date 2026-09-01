@@ -719,8 +719,14 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
             if (nullable_kind_name.empty())
                 nullable_kind_name = GeoBboxDetail::structuralGeoKindName(unwrapped);
 
-            if (nullable_kind_name.empty()
-                || node.function_base->rejectsColumnGeometryKind(nullable_kind_name, this_arg_index))
+            /// A predicate that positively accepts the unwrapped type raises nothing here, so it
+            /// keeps its pruning: an `is_spatial_predicate` WASM UDF declaring an auxiliary
+            /// `threshold Int32` takes a `Nullable(Int32)` constant perfectly well. Every native
+            /// builtin leaves `acceptsArgumentType` at its default `false` and so still fails
+            /// closed for every kind it does not accept, including a non-geometry type.
+            if ((nullable_kind_name.empty()
+                 || node.function_base->rejectsColumnGeometryKind(nullable_kind_name, this_arg_index))
+                && !node.function_base->acceptsArgumentType(unwrapped, this_arg_index))
             {
                 any_kind_rejected = true;
                 continue;

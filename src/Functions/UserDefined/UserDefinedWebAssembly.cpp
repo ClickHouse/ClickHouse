@@ -535,6 +535,24 @@ public:
         return GeoBboxDetail::declaredGeoRepresentationName(*expected_arguments[arg_index]) == "Point";
     }
 
+    /// Mirrors exactly what `getReturnTypeImpl` below accepts, so `Common/GeoBbox.h` can tell a
+    /// `Nullable` argument this UDF genuinely takes -- an auxiliary `threshold Int32` handed a
+    /// `Nullable(Int32)` constant, say, which `useDefaultImplementationForNulls` unwraps before
+    /// the declared types are compared -- from one it would reject. Only the latter can hide an
+    /// exception behind a fully pruned granule; the former raises nothing and keeps its pruning.
+    bool acceptsArgumentType(const IDataType & type, size_t arg_index) const override
+    {
+        const auto & expected_arguments = user_defined_function->getArguments();
+        if (arg_index >= expected_arguments.size())
+            return false;
+        if (type.equals(*expected_arguments[arg_index]))
+            return true;
+
+        auto actual_kind = wasmKindForDataType(&type);
+        auto expected_kind = wasmKindForDataType(expected_arguments[arg_index].get());
+        return actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind);
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 

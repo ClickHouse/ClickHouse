@@ -100,6 +100,7 @@ public:
         return function_overload_resolver->rejectsColumnGeometryKind(kind_name, arg_index);
     }
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function_overload_resolver->treatsConstTupleAsPoint(arg_index); }
+    bool acceptsArgumentType(const IDataType & type, size_t arg_index) const override { return function_overload_resolver->acceptsArgumentType(type, arg_index); }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.

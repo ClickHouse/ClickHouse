@@ -86,6 +86,7 @@ public:
 
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function->rejectsColumnGeometryKind(kind_name, arg_index); }
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function->treatsConstTupleAsPoint(arg_index); }
+    bool acceptsArgumentType(const IDataType & type, size_t arg_index) const override { return function->acceptsArgumentType(type, arg_index); }
 
 
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }
@@ -143,6 +144,7 @@ public:
 
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function->rejectsColumnGeometryKind(kind_name, arg_index); }
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function->treatsConstTupleAsPoint(arg_index); }
+    bool acceptsArgumentType(const IDataType & type, size_t arg_index) const override { return function->acceptsArgumentType(type, arg_index); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }
