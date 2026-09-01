@@ -189,6 +189,10 @@ namespace
                 request.SetContentDisposition(source_headers->content_disposition);
             if (!source_headers->cache_control.empty())
                 request.SetCacheControl(source_headers->cache_control);
+            if (source_headers->expires.Millis() > 0)
+                request.SetExpires(source_headers->expires);
+            if (!source_headers->website_redirect_location.empty())
+                request.SetWebsiteRedirectLocation(source_headers->website_redirect_location);
         }
 
         /// Same rationale as applySourceHeaders: CopyObject copied the source tag set by default.

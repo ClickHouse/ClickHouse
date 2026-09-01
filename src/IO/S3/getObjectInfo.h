@@ -20,6 +20,8 @@ struct ObjectHeaders
     String content_language;
     String content_disposition;
     String cache_control;
+    Aws::Utils::DateTime expires;
+    String website_redirect_location;
 };
 
 struct ObjectInfo

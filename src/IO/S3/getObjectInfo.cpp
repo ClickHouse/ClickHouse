@@ -83,6 +83,8 @@ namespace
         object_info.headers.content_language = result.GetContentLanguage();
         object_info.headers.content_disposition = result.GetContentDisposition();
         object_info.headers.cache_control = result.GetCacheControl();
+        object_info.headers.expires = result.GetExpires();
+        object_info.headers.website_redirect_location = result.GetWebsiteRedirectLocation();
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();

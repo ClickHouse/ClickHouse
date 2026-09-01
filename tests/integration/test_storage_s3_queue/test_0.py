@@ -670,12 +670,24 @@ def test_move_after_processing_preserves_source_headers(started_cluster, move_to
     processed_bucket = "sink-bucket-headers" if move_to == "another_bucket" else None
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     content_type = "text/csv"
+    # Expires rides the same restated-headers path; upload through boto3, the one client here
+    # that can set it.
+    import boto3
+    from datetime import datetime, timezone
 
-    put_s3_file_content(
-        started_cluster,
-        f"{files_path}/{file_name}",
-        b"1,2,3\n",
-        content_type=content_type,
+    expires = datetime(2030, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    s3.put_object(
+        Bucket=started_cluster.minio_bucket,
+        Key=f"{files_path}/{file_name}",
+        Body=b"1,2,3\n",
+        ContentType=content_type,
+        Expires=expires,
     )
 
     if move_to == "another_bucket":
@@ -707,6 +719,8 @@ def test_move_after_processing_preserves_source_headers(started_cluster, move_to
         dst_bucket, f"{processed_prefix}/{file_name}"
     )
     assert moved.content_type == content_type
+    moved_head = s3.head_object(Bucket=dst_bucket, Key=f"{processed_prefix}/{file_name}")
+    assert moved_head.get("Expires") == expires
 
 
 def test_move_after_processing_to_bucket_without_prefix_is_unguarded(started_cluster):
