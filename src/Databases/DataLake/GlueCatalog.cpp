@@ -832,10 +832,15 @@ void GlueCatalog::dropTable(const String & namespace_name, const String & table_
     /// TODO: implement the client-side purge (delete the table's data/manifest/metadata files, then
     /// `DeleteTable`) in a follow-up PR so `data_lake_delete_data_on_drop` can be honored for Glue.
     if (purge)
+    {
+        if (if_exists && !existsTable(namespace_name, table_name))
+            return;
+
         throw DB::Exception(
             DB::ErrorCodes::NOT_IMPLEMENTED,
             "data_lake_delete_data_on_drop is not supported for the Glue catalog: dropping only removes the Glue "
             "catalog entry and does not delete the underlying data files");
+    }
 
     Aws::Glue::Model::DeleteTableRequest request;
     request.SetDatabaseName(namespace_name);
