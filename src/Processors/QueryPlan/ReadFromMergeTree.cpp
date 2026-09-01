@@ -4362,6 +4362,11 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// before deduplication and return rows a newer version should have replaced.
     cloned_step->deferred_row_level_filter = deferred_row_level_filter;
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
+    /// Same decision, same source (`deferFiltersAfterFinalIfNeeded`): when FINAL merges across
+    /// partitions, pruning would drop rows that must participate in the FINAL result. A clone that
+    /// loses the flag re-enables pruning at its own analysis time (Cascades extraction,
+    /// `materializeQueryPlanReferences`, parallel-replicas fragments all clone).
+    cloned_step->skip_partition_pruning = skip_partition_pruning;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
     /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
@@ -7017,8 +7022,9 @@ bool ReadFromMergeTree::hasLogicalDigest() const
     /// With no table expression modifiers `isQueryWithSampling` falls back to the select AST, whose
     /// SAMPLE clause this digest does not encode - so the absent-modifiers slot may only mean "no
     /// sampling" if the AST agrees. `isFinal()` consults the AST in the same situation, but its value
-    /// is encoded, so only sampling needs a gate. An AST that is not a select at all is rejected too,
-    /// although `isFinal()` in the constructor has already cast it.
+    /// is encoded, so only sampling needs a gate. The `!select` branch is load-bearing rather than
+    /// defensive: on the analyzer path `isFinal()` returns early on `query_tree` and never casts the
+    /// AST, so nothing before this point has established that `query_info.query` is a select.
     if (!query_info.table_expression_modifiers && query_info.query)
     {
         const auto * select = query_info.query->as<ASTSelectQuery>();
@@ -7031,6 +7037,9 @@ bool ReadFromMergeTree::hasLogicalDigest() const
 
 void ReadFromMergeTree::writeLogicalDigest(StepDigestWriter & writer) const
 {
+    /// The writer dereferences `prepared_parts` and `storage_snapshot->metadata` unconditionally.
+    chassert(hasLogicalDigest());
+
     /// The table. The UUID is its portable identity, but it is `Nil` for a table in an `Ordinary`
     /// database, so the storage object is witnessed as well - two reads of one table always point at
     /// the same `MergeTreeData`.
@@ -7175,12 +7184,21 @@ void ReadFromMergeTree::writeLogicalDigest(StepDigestWriter & writer) const
     /// the witnessed context. This exclusion is also what makes a read's logical digest stable while
     /// it is costed: the two mutable members are the only ones that populate lazily.
     /// Out, execution-only: `enable_vertical_final` (a FINAL algorithm over the same rows),
-    /// `output_each_partition_through_separate_port` and `output_streams_limit` (port shaping),
     /// `requested_num_streams`, `query_task_size_limit`, `block_size`, `reader_settings`,
     /// `actions_settings`.
+    /// Out, the output-port fields. `output_each_partition_through_separate_port` is set only by
+    /// `useDataParallelAggregation`, which runs after Cascades, so it is still default whenever a
+    /// digest is taken, and `clone` does not carry it. `output_streams_limit` is set in the
+    /// constructor from the witnessed context and `requested_num_streams`, so a clone recomputes the
+    /// same value. Both only shape ports, not rows.
     /// Out, derived or display-only: `shared_virtual_fields` (filled at pipeline build from the
     /// storage id and the sampling factor), `selected_parts` / `selected_rows` / `selected_marks`,
     /// `log`, `query_info.local_storage_limits` (this step applies `storage_limits`).
+    /// Out, audited and superseded: `storage_snapshot->data` - its part list is what the content part
+    /// list above encodes and its mutations snapshot is gated, and `initializePipeline` strips the
+    /// parts out of it anyway; `query_info.query` - the only thing this path reads from the AST is
+    /// SAMPLE (gated) and FINAL (encoded); `query_info.view_query` - written only for a `StorageView`
+    /// table expression and read only by `StorageView::read`, so it is unused on this path.
     /// Out by gate: the read shapes of `canWriteContentDigest`, plus `max_block_numbers_to_read`, the
     /// mutations snapshot's on-the-fly state and an AST-path SAMPLE - see `hasLogicalDigest`.
 }

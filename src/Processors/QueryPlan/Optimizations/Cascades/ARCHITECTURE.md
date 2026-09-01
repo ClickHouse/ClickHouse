@@ -733,14 +733,17 @@ creates a group unconditionally, exactly as before.
   checks the target group is not reachable from them.
 - **Statistics** stay the existing group's on a hit; in debug builds the two independent estimates
   are asserted to agree within a loose factor, since a real disagreement means the identity
-  classified two different relations as equal.
+  classified two different relations as equal. If the group has none and the incoming expression
+  does, the group adopts it - the other direction would be silent information loss.
 - **Within the group** the incoming expression is still filtered by the full identity, so a knob
   variant survives as a costed alternative and only a fully-equal expression is dropped. Exact cost
   ties therefore become common, and `Group::updateBestImplementation` resolves them deterministically
   in favour of the earlier-inserted expression.
 - **Duplicate groups are detected, not merged.** A rule inserting into group A an expression that
   matches an interned expression of group B proves A and B equal; `Memo::addLogicalExpressionToGroup`
-  counts that event and logs both ids. Merging is a later stage.
+  counts that event and logs both ids. Merging is a later stage. Such rule-inserted alternatives are
+  themselves never indexed - they are detection-only, and only a group-creating intern registers an
+  index entry.
 - **Counters**, in `MemoCounters` on `OptimizerContext` and logged at the end of the pass:
   `groups_created`, `groups_reused`, `duplicate_group_detections`, plus the orphan count
   (`countGroupsUnreachableFrom` over the root group), which must stay zero - interning the partial
@@ -752,7 +755,10 @@ creates a group unconditionally, exactly as before.
 - The performance gate: per-run `StepDigestCounters` on `OptimizerContext` plus the
   `CascadesStepDigests` / `CascadesStepDigestBytes` / `CascadesStepDigestConfirmations`
   ProfileEvents ship the digest counters, but the wall-time measurement and the threshold it has
-  to clear do not exist yet.
+  to clear do not exist yet. That gate has to cover the default path too, not just
+  `cascades_memo_deduplication = 1`: within-group deduplication digests every insertion regardless
+  of the setting, and a fingerprint hit (the enforcer-duplicate case) materializes both byte digests
+  to confirm it.
 - Group merging (a rule inserting into group A an expression that proves A equal to B) is still only
   detected and counted, so a duplicate group that deduplication cannot prevent up front stays.
 

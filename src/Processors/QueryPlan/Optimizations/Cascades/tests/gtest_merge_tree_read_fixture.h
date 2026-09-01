@@ -44,8 +44,11 @@ struct MergeTreeReadFixture
     String relative_data_path;
 
     /// `shared_context` lets a second table live in the context of the first, so that a comparison of
-    /// two tables varies the table alone.
-    explicit MergeTreeReadFixture(const String & table_name, ContextMutablePtr shared_context = nullptr)
+    /// two tables varies the table alone. `partition_by_unsorted_column` adds a second column `p` and
+    /// partitions by it: a partition key the sorting key does not determine is what makes
+    /// `deferFiltersAfterFinalIfNeeded` skip partition pruning under FINAL.
+    explicit MergeTreeReadFixture(
+        const String & table_name, ContextMutablePtr shared_context = nullptr, bool partition_by_unsorted_column = false)
         : context(std::move(shared_context))
         , relative_data_path("store/test_cascades_step_identity_" + table_name + "/")
     {
@@ -66,13 +69,16 @@ struct MergeTreeReadFixture
 
         ColumnsDescription columns;
         columns.add(ColumnDescription("a", std::make_shared<DataTypeUInt64>()));
+        if (partition_by_unsorted_column)
+            columns.add(ColumnDescription("p", std::make_shared<DataTypeUInt64>()));
         metadata.setColumns(columns);
 
         ASTPtr order_by_ast = make_intrusive<ASTIdentifier>("a");
         metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
         metadata.primary_key = metadata.sorting_key;
         metadata.primary_key.definition_ast = nullptr;
-        metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, {}, context);
+        ASTPtr partition_by_ast = partition_by_unsorted_column ? ASTPtr(make_intrusive<ASTIdentifier>("p")) : nullptr;
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, {}, context);
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto partition_key = metadata.partition_key.expression_list_ast->clone();

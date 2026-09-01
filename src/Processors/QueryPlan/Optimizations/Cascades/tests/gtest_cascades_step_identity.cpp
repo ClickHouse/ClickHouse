@@ -2332,6 +2332,112 @@ TEST(CascadesStepIdentity, LogicalDigestReadPrewhereAndRowLevelFilterAreRelation
     expectLogicallyUnequal(*plain_2, *row_level);
 }
 
+/// The deferred carriers. `deferFiltersAfterFinalIfNeeded` moves a filter past the FINAL merge without
+/// clearing the `query_info` slot it came from, so the deferred slot is the only difference between the
+/// two sides here - and it decides which duplicate of a primary key survives the merge. Neither carrier
+/// flips the instance gate: `canWriteContentDigest` rejects a deferred filter only when its DAG is
+/// correlated.
+TEST(CascadesStepIdentity, LogicalDigestReadDeferredFinalCarriersAreRelationDefining)
+{
+    MergeTreeReadFixture fixture("logical_read_deferred");
+    fixture.context->setSetting("apply_prewhere_after_final", Field(true));
+
+    auto final_query_info = []
+    {
+        auto query_info = MergeTreeReadFixture::makeQueryInfo();
+        query_info.table_expression_modifiers.emplace(/*has_final_=*/ true, std::nullopt, std::nullopt);
+        return query_info;
+    };
+
+    /// Over the table's own column and with its column removed again, so the read header - and with it
+    /// the digest preamble - is the same on both sides.
+    auto predicate_over_a = []
+    {
+        auto type = std::make_shared<DataTypeUInt64>();
+        auto filter_type = std::make_shared<DataTypeUInt8>();
+        ActionsDAG dag(NamesAndTypesList{{"a", type}});
+        dag.getOutputs().push_back(&dag.addColumn(filter_type->createColumnConst(1, Field(static_cast<UInt8>(1))), filter_type, "f"));
+        return dag;
+    };
+
+    auto with_prewhere = final_query_info();
+    with_prewhere.prewhere_info = std::make_shared<PrewhereInfo>(predicate_over_a(), "f");
+    with_prewhere.prewhere_info->remove_prewhere_column = true;
+
+    auto prewhere_during_read = fixture.makeRead(with_prewhere);
+    auto prewhere_after_final = fixture.makeRead(with_prewhere);
+    prewhere_after_final->deferFiltersAfterFinalIfNeeded();
+    ASSERT_EQ(prewhere_during_read->getDeferredPrewhereInfo(), nullptr);
+    ASSERT_NE(prewhere_after_final->getDeferredPrewhereInfo(), nullptr);
+    ASSERT_TRUE(prewhere_after_final->hasLogicalDigest());
+
+    auto [a, b] = logicalPair(std::move(prewhere_during_read), std::move(prewhere_after_final));
+    expectLogicallyUnequal(*a, *b);
+
+    /// The row-level filter carrier. Its predicate must not be sorting-key-only, otherwise the policy is
+    /// safe to apply before FINAL and `isRowPolicyDeferredAfterFinal` defers nothing - hence `_part_offset`
+    /// rather than `a`. It has to be a column the read actually produces, so both sides read it.
+    auto predicate_off_the_sorting_key = []
+    { return ActionsDAG(NamesAndTypesList{{"_part_offset", std::make_shared<DataTypeUInt64>()}}); };
+
+    auto with_row_level = final_query_info();
+    with_row_level.row_level_filter
+        = std::make_shared<FilterDAGInfo>(FilterDAGInfo{predicate_off_the_sorting_key(), "_part_offset", true});
+
+    auto make_policy_read = [&]
+    {
+        return fixture.makeReadWith([&](MergeTreeReadFixture::ReadOptions & options)
+        {
+            options.query_info = with_row_level;
+            options.columns = {"a", "_part_offset"};
+        });
+    };
+
+    auto policy_during_read = make_policy_read();
+    auto policy_after_final = make_policy_read();
+    policy_after_final->deferFiltersAfterFinalIfNeeded();
+    ASSERT_EQ(policy_during_read->getDeferredRowLevelFilter(), nullptr);
+    ASSERT_NE(policy_after_final->getDeferredRowLevelFilter(), nullptr);
+    ASSERT_TRUE(policy_after_final->hasLogicalDigest());
+
+    auto [c, d] = logicalPair(std::move(policy_during_read), std::move(policy_after_final));
+    expectLogicallyUnequal(*c, *d);
+}
+
+/// `deferFiltersAfterFinalIfNeeded` also turns partition pruning off when FINAL merges across
+/// partitions: rows with the same primary key in different partitions must all reach the merge. The
+/// flag is decided once, at that point; a clone that dropped it would prune at its own analysis time
+/// and lose those rows. The table here partitions by a column the sorting key does not determine,
+/// which is what makes the pass set the flag.
+TEST(CascadesStepIdentity, ReadFromMergeTreeCloneKeepsSkipPartitionPruning)
+{
+    MergeTreeReadFixture fixture("clone_skip_partition_pruning", nullptr, /*partition_by_unsorted_column=*/ true);
+
+    auto final_query_info = MergeTreeReadFixture::makeQueryInfo();
+    final_query_info.table_expression_modifiers.emplace(/*has_final_=*/ true, std::nullopt, std::nullopt);
+
+    auto pruning = fixture.makeRead(final_query_info);
+    auto deferred = fixture.makeRead(final_query_info);
+    deferred->deferFiltersAfterFinalIfNeeded();
+    /// No filter carriers in this query info, so the pruning flag is the only thing the pass changed.
+    ASSERT_EQ(deferred->getDeferredRowLevelFilter(), nullptr);
+    ASSERT_EQ(deferred->getDeferredPrewhereInfo(), nullptr);
+    ASSERT_TRUE(deferred->hasLogicalDigest());
+
+    auto cloned_step = deferred->clone();
+    ASSERT_NE(cloned_step, nullptr);
+
+    /// The flag is observable at all - the logical digest carries it.
+    auto [plain, with_flag] = logicalPair(std::move(pruning), std::move(deferred));
+    expectLogicallyUnequal(*plain, *with_flag);
+
+    /// ... and the clone kept it.
+    auto cloned = std::make_shared<GroupExpression>(std::move(cloned_step));
+    EXPECT_EQ(with_flag->logicalFingerprint(), cloned->logicalFingerprint());
+    EXPECT_TRUE(with_flag->logicallyEqualTo(*cloned));
+    expectLogicallyUnequal(*plain, *cloned);
+}
+
 /// FINAL folds a part set into one row per primary key, and a sample keeps a fraction of the rows.
 TEST(CascadesStepIdentity, LogicalDigestReadFinalAndSamplingAreRelationDefining)
 {

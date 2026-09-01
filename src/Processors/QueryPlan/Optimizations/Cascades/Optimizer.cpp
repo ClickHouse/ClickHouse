@@ -203,6 +203,13 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
                 && prepopulated_statistics->estimated_row_count <= 10.0 * group->statistics->estimated_row_count + 1.0,
             "Cascades group deduplication merged two expressions with disagreeing row estimates");
     }
+    else if (!group->statistics.has_value() && prepopulated_statistics.has_value())
+    {
+        /// The group was created without an estimate (its first expression had none) and this one
+        /// has one for the same relation. Adopt it: dropping it would be silent information loss,
+        /// leaving the group uncosted for no reason.
+        group->statistics = std::move(prepopulated_statistics);
+    }
 
     return {group_id, {}};
 }

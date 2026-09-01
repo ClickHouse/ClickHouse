@@ -43,9 +43,9 @@ GroupId Memo::findInternedGroup(UInt128 fingerprint, const GroupExpression & gro
 
     for (const auto & entry : bucket->second)
     {
-        /// Guards the rule the field exists for: every entry is filed under the fingerprint taken
-        /// at its insertion, never under a recomputed one.
-        chassert(entry.insertion_time_fingerprint == fingerprint);
+        /// `entry.insertion_time_fingerprint` equals `fingerprint` here by construction - it is the
+        /// bucket key. The field is scaffolding for a future removal or relocation path, which needs
+        /// the key an entry was filed under without recomputing a digest that may have moved.
         /// Compares the frame field by field and the two live steps' logical digests byte for byte.
         if (entry.expression->logicallyEqualTo(group_expression))
             return entry.group_id;

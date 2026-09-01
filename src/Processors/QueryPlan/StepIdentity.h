@@ -77,9 +77,12 @@ private:
 /// Canonical full digest: the shared preamble (serialization name, output header), then everything
 /// the step writes through `writeFullDigest` - for a content step its wire encoding plus its framed
 /// extras, for every other step one whole-object witness. The step description is deliberately
-/// excluded: it is display-only. Total: defined for every step, and it never throws, because the
-/// only throwing component (the wire encoding) is written only by a step that has established its
-/// own instance encodes.
+/// excluded: it is display-only. Total: defined for every step. The only per-step throwing component
+/// (the wire encoding) is written only by a step that has established its own instance encodes, so
+/// nothing under `writeFullDigest` throws. The preamble is outside those guards and does have one
+/// throw path: `encodeDataType` raises `UNSUPPORTED_METHOD` for a type it cannot binary-encode. That
+/// is unreachable in practice - such a type could not be a plan step's output header, since the same
+/// encoding is what plan serialization uses - but it is not a guarantee this function makes.
 /// Both the full fingerprint and the byte-exact full comparison in
 /// Optimizations/Cascades/StepIdentity.h go through it so they cannot diverge.
 /// How to give a step a content digest, or classify a new field:
