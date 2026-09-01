@@ -20,6 +20,11 @@ Soft limits apply at three different scopes.
 | **[Warehouse](#warehouse-limits)**                                           | One [warehouse](/products/cloud/features/infrastructure/warehouses) — the group of services that share the same data | Combined replicas across the warehouse; data objects in the shared catalog (tables, databases, and so on) |
 | **[Service](#service-limits)**                                               | A single service and its compute                                                   | Per-service data objects, parts, query concurrency, etc                |
 
+The scope of the **data object limits** (databases, tables, columns, partitions, and parts) depends on how you run your services.
+If you run **standalone services**, these limits apply per service.
+As soon as services share data in a **warehouse**, the same limits instead apply once to the warehouse's shared catalog.
+The numbers don't change — only the level they are measured at does.
+
 <Tip>
 If you've run up against one of these guardrails, it's possible that you're
 implementing your use case in an unoptimized way. Contact [support](https://clickhouse.com/support/program) and
@@ -54,10 +59,13 @@ Contact [support](https://clickhouse.com/support/program) to raise it; for more 
 
 There is **no separate cap on the number of services** in a warehouse — it is bounded only by the combined replica limit above.
 
+Because services in a warehouse share one catalog (the same tables, databases, views, and so on), the [service-level data object limits](#service-limits) below are counted **once per warehouse** rather than multiplied per service. Separate warehouses are isolated from each other, so each warehouse counts its own tables and databases toward these limits.
+
 ## Service limits {#service-limits}
 
-These limits apply to an individual service (and, for data object counts, to that service's storage).
-When the service is part of a warehouse, the data object limits apply to the warehouse's shared catalog as described above.
+The limits below apply to a **standalone service** (and, for data object counts, to that service's storage).
+
+If the service belongs to a **warehouse**, the data object limits (databases, tables, columns, partitions, and parts) instead apply to the warehouse's shared catalog, as described in [Warehouse limits](#warehouse-limits) above — the values are unchanged, but they are measured across the whole warehouse rather than the single service. The remaining limits, such as **query concurrency** and **batch ingest**, stay per-service (or per-replica) in both cases.
 
 | Dimension                   | Limit                                                                                             |
 |-----------------------------|---------------------------------------------------------------------------------------------------|
