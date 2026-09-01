@@ -118,6 +118,24 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
+/// The byte layout a step hands upwards: column types by position, the same notion `sameByteLayout`
+/// compares. Names are deliberately left out - they are branch-local.
+UInt64 layoutHash(const Block & header)
+{
+    SipHash hash;
+    for (const auto & column : header)
+        hash.update(column.type->getName());
+    return hash.get64();
+}
+
+/// Whether a step is one of a chain that only reshapes rows, never removes or adds them. Such a chain
+/// contributes the layout it ends with and nothing else - see `collapsed` in the traversal below.
+bool onlyReshapesRows(const IQueryPlanStep & step)
+{
+    const auto * transform = dynamic_cast<const ITransformingStep *>(&step);
+    return transform && transform->getTransformTraits().preserves_number_of_rows;
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A filter that only applies a join runtime filter is transparent for the cache key, for the reason
@@ -225,6 +243,13 @@ void calculateHashTableCacheKeys(
         SipHash hash{};
     };
 
+    /// The key of the nearest descendant that is not merely reshaping rows. A chain of row-preserving
+    /// steps hashes against this rather than against its immediate child, so that how many steps a plan
+    /// build happened to leave in the chain stops mattering - only what the chain produces does. The two
+    /// builds of one query routinely differ here: the parallel-replicas fragment keeps a projection the
+    /// single-node plan folded away, and hashing it cost Auto-PR every query carrying a filter.
+    std::unordered_map<const QueryPlan::Node *, UInt64> base_keys;
+
     // We use addresses of `left` and `right`, so they should be stable
     std::list<Frame> stack;
     stack.push_back({.node = &root});
@@ -268,6 +293,7 @@ void calculateHashTableCacheKeys(
                     const auto raw = frame.hash.get64();
                     raw_hashes[&node] = raw;
                     cache_keys[&node] = raw;
+                    base_keys[&node] = raw;
 
                     stack.pop_back();
                 }
@@ -298,6 +324,11 @@ void calculateHashTableCacheKeys(
         /// selector, which is also kind-aware (`RIGHT`→child 1, `LEFT`→child 0), so both equivalent
         /// representations resolve to the same table. The (remapped) kind is mixed into the hash so
         /// that otherwise identical subtrees with different kinds (`INNER` vs `LEFT`) do not collide.
+
+        /// A single-child step that only reshapes rows stands in for the whole chain below it: it hashes
+        /// against `base_keys` instead of its child's key, and contributes the layout it produces.
+        const bool collapsed = node.children.size() == 1 && onlyReshapesRows(*node.step);
+
         if (const auto * join_step = typeid_cast<const JoinStep *>(node.step.get()); join_step && node.children.size() == 2)
         {
             const auto & table_join = join_step->getJoin()->getTableJoin();
@@ -399,7 +430,7 @@ void calculateHashTableCacheKeys(
         else
         {
             for (const auto * child : node.children)
-                frame.hash.update(cache_keys[child]);
+                frame.hash.update(collapsed ? base_keys[child] : cache_keys[child]);
         }
 
         if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
@@ -407,13 +438,18 @@ void calculateHashTableCacheKeys(
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+        {
+            if (collapsed)
+                frame.hash.update(layoutHash(*transform->getOutputHeader()));
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
-            if (auto hash = calculateHashFromStep(*transform))
+            else if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
+        }
 
         const auto raw = frame.hash.get64();
         raw_hashes[&node] = raw;
         cache_keys[&node] = raw;
+        base_keys[&node] = collapsed ? base_keys[node.children.front()] : raw;
 
         stack.pop_back();
     }
