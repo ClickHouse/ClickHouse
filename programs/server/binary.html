@@ -200,8 +200,12 @@
                 center: latLngToPixel(map.getCenter()),
             };
 
-            /// Keep the parameters that are not related to the position, such as host, user and password.
+            /// Keep the parameters that are not related to the position, such as host and user.
             const params = new URLSearchParams(window.location.search);
+
+            /// The password is already saved in `url` at startup, and it should not be kept in the address bar or in the browser history.
+            params.delete('password');
+
             params.set('zoom', state.zoom);
             params.set('x', state.center.x);
             params.set('y', state.center.y);
