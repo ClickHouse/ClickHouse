@@ -68,6 +68,22 @@ if (NOT SANITIZE)
     list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
 endif ()
 
+# On aarch64 these functions come from ARM's optimized-routines instead
+# (contrib/optimized-routines-cmake), which beats llvm-libc's generic
+# implementations on Neoverse cores (exp 2.1x, exp2 2.2x, atan 1.7x,
+# atan2 1.6x, plus log/log10; measured on Graviton4). Both archives are
+# linked with --whole-archive, so the sources must not overlap.
+if (ARCH_AARCH64)
+    list(REMOVE_ITEM SRCS
+        "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/exp.cpp"
+        "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/exp2.cpp"
+        "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/log.cpp"
+        "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/log10.cpp"
+        "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan.cpp"
+        "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan2.cpp"
+    )
+endif()
+
 set(LIBC_NAMESPACE "__llvm_libc")
 set(LLVMLIBC_DEFS_COMMON
     LIBC_MATH_HAS_NO_ERRNO=1

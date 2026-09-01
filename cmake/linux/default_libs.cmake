@@ -20,6 +20,14 @@ if (ENABLE_LLVM_LIBC_MATH)
     target_link_libraries(global-libs INTERFACE libllvmlibc)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 
+    if (ARCH_AARCH64)
+        # Scalar exp/exp2/log/log10/atan/atan2 from ARM's optimized-routines;
+        # excluded from libllvmlibc there (see contrib/optimized-routines-cmake).
+        link_directories("${CMAKE_BINARY_DIR}/contrib/optimized-routines-cmake")
+        target_link_libraries(global-libs INTERFACE aor)
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -laor")
+    endif()
+
     if (NOT SANITIZE)
         # Force every llvm-libc member into the link ahead of all objects and archives
         # (linker flags precede them on the link line; -L placement does not matter to ld).
@@ -33,6 +41,9 @@ if (ENABLE_LLVM_LIBC_MATH)
         # Skipped under sanitizers, where the interceptors must wrap the libc mem functions
         # instead (same reason the -u forcing was skipped before).
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -llibllvmlibc -Wl,--no-whole-archive")
+        if (ARCH_AARCH64)
+            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -laor -Wl,--no-whole-archive")
+        endif()
         # Redundant with --whole-archive above, but kept as a backstop for the mem functions
         # in case the whole-archive link is ever weakened or repositioned.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
