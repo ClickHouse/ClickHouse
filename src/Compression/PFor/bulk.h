@@ -64,32 +64,34 @@ inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noex
         return 0;
     uint8_t * p = out;
     T prev = 0;
-    T r[BLOCK];
+    T residuals[BLOCK];
     for (size_t s = 0; s < n; s += BLOCK)
     {
         const unsigned cnt = static_cast<unsigned>((n - s < BLOCK) ? (n - s) : BLOCK);
+        // blockEncode reads at most `cnt` values through a const pointer, so no delta means no copy.
+        const T * block = in + s;
         switch (mode)
         {
             case Delta::none:
-                for (unsigned i = 0; i < cnt; ++i)
-                    r[i] = in[s + i];
                 break;
             case Delta::d0:
                 for (unsigned i = 0; i < cnt; ++i)
                 {
-                    r[i] = static_cast<T>(in[s + i] - prev);
+                    residuals[i] = static_cast<T>(in[s + i] - prev);
                     prev = in[s + i];
                 }
+                block = residuals;
                 break;
             case Delta::d1:
                 for (unsigned i = 0; i < cnt; ++i)
                 {
-                    r[i] = static_cast<T>(in[s + i] - prev - 1);
+                    residuals[i] = static_cast<T>(in[s + i] - prev - 1);
                     prev = in[s + i];
                 }
+                block = residuals;
                 break;
         }
-        p += blockEncode<T>(r, cnt, p);
+        p += blockEncode<T>(block, cnt, p);
     }
     return static_cast<size_t>(p - out);
 }

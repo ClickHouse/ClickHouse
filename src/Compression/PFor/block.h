@@ -4,14 +4,14 @@
 // Layout:
 //   byte0 high bit set  -> constant block: low 7 bits = k value bytes, then k LE bytes (k == 0 => constant 0).
 //   byte0 high bit clear -> normal block:
-//        byte0 = b        base bit width (0..typeBits<T>)
-//        byte1 = e        number of exceptions (values needing more than b bits)
-//        byte2 = hb       (only if e > 0) high-bit width of the exception patches
-//        base             cnt values, low b bits each, bit-packed
-//        positions        e bytes, the exception indices: strictly increasing, each < cnt
-//        patches          e values, hb bits each, bit-packed; patch = value >> b
-// Decode unpacks the base then ORs each exception's high bits back in; b minimises total bytes.
-// A full 128-value uint32 block with b in [1,31] uses the SIMD vertical layout, else the scalar packer (same packedBytes, so the stream is identical).
+//        byte0 = base_width      base bit width (0..typeBits<T>)
+//        byte1 = num_exceptions  values needing more than base_width bits
+//        byte2 = patch_width     (only if num_exceptions > 0) high-bit width of the patches
+//        base                    cnt values, low base_width bits each, bit-packed
+//        positions               num_exceptions bytes, the exception indices: strictly increasing, each < cnt
+//        patches                 num_exceptions values, patch_width bits each; patch = value >> base_width
+// Decode unpacks the base then ORs each exception's high bits back in; base_width minimises total bytes.
+// A full 128-value uint32 block with base_width in [1,31] uses the SIMD vertical layout, else the scalar packer (same packedBytes, so the stream is identical).
 
 #include <Compression/PFor/bitpack.h>
 #include <Compression/PFor/common.h>
@@ -51,89 +51,89 @@ inline ALWAYS_INLINE void unpackBase(const uint8_t * p, unsigned cnt, unsigned b
 }
 
 template <typename T>
-inline size_t blockEncode(const T * r, unsigned cnt, uint8_t * out) noexcept
+inline size_t blockEncode(const T * residuals, unsigned cnt, uint8_t * out) noexcept
 {
     bool all_equal = true;
     for (unsigned i = 1; i < cnt; ++i)
-        if (r[i] != r[0])
+        if (residuals[i] != residuals[0])
         {
             all_equal = false;
             break;
         }
     if (all_equal)
     {
-        const T c = r[0];
-        const unsigned k = (bitWidth(c) + 7u) / 8u; // 0..sizeof(T)
-        out[0] = static_cast<uint8_t>(0x80u | k);
-        storeLE(out + 1, static_cast<uint64_t>(c), k);
-        return 1u + k;
+        const T constant = residuals[0];
+        const unsigned num_bytes = (bitWidth(constant) + 7u) / 8u; // 0..sizeof(T)
+        out[0] = static_cast<uint8_t>(0x80u | num_bytes);
+        storeLE(out + 1, static_cast<uint64_t>(constant), num_bytes);
+        return 1u + num_bytes;
     }
 
-    // Bit-width histogram; e(b) = #values needing > b bits is a suffix sum over it.
-    unsigned hist[typeBits<T> + 1] = {0};
-    unsigned maxw = 0;
+    // Bit-width histogram; the count of values needing more than `width` bits is a suffix sum over it.
+    unsigned histogram[typeBits<T> + 1] = {0};
+    unsigned max_width = 0;
     for (unsigned i = 0; i < cnt; ++i)
     {
-        const unsigned w = bitWidth(r[i]);
-        ++hist[w];
-        maxw = std::max(w, maxw);
+        const unsigned value_width = bitWidth(residuals[i]);
+        ++histogram[value_width];
+        max_width = std::max(value_width, max_width);
     }
 
-    // Candidate b == maxw has no exceptions; walk b down, adding exceptions, keep the min.
-    size_t best_cost = 2 + packedBytes(cnt, maxw);
-    unsigned best_b = maxw;
-    unsigned e = 0;
-    for (int b = static_cast<int>(maxw) - 1; b >= 0; --b)
+    // A value is an exception exactly when its width exceeds the base, so the suffix sum is already
+    // the winning width's exception count and is recorded here rather than recounted over the block.
+    size_t best_cost = 2 + packedBytes(cnt, max_width);
+    unsigned best_width = max_width;
+    unsigned best_num_exceptions = 0;
+    unsigned num_exceptions_at_width = 0;
+    for (int width = static_cast<int>(max_width) - 1; width >= 0; --width)
     {
-        e += hist[b + 1];
-        const unsigned hb = maxw - static_cast<unsigned>(b);
-        const size_t cost = 3 + packedBytes(cnt, static_cast<unsigned>(b)) + e + packedBytes(e, hb);
+        num_exceptions_at_width += histogram[width + 1];
+        const unsigned patch_width = max_width - static_cast<unsigned>(width);
+        const size_t cost = 3 + packedBytes(cnt, static_cast<unsigned>(width))
+            + num_exceptions_at_width + packedBytes(num_exceptions_at_width, patch_width);
         if (cost < best_cost)
         {
             best_cost = cost;
-            best_b = static_cast<unsigned>(b);
+            best_width = static_cast<unsigned>(width);
+            best_num_exceptions = num_exceptions_at_width;
         }
     }
 
-    const unsigned b = best_b;
-    unsigned ecount = 0;
-    // Exceptions exist only when b < maxw, so r[i] >> b is shift-safe (a full-width block has none).
-    if (b < maxw)
-        for (unsigned i = 0; i < cnt; ++i)
-            if ((r[i] >> b) != 0)
-                ++ecount;
+    const unsigned base_width = best_width;
+    const unsigned num_exceptions = best_num_exceptions;
 
-    out[0] = static_cast<uint8_t>(b);
-    out[1] = static_cast<uint8_t>(ecount);
+    out[0] = static_cast<uint8_t>(base_width);
+    out[1] = static_cast<uint8_t>(num_exceptions);
     uint8_t * p = out + 2;
-    unsigned hb = 0;
-    if (ecount)
+    unsigned patch_width = 0;
+    if (num_exceptions)
     {
-        hb = maxw - b;
-        *p++ = static_cast<uint8_t>(hb);
+        patch_width = max_width - base_width;
+        *p++ = static_cast<uint8_t>(patch_width);
     }
 
-    packBase<T>(r, cnt, b, p);
-    p += packedBytes(cnt, b);
+    packBase<T>(residuals, cnt, base_width, p);
+    p += packedBytes(cnt, base_width);
 
-    if (ecount)
+    if (num_exceptions)
     {
-        uint8_t * pos = p;
-        p += ecount;
+        uint8_t * exception_positions = p;
+        p += num_exceptions;
         T patches[BLOCK];
-        unsigned j = 0;
+        unsigned num_patches = 0;
+        // base_width < max_width here, so the shift is defined (a full-width block has no exceptions).
         for (unsigned i = 0; i < cnt; ++i)
         {
-            const T hi = static_cast<T>(r[i] >> b);
-            if (hi)
+            const T high_bits = static_cast<T>(residuals[i] >> base_width);
+            if (high_bits)
             {
-                pos[j] = static_cast<uint8_t>(i);
-                patches[j] = hi;
-                ++j;
+                exception_positions[num_patches] = static_cast<uint8_t>(i);
+                patches[num_patches] = high_bits;
+                ++num_patches;
             }
         }
-        packBits<T>(patches, ecount, hb, p);
-        p += packedBytes(ecount, hb);
+        packBits<T>(patches, num_exceptions, patch_width, p);
+        p += packedBytes(num_exceptions, patch_width);
     }
     return static_cast<size_t>(p - out);
 }
