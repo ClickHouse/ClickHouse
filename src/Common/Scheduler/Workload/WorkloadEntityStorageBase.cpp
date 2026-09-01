@@ -447,6 +447,27 @@ bool WorkloadEntityStorageBase::storeEntity(
             // Check the settings values and throw if something is wrong
             WorkloadSettings validator;
             validator.initFromChanges(workload->changes);
+
+            // `scheduler` reorders CPU/IO requests by per-query identity and only applies to
+            // time-shared CPU/IO resources. A `scheduler = ... FOR <resource>` clause targeting a
+            // resource that cannot honor it (a QUERY or MEMORY RESERVATION resource — any non-CPU/IO
+            // unit) would be accepted and then silently ignored, so reject it at DDL time. The
+            // referenced resource is created before the referencing workload, so it is already in
+            // `entities`; if it cannot be resolved here, reference validation reports the error.
+            for (const auto & [name, value, resource] : workload->changes)
+            {
+                if (name != "scheduler" || resource.empty())
+                    continue;
+                if (auto it = entities.find(resource); it != entities.end())
+                {
+                    auto * res = typeid_cast<ASTCreateResourceQuery *>(it->second.get());
+                    if (res && res->unit != CostUnit::IOByte && res->unit != CostUnit::CPUNanosecond)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload setting 'scheduler' can only be set for a time-shared CPU or IO resource, "
+                            "but resource '{}' manages {}; remove the `FOR {}` clause or target a CPU/IO resource",
+                            resource, costUnitToString(res->unit), resource);
+                }
+            }
         }
 
         // Validate resource: cost unit cannot change via CREATE OR REPLACE — the scheduler

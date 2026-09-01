@@ -215,7 +215,7 @@ CREATE WORKLOAD all SETTINGS scheduler = 'fair'
 - **`las`** — least-attained-service: the query that has consumed the least of this resource so far is served first (bucketed into levels, so a query drops a level each time its consumption doubles). This minimises latency for short queries under mixed workloads, but a long-running query can be starved by a continuous stream of short ones — prefer `fair` when a no-starvation guarantee is required.
 - **`priority`** — strict priority by the query's [`priority`](/operations/settings/settings#priority) setting (`1` = highest, larger values = lower, `0` = no priority = lowest). Queries are served in priority order, FIFO within the same priority. This reuses the existing `priority` query setting, so a value set for the query's admission priority also orders it inside the workload. Like any strict-priority scheme it can starve low-priority queries.
 
-The `scheduler` is time-shared only (CPU and IO) and can be set per resource with the `FOR <resource>` clause. Changing it on an existing workload swaps the algorithm in place, without interrupting other resources.
+The `scheduler` is time-shared only (CPU and IO) and can be set per resource with the `FOR <resource>` clause; targeting it at a non-CPU/IO resource (a `QUERY` or `MEMORY RESERVATION` resource) is rejected at DDL time rather than silently ignored. Changing it on an existing workload swaps the algorithm in place, without interrupting other resources.
 
 Under the `fair` scheduler, a query's effective weight can be **lowered as it runs**, so shorter or newer queries get a larger share. This is controlled by per-query settings (all default to disabled):
 

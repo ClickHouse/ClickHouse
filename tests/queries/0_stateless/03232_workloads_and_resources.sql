@@ -75,6 +75,18 @@ create or replace workload development in production settings priority = 1, weig
 create or replace workload development in admin settings priority = 1, weight = 1;
 create or replace workload development in all settings priority = 1, weight = 1;
 
+-- `scheduler` is time-shared CPU/IO only: a `FOR <resource>` clause targeting a non-CPU/IO
+-- resource (QUERY / MEMORY RESERVATION) is rejected at DDL time rather than silently ignored,
+-- while targeting a CPU/IO resource is accepted.
+create resource 03232_sched_query (query);
+create resource 03232_sched_memory (memory reservation);
+create workload invalid in all settings scheduler = 'fair' for 03232_sched_query; -- {serverError BAD_ARGUMENTS}
+create workload invalid in all settings scheduler = 'las' for 03232_sched_memory; -- {serverError BAD_ARGUMENTS}
+create workload sched_ok in all settings scheduler = 'fair' for 03232_write;
+drop workload sched_ok;
+drop resource 03232_sched_query;
+drop resource 03232_sched_memory;
+
 -- Clean up
 drop workload if exists production;
 drop workload if exists development;
