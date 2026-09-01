@@ -79,7 +79,6 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -108,7 +107,6 @@
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <cctype>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 
@@ -275,32 +273,6 @@ bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const Que
         }
     }
     return true;
-}
-
-/// `IStorageCluster` JOINs wrap the left table in a subquery. Attach dummy-analysis
-/// filters to the wrap source for listing only; do not add a FilterStep, which would
-/// drop unused columns from the wrap header.
-void tryAddClusterWrapFilter(QueryPlan & query_plan, const TableExpressionData & table_expression_data)
-{
-    const auto & filter_actions = table_expression_data.getFilterActions();
-    if (!filter_actions || !query_plan.isInitialized())
-        return;
-
-    QueryPlan::Node * node = query_plan.getRootNode();
-    while (node && !node->children.empty())
-        node = node->children.front();
-
-    auto * source = node ? dynamic_cast<SourceStepWithFilter *>(node->step.get()) : nullptr;
-    if (!source)
-        return;
-
-    auto filter_dag = filter_actions->clone();
-    const auto filter_column_name = filter_dag.getOutputs().at(0)->result_name;
-    source->addFilter(std::move(filter_dag), filter_column_name);
-    /// Wrap subquery planning already called `applyFilters` with no predicate.
-    /// Apply now so icebergCluster listing is recreated with the WHERE.
-    /// `SourceStepWithFilter::applyFilters` remaps `__tableN.col` to storage names.
-    source->SourceStepWithFilterBase::applyFilters();
 }
 
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
@@ -1542,29 +1514,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
     QueryProcessingStage::Enum till_stage = QueryProcessingStage::Enum::FetchColumns;
-    bool can_prefilter_wrapped_table = false;
 
     if (wrap_read_columns_in_subquery)
     {
         auto original_table_expression = table_expression;
-
         const auto * parent_query = select_query_info.query_tree
             ? select_query_info.query_tree->as<QueryNode>()
             : nullptr;
-        can_prefilter_wrapped_table = parent_query
+        const bool can_prefilter_wrapped_table = parent_query
             && joinTreePreservesRowsForTable(parent_query->getJoinTreeNode(), original_table_expression);
-
-        /// Subqueries inherit the outer GlobalPlannerContext, whose filter map is keyed by
-        /// outer table nodes. Collect filters for this JOIN query so icebergCluster listing
-        /// still sees left-only WHERE after the wrap. Skip the same join sides as
-        /// `joinTreePreservesRowsForTable` so listing cannot change `ASOF` / `PASTE` matches.
-        if (can_prefilter_wrapped_table && !table_expression_data.getFilterActions())
-        {
-            auto collected = collectFiltersForAnalysis(select_query_info.query_tree, select_query_options, nullptr);
-            auto it = collected.find(table_expression);
-            if (it != collected.end() && it->second.filter_actions)
-                table_expression_data.setFilterActions(it->second.filter_actions->clone());
-        }
 
         QueryTreeNodePtr wrap_where;
         QueryTreeNodePtr wrap_prewhere;
@@ -1583,29 +1541,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             if (parent_query->hasPrewhere())
                 wrap_prewhere = copy_left_only(parent_query->getPrewhere());
 
-            /// `icebergCluster` reports `WithMergeableState`, so wrap planning does not add a
-            /// `WHERE` `FilterStep` (`isFirstStage` is false). Dummy analysis of
-            /// `count()` of `SELECT * … JOIN` can also miss the predicate. Build the listing
-            /// DAG from the copied conjuncts and include those columns in the wrap projection.
-            QueryTreeNodePtr listing_predicate = wrap_where ? wrap_where : wrap_prewhere;
-            if (listing_predicate)
-            {
+            /// Keep copied `WHERE` columns in the wrap projection. `icebergCluster`
+            /// reports `WithMergeableState`, so wrap planning does not add a `FilterStep`.
+            if (auto listing_predicate = wrap_where ? wrap_where : wrap_prewhere)
                 collectSourceColumns(listing_predicate, planner_context, false /*keep_alias_columns*/);
-                if (!table_expression_data.getFilterActions())
-                {
-                    auto filter_info = buildFilterInfo(
-                        listing_predicate->clone(), original_table_expression, planner_context);
-                    table_expression_data.setFilterActions(std::move(filter_info.actions));
-                }
-            }
         }
 
         auto columns = table_expression_data.getColumns();
         table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, original_table_expression, query_context);
 
         /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
-        /// WHERE/PREWHERE so initiator file listing sees the same predicate as a single-table
-        /// `icebergCluster` read.
+        /// WHERE/PREWHERE so wrap dummy analysis (and initiator listing) see the same
+        /// predicate as a single-table `icebergCluster` read.
         if (can_prefilter_wrapped_table)
         {
             auto & wrap_query = table_expression->as<QueryNode &>();
@@ -2320,8 +2267,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             const auto & mapping = subquery_planner.getQueryNodeToPlanStepMapping();
             query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
             query_plan = std::move(subquery_planner).extractQueryPlan();
-            if (wrap_read_columns_in_subquery && till_stage == QueryProcessingStage::FetchColumns && can_prefilter_wrapped_table)
-                tryAddClusterWrapFilter(query_plan, table_expression_data);
         }
 
         auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();

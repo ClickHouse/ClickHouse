@@ -24,6 +24,7 @@
 
 #include <Common/ProfileEvents.h>
 
+#include <cctype>
 #include <memory>
 #include <unordered_map>
 
@@ -54,18 +55,52 @@ namespace ErrorCodes
 namespace
 {
 
-std::unordered_map<std::string, ColumnWithTypeAndName> storageColumnNameToInputColumn(const StorageSnapshotPtr & storage_snapshot)
+/// Analyzer / wrap headers use `__tableN.col`; Iceberg min/max and hive partition
+/// listing match DAG inputs against storage column names.
+std::string_view stripTableQualifier(std::string_view name)
 {
-    std::unordered_map<std::string, ColumnWithTypeAndName> replacements;
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && std::isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
+
+std::optional<ActionsDAG> remapListingFilterInputsToStorageColumns(
+    const ActionsDAG & filter,
+    const StorageSnapshotPtr & storage_snapshot)
+{
     if (!storage_snapshot)
-        return replacements;
+        return {};
 
     const auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns();
-    for (const auto & column : storage_snapshot->getColumns(options))
-        replacements.emplace(column.name, ColumnWithTypeAndName(nullptr, column.type, column.name));
-    return replacements;
+
+    std::unordered_map<std::string, ColumnWithTypeAndName> replacements;
+    for (const auto * input : filter.getInputs())
+    {
+        if (input->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        String physical{stripTableQualifier(input->result_name)};
+        if (!storage_snapshot->tryGetColumn(options, physical))
+            continue;
+
+        replacements.emplace(input->result_name, ColumnWithTypeAndName(nullptr, input->result_type, physical));
+    }
+
+    if (replacements.empty())
+        return {};
+
+    return ActionsDAG::buildFilterActionsDAG({filter.getOutputs().at(0)}, replacements);
 }
 
 }
@@ -82,47 +117,20 @@ IStorageCluster::IStorageCluster(
 
 void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
-    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
+    if (extension)
+        return;
 
+    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
     listing_filter_dag.reset();
     if (filter)
     {
-        auto replacements = query_info.buildNodeNameToInputNodeColumn();
-        if (replacements.empty())
-            replacements = storageColumnNameToInputColumn(storage_snapshot);
-
-        if (!replacements.empty())
+        if (auto remapped = remapListingFilterInputsToStorageColumns(*filter, storage_snapshot))
         {
-            if (auto remapped = ActionsDAG::buildFilterActionsDAG({filter->getOutputs().at(0)}, replacements))
-            {
-                listing_filter_dag = std::move(*remapped);
-                filter = &*listing_filter_dag;
-                predicate = filter->getOutputs().at(0);
-            }
+            listing_filter_dag = std::move(*remapped);
+            filter = &*listing_filter_dag;
         }
-        else if (!predicate)
+        if (!predicate)
             predicate = filter->getOutputs().at(0);
-    }
-
-    const UInt64 filter_hash = filter ? filter->getHash() : 0;
-    const bool has_predicate = predicate != nullptr;
-
-    if (extension)
-    {
-        /// Remote sources already hold the iterator; replacing it would be a use-after-free.
-        if (extension_used_in_pipeline)
-            return;
-
-        /// Optimizer `applyFilters` with no extra FilterSteps must not replace a
-        /// listing that already has a predicate with an empty one.
-        if (!has_predicate)
-            return;
-
-        /// Same listing predicate. Recreate when a later `applyFilters` replaces
-        /// `a` with `a AND b` (cluster JOIN wrap applies the copied `WHERE`
-        /// before the optimizer pushes outer filters).
-        if (extension_has_predicate && filter_hash == extension_filter_hash)
-            return;
     }
 
     extension = storage->getTaskIteratorExtension(
@@ -131,8 +139,6 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
         context,
         cluster,
         getStorageSnapshot()->metadata);
-    extension_has_predicate = has_predicate;
-    extension_filter_hash = filter_hash;
 }
 
 /// The code executes on initiator
@@ -213,10 +219,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
-    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
-    const ActionsDAG::Node * predicate = filter ? filter->getOutputs().at(0) : nullptr;
-    createExtension(predicate);
-    extension_used_in_pipeline = true;
+    createExtension(nullptr);
 
     ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
 

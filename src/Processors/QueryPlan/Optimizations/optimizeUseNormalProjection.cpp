@@ -21,7 +21,6 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
-#include <Analyzer/Identifier.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -63,6 +62,25 @@ static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & r
     {
         result.push_back(expr);
     }
+}
+
+/// Strip a leading analyzer table qualifier (e.g. `__table1.`) from a column name.
+/// The analyzer decorates input column names with a per-table-expression qualifier that is
+/// absent from the projection's WHERE AST, so it must be ignored when comparing identifiers.
+static std::string_view stripTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
 }
 
 /// Structurally compare a query-filter DAG node against a projection-WHERE AST conjunct.

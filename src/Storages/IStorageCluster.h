@@ -105,9 +105,6 @@ private:
     LoggerPtr log;
 
     std::optional<RemoteQueryExecutor::Extension> extension;
-    bool extension_has_predicate = false;
-    UInt64 extension_filter_hash = 0;
-    bool extension_used_in_pipeline = false;
     /// Listing DAG after identifier inputs (`__tableN.col`) are rewritten to storage names.
     std::optional<ActionsDAG> listing_filter_dag;
 
