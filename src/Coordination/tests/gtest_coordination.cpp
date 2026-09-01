@@ -1396,7 +1396,7 @@ TEST(KeeperOverDispatcherMulti, CallbackPromotesFailedMultiAggregateError)
     /// Drive the exact callback KeeperOverDispatcher::multi installs, with the response
     /// shape KeeperStorage builds for a failed multi, and check what the user callback
     /// receives as the aggregate error. Fails if multi() stops promoting the failing
-    /// subresponse error — the in-process regression this PR fixes.
+    /// subresponse error.
     auto aggregate_seen_by_callback = [&](std::vector<Error> sub_errors, Error aggregate)
     {
         auto response = std::make_shared<ZooKeeperMultiWriteResponse>();
