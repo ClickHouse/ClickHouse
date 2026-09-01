@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-/// Matches the largestTriangleThreeBuckets contract (its MAX_ARRAY_SIZE), so no state readable today is rejected.
+/// Matches the `largestTriangleThreeBuckets` contract (its `MAX_ARRAY_SIZE`), so no state readable today is rejected.
 static constexpr size_t MAX_STATISTICS_STATE_SIZE = 1ULL << 30;
 
 /// Because ranks are adjusted, we have to store each of them in Float type.
@@ -117,7 +117,7 @@ struct StatisticalSample
     }
 
     /// Fills `sample` with `count` elements, growing it only by what the buffer already holds, the way
-    /// addX/addY grow it. MixedAlignedArenaAllocator reallocates and frees for real at these sizes.
+    /// `addX`/`addY` grow it. `MixedAlignedArenaAllocator` reallocates and frees for real at these sizes.
     template <typename Sample>
     static void readSample(Sample & sample, size_t count, ReadBuffer & buf, Arena * arena)
     {

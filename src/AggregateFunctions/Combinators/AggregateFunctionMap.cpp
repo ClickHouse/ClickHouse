@@ -297,14 +297,14 @@ public:
 
             this->data(place).readKey(key, buf);
 
+            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+            nested_func->create(nested_place);
+
             /// `serialize` walks a map, so a repeated key is not something a writer can emit.
-            if (merged_maps.contains(key))
+            if (!merged_maps.emplace(key, nested_place).second)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Duplicate key in the serialized state of a -Map aggregate function");
 
-            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-            nested_func->create(nested_place);
-            merged_maps.emplace(key, nested_place);
             nested_func->deserialize(nested_place, buf, std::nullopt, arena);
         }
     }

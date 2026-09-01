@@ -48,8 +48,8 @@ inline std::string_view readStringBinaryInto(Arena & arena, ReadBuffer & buf)
         return std::string_view(data, size);
     }
 
-    /// An Arena cannot reuse a superseded block, so it is allocated once, after the value is complete.
-    /// Staging in a throwing container keeps the memory limit enforced as the Arena enforces it.
+    /// An `Arena` cannot reuse a superseded block, so it is allocated once, after the value is complete.
+    /// Staging in a throwing container keeps the memory limit enforced as the `Arena` enforces it.
     StringWithMemoryTracking staged;
     readStringGrowing(staged, size, buf);
 
