@@ -127,12 +127,14 @@ Configurez un gestionnaire routé par préfixe sur le port HTTP principal de Cli
 
 `<defaults/>` conserve les gestionnaires intégrés pour les endpoints tels que `/ping` et les requêtes SQL. Le préfixe ci-dessus expose ces endpoints via un seul gestionnaire :
 
-| Endpoint                         | Rôle                          |
-| -------------------------------- | ----------------------------- |
-| `/prometheus/api/v1/write`       | Écriture distante Prometheus  |
-| `/prometheus/api/v1/read`        | Lecture distante Prometheus   |
-| `/prometheus/api/v1/query`       | Requêtes PromQL instantanées  |
-| `/prometheus/api/v1/query_range` | Requêtes PromQL sur une plage |
+| Endpoint                         | Rôle                                   |
+| -------------------------------- | -------------------------------------- |
+| `/prometheus/api/v1/write`       | Écriture distante Prometheus           |
+| `/prometheus/api/v1/read`        | Lecture distante Prometheus            |
+| `/prometheus/api/v1/query`       | Requêtes PromQL instantanées           |
+| `/prometheus/api/v1/query_range` | Requêtes PromQL sur une plage          |
+| `/prometheus/api/v1/series`      | Métadonnées des séries                 |
+| `/prometheus/api/v1/metadata`    | Métadonnées de la famille de métriques |
 
 L&#39;exemple ne spécifie pas `database` ni `table` dans le gestionnaire. Chaque requête doit fournir le paramètre de requête `table`. Elle peut également fournir `database`, utiliser un nom de table qualifié tel que `prometheus.metrics` ou omettre la base de données afin d&#39;utiliser `default`. Un même gestionnaire peut ainsi desservir plusieurs tables `TimeSeries`.
 
@@ -171,6 +173,15 @@ remote_write:
 ```
 
 Prometheus envoie des échantillons dans la table `prometheus.metrics`.
+
+Pour regrouper les données issues de nombreuses requêtes d’écriture distante concurrentes en un nombre réduit de parties, activez les [insertions asynchrones](/fr/reference/settings/session-settings/async-insert#async_insert) en ajoutant le paramètre `async_insert` à l’URL (ou en l’activant dans le profil utilisateur) :
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
+```
+
+ClickHouse n’accuse réception d’une requête d’écriture distante asynchrone qu’une fois les données écrites dans toutes les tables internes de la table `TimeSeries`, indépendamment du paramètre [`wait_for_async_insert`](/fr/reference/settings/session-settings/wait-for#wait_for_async_insert) : le protocole d’écriture distante considère comme durable toute écriture dont réception a été accusée. Si l’écriture échoue, la requête renvoie une erreur et Prometheus la réessaie.
 
 <div id="promql-query-support">
   ### Interroger avec PromQL
@@ -226,7 +237,7 @@ datasources:
 Grafana ajoute `/api/v1/query` ou `/api/v1/query_range` à cette URL de base et ajoute `customQueryParameters` à chaque requête.
 
 <Note>
-  Seuls les endpoints de requête `/api/v1/query` et `/api/v1/query_range` sont implémentés. Les endpoints de métadonnées utilisés par une source de données Prometheus dans Grafana pour parcourir les libellés, les variables de modèle et l’autocomplétion du générateur de requêtes (`/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`) ne sont pas implémentés et renvoient une erreur. Écrivez les expressions PromQL en mode code plutôt que d’utiliser le générateur de requêtes.
+  Seuls les endpoints de requête `/api/v1/query` et `/api/v1/query_range`, ainsi que les endpoints de métadonnées `/api/v1/series`, `/api/v1/labels` et `/api/v1/metadata`, sont implémentés. `/api/v1/series` nécessite au moins un sélecteur de séries `match[]`, prend en charge les paramètres facultatifs `start`, `end` et `limit`, et renvoie l’union des séries correspondant à chaque sélecteur. `/api/v1/labels` accepte les mêmes paramètres, `match[]` étant facultatif, et renvoie les noms de libellés triés des séries correspondantes (ou de toutes les séries lorsqu’aucun sélecteur n’est fourni). L’endpoint de valeurs de libellés (`/api/v1/label/<name>/values`), qu’une source de données Prometheus dans Grafana utilise pour parcourir les libellés, les variables de modèle et l’autocomplétion du générateur de requêtes, n’est pas implémenté et renvoie une erreur. Écrivez les expressions PromQL en mode code plutôt que d’utiliser le générateur de requêtes.
 </Note>
 
 <div id="sql-entry-points">
@@ -254,6 +265,28 @@ FROM prometheusQuery(
     'rate(http_requests_total[5m])',
     now()
 );
+```
+
+<div id="metadata">
+  ### Interroger les métadonnées des métriques
+</div>
+
+L’endpoint `/prometheus/api/v1/metadata` renvoie les métadonnées des métriques stockées dans la table cible `Metrics` de la table `TimeSeries` : le type, le texte d’aide et l’unité de chaque famille de métriques. Il prend en charge les paramètres Prometheus suivants dans la chaîne de requête de l’URL :
+
+| Paramètre          | Description                                                                                                                                                |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric`           | Renvoie les métadonnées uniquement pour cette famille de métriques.                                                                                        |
+| `limit`            | Limite le nombre de familles de métriques renvoyées. Une valeur négative signifie qu’il n’y a pas de limite ; zéro ne renvoie aucune famille de métriques. |
+| `limit_per_metric` | Limite le nombre d’objets de métadonnées renvoyés pour chaque famille de métriques. Les valeurs nulles ou négatives signifient qu’il n’y a pas de limite.  |
+
+La table cible `Metrics` par défaut est une `ReplacingMergeTree` ordonnée par nom de famille de métriques : elle conserve l’entrée de métadonnées écrite le plus récemment pour chaque famille de métriques. Plusieurs entrées par famille ne sont renvoyées que tant que la table cible les stocke — avant la fusion de ses parts, ou lorsque la table est définie avec un engine qui les conserve.
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
+  --data-urlencode "metric=http_requests_total" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
 ```
 
 <div id="remote-read">
