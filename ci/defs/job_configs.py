@@ -163,6 +163,7 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
+            "./ci/jobs/scripts/log_export.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
@@ -206,6 +207,11 @@ common_stress_job_config = Job.Config(
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/log_parser.py",
+            # `stress_runner.sh` exports the system logs through
+            # `clickhouse_proc.py logs_export_*`. The `ci_logs_sender` user is
+            # covered by `./tests/config` above.
+            "./ci/jobs/scripts/log_export.py",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
         ],
     ),
     timeout=3600 * 3,
@@ -242,41 +248,20 @@ common_integration_test_job_config = Job.Config(
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
-    )
-    ci_tests = Job.Config(
-        name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_SMALL,
-        command="python3 ./ci/jobs/ci_tests_job.py",
-        timeout=1200,
-        run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci",
-                # The ci/tests/ guards for the expect-trace / bash-xtrace separation read these
-                # two files, so a change to either must run this job.
-                "./tests/clickhouse-test",
-                "./tests/queries/shell_config.sh",
-                # The CFI build-classification guards read these two, so a change to either
-                # must run this job instead of reusing a cached result.
-                "./tests/config/install.sh",
-                "./tests/integration/helpers/cluster.py",
-            ]
-        ),
-        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -651,7 +636,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
@@ -661,7 +646,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
@@ -688,7 +673,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
@@ -698,7 +683,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
@@ -1431,25 +1416,28 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
     )
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
+                "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
                 "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
@@ -1485,7 +1473,7 @@ class JobConfigs:
     ast_fuzzer_targeted_pr_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
@@ -1493,7 +1481,10 @@ class JobConfigs:
                 "./ci/jobs/scripts/find_symbols.py",
                 "./ci/jobs/scripts/find_tests.py",
                 "./ci/jobs/scripts/log_parser.py",
+                "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
                 "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
@@ -1522,7 +1513,10 @@ class JobConfigs:
                 "./ci/jobs/buzzhouse_job.py",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
+                "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
                 "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
@@ -1562,6 +1556,10 @@ class JobConfigs:
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
                 "./ci/docker/performance-comparison",
+                # Both servers export their system logs to the CI Logs cluster
+                "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
         timeout=2 * 3600,
@@ -1598,6 +1596,10 @@ class JobConfigs:
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
                 "./ci/docker/performance-comparison",
+                # Both servers export their system logs to the CI Logs cluster
+                "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
         timeout=2 * 3600,
@@ -1627,6 +1629,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/clickbench/",
                 "./ci/jobs/scripts/clickhouse_service.py",
+                "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/praktika/result.py",
                 "./tests/config/users.d/ci_logs_sender.yaml",
@@ -1674,7 +1677,7 @@ class JobConfigs:
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
         # runners are in us-east-1, where Canonical's mirrors are often unreachable.
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
@@ -1690,7 +1693,7 @@ class JobConfigs:
     )
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
         # runners are in us-east-1, where Canonical's mirrors are often unreachable.
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
@@ -1828,6 +1831,10 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/sqlstorm_test.py",
                 "./ci/jobs/scripts/server_cleanup.py",
+                "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `create_log_export_config`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./tests/sqlstorm/",
             ],
         ),
@@ -1837,13 +1844,13 @@ class JobConfigs:
     )
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py keeper",
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_SERVER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
@@ -1851,6 +1858,18 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+        ),
+    )
+    libfuzzer_corpus_minimization_job = Job.Config(
+        name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command=(
+            "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
+            "'libFuzzer corpus minimization'"
+        ),
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
@@ -1925,7 +1944,7 @@ class JobConfigs:
     )
     update_toolchain_dockerfile_job = Job.Config(
         name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
         enable_gh_auth=True,
     )
@@ -1954,18 +1973,6 @@ class JobConfigs:
         ),
         timeout=1800,
         enable_gh_auth=True,
-        # Run on a red head too. This job is the only writer of the
-        # `build-profile-diff` PR comment, so skipping it leaves the comment
-        # posted for an older commit pinned to the PR, reading as if it
-        # described the head. `Build (arm_release)` runs after every regular
-        # build (`set_run_after(REGULAR_BUILD_NAMES)` in ci/workflows/pull_request.py)
-        # and inherits the default "no upstream failure" gate, so an unrelated
-        # build failure skips it and would skip this job with it. With no
-        # profile data for the head the job posts the "no data" text over the
-        # stale comparison (see main()) instead of leaving it. Not
-        # `run_unless_cancelled`: that would also ignore the job filter and run
-        # this on a `release` or `do not test` PR.
-        run_on_upstream_failure=True,
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
@@ -2001,7 +2008,7 @@ class JobConfigs:
     )
     promql_compliance_job = Job.Config(
         name=JobNames.PROMQL_COMPLIANCE,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         run_in_docker="clickhouse/test-base",
         # Wait for integration upload post-hooks, including failed integration jobs.
         run_after=[
