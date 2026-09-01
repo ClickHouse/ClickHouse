@@ -10,15 +10,17 @@ executable is picked up as a fuzzer target and invoked as
 with UNRECOGNIZED_ARGUMENTS. That produced a `clickhouse` FAIL leaf beside 20
 passing *_fuzzer leaves.
 
-The binary arrives non-executable: artifacts are downloaded with `aws s3 cp`, a
-content copy that does not carry POSIX mode, which is also why the *_fuzzer
-files have to be chmod-ed explicitly. So the execute bit exists only for the
-duration of dictionary generation, and restoring the original mode afterwards
-returns the directory to a state where only fuzzer targets are executable.
+The binary arrives non-executable: an artifact download copies object content and
+S3 carries no POSIX mode, which is also why the *_fuzzer files have to be
+chmod-ed explicitly. So the execute bit exists only for the duration of
+dictionary generation, and restoring the original mode afterwards returns the
+directory to a state where only fuzzer targets are executable.
 
 These tests pin the whole 0644 -> 0755 -> 0644 cycle rather than just the end
 state: the binary must be executable *while* the generator runs, and must not be
-afterwards, including when generation fails.
+afterwards, including when generation fails. The last two pin which jobs reach
+the generator at all: the same script also backs the weekly corpus-minimization
+job, which is given no release binary.
 """
 
 import os
@@ -32,7 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 import ci.jobs.libfuzzer_test_check as libfuzzer_test_check  # noqa: E402
 
-# What `aws s3 cp` actually delivers under the job's umask 0022.
+# What the artifact download delivers under the job's umask 0022.
 _DOWNLOADED_MODE = 0o644
 
 
@@ -115,3 +117,67 @@ def test_without_the_restore_the_binary_stays_executable(
     _run(monkeypatch, fuzzers_path, tmp_path, restore=False)
     assert _mode(fuzzers_path / "clickhouse") != _DOWNLOADED_MODE
     assert _mode(fuzzers_path / "clickhouse") & 0o111
+
+
+def _drive_main(monkeypatch, tmp_path, *, minimize_only):
+    """Run main() as far as the runner invocation, recording generation calls.
+
+    main() is one function, so the dispatch these two arms pin is not reachable
+    any other way; everything it touches before the runner is stubbed out.
+    """
+    (tmp_path / "ci" / "tmp").mkdir(parents=True)
+    generated = []
+
+    class _ReachedRunner(Exception):
+        pass
+
+    class _Image:
+        def pull_image(self):
+            return self
+
+    class _Info:
+        pr_number = 0
+        git_branch = "master"
+
+    def _stop(*args, **kwargs):
+        raise _ReachedRunner
+
+    monkeypatch.setattr(
+        libfuzzer_test_check.Utils, "cwd", staticmethod(lambda: str(tmp_path))
+    )
+    monkeypatch.setattr(libfuzzer_test_check, "download_corpus", lambda *a, **k: None)
+    monkeypatch.setattr(
+        libfuzzer_test_check.DockerImage,
+        "get_docker_image",
+        staticmethod(lambda *a, **k: _Image()),
+    )
+    monkeypatch.setattr(libfuzzer_test_check, "Info", _Info)
+    monkeypatch.setattr(
+        libfuzzer_test_check,
+        "generate_dictionary",
+        lambda *a, **k: generated.append(a),
+    )
+    monkeypatch.setattr(libfuzzer_test_check, "get_run_command", _stop)
+
+    argv = ["libfuzzer_test_check.py"]
+    if minimize_only:
+        argv += ["--minimize-only", "libFuzzer corpus minimization"]
+    else:
+        argv += ["libFuzzer tests"]
+    monkeypatch.setattr(sys, "argv", argv)
+
+    with pytest.raises(_ReachedRunner):
+        libfuzzer_test_check.main()
+    return generated
+
+
+def test_minimization_does_not_generate_the_dictionary(monkeypatch, tmp_path):
+    # libFuzzer takes no dictionary for a corpus merge, and the job is given no
+    # binary to generate one from.
+    assert _drive_main(monkeypatch, tmp_path, minimize_only=True) == []
+
+
+def test_the_fuzzing_job_still_generates_the_dictionary(monkeypatch, tmp_path):
+    # Positive control for the arm above: the same dispatch must not stop the job
+    # that does need the dictionary.
+    assert len(_drive_main(monkeypatch, tmp_path, minimize_only=False)) == 1

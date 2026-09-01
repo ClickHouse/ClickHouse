@@ -220,6 +220,45 @@ class TestLatestTagIsBaseBranchOnly:
         for branch in (*sqlancer_workflow.branches, "some/other-branch"):
             assert not _publish_latest_docker_manifest(sqlancer_workflow, branch)
 
+    def _add_latest_reaching_the_merge(self, monkeypatch, branch):
+        """The argument `Docker.merge_manifest` receives, not the decision alone.
+
+        The arms above pin the helper; restoring the static workflow flag at the
+        call site would leave them green, so the wiring needs its own arm.
+        """
+        from ci.praktika import native_jobs
+
+        class _Stop(Exception):
+            pass
+
+        class _Info:
+            is_local_run = True
+            git_branch = branch
+
+        seen = []
+
+        def _merge_manifest(config, digests, add_latest, with_log=False):
+            seen.append(add_latest)
+            raise _Stop
+
+        monkeypatch.setattr(native_jobs, "Info", lambda: _Info())
+        monkeypatch.setattr(native_jobs.Shell, "check", lambda *a, **k: True)
+        monkeypatch.setattr(native_jobs.Docker, "merge_manifest", _merge_manifest)
+        with pytest.raises(_Stop):
+            native_jobs._build_dockers(
+                _mangled("NightlyFuzzers"),
+                native_jobs.Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
+            )
+        return seen
+
+    def test_the_merge_gets_the_tag_on_the_declared_branch(self, monkeypatch):
+        assert self._add_latest_reaching_the_merge(monkeypatch, "master") == [True]
+
+    def test_the_merge_gets_no_tag_on_another_branch(self, monkeypatch):
+        assert self._add_latest_reaching_the_merge(
+            monkeypatch, "groeneai/reland-fuzzer-dict-from-binary"
+        ) == [False]
+
     def test_every_workflow_in_the_tree_that_tags_latest_declares_a_branch(self):
         # A workflow with no branches cannot name its base branch, so the gate
         # falls back to publishing; that fallback has to stay unreachable.
