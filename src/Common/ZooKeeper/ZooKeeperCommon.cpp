@@ -1364,15 +1364,7 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
             response = std::make_shared<ZooKeeperErrorResponse>();
 
         if (op_error != Error::ZOK)
-        {
             response->error = op_error;
-
-            /// Set error for whole transaction.
-            /// If some operations fail, ZK send global error as zero and then send details about each operation.
-            /// It will set error code for first failed operation and it will set special "runtime inconsistency" code for other operations.
-            if (error == Error::ZOK && op_error != Error::ZRUNTIMEINCONSISTENCY)
-                error = op_error;
-        }
 
         if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
@@ -1397,6 +1389,11 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         if (error_read != -1)
             throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
     }
+
+    /// Derive the transaction's aggregate error from the per-operation errors just read:
+    /// the wire carries a ZOK aggregate on a failed multi and the real error only in the
+    /// failing subresponse. Shared with the in-process path (KeeperOverDispatcher).
+    promoteMultiResponseError(*this);
 }
 
 void promoteMultiResponseError(MultiResponse & response)
@@ -1404,10 +1401,10 @@ void promoteMultiResponseError(MultiResponse & response)
     if (response.error != Error::ZOK)
         return;
 
-    /// Mirror the aggregate-error promotion in ZooKeeperMultiResponse::readImpl:
-    /// the first failed operation carries the real error, later operations carry
-    /// ZRUNTIMEINCONSISTENCY. Skip the latter so the aggregate reflects the
-    /// operation that actually failed.
+    /// A failed multi leaves the aggregate error ZOK, with the real error on the failing
+    /// operation and ZRUNTIMEINCONSISTENCY on the operations after it. Promote the first
+    /// real error to the aggregate. The wire (readImpl) and the in-process adapter
+    /// (KeeperOverDispatcher) both use this so they stay identical.
     for (const auto & sub : response.responses)
     {
         if (sub->error != Error::ZOK && sub->error != Error::ZRUNTIMEINCONSISTENCY)
