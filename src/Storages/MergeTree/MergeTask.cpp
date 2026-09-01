@@ -949,6 +949,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                         if (expired_columns.contains(dependency))
                         {
                             expired_columns.emplace(storage_column.name);
+                            global_ctx->columns_expired_by_unmaterializable_default.emplace(storage_column.name);
                             changed = true;
                             break;
                         }
@@ -1001,7 +1002,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 bool is_expired = expired_columns.contains(column.name);
                 bool is_required_for_merge = global_ctx->merge_required_columns.contains(column.name);
 
-                if (is_expired)
+                /// The TTL step fills expired columns with the value of their `DEFAULT`, so that
+                /// skip indexes and projections rebuilt during the merge see the value the table
+                /// logically reads. A column expired because its `DEFAULT` cannot be materialized
+                /// here must be left out of that: evaluating it is what writes array sizes that
+                /// disagree with the shared `Nested` offsets, and for a column also required for the
+                /// merge it would overwrite the value the reader already reconciled with those
+                /// offsets. Such a column is recomputed on read, where the full context is available.
+                if (is_expired && !global_ctx->columns_expired_by_unmaterializable_default.contains(column.name))
                     expired_out.push_back(column);
 
                 if (!is_expired || is_required_for_merge)
