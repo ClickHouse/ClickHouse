@@ -1,6 +1,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Core/Defines.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Common/SipHash.h>
@@ -17,6 +18,8 @@
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -109,17 +112,34 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     /// Adjust the size of state to make all states aligned in vector.
     size_t total_size_of_state = (size_of_state + align_of_state - 1) / align_of_state * align_of_state;
 
-    /// Both the size of a state and the number of rows come from the data, so their product can
-    /// wrap around: the block would then be allocated smaller than what is written into it.
-    size_t size_of_all_states = 0;
-    if (common::mulOverflow(total_size_of_state, limit, size_of_all_states))
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Too large aggregate function states: {} states of {} bytes each", limit, total_size_of_state);
+    /// The number of rows comes from the data, so it must not be turned into an allocation on its
+    /// own: allocating all the states at once would multiply it by the size of a state, which comes
+    /// from the data as well, and the product both overflows and lets a tiny block ask for an
+    /// enormous allocation. The states are allocated in blocks bounded by the size of the array of
+    /// pointers that is reserved for them anyway, so a block of rows of an ordinary state still
+    /// takes a single allocation, and a state larger than that bound is allocated on its own.
+    static constexpr size_t max_bytes_per_block = DEFAULT_INSERT_BLOCK_SIZE * sizeof(AggregateDataPtr);
+    const size_t states_per_block
+        = total_size_of_state == 0 ? limit : std::max<size_t>(1, max_bytes_per_block / total_size_of_state);
 
-    vec.reserve(vec.size() + limit);
-    char * place = arena.alignedAlloc(size_of_all_states, align_of_state);
+    vec.reserve(vec.size() + std::min<size_t>(limit, DEFAULT_INSERT_BLOCK_SIZE));
 
-    function->createAndDeserializeBatch(vec, place, total_size_of_state, limit, istr, version, &arena);
+    for (size_t remaining = limit; remaining != 0 && !istr.eof();)
+    {
+        const size_t states_in_block = std::min(remaining, states_per_block);
+
+        size_t size_of_block = 0;
+        if (common::mulOverflow(total_size_of_state, states_in_block, size_of_block))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large aggregate function states: {} states of {} bytes each", states_in_block, total_size_of_state);
+
+        char * place = arena.alignedAlloc(size_of_block, align_of_state);
+
+        /// Reads less than the whole block when the data ends, and then the loop stops on `eof`.
+        function->createAndDeserializeBatch(vec, place, total_size_of_state, states_in_block, istr, version, &arena);
+
+        remaining -= states_in_block;
+    }
 }
 
 static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num, size_t version)
