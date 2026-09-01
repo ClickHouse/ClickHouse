@@ -84,6 +84,15 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         chassert(!substream_path.empty());
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
+        const bool is_offsets = substream_path.back().type == ISerialization::Substream::ArraySizes;
+
+        /// Flattened Nested columns intentionally share their offsets stream. Preserve the legacy
+        /// deterministic first-owner rule before resolving the sibling's codec. Other duplicate streams,
+        /// in particular value streams, continue through the conflict check below. The dedicated set
+        /// ensures that both callbacks describe ArraySizes rather than trusting only the stream name.
+        if (is_offsets && shared_offset_streams.contains(stream_name))
+            return;
+
         const auto resolved = codec_policy.resolve(getCodecPathForStream(name_and_type, name_and_type.getTypeInStorage(), substream_path), default_codec_desc);
 
         const auto & subtype = substream_path.back().data.type;
@@ -133,6 +142,8 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         /// pure-float `Tuple`.
         compressed_streams.emplace(stream_name, it->second);
         stream_codec_hashes.emplace(stream_name, compression_codec->getHash());
+        if (is_offsets)
+            shared_offset_streams.emplace(stream_name);
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;

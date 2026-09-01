@@ -130,6 +130,7 @@ private:
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
     std::unordered_map<String, UInt64> stream_codec_hashes;
+    NameSet shared_offset_streams;
 
     /// Some long column names may be replaced to hashes.
     /// Below are mapping from original stream name to actual

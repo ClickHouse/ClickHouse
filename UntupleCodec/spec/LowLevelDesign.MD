@@ -149,7 +149,7 @@ Split the new factory path into two phases. The declaration phase validates AST 
 3. Call `validateCodecAndGetPreprocessedASTForStreams` once for each declaration with exactly its group, including an empty group for a dormant declaration. Replace that declaration with the returned normalized AST.
 4. Enumerate the whole owning serialization again, resolve the normalized effective policy per stream, instantiate every explicit filtered codec, preserve the part default as a symbolic source, and produce the effective-stream records used by shared-stream and storage-specific restriction checks.
 
-The final pass is authoritative for effective codec/type compatibility and shared-stream agreement. Use an owning record such as:
+The final pass is authoritative for effective codec/type compatibility and for identifying shared streams. Use an owning record such as:
 
 ```cpp
 enum class EffectiveCodecSource : uint8_t
@@ -175,17 +175,17 @@ struct EffectiveCodecStream
 
 `MergeTreeData::checkProperties` consumes the same records, restricted to the logical paths used by sorting and partition keys, to reject effective lossy codecs. Other restrictions which currently inspect a root `column.codec` must likewise consume effective-stream records. This keeps storage-specific key knowledge out of `ColumnCodecDescription` while preventing those checks from accidentally validating shadowed descendants.
 
-The actual part default is unavailable at DDL time and may later be changed by `RECOMPRESS` TTL, so a missing declaration or winning `CODEC(Default)` has a symbolic `PartDefault` codec identity during this pass. Two symbolic defaults agree. A symbolic default and an explicit codec do not have a stable agreement and must be rejected when they meet on one shared stream, even if the server's current default happens to equal that explicit codec. The writer repeats the check after substituting the actual per-part default.
+The actual part default is unavailable at DDL time and may later be changed by `RECOMPRESS` TTL, so a missing declaration or winning `CODEC(Default)` has a symbolic `PartDefault` codec identity during this pass. Shared structural streams are not required to have equal identities: their canonical first owner selects the codec as described below. A symbolic default remains useful when reporting the effective policy of each logical path.
 
 Static validation must not depend on MergeTree filename escaping, hashed filenames, storage settings, or whether a future part is wide or compact. Add `ISerialization::getLogicalStreamIdentity`, returning a value such as `LogicalSerializationStreamId` from a `NameAndTypePair` and `SubstreamPath`. The identity contains the owning storage name plus normalized serialization components needed to express sharing: substream type, tuple or variant name, array level, object path, and bucket where applicable. It applies the same logical sharing rule as serialization, such as collapsing shared `Nested` offsets, but performs no filename escaping or hashing and has no part-format setting.
 
-DDL validation groups static callbacks by `LogicalSerializationStreamId`. All logical owners of an identity are resolved independently, structural filtering is applied, and the instantiated codec hashes must agree. `ColumnCodecDescription::validateAndNormalize` performs this within one owning column and returns its records.
+DDL validation groups static callbacks by `LogicalSerializationStreamId`. All logical owners of an identity are resolved independently and structural filtering is applied. The records retain enough ownership information to distinguish intentionally shared structural streams from accidental value-stream aliases. `ColumnCodecDescription::validateAndNormalize` performs this within one owning column and returns its records.
 
-Add the const `ColumnsDescription`-level helper `ColumnsDescription::validateCodecSharedStreams`. It calls `enumerateEffectiveCodecStreams` for every already normalized physical `ColumnDescription`, groups the returned records across the complete candidate schema, and validates shared streams such as `Nested` offsets across flattened top-level entries. This deliberate recomputation avoids storing serialization-layout records in table metadata. Report the identity, both owning columns, both logical codec paths, and both normalized expressions on mismatch.
+Add the const `ColumnsDescription`-level helper `ColumnsDescription::validateCodecSharedStreams`. It calls `enumerateEffectiveCodecStreams` for every already normalized physical `ColumnDescription` and groups the returned records across the complete candidate schema. Intentionally shared structural streams such as `Nested` offsets across flattened top-level entries use the first physical column in deterministic schema order as their canonical codec owner, matching legacy writes. A duplicate independent value stream remains an error; report the identity, both owning columns, both logical codec paths, and both normalized expressions. This deliberate recomputation avoids storing serialization-layout records in table metadata.
 
 `InterpreterCreateQuery::getColumnsDescription` invokes the aggregate helper after all columns have been constructed and individually normalized, before the metadata is installed. For `ALTER TABLE`, individual `AlterCommand::apply` operations normalize each changed owning column, and `AlterCommands::validate` invokes the aggregate helper on the final candidate `StorageInMemoryMetadata::columns` after applying the complete command sequence. Trusted metadata loading also invokes it after parsing the complete `ColumnsDescription`.
 
-Dynamic streams not known from the type are checked later by the concrete writer. Each writer additionally verifies agreement by its final concrete stream key after part-specific enumeration, filename generation, and optional hashing; this is the last defense against format-specific aliasing.
+Dynamic streams not known from the type are checked later by the concrete writer. Each writer additionally verifies agreement for duplicate independent streams by their final concrete key after part-specific enumeration, filename generation, and optional hashing; this is the last defense against format-specific aliasing. Intentionally shared structural streams use canonical ownership instead.
 
 The MergeTree checks for lossy codecs in sorting and partition keys in `MergeTreeData::checkProperties` must enumerate the effective policy per stream. A key that refers to one tuple element must reject a lossy codec on that element; a lossy codec on an unrelated sibling must not reject it. The same audit applies to every current test or restriction that directly inspects `column.codec`.
 
@@ -230,7 +230,7 @@ When subcolumn declarations exist, `ColumnDescription::writeText` constructs a n
 - Loading existing table `columns` text, ZooKeeper metadata, an `ATTACH` definition, or a backup produces a root-only `ColumnCodecDescription` with unchanged semantics.
 - Part `columns.txt` continues to contain only logical names and undecorated types; codec-driven custom serialization restoration consults table metadata separately as it does today.
 
-Use `CodecValidationSettings::trusted` when reading already persisted column metadata, as `ColumnDescription::readText` does today. Normal user `CREATE TABLE`, `ADD COLUMN`, and `MODIFY` paths use the session settings so experimental and suspicious-codec gates remain enforced.
+Use `CodecValidationSettings::trusted` when reading already persisted column metadata, as `ColumnDescription::readText` does today. Normal user `CREATE TABLE`, `ADD COLUMN`, and tuple-codec-changing `MODIFY` paths use the session codec settings. A separate `allow_experimental_tuple_element_codecs` setting, disabled by default, gates only statements which introduce or change persisted tuple-element declarations. Loading and attaching existing metadata, retaining or removing declarations, and root-only codec operations are not gated. A `MODIFY COLUMN` which merely retains tuple-element declarations validates those retained declarations as trusted metadata, so comment/default/TTL/settings-only changes do not fail because the current session's codec policy differs from the policy under which the table was created.
 
 ## `ALTER TABLE` application
 
@@ -332,17 +332,17 @@ The resolver is a write-time policy object. It must not be cached in `IDataType`
 
 ### Wide parts
 
-In `MergeTreeDataPartWriterWide::addStreams`, compute the logical path and effective codec inside the enumeration callback, before checking `column_streams.contains` or `written_offset_substreams`. Maintain a map from the final stream name to the resolved codec hash and a diagnostic logical path. If the stream already exists, compare hashes and throw on disagreement before returning.
+In `MergeTreeDataPartWriterWide::addStreams`, derive the final stream name and identify intentionally shared `ArraySizes` streams before codec resolution. If such an offsets stream was already created, return immediately so its first owner keeps the codec chosen by legacy writers. For all other streams, compute the logical path and effective codec, maintain a map from the final stream name to the resolved codec hash and a diagnostic logical path, and compare hashes on duplicates.
 
-`WrittenOffsetSubstreams` is currently a `std::set<String>` shared across vertical column writers. Extend the vertical-write state with codec identity, for example a `WrittenStreamCodecs` map keyed by stream name. Pass it through `MergedBlockOutputStream`, `MergedColumnOnlyOutputStream`, and `MergeTreeDataPartWriterWide`. This makes a later partial writer verify the codec of an offset stream written by an earlier writer instead of merely skipping it.
+`WrittenOffsetSubstreams` is a `std::set<String>` shared across vertical column writers. Keep a parallel registry containing both the resolved codec hash and the original, unhashed full stream name. A later partial writer validates that full name before skipping an offsets stream written by an earlier writer, so a long-name hash collision still raises `INCORRECT_FILE_NAME`; it does not compare codec hashes for this compatibility case. The vertical merge's deterministic physical-column order determines the canonical owner.
 
 All existing mark-codec, maximum block-size, filename hashing, adaptive write-buffer, checksum, and vector-dimension logic remains after codec resolution. Codecs needing an upfront vector dimension still receive a distinct object per physical stream.
 
 ### Compact parts
 
-In `MergeTreeDataPartWriterCompact::addStreams`, resolve per callback before checking `compressed_streams`. Keep `streams_by_codec` keyed by the instantiated codec hash as today, including the per-stream hash salt for codecs with `needsVectorDimensionUpfront`. Different tuple elements may therefore share one `CompressedStream` when their instantiated codecs are identical and use different streams when they are not.
+In `MergeTreeDataPartWriterCompact::addStreams`, check whether an `ArraySizes` stream already has a canonical owner before resolving its codec, consistently with the Wide writer. Resolve all other callbacks normally. Keep `streams_by_codec` keyed by the instantiated codec hash as today, including the per-stream hash salt for codecs with `needsVectorDimensionUpfront`. Different tuple elements may therefore share one `CompressedStream` when their instantiated codecs are identical and use different streams when they are not.
 
-`compressed_streams` remains the mapping from logical stream filename to `CompressedStream`. On a duplicate physical filename, compare the already registered codec hash and reject a mismatch. Compact parts still write one data file; compressed block headers make codec changes between logical streams readable.
+`compressed_streams` remains the mapping from logical stream filename to `CompressedStream`. On a duplicate independent stream filename, compare the already registered codec hash and reject a mismatch. The intentional shared-offset case returns earlier. Compact parts still write one data file; compressed block headers make codec changes between logical streams readable.
 
 ### Partial and vertical writes
 
@@ -356,9 +356,11 @@ Exercise `MergedColumnOnlyOutputStream`, vertical merge stages in `MergeTask`, a
 
 A declaration on a tuple element owns all streams below that element, including array offsets and null maps. Ownership does not mean every codec in its expression is applicable: `isSpecialCompressionAllowed` and the generic-only factory call remain authoritative. For example, `CODEC(Delta, ZSTD)` on an array element writes its values with `Delta, ZSTD` and its offsets with the generic `ZSTD` component.
 
-Some serializations intentionally make one serialization stream reachable from multiple logical paths, including shared `Nested` offsets and object shared data. Resolution is done for every logical path before deduplication. At DDL time, sharing is recognized with `LogicalSerializationStreamId`; in a writer, it is checked again with the final concrete stream key. Two declarations are compatible when the codec instances that would actually be used for that stream have the same hash after generic filtering and `Default` substitution. Comparing only AST text is too strict; silently choosing the first enumeration result is incorrect.
+Some serializations intentionally make one structural serialization stream reachable from multiple logical paths. The important compatibility case is flattened `Nested`: declarations such as different root codecs on `n.a` and `n.b` have always been legal even though both Arrays reach `n.size0`. Legacy writers deduplicate that offsets stream before instantiating the later sibling's codec. Continue to select the first physical column in deterministic schema order as the canonical owner, both within one writer and across vertical writers. This rule also applies when tuple-element policy resolution makes the sibling codecs differ.
 
-Dynamic shared streams that cannot be enumerated during DDL validation are checked while initializing writer streams. The exception propagates and the part write fails before inconsistent data is committed.
+Do not generalize this exception to independent value streams. They resolve before deduplication, and a duplicate concrete key with different instantiated codec hashes remains a logical error. Other shared serialization layouts need an explicit classification before adopting the structural first-owner rule.
+
+Dynamic duplicate streams that cannot be enumerated during DDL validation are classified while initializing writer streams. Conflicting independent streams fail before inconsistent data is committed; intentionally shared structural streams must have an explicit canonical-ownership rule.
 
 ## Default, adaptive, and TTL behavior
 

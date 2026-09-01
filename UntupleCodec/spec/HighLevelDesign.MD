@@ -53,7 +53,7 @@ Validation must reject:
 - Paths that do not resolve to a tuple element.
 - Duplicate declarations for the same logical path.
 - Codec declarations incompatible with the selected element type.
-- Ambiguous or conflicting codec choices for one shared physical stream.
+- Ambiguous or conflicting codec choices for one independent value stream; intentionally shared structural streams retain their legacy canonical owner.
 
 ## Codec Validation
 
@@ -104,7 +104,7 @@ Apply the same resolution in:
 
 Partial writers must combine `NameAndTypePair::getNameInStorage` with the serialization path so that resolution always starts from the owning top-level `ColumnDescription`.
 
-If multiple logical paths resolve to the same shared physical stream, their effective generic codec must agree. Reject incompatible declarations instead of selecting whichever path is enumerated first.
+If multiple logical paths resolve to the same independent value stream, their effective codecs must agree. Intentionally shared structural streams are the compatibility exception: flattened `Nested` siblings may legally have different codecs while sharing offsets, so deterministic schema order selects the first/canonical owner as legacy writers did.
 
 ## Defaults and Recompression
 
@@ -140,6 +140,7 @@ The change must preserve:
 - Parsing and loading of existing single-codec metadata.
 - Existing top-level `CODEC` semantics.
 - Reading old parts after metadata changes.
+- Writing existing flattened `Nested` schemas whose sibling Arrays have different codecs but share an offsets stream.
 - Replication between servers that understand the new syntax and metadata representation.
 
 Compatibility with older server versions requires a feature/version gate if the persisted metadata syntax cannot be parsed by them. A table using only a root codec should continue to be serialized in the existing form.

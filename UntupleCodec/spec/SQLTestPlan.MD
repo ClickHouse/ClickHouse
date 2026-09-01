@@ -4,7 +4,7 @@
 
 This plan verifies the SQL model selected in `SQLNoModifySubcolumnNoDots.MD` from parsing through persisted metadata and physical `MergeTree` streams. The tests must prove both the declared policy and the codecs actually written; successful reads alone are insufficient because compressed blocks are self-describing and could hide a writer-side policy error.
 
-The six tests were allocated with `tests/queries/0_stateless/add-test` and have the filenames below.
+The tests were allocated with `tests/queries/0_stateless/add-test` and have the filenames below.
 
 The initial suite consists of these files:
 
@@ -16,6 +16,8 @@ The initial suite consists of these files:
 | `05028_tuple_element_codecs_invalid.sql` | Non-column tuples, unsupported wrappers, and invalid element operations |
 | `05028_tuple_element_codecs_structural.sql` | Array and nullable structural streams and generic-only filtering |
 | `05028_tuple_element_codecs_compact.sql` | Compact-part stream construction, reads, merges, and mutations |
+| `05028_tuple_element_codec_experimental_gate.sql` | Default-off compatibility gate for CREATE/ADD/MODIFY, plus retained/removal/root-only controls |
+| `05028_tuple_element_codecs_shared_nested_offsets.sql` | Legacy flattened-`Nested` sibling codecs and canonical shared offsets in Wide and Compact parts |
 
 All tests use unique table names, begin with `DROP TABLE IF EXISTS` cleanup, and drop successfully created tables at the end. Output queries select only stable fields and use an explicit `ORDER BY` wherever row order is relevant.
 
@@ -320,20 +322,28 @@ SETTINGS
 5. Run a mutation which assigns a reconstructed value to the complete `payload` column and wait synchronously. Repeat reads and part-type assertions. This exercises the mutation writer with a per-element policy even though physical block attribution is unavailable.
 6. Repeat stable `system.tables.create_table_query` fragment and declaration-count assertions after merge and mutation to prove writer operations did not alter metadata.
 
+## `05028_tuple_element_codecs_shared_nested_offsets.sql`
+
+Create Wide and Compact `MergeTree` tables with `n Nested(a UInt64, b String)`, then use the longstanding root-only ALTER syntax to assign `CODEC(ZSTD(3))` to `n.a` and `CODEC(LZ4HC(4))` to `n.b`. These are separate flattened Array columns, but both reach the structural stream `n.size0`.
+
+For each part format, stop merges, insert two parts, verify their type and contents, restart merges, and run `OPTIMIZE FINAL`. Inserts and merges must succeed. In the Wide result, inspect `n.size0` with `mergeTreeCodecBlockCounts` and assert `ZSTD(3)`: schema order makes `n.a` the deterministic canonical first owner. Compact parts cannot attribute blocks to physical substreams, so successful creation and merge plus content checks cover that writer path.
+
+This compatibility exception is specific to intentionally shared structural offsets. Existing conflict coverage for duplicate independent value streams must remain effective.
+
 ## Follow-up Coverage Outside the Initial Stateless Set
 
 The following remain required by the broader low-level design but should be added when their implementation is present and stable:
 
-- vertical merges forced by deterministic merge settings, including codec agreement for shared offset streams;
+- vertical merges forced by deterministic merge settings, including canonical ownership of shared offset streams;
 - `RECOMPRESS` TTL with explicit siblings and `CODEC(Default)` siblings;
 - adaptive default selection per tuple element;
 - replicated database metadata synchronization and mixed-version feature gating;
 - backup and restore;
 - path-aware `Quantized` serialization after the current `NOT_IMPLEMENTED` restriction is removed;
-- shared streams across flattened `Nested`, `Dynamic`, and `JSON` layouts;
+- shared streams across `Dynamic` and `JSON` layouts after their structural ownership rules are classified;
 - storage engines other than `MergeTree` once they support the resolver rather than rejecting the policy.
 
-These follow-ups must get separate descriptive stateless files instead of expanding the six core files indefinitely.
+These follow-ups must get separate descriptive stateless files instead of expanding the core files indefinitely.
 
 ## Completion Criteria
 
@@ -343,5 +353,6 @@ The initial SQL suite is complete when:
 - both named and positional elements, nested tuple paths, literal-dot names, inheritance, overrides, removal, omission, and explicit `Default` are covered;
 - physical wide-part assertions prove different tuple elements receive different codecs;
 - compact, merge, and mutation paths read correctly;
+- existing flattened `Nested` siblings with different codecs remain writable in Wide and Compact parts;
 - ordinary expression-level tuples and wrapped tuples reject element annotations explicitly;
 - existing root-only codec tests pass without reference changes.

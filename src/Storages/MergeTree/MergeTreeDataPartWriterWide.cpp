@@ -155,6 +155,42 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
+        const bool is_offsets = substream_path.back().type == ISerialization::Substream::ArraySizes;
+
+        /// Check the unhashed identity before treating equal final names as an intentionally shared stream.
+        /// Otherwise an ArraySizes stream could hide a collision between a long name and another name's hash.
+        auto it = stream_name_to_full_name.find(stream_name);
+        if (it != stream_name_to_full_name.end() && it->second != full_stream_name)
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
+                "Stream with name {} already created (full stream name: {}). Current full stream name: {}."
+                " It is a collision between a filename for one column and a hash of filename for another column or a bug",
+                stream_name, it->second, full_stream_name);
+
+        /// Flattened Nested columns are stored as separate Array columns which intentionally share an
+        /// offsets stream. Such columns have always been allowed to declare different root codecs. Keep
+        /// the legacy first-owner rule for this structural stream and, importantly, apply it before codec
+        /// resolution. The dedicated set proves that the existing stream is also ArraySizes; a mere
+        /// column_streams.contains() could conflate an unrelated value stream with the same full name.
+        /// Value streams still resolve independently and are checked for conflicts below.
+        if (is_offsets && shared_offset_streams.contains(stream_name))
+            return;
+
+        /// A vertical merge may initialize the sibling Arrays in separate writers. Its shared registry
+        /// similarly makes the writer which encounters the offsets first their canonical codec owner.
+        if (is_offsets && written_offset_substreams && written_offset_substreams->contains(stream_name))
+        {
+            if (!written_stream_codecs || !written_stream_codecs->contains(stream_name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing identity for previously written shared offset stream {}", stream_name);
+
+            const auto & written_stream = written_stream_codecs->at(stream_name);
+            if (written_stream.full_name != full_stream_name)
+                throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
+                    "Stream with name {} already written (full stream name: {}). Current full stream name: {}."
+                    " It is a collision between a filename for one column and a hash of filename for another column or a bug",
+                    stream_name, written_stream.full_name, full_stream_name);
+            return;
+        }
+
         const auto resolved = codec_policy.resolve(getCodecPathForStream(name_and_type, name_and_type.getTypeInStorage(), substream_path), default_codec_desc);
         const auto & subtype = substream_path.back().data.type;
         CompressionCodecPtr compression_codec;
@@ -173,27 +209,6 @@ void MergeTreeDataPartWriterWide::addStreams(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Conflicting codecs resolve to shared stream {}", stream_name);
             return;
         }
-
-        /// Don't write offsets more than one time for Nested type in case elements of nested had been written separately, i.e. via Vertical merge.
-        if (written_offset_substreams)
-        {
-            bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
-            if (is_offsets && written_offset_substreams->contains(stream_name))
-            {
-                if (!written_stream_codecs || !written_stream_codecs->contains(stream_name))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing codec identity for previously written shared offset stream {}", stream_name);
-                if (written_stream_codecs->at(stream_name) != compression_codec->getHash())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Conflicting codec for previously written shared offset stream {}", stream_name);
-                return;
-            }
-        }
-
-        auto it = stream_name_to_full_name.find(stream_name);
-        if (it != stream_name_to_full_name.end() && it->second != full_stream_name)
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                "Stream with name {} already created (full stream name: {}). Current full stream name: {}."
-                " It is a collision between a filename for one column and a hash of filename for another column or a bug",
-                stream_name, it->second, full_stream_name);
 
         /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
         /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
@@ -240,8 +255,10 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.marks_compress_block_size,
             query_write_settings));
         stream_codec_hashes.emplace(stream_name, compression_codec->getHash());
-        if (written_stream_codecs && substream_path.back().type == ISerialization::Substream::ArraySizes)
-            written_stream_codecs->insert_or_assign(stream_name, compression_codec->getHash());
+        if (is_offsets)
+            shared_offset_streams.emplace(stream_name);
+        if (written_stream_codecs && is_offsets)
+            written_stream_codecs->insert_or_assign(stream_name, WrittenStreamInfo{compression_codec->getHash(), full_stream_name});
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());

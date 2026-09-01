@@ -22,7 +22,12 @@ struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 using WrittenOffsetSubstreams = std::set<std::string>;
-using WrittenStreamCodecs = std::unordered_map<String, UInt64>;
+struct WrittenStreamInfo
+{
+    UInt64 codec_hash;
+    String full_name;
+};
+using WrittenStreamCodecs = std::unordered_map<String, WrittenStreamInfo>;
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
 
