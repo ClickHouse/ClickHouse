@@ -20,6 +20,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -115,6 +116,15 @@ bool MutatePlainMergeTreeTask::executeStep()
                     return true;
 
                 new_part = mutate_task->getFuture().get();
+
+                /// A `KILL MUTATION` can land after `mutate_task->execute()` returned (it only
+                /// re-checks cancellation before handing the part over) but before this part is
+                /// renamed into place. Do not publish the result of a mutation that was killed in
+                /// that window: the thrown exception reports the mutation as failed and the executor
+                /// calls `cancel()`, which removes the temporary part.
+                if ((*merge_list_entry)->is_cancelled)
+                    throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+
                 auto & data_part_storage = new_part->getDataPartStorage();
 #if CLICKHOUSE_CLOUD
                 data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());

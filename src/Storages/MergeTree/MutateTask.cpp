@@ -1752,6 +1752,13 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
     PartitionActionBlocker * merges_blocker{};
     TableLockHolder * holder{};
     MergeListEntry * mutate_entry{};
+    /// The `PipelineCancelState` this context registered its cancellation hook with, kept as a
+    /// `shared_ptr` so the teardown helpers (`clearPipelineCancelHook`, `resetMutatingPipeline`,
+    /// `cancelMutatingExecutor`) do not depend on the merge list entry still being alive: the raw
+    /// `mutate_entry` generally outlives the context, but a concurrent teardown can destroy the entry
+    /// while this context runs its destructor on the cancellation thread. Holding the state directly
+    /// makes the entry lifetime non-load-bearing. Set once in `setPipelineCancelHook`.
+    PipelineCancelStatePtr cancel_state;
 
     LoggerPtr log{getLogger("MutateTask")};
 
@@ -1864,24 +1871,25 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
     void setPipelineCancelHook()
     {
         auto state = (*mutate_entry)->pipeline_cancel_state;
+        cancel_state = state;
         std::lock_guard lock{state->mutex};
         state->hook = [state, weak_ctx = weak_from_this()]()
         {
+            /// `cancel_state` (set together with the captured `state`) keeps `state` alive while the
+            /// context it belongs to is alive; `cancelMutatingExecutor` locks `state->mutex`, so access
+            /// to the executor is guarded against the teardown in `resetMutatingPipeline()`.
             if (auto ctx = weak_ctx.lock())
-            {
-                /// Access to the executor is guarded by the same mutex that protects the hook slot,
-                /// so it cannot race with the teardown in `resetMutatingPipeline()`.
-                std::lock_guard hook_lock{state->mutex};
-                if (ctx->mutating_executor)
-                    ctx->mutating_executor->cancel();
-            }
+                ctx->cancelMutatingExecutor();
         };
     }
 
     void clearPipelineCancelHook() const
     {
-        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_state->mutex};
-        (*mutate_entry)->pipeline_cancel_state->hook = {};
+        if (cancel_state)
+        {
+            std::lock_guard lock{cancel_state->mutex};
+            cancel_state->hook = {};
+        }
     }
 
     /// Releases the mutation pipeline. Must run under the same mutex that protects the hook slot,
@@ -1889,18 +1897,37 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
     /// or observes a null one, never a destroyed one.
     void resetMutatingPipeline()
     {
-        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_state->mutex};
-        mutating_executor.reset();
-        mutating_pipeline.reset();
+        if (cancel_state)
+        {
+            std::lock_guard lock{cancel_state->mutex};
+            mutating_executor.reset();
+            mutating_pipeline.reset();
+        }
+    }
+
+    /// Cancels the running mutation pipeline, guarded by the same mutex that protects the hook slot,
+    /// so it cannot race with `resetMutatingPipeline()`. Uses the context's own `cancel_state` copy
+    /// (not the merge list entry), so it is safe even after the entry has been destroyed. Also used
+    /// by the `cancel()` overrides, which can be reached from another thread while the mutation thread
+    /// is finalizing (e.g. `MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage`).
+    void cancelMutatingExecutor() const
+    {
+        if (cancel_state)
+        {
+            std::lock_guard lock{cancel_state->mutex};
+            if (mutating_executor)
+                mutating_executor->cancel();
+        }
     }
 
     /// The hook installed in `setPipelineCancelHook` captures the `PipelineCancelState` by value
     /// (so it can outlive the merge list entry and be invoked from another thread); because the hook
     /// is stored inside that very state, it forms a reference cycle. On the success path the cycle is
     /// broken by `finalize()` clearing the hook, but on the cancel/kill/shutdown paths it is not, and
-    /// the whole object graph (state, merge list entry, this context) leaks. The entry
-    /// (`MergeListEntry * mutate_entry`) always outlives this context, so it is safe to release the
-    /// hook and the pipeline here, on every teardown path.
+    /// the whole object graph (state, merge list entry, this context) leaks. This destructor clears
+    /// the hook and releases the pipeline on every teardown path, using the context's own
+    /// `cancel_state` member rather than the raw `mutate_entry`, so it stays safe even when a
+    /// concurrent teardown has already destroyed the entry.
     ~MutationContext()
     {
         clearPipelineCancelHook();
@@ -2523,8 +2550,7 @@ public:
             ctx->out->cancel();
         }
 
-        if (ctx->mutating_executor)
-            ctx->mutating_executor->cancel();
+        ctx->cancelMutatingExecutor();
     }
 
 private:
@@ -2901,8 +2927,7 @@ public:
             ctx->out->cancel();
         }
 
-        if (ctx->mutating_executor)
-            ctx->mutating_executor->cancel();
+        ctx->cancelMutatingExecutor();
     }
 
 private:

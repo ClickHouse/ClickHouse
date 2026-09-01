@@ -4,6 +4,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/ErrorCodes.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -21,6 +22,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+}
 
 namespace Setting
 {
@@ -291,6 +297,15 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
+
+    /// A `KILL MUTATION` can land after `MutateTask::execute()` returned (which only re-checks
+    /// cancellation before handing the part over) but before this part is renamed and committed. The
+    /// pipeline hook has already been cleared on the success path, so only the entry's `is_cancelled`
+    /// flag reflects the kill. Do not publish the result of a mutation killed in that window: the
+    /// thrown exception propagates to the task executor, which calls `cancel()` and removes the
+    /// temporary part.
+    if ((*merge_mutate_entry)->is_cancelled)
+        throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
 
     auto & data_part_storage = new_part->getDataPartStorage();
 
