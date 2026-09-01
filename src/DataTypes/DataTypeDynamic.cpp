@@ -923,10 +923,20 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         /// compatible values can also live in the shared variant, so all of them must be read.
         String subcolumn_type_name = subcolumn_type->getName();
         auto it = variant_info.variant_name_to_discriminator.find(subcolumn_type_name);
-        if (it != variant_info.variant_name_to_discriminator.end() && !subcolumn_type->hasDynamicSubcolumns())
+        /// The stored variant of exactly the requested type, when the values have to be collected
+        /// from several variants: the result is seeded from it, see below.
+        ColumnPtr exactly_matching_variant_column;
+        if (it != variant_info.variant_name_to_discriminator.end())
         {
-            discriminator = it->second;
-            res->column = variant_column.getVariantPtrByGlobalDiscriminator(*discriminator);
+            if (!subcolumn_type->hasDynamicSubcolumns())
+            {
+                discriminator = it->second;
+                res->column = variant_column.getVariantPtrByGlobalDiscriminator(*discriminator);
+            }
+            else
+            {
+                exactly_matching_variant_column = variant_column.getVariantPtrByGlobalDiscriminator(it->second);
+            }
         }
         /// Otherwise, check if provided Dynamic column has compatible variants of this type.
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type);
@@ -964,7 +974,13 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
             auto null_map_column = ColumnUInt8::create();
             NullMap & null_map = assert_cast<ColumnUInt8 &>(*null_map_column).getData();
             null_map.reserve(variant_column.size());
-            auto subcolumn = subcolumn_type->createColumn();
+            /// Seed the result from the stored variant of the same type, so that the dynamic
+            /// structure of the stored values survives the extraction: a fresh column of the
+            /// requested type would take the limits of the type itself, and inserting the values
+            /// into it would turn paths that the stored column keeps in shared data into dynamic
+            /// paths (a `JSON` column whose number of dynamic paths was limited during parsing
+            /// would read back with more dynamic paths than it was written with).
+            auto subcolumn = exactly_matching_variant_column ? exactly_matching_variant_column->cloneEmpty() : subcolumn_type->createColumn();
             const auto & local_discriminators = variant_column.getLocalDiscriminators();
             const auto & offsets = variant_column.getOffsets();
             const FormatSettings format_settings;
