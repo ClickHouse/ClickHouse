@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
+#include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -20,7 +21,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 /** The function takes two arrays: scores and labels.
   * Label can be one of two values: positive (> 0) and negative (<= 0)
-  * Score can be arbitrary number.
+  * Score can be arbitrary number. A NaN score makes the result NaN.
   *
   * These values are considered as the output of classifier. We have some true labels for objects.
   * And classifier assigns some scores to objects that predict these labels in the following way:
@@ -409,6 +410,11 @@ private:
             sorted_labels[i].score = scores.getFloat64(current_offset + i);
         }
 
+        /// A NaN score has no place in the order below and belongs to no threshold, so the area is undefined.
+        for (size_t i = 0; i < size; ++i)
+            if (isNaN(sorted_labels[i].score))
+                return std::numeric_limits<Float64>::quiet_NaN();
+
         /// Sorting scores in descending order to traverse the ROC / Precision-Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
@@ -500,7 +506,8 @@ REGISTER_FUNCTION(ArrayAUC)
     FunctionDocumentation::Description description_roc = R"(
 Calculates the area under the receiver operating characteristic (ROC) curve.
 A ROC curve is created by plotting True Positive Rate (TPR) on the y-axis and False Positive Rate (FPR) on the x-axis across all thresholds.
-The resulting value ranges from zero to one, with a higher value indicating better model performance.
+With `scale` set to true, the default, the resulting value ranges from zero to one, with a higher value indicating better model performance, and the result is `NaN` when the ROC AUC is undefined, for example if there are no positive or no negative labels.
+A `NaN` score always produces a `NaN` result.
 
 The ROC AUC (also known as simply AUC) is a concept in machine learning.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
@@ -526,7 +533,7 @@ For example:
 :::
 )"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve. Returns `NaN` if a score is `NaN`, and, when `scale` is true, also when the ROC AUC is undefined because there are no positive or no negative labels.", {"Float64"}};
     FunctionDocumentation::Examples examples_roc = {{"Usage example", "SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", "0.75"}};
     FunctionDocumentation::IntroducedIn introduced_in_roc = {20, 4};
     FunctionDocumentation::Category category_roc = FunctionDocumentation::Category::Array;
@@ -539,7 +546,7 @@ For example:
     FunctionDocumentation::Description description_pr = R"(
 Calculates the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
-The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
+The resulting value ranges from 0 to 1, with a higher value indicating better model performance, unless a score is `NaN`, in which case the result is `NaN`.
 The PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 )";
@@ -562,7 +569,7 @@ For example:
 :::
 )"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_pr = {"Returns area under the precision-recall (PR) curve.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_pr = {"Returns area under the precision-recall (PR) curve, or `NaN` if any score is `NaN`.", {"Float64"}};
     FunctionDocumentation::Examples examples_pr = {{"Usage example", "SELECT arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", R"(
 ┌─arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                              0.8333333333333333 │
