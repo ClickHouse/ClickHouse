@@ -84,7 +84,7 @@ Por ejemplo, al usar CPU de tipo M, recomendamos aprovisionar 100 GB de memoria 
   ## Memoria
 </div>
 
-Al igual que con la elección de la CPU, la elección de la proporción entre memoria y almacenamiento, y entre memoria y CPU, depende de su caso de uso.
+Al igual que con la elección de la CPU, la elección de la proporción de memoria a almacenamiento, y entre memoria y CPU, depende de su caso de uso.
 
 La cantidad de RAM necesaria generalmente depende de:
 
@@ -92,7 +92,7 @@ La cantidad de RAM necesaria generalmente depende de:
 * La cantidad de datos que se procesan en las consultas.
 
 Sin embargo, por lo general, cuanta más memoria tenga, más rápido se ejecutarán sus consultas.
-Si su caso de uso es sensible al precio, también pueden funcionar cantidades menores de memoria, ya que es posible habilitar ajustes ([`max_bytes_before_external_group_by`](/es/reference/settings/session-settings#max_bytes_before_external_group_by) y [`max_bytes_before_external_sort`](/es/reference/settings/session-settings#max_bytes_before_external_sort)) para permitir el volcado de datos a disco, pero tenga en cuenta que esto puede afectar significativamente al rendimiento de las consultas.
+Si su caso de uso es sensible al precio, también pueden funcionar cantidades menores de memoria, ya que es posible habilitar ajustes ([`max_bytes_before_external_group_by`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) y [`max_bytes_before_external_sort`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) para permitir el volcado de datos a disco, pero tenga en cuenta que esto puede afectar significativamente al rendimiento de las consultas.
 
 <div id="what-should-the-memory-to-storage-ratio-be">
   ### ¿Cuál debería ser la proporción entre memoria y almacenamiento?

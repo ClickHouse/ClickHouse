@@ -36,8 +36,10 @@ class time_zone;
 
 #define DAYNUM_OFFSET_EPOCH 25567
 
-/// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
-#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - DAYNUM_OFFSET_EPOCH)
+/// Min and max value of Date32: day numbers (days relative to 1970-01-01) of
+/// DATE_LUT_MIN_REPRESENTABLE_YEAR-01-01 and DATE_LUT_MAX_REPRESENTABLE_YEAR-12-31.
+#define DATE_LUT_MIN_EXTEND_DAY_NUM (-719528)
+#define DATE_LUT_MAX_EXTEND_DAY_NUM 2932896
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
@@ -266,6 +268,10 @@ private:
     static constexpr Int64 max_representable_day_index = 2958463;  /// 9999-12-31
     static constexpr Time min_representable_time = -62167219200;   /// 0000-01-01 00:00:00 UTC
     static constexpr Time max_representable_time = 253402300799;   /// 9999-12-31 23:59:59 UTC
+
+    /// The Date32 range is the whole representable window.
+    static_assert(DATE_LUT_MIN_EXTEND_DAY_NUM == min_representable_day_index - daynum_offset_epoch);
+    static_assert(DATE_LUT_MAX_EXTEND_DAY_NUM == max_representable_day_index - daynum_offset_epoch);
 
     /// std::chrono::system_clock::from_time_t can overflow for extreme Int64 inputs, so the cctz escape paths
     /// bound the UTC timestamp to this window before constructing a time point. It is wider than the
@@ -878,21 +884,15 @@ public:
 
         const LUTIndex index = findIndexInRange(t);
 
-        /// Calculate daylight saving offset first.
-        /// Because the "amount_of_offset_change" in LUT entry only exists in the change day, it's costly to scan it from the very begin.
-        /// but we can figure out all the accumulated offsets from 1970-01-01 to that day just by get the whole difference between lut[].date,
-        /// and then, we can directly subtract multiple 86400s to get the real DST offsets for the leap seconds is not considered now.
-        Time res = (lut[index].date - lut[daynum_offset_epoch].date) % 86400;
-
-        /// As so far to know, the maximal DST offset couldn't be more than 2 hours, so after the modulo operation the remainder
-        /// will sits between [-offset --> 0 --> offset] which respectively corresponds to moving clock forward or backward.
-        res = res > 43200 ? (86400 - res) : (0 - res);
+        /// The offset at the start of the day: local midnight is `day_number * 86400` seconds of local
+        /// time from the epoch, while `date` is the UTC instant of that same midnight.
+        Time res = (static_cast<Int64>(index.toUnderType()) - daynum_offset_epoch) * 86400 - lut[index].date;
 
         /// Check if has a offset change during this day. Add the change when cross the line
         if (lut[index].amount_of_offset_change() != 0 && t >= lut[index].date + lut[index].time_at_offset_change())
             res += lut[index].amount_of_offset_change();
 
-        return res + offset_at_start_of_epoch;
+        return res;
     }
 
 
@@ -1765,6 +1765,9 @@ public:
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
+        if (unlikely(isMakeDateOutOfRange(year, month, day_of_month)))
+            return makeDayNumOutOfRange(year, month, day_of_month);
+
         if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return ExtendedDayNum(default_error_day_num);
 
@@ -1773,6 +1776,9 @@ public:
 
     std::optional<ExtendedDayNum> tryToMakeDayNum(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
+        if (unlikely(isMakeDateOutOfRange(year, month, day_of_month)))
+            return makeDayNumOutOfRange(year, month, day_of_month);
+
         if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return std::nullopt;
 

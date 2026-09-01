@@ -1,6 +1,10 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
@@ -42,6 +46,39 @@ TEST(ColumnArray, OffsetsConsistentWithNestedColumn)
     EXPECT_EQ(column->getSize(2), 1);
 }
 
+TEST(ColumnArray, CutPreservesSharedLowCardinalityDictionary)
+{
+    auto dictionary_keys = ColumnUInt64::create();
+    for (UInt64 value : {0, 10, 20, 30})
+        dictionary_keys->insertValue(value);
+
+    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeUInt64(), std::move(dictionary_keys));
+
+    auto indexes = ColumnUInt8::create();
+    for (UInt8 index : {UInt8{1}, UInt8{2}, UInt8{3}, UInt8{1}, UInt8{2}})
+        indexes->insertValue(index);
+
+    auto nested = ColumnLowCardinality::create(dictionary, std::move(indexes), /* is_shared = */ true);
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    for (ColumnArray::Offset offset : {2, 2, 5})
+        offsets->insertValue(offset);
+
+    auto column = ColumnArray::create(std::move(nested), std::move(offsets));
+    auto cut_column = column->cut(1, 2);
+    const auto & cut_array = assert_cast<const ColumnArray &>(*cut_column);
+    const auto & cut_nested = assert_cast<const ColumnLowCardinality &>(cut_array.getData());
+
+    ASSERT_TRUE(cut_nested.isSharedDictionary());
+    EXPECT_EQ(cut_nested.getDictionaryPtr().get(), dictionary.get());
+    ASSERT_EQ(cut_array.size(), 2);
+    EXPECT_EQ(cut_array.getSize(0), 0);
+    EXPECT_EQ(cut_array.getSize(1), 3);
+    ASSERT_EQ(cut_nested.size(), 3);
+    EXPECT_EQ(cut_nested.getUInt(0), 30);
+    EXPECT_EQ(cut_nested.getUInt(1), 10);
+    EXPECT_EQ(cut_nested.getUInt(2), 20);
+}
+
 /// Skipped under debug/sanitizers: LOGICAL_ERROR aborts there, so EXPECT_THROW can't catch it.
 #ifndef DEBUG_OR_SANITIZER_BUILD
 
@@ -64,16 +101,26 @@ TEST(ColumnArray, InconsistentOffsetsAreRejected)
     EXPECT_THROW(createArray({10}, {}), Exception);
 }
 
-/// A decreasing offset makes `sizeAt` underflow to a huge value even when the last offset
-/// matches the size of the nested column, so the offsets are checked for monotonicity as well.
-TEST(ColumnArray, NonMonotonicOffsetsAreRejected)
+#endif
+
+/// A decreasing offset makes `sizeAt` underflow to a huge value even when the last offset matches
+/// the size of the nested column, so the offsets are checked for monotonicity as well. The check is
+/// a linear scan - a heavy assertion, so it only runs in debug and sanitizer builds, where a
+/// LOGICAL_ERROR aborts the process: hence a death test.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+
+TEST(ColumnArrayDeathTest, NonMonotonicOffsetsAreRejected)
 {
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    /// The extra parentheses keep the preprocessor from splitting the braced lists into macro arguments.
+
     /// The nested column is empty and the last offset is 0, but the first row claims one element.
-    EXPECT_THROW(createArray({}, {1, 0}), Exception);
+    EXPECT_DEATH((createArray({}, {1, 0})), "not monotonically increasing");
 
     /// The last offset matches the nested column, but the offsets dip in the middle.
-    EXPECT_THROW(createArray({10, 20, 30}, {2, 1, 3}), Exception);
-    EXPECT_THROW(createArray({10, 20, 30}, {3, 0, 3}), Exception);
+    EXPECT_DEATH((createArray({10, 20, 30}, {2, 1, 3})), "not monotonically increasing");
+    EXPECT_DEATH((createArray({10, 20, 30}, {3, 0, 3})), "not monotonically increasing");
 }
 
 #endif

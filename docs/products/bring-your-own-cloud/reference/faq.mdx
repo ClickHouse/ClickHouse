@@ -110,12 +110,6 @@ Only operational metadata: service and backup state events, usage metrics for bi
 By default, the Kubernetes API endpoint is public but restricted to ClickHouse's NAT IP addresses — while this default is in use, do not remove the ClickHouse allowlist entries, since the control plane needs them to manage the cluster. The endpoint can instead be switched to private-only access, coordinated with the ClickHouse team: via Tailscale (outbound-only, also used for troubleshooting access) or, on AWS, via VPC Lattice (private preview) — see [configuration](/products/bring-your-own-cloud/configuration/configurations). Note that this applies only to the Kubernetes API: cloud provider API calls (for example EKS and EC2 on AWS) originate from ClickHouse Cloud's network via cross-account role assumption and can never be routed through Tailscale — see [cloud provider APIs vs the Kubernetes API](/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
 </Accordion>
 
-<Accordion title="What is the size of the VPC/VNet IP range created?">
-By default, we use `10.0.0.0/16` for the BYOC VPC (AWS/GCP) or VNet (Azure). We recommend reserving at least /22 for potential future scaling,
-but if you prefer to limit the size, it is possible to use /23 if it is likely that you will be limited
-to 30 server pods.
-</Accordion>
-
 <Accordion title="How does network communication work between the BYOC network and object storage?">
 On AWS, traffic between your Customer BYOC VPC and S3 uses HTTPS (port 443) via the AWS S3 API for table data, backups, and logs. This traffic goes through an S3 gateway VPC endpoint, so it remains within the AWS network, doesn't traverse the public internet, and incurs no NAT gateway charges. On GCP, access to Google APIs similarly uses Private Google Access. On Azure, data is stored in Azure Blob Storage accounts within your subscription.
 </Accordion>

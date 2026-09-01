@@ -342,6 +342,10 @@ struct Reader
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
+        /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
+        /// bitset) the file claims to have. Upper bound if the file didn't say (see
+        /// need_to_find_bloom_filter_lengths_the_hard_way).
+        size_t bloom_filter_data_bytes = 0;
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
         PrefetchHandle offset_index_prefetch;

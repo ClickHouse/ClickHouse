@@ -195,6 +195,10 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
+    /// Same as `addCast`, but the values that cannot be represented in the destination type exactly
+    /// are converted to NULL instead of being wrapped around, saturated or leading to an exception.
+    /// The result type is always Nullable, so `cast_type` must be allowed inside Nullable.
+    const Node & addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
@@ -315,6 +319,11 @@ public:
 
     /// Replace each node listed in `substitutions` (a node of this DAG) with a constant COLUMN node.
     void substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions);
+
+    /// Rewire consumers of the input named `input_name` to a constant. The input node and the output
+    /// list are unchanged, so an output that IS that input keeps the value supplied for it; an output
+    /// computed FROM it, including an alias, is a consumer and sees `replacement`.
+    void substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
     /// Special handling for logical AND: non-computable children are replaced with constant true.
@@ -442,13 +451,17 @@ public:
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
-    /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
-    /// Outputs of initial actions must contain column_name.
-    SplitResult splitActionsForFilter(const std::string & column_name) const;
+    /// Splits actions into two parts. First part has minimal size sufficient for calculation of
+    /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.
+    SplitResult splitActionsForFilter(
+        const std::string & column_name,
+        std::unordered_set<const Node *> additional_split_nodes = {}) const;
 
-    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
-    /// The second contains the rest.
-    SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
+    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns
+    /// and additional_split_nodes. The second contains the rest.
+    SplitResult splitActionsBySortingDescription(
+        const NameSet & sort_columns,
+        std::unordered_set<const Node *> additional_split_nodes = {}) const;
 
     /** Returns true if filter DAG is always false for inputs with default values.
       *

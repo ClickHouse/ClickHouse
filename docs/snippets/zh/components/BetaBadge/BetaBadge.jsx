@@ -1,5 +1,4 @@
 import { galaxyOnClick } from '/snippets/lib/galaxy.jsx';
-
 export const BetaBadge = ({ link, galaxyTrack, galaxyEvent }) => {
     if (link) {
         return (
@@ -17,12 +16,11 @@ export const BetaBadge = ({ link, galaxyTrack, galaxyEvent }) => {
 
     return (
         <a
-            href="/docs/zh/reference/settings/beta-and-experimental-features#beta-features"
+            href="https://clickhouse.com/docs/reference/settings/beta-and-experimental-features#beta-features"
             className="betaBadge"
         >
             <span>Beta 版功能</span>
         </a>
     )
 }
-
 export default BetaBadge;
