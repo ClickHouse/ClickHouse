@@ -744,6 +744,7 @@ namespace
         void readQueryInfo();
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
+        void cancelQueryByUser();
 
         void addQueryDetailsToResult();
         void addOutputFormatToResult();
@@ -764,6 +765,7 @@ namespace
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
+        std::mutex query_context_mutex;
         std::optional<QueryScope> query_scope;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
@@ -1564,7 +1566,10 @@ namespace
         compressing_write_buffer = nullptr;
         io = {};
         query_scope.reset();
-        query_context.reset();
+        {
+            std::lock_guard lock{query_context_mutex};
+            query_context.reset();
+        }
         thread_trace_context.reset();
         session.reset();
     }
@@ -1590,7 +1595,18 @@ namespace
                         }
                     }
                     if (nqi.cancel())
+                    {
+                        /// Record the hard user cancel right here on the queue thread, not on the
+                        /// next pull poll of `isQueryCancelled()`. While the pipeline is blocked (e.g.
+                        /// at a paused transform) or has already broken out after a latched soft
+                        /// timeout, the pull loop may never reach `isQueryCancelled()` in time, so
+                        /// the query status must reflect `CANCELLED_BY_USER` as soon as the message
+                        /// arrives. `cancelQuery` is thread-safe (see `QueryStatus::cancelQuery`) and
+                        /// only sets the kill flag plus cancels registered executors (all
+                        /// non-blocking). `isQueryCancelled()` will repeat the call idempotently.
                         want_to_cancel = true;
+                        cancelQueryByUser();
+                    }
                 }
                 else
                 {
@@ -1656,27 +1672,40 @@ namespace
             cancelled = true;
             result.set_cancelled(true);
 
-            /// A client-initiated gRPC cancel (`QueryInfo.cancel`) is a hard user cancellation.
-            /// Surface it through the query status so soft-timeout-aware transforms (e.g.
-            /// `DistinctTransform`) can distinguish it from an executor-side break-mode timeout,
-            /// which would otherwise be misclassified and keep a committed prefix instead of
-            /// aborting. `KILL QUERY` and the native TCP `Cancel` packet already set
-            /// `CANCELLED_BY_USER` the same way; without it, `getCancelReason()` stays `UNDEFINED`
-            /// after a soft timeout has latched and a real user cancel gets treated as a soft
-            /// timeout. The `QUERY_WAS_CANCELLED_BY_CLIENT` exception is passed the same way TCP
-            /// does: `Call::onException` recognizes this code and turns it back into a clean
-            /// `cancelled` completion, preserving the gRPC wire contract (no exception payload).
-            if (query_context)
-                if (auto process_list_element = query_context->getProcessListElementSafe())
-                    process_list_element->cancelQuery(
-                        CancelReason::CANCELLED_BY_USER,
-                        std::make_exception_ptr(
-                            Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
+            /// The query status has usually already been cancelled from the queue-thread read
+            /// callback (`cancelQueryByUser()` on `QueryInfo.cancel` receipt); this is an
+            /// idempotent repeat for cancels that arrived before the query context was ready.
+            cancelQueryByUser();
 
             return true;
         }
 
         return false;
+    }
+
+    void Call::cancelQueryByUser()
+    {
+        ContextMutablePtr context;
+        {
+            std::lock_guard lock{query_context_mutex};
+            context = query_context;
+        }
+
+        /// A client-initiated gRPC cancel (`QueryInfo.cancel`) is a hard user cancellation.
+        /// Surface it through the query status so soft-timeout-aware transforms (e.g.
+        /// `DistinctTransform`) can distinguish it from an executor-side break-mode timeout,
+        /// which would otherwise be misclassified and keep a committed prefix instead of
+        /// aborting. `KILL QUERY` and the native TCP `Cancel` packet already set
+        /// `CANCELLED_BY_USER` the same way; without it, `getCancelReason()` stays `UNDEFINED`
+        /// after a soft timeout has latched and a real user cancel gets treated as a soft
+        /// timeout. The `QUERY_WAS_CANCELLED_BY_CLIENT` exception is passed the same way TCP
+        /// does: `Call::onException` recognizes this code and turns it back into a clean
+        /// `cancelled` completion, preserving the gRPC wire contract (no exception payload).
+        if (auto process_list_element = context ? context->getProcessListElementSafe() : QueryStatusPtr{})
+            process_list_element->cancelQuery(
+                CancelReason::CANCELLED_BY_USER,
+                std::make_exception_ptr(
+                    Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
     }
 
     void Call::addQueryDetailsToResult()

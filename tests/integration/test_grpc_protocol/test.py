@@ -830,19 +830,25 @@ def test_cancel_latched_timeout_after_distinct_grpc():
         ## the soft timeout is latched inside the transform.
         time.sleep(6)
 
-        ## Now send the real gRPC `Cancel` while the soft timeout is already latched, then release the
-        ## paused scan. The recorded `cancel_reason` turns the cancel into a hard abort (the
+        ## Now send the real gRPC `Cancel` while the soft timeout is already latched, wait for the
+        ## server to record `CANCELLED_BY_USER` on the query status, then release the paused scan.
+        ## The gRPC queue-thread read callback calls `cancelQueryByUser()` immediately upon
+        ## `QueryInfo.cancel` receipt, so `system.processes.is_cancelled` flips to 1 deterministically
+        ## -- polling it instead of sleeping fixed time removes the timing dependency entirely. The
+        ## recorded `cancel_reason` turns the cancel into a hard abort (the
         ## `isCancelled() && !isCancelledBySoftTimeout()` check) instead of a soft-timeout continuation.
-        ##
-        ## The 1-second sleep between the cancel and the NOTIFY is required: the cancel must propagate
-        ## through the gRPC async-read callback -> `want_to_cancel` -> main-thread `isQueryCancelled()`
-        ## -> `cancelQuery(CANCELLED_BY_USER)` (which sets `cancel_reason`) BEFORE the NOTIFY releases the
-        ## transform. On ARM this propagation can take up to ~100 ms (`interactive_delay`), and the TCP
-        ## NOTIFY arrives on a separate thread in <5 ms; without the sleep the NOTIFY wins the race on
-        ## slower machines and the transform sees `cancel_reason == UNDEFINED` (soft timeout) instead of
-        ## `CANCELLED_BY_USER` (hard abort).
         cancel_event.set()
-        time.sleep(1)
+
+        deadline = time.monotonic() + 30
+        while True:
+            if time.monotonic() >= deadline:
+                assert False, "gRPC cancel did not mark the query cancelled within 30 s"
+            is_cancelled = node.query(
+                f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}' FORMAT TSV"
+            ).strip()
+            if is_cancelled == "1":
+                break
+            time.sleep(0.1)
 
         node.query("SYSTEM NOTIFY FAILPOINT distinct_transform_null_pause")
     finally:
