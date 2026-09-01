@@ -384,7 +384,8 @@ class Shell:
                     break
                 if on_retry and pending_notice is not None:
                     # Announced here, where the recheck above has confirmed the attempt
-                    # it announces will actually run.
+                    # it announces will run. A reporting failure must never fail the
+                    # command the retry is rescuing.
                     try:
                         on_retry(pending_notice, retry, retries - 1)
                     except Exception as e:  # noqa: BLE001
@@ -506,9 +507,6 @@ class Shell:
                         )
                     break
                 if on_retry:
-                    # Only where another attempt actually follows: the last iteration
-                    # matches too, but nothing is retried after it. Never lets a
-                    # reporting failure fail the command the retry is rescuing.
                     pending_notice = matched
             except Exception as e:
                 if retry_deadline is not None and ladder_start is None:
