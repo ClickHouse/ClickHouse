@@ -118,3 +118,50 @@ inner JSON JSONAllValues with setting
 ['{"b":42}']
 ['{}']
 ['{}']
+has without setting
+1	1
+1	1
+1	1
+1	1
+has with setting
+1	1
+0	0
+0	1
+0	0
+has with non-constant path with setting
+1	1
+0	0
+0	1
+0	0
+non-nullable has with setting
+1	1
+1	1
+mixed has with setting
+1	1
+0	1
+0	0
+nested has without setting
+1	1
+1	1
+1	1
+nested has with setting
+1	1	1
+0	0	0
+0	0	0
+Pretty without setting
+   ┌─json─────────────────┐
+1. │ {"a":42,"b":"hello"} │
+2. │ {"a":null,"b":null}  │
+   └──────────────────────┘
+Pretty with setting
+   ┌─json─────────────────┐
+1. │ {"a":42,"b":"hello"} │
+2. │ {}                   │
+   └──────────────────────┘
+Pretty keeps default JSON settings
+   ┌─t─────────────┐
+1. │ {            ↴│
+   │↳  "x": "nan",↴│
+   │↳  "y": 1     ↴│
+   │↳}             │
+   └───────────────┘

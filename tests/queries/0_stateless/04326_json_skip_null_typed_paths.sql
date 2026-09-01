@@ -114,6 +114,40 @@ SELECT JSONAllValues(json) FROM test_json_inner_json ORDER BY rowNumberInAllBloc
 SELECT 'inner JSON JSONAllValues with setting';
 SELECT JSONAllValues(json) FROM test_json_inner_json ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
 
+-- has() checks path presence in JSON and must agree with JSONHas.
+SELECT 'has without setting';
+SELECT has(json, 'a'), has(json, 'b') FROM test_json_skip_null ORDER BY rowNumberInAllBlocks();
+
+SELECT 'has with setting';
+SELECT has(json, 'a'), has(json, 'b') FROM test_json_skip_null ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
+-- A non-constant path is checked by a separate implementation.
+SELECT 'has with non-constant path with setting';
+SELECT has(json, materialize('a')), has(json, materialize('b')) FROM test_json_skip_null ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
+SELECT 'non-nullable has with setting';
+SELECT has(json, 'a'), has(json, materialize('a')) FROM test_json_non_nullable ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
+SELECT 'mixed has with setting';
+SELECT has(json, 'a'), has(json, 'd') FROM test_json_mixed ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
+SELECT 'nested has without setting';
+SELECT has(json, 'a'), has(json, 'a.b') FROM test_json_nested ORDER BY rowNumberInAllBlocks();
+
+SELECT 'nested has with setting';
+SELECT has(json, 'a'), has(json, 'a.b'), has(json, materialize('a')) FROM test_json_nested ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
+-- Pretty formats reset JSON settings to their defaults, but must keep this one.
+SELECT 'Pretty without setting';
+SELECT json FROM test_json_skip_null ORDER BY rowNumberInAllBlocks() LIMIT 2 FORMAT PrettyCompactMonoBlock;
+
+SELECT 'Pretty with setting';
+SELECT json FROM test_json_skip_null ORDER BY rowNumberInAllBlocks() LIMIT 2 SETTINGS type_json_skip_null_typed_paths = 1 FORMAT PrettyCompactMonoBlock;
+
+-- Other output_format_json_* settings must stay at their defaults in Pretty: nan remains quoted.
+SELECT 'Pretty keeps default JSON settings';
+SELECT CAST(tuple(nan::Float64, 1::Int64), 'Tuple(x Float64, y Int64)') AS t SETTINGS type_json_skip_null_typed_paths = 1 FORMAT PrettyCompactMonoBlock;
+
 DROP TABLE test_json_skip_null;
 DROP TABLE test_json_non_nullable;
 DROP TABLE test_json_mixed;

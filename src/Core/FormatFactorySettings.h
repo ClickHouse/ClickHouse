@@ -616,7 +616,7 @@ Possible values:
 + 1 — Enable (skip field on type mismatch).
 )", 0) \
     DECLARE(Bool, type_json_skip_null_typed_paths, false, R"(
-When enabled, typed paths in JSON columns that have NULL values are treated as absent, matching the behavior of dynamic paths. This affects JSON serialization output, introspection functions like `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, and `empty`/`notEmpty` checks.
+When enabled, typed paths in JSON columns that have NULL values are treated as absent, matching the behavior of dynamic paths. This affects JSON serialization output, introspection functions like `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, `has`, and `empty`/`notEmpty` checks.
 
 Possible values:
 
