@@ -89,7 +89,7 @@ Les paramètres peuvent être configurés à différents niveaux : pour un comp
 1. Paramètres du compte utilisateur.
 2. Les paramètres des rôles par défaut du compte utilisateur. Si un paramètre est configuré dans plusieurs rôles, l’ordre d’application du paramètre n’est pas défini.
 3. Les paramètres issus des profils de paramètres attribués à un utilisateur ou à ses rôles par défaut. Si un paramètre est configuré dans plusieurs profils, l’ordre d’application du paramètre n’est pas défini.
-4. Paramètres appliqués par défaut à l’ensemble du serveur ou à partir du [profil par défaut](/fr/reference/settings/server-settings/settings#default_profile).
+4. Paramètres appliqués par défaut à l’ensemble du serveur ou à partir du [profil par défaut](/fr/reference/settings/server-settings/settings/default#default_profile).
 
 <div id="role-management">
   ### Rôle
@@ -120,6 +120,8 @@ Des privilèges peuvent être attribués à un rôle au moyen de la requête [GR
 </div>
 
 Une politique de ligne est un filtre qui définit quelles lignes sont accessibles à un utilisateur ou à un rôle. Une politique de ligne contient des filtres pour une table donnée, ainsi qu&#39;une liste de rôles et/ou d&#39;utilisateurs auxquels cette politique de ligne s&#39;applique.
+
+Une politique de ligne s&#39;applique lorsque les données de la table sont lues localement. Pour une table [Distributed](/fr/reference/engines/table-engines/special/distributed), ou toute autre table qui délègue la lecture à des serveurs distants, définissez la politique sur les tables sous-jacentes de chaque serveur : une politique définie sur une table reposant sur des serveurs distants ne peut pas être appliquée à la requête envoyée, et les lectures via cette table sont alors rejetées. Une telle politique sur une table sous-jacente n&#39;est pas appliquée lorsque l&#39;initiateur envoie un plan de lecture déjà construit ; conservez donc [`serialize_query_plan = 0`](/fr/reference/settings/session-settings/serialize#serialize_query_plan) pour les utilisateurs dont les politiques de ligne doivent être appliquées (voir l&#39;[issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
 
 <Note>
   Les politiques de ligne n&#39;ont de sens que si vous disposez d&#39;un accès readonly. Si vous pouvez modifier la table ou copier des partitions entre tables, cela contourne les restrictions des politiques de ligne.
@@ -165,16 +167,16 @@ Requêtes de gestion :
 * [SHOW QUOTAS](/fr/reference/statements/show#show-quotas)
 
 <div id="enabling-access-control">
-  ### Activation du contrôle d’accès et de la gestion des comptes via SQL
+  ### Activation du contrôle d’accès et de la gestion des comptes pilotés par SQL
 </div>
 
 * Configurez un répertoire pour stocker la configuration.
 
-  ClickHouse stocke les configurations des entités d’accès dans le dossier défini par le paramètre de configuration du serveur [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings#access_control_path).
+  ClickHouse stocke les configurations des entités d’accès dans le dossier défini par le paramètre de configuration du serveur [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings/access-control#access_control_path).
 
-* Activez le contrôle d’accès et la gestion des comptes via SQL pour au moins un compte utilisateur.
+* Activez le contrôle d’accès et la gestion des comptes pilotés par SQL pour au moins un compte utilisateur.
 
-  Par défaut, le contrôle d’accès et la gestion des comptes via SQL sont désactivés pour tous les utilisateurs. Vous devez configurer au moins un utilisateur dans le fichier de configuration `users.xml` et définir à 1 les valeurs des paramètres [`access_management`](/fr/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections` et `show_named_collections_secrets`.
+  Par défaut, le contrôle d’accès et la gestion des comptes pilotés par SQL sont désactivés pour tous les utilisateurs. Vous devez configurer au moins un utilisateur dans le fichier de configuration `users.xml` et définir à 1 les valeurs des paramètres [`access_management`](/fr/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections` et `show_named_collections_secrets`.
 
 <div id="defining-sql-users-and-roles">
   ## Définir les utilisateurs et les rôles SQL

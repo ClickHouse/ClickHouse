@@ -44,8 +44,7 @@ Enable WebAssembly support in your ClickHouse configuration:
 
 Available Engine Implementations:
 
-- `wasmtime` (default, recommended) — uses [WasmTime](https://github.com/bytecodealliance/wasmtime)
-- `wasmedge` — uses [WasmEdge](https://github.com/WasmEdge/WasmEdge)
+- `wasmtime` (default, and currently the only one) — uses [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
 ## Quick Start
 
@@ -222,7 +221,7 @@ RETURNS return_type
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
     - `serialization_format` String — Format used to serialize argument blocks passed to the module and to parse the returned result. Used only by `ABI BUFFERED_V1`. Supported values: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, and `Buffers`. Default: `MsgPack`. Block-based formats such as `Buffers` must return a single column whose type matches the declared function signature.
-    - `webassembly_udf_enable_fuel` Bool — Enables finite fuel budgeting for the function. Default: `true`. When `false`, the query-level setting `webassembly_udf_max_fuel` is ignored for this function. Disabling fuel limits may improve performance when using the `wasmtime` engine. However, for untrusted or buggy guest code, it can increase the risk of runaway execution.
+    - `webassembly_udf_enable_fuel` Bool — Enables finite fuel budgeting for the function. Default: `true`. When `false`, the query-level setting `webassembly_udf_max_fuel` is ignored for this function. Disabling fuel limits may improve performance. However, for untrusted or buggy guest code, it can increase the risk of runaway execution.
 
 ## ABIs Versions
 
@@ -312,7 +311,7 @@ A complete example in freestanding C: `str_reverse` reverses the bytes of each i
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickhouseBuffer;
+} ClickHouseBuffer;
 
 #define HEAP_SIZE (1 << 24)
 static _Alignas(16) uint8_t heap[HEAP_SIZE];
@@ -320,13 +319,13 @@ static uint32_t heap_pos = 0;
 static uint32_t live_buffers = 0;
 
 __attribute__((export_name("clickhouse_create_buffer")))
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
+ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
 {
-    uint32_t total = (sizeof(ClickhouseBuffer) + size + 15u) & ~15u;
+    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
     if (heap_pos + total > HEAP_SIZE)
         return 0; /* a zero handle makes the host fail the query with an error */
-    ClickhouseBuffer * buf = (ClickhouseBuffer *) &heap[heap_pos];
-    buf->data = &heap[heap_pos + sizeof(ClickhouseBuffer)];
+    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
     buf->size = size;
     heap_pos += total;
     ++live_buffers;
@@ -334,7 +333,7 @@ ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
 }
 
 __attribute__((export_name("clickhouse_destroy_buffer")))
-void clickhouse_destroy_buffer(ClickhouseBuffer * buf)
+void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
 {
     if (--live_buffers == 0)
         heap_pos = 0;
@@ -365,9 +364,9 @@ static void write_varint(uint8_t ** pp, uint64_t value)
 
 /* Reverses the bytes of each input string */
 __attribute__((export_name("str_reverse")))
-ClickhouseBuffer * str_reverse(ClickhouseBuffer * input, uint32_t num_rows)
+ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
 {
-    ClickhouseBuffer * out = clickhouse_create_buffer(input->size);
+    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
     if (!out)
         return 0;
     const uint8_t * in = input->data;

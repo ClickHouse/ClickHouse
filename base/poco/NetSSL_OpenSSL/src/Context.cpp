@@ -458,6 +458,12 @@ void Context::disableProtocols(int protocols)
 		SSL_CTX_set_options(_pSSLContext, SSL_OP_NO_TLSv1_2);
 #endif
 	}
+	if (protocols & PROTO_TLSV1_3)
+	{
+#if defined(SSL_OP_NO_TLSv1_3)
+		SSL_CTX_set_options(_pSSLContext, SSL_OP_NO_TLSv1_3);
+#endif
+	}
 }
 
 

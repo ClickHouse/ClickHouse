@@ -76,13 +76,20 @@ ATTACH TABLE t_104791 CLONE AS t_104791; -- { serverError BAD_ARGUMENTS }
 --     by stored metadata in the short-ATTACH path below).
 ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000001'; -- { serverError BAD_ARGUMENTS }
 
+ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { clientError BAD_ARGUMENTS }
 -- 12. Explicit `Nil` UUID on a short ATTACH: also silently dropped before this
 --     patch. `ParserCompoundIdentifier` parses `UUID '...'` into `table_id->uuid`,
 --     and `Nil == Nil` so the value-based check we used previously missed this
 --     case. The fix is the `has_uuid_clause` flag on `ASTTableIdentifier`, which
 --     records that the parser actually saw the `UUID '...'` clause regardless of
 --     value, and which propagates into `ASTCreateQuery::has_uuid_clause`.
-ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { serverError BAD_ARGUMENTS }
+--     An explicit `Nil` `UUID` clause cannot be represented in the formatted query -
+--     `ASTCreateQuery::formatImpl` prints the clause only for a non-`Nil` value - so the
+--     parser rejects it outright and the error is reported by the client, which parses
+--     the query as well.
+--     The comment for this case is placed *after* the statement on purpose: the parser
+--     rejects the query, and `clickhouse-client` looks for the test hint only on the
+--     first line of the unparsed text, which would be a comment line otherwise.
 
 -- 13. `FROM '/path'` on an `ATTACH TABLE`: silently dropped before this patch.
 --     The parser sets `create.has_attach_from_path` and `create.attach_from_path`,
@@ -92,19 +99,20 @@ ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { serverEr
 --     not affected by this guard.
 ATTACH TABLE t_104791 FROM '/var/lib/clickhouse/detached/t_104791'; -- { serverError BAD_ARGUMENTS }
 
--- 14. `TO INNER UUID '...'` on a short `ATTACH TABLE`: silently dropped before
---     this patch. `ParserCreateTableQuery` parses `TO INNER UUID` into a local
---     variable BEFORE the short-ATTACH early return, but the short-ATTACH branch
---     does not persist it into the query AST. The non-short branch persists it
---     into `create.targets` (already covered by the guard), so we only need the
---     new `has_inner_uuid_clause` flag to also catch the short-ATTACH shape.
-ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000001'; -- { serverError BAD_ARGUMENTS }
-
--- 15. Explicit `Nil` `TO INNER UUID` on a short `ATTACH TABLE`: same code path as
---     case 14, but with the all-zero UUID. The parser sets
---     `has_inner_uuid_clause = true` based on the presence of the literal, not
---     its value, so the all-zero case is also rejected.
-ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000000'; -- { serverError BAD_ARGUMENTS }
+ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000001'; -- { clientError BAD_ARGUMENTS }
+ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000000'; -- { clientError BAD_ARGUMENTS }
+-- 14 and 15. `TO INNER UUID '...'` on a short `ATTACH TABLE`: silently dropped before
+--     this patch. `ParserCreateTableQuery` parses `TO INNER UUID` into a local variable
+--     BEFORE the short-ATTACH early return, and the short-ATTACH branch has nowhere to
+--     persist it: it builds no `targets`, which is what `ASTCreateQuery::formatImpl`
+--     prints the clause from. Such a query cannot be formatted back, so the parser
+--     rejects it outright and the error is reported by the client, which parses the
+--     query as well. The rejection is based on the presence of the clause, not on its
+--     value, so the all-zero UUID is rejected the same way.
+--     The two statements are adjacent, and their comment is placed *after* them, on
+--     purpose: `clickhouse-client` looks for the test hint only on the first line of
+--     the text it failed to parse, and after the first failure that text starts at the
+--     next line - which must therefore be the second statement, not a comment.
 
 -- Restore the table so cleanup at the end works.
 ATTACH TABLE t_104791;
@@ -124,9 +132,16 @@ DETACH DICTIONARY d_104791;
 --     before this patch via the parser-propagation gap described above.
 ATTACH DICTIONARY d_104791 UUID '00000000-0000-0000-0000-000000000001'; -- { serverError BAD_ARGUMENTS }
 
+ATTACH DICTIONARY d_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { clientError BAD_ARGUMENTS }
 -- 17. `ATTACH DICTIONARY d UUID '...'` with an explicit `Nil` UUID: same gap,
 --     same fix.
-ATTACH DICTIONARY d_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { serverError BAD_ARGUMENTS }
+--     An explicit `Nil` `UUID` clause cannot be represented in the formatted query -
+--     `ASTCreateQuery::formatImpl` prints the clause only for a non-`Nil` value - so the
+--     parser rejects it outright and the error is reported by the client, which parses
+--     the query as well.
+--     The comment for this case is placed *after* the statement on purpose: the parser
+--     rejects the query, and `clickhouse-client` looks for the test hint only on the
+--     first line of the unparsed text, which would be a comment line otherwise.
 
 -- Plain short `ATTACH DICTIONARY` still works.
 ATTACH DICTIONARY d_104791;

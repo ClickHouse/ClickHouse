@@ -416,9 +416,9 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 window_description.frame.session_window_threshold,
                 *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
 
-            // Negated "less" rather than "greater": there is no "greater" visitor, and the
-            // value can be NaN, which must fail this check.
-            if (!accurateLess(Field(0), window_description.frame.session_window_threshold))
+            // The converted value is what the frame advances by, and it can round down to zero in
+            // the ORDER BY type. Negated "less" because there is no "greater" visitor.
+            if (!accurateLess(Field(0), converted))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be positive, instead have {} as specified in the query, {} as converted to the ORDER BY type {}",
@@ -1526,7 +1526,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         block.original_input_columns = columns;
         for (size_t i = 0; i < columns.size(); ++i)
             if (should_materialize[i])
-                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullIfWrapped());
 
         block.input_columns = std::move(columns);
 
@@ -3718,7 +3718,7 @@ Returns a value evaluated at the row that is at a specified physical offset row 
 
 <Warning>
 `lagInFrame` behavior differs from the standard SQL `lag` window function.
-Clickhouse window function `lagInFrame` respects the window frame.
+ClickHouse window function `lagInFrame` respects the window frame.
 To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 </Warning>
 
@@ -3877,7 +3877,7 @@ Returns a value evaluated at the row that is offset rows after the current row w
 
 <Warning>
 `leadInFrame` behavior differs from the standard SQL `lead` window function.
-Clickhouse window function `leadInFrame` respects the window frame.
+ClickHouse window function `leadInFrame` respects the window frame.
 To get behavior identical to the `lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 </Warning>
 

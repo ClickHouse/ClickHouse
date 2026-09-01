@@ -76,6 +76,8 @@ TLS lives at the transport layer, below the protocol. When it is enabled the ent
 
 Authentication happens during the handshake, in the [`ClientHello`](#clienthello) message. The `user` and `password` fields travel as plaintext strings, so transport-level encryption (TLS) is what protects credentials in transit.
 
+An empty `user` field is interpreted by the server as its configured default session user: the `default_session_user` server setting (whose default value is `default`), possibly overridden per listener in the `protocols` section. If the server is configured with an empty default session user, or the server is older than 26.8, an empty `user` field is rejected with an exception. Note that `clickhouse-client` never sends an empty user name: it substitutes `default` on the client side.
+
 SSH challenge-response authentication is available from protocol version 54466 onward — see [SSH challenge-response authentication](#ssh-authentication).
 
 ### Inter-server secret {#inter-server-secret}
@@ -142,7 +144,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | SERVER_SETTINGS                 | 54474   | ServerHello            | Server broadcasts its non-default settings as a list at the tail of ServerHello, after `nonce`. Format: `(key, flags, value)` triples terminated by an empty key — same as the Query packet's settings list. |
 | QUERY_AND_LINE_NUMBERS          | 54475   | ClientInfo             | Adds `script_query_number` (VarUInt) and `script_line_number` (VarUInt) at the tail of ClientInfo. Used by clickhouse-client for multi-statement script error attribution; external clients send `0, 0`. |
 | JWT_IN_INTERSERVER              | 54476   | ClientInfo             | Adds a JWT-presence UInt8 + optional `String jwt` at the tail of ClientInfo. External clients (no JWT) send byte `0x00`. (Spelled `DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER` in C++ — note the typo in the constant name.) |
-| QUERY_PLAN_SERIALIZATION        | 54477   | ServerHello, QueryPlan packet | ServerHello appends `VarUInt query_plan_serialization_version` after server settings. Also introduces `ClientPacket::QueryPlan` (code `13`) for inter-server delivery of pre-built query plans — external clients never send. |
+| QUERY_PLAN_SERIALIZATION        | 54477   | ServerHello, QueryPlan packet | ServerHello appends `VarUInt query_plan_serialization_version` after server settings. Also introduces `ClientPacket::QueryPlan` (code `13`) for inter-server delivery of pre-built query plans — external clients never send. Query-plan serialization version `10` prefixes the serialized plan with `VarUInt max_threads` and `Bool concurrency_control`; when either is non-default, initiators use SQL shipping for peers below version `10` so the peer builds its plan from the transmitted query settings. |
 | PARALLEL_BLOCK_MARSHALLING      | 54478   | Block (Column)         | Server may wrap columns in `ColumnBLOB` (compressed inline) for parallel processing. Gated on the query having compression enabled AND `rows > 1`; otherwise the regular column wire format applies. Clients that never enable compression on outgoing Query packets see no wire change. |
 | VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Used for `*Cluster` table functions (`s3Cluster`, etc.). Current value: `8` (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`); version `7` is reserved for a private-repository feature (Iceberg compaction), and `8` adds an optional `read_source_index` to the inter-server cluster read-task payload (the `ReadTaskResponse` body, which stays unspecified here — see below). External clients decode and ignore. |
 | OUT_OF_ORDER_BUCKETS_IN_AGGREGATION | 54480 | BlockInfo              | Adds field 3 (`out_of_order_buckets: Vec<Int32>`) to BlockInfo's field-tagged stream. Decoded as `[VarUInt count][Int32]*count`. External clients don't emit this themselves; the decoder reads any non-empty list the server sends. |
@@ -153,7 +155,10 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | CLIENT_AGENT_IN_CLIENT_INFO     | 54485   | ClientInfo             | Adds a trailing `client_agent` `String` to ClientInfo. The canonical client auto-detects an agent identifier from its environment (for example `claude-code`, `cursor`, `gemini-cli`, or the value of the `AGENT` variable); an external client with nothing detected sends an empty string. Required once negotiated version ≥ 54485 — omitting it desynchronizes the rest of the Query packet. |
 | INTERNAL_QUERY_FLAG             | 54486   | ClientInfo             | Adds a trailing `is_internal` `UInt8` to ClientInfo. `1` for a server-internal query (not user-issued), propagated to remote queries so their `system.query_log` rows are labeled internal; external clients send `0`. Required once negotiated version ≥ 54486 — omitting it desynchronizes the rest of the Query packet. |
 | INTERSERVER_CURRENT_ROLES       | 54488   | ClientInfo             | Adds a trailing `current_roles` optional String list to ClientInfo (`[UInt8 present]` then, if `1`, `[VarUInt count][String]*count`), and, for inter-server queries, extends the `auth_hash` to cover the serialized list. Carries the initiator's active (enabled) role names so a secondary node scopes row policies the same way instead of falling back to the user's default roles. Only populated for inter-server queries and only when `push_external_roles_in_interserver_queries = 1`; external clients send `0` (absent). Required once negotiated version ≥ 54488 — omitting the presence byte desynchronizes the rest of the Query packet. |
+| CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD | 54489 | Aggregation (two-level buckets) | The aggregation method for a single `String` key follows `enable_packed_string_keys_in_aggregation`. A peer below this revision always uses the packed method and does not know the setting, so exchanging two-level buckets with it would place the same key in different buckets. The initiator fails closed for such a peer: it zeroes the two-level thresholds for it and re-buckets its single-level blocks itself. Compared against the peer's revision rather than its version, because the method can change within one release. No native-protocol wire change. |
 | HTTP_HANDLER_IN_CLIENT_INFO     | 54490   | ClientInfo             | Adds `http_handler_name` and `http_request_url` (both `String`) to the **HTTP** branch of ClientInfo, immediately after `http_referer`. They carry the name of the matched SQL-defined HTTP handler and the request URL, so that `currentHandler`/`currentRequestURL` and the `http_handler_name`/`http_request_url` `system.query_log` columns stay populated on remote shards for distributed handler queries. Written only when `query_interface = HTTP` (empty strings for a non-handler HTTP query); required once negotiated version ≥ 54490 — omitting it desynchronizes the rest of the Query packet. |
+| QUANTILE_DETERMINISTIC_SKIP_DEGREE | 54491 | Block (Column) | Bumps the state version of `AggregateFunction(quantileDeterministic, ...)` (and the `quantiles`/`median` spellings of it) from `0` to `1`, which appends a trailing `UInt8 skip_degree` to each serialized state. Only the state payload of that one aggregate function changes; the column framing is untouched, and every other aggregate function keeps its own version. Below this revision the writer emits version `0` states, so an older peer is unaffected. |
+| STRING_WITH_SIZE_STREAM_SERIALIZATION | 54492 | Block (Column)         | `String` columns switch from the per-value length-prefixed layout to a separate stream of cumulative byte offsets (the same offsets layout an `Array` uses), sent as-is: `[UInt64 × num_rows offsets][data blob]`. Gated on the negotiated revision; below 54492 the writer uses the per-value length prefixes. The wire carries no per-column marker for this — both peers derive it from the revision alone. See [String column layout](/reference/interfaces/specs/NativeFormat#string-type). |
 
 ## Packet envelope {#packet-envelope}
 
@@ -435,7 +440,7 @@ Client → Server. The first message after the TCP connection opens.
 | 3 | version_minor    | VarUInt | universal | Client minor version |
 | 4 | protocol_version | VarUInt | universal | Client's max supported protocol version |
 | 5 | database         | String  | universal | Default database name |
-| 6 | user             | String  | universal | Username for authentication |
+| 6 | user             | String  | universal | Username for authentication. Empty means the server's default session user (the `default_session_user` server setting; rejected by servers older than 26.8). See [Authentication](#authentication). |
 | 7 | password         | String  | universal | Password (plaintext) |
 
 ### ServerHello (packet type 0) {#serverhello}
@@ -903,7 +908,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 10   | MergeTreeReadTaskResponse | not specified       | Parallel read task response |
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |
-| 13   | QueryPlan                 | not specified       | Query plan |
+| 13   | QueryPlan                 | [QueryPlan](#queryplan) | Query plan |
 | 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | Initiator's reply to a follower's [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) (gated on `parallel_replicas_protocol_version ≥ 8` — see [VERSIONED_PARALLEL_REPLICAS_PROTOCOL](#feature-table)). Inter-server only — external clients never send. |
 
 ### Server → Client {#server-to-client}
@@ -929,6 +934,19 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 16   | MergeTreeReadTaskRequest       | not specified       | Parallel read task assignment |
 | 17   | TimezoneUpdate                 | [TimezoneUpdate](#timezoneupdate) | Server timezone update |
 | 18   | SSHChallenge                   | [SSH auth](#ssh-authentication) | SSH auth challenge |
+
+### QueryPlan {#queryplan}
+
+`QueryPlan` is an inter-server-only client packet. It follows a [`Query`](#query) whose `stage` is `QueryPlan` (`7`) and contains one serialized plan stream.
+
+| # | Field | Type | Gate | Description |
+|---|---|---|---|---|
+| 1 | serialization_version | VarUInt | universal | Query-plan serialization version, no greater than the receiver's `query_plan_serialization_version` advertised in `ServerHello`. |
+| 2 | max_threads | VarUInt | serialization version ≥ `10` | Plan-level thread limit. `0` means no plan-specific limit. |
+| 3 | concurrency_control | Bool | serialization version ≥ `10` | Whether the plan participates in concurrency control. |
+| 4 | plan | versioned query-plan stream | universal | Serialized plan tree, step settings, headers, and prepared sets. Its internal layout is owned by the query-plan serialization version. |
+
+Before version `10`, fields 2 and 3 are absent. An initiator with either non-default execution limit must not send that older layout: it ships the original SQL query instead, so the older receiver reconstructs the limits from the query settings.
 
 ## Configuration {#configuration}
 

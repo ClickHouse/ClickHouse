@@ -49,6 +49,8 @@ WINDOW window_name as ([
 - `ROWS`, `RANGE`, or `GROUPS` - defines bounds of a frame, aggregate_function is calculated within a frame. `ROWS` counts physical rows, `RANGE` counts `ORDER BY` values, and `GROUPS` counts peer groups (rows equal on the `ORDER BY` key).
 - `WINDOW` - allows multiple expressions to use the same window definition.
 
+Besides the standard frame types above, ClickHouse has an experimental [`SESSION` frame](#session-frame), written `SESSION threshold` in place of the frame bounds.
+
 ```text
       PARTITION
 ┌─────────────────┐  <-- UNBOUNDED PRECEDING (BEGINNING of the PARTITION)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>

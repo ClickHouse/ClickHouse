@@ -555,7 +555,7 @@ service:
   ### استخدم عمليات الإدراج غير المتزامنة
 </div>
 
-عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون معدل النقل لدى المجمّع منخفضًا، ومع ذلك يظلون يتوقعون وصول البيانات إلى ClickHouse بأقل زمن وصول ممكن من طرف إلى طرف. في هذه الحالة، تُرسل الدفعات الصغيرة عند انتهاء مهلة `timeout` الخاصة بـ batch processor. وقد يسبب ذلك مشكلات، وهنا تصبح عمليات الإدراج غير المتزامنة ضرورية. ونادرًا ما تظهر هذه المشكلة إذا كنت ترسل البيانات إلى ClickStack collector الذي يعمل كبوابة Gateway، إذ يخفف هذا الإشكال من خلال عمله كمجمّع — راجع [أدوار المجمّع](#collector-roles).
+عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون معدل النقل لدى المجمّع منخفضًا، ومع ذلك يظلون يتوقعون وصول البيانات إلى ClickHouse بأقل زمن وصول ممكن من طرف إلى طرف. في هذه الحالة، تُرسل الدفعات الصغيرة عند انتهاء مهلة `timeout` الخاصة بـ batch معالج. وقد يسبب ذلك مشكلات، وهنا تصبح عمليات الإدراج غير المتزامنة ضرورية. ونادرًا ما تظهر هذه المشكلة إذا كنت ترسل البيانات إلى ClickStack مجمّع الذي يعمل كبوابة، إذ يخفف هذا الإشكال من خلال عمله كمجمّع — راجع [أدوار المجمّع](#collector-roles).
 
 إذا تعذر ضمان دفعات كبيرة، يمكنك إسناد التجميع إلى ClickHouse باستخدام [عمليات الإدراج غير المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). ففي عمليات الإدراج غير المتزامنة، تُدرج البيانات أولًا في مخزن مؤقت، ثم تُكتب لاحقًا إلى تخزين قاعدة البيانات بشكل غير متزامن.
 
@@ -565,15 +565,15 @@ service:
 
 لتمكين عمليات الإدراج غير المتزامنة للمجمّع، أضف `async_insert=1` إلى connection string. ونوصي باستخدام `wait_for_async_insert=1` (وهو الإعداد الافتراضي) للحصول على ضمانات التسليم — راجع [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) لمزيد من التفاصيل.
 
-تُدرج البيانات من async insert بمجرد تفريغ المخزن المؤقت في ClickHouse. ويحدث ذلك إما بعد تجاوز [`async_insert_max_data_size`](/ar/reference/settings/session-settings#async_insert_max_data_size) أو بعد مرور [`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings#async_insert_max_data_size) Milliseconds منذ أول INSERT query. وإذا ضُبط `async_insert_stale_timeout_ms` على قيمة غير صفرية، فستُدرج البيانات بعد `async_insert_stale_timeout_ms milliseconds` منذ آخر query. يمكنك ضبط هذه الإعدادات للتحكم في زمن الوصول من طرف إلى طرف في pipeline لديك. وتجد [هنا](/ar/reference/settings/session-settings#async_insert) إعدادات إضافية يمكن استخدامها لضبط تفريغ المخزن المؤقت. وبوجه عام، تكون القيم الافتراضية مناسبة.
+تُدرج البيانات من async insert بمجرد تفريغ المخزن المؤقت في ClickHouse. ويحدث ذلك إما بعد تجاوز [`async_insert_max_data_size`](/ar/reference/settings/session-settings/async-insert#async_insert_max_data_size) أو بعد مرور [`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) Milliseconds منذ أول INSERT query. وإذا ضُبط `async_insert_stale_timeout_ms` على قيمة غير صفرية، فستُدرج البيانات بعد `async_insert_stale_timeout_ms milliseconds` منذ آخر query. يمكنك ضبط هذه الإعدادات للتحكم في زمن الوصول من طرف إلى طرف في pipeline لديك. وتجد [هنا](/ar/reference/settings/session-settings/async-insert#async_insert) إعدادات إضافية يمكن استخدامها لضبط تفريغ المخزن المؤقت. وبوجه عام، تكون القيم الافتراضية مناسبة.
 
 <Info>
   **ضع في اعتبارك عمليات الإدراج غير المتزامنة التكيفية**
 
-  في الحالات التي يُستخدم فيها عدد قليل من agent، مع معدل نقل منخفض ولكن متطلبات صارمة لزمن الوصول من طرف إلى طرف، قد تكون [عمليات الإدراج غير المتزامنة التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. لكن عمومًا، لا تكون مناسبة لحالات استخدام Observability ذات معدل النقل المرتفع، كما هو الحال مع ClickHouse.
+  في الحالات التي يُستخدم فيها عدد قليل من الوكلاء، مع معدل نقل منخفض ولكن متطلبات صارمة لزمن الوصول من طرف إلى طرف، قد تكون [عمليات الإدراج غير المتزامنة التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. لكن عمومًا، لا تكون مناسبة لحالات استخدام Observability ذات معدل النقل المرتفع، كما هو الحال مع ClickHouse.
 </Info>
 
-أخيرًا، فإن سلوك deduplication السابق المرتبط بعمليات الإدراج المتزامنة في ClickHouse لا يكون مفعّلًا افتراضيًا عند استخدام عمليات الإدراج غير المتزامنة. وإذا لزم الأمر، فراجع الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings#async_insert_deduplicate).
+أخيرًا، فإن سلوك deduplication السابق المرتبط بعمليات الإدراج المتزامنة في ClickHouse لا يكون مفعّلًا افتراضيًا عند استخدام عمليات الإدراج غير المتزامنة. وإذا لزم الأمر، فراجع الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings/async-insert#async_insert_deduplicate).
 
 يمكن العثور على التفاصيل الكاملة حول تهيئة هذه الميزة في [صفحة التوثيق](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، أو في [منشور المدونة](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) المتعمق.
 

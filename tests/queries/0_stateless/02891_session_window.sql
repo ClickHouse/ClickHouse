@@ -92,9 +92,21 @@ select number, count() over (rows) c from numbers(3) window rows as (order by nu
 
 -- Test some wrong things
 select 1 n, count() over (order by n session 0.5); -- { serverError 69 }
-select 1 n, count() over (order by n session -1); -- { serverError 69 }
+select 1 n, count() over (order by n session -1); -- { serverError 36 }
 select 1 n, count() over (order by n session 0); -- { serverError 36 }
 select 1 n, count() over (order by n session 'what'); -- { serverError BAD_ARGUMENTS }
 select 1 n, count() over (session 1); -- { serverError 36 }
 select 1 n, count() over (order by n, n+1 session 1); -- { serverError 36 }
 select 'a' n, count() over (order by n session 1); -- { serverError 48 }
+-- A non-positive threshold is rejected while the frame is analyzed, so it cannot be stored in a
+-- view and fail only on SELECT.
+create view 02891_session_window_bad as select n, count() over (order by n session 0) from (select arrayJoin([1, 2]) n); -- { serverError 36 }
+create view 02891_session_window_bad as select n, count() over (order by n session 0) from (select arrayJoin([1, 2]) n) settings enable_analyzer = 0; -- { serverError 36 }
+create view 02891_session_window_bad as select n, count() over (order by n session -1) from (select arrayJoin([1, 2]) n); -- { serverError 36 }
+create view 02891_session_window_bad as select n, count() over (order by n session -1) from (select arrayJoin([1, 2]) n) settings enable_analyzer = 0; -- { serverError 36 }
+-- A non-finite threshold has no session gap to compare against; it must not reach the frame.
+select 1 n, count() over (order by n session nan); -- { serverError 36 }
+select 1 n, count() over (order by n session nan) settings enable_analyzer = 0; -- { serverError 36 }
+select n, count() over (order by n session nan) from (select arrayJoin([1.0, 2.0])::Float64 n); -- { serverError 36 }
+select n, count() over (order by n session nan) from (select arrayJoin([1.0, 2.0])::Float64 n) settings enable_analyzer = 0; -- { serverError 36 }
+select n, count() over (order by n session inf) from (select arrayJoin([1.0, 2.0])::Float64 n); -- { serverError 36 }

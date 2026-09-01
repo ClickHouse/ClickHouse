@@ -98,6 +98,18 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
+    // A SESSION frame is bounded by its threshold rather than by boundary offsets. NaN is tested
+    // separately because it compares as greater than every value, and negated "less" is used for
+    // the rest because there is no "greater" visitor.
+    if (type == FrameType::SESSION
+        && (session_window_threshold.isNaN() || session_window_threshold.isInf()
+            || !accurateLess(Field(0), session_window_threshold)))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Window frame SESSION threshold must be a positive finite number, '{}' given",
+            applyVisitor(FieldVisitorToString(), session_window_threshold));
+    }
+
     // Check the validity of offsets.
     if (begin_type == BoundaryType::Offset
         && !((begin_offset.getType() == Field::Types::UInt64
