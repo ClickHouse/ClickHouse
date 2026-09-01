@@ -525,6 +525,9 @@ void processMatch(
     }
     else if constexpr (join_features.is_all_join)
     {
+        /// This branch records a key's whole cell word. The emit reads such a word correctly only when
+        /// it was told to expect that shape, so `emits_whole_key_per_word` has to cover this branch.
+        static_assert(join_features.emits_whole_key_per_word);
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
         /// An ALL join emits a right row for each matching left row, so nothing is claimed here.
@@ -532,6 +535,7 @@ void processMatch(
     }
     else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
     {
+        static_assert(join_features.emits_whole_key_per_word);
         /// Each right row is emitted for exactly one left row, so the claimed rows must be the emitted
         /// ones. With several disjuncts a right row is reachable through several keys, hence the claim
         /// is taken per row by `addFoundRowAll`, which emits only what it claims.
@@ -610,7 +614,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.filter = IColumn::Filter(rows, 0);
         added_columns.matched_rows.reserve(rows);
     }
-    /// Deliberately the same condition as the `addFoundRowAll` branches of `addRowsForKey` below.
+    /// Deliberately the same condition as the `addFoundRowAll` branches of `processMatch` below.
     if constexpr (!flag_per_row && join_features.emits_whole_key_per_word)
         added_columns.lazy_output.output_by_row_list = true;
 
@@ -720,7 +724,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.filter = IColumn::Filter(rows, 0);
         added_columns.matched_rows.reserve(rows);
     }
-    /// Deliberately the same condition as the `addFoundRowAll` branches of `addRowsForKey` below.
+    /// Deliberately the same condition as the `addFoundRowAll` branches of `processMatch` below.
     if constexpr (!flag_per_row && join_features.emits_whole_key_per_word)
         added_columns.lazy_output.output_by_row_list = true;
 

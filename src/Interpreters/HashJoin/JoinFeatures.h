@@ -34,6 +34,12 @@ struct JoinFeatures
     /// append one ref at a time so that it can claim each row separately.
     static constexpr bool emits_whole_key_per_word = is_all_join || ((is_any_join || is_semi_join) && right);
 
+    /// These two are always the same condition. Emitting every row of a matched key at once is what
+    /// makes one left row come out several times. They are written out separately because they are used
+    /// for different things: one sizes `offsets_to_replicate`, the other picks the word shape the emit
+    /// reads. This assert is what stops them drifting apart.
+    static_assert(emits_whole_key_per_word == need_replication);
+
     /// Whether we need to filter rows from the left table that do not have matches in the right table.
     static constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
 

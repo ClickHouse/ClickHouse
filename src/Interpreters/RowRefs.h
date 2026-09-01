@@ -89,6 +89,11 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 /// up to 32766 rows to keys with up to 126 rows - still covering most practical duplication.
 [[noreturn]] void throwRowRefPointerTooLarge();
 
+/// Thrown when a range would run past the last row a ref word can address. A range is one run of
+/// consecutive rows in one block. Iterating it advances only the word's 32-bit row field, so a longer
+/// run would carry into `block_no` and start reading another block.
+[[noreturn]] void throwRowRefRangeOutOfRange(size_t row_no, size_t rows);
+
 /// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte word.
 ///   - bit 63 is 1: the key has exactly one row so far; the word IS the encoded RowRef (inline).
 ///   - bit 63 is 0 and the word is not 0: a pointer (bits 47..0) to an arena-allocated `Batch` node,
@@ -190,6 +195,13 @@ struct RowRefList
     void setRange(UInt64 start_word, size_t rows_, Arena & pool)
     {
         chassert(refWordIsInline(start_word));
+
+        /// The run has to end inside the block it starts in - see `throwRowRefRangeOutOfRange`.
+        /// `addBlockToJoin` limits a block's rows and `RowRef` limits the field, so this only says that
+        /// same limit in the range's own terms.
+        const size_t start_row = refWordRowNo(start_word);
+        if (start_row + rows_ > static_cast<size_t>(std::numeric_limits<UInt32>::max()) + 1) [[unlikely]]
+            throwRowRefRangeOutOfRange(start_row, rows_);
 
         /// A single-row range is just the inline ref itself: no node needed, and the emit paths
         /// already treat an inline word as a 1-length range.
@@ -308,7 +320,7 @@ struct RowRefList
             if (b->is_range)
             {
                 range_word = b->refs[0];
-                range_remaining = static_cast<UInt32>(b->total_rows);
+                range_remaining = b->total_rows;
                 return;
             }
 
@@ -358,9 +370,12 @@ struct RowRefList
         const UInt64 * cur = nullptr;
         const UInt64 * run_end = nullptr;
         const Batch * next_node = nullptr;
-        /// Range mode (inline ref / rerange): `range_word` is the current ref, `range_remaining` the count.
+        /// Range mode (inline ref / rerange): `range_word` is the current ref, `range_remaining` the
+        /// count. The count is as wide as `rows` on purpose. `Batch::total_rows` is 56 bits and the
+        /// destination is sized from `rows`, so a narrower counter would stop early and leave the tail
+        /// of that destination unwritten.
         UInt64 range_word = 0;
-        UInt32 range_remaining = 0;
+        size_t range_remaining = 0;
     };
 
     ForwardIterator begin() const { return ForwardIterator(*this); }
@@ -513,6 +528,9 @@ public:
     /// The resolved gather source for one output (saved-block) column position.
     struct EmitColumn
     {
+        /// The type this entry was resolved for. It picks the `Fixed` leaf's `default_pattern` and the
+        /// `Rows` node's `type`, so an entry reused under another type would write the wrong defaults.
+        DataTypePtr request_type;
         /// Its raw bases stay valid only until the generation changes, so a stored column's buffer must
         /// not be mutated in place without bumping it.
         GatherNode gather_root;
@@ -553,10 +571,11 @@ public:
     /// Resolve the emit table for the given `requests` (the output columns of one probe), building any
     /// not-yet-built positions for the current generation (and dropping the whole table first if the
     /// blocks changed). `out_gather` is sized to `saved_columns_count` and indexed by stored-block
-    /// column position; positions not requested stay empty. Pointers are stable for as long as the
-    /// generation does not change, which a StorageJoin read lock or a normal join's build-then-probe
-    /// guarantees for the caller's lifetime. Holds `mutex` for the duration; called once per probe batch,
-    /// never in the per-row loop.
+    /// column position; positions not requested stay empty. A position asked for under a second type
+    /// throws: rebuilding its entry would invalidate the pointers an earlier caller still holds.
+    /// Pointers are stable for as long as the generation does not change,
+    /// which a StorageJoin read lock or a normal join's build-then-probe guarantees for the caller's
+    /// lifetime. Holds `mutex` for the duration; called once per probe batch, never in the per-row loop.
     void resolveEmitColumns(
         size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<GatherColumn> & out_gather);
 

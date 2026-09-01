@@ -282,6 +282,14 @@ void throwRowRefPointerTooLarge()
         "Arena pointer does not fit in 48 bits; RowRefList pointer+count packing is invalid on this platform");
 }
 
+void throwRowRefRangeOutOfRange(size_t row_no, size_t rows)
+{
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "RowRefList range out of range: a run of {} rows from row_no {} does not end in the same block",
+        rows, row_no);
+}
+
 void throwRowRefOutOfRange(size_t block_no, size_t row_no)
 {
     throw Exception(
@@ -340,9 +348,18 @@ void StoredColumnsIndex::resolveEmitColumns(
     {
         const size_t pos = request.position;
         chassert(pos < saved_columns_count);
+        /// `resolveGatherNode` catches a differing shape. Two types of the same shape can still have
+        /// different defaults - `Enum8` and `Int8` - and would otherwise share one `default_pattern`.
+        if (emit_columns[pos] && !emit_columns[pos]->request_type->equals(*request.type))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Join emit column {} was resolved for type {} and is now asked for as {}",
+                pos, emit_columns[pos]->request_type->getName(), request.type->getName());
+
         if (!emit_columns[pos]) /// not built yet for this generation: build this requested position
         {
             auto emit_column = std::make_unique<EmitColumn>();
+            emit_column->request_type = request.type;
             bool any_replicated = false;
             std::vector<GatherRowRemap> remap(num_blocks);
             for (size_t b = 0; b < num_blocks; ++b)
