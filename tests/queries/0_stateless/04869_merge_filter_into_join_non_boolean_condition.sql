@@ -15,6 +15,12 @@ SELECT count() FROM t_merge_filter AS l LEFT JOIN t_merge_filter AS r ON l.id = 
 WHERE r.id AND l.id = r.id
 SETTINGS query_plan_merge_filter_into_join_condition = 0;
 
+-- The INNER JOIN shape from the linked issue reaches the merge pass by a different route;
+-- the filter push down is disabled so that the filter stays above the JOIN for the merge pass.
+SELECT count() FROM t_merge_filter AS l INNER JOIN t_merge_filter AS r ON l.id = r.id
+WHERE r.id AND l.id = r.id
+SETTINGS query_plan_merge_filter_into_join_condition = 1, query_plan_filter_push_down = 0;
+
 SELECT l.id FROM t_merge_filter AS l LEFT JOIN t_merge_filter AS r ON l.id = r.id
 WHERE r.id AND l.id = r.id AND l.id IN (0, 255, 256, 512)
 ORDER BY l.id;
