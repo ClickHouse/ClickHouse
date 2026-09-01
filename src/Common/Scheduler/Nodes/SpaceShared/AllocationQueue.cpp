@@ -206,7 +206,10 @@ bool AllocationQueue::canEnterSuction(const ResourceAllocation & allocation) con
         const auto * space_node = static_cast<const ISpaceSharedNode *>(node);
         if (ResourceAllocation * suction = space_node->getLocalSuctionAllocation(); suction && suction != &allocation)
             return false;
-        if (ResourceAllocation * spilling = space_node->getLocalSpillingAllocation(); spilling && spilling != &allocation)
+        /// The queue policy may replace this queue's provisional spiller before suction starts.
+        /// A spiller from another queue still owns this ancestor scope and blocks promotion.
+        if (ResourceAllocation * spilling = space_node->getLocalSpillingAllocation();
+            spilling && spilling != &allocation && &spilling->queue != &allocation.queue)
             return false;
     }
     return true;
@@ -684,7 +687,7 @@ void AllocationQueue::processActivation()
                 && increase->allocation.increasing_hook.is_linked()
                 && increase->allocation.memory_growth_suction_priority
                 && !increase->allocation.memory_growth_recovery_pending);
-        if (!suspended_growth && !has_active_suction)
+        if (!has_active_suction)
         {
             const auto first_nominated = std::find_if(
                 increasing_allocations.begin(), increasing_allocations.end(), [](const ResourceAllocation & allocation)

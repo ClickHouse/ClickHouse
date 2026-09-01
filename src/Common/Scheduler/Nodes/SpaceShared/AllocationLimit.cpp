@@ -187,14 +187,17 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         if (child_suction)
         {
             IncreaseRequest * child_suction_request = &child_suction->increase;
+            /// A leaf queue owns ordering between its nominated entries. Before suction starts it
+            /// may replace that queue's provisional spiller; the exact selected owner then climbs.
+            const bool replaces_queue_spiller = suspended_growth
+                && &suspended_growth->allocation.queue == &child_suction->queue;
             chassert(!suction_growth || suction_growth == child_suction_request);
-            chassert(!suspended_growth || suspended_growth == child_suction_request);
+            chassert(!suspended_growth || suspended_growth == child_suction_request || replaces_queue_spiller);
             if ((!suction_growth || suction_growth == child_suction_request)
-                && (!suspended_growth || suspended_growth == child_suction_request))
+                && (!suspended_growth || suspended_growth == child_suction_request || replaces_queue_spiller))
             {
                 suction_growth = child_suction_request;
-                if (suspended_growth == child_suction_request)
-                    suspended_growth = nullptr;
+                suspended_growth = nullptr;
                 suspended_growth_retry_pending = false;
             }
         }
@@ -258,20 +261,22 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
 
     if (new_increase && new_increase->allocation.memory_growth_suction_priority)
     {
-        /// A child suction must be followed by every ancestor on its path. A different active
-        /// suction or spill at this level is an invariant violation, not a new scheduling case.
+        /// A child suction must be followed by every ancestor on its path. The child queue may
+        /// replace its provisional spiller before suction starts, but cannot replace a suction or
+        /// a spiller owned by another queue in this scope.
+        const bool replaces_queue_spiller = suspended_growth
+            && &suspended_growth->allocation.queue == &new_increase->allocation.queue;
         chassert(!suction_growth || suction_growth == new_increase);
-        chassert(!suspended_growth || suspended_growth == new_increase);
+        chassert(!suspended_growth || suspended_growth == new_increase || replaces_queue_spiller);
         if ((suction_growth && suction_growth != new_increase)
-            || (suspended_growth && suspended_growth != new_increase))
+            || (suspended_growth && suspended_growth != new_increase && !replaces_queue_spiller))
         {
             new_increase = nullptr;
         }
         else
         {
             suction_growth = new_increase;
-            if (suspended_growth == new_increase)
-                suspended_growth = nullptr;
+            suspended_growth = nullptr;
             suspended_growth_retry_pending = false;
         }
     }
