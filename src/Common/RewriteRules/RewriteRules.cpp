@@ -157,6 +157,17 @@ namespace
     /// substituted, so the rule would silently never match as intended. Returns the name of
     /// the first such placeholder so it can be rejected at DDL time. `inside_nested_template`
     /// is true once the walk has descended into a nested rule's template fields.
+    ///
+    /// The walk composes both dimensions along which a placeholder can hide: ordinary
+    /// `children` and the semantic AST members kept outside `children`
+    /// (`forEachNonChildSemanticAST`). Composing them matters in both directions — a nested
+    /// rule DDL can sit behind a non-`children` member of the outer template, and a
+    /// placeholder inside a nested template can sit in a non-`children` carrier of its own
+    /// (for example `CREATE RULE outer AS (CREATE RULE inner AS (CREATE USER {u:Identifier})
+    /// REWRITE TO (SELECT 1)) REWRITE TO (SELECT 1)`, where `{u:Identifier}` lives in
+    /// `ASTCreateUserQuery::names`). Screening only one dimension at a time (as
+    /// `findQueryParameterInNonChildMember` below does for the non-nested case) would let
+    /// such a cross-dimension placeholder through.
     std::optional<String> findQueryParameterInNestedRuleTemplate(const ASTPtr & ast, bool inside_nested_template)
     {
         if (!ast)
@@ -180,6 +191,18 @@ namespace
             if (auto found = findQueryParameterInNestedRuleTemplate(alter_rule->resulting_query, true))
                 return found;
         }
+
+        /// The flag is propagated unchanged here: descending through a non-`children` member does
+        /// not by itself make a placeholder a *nested-template* one (that case is reported by
+        /// `findQueryParameterInNonChildMember`), it only keeps the search reachable.
+        std::optional<String> found_in_non_child;
+        forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member)
+        {
+            if (!found_in_non_child)
+                found_in_non_child = findQueryParameterInNestedRuleTemplate(member, inside_nested_template);
+        });
+        if (found_in_non_child)
+            return found_in_non_child;
 
         for (const auto & child : ast->children)
             if (auto found = findQueryParameterInNestedRuleTemplate(child, inside_nested_template))
@@ -361,6 +384,24 @@ namespace
             /// `{` + non-empty name + `:` + type + `}`.
             if (new_name.starts_with('{') && closing != String::npos && colon > 1 && colon < closing)
                 return new_name.substr(1, colon - 1);
+        }
+
+        /// A nested rule template can carry the same flattened placeholder, and its
+        /// `source_query` / `resulting_query` live outside both `children` and
+        /// `forEachNonChildSemanticAST`, so descend into them explicitly.
+        if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
+        {
+            if (auto found = findFlattenedQueryParameterInUserName(create_rule->source_query))
+                return found;
+            if (auto found = findFlattenedQueryParameterInUserName(create_rule->resulting_query))
+                return found;
+        }
+        else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
+        {
+            if (auto found = findFlattenedQueryParameterInUserName(alter_rule->source_query))
+                return found;
+            if (auto found = findFlattenedQueryParameterInUserName(alter_rule->resulting_query))
+                return found;
         }
 
         std::optional<String> found;
