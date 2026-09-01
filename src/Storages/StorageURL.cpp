@@ -81,6 +81,7 @@ namespace Setting
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 max_http_get_redirects;
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsNonZeroUInt64 max_read_buffer_size;
@@ -728,7 +729,9 @@ void StorageURLSink::initBuffers()
         compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
-        settings[Setting::snappy_mode]);
+        settings[Setting::snappy_mode],
+        DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true,
+        settings[Setting::max_generic_compression_threads]);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, getHeader(), context, format_settings);
 }
 

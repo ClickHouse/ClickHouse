@@ -329,6 +329,18 @@ The write-side parallelization applies only to synchronous plain `INSERT`s: asyn
 The writing side is parallelized only when it is safe to do so; otherwise it stays single-stream and this setting has no effect on it. In particular, the write is kept single-stream when [`use_strict_insert_block_limits`](#use_strict_insert_block_limits) is enabled, a destination table (or a table it forwards to) deduplicates inserted blocks, and insert deduplication is enabled for the query (see [`deduplicate_insert`](#deduplicate_insert)), when the destination has dependent materialized views — including views of a table the destination forwards to, e.g. behind an `Alias` — (unless [`parallel_view_processing`](#parallel_view_processing) is enabled and the dependent view chains are free of deduplication hazards — deduplication in the views is disabled ([`deduplicate_blocks_in_dependent_materialized_views`](#deduplicate_blocks_in_dependent_materialized_views)) or no dependent view path can deduplicate), and always for `Buffer` and `Distributed` destinations. A `Buffer` flushes in its own context and a `Distributed` forwards the write to a remote shard (which may itself buffer the data), so this query's deduplication settings do not govern the final write and it is kept single-stream regardless of them. A non-parallel quorum insert ([`insert_quorum`](#insert_quorum) is `2` or greater, or `'auto'`, and [`insert_quorum_parallel`](#insert_quorum_parallel) is disabled) also stays single-stream, because it permits only one in-flight quorum part per table.
 Higher values will lead to higher memory usage.
 )", 0) \
+    DECLARE(UInt64, max_generic_compression_threads, 1, R"(
+The maximum number of threads used to compress generic stream-compressed output (currently `gzip`) when writing to output formats, files or storage, and when compressing HTTP query responses with `Content-Encoding: gzip`.
+
+The output stays in the standard `gzip` format and can be read by any decompressor; only the writing side is parallelized. Independent blocks are compressed in parallel on the shared IO thread pool. The setting is named generically so that other stream-compression methods can adopt it in the future.
+
+Possible values:
+
+- 0 or 1 — single-threaded compression (default).
+- Positive integer greater than 1 — compress on up to this many threads.
+
+Higher values will lead to higher memory usage.
+)", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 
