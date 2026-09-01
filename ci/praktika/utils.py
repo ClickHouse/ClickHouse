@@ -442,13 +442,6 @@ class Shell:
                     stdout_thread.start()
                     stderr_thread.start()
 
-                    if pending_notice is not None:
-                        # Only from here is a deadline-cancellable retry certain to have
-                        # started, and the readers above keep caller code of any duration
-                        # from blocking the child on a full pipe.
-                        _announce(pending_notice, retry)
-                        pending_notice = None
-
                     try:
                         stdout_thread.join()
                         stderr_thread.join()
@@ -465,6 +458,12 @@ class Shell:
                         # setting this at the leader's exit would retire the watchdog while a
                         # descendant it must still reach keeps this call blocked.
                         finished.set()
+
+                if pending_notice is not None:
+                    # Only past here is a deadline-cancellable retry certain to have run,
+                    # and the child is already reaped, so caller code cannot strand it.
+                    _announce(pending_notice, retry)
+                    pending_notice = None
 
                 if proc.returncode == 0:
                     return 0
