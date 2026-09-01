@@ -110,7 +110,6 @@ $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG |& grep -F -o Exception
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --host $TEST_HOST |& grep -F -o Exception
 echo 'port'
-# The refusal now names the resolved address; normalize it away so the line stays stable.
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_port |& grep -E -o 'Connection refused[^(]*\(localhost:0\)\.' | sed -E 's/refused[^(]*\(/refused (/'
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_port --port $TEST_PORT |& grep -F -o Exception
 echo 'secure'

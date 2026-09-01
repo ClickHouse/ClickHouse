@@ -78,18 +78,14 @@ def test_connect_timeout_names_the_dialled_address(started_cluster):
     # Asserting on "connect timed out" distinguishes from the connection-description suffix.
     peer_ip = cluster.get_instance_ip("peer")
 
-    # /proc/sys is read-only in these containers (NET_ADMIN, not --privileged), so sysctl is
-    # ignored. At default 6 retries the kernel gives up at ~127s; client timeout is set well
-    # beyond that so the deferred branch reports, not ClickHouse's own deadline.
+    # /proc/sys is read-only in these containers, so sysctl is ignored. At default 6 retries
+    # the kernel gives up at ~127s; client timeout is set well beyond that.
     with PartitionManager() as pm:
         # DROP not REJECT: rejection arrives as RST and takes the refused path.
         pm.partition_instances(node, peer, port=9000)
         error = node.query_and_get_error(
             f"SELECT * FROM remote('{peer_ip}:9000', system, one) SETTINGS "
-            # Pinned, not left at the default: applySettingsQuirks turns async_socket_for_remote
-            # off on some kernels unless it was explicitly changed, and the synchronous
-            # SocketImpl::connect branch produces the same text -- so on those machines this would
-            # pass without ever reaching the helper it is meant to cover.
+            # Pinned: applySettingsQuirks may turn async_socket_for_remote off on some kernels.
             "async_socket_for_remote = 1, async_query_sending_for_remote = 1, "
             "connect_timeout_with_failover_ms = 300000, connections_with_failover_max_tries = 1"
         )

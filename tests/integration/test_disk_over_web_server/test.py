@@ -283,7 +283,6 @@ def test_unavailable_server(cluster):
         assert node2.contains_in_log(
             "Caught exception while loading metadata.*Connection refused"
         )
-        # The refusal now names the address that actually refused, not just the logical host.
         assert node2.contains_in_log(
             "Failed to make request to 'http://nginx:8080/test1/.*'. "
             "Error: 'Connection refused: .*:8080'. Failed at try 10/10."
