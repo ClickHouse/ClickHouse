@@ -71,8 +71,10 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// query context and hold mutable per-use state that must not be shared between
 /// queries (see the comment in SerializationJSON::create). Since the cache lives
 /// in a long-lived thread, it must be cleared whenever the thread starts serving
-/// a different query; otherwise a stale entry produces wrong results (e.g. DateTime
-/// values rendered in another query's timezone).
+/// a different query, and also when `session_timezone` is mutated in place on the
+/// same context (clickhouse-client does this between queries of one session);
+/// otherwise a stale entry produces wrong results (e.g. DateTime values rendered
+/// in another query's timezone).
 class DataTypesCache
 {
 public:
@@ -101,7 +103,8 @@ private:
     const Element & getCacheElement(const String & type_name, const DataTypePtr * known_type = nullptr);
 
     /// Clear the cache if the thread is now attached to a different query context
-    /// than the one the cache was populated under.
+    /// than the one the cache was populated under, or if `session_timezone` was
+    /// changed in place on the same context.
     void clearIfQueryContextChanged();
 
     std::unordered_map<String, Element> cache;
@@ -110,6 +113,12 @@ private:
     /// not attached to any query). Holding a weak_ptr keeps the control block alive,
     /// which makes the owner-based identity comparison immune to address reuse.
     ContextWeakPtr query_context;
+
+    /// The value of `session_timezone` the cached entries were created under. Tracked
+    /// in addition to the context identity because clickhouse-client keeps one
+    /// long-lived client context for the whole session and mutates the setting
+    /// in place between queries (see `ClientBase::onTimezoneUpdate`).
+    String session_timezone;
 };
 
 /// Return instance of a thread local cache.

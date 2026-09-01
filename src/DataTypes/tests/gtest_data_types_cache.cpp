@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
@@ -68,4 +69,23 @@ TEST(DataTypesCache, InvalidatedOnQueryContextChange)
 
         ASSERT_EQ(cachedDateTimeTimezone(), "Europe/Amsterdam");
     }
+}
+
+TEST(DataTypesCache, InvalidatedOnSessionTimezoneChangeWithinOneContext)
+{
+    ThreadStatus thread_status;
+
+    /// clickhouse-client keeps one long-lived client context attached to the client thread
+    /// by a single query scope for the whole session, and mutates `session_timezone` on it
+    /// in place between queries (see `ClientBase::onTimezoneUpdate`). The context identity
+    /// never changes here, so the cache must track the setting value itself.
+    auto client_context = makeQueryContext("data_types_cache_test_client_session", "Asia/Tokyo");
+    auto query_scope = QueryScope::create(client_context);
+
+    ASSERT_EQ(cachedDateTimeTimezone(), "Asia/Tokyo");
+
+    /// The next query of the same client session changes the setting on the same context.
+    client_context->setSetting("session_timezone", String("Europe/Amsterdam"));
+
+    ASSERT_EQ(cachedDateTimeTimezone(), "Europe/Amsterdam");
 }
