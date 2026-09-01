@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
@@ -23,6 +24,18 @@ ContextMutablePtr makeQueryContext(const String & query_id, const String & sessi
     return query_context;
 }
 
+/// The gtest binary's main thread already has a `MainThreadStatus` attached, and
+/// `ThreadStatus`'s constructor asserts no `ThreadStatus` is already current on this
+/// thread. Reset `current_thread` before constructing a local `ThreadStatus` and restore
+/// it afterward, matching the `FileCacheTest` fixture pattern in gtest_filecache.cpp.
+/// Declare this before the `ThreadStatus` it guards so construction/destruction order
+/// (reverse of declaration) resets first and restores last.
+struct ResetCurrentThreadGuard
+{
+    ResetCurrentThreadGuard() { current_thread = nullptr; }
+    ~ResetCurrentThreadGuard() { current_thread = MainThreadStatus::get(); }
+};
+
 /// `DateTime` without an explicit timezone captures the current query's `session_timezone`
 /// at construction (see TimezoneMixin and DateLUT::instance), so the timezone of the returned
 /// type shows which query context the cached entry was built under.
@@ -36,6 +49,7 @@ String cachedDateTimeTimezone()
 
 TEST(DataTypesCache, ReusesEntriesWithinOneQuery)
 {
+    ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
     auto query_context = makeQueryContext("data_types_cache_test_same_query", "UTC");
@@ -48,6 +62,7 @@ TEST(DataTypesCache, ReusesEntriesWithinOneQuery)
 
 TEST(DataTypesCache, InvalidatedOnQueryContextChange)
 {
+    ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
     /// A long-lived thread serves one query, caching a context-dependent type...
@@ -73,6 +88,7 @@ TEST(DataTypesCache, InvalidatedOnQueryContextChange)
 
 TEST(DataTypesCache, DoesNotPoolNonPoolableSerializations)
 {
+    ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
     auto query_context = makeQueryContext("data_types_cache_test_non_poolable", "UTC");
@@ -94,6 +110,7 @@ TEST(DataTypesCache, DoesNotPoolNonPoolableSerializations)
 
 TEST(DataTypesCache, InvalidatedOnSessionTimezoneChangeWithinOneContext)
 {
+    ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
     /// clickhouse-client keeps one long-lived client context attached to the client thread
