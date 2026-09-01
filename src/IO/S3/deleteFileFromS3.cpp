@@ -199,7 +199,7 @@ void deleteFilesFromS3(
                     /// Mixed success/error response - some objects were removed, and some were not.
                     /// We need to extract more detailed information from the outcome.
 
-		    /// Keys which already did not exist at the removal point.
+                    /// Keys which already did not exist at the removal point.
                     UnorderedSetWithMemoryTracking<std::string_view> non_existing_keys;
                     /// Keys which were successfully removed by current thread.
                     UnorderedSetWithMemoryTracking<std::string_view> removed_keys;
