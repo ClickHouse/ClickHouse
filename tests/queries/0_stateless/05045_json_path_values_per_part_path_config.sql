@@ -3,6 +3,7 @@ SET mutations_sync = 2, alter_sync = 2;
 
 DROP TABLE IF EXISTS json_path_values_per_part_config;
 
+-- `jsonPathValues` requires v3, so an older version preference must be raised automatically.
 CREATE TABLE json_path_values_per_part_config
 (
     id UInt64,
@@ -11,7 +12,7 @@ CREATE TABLE json_path_values_per_part_config
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, text_index_serialization_version = 'v2_with_positions';
 
 INSERT INTO json_path_values_per_part_config VALUES (1, '{"old_path":"old","new_path":"old-hit"}');
 
