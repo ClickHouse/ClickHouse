@@ -231,7 +231,7 @@ public:
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
-    void undropTable(StorageID table_id, std::function<void()> throw_if_cancelled = {});
+    void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 
@@ -371,9 +371,7 @@ private:
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
     TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
-    /// A multiset: the same UUID may appear more than once when a fixed explicit UUID is reused across
-    /// CREATE OR REPLACE TABLE, which enqueues several intermediate tables sharing that UUID for drop.
-    std::unordered_multiset<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;

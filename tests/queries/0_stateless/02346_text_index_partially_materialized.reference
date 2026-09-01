@@ -1,15 +1,15 @@
 hasAnyToken and hasAllToken functions
 -- fully materialized
-20
-20
+200
+200
 ---- use text index reader for all parts
 1
 1
 ---- verify all parts have a materialized index
 1
 -- partially materialized
-20
-20
+200
+200
 ---- use text index reader for parts have a materialized index
 1
 1
@@ -17,26 +17,26 @@ hasAnyToken and hasAllToken functions
 1
 hasPhrase function - without positions
 -- fully materialized
-20
+200
 ---- use text index reader for all parts
 1
 ---- verify all parts have a materialized index
 1
 -- partially materialized
-20
+200
 ---- use text index reader for parts have a materialized index
 1
 ---- verify some parts do not have a materialized index
 1
 hasPhrase function - with positions
 -- fully materialized
-20
+200
 ---- use text index reader for all parts
 1
 ---- verify all parts have a materialized index
 1
 -- partially materialized
-20
+200
 ---- use text index reader for parts have a materialized index
 1
 ---- verify some parts do not have a materialized index

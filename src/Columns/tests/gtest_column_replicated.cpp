@@ -1,15 +1,9 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/Exception.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
-
-namespace DB::ErrorCodes
-{
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-}
 
 static MutableColumnPtr createNestedColumn(const VectorWithMemoryTracking<String> & values)
 {
@@ -97,74 +91,12 @@ TEST(ColumnReplicated, Permute)
     checkColumn(*filtered_column, {"s1", "s2", "s3"}, {2, 0});
 }
 
-TEST(ColumnReplicated, PermuteShorterThanColumnWithLimit)
-{
-    /// Relaxed contract: a permutation shorter than the column is legal when limit == perm.size()
-    /// (see IColumn::permute / getLimitForPermutation). This is the case ORDER BY ... LIMIT
-    /// produces for a replicated payload column. permute must succeed and take the first
-    /// `limit` rows.
-    auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
-    IColumnPermutation permutation = {3, 4};
-    auto permuted_column = column->permute(permutation, 2);
-    checkColumn(*permuted_column, {"s1", "s2", "s3"}, {2, 0});
-}
-
-TEST(ColumnReplicated, PermuteTooShortForLimitThrows)
-{
-    /// Kept negative contract: perm.size() < min(size(), limit) is invalid and must throw.
-    auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
-    IColumnPermutation permutation = {3, 4};
-    EXPECT_THROW(column->permute(permutation, 5), DB::Exception);
-}
-
 TEST(ColumnReplicated, InsertRangeFrom)
 {
     auto column_to = createColumn({"s0", "s1"}, {0, 1});
     auto column_from = createColumn({"s2", "s3", "s4"}, {0, 1, 1, 2, 0, 0, 1, 2, 0});
     column_to->insertRangeFrom(*column_from, 3, 4);
     checkColumn(*column_to, {"s0", "s1", "s4", "s2", "s3"}, {0, 1, 2, 3, 3, 4});
-}
-
-TEST(ColumnReplicated, RollbackClearsInsertionCache)
-{
-    /// insertion_cache memoizes absolute indexes into nested_column keyed by the source id.
-    /// rollback() shrinks nested_column and indexes, so it must invalidate the cache (like filter() does);
-    /// otherwise a re-insert from the same source hits a stale entry, skips the real insert and stores a
-    /// dangling index >= nested_column->size().
-    MutableColumnPtr src_nested = ColumnUInt64::create();
-    src_nested->insert(10);
-    src_nested->insert(11);
-    src_nested->insert(12);
-    MutableColumnPtr src_indexes = ColumnUInt8::create();
-    src_indexes->insert(0);
-    src_indexes->insert(1);
-    src_indexes->insert(2);
-    auto src = ColumnReplicated::create(std::move(src_nested), std::move(src_indexes));
-
-    MutableColumnPtr dest_nested = ColumnUInt64::create();
-    auto dest = ColumnReplicated::create(std::move(dest_nested));
-    auto checkpoint = dest->getCheckpoint();
-
-    dest->insertFrom(*src, 0);
-    dest->insertFrom(*src, 1);
-    dest->insertFrom(*src, 2);
-    ASSERT_EQ(dest->size(), 3);
-    ASSERT_EQ(dest->getNestedColumn()->size(), 3);
-
-    dest->rollback(*checkpoint);
-    ASSERT_EQ(dest->size(), 0);
-    ASSERT_EQ(dest->getNestedColumn()->size(), 0);
-
-    /// Re-insert the source value that was cached before the rollback.
-    dest->insertFrom(*src, 2);
-    ASSERT_EQ(dest->size(), 1);
-    /// The value must have been re-inserted into nested_column (cache miss), not skipped via a stale entry.
-    ASSERT_EQ(dest->getNestedColumn()->size(), 1)
-        << "rollback() left a stale insertion_cache; the re-insert was skipped and the stored index is dangling";
-    ASSERT_LT(assert_cast<const ColumnReplicated &>(*dest).getIndexes().getIndexAt(0), dest->getNestedColumn()->size());
-    auto full = assert_cast<const ColumnReplicated &>(*dest).convertToFullColumnIfReplicated();
-    ASSERT_EQ(full->size(), 1u);
-    ASSERT_EQ(full->getUInt(0), 12u);
 }
 
 TEST(ColumnReplicated, IndicesOfNonDefaultRows)

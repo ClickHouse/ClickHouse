@@ -8,7 +8,7 @@ REGISTER_FUNCTION(ToUnixTimestamp64Nano)
 {
     /// toUnixTimestamp64Nano documentation
     FunctionDocumentation::Description description = R"(
-Converts a [`DateTime64`](/reference/data-types/datetime64) to a [`Int64`](/reference/functions/regular-functions/type-conversion-functions#toInt64) value with fixed nanosecond precision.
+Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/functions/type-conversion-functions#toInt64) value with fixed nanosecond precision.
 The input value is scaled up or down appropriately depending on its precision.
 
 :::note
@@ -28,9 +28,9 @@ WITH toDateTime64('2025-02-13 23:31:31.011123456', 9, 'UTC') AS dt64
 SELECT toUnixTimestamp64Nano(dt64);
         )",
         R"(
-┌─toUnixTimestamp64Nano(dt64)─┐
-│         1739489491011123456 │
-└─────────────────────────────┘
+┌─toUnixTimestamp64Nano(dt64)────┐
+│            1739489491011123456 │
+└────────────────────────────────┘
         )"
     }
     };

@@ -9,21 +9,6 @@
 
 namespace DimensionalMetrics
 {
-    namespace
-    {
-        String metricTypeToString(MetricType type)
-        {
-            switch (type)
-            {
-                case MetricType::Gauge:
-                    return "gauge";
-                case MetricType::Counter:
-                    return "counter";
-            }
-            UNREACHABLE();
-        }
-    }
-
     MetricFamily & MergeFailures = Factory::instance().registerMetric(
         "merge_failures",
         "Number of all failed merges since startup.",
@@ -40,34 +25,6 @@ namespace DimensionalMetrics
         "merge_tree_parts",
         "Number of merge tree data parts, labelled by part state (e.g. Temporary, PreActive, Active, Outdated, Deleting, DeleteOnDestroy), part type (e.g. Wide, Compact, Unknown) and whether it is a projection part.",
         {"part_state", "part_type", "part_is_projection"}
-    );
-
-    MetricFamily & ObjectStorageQueueFailures = Factory::instance().registerMetric(
-        "object_storage_queue_failures_total",
-        "Number of ObjectStorageQueue (S3Queue/AzureQueue) failures, labelled by database, table, processing stage (read, set_processing, insert, commit) and error code.",
-        {"database", "table", "stage", "error_code"},
-        {},
-        MetricType::Counter
-    );
-
-    MetricFamily & ObjectStorageQueuePermanentlyFailedFiles = Factory::instance().registerMetric(
-        "object_storage_queue_permanently_failed_files_total",
-        "Number of ObjectStorageQueue (S3Queue/AzureQueue) files given up on for good after exhausting retries (or with retries disabled), labelled by database and table. Each of these represents a file whose data will never be processed.",
-        {"database", "table"},
-        {},
-        MetricType::Counter
-    );
-
-    MetricFamily & ObjectStorageQueueNewestSeenTimestamp = Factory::instance().registerMetric(
-        "object_storage_queue_newest_seen_object_timestamp_seconds",
-        "Unix timestamp of the last-modified time of the newest object seen so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_committed_object_timestamp_seconds to estimate pipeline lag.",
-        {"database", "table"}
-    );
-
-    MetricFamily & ObjectStorageQueueNewestCommittedTimestamp = Factory::instance().registerMetric(
-        "object_storage_queue_newest_committed_object_timestamp_seconds",
-        "Unix timestamp of the last-modified time of the newest object fully processed so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_seen_object_timestamp_seconds to estimate pipeline lag.",
-        {"database", "table"}
     );
 
     void Metric::set(Value value_)
@@ -101,16 +58,10 @@ namespace DimensionalMetrics
         return hash.get64();
     }
 
-    MetricFamily::MetricFamily(
-        String name_,
-        String documentation_,
-        Labels labels_,
-        std::vector<LabelValues> initial_label_values,
-        MetricType type_)
+    MetricFamily::MetricFamily(String name_, String documentation_, Labels labels_, std::vector<LabelValues> initial_label_values)
         : name(std::move(name_))
         , documentation(std::move(documentation_))
         , labels(std::move(labels_))
-        , type_string(metricTypeToString(type_))
     {
         for (auto & label_values : initial_label_values)
         {
@@ -138,7 +89,6 @@ namespace DimensionalMetrics
     const Labels & MetricFamily::getLabels() const { return labels; }
     const String & MetricFamily::getName() const { return name; }
     const String & MetricFamily::getDocumentation() const { return documentation; }
-    const String & MetricFamily::getTypeString() const { return type_string; }
 
     void add(MetricFamily & metric, LabelValues labels, Value amount)
     {
@@ -165,8 +115,7 @@ namespace DimensionalMetrics
         String name,
         String documentation,
         Labels labels,
-        std::vector<LabelValues> initial_label_values,
-        MetricType type)
+        std::vector<LabelValues> initial_label_values)
     {
         std::lock_guard lock(mutex);
         registry.push_back(
@@ -174,8 +123,7 @@ namespace DimensionalMetrics
                 std::move(name),
                 std::move(documentation),
                 std::move(labels),
-                std::move(initial_label_values),
-                type
+                std::move(initial_label_values)
             )
         );
         return *registry.back();

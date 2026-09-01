@@ -8,7 +8,9 @@ yahoo
 other
 other
 other
-SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')\nFROM system.numbers\nLIMIT 10
+SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
+FROM system.numbers
+LIMIT 10
 google
 google
 google
@@ -19,7 +21,9 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(greater(number, 5), \'censor.net\', \'google\')\nFROM system.numbers\nLIMIT 10
+SELECT if(greater(number, 5), \'censor.net\', \'google\')
+FROM system.numbers
+LIMIT 10
 other
 other
 google
@@ -30,7 +34,9 @@ yahoo
 other
 other
 other
-SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')\nFROM system.numbers\nLIMIT 10
+SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
+FROM system.numbers
+LIMIT 10
 google
 google
 google
@@ -41,4 +47,6 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(greater(number, 5), \'censor.net\', \'google\')\nFROM system.numbers\nLIMIT 10
+SELECT if(greater(number, 5), \'censor.net\', \'google\')
+FROM system.numbers
+LIMIT 10

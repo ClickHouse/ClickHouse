@@ -226,11 +226,6 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
             static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
             static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
     }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unknown optimization {}, the only supported one is 'vector_search_index_analysis'", quoteString(optimization));
-    }
 }
 
 ColumnsDescription TableFunctionMergeTreeAnalyzeIndexes::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
@@ -284,7 +279,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ false); },
         {
             .description = "Internal function for index analysis",
-            .syntax = "mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])",
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = true}
@@ -294,7 +289,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ true); },
         {
             .description = "Internal function for index analysis",
-            .syntax = "mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])",
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = true}
