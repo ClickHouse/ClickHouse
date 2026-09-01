@@ -65,3 +65,23 @@ $CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE $PROFILE SETTINGS format_avro_sch
 $CLICKHOUSE_CLIENT -q "SHOW CREATE SETTINGS PROFILE $PROFILE" | sed "s/$PROFILE/profile/"
 $CLICKHOUSE_CLIENT -q "SELECT value FROM system.settings_profile_elements WHERE profile_name = '$PROFILE'"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $PROFILE"
+
+# 5. A table engine setting that is secret must be masked in `ALTER TABLE ... MODIFY SETTING` too, not
+# only inside `ENGINE = ...` of a `CREATE`. The alter itself is rejected for Kafka, but the query text
+# reaches `system.query_log` either way.
+ALTER_CANARY="c05056altermodifysetting"
+ALTER_QUERY_ID="05056_alter_$CLICKHOUSE_DATABASE"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=$ALTER_QUERY_ID&log_queries=1" \
+    --data-binary "ALTER TABLE t05056_absent MODIFY SETTING kafka_sasl_password = '$ALTER_CANARY'" > /dev/null 2>&1
+
+for _ in {1..60}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    ALTERED=$($CLICKHOUSE_CLIENT -q "SELECT
+            position(query, '[HIDDEN]') > 0,
+            position(query, '$ALTER_CANARY') = 0
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$ALTER_QUERY_ID' AND type != 'QueryStart'")
+    [ -n "$ALTERED" ] && break
+    sleep 0.5
+done
+echo "$ALTERED"
