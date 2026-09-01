@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace MergeTreeSetting
@@ -61,6 +62,46 @@ CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_c
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     return CompressionCodecFactory::instance().get(ast, nullptr);
+}
+
+/// Merge-path decode of blocked positions: the stream stores per-posting-rank position lists with
+/// no document ids, so it is paired with the token's posting lists (its rank space, in pre-remap
+/// doc order) to rebuild roaringish entries the merge can remap and re-encode.
+void decodeBlockedPositions(
+    ReadBuffer & in,
+    std::span<const UInt32> doc_ids,
+    UInt64 expected_num_docs,
+    size_t available_bytes,
+    TextIndexBlockedPositionsCodec::DecodeScratch & scratch,
+    PODArray<RoaringishEntry> & entries)
+{
+    PaddedPODArray<UInt32> doc_offsets;
+    PaddedPODArray<UInt32> positions;
+    TextIndexBlockedPositionsCodec::decodeAll(in, expected_num_docs, available_bytes, doc_offsets, positions, scratch);
+
+    entries.reserve(entries.size() + positions.size());
+
+    size_t rank = 0;
+    for (const UInt32 doc : doc_ids)
+    {
+        if (rank + 1 >= doc_offsets.size())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: more posting documents than position lists ({})", rank);
+
+        for (UInt32 i = doc_offsets[rank]; i < doc_offsets[rank + 1]; ++i)
+        {
+            const auto entry = RoaringishEntry::make(doc, positions[i]);
+            if (!entries.empty() && entries.back().sameBucket(entry))
+                entries.back().mergeBitmap(entry);
+            else
+                entries.push_back(entry);
+        }
+        ++rank;
+    }
+
+    if (rank + 1 != doc_offsets.size())
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: {} posting documents but {} position lists", rank, doc_offsets.size() - 1);
 }
 
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
@@ -248,14 +289,6 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version);
 }
 
-static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
-{
-    header_stream.seekToStart();
-    /// Only the version and codec are needed here, so skip deserializing the sparse index.
-    auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
-    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
-}
-
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
@@ -325,13 +358,17 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         }
     }
 
-    /// Resolve each source part's codec from its own header.
+    /// Resolve each source part's codecs (postings + positions) from its own header.
     source_postings_serializations.reserve(segments.size());
 
     for (size_t i = 0; i < segments.size(); ++i)
     {
         auto * stream = input_streams[i].at(MergeTreeIndexSubstream::Type::Regular);
-        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream));
+        stream->seekToStart();
+        /// Only the version and codecs are needed here, so skip deserializing the sparse index.
+        auto header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
+        source_postings_serializations.emplace_back(
+            PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
     }
 }
 
@@ -400,6 +437,7 @@ void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenS
     cursor.source = &source;
     cursor.next_segment = 0;
     cursor.rowIds().clear();
+    cursor.token_row_ids.clear();
     if (params.enable_scoring)
         cursor.tfs.clear();
 
@@ -408,6 +446,7 @@ void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenS
     if (!info.embedded_postings.empty())
     {
         cursor.rowIds().assign(info.embedded_postings.begin(), info.embedded_postings.end());
+        captureRowIdsForPositions(cursor);
         adjustPartOffsets(cursor.rowIds(), segments[source.source_num].part_index);
 
         if (params.enable_scoring && !info.embedded_term_frequencies.empty())
@@ -444,6 +483,7 @@ bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
         cursor.rowIds(),
         has_term_frequencies ? &cursor.tfs : nullptr);
 
+    captureRowIdsForPositions(cursor);
     adjustPartOffsets(cursor.rowIds(), segments[source_num].part_index);
     ++cursor.next_segment;
     cursor.resetToColumnStart();
@@ -452,6 +492,14 @@ bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
     chassert(std::is_sorted(cursor.rowIds().begin(), cursor.rowIds().end()));
     chassert(cursor.tfs.empty() || cursor.tfs.size() == cursor.rowIds().size());
     return true;
+}
+
+void MergeTextIndexesTask::captureRowIdsForPositions(PostingsMergeCursor & cursor)
+{
+    /// Positions are addressed by posting rank, so decoding them needs the token's row ids of this
+    /// source in pre-remap order. The row ids are remapped in place right after, so capture them first.
+    if (params.enable_positions && (cursor.source->info.header & PostingsSerialization::Flags::HasPositions))
+        cursor.token_row_ids.insert(cursor.rowIds().begin(), cursor.rowIds().end());
 }
 
 template <typename Sink>
@@ -478,6 +526,7 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
         }
         while (advanceCursorSegment(cursor));
 
+        readAndAppendPositions(cursor);
         return;
     }
 
@@ -513,11 +562,14 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
         }
         else
         {
-            /// The segment is exhausted: load the source's next one or drop the cursor.
+            /// The segment is exhausted: load the source's next one, or drop the cursor
+            /// and read the positions of the source, whose row ids are now fully captured.
             postings_queue.removeTop();
 
             if (advanceCursorSegment(cursor))
                 postings_queue.push(cursor.impl);
+            else
+                readAndAppendPositions(cursor);
         }
     }
 }
@@ -654,19 +706,38 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
     return token_info;
 }
 
-void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info)
+void MergeTextIndexesTask::readAndAppendPositions(const PostingsMergeCursor & cursor)
 {
-    auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+    const auto & source = *cursor.source;
+    const auto & token_info = source.info;
+
+    if (!params.enable_positions || !(token_info.header & PostingsSerialization::Flags::HasPositions))
+        return;
+
+    auto * stream = input_streams[source.source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
     auto * data_buffer = stream->getDataBuffer();
+
+    /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
+    const size_t file_size = stream->getFileSize();
+    if ((token_info.position_bytes == 0) || (token_info.position_offset > file_size)
+        || (token_info.position_bytes > file_size - token_info.position_offset))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
+            token_info.position_bytes, token_info.position_offset, file_size);
+
     stream->seekToMark({token_info.position_offset, 0});
 
+    /// The stream stores position lists per posting rank with no document ids, so it is paired with
+    /// this token's row ids in pre-remap order, captured by the cursor while its postings were merged.
     position_entries_buffer.clear();
-    TextIndexPositionCodec::decode(*data_buffer, position_entries_buffer);
+    decodeBlockedPositions(
+        *data_buffer, cursor.token_row_ids, token_info.cardinality, token_info.position_bytes,
+        blocked_decode_scratch, position_entries_buffer);
 
     /// Adjust doc_ids if merging parts with offset remapping.
     if (merged_part_offsets)
     {
-        size_t part_index = segments[source_num].part_index;
+        size_t part_index = segments[source.source_num].part_index;
         for (auto & entry : position_entries_buffer)
             entry = entry.withDocId(adjustPartOffset(part_index, entry.doc_id));
     }
@@ -786,9 +857,8 @@ void MergeTextIndexesTask::flushPositions(TokenPostingsInfo & token_info)
 
     token_info.header |= PostingsSerialization::Flags::HasPositions;
     token_info.position_offset = positions_stream->plain_hashing.count();
-    token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
-
-    TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
+    TextIndexBlockedPositionsCodec::encode(output_positions, positions_stream->plain_hashing);
+    token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
@@ -903,13 +973,10 @@ bool MergeTextIndexesTask::executeStep()
                 output_tokens_str.insertFrom(*source_block.tokens, row);
             }
 
-            /// Postings are decoded lazily on flush.
+            /// Postings and positions are decoded lazily on flush.
             /// Copy the info because the dictionary block it points into may be replaced before that.
             auto & token_info = source_block.token_infos[row];
             output_sources.push_back({source_num, token_info});
-
-            if (params.enable_positions && (token_info.header & PostingsSerialization::Flags::HasPositions))
-                readAndAppendPositions(source_num, token_info);
         }
 
         if (!current->isLast(batch_size))
@@ -970,6 +1037,7 @@ void MergeTextIndexesTask::finalize()
         .version = params.serialization_version,
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
         .has_positions = params.enable_positions,
+        .positions_codec = params.positions_codec,
         .has_scoring = params.enable_scoring,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
         .scoring_stats = std::move(scoring_stats),

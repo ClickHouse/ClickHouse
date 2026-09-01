@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/SmallFloat.h>
@@ -47,6 +48,7 @@
 #include <base/types.h>
 #include <fmt/ranges.h>
 
+#include <limits>
 #include <numeric>
 
 namespace ProfileEvents
@@ -548,6 +550,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
+    positions_codec = text_index_header->positions_codec;
     scoring_stats = text_index_header->scoring_stats;
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
@@ -1108,9 +1111,8 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
 
         info.header |= HasPositions;
         info.position_offset = positions_stream->plain_hashing.count();
-        info.position_cardinality = static_cast<UInt32>(position_entries.size());
-
-        TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
+        TextIndexBlockedPositionsCodec::encode(position_entries, positions_stream->plain_hashing);
+        info.position_bytes = positions_stream->plain_hashing.count() - info.position_offset;
     }
 
     /// Tiny posting lists are embedded into the dictionary block
@@ -1186,7 +1188,7 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     if (token_info.header & HasPositions)
     {
         writeVarUInt(token_info.position_offset, ostr);
-        writeVarUInt(token_info.position_cardinality, ostr);
+        writeVarUInt(token_info.position_bytes, ostr);
     }
 
     /// Embedded postings will be serialized later into the dictionary block.
@@ -1225,7 +1227,12 @@ void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, Wri
         writeVarUInt(static_cast<UInt64>(header.codec_type), ostr);
 
     if (version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
+    {
         writeVarUInt(static_cast<UInt64>(header.has_positions), ostr);
+        /// Only a part that has positions carries their codec.
+        if (header.has_positions)
+            writeVarUInt(static_cast<UInt64>(header.positions_codec), ostr);
+    }
 
     if (version >= MergeTreeTextIndexSerializationVersion::V3_WithScoring)
         writeVarUInt(static_cast<UInt64>(header.has_scoring), ostr);
@@ -1287,6 +1294,16 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);
         header.has_positions = has_positions != 0;
+
+        if (header.has_positions)
+        {
+            UInt64 positions_codec = 0;
+            readVarUInt(positions_codec, istr);
+            if (positions_codec != static_cast<UInt64>(TextIndexPositionCodec::Encoding::BlockedPfor))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Unknown positions codec {} in text index header", positions_codec);
+            header.positions_codec = static_cast<UInt8>(positions_codec);
+        }
     }
 
     /// The `has_scoring` flag is written after `has_positions` for v >= `V3_WithScoring`.
@@ -1356,9 +1373,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
     if (info.header & HasPositions)
     {
         readVarUInt(info.position_offset, istr);
-        UInt64 position_cardinality = 0;
-        readVarUInt(position_cardinality, istr);
-        info.position_cardinality = static_cast<UInt32>(position_cardinality);
+        readVarUInt(info.position_bytes, istr);
     }
 
     if (info.header & EmbeddedPostings)
@@ -1430,7 +1445,7 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     readVarUInt(header, istr);
     readVarUInt(cardinality, istr);
 
-    /// Position metadata is right after (header, cardinality), before posting data.
+    /// Position metadata (offset, bytes) is right after (header, cardinality).
     if (header & HasPositions)
     {
         ignoreVarUInt(istr);
@@ -1681,6 +1696,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         .version = params.serialization_version,
         .codec_type = posting_list_codec_type,
         .has_positions = params.enable_positions,
+        .positions_codec = params.positions_codec,
         .has_scoring = params.enable_scoring,
         .sparse_index = std::move(sparse_index_block),
         .scoring_stats = std::move(scoring_stats),
@@ -2445,6 +2461,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         posting_list_block_size,
         enable_positions,
         enable_scoring,
+        static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), /// not user-configurable yet
         std::move(preprocessor_ast),
         std::move(postprocessor_ast),
         serialization_version};

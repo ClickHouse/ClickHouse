@@ -3700,13 +3700,29 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     header_with_positions.version = MergeTreeTextIndexSerializationVersion::V2_WithPositions;
     header_with_positions.codec_type = IPostingListCodec::Type::None;
     header_with_positions.has_positions = true;
+    header_with_positions.positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
     header_with_positions.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out_with_positions;
     TextIndexSerialization::serializeHeader(header_with_positions, out_with_positions);
 
-    /// The `V2_WithPositions` header adds the single-byte positions flag on top of the codec type.
-    EXPECT_EQ(out_with_codec.str().size() + 1, out_with_positions.str().size());
+    /// A positional `V2_WithPositions` header adds the positions flag and the positions codec byte on top of the codec type.
+    EXPECT_EQ(out_with_codec.str().size() + 2, out_with_positions.str().size());
+
+    /// Without positions the codec byte is omitted, so the header costs only the flag. This keeps a
+    /// non-positional part the same size as before positions existed.
+    TextIndexHeader header_no_positions;
+    header_no_positions.version = MergeTreeTextIndexSerializationVersion::V2_WithPositions;
+    header_no_positions.codec_type = IPostingListCodec::Type::None;
+    header_no_positions.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
+
+    WriteBufferFromOwnString out_no_positions;
+    TextIndexSerialization::serializeHeader(header_no_positions, out_no_positions);
+    EXPECT_EQ(out_with_codec.str().size() + 1, out_no_positions.str().size());
+
+    ReadBufferFromString in_no_positions(out_no_positions.str());
+    auto no_positions_data = TextIndexSerialization::deserializeHeader(in_no_positions);
+    EXPECT_FALSE(no_positions_data.has_positions);
 
     ReadBufferFromString in(out_initial.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
@@ -3722,6 +3738,7 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
 
     EXPECT_EQ(with_positions_data.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
     EXPECT_TRUE(with_positions_data.has_positions);
+    EXPECT_EQ(with_positions_data.positions_codec, static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor));
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringFlag)
