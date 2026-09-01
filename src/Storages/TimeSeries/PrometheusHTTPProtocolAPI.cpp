@@ -58,8 +58,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
-    extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace TimeSeriesSetting
@@ -167,8 +165,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         is_distributed_target = true;
         evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
         evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
-        evaluation_settings.skip_unavailable_shards = getContext()->getSettingsRef()[Setting::skip_unavailable_shards];
-        evaluation_settings.skip_unavailable_shards_mode = getContext()->getSettingsRef()[Setting::skip_unavailable_shards_mode].toString();
+        std::tie(evaluation_settings.skip_unavailable_shards, evaluation_settings.skip_unavailable_shards_mode)
+            = effectiveShardSkipSemantics(*time_series_storage, getContext());
     }
 
     /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,

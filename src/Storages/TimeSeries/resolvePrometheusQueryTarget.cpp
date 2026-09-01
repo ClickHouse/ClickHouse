@@ -132,35 +132,24 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     auto storage_id = storage.getStorageID();
     context->checkAccess(AccessType::SELECT, storage_id);
     checkTimeSeriesWrapperReadContract(storage_id, context);
+}
 
-    /// The generated cluster() call cannot carry the wrapper's declared Distributed settings,
-    /// so a read that would diverge from a plain SELECT is refused rather than silently changed.
+std::pair<bool, String> effectiveShardSkipSemantics(const IStorage & storage, const ContextPtr & context)
+{
+    /// Mirrors ClusterProxy::executeQuery: declarations are defaults the query overrides. The
+    /// result is pinned into the generated cluster() read, which replicates the wrapper's fan-out.
+    DistributedSettings declared;
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     if (const auto & settings_changes = metadata->settings_changes)
-    {
-        /// Mirrors ClusterProxy::executeQuery: declarations are defaults the query overrides,
-        /// so the reads diverge only when the query leaves a setting unset and the declaration differs.
-        DistributedSettings declared;
         declared.applyChanges(settings_changes->as<const ASTSetQuery &>().changes);
-        const auto & query_settings = context->getSettingsRef();
-        const bool skip_diverges = !query_settings[Setting::skip_unavailable_shards].changed
-            && declared[DistributedSetting::skip_unavailable_shards].value != query_settings[Setting::skip_unavailable_shards].value;
-        /// The mode controls which exceptions shard skipping ignores, so with skipping effectively
-        /// off it cannot change behavior; compare it only under the normal path's effective flag.
-        const bool effective_skip = query_settings[Setting::skip_unavailable_shards].changed
-            ? query_settings[Setting::skip_unavailable_shards].value
-            : declared[DistributedSetting::skip_unavailable_shards].value;
-        const bool mode_diverges = effective_skip
-            && !query_settings[Setting::skip_unavailable_shards_mode].changed
-            && declared[DistributedSetting::skip_unavailable_shards_mode].value != query_settings[Setting::skip_unavailable_shards_mode].value;
-        if (skip_diverges || mode_diverges)
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "This operation is not supported over table {} because it sets skip_unavailable_shards or "
-                "skip_unavailable_shards_mode to a non-default value: a prometheus query reads through a "
-                "generated cluster() call, which does not carry the table's Distributed settings",
-                storage_id.getNameForLogs());
-    }
+    const auto & query_settings = context->getSettingsRef();
+    const bool skip = query_settings[Setting::skip_unavailable_shards].changed
+        ? query_settings[Setting::skip_unavailable_shards].value
+        : declared[DistributedSetting::skip_unavailable_shards].value;
+    const String mode = query_settings[Setting::skip_unavailable_shards_mode].changed
+        ? query_settings[Setting::skip_unavailable_shards_mode].toString()
+        : declared[DistributedSetting::skip_unavailable_shards_mode].toString();
+    return {skip, mode};
 }
 
 }

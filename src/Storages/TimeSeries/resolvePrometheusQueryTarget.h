@@ -33,4 +33,8 @@ void checkTimeSeriesWrapperReadContract(const StorageID & storage_id, const Cont
 /// unmappable settings and filters). Call before reading through a resolved distributed target.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
+/// The effective {skip_unavailable_shards, skip_unavailable_shards_mode} of a read through the
+/// wrapper, per ClusterProxy rules: declarations are defaults the query overrides.
+std::pair<bool, String> effectiveShardSkipSemantics(const IStorage & storage, const ContextPtr & context);
+
 }
