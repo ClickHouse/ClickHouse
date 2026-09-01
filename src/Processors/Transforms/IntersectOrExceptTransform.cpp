@@ -5,9 +5,10 @@ namespace DB
 {
 
 /// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
-IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_)
+IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_, bool read_left_input_first_)
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
+    , stage(read_left_input_first_ ? Stage::ReadLeftInput : Stage::ReadRightInput)
 {
 }
 
@@ -41,16 +42,34 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
     {
         while (true)
         {
+            if (stage == Stage::ReadLeftInput)
+            {
+                auto & input = inputs.front();
+
+                if (input.isFinished())
+                {
+                    inputs.back().close();
+                    output.finish();
+                    return Status::Finished;
+                }
+
+                input.setNeeded();
+                if (!input.hasData())
+                    return Status::NeedData;
+
+                current_input_chunk = input.pull();
+                has_input = true;
+                break;
+            }
+
             if (stage == Stage::ReadRightInput)
             {
                 auto & left_input = inputs.front();
 
-                /// An empty left input makes the result empty whatever the right input holds, and the
-                /// right input may be unbounded, so stop before draining it. Sample the left port
-                /// while the right one is being read instead of waiting on it first: partitioned
-                /// transforms share one left scatter, and a scatter blocked on the partition of a
-                /// transform that stopped reading its left port never feeds the partitions that are
-                /// still waiting, which in turn never drain the right scatter this one waits on.
+                /// Only reached when the left input is not read first: that path always arrives here
+                /// with a stashed chunk. An empty left input makes the result empty whatever the right
+                /// input holds, so stop before draining a possibly unbounded one, but sample the left
+                /// port instead of waiting on it, which would deadlock the shared scatters.
                 if (!has_left_input_chunk)
                 {
                     left_input.setNeeded();
@@ -131,7 +150,16 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
 void IntersectOrExceptTransform::work()
 {
-    if (stage == Stage::ReadRightInput)
+    if (stage == Stage::ReadLeftInput)
+    {
+        if (current_input_chunk.hasRows())
+        {
+            left_input_chunk = std::move(current_input_chunk);
+            has_left_input_chunk = true;
+            stage = Stage::ReadRightInput;
+        }
+    }
+    else if (stage == Stage::ReadRightInput)
     {
         has_right_input_rows |= current_input_chunk.hasRows();
         accumulate(std::move(current_input_chunk));

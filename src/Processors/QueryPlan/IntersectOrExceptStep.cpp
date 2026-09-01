@@ -199,7 +199,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         Processors result;
         for (size_t i = 0; i < num_partitions; ++i)
         {
-            auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
+            auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator, /*read_left_input_first_=*/ false);
             connect(*ports[i], transform->getInputs().front());
             connect(*ports[num_partitions + i], transform->getInputs().back());
             result.push_back(std::move(transform));

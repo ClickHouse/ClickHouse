@@ -73,9 +73,17 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         if (!intersect_or_except->isPartitioned())
             return {};
 
+        /// The scatter partitions by column position, while this property is matched by column name
+        /// downstream (`findInOutputs`, `matchTrees`), which collapses columns that share one. Such a
+        /// header is legal here, `SELECT id, *, b` produces one, so drop the property rather than
+        /// claim a partitioning that the names cannot express.
+        const Names names = step->getOutputHeader()->getNames();
+        if (NameSet(names.begin(), names.end()).size() != names.size())
+            return {};
+
         /// The partitioning expression is the identity over all output columns.
         const auto & columns = step->getOutputHeader()->getColumnsWithTypeAndName();
-        return {ActionsDAG(columns), step->getOutputHeader()->getNames(), ActionsDAG(columns), nullptr};
+        return {ActionsDAG(columns), names, ActionsDAG(columns), nullptr};
     }
 
     /// Skip multi-child steps (joins, unions, ...) as they do not pass the disjointness property
