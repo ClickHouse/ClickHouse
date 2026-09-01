@@ -345,8 +345,8 @@ void WindowStep::serialize(Serialization & ctx) const
     /// the same qualified column names as the descriptions below.
     ctx.writeColumnName(window_description.window_name);
 
-    serializeSortDescription(window_description.partition_by, ctx.out, ctx.for_cache_key);
-    serializeSortDescription(window_description.order_by, ctx.out, ctx.for_cache_key);
+    serializeSortDescription(window_description.partition_by, ctx.out, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(window_description.order_by, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     serializeWindowFrame(window_description.frame, ctx.out);
 

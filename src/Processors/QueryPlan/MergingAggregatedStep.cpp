@@ -300,9 +300,9 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         }
     }
 
-    serializeAggregateDescriptions(params.aggregates, ctx.out, ctx.for_cache_key);
+    serializeAggregateDescriptions(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
-    serializeSortDescription(group_by_sort_description, ctx.out, ctx.for_cache_key);
+    serializeSortDescription(group_by_sort_description, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);

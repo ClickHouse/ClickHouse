@@ -1,6 +1,8 @@
 #include <Analyzer/TableQualifiers.h>
 
 #include <Common/StringUtils.h>
+#include <Core/Block.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -83,6 +85,17 @@ String normalizeGeneratedTableQualifiers(const String & name, const std::unorder
         ++pos;
     }
     return result;
+}
+
+
+void writeCacheKeyColumnName(const String & name, const Block * input_header, WriteBuffer & out)
+{
+    /// `input_header->columns()` is the sentinel for "not a column of this header": it is one past every
+    /// valid position, so it can never be confused with one.
+    const size_t position = (input_header && input_header->has(name)) ? input_header->getPositionByName(name)
+                                                                     : (input_header ? input_header->columns() : 0);
+    writeVarUInt(position, out);
+    writeStringBinary(normalizeGeneratedTableQualifiers(name), out);
 }
 
 }

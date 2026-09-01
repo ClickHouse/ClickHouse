@@ -514,7 +514,10 @@ void IQueryPlanStep::updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPL
 
 void IQueryPlanStep::Serialization::writeColumnName(const String & name) const
 {
-    writeStringBinary(for_cache_key ? normalizeGeneratedTableQualifiers(name) : name, out);
+    if (for_cache_key)
+        writeCacheKeyColumnName(name, input_header, out);
+    else
+        writeStringBinary(name, out);
 }
 
 }

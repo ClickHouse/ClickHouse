@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Optimizations/SipHashingWriteBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -77,6 +78,33 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
+
+/// If `dag` only forwards its inputs (possibly renaming and reordering them), return the input index
+/// each output comes from. Returns nothing when an output is computed rather than forwarded.
+std::optional<std::vector<size_t>> pureColumnPermutation(const ActionsDAG & dag)
+{
+    std::unordered_map<const ActionsDAG::Node *, size_t> input_index;
+    const auto & inputs = dag.getInputs();
+    for (size_t i = 0; i < inputs.size(); ++i)
+        input_index.emplace(inputs[i], i);
+
+    std::vector<size_t> result;
+    result.reserve(dag.getOutputs().size());
+    for (const auto * output : dag.getOutputs())
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+            node = node->children.front();
+
+        auto it = input_index.find(node);
+        if (it == input_index.end())
+            return {};
+
+        result.push_back(it->second);
+    }
+    return result;
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
@@ -94,7 +122,33 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// consequence is a slightly-off estimate, never a wrong result.
     if (transform.getTransformTraits().preserves_number_of_rows
         && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
+    {
+        /// A rename-only step is transparent, but a step that REORDERS same-typed columns is not: it
+        /// changes which column each position holds, and a position is how the payloads above identify
+        /// their columns (`writeCacheKeyColumnName`). `sameByteLayout` cannot see the difference - a
+        /// permutation of same-typed columns has the same layout - so two mirror queries whose only
+        /// difference is which join input a column comes from would otherwise share a key. Hash the
+        /// permutation, which is structural and so equal in both plan builds.
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(&transform))
+        {
+            if (auto permutation = pureColumnPermutation(expression->getExpression()))
+            {
+                bool is_identity = true;
+                for (size_t i = 0; i < permutation->size(); ++i)
+                    is_identity &= (*permutation)[i] == i;
+
+                if (!is_identity)
+                {
+                    SipHash permutation_hash;
+                    permutation_hash.update("column permutation");
+                    for (auto index : *permutation)
+                        permutation_hash.update(index);
+                    return permutation_hash.get64();
+                }
+            }
+        }
         return 0;
+    }
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
     /// hashed as it is produced rather than accumulated. A step can carry a whole constant-folded
@@ -108,8 +162,15 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// default 0 would make every step that gates on a minimum version (e.g. `WindowStep`) either
     /// throw or silently write an older encoding. The key then varies across server versions, which
     /// only invalidates in-memory cache entries.
+    /// Give the step its own input header: a column name in its payload is then identified by where it
+    /// sits in that header as well as by its (normalized) text, which is what keeps the same name taken
+    /// from two different join inputs apart. See `writeCacheKeyColumnName`.
     IQueryPlanStep::Serialization ctx{
-        .out = wbuf, .registry = registry, .for_cache_key = true, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
+        .out = wbuf,
+        .registry = registry,
+        .for_cache_key = true,
+        .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+        .input_header = transform.getInputHeaders().empty() ? nullptr : transform.getInputHeaders().front().get()};
 
     writeStringBinary(transform.getSerializationName(), wbuf);
     if (transform.isSerializable())

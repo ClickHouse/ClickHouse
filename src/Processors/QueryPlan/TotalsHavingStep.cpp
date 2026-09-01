@@ -185,7 +185,7 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    serializeAggregateDescriptions(aggregates, ctx.out, ctx.for_cache_key);
+    serializeAggregateDescriptions(aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (actions_dag)
     {

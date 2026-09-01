@@ -286,13 +286,17 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
     return json_array;
 }
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, bool for_cache_key)
+void serializeSortDescription(
+    const SortDescription & sort_description, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
     writeVarUInt(sort_description.size(), out);
     for (const auto & desc : sort_description)
     {
-        /// A sort column is a plan-build-local name in a cache key; see `Serialization::writeColumnName`.
-        writeStringBinary(for_cache_key ? normalizeGeneratedTableQualifiers(desc.column_name) : desc.column_name, out);
+        /// A sort column is a plan-build-local name in a cache key; see `writeCacheKeyColumnName`.
+        if (for_cache_key)
+            writeCacheKeyColumnName(desc.column_name, input_header, out);
+        else
+            writeStringBinary(desc.column_name, out);
 
         UInt8 flags = 0;
         if (desc.direction > 0)

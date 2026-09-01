@@ -124,7 +124,7 @@ void RollupStep::serialize(Serialization & ctx) const
     /// The planner builds the rollup aggregates without argument names (the transform only merges
     /// states, so the argument columns do not exist in its input), which the generic
     /// `serializeAggregateDescriptions` rejects.
-    serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out, ctx.for_cache_key);
+    serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 }
 
 QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
