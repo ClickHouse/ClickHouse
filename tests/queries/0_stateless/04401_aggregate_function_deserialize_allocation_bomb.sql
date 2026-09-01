@@ -62,6 +62,8 @@ SELECT finalizeAggregation(CAST(unhex('01FFFFFFFF03'), 'AggregateFunction(groupU
 -- `ColumnString::deserializeAndInsertFromArena`, reached by feeding attacker bytes back through a
 -- non-plain column: the element is 8 bytes of `size_t` declaring 2 GiB and nothing after it.
 SELECT finalizeAggregation(CAST(unhex('01080000008000000000'), 'AggregateFunction(groupUniqArray, Tuple(String))')) SETTINGS max_memory_usage = 100000000; -- { serverError CANNOT_READ_ALL_DATA }
+-- One byte short of the terminator: the payload is complete, so `in.ignore` is what fails.
+SELECT finalizeAggregation(CAST(unhex('010A03000000000000006162'), 'AggregateFunction(groupUniqArray, Tuple(String))')); -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
 
 -- `serialize` walks a map, so a repeated key cannot come from a writer. Each repetition used to
 -- allocate a nested state that `emplace` then dropped.

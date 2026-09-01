@@ -372,9 +372,10 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 
     /// Callers of this method wrap one complete in-memory record, never a refillable stream, so a size
     /// reaching past its end can never be satisfied and must not become an allocation first.
-    if (string_size > in.available())
+    if (string_size - serialize_string_with_zero_byte > in.available())
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Cannot read all data. Bytes read: {}. Bytes expected: {}.", in.available(), string_size);
+            "Cannot read all data. Bytes read: {}. Bytes expected: {}.",
+            in.available(), string_size - serialize_string_with_zero_byte);
 
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
