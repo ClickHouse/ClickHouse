@@ -69,6 +69,8 @@
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 
 #include <base/scope_guard.h>
@@ -5794,10 +5796,24 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 
+    auto storage_id = storage->getStorageID();
+
+    /// Inlining replaces the view's TableNode with the view body, so the SELECT check the planner
+    /// performs for a TableNode never runs for the view, and for a SQL SECURITY DEFINER view the
+    /// body is subsequently resolved and planned under the definer's identity - meaning the caller
+    /// is never checked against the view or against the tables behind it. Only inline when the
+    /// caller may already read the whole view, so that inlining cannot change the access decision;
+    /// otherwise leave the TableNode in place and let the planner apply its normal column-aware check.
+    if (!scope.context->getAccess()->isGranted(
+            AccessType::SELECT,
+            storage_id.getDatabaseName(),
+            storage_id.getTableName(),
+            storage_snapshot->metadata->getColumns().getOrdinary().getNames()))
+        return;
+
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
-    auto storage_id = storage->getStorageID();
     auto row_policy_filter = scope.context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
