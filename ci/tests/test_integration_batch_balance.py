@@ -25,6 +25,14 @@ packing the table produces. `test_hidden_mass_unbalances_the_shards` keeps that 
 honest by checking that dropping a heavy prefix out of the table does trip the balance
 assertion.
 
+Balance alone does not keep a shard inside the session timeout, though: a suite that grows
+uniformly keeps the shards evenly matched while walking all of them off the end of the budget.
+That is the other half of what broke here, and the reason the release-branch job went from four
+batches to six. So `test_shards_fit_the_session_timeout` also bounds each shard's measured wall
+against the `--session-timeout` it is run under, and
+`test_too_few_shards_do_not_fit_the_session_timeout` keeps that bound honest by checking that
+the four batches this job used to run with really do overflow it.
+
 See ClickHouse/ClickHouse#116591.
 """
 
@@ -56,6 +64,20 @@ MIN_MASS_COVERAGE = 0.85
 # How far the heaviest shard's measured wall-clock may stand out from the average. The stale
 # table spread the shards to 1.08 of the average; the refreshed one holds them to 1.04.
 MAX_SHARD_IMBALANCE = 1.06
+
+# The two pytest budgets a shard is run under, from `session_timeout_parallel` and
+# `session_timeout_sequential` in `ci/jobs/integration_test_job.py`. The parallel and
+# sequential buckets are two separate pytest runs, each with its own `--session-timeout`.
+SESSION_TIMEOUT_PARALLEL = 3600 * 2
+SESSION_TIMEOUT_SEQUENTIAL = 3600
+
+# How much of its session budget a shard's modelled wall-clock may take. The modelled wall is
+# the sum of measured test durations only: it does not account for cluster setup, image pulls
+# or the runner being slower than the median, so a shard planned right up against its budget
+# times out in practice. Ten percent - 720s of the parallel budget - is the slack this leaves
+# for that, and it doubles as the alarm that the suite has outgrown its batch count: when this
+# trips, raise `total_batches` in `integration_test_asan_master_jobs`, do not raise the bound.
+MAX_SESSION_BUDGET_USED = 0.90
 
 # The sample only describes the modules that existed when it was taken. If the suite has
 # moved on far enough that it no longer describes most of them, the two assertions above stop
@@ -109,6 +131,20 @@ def _shard_walls(packing, durations, num_workers=NUM_WORKERS):
     return [
         sum(durations.get(t, 0) for t in par) / num_workers
         + sum(durations.get(t, 0) for t in seq)
+        for par, seq in packing
+    ]
+
+
+def _shard_bucket_walls(packing, durations, num_workers=NUM_WORKERS):
+    """
+    The same model as `_shard_walls`, but keeping the two buckets apart, because they are two
+    separate pytest runs bounded by two separate `--session-timeout` values.
+    """
+    return [
+        (
+            sum(durations.get(t, 0) for t in par) / num_workers,
+            sum(durations.get(t, 0) for t in seq),
+        )
         for par, seq in packing
     ]
 
@@ -182,6 +218,46 @@ def test_hidden_mass_unbalances_the_shards(monkeypatch):
 
     walls = _shard_walls(_pack(tests), measured)
     assert _imbalance(walls) > MAX_SHARD_IMBALANCE, [round(w) for w in walls]
+
+
+def test_shards_fit_the_session_timeout():
+    """
+    Balance is necessary but not sufficient: if the suite grows uniformly the shards stay
+    evenly matched right up to the point where every one of them runs out of its pytest
+    session budget. This is the other half of the `4 -> 6` batch-count fix - it asserts the
+    packing still *fits*, not merely that it is even - and it is scored against the measured
+    sample, so it starts failing while the suite still has slack rather than in CI.
+    """
+    tests = _all_test_files()
+    measured = _measured_durations(tests)
+
+    for batch, (par, seq) in enumerate(
+        _shard_bucket_walls(_pack(tests), measured), start=1
+    ):
+        for wall, budget, bucket in (
+            (par / 1000, SESSION_TIMEOUT_PARALLEL, "parallel"),
+            (seq / 1000, SESSION_TIMEOUT_SEQUENTIAL, "sequential"),
+        ):
+            assert wall <= budget * MAX_SESSION_BUDGET_USED, (
+                f"the {bucket} bucket of shard {batch}/{TOTAL_BATCHES} is planned for "
+                f"{wall:.0f}s of measured work, over {MAX_SESSION_BUDGET_USED:.0%} of its "
+                f"{budget}s pytest --session-timeout. Raise the batch count of "
+                f"integration_test_asan_master_jobs in ci/defs/job_configs.py."
+            )
+
+
+def test_too_few_shards_do_not_fit_the_session_timeout():
+    """
+    Keeps the ceiling above honest, the way `test_hidden_mass_unbalances_the_shards` keeps the
+    balance assertion honest: at the four batches this job used to run with, the measured suite
+    must not fit - that overflow is what the batch-count change fixed.
+    """
+    tests = _all_test_files()
+    measured = _measured_durations(tests)
+
+    walls = _shard_bucket_walls(_pack(tests, total_batches=4), measured)
+    worst = max(par for par, _ in walls) / 1000
+    assert worst > SESSION_TIMEOUT_PARALLEL, round(worst)
 
 
 def test_every_test_is_assigned_exactly_once():
