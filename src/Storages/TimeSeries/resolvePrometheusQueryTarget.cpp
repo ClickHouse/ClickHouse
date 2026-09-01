@@ -100,22 +100,16 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     context->checkAccess(AccessType::SELECT, storage.getStorageID());
 }
 
-std::pair<bool, String> effectiveShardSkipSemantics(const IStorage & storage, const ContextPtr & context)
+std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage, const ContextPtr & context)
 {
-    /// Mirrors ClusterProxy::executeQuery: declarations are defaults the query overrides. The
-    /// result is pinned into the generated cluster() read, which replicates the wrapper's fan-out.
+    /// Handed to the generated cluster() call as its own declaration, so ClusterProxy applies the
+    /// query-overrides-declaration rule itself rather than this file restating it.
     DistributedSettings declared;
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     if (const auto & settings_changes = metadata->settings_changes)
         declared.applyChanges(settings_changes->as<const ASTSetQuery &>().changes);
-    const auto & query_settings = context->getSettingsRef();
-    const bool skip = query_settings[Setting::skip_unavailable_shards].changed
-        ? query_settings[Setting::skip_unavailable_shards].value
-        : declared[DistributedSetting::skip_unavailable_shards].value;
-    const String mode = query_settings[Setting::skip_unavailable_shards_mode].changed
-        ? query_settings[Setting::skip_unavailable_shards_mode].toString()
-        : declared[DistributedSetting::skip_unavailable_shards_mode].toString();
-    return {skip, mode};
+    return {declared[DistributedSetting::skip_unavailable_shards].value,
+            declared[DistributedSetting::skip_unavailable_shards_mode].toString()};
 }
 
 }

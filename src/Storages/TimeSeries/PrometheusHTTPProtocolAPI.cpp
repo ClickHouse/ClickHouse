@@ -163,7 +163,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
         evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
         std::tie(evaluation_settings.skip_unavailable_shards, evaluation_settings.skip_unavailable_shards_mode)
-            = effectiveShardSkipSemantics(*time_series_storage, getContext());
+            = declaredShardSkipSettings(*time_series_storage, getContext());
     }
 
     /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,

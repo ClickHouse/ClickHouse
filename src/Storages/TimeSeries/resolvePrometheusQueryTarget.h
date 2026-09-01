@@ -27,10 +27,18 @@ bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 
 /// Enforces the wrapper's SELECT grant, which its rewrite would otherwise bypass.
 /// Call before reading through a resolved distributed target.
+///
+/// This is the only decoration the rewrite has to reproduce by hand. A PromQL leaf carries no
+/// WHERE/PREWHERE/FINAL/SAMPLE/LIMIT/ORDER BY, so of everything PlannerJoinTree attaches to a
+/// TableNode only three items are table-scoped: the SELECT grant (checkAccessRights), the row
+/// policy - which for a remote storage the planner refuses rather than applies - and
+/// additional_table_filters, which ClusterProxy forwards to the shards itself. Table functions are
+/// exempt from the planner's grant check by design, hence this call. If PlannerJoinTree ever grows
+/// a fourth decoration keyed on the storage id rather than on a query clause, revisit this.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
-/// The effective {skip_unavailable_shards, skip_unavailable_shards_mode} of a read through the
-/// wrapper, per ClusterProxy rules: declarations are defaults the query overrides.
-std::pair<bool, String> effectiveShardSkipSemantics(const IStorage & storage, const ContextPtr & context);
+/// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
+/// generated cluster() call's own declaration so ClusterProxy applies its usual precedence.
+std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage, const ContextPtr & context);
 
 }
