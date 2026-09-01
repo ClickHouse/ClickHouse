@@ -8873,13 +8873,15 @@ Allow to add hint (additional predicate) for filtering built from the inverted t
 Maximal selectivity of the filter to use the hint built from the inverted text index.
 )", 0) \
     DECLARE(Bool, use_text_index_like_evaluation_by_dictionary_scan, true, R"(
-Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
+Enable evaluation of pattern predicates by scanning the inverted text index dictionary.
+Supports `LIKE` and `ILIKE` for generic tokenizers, and also `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8` for `jsonPathValues`.
 )", 0) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
-Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern required to use the text index LIKE evaluation by the dictionary scan.
+Minimum length of the fixed string or required substring in a pattern predicate for text index evaluation.
+For `jsonPathValues`, this also applies to `startsWith`, `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`.
 Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
 
-Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+Dictionary-scanned predicates require `use_text_index_like_evaluation_by_dictionary_scan`; `jsonPathValues` `startsWith` uses an ordered lookup instead.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
 Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.

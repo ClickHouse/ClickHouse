@@ -19,7 +19,7 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO json_path_values_dynamic_nan VALUES
     (1, '{"x":"nan"}'),
-    (2, '{"x":1}');
+    (2, '{"x":1.0}');
 
 SELECT count() FROM json_path_values_dynamic_nan
 WHERE data.x = nan
@@ -36,5 +36,12 @@ FROM
     WHERE data.x = nan
 )
 WHERE position(explain, '__text_index') > 0;
+
+SELECT count() FROM json_path_values_dynamic_nan
+WHERE data.x = 'nan'
+SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
+
+SELECT count() FROM json_path_values_dynamic_nan
+WHERE data.x = 'nan';
 
 DROP TABLE json_path_values_dynamic_nan;

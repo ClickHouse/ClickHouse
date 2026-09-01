@@ -207,6 +207,8 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
             Field converted = tryConvertFieldToType(literal, *target_type, literal_type.get());
             if (converted.isNull())
                 continue;
+            if (WhichDataType(target_type).isFloat64() && !std::isfinite(converted.safeGet<Float64>()))
+                return false;
 
             const String converted_text = serializeFieldAsText(converted, target_type);
             if (converted_text != value && !isBool(target_type))
