@@ -84,20 +84,22 @@ namespace
 
 std::optional<std::pair<std::string, std::string>> tryParseFullyQualifiedS3Path(const std::string & path)
 {
-    static constexpr std::string_view schemes[] = {"s3://", "s3a://", "s3n://"};
-    for (const auto & scheme : schemes)
-    {
-        if (!path.starts_with(scheme))
-            continue;
+    static constexpr std::string_view scheme_delimiter = "://";
 
-        const std::string_view rest = std::string_view(path).substr(scheme.size());
-        const size_t slash_pos = rest.find('/');
-        if (slash_pos == 0 || slash_pos == std::string_view::npos || slash_pos + 1 == rest.size())
-            return {};
+    const size_t scheme_pos = path.find(scheme_delimiter);
+    if (scheme_pos == 0 || scheme_pos == std::string::npos)
+        return {};
 
-        return std::pair{std::string(rest.substr(0, slash_pos)), std::string(rest.substr(slash_pos + 1))};
-    }
-    return {};
+    const std::string_view scheme = std::string_view(path).substr(0, scheme_pos);
+    if (scheme.find('/') != std::string_view::npos)
+        return {};
+
+    const std::string_view rest = std::string_view(path).substr(scheme_pos + scheme_delimiter.size());
+    const size_t slash_pos = rest.find('/');
+    if (slash_pos == 0 || slash_pos == std::string_view::npos || slash_pos + 1 == rest.size())
+        return {};
+
+    return std::pair{std::string(rest.substr(0, slash_pos)), std::string(rest.substr(slash_pos + 1))};
 }
 
 template <typename Result, typename Error>
