@@ -1,8 +1,7 @@
 <clickhouse>
     <proxy>
         <https>
-            <!-- A name with two A records (added to /etc/hosts by the test), both with a dead port:
-                 whichever record the attempt resolves, its refusal must be reported by address. -->
+            <!-- Two A records (added to /etc/hosts by the test), both dead port. -->
             <uri>http://proxymulti:1</uri>
         </https>
     </proxy>

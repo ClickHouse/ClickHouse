@@ -753,8 +753,6 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
             || text.contains("127.0.0.1:1");
         ASSERT_EQ(std::string::npos, text.find("proxy-only-target.invalid"))
             << "Target host was resolved locally: " << text;
-        /// The synchronous refusal path already names the peer, so `doConnect` must leave that
-        /// message alone instead of appending the endpoint a second time.
         ASSERT_EQ(text.find("127.0.0.1:1"), text.rfind("127.0.0.1:1"))
             << "Peer address repeated: " << text;
     }
@@ -1184,7 +1182,6 @@ TEST_F(ConnectionPoolTest, ReconnectWithoutPoolNamesThePeer)
 
     connection->abort(); // further usage requires a reconnect
 
-    /// The connection keeps only a weak pointer to its pool, so dropping the cache expires it.
     DB::HTTPConnectionPools::instance().dropCache();
 
     server->stop();
