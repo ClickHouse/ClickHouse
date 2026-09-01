@@ -407,8 +407,8 @@ void considerEnablingParallelReplicas(
             /// `output_bytes` is what the boundary step produced on a single node, and the network term
             /// below is what one replica ships to the initiator. Dividing by `num_replicas` assumes the
             /// replicas partition that output between them, which holds for a boundary whose output is a
-            /// share of the rows: `Aggregating` (each replica aggregates its own share), a plain
-            /// `Sorting`, or an `Offset` (each replica would emit its share less the skipped rows).
+            /// share of the rows: `Aggregating` (each replica aggregates its own share) or a plain
+            /// `Sorting`.
             ///
             /// It does not hold for a boundary that keeps a bounded top-N *per replica*, because there
             /// every replica emits up to `n` rows and ships all of them, so each one sends the whole
