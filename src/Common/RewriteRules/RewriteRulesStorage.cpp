@@ -31,8 +31,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
@@ -569,10 +567,19 @@ ASTCreateRewriteRuleQuery RewriteRulesStorage::readCreateQuery(const std::string
 {
     const auto path = getFileName(rule_name);
     auto query = impl_storage->read(path);
-    const auto & settings = getContext()->getSettingsRef();
 
+    /// The stored statement is the server's own canonical `CREATE RULE` text, already parsed and
+    /// validated when the rule was created. Re-parse it with unlimited depth and backtracks (`0`
+    /// disables the limit) rather than the reader's session/default `max_parser_depth` /
+    /// `max_parser_backtracks`, mirroring `SQLDefinedHandlersMetadataStorage::readHandler`: a rule
+    /// created in a session with raised limits must stay readable on restart, background reload,
+    /// `ALTER RULE` and `system.query_rules`, where the reader would otherwise impose a stricter
+    /// limit and reject the server's own valid output. The rule templates were bounded by
+    /// `max_ast_depth` / `max_ast_elements` at `CREATE RULE` time
+    /// (`checkRewriteRuleTemplateLimits`), and `parseQuery` still guards against stack overflow
+    /// via `checkStackSize`.
     ParserCreateRewriteRuleQuery parser(query.data() + query.size());
-    auto ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + path, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    auto ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + path, 0, 0, 0);
     const auto & create_query = ast->as<const ASTCreateRewriteRuleQuery &>();
     return create_query;
 }
