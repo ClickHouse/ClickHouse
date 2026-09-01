@@ -202,8 +202,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
                 "The url table function does not support headers(...) when dispatching to the {} engine (URL '{}')",
                 storageEngineNameForURLScheme(target), filename);
 
-        configuration.http_method.clear();  /// meaningless for non-HTTP backends
-
         buildDelegate(target, context);
         return;
     }

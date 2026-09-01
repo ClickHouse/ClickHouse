@@ -2530,8 +2530,6 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             "The URL engine does not support headers(...) when dispatching to the {} engine (URL '{}')",
             engine_name, configuration.url);
 
-    configuration.http_method.clear();
-
     const String & format = configuration.format;
     const String & compression = configuration.compression_method;
 
