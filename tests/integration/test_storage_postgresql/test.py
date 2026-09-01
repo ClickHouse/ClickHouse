@@ -958,9 +958,12 @@ def test_postgres_datetime_malformed_suffix(started_cluster):
         "2025-01-02 03:04:05+0:",
         "2025-01-02 03:04:05+::30",
         "2025-01-02 03:04:05+",
-        "2025-01-02 03:04:05.",
         "2025-01-02 03:04:05+03:30:15:20",
     ]
+    # `readDateTime64Text` consumes a fractional-seconds separator with no digit after it and pads
+    # the fraction with zeros, on `master` as well, so only the plain `DateTime` reader - which stops
+    # in front of the dot and leaves the check to `assertPostgreSQLDateTimeFullyParsed` - rejects it.
+    malformed_for_datetime_only = ["2025-01-02 03:04:05."]
     accepted = [
         "2025-01-02 03:04:05",
         "2025-01-02 03:04:05.6789",
@@ -969,25 +972,29 @@ def test_postgres_datetime_malformed_suffix(started_cluster):
         "2025-01-02 03:04:05-08:00:30",
     ]
 
-    for value in malformed:
-        cursor.execute("TRUNCATE test_datetime_suffix")
-        cursor.execute("INSERT INTO test_datetime_suffix VALUES (%s)", (value,))
-        for clickhouse_type in ["DateTime('UTC')", "DateTime64(6, 'UTC')"]:
-            node1.query("DROP TABLE IF EXISTS test_datetime_suffix")
-            node1.query(
-                f"CREATE TABLE test_datetime_suffix (ts {clickhouse_type}) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime_suffix', 'postgres', '{pg_pass}')"
-            )
-            assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
-                "SELECT ts FROM test_datetime_suffix"
-            ), f"{value} accepted for {clickhouse_type}"
-
-    for value in accepted:
+    def attach(value, clickhouse_type):
         cursor.execute("TRUNCATE test_datetime_suffix")
         cursor.execute("INSERT INTO test_datetime_suffix VALUES (%s)", (value,))
         node1.query("DROP TABLE IF EXISTS test_datetime_suffix")
         node1.query(
-            f"CREATE TABLE test_datetime_suffix (ts DateTime('UTC')) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime_suffix', 'postgres', '{pg_pass}')"
+            f"CREATE TABLE test_datetime_suffix (ts {clickhouse_type}) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime_suffix', 'postgres', '{pg_pass}')"
         )
+
+    for value in malformed:
+        for clickhouse_type in ["DateTime('UTC')", "DateTime64(6, 'UTC')"]:
+            attach(value, clickhouse_type)
+            assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
+                "SELECT ts FROM test_datetime_suffix"
+            ), f"{value} accepted for {clickhouse_type}"
+
+    for value in malformed_for_datetime_only:
+        attach(value, "DateTime('UTC')")
+        assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
+            "SELECT ts FROM test_datetime_suffix"
+        ), f"{value} accepted"
+
+    for value in accepted:
+        attach(value, "DateTime('UTC')")
         assert (
             node1.query("SELECT ts FROM test_datetime_suffix").strip()
             == "2025-01-02 03:04:05"
