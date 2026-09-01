@@ -146,9 +146,10 @@ def test_native_fallback_to_password():
 
 
 def test_native_cn_nul_byte_no_bypass():
-    # Authentication bypass: client13's CN is "john\0.evil.com". If server-side CN extraction
-    # truncated at the embedded NUL byte, the CN would collapse to "john" and the certificate would
-    # authenticate as user 'john'. The full CN must be preserved, so the match must fail.
+    # Authentication bypass: client13's CN is "client1\0.evil.com" and user 'john' is configured with
+    # <common_name>client1</common_name>. If server-side CN extraction truncated at the embedded NUL
+    # byte, the CN would collapse to "client1" and the certificate would authenticate as user 'john'.
+    # The full CN must be preserved, so the match must fail.
     with pytest.raises(Exception) as err:
         execute_query_native(
             instance, "SELECT currentUser()", user="john", cert_name="client13"
@@ -232,7 +233,7 @@ def test_https_wrong_cert():
 
 def test_https_cn_nul_byte_no_bypass():
     # Same bypass as test_native_cn_nul_byte_no_bypass, over the HTTPS interface: client13's CN
-    # "john\0.evil.com" must not be truncated to "john" and authenticate as user 'john'.
+    # "client1\0.evil.com" must not be truncated to "client1" and authenticate as user 'john'.
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="john", cert_name="client13")
     assert "403" in str(err.value)

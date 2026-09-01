@@ -61,10 +61,12 @@ openssl x509 -req -days 36525 -in client_far_future-req.pem -CA ca-cert.pem -CAk
 # 6. Generate one more self-signed certificate and private key for using as wrong certificate (because it's not signed by CA)
 openssl req -newkey rsa:4096 -x509 -days 3650 -nodes -batch -keyout wrong-key.pem -out wrong-cert.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client"
 
-# 7. Generate a CA-signed certificate whose CN carries an embedded NUL byte ("john\0.evil.com"), to
-# test that server-side CN extraction does not truncate at the NUL and thereby let the certificate
-# impersonate user 'john'. openssl's CLI cannot place a NUL inside a -subj field, so we build this
-# certificate with the 'cryptography' library instead.
+# 7. Generate a CA-signed certificate whose CN carries an embedded NUL byte ("client1\0.evil.com"),
+# to test that server-side CN extraction does not truncate at the NUL. User 'john' is configured with
+# <common_name>client1</common_name>, so a server that truncated the CN at the NUL would extract
+# "client1" and wrongly authenticate this certificate as 'john'; the full CN must be preserved so the
+# match fails. openssl's CLI cannot place a NUL inside a -subj field, so we build this certificate
+# with the 'cryptography' library instead.
 python3 - <<'PY'
 from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -82,7 +84,7 @@ subject = x509.Name([
     x509.NameAttribute(NameOID.COUNTRY_NAME, "RU"),
     x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Some-State"),
     x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Internet Widgits Pty Ltd"),
-    x509.NameAttribute(NameOID.COMMON_NAME, "john\x00.evil.com"),
+    x509.NameAttribute(NameOID.COMMON_NAME, "client1\x00.evil.com"),
 ])
 now = datetime.datetime(2020, 1, 1)
 cert = (x509.CertificateBuilder()
