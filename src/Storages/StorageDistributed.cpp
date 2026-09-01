@@ -174,6 +174,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_distributed_group_by_sharding_key;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
@@ -1353,6 +1354,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     if (available_shards == 0)
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to write to");
 
+    /// Otherwise CompletedPipelineExecutor uses 1 thread and shards are written sequentially.
+    pipeline.setNumThreads(settings[Setting::max_threads]);
+
     return pipeline;
 }
 
@@ -1501,6 +1505,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
         }
     }
+
+    /// Otherwise CompletedPipelineExecutor uses 1 thread and shards are written sequentially.
+    pipeline.setNumThreads(settings[Setting::max_threads]);
 
     return pipeline;
 }

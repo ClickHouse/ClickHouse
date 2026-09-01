@@ -66,6 +66,13 @@ void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cance
 
 void CompletedPipelineExecutor::execute()
 {
+    /// A pipeline assembled from completed subgraphs (addCompletedPipeline) has no thread
+    /// count of its own; the assembler must set it, otherwise it would silently run on a
+    /// single thread (PARALLEL WITH, distributed INSERT SELECT).
+    if (pipeline.assembled_from_completed && pipeline.getNumThreads() == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of threads is not set for a pipeline assembled from completed pipelines");
+
     if (interactive_timeout_ms)
     {
         data = std::make_unique<Data>();

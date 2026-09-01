@@ -25,6 +25,7 @@ private:
     ASTPtr query;
     LoggerPtr log;
     QueryPipeline combined_pipeline TSA_GUARDED_BY(mutex);
+    size_t combined_num_threads TSA_GUARDED_BY(mutex) = 0;
 
     /// Needed to hold query contexts and run onFinish/onException callback.
     std::vector<BlockIO> io_holders TSA_GUARDED_BY(mutex);
