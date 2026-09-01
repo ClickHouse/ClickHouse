@@ -82,7 +82,7 @@ MAC アドレスを表す数値を返します。形式が無効な場合は `0`
 **使用例**
 
 ```sql title=Query
-IPv4NumToString(3232235521)
+SELECT IPv4NumToString(3232235521)
 ```
 
 ```response title=Response
@@ -120,25 +120,20 @@ IPv4NumToStringClassC(num)
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
-FROM test.hits
+FROM VALUES('ClientIP UInt32',
+    (toUInt32(toIPv4('83.149.9.10'))), (toUInt32(toIPv4('83.149.9.11'))), (toUInt32(toIPv4('83.149.9.12'))),
+    (toUInt32(toIPv4('217.118.81.5'))), (toUInt32(toIPv4('217.118.81.6'))),
+    (toUInt32(toIPv4('213.87.129.1'))))
 GROUP BY k
-ORDER BY c DESC
-LIMIT 10
+ORDER BY c DESC, k
 ```
 
 ```response title=Response
-┌─k──────────────┬─────c─┐
-│ 83.149.9.xxx   │ 26238 │
-│ 217.118.81.xxx │ 26074 │
-│ 213.87.129.xxx │ 25481 │
-│ 83.149.8.xxx   │ 24984 │
-│ 217.118.83.xxx │ 22797 │
-│ 78.25.120.xxx  │ 22354 │
-│ 213.87.131.xxx │ 21285 │
-│ 78.25.121.xxx  │ 20887 │
-│ 188.162.65.xxx │ 19694 │
-│ 83.149.48.xxx  │ 17406 │
-└────────────────┴───────┘
+┌─k──────────────┬─c─┐
+│ 83.149.9.xxx   │ 3 │
+│ 217.118.81.xxx │ 2 │
+│ 213.87.129.xxx │ 1 │
+└────────────────┴───┘
 ```
 
 <div id="IPv4StringToNum">
@@ -148,7 +143,7 @@ LIMIT 10
 導入バージョン: v1.1.0
 
 ドット区切りの 10 進表記 (A.B.C.D 形式) の IPv4 アドレス文字列を、対応する 32 ビット整数表現に変換します ([`IPv4NumToString`](#IPv4NumToString) の逆です) 。
-IPv4 アドレスの形式が不正な場合は、例外が発生します。
+IPv4 アドレスの形式が無効な場合は、例外が発生します。
 
 **構文**
 
@@ -171,7 +166,7 @@ IPv4 アドレスを返します。[`UInt32`](/ja/reference/data-types/int-uint)
 **使用例**
 
 ```sql title=Query
-IPv4StringToNum('192.168.0.1')
+SELECT IPv4StringToNum('192.168.0.1')
 ```
 
 ```response title=Response
@@ -334,7 +329,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 導入バージョン: v1.1.0
 
-IPv6 アドレスをバイナリ形式 (FixedString(16)) から標準的な文字列表現に変換します。
+IPv6 アドレスをバイナリ形式 (FixedString(16)) から標準的なテキスト表現に変換します。
 IPv4 マップド IPv6 アドレスは、`::ffff:111.222.33.44` の形式で表示されます。
 
 **構文**
@@ -370,57 +365,53 @@ SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 
 **hits を用いた IPv6 の分析**
 
 ```sql title=Query
+CREATE TABLE hits_all (EventDate Date, ClientIP6 FixedString(16)) ENGINE = Memory;
+
+INSERT INTO hits_all SELECT today(), IPv6StringToNum(addr) FROM VALUES('addr String',
+    ('2a02:2168:aaa:bbbb::2'), ('2a02:2168:aaa:bbbb::2'), ('2a02:2168:aaa:bbbb::2'),
+    ('2a02:6b8:0:fff::ff'), ('2a02:6b8:0:fff::ff'),
+    ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'),
+    ('::ffff:37.143.222.4'));
+
+-- The addresses that are not an IPv4 address mapped into the IPv6 space.
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
 FROM hits_all
 WHERE EventDate = today() AND substring(ClientIP6, 1, 12) != unhex('00000000000000000000FFFF')
 GROUP BY k
-ORDER BY c DESC
+ORDER BY c DESC, k
 LIMIT 10
 ```
 
 ```response title=Response
-┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
-│ 2a02:2168:aaa:bbbb::2                   │ 24695 │
-│ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
-│ 2a02:6b8:0:fff::ff                      │ 16389 │
-│ 2a01:4f8:111:6666::2                    │ 16016 │
-│ 2a02:2168:888:222::1                    │ 15896 │
-│ 2a01:7e00::ffff:ffff:ffff:222           │ 14774 │
-│ 2a02:8109:eee:ee:eeee:eeee:eeee:eeee    │ 14443 │
-│ 2a02:810b:8888:888:8888:8888:8888:8888  │ 14345 │
-│ 2a02:6b8:0:444:4444:4444:4444:4444      │ 14279 │
-│ 2a01:7e00::ffff:ffff:ffff:ffff          │ 13880 │
-└─────────────────────────────────────────┴───────┘
+┌─IPv6NumToString(k)────┬─c─┐
+│ 2a02:2168:aaa:bbbb::2 │ 3 │
+│ 2a02:6b8:0:fff::ff    │ 2 │
+└───────────────────────┴───┘
 ```
 
 **IPv6マップドIPv4アドレス**
 
 ```sql title=Query
+-- Without the filter, the mapped IPv4 addresses show up as well.
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
 FROM hits_all
 WHERE EventDate = today()
 GROUP BY k
-ORDER BY c DESC
+ORDER BY c DESC, k
 LIMIT 10
 ```
 
 ```response title=Response
-┌─IPv6NumToString(ClientIP6)─┬──────c─┐
-│ ::ffff:94.26.111.111       │ 747440 │
-│ ::ffff:37.143.222.4        │ 529483 │
-│ ::ffff:5.166.111.99        │ 317707 │
-│ ::ffff:46.38.11.77         │ 263086 │
-│ ::ffff:79.105.111.111      │ 186611 │
-│ ::ffff:93.92.111.88        │ 176773 │
-│ ::ffff:84.53.111.33        │ 158709 │
-│ ::ffff:217.118.11.22       │ 154004 │
-│ ::ffff:217.118.11.33       │ 148449 │
-│ ::ffff:217.118.11.44       │ 148243 │
-└────────────────────────────┴────────┘
+┌─IPv6NumToString(k)────┬─c─┐
+│ ::ffff:94.26.111.111  │ 4 │
+│ 2a02:2168:aaa:bbbb::2 │ 3 │
+│ 2a02:6b8:0:fff::ff    │ 2 │
+│ ::ffff:37.143.222.4   │ 1 │
+└───────────────────────┴───┘
 ```
 
 <div id="IPv6StringToNum">
@@ -457,12 +448,11 @@ IPv6 アドレスをバイナリ形式で返します。[`FixedString(16)`](/ja/
 **基本例**
 
 ```sql title=Query
-SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
+SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
 ```
 
 ```response title=Response
 ┌─addr───────┬─cutIPv6(IPv6StringToNum(addr), 0, 0)─┐
-│ notaddress │ ::                                   │
 │ 127.0.0.1  │ ::ffff:127.0.0.1                     │
 │ 1111::ffff │ 1111::ffff                           │
 └────────────┴──────────────────────────────────────┘
@@ -516,7 +506,7 @@ SELECT
 
 IPv6 アドレスを標準的なテキスト表現からバイナリ形式 (`FixedString(16)`) に変換します。
 `::ffff:111.222.33.44.` 形式の IPv4 マップド IPv6 アドレスを受け付けます。
-IPv6 アドレスの形式が正しくない場合は、`NULL` を返します。
+IPv6 アドレスの形式が無効な場合は、`NULL` を返します。
 
 **構文**
 
@@ -544,7 +534,7 @@ SELECT
 
 ```response title=Response
 ┌─valid───────┬─invalid─┐
-│ 2001:db8::1 │    ᴺᵁᴸᴸ │
+│ 2001:db8::1 │ ᴺᵁᴸᴸ    │
 └─────────────┴─────────┘
 ```
 
@@ -839,9 +829,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid─────────┬─default_value─┬─provided_default─┐
-│ 192.168.1.1   │ 0.0.0.0       │ 8.8.8.8          │
-└───────────────┴───────────────┴──────────────────┘
+┌─valid───────┬─default_value─┬─provided_default─┐
+│ 192.168.1.1 │ 0.0.0.0       │ 8.8.8.8          │
+└─────────────┴───────────────┴──────────────────┘
 ```
 
 <div id="toIPv4OrNull">
@@ -891,7 +881,7 @@ SELECT
 
 ```response title=Response
 ┌─valid_ip────┬─invalid_ip─┐
-│ 192.168.1.1 │       ᴺᵁᴸᴸ │
+│ 192.168.1.1 │ ᴺᵁᴸᴸ       │
 └─────────────┴────────────┘
 ```
 
@@ -1039,9 +1029,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid──────────────────────────────────┬─default_value─┬─provided_default─┐
-│ 2001:db8:85a3::8a2e:370:7334           │ ::            │ ::1              │
-└────────────────────────────────────────┴───────────────┴──────────────────┘
+┌─valid────────────────────────┬─default_value─┬─provided_default─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ::            │ ::1              │
+└──────────────────────────────┴───────────────┴──────────────────┘
 ```
 
 <div id="toIPv6OrNull">
@@ -1051,7 +1041,7 @@ SELECT
 導入バージョン: v22.3.0
 
 入力値を `IPv6` 型の値に変換します。エラーが発生した場合は `NULL` を返します。
-[`toIPv6`](#toIPv6) と同様ですが、変換エラー時に例外をスローする代わりに `NULL` を返します。
+[`toIPv6`](#toIPv6) と同様ですが、変換エラー時に例外を発生させる代わりに `NULL` を返します。
 
 サポートされる引数:
 
@@ -1091,9 +1081,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334        │         ᴺᵁᴸᴸ │
-└─────────────────────────────────────┴──────────────┘
+┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ᴺᵁᴸᴸ         │
+└──────────────────────────────┴──────────────┘
 ```
 
 <div id="toIPv6OrZero">
@@ -1103,7 +1093,7 @@ SELECT
 導入バージョン: v23.1.0
 
 入力値を [IPv6](/ja/reference/data-types/ipv6) 型の値に変換します。エラーが発生した場合は、ゼロ IPv6 アドレスを返します。
-[`toIPv6`](#toIPv6) と似ていますが、変換エラー時に例外をスローする代わりに、ゼロ IPv6 アドレス (`::`) を返します。
+[`toIPv6`](#toIPv6) と似ていますが、変換エラー時に例外を発生させる代わりに、ゼロ IPv6 アドレス (`::`) を返します。
 
 サポートされる引数:
 
@@ -1142,9 +1132,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334        │ ::           │
-└─────────────────────────────────────┴──────────────┘
+┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ::           │
+└──────────────────────────────┴──────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}
