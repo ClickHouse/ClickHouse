@@ -15,8 +15,8 @@ extern const int UNKNOWN_SETTING;
 }
 
 #define LIST_OF_DATABASE_REPLICATED_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Float, max_broken_tables_ratio, 1, "Do not recover replica automatically if the ratio of staled tables to all tables is greater", 0) \
-    DECLARE(NonZeroUInt64, max_replication_lag_to_enqueue, 50, "Replica will throw exception on attempt to execute query if its replication lag greater. Must be greater than 0", 0) \
+    DECLARE(Float,  max_broken_tables_ratio, 1, "Do not recover replica automatically if the ratio of staled tables to all tables is greater", 0) \
+    DECLARE(UInt64, max_replication_lag_to_enqueue, 50, "Replica will throw exception on attempt to execute query if its replication lag greater", 0) \
     DECLARE(UInt64, wait_entry_commited_timeout_sec, 3600, "Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet", 0) \
     DECLARE(String, collection_name, "", "A name of a collection defined in server's config where all info for cluster authentication is defined", 0) \
     DECLARE(Bool, check_consistency, true, "Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency", 0) \
@@ -28,8 +28,22 @@ extern const int UNKNOWN_SETTING;
     DECLARE(String, default_replica_name, "{replica}", "The name of the replica in the database. Used during database creation if arguments are omitted.", 0) \
     DECLARE(Bool, internal_replication, false, "Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas)", 0) \
 
-DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS, DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS, DatabaseReplicatedSettings, DatabaseReplicatedSetting)
+DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS)
+
+struct DatabaseReplicatedSettingsImpl : public BaseSettings<DatabaseReplicatedSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    DatabaseReplicatedSettings##TYPE NAME = &DatabaseReplicatedSettingsImpl ::NAME;
+
+namespace DatabaseReplicatedSetting
+{
+LIST_OF_DATABASE_REPLICATED_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 DatabaseReplicatedSettings::DatabaseReplicatedSettings() : impl(std::make_unique<DatabaseReplicatedSettingsImpl>())
 {
@@ -40,7 +54,10 @@ DatabaseReplicatedSettings::DatabaseReplicatedSettings(const DatabaseReplicatedS
 {
 }
 
-DatabaseReplicatedSettings::DatabaseReplicatedSettings(DatabaseReplicatedSettings && settings) noexcept = default;
+DatabaseReplicatedSettings::DatabaseReplicatedSettings(DatabaseReplicatedSettings && settings) noexcept
+    : impl(std::make_unique<DatabaseReplicatedSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 DatabaseReplicatedSettings::~DatabaseReplicatedSettings() = default;
 

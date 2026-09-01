@@ -18,21 +18,5 @@
             </replica>
         </shard>
     </cluster>
-    <!-- A two-node cluster whose members run in different server time zones, used to check that
-         `VALID FOR <interval>` distributed `ON CLUSTER` stores an identical absolute deadline everywhere. -->
-    <cluster_tz>
-        <shard>
-            <replica>
-                <host>ch1</host>
-                <port>9000</port>
-            </replica>
-        </shard>
-        <shard>
-            <replica>
-                <host>ch4</host>
-                <port>9000</port>
-            </replica>
-        </shard>
-    </cluster_tz>
 </remote_servers>
 </clickhouse>

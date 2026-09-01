@@ -80,135 +80,10 @@ function deb2tgz {
 set -e
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
-
-# Moving a file replaces the destination inode with the one from the unpack tree, so the
-# installed file inherits the SELinux label of the temporary directory instead of the one
-# the final path should have. Restore the labels from the policy where SELinux is active.
-RESTORECON=""
-if command -v selinuxenabled > /dev/null 2>&1 && selinuxenabled > /dev/null 2>&1 && command -v restorecon > /dev/null 2>&1; then
-    RESTORECON="restorecon"
-fi
-
-# Extended attributes live on the inode as well, and unlike the SELinux label they cannot be
-# recreated from a policy, so a destination carrying them is written through instead of being
-# renamed over. `getfattr` reports them where it is available.
-GETFATTR=""
-if command -v getfattr > /dev/null 2>&1; then
-    GETFATTR="getfattr"
-fi
-
-# Whether the file already at the destination has to survive the installation as the same
-# inode. Everything else - and that is the common case, including every fresh installation -
-# is replaced by a rename, which needs no additional disk space.
-keep_destination_inode () {
-    # An existing symlink at the destination is written through, the way copying did, so that
-    # an installation keeping its configs or binaries elsewhere and linking to them keeps the
-    # indirection after an upgrade. A symlink with no target yet is handled separately in the
-    # loop below, because there is no inode to write through in that case.
-    if [ -L "$1" ] && [ -e "$1" ]; then
-        return 0
-    fi
-    if [ ! -e "$1" ]; then
-        return 1
-    fi
-    # Only a regular file can be written through.
-    if [ ! -f "$1" ]; then
-        return 1
-    fi
-    listing=$(ls -ld -- "$1")
-    # Another hard link to the destination would keep pointing at the pre-upgrade contents
-    # after a rename, while writing through updates every link.
-    if [ "$(printf '%s\n' "$listing" | awk '{print $2}')" -gt 1 ]; then
-        return 0
-    fi
-    # An ACL is reported by `ls` as a `+` after the permissions.
-    case "$(printf '%s\n' "$listing" | awk '{print $1}')" in
-        *+) return 0 ;;
-    esac
-    if [ -z "$GETFATTR" ]; then
-        # Without `getfattr` there is no portable way to tell whether the destination carries
-        # extended attributes, so an existing regular file conservatively keeps its inode.
-        # The disk-space saving is unaffected: it comes from the fresh installation, where no
-        # destination exists and the rename path is taken above.
-        return 0
-    fi
-    # The SELinux label is skipped: it is not carried over by a rename either, but it is
-    # recreated from the policy by `restorecon` below, and on an SELinux system every
-    # single file has one, which would make the rename path unreachable.
-    attributes=$($GETFATTR --absolute-names --match=- --dump -- "$1" 2> /dev/null | grep -v -e '^#' -e '^$' -e '^security\.selinux=' || true)
-    if [ -n "$attributes" ]; then
-        return 0
-    fi
-    return 1
-}
-
-# The path a chain of symlinks finally points at. Every hop is followed, and a relative hop is
-# resolved against the directory of the link it was read from, so that a destination pointing
-# at another symlink keeps every level of the indirection instead of only the first one.
-resolve_symlink_chain () {
-    path="$1"
-    hops=0
-    while [ -L "$path" ]; do
-        hops=$((hops + 1))
-        if [ "$hops" -gt 40 ]; then
-            printf '%s\n' "Too many levels of symbolic links at $1" >&2
-            return 1
-        fi
-        target=$(readlink -- "$path")
-        case "$target" in
-            /*) path="$target" ;;
-            *) path="$(dirname -- "$path")/$target" ;;
-        esac
-    done
-    printf '%s\n' "$path"
-}
-
 for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
     destpath=${filepath##$SCRIPTPATH/..}
     mkdir -p $(dirname "$destpath")
-    if [ ! -L "$filepath" ] && [ -L "$destpath" ] && [ ! -e "$destpath" ]; then
-        # A symlink whose target does not exist yet has to survive the installation as well,
-        # but there is no destination inode to write through: a shell redirection would create
-        # the target with the `umask` of the installation and with no relation to the mode of
-        # the packaged file, which would install a binary non-executable. Rename the packaged
-        # file to where the link points instead, so that the link keeps its indirection and the
-        # installed file gets the mode, the ownership and the label every installed file has.
-        # The whole chain is followed: a link pointing at another link has to keep both, the
-        # way writing through the destination did, so only the final referent is created.
-        linktarget=$(resolve_symlink_chain "$destpath")
-        linkparent=$(dirname -- "$linktarget")
-        if [ ! -d "$linkparent" ]; then
-            # The directory the link points into is not created here. It would be created
-            # with the `umask` of the installation and with no defined ownership, so the
-            # installed file could end up unreachable while the installation reports
-            # success. Writing through the link failed loudly when that directory was
-            # missing, and pointing a destination at a directory that does not exist stays
-            # an error the administrator has to see and fix.
-            printf '%s\n' "Cannot install $destpath: it points at $linktarget, but the directory $linkparent does not exist" >&2
-            exit 1
-        fi
-        mv -f "$filepath" "$linktarget"
-        chown -h root:root "$linktarget"
-        if [ -n "$RESTORECON" ]; then
-            $RESTORECON "$linktarget"
-        fi
-    elif [ ! -L "$filepath" ] && keep_destination_inode "$destpath"; then
-        # The destination keeps its inode, so its ownership, permissions, attributes and every
-        # other hard link to it stay valid after the upgrade, as they did when copying.
-        cat "$filepath" > "$destpath"
-        rm -f "$filepath"
-    else
-        # Move instead of copy: copying requires twice the disk space, which is several
-        # gigabytes for the packages with debug symbols. Moving also succeeds when the
-        # destination is a running executable, while copying over it fails with ETXTBSY.
-        mv -f "$filepath" "$destpath"
-        # The tarball carries the ownership of the user who built it, while the installed
-        # files have to belong to root, as they do in the deb and rpm packages.
-        chown -h root:root "$destpath"
-        if [ -n "$RESTORECON" ]; then
-            $RESTORECON "$destpath"
-        fi
-    fi
+    cp -r "$filepath" "$destpath"
 done
 EOF
     chmod +x "$PKG_PATH/install/doinst.sh"
@@ -243,8 +118,6 @@ elif [[ $BUILD_TYPE == 'debug' ]]; then
     VERSION_POSTFIX+="+debug"
 elif [[ $BUILD_TYPE =~ 'coverage' ]]; then
     VERSION_POSTFIX+="+coverage"
-elif [[ $BUILD_TYPE == 'cfi' ]]; then
-    VERSION_POSTFIX+="+cfi"
 fi
 
 if [[ "$PKG_ROOT" != "$SOURCE" ]]; then

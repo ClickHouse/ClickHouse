@@ -26,7 +26,7 @@ enum class ErrorHandlingMode : uint8_t
 };
 
 /// Get the value of a setting.
-class FunctionGetSetting final : public IFunction, WithContext
+class FunctionGetSetting : public IFunction, WithContext
 {
 public:
     static FunctionPtr create(ContextPtr context_, ErrorHandlingMode mode_)
@@ -114,12 +114,12 @@ SET enable_analyzer = false;
 SELECT getSetting('enable_analyzer');
         )",
         R"(
-┌─getSetting('enable_analyzer')─┐
-│ true                          │
-└───────────────────────────────┘
-┌─getSetting('enable_analyzer')─┐
-│ false                         │
-└───────────────────────────────┘
+┌─getSetting('⋯_analyzer')─┐
+│ true                     │
+└──────────────────────────┘
+┌─getSetting('⋯_analyzer')─┐
+│ false                    │
+└──────────────────────────┘
         )"
     }
     };
@@ -149,7 +149,7 @@ SELECT getSettingOrDefault('custom_undef3', NULL);
         R"(
 my_value
 100
-\N
+NULL
         )"
     }
     };

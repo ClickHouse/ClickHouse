@@ -1,3 +1,0 @@
-<clickhouse>
-    <schema_inference_cache_max_elements_for_hdfs>2</schema_inference_cache_max_elements_for_hdfs>
-</clickhouse>

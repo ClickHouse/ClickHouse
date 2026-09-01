@@ -21,9 +21,7 @@ public:
         ProjectionDescription & result,
         const IAST * index_expr,
         const ColumnsDescription & columns,
-        const KeyDescription * partition_key,
-        const ContextPtr & query_context,
-        const MergeTreeSettings & projection_settings) const override;
+        ContextPtr query_context) const override;
 
     Block calculate(
         const ProjectionDescription & projection_desc,

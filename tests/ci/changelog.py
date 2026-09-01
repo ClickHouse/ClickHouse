@@ -120,8 +120,6 @@ def _match_changelog_category(category: str) -> Optional[str]:
     return best_match
 
 
-BOT_AUTHORS = {"dependabot[bot]"}
-
 FROM_REF = ""
 TO_REF = ""
 SHA_IN_CHANGELOG = []  # type: List[str]
@@ -285,7 +283,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-# This function mirrors the PR description checks in ClickHousePullRequestTrigger.
+# This function mirrors the PR description checks in ClickhousePullRequestTrigger.
 # Returns None if the PR should not be mentioned in changelog.
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number
@@ -302,26 +300,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
                 item.head.ref,
                 item.number,
             )
-    # Skip PRs by bot authors (e.g., dependabot)
-    # pylint: disable=protected-access
-    user_login = item.user._rawData["login"]
-    # pylint: enable=protected-access
-    if user_login in BOT_AUTHORS:
-        logging.info("Skipping PR %s by bot author '%s'", item.number, user_login)
-        return None
-
     description = item.body
-    # Strip the auto-maintained version-info block (added by pr_version_info.py)
-    # so it can never leak into the changelog entry: when the entry is empty it
-    # is the first content after the header and would otherwise be parsed as the
-    # entry. The markers are HTML comments, invisible in the rendered body.
-    if description:
-        description = re.sub(
-            r"<!-- ch-version-info:start -->.*?<!-- ch-version-info:end -->",
-            "",
-            description,
-            flags=re.DOTALL,
-        )
     # Don't skip empty lines because they delimit parts of description
     lines = [x.strip() for x in (description.split("\n") if description else [])]
     lines = [re.sub(r"\s+", " ", ln) for ln in lines]
@@ -337,7 +316,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
                 lines[i],
             )
             m_entry = re.match(
-                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)(?:\s*\(.*\))?(?:[^:]*:\s*(.*))?$",
+                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)(?:[^:]*:\s*(.*))?$",
                 lines[i],
             )
             if m_cat:
@@ -392,10 +371,9 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     if re.match(r"^[\-\*] ", entry):
         entry = entry[2:]
 
-    # Better style. Uppercase only the first letter (str.capitalize lowercases
-    # the rest of the string, mangling URLs and identifiers).
+    # Better style.
     if re.match(r"^[a-z]", entry):
-        entry = entry[0].upper() + entry[1:]
+        entry = entry.capitalize()
 
     if not category:
         # Shouldn't happen, because description check in CI should catch such PRs.

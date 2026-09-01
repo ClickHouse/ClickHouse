@@ -2,7 +2,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
-#include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
@@ -10,13 +9,9 @@
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/transformTypesRecursively.h>
-#include <Common/FieldVisitorToCastedLiteral.h>
-#include <Parsers/parseFieldFromCastedLiteral.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -34,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
@@ -88,6 +84,11 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
+void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
+{
+    setVersion(function->getVersionFromRevision(revision), if_empty);
+}
+
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
     WriteBufferFromOwnString stream;
@@ -102,25 +103,11 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (!parameters.empty())
     {
         stream << '(';
-        if (function->shouldPrintParametersWithTypes())
+        for (size_t i = 0, size = parameters.size(); i < size; ++i)
         {
-            FieldVisitorToCastedLiteral visitor;
-            for (size_t i = 0, size = parameters.size(); i < size; ++i)
-            {
-                if (i)
-                    stream << ", ";
-                stream << applyVisitor(visitor, parameters[i]);
-            }
-        }
-        else
-        {
-            FieldVisitorToString visitor;
-            for (size_t i = 0, size = parameters.size(); i < size; ++i)
-            {
-                if (i)
-                    stream << ", ";
-                stream << applyVisitor(visitor, parameters[i]);
-            }
+            if (i)
+                stream << ", ";
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
         }
         stream << ')';
     }
@@ -166,15 +153,12 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
-bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant)
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
 {
     const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
     const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
 
     if (!lhs_state || !rhs_state)
-        return false;
-
-    if (!ignore_variant && lhs_state->function->getStateVariant() != rhs_state->function->getStateVariant())
         return false;
 
     if (lhs_state->function->getName() != rhs_state->function->getName())
@@ -208,18 +192,6 @@ void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
         arg_type->updateHash(hash);
     if (version)
         hash.update(*version);
-    hash.update(static_cast<UInt8>(function->getStateVariant()));
-}
-
-bool DataTypeAggregateFunction::equalsIgnoringVariant(const IDataType & rhs) const
-{
-    if (typeid(rhs) != typeid(*this))
-        return false;
-
-    auto lhs_state_type = function->getNormalizedStateType();
-    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
-
-    return strictEquals(lhs_state_type, rhs_state_type, /*ignore_variant=*/ true);
 }
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
@@ -236,28 +208,9 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeAggregateFunction::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationAggregateFunction::create(function, getName(), getVersion());
+    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
 }
 
-
-namespace
-{
-
-/// Extract a single AggregateFunction parameter value from its AST node.
-Field parseAggregateFunctionParameter(const ASTPtr & param_ast, const String & function_name)
-{
-    try
-    {
-        return parseFieldFromCastedLiteral(param_ast);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while parsing aggregate function '{}'", function_name);
-        throw;
-    }
-}
-
-}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -303,7 +256,17 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row.resize(parameters.size());
 
             for (size_t i = 0; i < parameters.size(); ++i)
-                params_row[i] = parseAggregateFunctionParameter(parameters[i], function_name);
+            {
+                const auto * literal = parameters[i]->as<ASTLiteral>();
+                if (!literal)
+                    throw Exception(
+                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                        "Parameters to aggregate functions must be literals. "
+                        "Got parameter '{}' for function '{}'",
+                        parameters[i]->formatForErrorMessage(), function_name);
+
+                params_row[i] = literal->value;
+            }
         }
     }
     else if (auto opt_name = tryGetIdentifierName(data_type_ast))
@@ -332,196 +295,27 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 
-/// `choose_version` returns the version to pin on a versioned aggregate function type, or nothing
-/// to leave the type untouched.
-static void setVersionToAggregateFunctionsImpl(
-    DataTypePtr & type, bool if_empty, const std::function<std::optional<size_t>(const AggregateFunctionPtr &)> & choose_version)
+void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
 {
-    auto callback = [&choose_version, if_empty](DataTypePtr & column_type)
+    auto callback = [revision, if_empty](DataTypePtr & column_type)
     {
         const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
-        if (!aggregate_function_type || !aggregate_function_type->isVersioned())
-            return;
-
-        if (if_empty && aggregate_function_type->hasExplicitVersion())
-            return;
-
-        const auto function = aggregate_function_type->getFunction();
-        const std::optional<size_t> chosen_version = choose_version(function);
-        if (!chosen_version)
-            return;
-        const size_t new_version = *chosen_version;
-
-        if (aggregate_function_type->hasExplicitVersion() && aggregate_function_type->getVersion() == new_version)
-            return;
-
-        auto new_type = std::make_shared<DataTypeAggregateFunction>(
-            function, aggregate_function_type->getArgumentsDataTypes(), aggregate_function_type->getParameters(), new_version);
-
-        /// A custom name is part of the observable type and must survive the replacement. The only
-        /// custom name an `AggregateFunction` type can carry is `SimpleAggregateFunction` over an
-        /// `AggregateFunction` argument.
-        if (column_type->hasCustomName())
+        if (aggregate_function_type && aggregate_function_type->isVersioned())
         {
-            const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column_type->getCustomName());
-            if (!simple)
-                return;
-
-            /// The custom name keeps its own copy of the argument types, and for
-            /// `SimpleAggregateFunction` over an `AggregateFunction` that argument is the state type
-            /// itself - both the printed name and the binary type encoding come from it. It has to be
-            /// given the same version as the storage type, otherwise the announced type and the payload
-            /// disagree: a downgraded state would still be announced as the newer version and the
-            /// receiver would read one version too many out of it.
-            DataTypes new_argument_types = simple->getArgumentsDataTypes();
-            for (auto & argument_type : new_argument_types)
-                setVersionToAggregateFunctionsImpl(argument_type, if_empty, choose_version);
-
-            new_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomSimpleAggregateFunction>(
-                simple->getFunction(), new_argument_types, simple->getParameters())));
+            if (revision)
+                aggregate_function_type->updateVersionFromRevision(*revision, if_empty);
+            else
+                aggregate_function_type->setVersion(0, if_empty);
         }
-
-        column_type = new_type;
     };
 
     callOnNestedSimpleTypes(type, callback);
 }
 
-void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
-{
-    setVersionToAggregateFunctionsImpl(type, if_empty, [revision](const AggregateFunctionPtr & function)
-    {
-        return std::optional<size_t>(revision ? function->getVersionFromRevision(*revision) : 0);
-    });
-}
-
-void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type)
-{
-    setVersionToAggregateFunctionsImpl(type, /* if_empty= */ true, [](const AggregateFunctionPtr & function) -> std::optional<size_t>
-    {
-        /// Pin only a version that is newer than the default the function would fall back to anyway:
-        /// a function whose default version already covers the current revision keeps persisting the
-        /// unpinned type it always had, and a combinator that does not map revisions to versions
-        /// (`getVersionFromRevision` returning 0 while the default is higher) must not have its
-        /// storage format downgraded by the pin.
-        const size_t current_version = function->getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION);
-        if (current_version > function->getDefaultVersion())
-            return current_version;
-        return std::nullopt;
-    });
-}
-
 
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
-    factory.registerDataType("AggregateFunction", create, DataTypeFactory::Case::Sensitive, Documentation{
-            .description = R"DOCS_MD(
-## Description {#description}
-
-All [Aggregate functions](/reference/functions/aggregate-functions) in ClickHouse have
-an implementation-specific intermediate state that can be serialized to an
-`AggregateFunction` data type and stored in a table. This is usually done by
-means of a [materialized view](/reference/statements/create/view).
-
-There are two aggregate function [combinators](/reference/functions/aggregate-functions/combinators)
-commonly used with the `AggregateFunction` type:
-
-- The [`-State`](/reference/functions/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
-function name, produces `AggregateFunction` intermediate states.
-- The [`-Merge`](/reference/functions/aggregate-functions/combinators#-merge) aggregate
-function combinator, which is used to get the final result of an aggregation
-from the intermediate states.
-
-## Syntax {#syntax}
-
-```sql
-AggregateFunction(aggregate_function_name, types_of_arguments...)
-```
-
-**Parameters**
-
-- `aggregate_function_name` - The name of an aggregate function. If the function
-is parametric, then its parameters should be specified too.
-- `types_of_arguments` - The types of the aggregate function arguments.
-
-for example:
-
-```sql
-CREATE TABLE t
-(
-    column1 AggregateFunction(uniq, UInt64),
-    column2 AggregateFunction(anyIf, String, UInt8),
-    column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
-) ENGINE = ...
-```
-
-## Usage {#usage}
-
-### Data Insertion {#data-insertion}
-
-To insert data into a table with columns of type `AggregateFunction`, you can
-use `INSERT SELECT` with aggregate functions and the
-[`-State`](/reference/functions/aggregate-functions/combinators#-state) aggregate
-function combinator.
-
-For example, to insert into columns of type `AggregateFunction(uniq, UInt64)` and
-`AggregateFunction(quantiles(0.5, 0.9), UInt64)` you would use the following
-aggregate functions with combinators.
-
-```sql
-uniqState(UserID)
-quantilesState(0.5, 0.9)(SendTiming)
-```
-
-In contrast to functions `uniq` and `quantiles`, `uniqState` and `quantilesState`
-(with `-State` combinator appended) return the state, rather than the final value.
-In other words, they return a value of `AggregateFunction` type.
-
-In the results of the `SELECT` query, values of type `AggregateFunction` have
-implementation-specific binary representations for all of the ClickHouse output
-formats.
-
-There is a special Session level setting `aggregate_function_input_format` that allows to build state from the input values.
-It supports the following formats:
-
-- `state` - binary string with the serialized state (the default).
-If you dump data into, for example, the `TabSeparated` format with a `SELECT`
-query, then this dump can be loaded back using the `INSERT` query.
-- `value` - the format will expect a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; that will be deserialized to form the relevant state
-- `array` - the format will expect an Array of values, as described in the values option above; all the elements of the array will be aggregated to form the state
-
-### Data Selection {#data-selection}
-
-When selecting data from `AggregatingMergeTree` table, use the `GROUP BY` clause
-and the same aggregate functions as for when you inserted the data, but use the
-[`-Merge`](/reference/functions/aggregate-functions/combinators#-merge) combinator.
-
-An aggregate function with the `-Merge` combinator appended to it takes a set of
-states, combines them, and returns the result of the complete data aggregation.
-
-For example, the following two queries return the same result:
-
-```sql
-SELECT uniq(UserID) FROM table
-
-SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
-```
-
-## Usage Example {#usage-example}
-
-See [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) engine description.
-
-## Related Content {#related-content}
-
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
-- [MergeState](/reference/functions/aggregate-functions/combinators#-mergestate)
-combinator.
-- [State](/reference/functions/aggregate-functions/combinators#-state) combinator.
-)DOCS_MD",
-            .syntax = "AggregateFunction(name, types...)",
-            .examples = {},
-            .related = {"SimpleAggregateFunction"},
-        });
+    factory.registerDataType("AggregateFunction", create);
 }
 
 bool hasAggregateFunctionType(const DataTypePtr & type)

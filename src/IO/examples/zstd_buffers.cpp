@@ -12,7 +12,6 @@
 #include <iostream>
 
 #include <zstd.h>
-#include <Examples/clickhouse_examples.h>
 
 namespace DB::ErrorCodes
 {
@@ -20,7 +19,7 @@ extern const int BAD_ARGUMENTS;
 }
 
 
-int mainEntryExampleZstdBuffers(int argc, char ** argv)
+int main(int argc, char ** argv)
 try
 {
     std::cout << std::fixed << std::setprecision(2);
@@ -72,7 +71,7 @@ try
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)
         {
-            size_t x = {};
+            size_t x;
             DB::readIntText(x, zstd_buf);
             zstd_buf.ignore();
 

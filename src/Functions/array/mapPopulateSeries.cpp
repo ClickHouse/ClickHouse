@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionMapPopulateSeries final : public IFunction
+class FunctionMapPopulateSeries : public IFunction
 {
 public:
     static constexpr auto name = "mapPopulateSeries";
@@ -259,13 +259,8 @@ private:
 
             for (KeyType current_key = min_key; current_key <= max_key; ++current_key)
             {
-                /// Compute via unsigned arithmetic to avoid signed overflow when
-                /// max_key - min_key does not fit into KeyType (e.g. Int8 with min=-94, max=34).
-                /// The outer cast back to KeyTypeUnsigned discards the int-promotion bits for
-                /// types narrower than int, so the result is the wrap-around difference.
-                KeyTypeUnsigned key_offset_unsigned = static_cast<KeyTypeUnsigned>(
-                    static_cast<KeyTypeUnsigned>(current_key) - static_cast<KeyTypeUnsigned>(min_key));
-                size_t insert_index = result_value_data_size + static_cast<size_t>(key_offset_unsigned);
+                size_t key_offset_index = static_cast<size_t>(current_key - min_key);
+                size_t insert_index = result_value_data_size + key_offset_index;
 
                 result_key_data[insert_index] = current_key;
 
@@ -394,7 +389,7 @@ private:
         MutableColumnPtr result_key_column;
         MutableColumnPtr result_value_column;
         MutableColumnPtr result_offset_column;
-        IColumn * result_offset_column_raw{};
+        IColumn * result_offset_column_raw;
         /// If we return tuple of two arrays, this offset need to be the same as result_offset_column
         MutableColumnPtr result_array_additional_offset_column;
     };
@@ -521,8 +516,8 @@ In case keys repeat, only the first value (in order of appearance) is associated
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys.", {"Map(K, V)", "Tuple(Array(UInt*), Array(Any))"}};
     FunctionDocumentation::Examples examples = {
-        {"With Map type", "SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)", "{1:10,2:0,3:0,4:0,5:20,6:0}"},
-        {"With mapped arrays", "SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)", "([1,2,3,4,5],[11,22,0,44,0])"}
+        {"With Map type", "SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)", "{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}"},
+        {"With mapped arrays", "SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)", "([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Map;
