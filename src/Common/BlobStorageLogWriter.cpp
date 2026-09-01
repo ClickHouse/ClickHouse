@@ -25,7 +25,7 @@ void BlobStorageLogWriter::addEvent(
     BlobStorageLogElement::EvenTime time_now)
 {
     /// Which connection carried the request we are about to log. Taken here, before anything can
-    /// return early, so that the slot is always emptied: it is filled by every pooled HTTP request,
+    /// return early, so that the slot is always emptied: it is filled by every blob storage request,
     /// including the ones whose event is never logged, and a value left behind would be picked up
     /// by whatever this thread logs next - attributing an unrelated socket to it.
     const auto connection = takeCurrentHTTPConnectionInfo();

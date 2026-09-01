@@ -44,23 +44,47 @@ struct HTTPConnectionInfo
     /// idle in the pool before being handed out for this request. 0 on a socket's first request.
     UInt64 idle_microseconds = 0;
 
-    /// False when nothing on this thread has made an HTTP request since the last one was
+    /// False when no blob storage request has been made on this thread since the last one was
     /// accounted for: an operation on local object storage, or the tail events of a batch that
     /// shared a single request (a batched delete attributes the connection to its first event).
-    /// Note the flip side: what is reported is the most recent HTTP request on this thread, so an
-    /// operation that issues a request and logs nothing can hand its connection to whatever this
-    /// thread logs next. Requests and their log entries are adjacent in every path that matters
-    /// here (one GetObject, one Read row), but do not read the columns as a strict join key.
     bool has_value = false;
 };
 
 /// Hand out the next connection id. Called once per established socket.
 UInt64 nextHTTPConnectionId();
 
-/// Publish the connection that is about to serve a request on this thread.
+/// Arms the current thread for recording the connection behind a blob storage request.
+///
+/// Publishing is opt-in rather than automatic, because the pool is shared: `StorageURL`, the
+/// dictionary sources, the proxy resolver and the various REST catalogs all borrow connections
+/// from it and none of them logs anything. Were every borrow to publish, a request made by one of
+/// them would sit in the slot until the next blob storage event on that thread took it - and a row
+/// for local or HDFS object storage, which uses no HTTP connection at all, would report the socket
+/// of an unrelated `StorageURL` read. So only the object storage clients (S3, Azure) open this
+/// scope, and only requests issued inside it are recorded.
+///
+/// The scope covers issuing the request, not logging it: the log entry is written after the client
+/// returns, so the value deliberately outlives the scope, and is cleared when it is taken. Entering
+/// the scope also drops whatever was left in the slot, so a request that fails before reaching the
+/// wire reports no connection instead of the previous one.
+class HTTPConnectionInfoScope
+{
+public:
+    HTTPConnectionInfoScope();
+    ~HTTPConnectionInfoScope();
+
+    HTTPConnectionInfoScope(const HTTPConnectionInfoScope &) = delete;
+    HTTPConnectionInfoScope & operator=(const HTTPConnectionInfoScope &) = delete;
+
+private:
+    bool previously_enabled;
+};
+
+/// Publish the connection that is about to serve a request on this thread. Does nothing outside of
+/// an `HTTPConnectionInfoScope`.
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info);
 
-/// Return the info for the most recent request on this thread, and clear it. Clearing is
+/// Return the info for the most recent recorded request on this thread, and clear it. Clearing is
 /// deliberate: without it a later log entry that made no request of its own would silently
 /// inherit some earlier connection's numbers.
 HTTPConnectionInfo takeCurrentHTTPConnectionInfo();

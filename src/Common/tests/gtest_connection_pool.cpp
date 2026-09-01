@@ -571,6 +571,18 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
     ASSERT_EQ(count-2, CurrentMetrics::get(metrics.stored_count));
 }
 
+/// Blob storage clients (S3, Azure) wrap every request they issue in an `HTTPConnectionInfoScope`;
+/// nothing is published outside of one. The row describing the request is written after the request
+/// returns, so taking the info after the scope has ended is exactly what production does.
+static DB::HTTPConnectionInfo echoRequestAndTakeConnectionInfo(String data, HTTPSession & session)
+{
+    {
+        DB::HTTPConnectionInfoScope scope;
+        echoRequest(std::move(data), session);
+    }
+    return DB::takeCurrentHTTPConnectionInfo();
+}
+
 /// The connection info published for a request must describe the socket that actually carried it.
 /// Both tests below exercise `PooledConnection::reconnect`, which swaps the whole socket - and the
 /// bookkeeping that goes with it - out from under a session that is already in the middle of a
@@ -582,16 +594,14 @@ TEST_F(ConnectionPoolTest, ConnectionInfoNewIdAfterReconnect)
 
     auto connection = pool->getConnection(timeouts, nullptr);
 
-    echoRequest("Hello", *connection);
-    auto first = DB::takeCurrentHTTPConnectionInfo();
+    auto first = echoRequestAndTakeConnectionInfo("Hello", *connection);
     ASSERT_TRUE(first.has_value);
     ASSERT_NE(0, first.id);
     ASSERT_EQ(0, first.requests_served);
 
     connection->abort(); // further usage requires reconnect, the pool is empty so a new socket
 
-    echoRequest("Hello", *connection);
-    auto second = DB::takeCurrentHTTPConnectionInfo();
+    auto second = echoRequestAndTakeConnectionInfo("Hello", *connection);
     ASSERT_TRUE(second.has_value);
 
     /// A different TCP connection, even though the kernel usually hands back the same file
@@ -608,14 +618,12 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
     auto pool = getPool();
 
     auto first_connection = pool->getConnection(timeouts, nullptr);
-    echoRequest("Hello", *first_connection);
-    DB::takeCurrentHTTPConnectionInfo();
+    echoRequestAndTakeConnectionInfo("Hello", *first_connection);
 
     DB::HTTPConnectionInfo stored_info;
     {
         auto second_connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *second_connection);
-        stored_info = DB::takeCurrentHTTPConnectionInfo();
+        stored_info = echoRequestAndTakeConnectionInfo("Hello", *second_connection);
     } // returned to the pool, and starts sitting there idle from now on
 
     ASSERT_TRUE(stored_info.has_value);
@@ -626,8 +634,7 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
 
     first_connection->abort(); // further usage requires reconnect, reuse the idle stored connection
 
-    echoRequest("Hello", *first_connection);
-    auto reused = DB::takeCurrentHTTPConnectionInfo();
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *first_connection);
 
     ASSERT_TRUE(reused.has_value);
     /// The very socket that was waiting in the pool, with its own history - not a fresh one, and
@@ -637,6 +644,30 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
     /// And the idle time is how long that socket really waited, not the sample taken for its
     /// previous request.
     ASSERT_GE(reused.idle_microseconds, idle_for_microseconds / 2);
+}
+
+/// The pool is shared with everything that speaks HTTP - `StorageURL`, dictionary sources, the
+/// proxy resolver, the REST catalogs - and none of that logs to `system.blob_storage_log`. A
+/// request they make must not be left in the slot for the next blob storage row on this thread,
+/// which would otherwise report a socket it never used - including rows for local or HDFS object
+/// storage, which use no HTTP connection at all.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedOutsideScope)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+
+    /// A blob storage request in between is recorded as usual.
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_NE(0, info.id);
+
+    /// And an unrelated request after it does not resurrect the slot.
+    echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
 }
 
 TEST_F(ConnectionPoolTest, ReceiveTimeout)

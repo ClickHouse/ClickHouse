@@ -5,6 +5,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <IO/HTTPCommon.h>  // Add this include at the top
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -155,6 +156,10 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
     Azure::Core::Http::Request & request,
     Azure::Core::Context const & context)
 {
+    /// Record which pooled connection carries this request, for the `system.blob_storage_log` entry
+    /// that will be written once it completes. See the same scope in the S3 client.
+    HTTPConnectionInfoScope connection_info_scope;
+
     /// Test-only: inject a 403 by returning it like the real transport. Returned (not thrown) so it goes
     /// through the SDK RetryPolicy — a thrown exception would bypass it and test only the ClickHouse loops.
     fiu_do_on(DB::FailPoints::azure_inject_forbidden_response,

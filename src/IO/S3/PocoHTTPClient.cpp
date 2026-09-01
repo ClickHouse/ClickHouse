@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <functional>
 
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
@@ -419,6 +420,12 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
+    /// Record which pooled connection carries this request, for the `system.blob_storage_log` entry
+    /// that will be written once it completes. Scoped to here so that requests made through the same
+    /// pool by everything else - `StorageURL`, dictionary sources, the proxy resolver - cannot leave
+    /// their connection behind for a later blob storage row to pick up.
+    HTTPConnectionInfoScope connection_info_scope;
+
     makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
 }
 
