@@ -41,35 +41,47 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
     {
         while (true)
         {
-            if (stage == Stage::ReadLeftInput)
-            {
-                auto & input = inputs.front();
-
-                if (input.isFinished())
-                {
-                    inputs.back().close();
-                    output.finish();
-                    return Status::Finished;
-                }
-
-                input.setNeeded();
-                if (!input.hasData())
-                    return Status::NeedData;
-
-                current_input_chunk = input.pull();
-                has_input = true;
-                break;
-            }
-
             if (stage == Stage::ReadRightInput)
             {
+                auto & left_input = inputs.front();
+
+                /// An empty left input makes the result empty whatever the right input holds, and the
+                /// right input may be unbounded, so stop before draining it. Sample the left port
+                /// while the right one is being read instead of waiting on it first: partitioned
+                /// transforms share one left scatter, and a scatter blocked on the partition of a
+                /// transform that stopped reading its left port never feeds the partitions that are
+                /// still waiting, which in turn never drain the right scatter this one waits on.
+                if (!has_left_input_chunk)
+                {
+                    left_input.setNeeded();
+
+                    if (left_input.isFinished())
+                    {
+                        inputs.back().close();
+                        output.finish();
+                        return Status::Finished;
+                    }
+
+                    if (left_input.hasData())
+                    {
+                        /// An empty chunk says nothing about the left input, keep looking.
+                        Chunk chunk = left_input.pull();
+                        if (chunk.hasRows())
+                        {
+                            left_input_chunk = std::move(chunk);
+                            has_left_input_chunk = true;
+                            left_input.setNotNeeded();
+                        }
+                    }
+                }
+
                 auto & input = inputs.back();
 
                 if (input.isFinished())
                 {
                     if (isIntersectOperator() && !has_right_input_rows)
                     {
-                        inputs.front().close();
+                        left_input.close();
                         output.finish();
                         return Status::Finished;
                     }
@@ -119,16 +131,7 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
 void IntersectOrExceptTransform::work()
 {
-    if (stage == Stage::ReadLeftInput)
-    {
-        if (current_input_chunk.hasRows())
-        {
-            left_input_chunk = std::move(current_input_chunk);
-            has_left_input_chunk = true;
-            stage = Stage::ReadRightInput;
-        }
-    }
-    else if (stage == Stage::ReadRightInput)
+    if (stage == Stage::ReadRightInput)
     {
         has_right_input_rows |= current_input_chunk.hasRows();
         accumulate(std::move(current_input_chunk));
