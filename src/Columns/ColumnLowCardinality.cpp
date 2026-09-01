@@ -188,6 +188,36 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     }
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnLowCardinality::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    if (length == 0)
+        return;
+
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+
+    if (!low_cardinality_src)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
+    const size_t source_index = low_cardinality_src->getIndexes().getUInt(position);
+
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
+    {
+        /// Dictionary is shared with src column. Insert only indexes.
+        idx.insertManyIndexes(source_index, length);
+    }
+    else
+    {
+        compactIfSharedDictionary();
+        const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
+        const size_t destination_index = getDictionary().uniqueInsertFrom(nested, source_index);
+        idx.insertManyIndexes(destination_index, length);
+    }
+}
+
 void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 {
     compactIfSharedDictionary();
@@ -204,6 +234,20 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
+    if (length == 0)
+        return;
+
+    /// An already shared, structurally compatible source dictionary is immutable. Reuse it when initializing
+    /// an empty column to avoid rebuilding it and keep its indexes unchanged through generic range insertions.
+    /// A private source dictionary can still be mutated in place, while an incompatible dictionary must be
+    /// rebuilt to perform conversions such as nullable promotion.
+    if (
+        empty()
+        && low_cardinality_src->isSharedDictionary()
+        && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
+        && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
+        setSharedDictionary(low_cardinality_src->getDictionaryPtr());
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
