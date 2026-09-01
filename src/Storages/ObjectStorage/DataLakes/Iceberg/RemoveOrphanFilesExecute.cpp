@@ -13,7 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <IO/ReadBufferFromString.h>    
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>

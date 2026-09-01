@@ -20,7 +20,6 @@
 namespace DB::ErrorCodes
 {
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int NOT_IMPLEMENTED;
 extern const int UNKNOWN_PROTOCOL;
 }
 
