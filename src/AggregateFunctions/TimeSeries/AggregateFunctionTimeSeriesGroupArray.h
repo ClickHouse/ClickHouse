@@ -7,9 +7,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
-#include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -20,10 +18,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 /// Aggregate function sorting pairs (timestamp, values) by timestamp.
@@ -63,14 +59,8 @@ public:
             {
                 auto old_size = allocated_size;
                 allocated_size = std::max(2 * allocated_size, new_size);
-
-                size_t bytes = 0;
-                if (common::mulOverflow(allocated_size, sizeof(Element), bytes))
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "Too large size ({}) of the state of timeSeriesGroupArray", new_size);
-
                 elements = reinterpret_cast<Element *>(arena->alignedRealloc(
-                    reinterpret_cast<char *>(elements), old_size * sizeof(Element), bytes,
+                    reinterpret_cast<char *>(elements), old_size * sizeof(Element), allocated_size * sizeof(Element),
                     alignof(Element)));
             }
         }
@@ -402,35 +392,10 @@ public:
         size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
-        /// The wire format is one run of timestamps then one run of values, and Element is padded,
-        /// so the payload width is not sizeof(Element).
-        static constexpr size_t serialized_element_size = sizeof(TimestampType) + sizeof(ValueType);
-        size_t serialized_bytes = 0;
-        if (common::mulOverflow(size, serialized_element_size, serialized_bytes))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large size ({}) of the state of timeSeriesGroupArray", size);
-
-        if (buf.available() >= serialized_bytes)
-        {
-            data.reserve(size, arena);
-
-            for (size_t i = 0; i < size; ++i)
-                readBinaryLittleEndian(data.elements[i].timestamp, buf);
-
-            for (size_t i = 0; i < size; ++i)
-                readBinaryLittleEndian(data.elements[i].value, buf);
-
-            data.size = size;
-            return;
-        }
-
-        VectorWithMemoryTracking<TimestampType> timestamps;
-        readRun(timestamps, size, buf);
-
-        /// A complete timestamps run makes `size` payload-backed, so the values run needs no staging.
         data.reserve(size, arena);
+
         for (size_t i = 0; i < size; ++i)
-            data.elements[i].timestamp = timestamps[i];
+            readBinaryLittleEndian(data.elements[i].timestamp, buf);
 
         for (size_t i = 0; i < size; ++i)
             readBinaryLittleEndian(data.elements[i].value, buf);
@@ -469,25 +434,6 @@ public:
     }
 
 private:
-    /// Stages one run outside the Arena, growing it only by what the buffer already holds, because an
-    /// Arena cannot reuse a superseded block and so must be allocated once, after the run is complete.
-    template <typename T>
-    static void readRun(VectorWithMemoryTracking<T> & run, size_t count, ReadBuffer & buf)
-    {
-        while (run.size() < count)
-        {
-            if (buf.eof())
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Cannot read all data. Bytes read: {}. Bytes expected: {}.", run.size() * sizeof(T), count * sizeof(T));
-
-            const size_t done = run.size();
-            const size_t batch = std::min(count - done, std::max<size_t>(1, buf.available() / sizeof(T)));
-            run.resize(done + batch);
-            for (size_t i = done; i < done + batch; ++i)
-                readBinaryLittleEndian(run[i], buf);
-        }
-    }
-
     static constexpr UInt16 FORMAT_VERSION = 1;
 };
 

@@ -300,9 +300,7 @@ public:
         if (buckets_size > bucket_count)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more buckets than expected");
 
-        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
-        /// Bucket contents vary by derived function, but every bucket costs at least its index below.
-        data(place)->buckets.reserve(std::min(buckets_size, buf.available() / sizeof(size_t)));
+        data(place)->buckets.reserve(buckets_size);
 
         for (size_t i = 0; i < buckets_size; ++i)
         {

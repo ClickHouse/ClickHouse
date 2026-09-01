@@ -5,7 +5,6 @@
 #include <IO/VarInt.h>
 #include <Common/Arena.h>
 #include <Common/StringWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -19,7 +18,8 @@ namespace ErrorCodes
 }
 
 /// Appends bytes to `s` until it holds `size` of them, extending it only by what the buffer already has.
-inline void readStringGrowing(String & s, size_t size, ReadBuffer & buf)
+template <typename StringType>
+inline void readStringGrowing(StringType & s, size_t size, ReadBuffer & buf)
 {
     while (s.size() < size)
     {
@@ -49,29 +49,12 @@ inline std::string_view readStringBinaryInto(Arena & arena, ReadBuffer & buf)
     }
 
     /// An Arena cannot reuse a superseded block, so it is allocated once, after the value is complete.
-    /// Staging in throwing containers keeps the memory limit enforced as the Arena enforces it.
-    VectorWithMemoryTracking<StringWithMemoryTracking> chunks;
-    size_t bytes_read = 0;
-    while (bytes_read < size)
-    {
-        if (buf.eof())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Cannot read all data. Bytes read: {}. Bytes expected: {}.", bytes_read, size);
-
-        const size_t bytes_to_copy = std::min(size - bytes_read, buf.available());
-        chunks.emplace_back(buf.position(), bytes_to_copy);
-        buf.position() += bytes_to_copy;
-        bytes_read += bytes_to_copy;
-    }
+    /// Staging in a throwing container keeps the memory limit enforced as the Arena enforces it.
+    StringWithMemoryTracking staged;
+    readStringGrowing(staged, size, buf);
 
     char * data = arena.alloc(size);
-    char * pos = data;
-    for (const auto & chunk : chunks)
-    {
-        memcpy(pos, chunk.data(), chunk.size());
-        pos += chunk.size();
-    }
-
+    memcpy(data, staged.data(), size);
     return std::string_view(data, size);
 }
 
