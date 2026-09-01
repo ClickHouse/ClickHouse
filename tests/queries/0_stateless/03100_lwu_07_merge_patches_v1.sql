@@ -7,7 +7,10 @@ SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lwu_merge_patches_v1 (id UInt64, c1 UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v1';
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v1',
+         -- the patch parts are listed one by one below, so only the explicit OPTIMIZE FINAL
+         -- (which ignores this limit) may merge them
+         max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO t_lwu_merge_patches_v1 SELECT number, number FROM numbers(20);
 

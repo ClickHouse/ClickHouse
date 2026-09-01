@@ -1,0 +1,406 @@
+---
+slug: /optimize/diagnose-slow-queries
+sidebarTitle: '诊断慢查询'
+title: '诊断慢查询'
+description: '了解如何识别执行缓慢的 ClickHouse 查询，并检查其资源使用情况和查询计划'
+doc_type: 'guide'
+keywords: ['查询优化', '查询日志', '慢查询', 'EXPLAIN', '性能']
+---
+
+import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
+
+诊断慢查询时，应先从其查询历史中查找线索。本指南介绍如何使用 `system.query_log` 识别反复出现的慢查询模式，选择一次具有代表性的执行，并查看其资源使用情况。随后，您将使用 `EXPLAIN` 检查查询计划，在修改查询或 schema 前对性能瓶颈提出假设。
+
+<div id="before-you-begin">
+  ## 开始之前
+</div>
+
+本指南中的示例使用 `nyc_taxi.trips_small_inferred` 表。若要按文中所示运行这些示例，如尚未创建并加载该表，请执行以下操作：
+
+<Accordion title="设置示例数据集">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+若要复现本指南中的查询日志结果，请在加载数据集后，将全部三个[示例工作负载查询](/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example#define-the-baseline-workload)各运行至少两次。然后刷新查询日志，以便下方示例可使用已完成的运行记录：
+
+```sql
+SYSTEM FLUSH LOGS;
+```
+
+如果无法运行 `SYSTEM FLUSH LOGS`，请等待查询日志自动刷写后再重试首次查找。诊断自己的工作负载时，请确保 `system.query_log` 包含您要检查的时间范围内已完成的查询记录。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+默认情况下，ClickHouse 会将已完成查询的信息记录在 [`system.query_log`](/zh/reference/system-tables/query_log) 表中。每条记录可包含查询耗时、读取行数、CPU 和内存使用情况，以及文件系统缓存活动。
+
+这些指标可帮助您识别慢查询模式，并了解其资源使用情况。选择一次具有代表性的执行后，您可以检查其查询计划，分析查询可能在哪些环节耗时。
+
+在集群中，查询日志数据保留在各个节点本地。本指南中的示例使用 [`clusterAllReplicas`](/zh/reference/functions/table-functions/cluster) 查询所有副本，并使用 [`merge`](/zh/reference/functions/table-functions/merge) 纳入当前的 `system.query_log` 表，以及系统表 schema 变更后保留的所有版本化 `query_log_N` 表。
+
+每个查询日志示例都提供集群部署和单节点部署的选项卡。ClickHouse Cloud 提供了集群示例中使用的 `default` 集群。在自管理部署中，请将 `default` 替换为 [`system.clusters`](/zh/reference/system-tables/clusters) 中列出的集群。
+
+<Note>
+  这些示例设置了 [`skip_unavailable_shards`](/zh/reference/settings/session-settings#skip_unavailable_shards)，以确保暂时不可用的副本不会导致诊断查询失败。这在扩缩容期间尤其有用。被跳过副本中的记录不会包含在结果中，因此结果可能不完整。
+</Note>
+
+<div id="diagnose-a-slow-query">
+  ## 诊断慢查询
+</div>
+
+在查询日志中找到已完成的查询记录后，按以下顺序执行这三个步骤。您将识别反复出现的慢查询模式，选择一次具有代表性的执行，并查看该查询的执行计划。
+
+<Steps titleSize="h3">
+  <Step title="识别候选查询" id="identify-candidate-queries">
+    首先按 `normalized_query_hash` 对已完成的初始查询进行分组，从而将反复出现的查询模式与个别的慢执行区分开来。下面的查询会按中位耗时对各类模式排序，并为每种模式给出一个示例查询：
+
+    <Tabs>
+      <Tab title="集群">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1
+        ```
+      </Tab>
+
+      <Tab title="单节点">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        ```
+      </Tab>
+    </Tabs>
+
+    使用 `executions` 可以区分反复出现的 workload 与偶发的 queries。相比单次运行较慢的查询，中位耗时较高、执行频繁或 resource 消耗较大的 pattern 更值得优先调查。
+
+    为快速摸清情况，下面的查询会针对 NYC Taxi 数据集，列出最多五个不同查询模式各自最慢的一次已完成执行，并排除数据集加载语句以及同一模式的重复执行。在下一步中，你将把查询历史缩小到与上面所选 `normalized_query_hash` 相对应的执行记录。
+
+    <Tabs>
+      <Tab title="集群">
+        ```sql
+        -- 查找过去 1 小时内 nyc_taxi 数据库中耗时最长的 5 个查询
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        SETTINGS skip_unavailable_shards = 1
+        FORMAT VERTICAL
+        ```
+      </Tab>
+
+      <Tab title="单节点">
+        ```sql
+        -- 查找过去 1 小时内 nyc_taxi 数据库中耗时最长的 5 个查询
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM merge('system', '^query_log')
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        FORMAT VERTICAL
+        ```
+      </Tab>
+    </Tabs>
+
+    ```response
+    Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+    Row 1:
+    ──────
+    normalized_query_hash: 11000678248135956062
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:36
+    query_duration_ms: 2967
+    query:             WITH
+      dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+      trip_distance / trip_time * 3600 AS speed_mph
+    SELECT
+      quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM
+      nyc_taxi.trips_small_inferred
+    WHERE
+      speed_mph > 30
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 2:
+    ──────
+    normalized_query_hash: 4194765292165295011
+    type:              QueryFinish
+    event_time:        2024-11-27 11:11:33
+    query_duration_ms: 2026
+    query:             SELECT
+        payment_type,
+        COUNT() AS trip_count,
+        formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+        AVG(total_amount) AS total_amount_avg,
+        AVG(tip_amount) AS tip_amount_avg
+    FROM
+        nyc_taxi.trips_small_inferred
+    WHERE
+        pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+    GROUP BY
+        payment_type
+    ORDER BY
+        trip_count DESC;
+
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 3:
+    ──────
+    normalized_query_hash: 1891814463795712754
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:17
+    query_duration_ms: 1860
+    query:             SELECT
+      avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+    FROM nyc_taxi.trips_small_inferred
+    WHERE passenger_count = 1 or passenger_count = 2
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+    ```
+
+    `query_duration_ms` 字段表示查询耗时，单位为毫秒。在上述结果中，耗时最长的查询用了 2,967 毫秒。
+
+    你也可以根据资源使用情况 (而非查询耗时) 来定位候选查询：
+
+    <Accordion title="查找资源消耗高的查询">
+      此查询按内存使用量对最近的查询进行排序，并显示其 CPU 使用情况。结果因工作负载和部署方式而异：
+
+      <Tabs>
+        <Tab title="集群">
+          ```sql
+          -- 按内存使用量排序的热门查询
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM clusterAllReplicas('default', merge('system', '^query_log'))
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          SETTINGS skip_unavailable_shards = 1
+          ```
+        </Tab>
+
+        <Tab title="单节点">
+          ```sql
+          -- 按内存使用量排序的热门查询
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM merge('system', '^query_log')
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          ```
+        </Tab>
+      </Tabs>
+    </Accordion>
+  </Step>
+
+  <Step title="选择一次有代表性的查询执行" id="choose-a-representative-query-run">
+    单次运行缓慢可能只是异常值，由临时查询或短暂的系统负载所致。在检查查询计划前，请查看多次具有相同 [`normalized_query_hash`](/zh/reference/system-tables/query_log#columns) 的已完成运行；仅字面量值不同的查询具有相同的哈希值。选择一次能代表该模式典型耗时和资源使用情况的运行。
+
+    将 `selected_hash` 的值替换为要调查模式的 `normalized_query_hash`：
+
+    <Tabs>
+      <Tab title="集群">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1;
+        ```
+      </Tab>
+
+      <Tab title="单节点">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10;
+        ```
+      </Tab>
+    </Tabs>
+
+    1. 查找 `read_rows` 和 `read_bytes` 相近的运行记录。
+    2. 比较这些运行记录的 `query_duration_ms` 和 `memory_usage`。
+    3. 选择 `query_duration_ms` 最接近中位数的 `query_id`。
+
+    <Note>
+      历史查询日志结果会随缓存状态和系统负载而变化，因此应使用它们来选择要调查的查询，而不应用于比较优化前后的变化。如果查询日志中没有足够的已完成运行记录，请在相似条件下运行该查询几次。下一篇指南 [隔离查询瓶颈](/zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) 介绍了如何收集受控测量数据，以便比较变更。
+    </Note>
+
+    示例查询日志结果显示，每个候选查询读取了约 3.2904 亿行。为便于参考，请确认示例表中的行数：
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    ```
+
+    ```response
+    Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+       ┌───count()─┐
+    1. │ 329044175 │ -- 329.04 million
+       └───────────┘
+    ```
+
+    该表包含 3.2904 亿行，与每个候选项中 `read_rows` 报告的行数大致相同。这表明查询扫描了表中的大部分或全部数据，但无法解释为何读取这些行，也无法判断这样的读取量是否适合该查询。接下来检查查询计划，了解 ClickHouse 如何选择和处理数据。
+  </Step>
+
+  <Step title="查看执行计划" id="explain-statement">
+    选择一次具有代表性的运行后，使用 [`EXPLAIN`](/zh/reference/statements/explain) 查看 ClickHouse 如何规划查询，而无需实际执行查询。输出会显示 ClickHouse 预计执行的操作以及数据如何在这些操作之间流动，为理解查询日志中的指标提供更多背景信息。
+
+    有关可用输出格式的详细介绍，请参阅[使用 analyzer 理解查询执行](/zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer)。在此示例中，`EXPLAIN` 会显示 ClickHouse 计划如何读取和过滤数据，以及能否跳过其中的部分数据。
+
+    输出是一个操作树，展示 ClickHouse 预计如何读取、过滤和处理数据。子操作显示在其父操作下方。请从最深层的读取操作开始，再沿计划向上查看 ClickHouse 如何将数据转换为最终结果。
+
+    在本示例中，请查看查询日志结果中的计算速度查询：
+
+    ```sql
+    EXPLAIN actions = 1, compact = 1, pretty = 1, indexes = 1
+    WITH
+        dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+        (trip_distance / trip_time) * 3600 AS speed_mph
+    SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM nyc_taxi.trips_small_inferred
+    WHERE speed_mph > 30
+    ```
+
+    输出包含以下操作。parts 和粒度等详细信息的数量取决于数据的存储方式：
+
+    ```response
+    Output: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+
+    Aggregating
+    │  Aggregates: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    └──Filter
+       │  Filter column: trip_distance / dateDiff('s', pickup_datetime, dropoff_datetime) * 3600 > 30
+       └──ReadFromMergeTree (nyc_taxi.trips_small_inferred)
+    ```
+
+    自下而上，该执行计划与查询的对应关系如下：
+
+    1. `ReadFromMergeTree` 从 `nyc_taxi.trips_small_inferred` 读取数据。未显示 `Indexes` 部分，且 `read_rows` 与表的行数一致，表明 ClickHouse 会读取整张表。
+    2. `Filter` 显示了 `speed_mph > 30` 的展开表达式。对于读取的每一行，ClickHouse 都会计算行程耗时和速度，然后仅保留速度超过每小时 30 英里的行。
+    3. `Aggregating` 根据过滤后的 `trip_distance` 值计算分位数。
+
+    该执行计划指出了三个需要测试的工作来源：读取每一行、过滤时计算 `speed_mph`，以及计算分位数。
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+接下来，请参阅[隔离查询瓶颈](/zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)，了解如何在受控条件下测试疑似的工作来源。该指南通过比较逐步简化的查询形态，确定哪些操作值得进一步调查。

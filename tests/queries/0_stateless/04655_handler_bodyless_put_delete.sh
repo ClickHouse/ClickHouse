@@ -33,14 +33,16 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HDEL\` URL '${P}/del' METHODS (DELETE) 
 # A lengthless non-chunked body ends only when the connection closes, so a server that waits for it deadlocks
 # against a client that waits for the response. Bound these two requests well below the test timeout, so that
 # such a regression shows up as a diff here instead of killing the whole test run.
+# Keep them silent and turn a nonzero exit into a stdout line: the harness fails on any stderr before it
+# compares the reference, so an error line there would take the place of that diff.
 CURL_BOUNDED="${CLICKHOUSE_CURL_COMMAND} -q -s --max-time 30"
 
 echo "=== a lengthless non-chunked PUT to a handler that does not read the body succeeds ==="
 # `-X PUT` with no data sends neither Content-Length nor chunked Transfer-Encoding.
-${CURL_BOUNDED} -sS -X PUT "${BASE}${P}/put"
+${CURL_BOUNDED} -X PUT "${BASE}${P}/put" || echo "curl failed: $?"
 
 echo "=== a lengthless non-chunked DELETE to a handler that does not read the body succeeds ==="
-${CURL_BOUNDED} -sS -X DELETE "${BASE}${P}/del"
+${CURL_BOUNDED} -X DELETE "${BASE}${P}/del" || echo "curl failed: $?"
 
 echo "=== a handler reading _request_body still requires the length up front ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HPARAM\` URL '${P}/param' METHODS (PUT) AS SELECT {_request_body:String} AS a FORMAT TSV"

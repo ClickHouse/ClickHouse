@@ -45,7 +45,11 @@ def _finish_error(info: str) -> int:
 
 
 def _http_get_json(url: str):
-    """Return parsed JSON, or None only when the PR object is missing (HTTP 404)."""
+    """Return parsed JSON, or None when the PR object is missing.
+
+    The bucket denies anonymous ``s3:ListBucket``, so S3 reports a missing key
+    as 403 (AccessDenied) rather than 404 — treat both as "missing".
+    """
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "ClickHouse-CI-promql-compliance"},
@@ -54,7 +58,7 @@ def _http_get_json(url: str):
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as e:
-        if e.code == 404:
+        if e.code in (403, 404):
             return None
         raise
     try:
@@ -106,11 +110,16 @@ def main() -> int:
         return _finish_error(f"Failed to fetch PR compliance JSON: {e}")
 
     if new is None:
+        # The batch carrying test_compliance may not have executed for this
+        # commit (cache hit, filtered out, or skipped on a test-only PR).
+        # Real upload failures are raised by the upload post-hook in the
+        # integration job itself, so a missing JSON is not an error here.
         print(
-            "PromQL compliance job: no PR-scoped JSON in S3 "
-            "(integration batch likely did not run test_compliance)."
+            f"PromQL compliance job: no PR-scoped JSON in S3 at {url} "
+            "(integration batches were cached, filtered, or skipped, or the "
+            "batch did not run test_compliance)."
         )
-        return _finish_error("No PR compliance JSON in S3 (404).")
+        return _finish_ok(f"No PR compliance JSON in S3 at {url}; nothing to report.")
 
     for _k in ("pct", "passed", "failed", "unsupported"):
         if _k not in new:

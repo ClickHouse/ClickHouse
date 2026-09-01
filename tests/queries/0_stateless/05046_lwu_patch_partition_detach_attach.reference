@@ -1,0 +1,8 @@
+v1 before detach: 1000	400
+v1 after detach: 1000	0
+v1 after attach: 1000	400
+v1 after optimize: 1000	400
+v2 before detach: 1000	400
+v2 after detach: 1000	0
+v2 after attach: 1000	400
+v2 after optimize: 1000	400
