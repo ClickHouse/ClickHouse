@@ -314,6 +314,9 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
         /// A profile- or URL-provided skip_unavailable_shards would let the sink drop a failed
         /// shard yet still acknowledge; the 204 contract needs every shard write to count.
         context_->setSetting("skip_unavailable_shards", false);
+        /// A URL- or profile-provided insert_shard_id narrows the sink to one shard (DistributedSink
+        /// start/end), bypassing the wrapper's sharding key behind the same 204.
+        context_->setSetting("insert_shard_id", UInt64(0));
     }
 }
 
