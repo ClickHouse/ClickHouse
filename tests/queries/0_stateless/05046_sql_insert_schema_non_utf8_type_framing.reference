@@ -2,3 +2,7 @@
 is not compatible with the output format SQLInsert
 --- EventStream base64-encodes SQLInsert schema with a non-UTF-8 type name
 SQLInsert schema payload with a non-UTF-8 type name round-trips
+--- JSONEachPacketString accepts SQLInsert schema when a non-UTF-8 byte is in an ignored table-name comment
+SQLInsert schema with a canonical UTF-8 table name accepted: OK
+--- EventStream keeps SQLInsert schema with a canonical UTF-8 table name as text
+text/event-stream; charset=UTF-8

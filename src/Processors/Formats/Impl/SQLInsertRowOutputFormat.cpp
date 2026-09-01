@@ -244,7 +244,11 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
             return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
         };
 
-        if (is_not_valid_utf8(settings.sql_insert.table_name))
+        const String table_name = settings.sql_insert.include_table_schema
+            ? parseAndFormatSQLInsertTableName(settings.sql_insert.table_name, settings.max_parser_depth)
+            : settings.sql_insert.table_name;
+
+        if (is_not_valid_utf8(table_name))
             return true;
 
         /// `output_format_sql_insert_include_table_schema` writes the column names in the

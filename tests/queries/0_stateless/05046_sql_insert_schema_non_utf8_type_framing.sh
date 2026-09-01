@@ -19,3 +19,15 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}"
     | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" \
         -d "SELECT CAST(1 AS Enum8('x\xFFy' = 1)) AS c FORMAT SQLInsert SETTINGS output_format_sql_insert_include_table_schema = 1") \
     && echo 'SQLInsert schema payload with a non-UTF-8 type name round-trips' || echo 'MISMATCH'
+
+echo '--- JSONEachPacketString accepts SQLInsert schema when a non-UTF-8 byte is in an ignored table-name comment'
+data_packets=$(${CLICKHOUSE_CURL} -sS \
+    "${URL}&framing_output_format=JSONEachPacketString&output_format_sql_insert_table_name=t%20--%20%FF" \
+    -d "SELECT toUInt8(1) AS x FORMAT SQLInsert SETTINGS output_format_sql_insert_include_table_schema = 1" \
+    | grep -c '"packet":"data"')
+[ "${data_packets}" -ge 1 ] && echo 'SQLInsert schema with a canonical UTF-8 table name accepted: OK'
+
+echo '--- EventStream keeps SQLInsert schema with a canonical UTF-8 table name as text'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' \
+    "${URL}&framing_output_format=EventStream&output_format_sql_insert_table_name=t%20--%20%FF" \
+    -d "SELECT toUInt8(1) AS x FORMAT SQLInsert SETTINGS output_format_sql_insert_include_table_schema = 1"
