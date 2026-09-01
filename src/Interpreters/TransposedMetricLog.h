@@ -42,6 +42,7 @@ public:
     static constexpr auto DESCRIPTION = R"(
         Contains history of metrics values from tables system.metrics and system.events.
         Periodically flushed to disk. Transposed form of system.metric_log.)";
+    static constexpr const char * DOCUMENTATION_SOURCE = __builtin_FILE();
 
     TransposedMetricLog(
         ContextPtr context_,

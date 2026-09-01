@@ -48,6 +48,7 @@ public:
     static constexpr auto DESCRIPTION = R"(
         Contains history of metrics values from tables system.metrics and system.events.
         Periodically flushed to disk. Stores all metrics in a single Map column with bucketed serialization.)";
+    static constexpr const char * DOCUMENTATION_SOURCE = __builtin_FILE();
 
     /// Serialize the Map column into a constant number of buckets, so reading a single metric
     /// reads only a small fraction of the data. Parts created by inserts (zero level) use the

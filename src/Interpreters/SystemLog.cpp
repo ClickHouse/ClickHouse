@@ -136,7 +136,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const String & default_table_name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const String & comment)
+    const String & comment,
+    const char * documentation_source = SYSTEM_LOG_DOCUMENTATION_SOURCE)
 {
     if (!config.has(config_prefix))
     {
@@ -167,7 +168,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.queue_settings.database = default_database_name;
     }
 
-    registerSystemTableDocumentationSource(log_settings.queue_settings.table, SYSTEM_LOG_DOCUMENTATION_SOURCE);
+    registerSystemTableDocumentationSource(log_settings.queue_settings.table, documentation_source);
 
     if (config.has(config_prefix + ".engine"))
     {
@@ -396,10 +397,22 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         auto schema = config.getString("metric_log.schema_type", "wide");
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
             transposed_metric_log = createSystemLog<TransposedMetricLog>(
-                global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+                global_context,
+                "system",
+                "metric_log",
+                config,
+                "metric_log",
+                TransposedMetricLog::DESCRIPTION,
+                TransposedMetricLog::DOCUMENTATION_SOURCE);
         else if (schema == "bucketed")
             bucketed_metric_log = createSystemLog<BucketedMetricLog>(
-                global_context, "system", "metric_log", config, "metric_log", BucketedMetricLog::DESCRIPTION);
+                global_context,
+                "system",
+                "metric_log",
+                config,
+                "metric_log",
+                BucketedMetricLog::DESCRIPTION,
+                BucketedMetricLog::DOCUMENTATION_SOURCE);
     }
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];

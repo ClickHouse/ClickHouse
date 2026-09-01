@@ -70,6 +70,12 @@ def test_table_rotation(start_cluster):
     assert int(node1.query("select count() from system.metric_log").strip()) > 0
     assert "metric" in node1.query("SHOW CREATE TABLE system.metric_log")
     assert "ORDER BY (event_date, event_time)" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert (
+        node1.query(
+            "SELECT source FROM system.documentation WHERE type = 'System Table' AND name = 'metric_log'"
+        )
+        == "src/Interpreters/TransposedMetricLog.h\n"
+    )
 
     assert int(node1.query("select countDistinct(metric) from system.metric_log").strip()) > 1000
 
@@ -103,6 +109,12 @@ def test_bucketed_schema(start_cluster):
     assert "max_buckets_in_map = 128" in create_query
     assert "map_buckets_strategy = 'constant'" in create_query
     assert "ALIAS metrics['ProfileEvent_Query']" in create_query
+    assert (
+        node2.query(
+            "SELECT source FROM system.documentation WHERE type = 'System Table' AND name = 'metric_log'"
+        )
+        == "src/Interpreters/BucketedMetricLog.h\n"
+    )
 
     assert int(node2.query("select count() from system.metric_log").strip()) > 0
     assert int(node2.query("select max(length(metrics)) from system.metric_log").strip()) > 0
