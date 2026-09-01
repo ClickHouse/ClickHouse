@@ -21,7 +21,6 @@
 #include <base/sleep.h>
 
 #include <cstdint>
-#include <exception>
 #include <utility>
 
 
@@ -91,23 +90,6 @@ void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer
     chassert(inner_begin <= inner_end);
     chassert(inner_begin >= outer_begin);
     chassert(inner_end <= outer_end);
-}
-
-bool isQueryCancellationException(const std::exception_ptr & exception)
-{
-    try
-    {
-        CurrentThread::checkIfNotCancelled();
-    }
-    catch (...)
-    {
-        /// A cancellation supplied through `QueryStatus::cancelQuery` can carry any exception code.
-        /// Compare exception identity instead of mutable cancellation state, so a real S3 error is
-        /// still reported if query cancellation races with exception unwinding.
-        return std::current_exception() == exception;
-    }
-
-    return false;
 }
 
 }
@@ -391,7 +373,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
     if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED
         || exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
         || exception_code == ErrorCodes::TIMEOUT_EXCEEDED
-        || isQueryCancellationException(exception))
+        || CurrentThread::isQueryCancellationException(exception))
         return false;
 
     /// Callers check mutable query cancellation state only after this function classifies the caught

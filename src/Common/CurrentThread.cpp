@@ -122,6 +122,20 @@ void CurrentThread::checkIfNotCancelled()
     current_thread->throwIfQueryCanceled();
 }
 
+bool CurrentThread::isQueryCancellationException(const std::exception_ptr & exception)
+{
+    try
+    {
+        checkIfNotCancelled();
+    }
+    catch (...)
+    {
+        return std::current_exception() == exception;
+    }
+
+    return false;
+}
+
 std::string_view CurrentThread::getQueryId()
 {
     if (unlikely(!current_thread))

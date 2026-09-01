@@ -13,6 +13,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
+#include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/NetException.h>
@@ -168,6 +169,9 @@ bool shouldReportBrokenPart(std::exception_ptr exception_ptr)
     FailPointInjection::pauseFailPoint(FailPoints::merge_tree_reader_pause_before_report_broken);
 
     if (isRetryableException(exception_ptr))
+        return false;
+
+    if (CurrentThread::isQueryCancellationException(exception_ptr))
         return false;
 
     try
