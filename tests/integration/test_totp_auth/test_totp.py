@@ -36,6 +36,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     user_configs=["config/users.xml"],
+    stay_alive=True,
 )
 
 
@@ -47,6 +48,14 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def fresh_server(started_cluster):
+    # The server keeps the used codes in memory to enforce their single use, so a repeated
+    # run of a test (e.g. the flaky check with --count) would see its codes already consumed.
+    # Restart the server to reset that state.
+    node.restart_clickhouse()
 
 
 def get_one_time_password(
