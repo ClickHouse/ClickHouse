@@ -1060,11 +1060,10 @@ void AggregatingStep::serialize(Serialization & ctx) const
         flags |= 32;
     if (explicit_sorting_required_for_aggregation_in_order)
         flags |= 64;
-    /// Deliberately NOT stripped under `for_cache_key`, in contrast to `final` above: `only_merge`
-    /// changes how the input is interpreted (state columns vs argument columns), so two plans
-    /// differing only in it must not share a stats/preallocation cache key. It also cannot break
-    /// the Auto-PR single-node vs distributed hash matching `final` is stripped for: both of those
-    /// builds merge via `MergingAggregatedStep`, never a merge-only `AggregatingStep`.
+    /// `only_merge` participates in the cache key because it changes how the input columns are
+    /// interpreted (state columns vs argument columns). Unlike `final`, stripping it is not
+    /// needed for the parallel-replicas hash matching: that path never builds a merge-only
+    /// `AggregatingStep`.
     if (params.only_merge)
         flags |= 128;
 
@@ -1286,6 +1285,10 @@ void AggregatingStep::setFinal(bool new_value)
 
 void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Names new_keys)
 {
+    /// The sort descriptions are not rebased and could name dropped keys; the only caller
+    /// (`AggregationPushdown`) rejects in-order aggregation in `checkPattern`.
+    chassert(sort_description_for_merging.empty() && group_by_sort_description.empty()
+        && !explicit_sorting_required_for_aggregation_in_order);
     params.keys = std::move(new_keys);
     params.keys_size = params.keys.size();
     updateInputHeader(new_input_header);

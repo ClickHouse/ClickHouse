@@ -51,7 +51,7 @@ struct JoinOutputBindings
 };
 
 /// Pushes an aggregation below a join (eager aggregation) as a cost-based alternative, gated by
-/// `cascades_aggregation_pushdown`. Variant A (partial pushdown, shown for pushed side S = L;
+/// `cascades_aggregation_pushdown`. Variant A, partial pushdown (shown for the left side;
 /// push-right is the mirror image):
 ///
 ///     Aggregating(final, keys=G, aggs=F)      Aggregating(only_merge, keys=G, aggs=F)
@@ -59,42 +59,35 @@ struct JoinOutputBindings
 ///           Join(L, R)                =>                 Join'(L', R)
 ///           /      \                                     /      \
 ///          L        R                     Aggregating(final=false,
-///                                           keys=(G ∩ L) ∪ J_L, aggs=F)
+///                                           keys=G_L+J_L, aggs=F)
 ///                                                 |
 ///                                                 L
 ///
-/// where `J_L` is the set of L-side columns the join condition reads. Every row within one
-/// partial group is indistinguishable to the join (all join-relevant columns of the pushed
-/// side are group keys), so the join filters or duplicates whole groups uniformly, and merging
-/// `m` duplicated copies of a state equals processing the underlying rows `m` times - exactly
-/// what the original plan does.
+/// G_L are the L-side `GROUP BY` keys, J_L the L-side columns the join condition reads. All
+/// join-relevant columns of L are then group keys, so the rows within one partial group are
+/// indistinguishable to the join: it filters or duplicates whole groups uniformly, and merging
+/// `m` copies of a state equals processing its rows `m` times - exactly the original plan.
+/// Variant A is skipped under `distributed_plan_force_shuffle_aggregation`, which forbids
+/// exactly this partial + merge split.
 ///
-/// Variant B (full pushdown): when every `GROUP BY` key comes from the pushed side, the join
-/// condition reads no other pushed-side columns (`J_S ⊆ G`), and the join emits each pushed row
-/// at most once (see `isFullPushdownAllowed`), the aggregation stays final below the join and
-/// the rebuilt join itself becomes the alternative - no merge above. B strictly dominates A
-/// there (same grouping, one step less), so only B is emitted when it is legal.
+/// Variant B, full pushdown: when every `GROUP BY` key comes from the pushed side, the join
+/// condition reads only `GROUP BY` keys, and the join emits each pushed row at most once (see
+/// `isFullPushdownAllowed`), the aggregation stays final below the join with no merge above.
+/// B dominates A there (same grouping, one step less), so only B is emitted when it is legal.
 ///
-/// The rule also bails out when the join condition reads a function non-deterministic in scope
-/// of the query (e.g. `rand`): the multiplicity argument requires the condition to be a pure
-/// function of the pushed side's group keys (see `collectConditionInputs`). It also bails when
-/// the pushed keys' cardinality is not reliably known to guarantee a shrinkage (see
-/// `buildPushdownAlternative`'s cardinality gate) - with statistics hint-only today, a hint-less
-/// query never takes this rewrite.
+/// Bail-outs: a join condition that reads a function non-deterministic within the query (see
+/// `collectConditionInputs`), and pushed keys without reliable distinct-value counts proving
+/// the partial aggregation shrinks its input (see the cardinality gate in
+/// `buildPushdownAlternative`; statistics are hint-only today, so a hint-less query never
+/// takes this rewrite).
 ///
-/// The join under the aggregation is matched against every logical alternative of its group (see
-/// `collectJoinsUnderAggregation`), not just the ingested plan, so e.g. `JoinCommutativity`'s
-/// swapped twin and a join alternative left by a nested aggregation's own pushdown are both
-/// visible to `applyImpl`, once it runs. The swapped twin's pushdown is a mirror image of the
-/// original's and is currently accepted as a duplicate memo group; memo-level dedup of mirror
-/// alternatives is left to a separate change. Whether an outer aggregation ever actually sees a
-/// nested one's pushdown alternative depends on `checkPattern` for the outer expression running
-/// late enough to observe it - `checkPattern` is evaluated synchronously when the outer
-/// expression is first explored, before its child's own exploration (and hence the nested
-/// aggregation's pushdown) has run, so this does not fire for a plain `GROUP BY` subquery (see
-/// `04926_cascades_aggregation_pushdown`, case 27). Like every transformation rule, this one
-/// applies once per source group expression (`setApplied`), so alternatives added to a child
-/// group after this rule has already run on the parent are not revisited.
+/// The join is matched against every logical alternative in the group below the aggregation,
+/// not only the original plan (see `collectJoinsUnderAggregation`), so the rule also fires on
+/// e.g. `JoinCommutativity`'s swapped twin; the twin's pushdown is a mirror image of the
+/// original's and currently lands in a duplicate memo group. Engine limits: `checkPattern`
+/// runs before the child group is explored, and each rule runs once per source expression, so
+/// a join that appears in the child group only later (e.g. from a nested aggregation's own
+/// pushdown) never triggers the rule.
 class AggregationPushdown : public IOptimizationRule
 {
 public:
@@ -195,7 +188,7 @@ void addJoinCandidate(std::vector<MatchedJoin> & result, GroupExpressionPtr join
 /// swapped twin is a distinct `JoinStepLogical` expression and is processed like any other,
 /// producing a mirror-image pushdown that lands in a structurally-distinct duplicate memo group
 /// (fresh input group ids defeat `Group::addLogicalExpression`'s structural dedup). This
-/// duplication is accepted here; memo-level dedup is planned separately, in another PR.
+/// duplication is accepted here; dedup of mirror alternatives is a known memo-level gap.
 ///
 /// Input links with non-empty required properties carry a stripped `Sort`, which the
 /// transformation would silently drop - such shapes do not match.
@@ -513,9 +506,7 @@ bool pushedKeysHaveReliableCardinality(const ExpressionStatistics & input_statis
     return true;
 }
 
-/// The memo prices the alternative optimistically, by the max of the pushed keys' NDVs; this
-/// factor requires the proven composite bound (below) to guarantee at least this much shrinkage
-/// below the input to compensate.
+/// Minimum shrinkage the composite bound must prove (see `pushedKeysGuaranteeReduction`).
 constexpr Float64 MIN_GUARANTEED_REDUCTION = 2.0;
 
 /// The product of the pushed keys' NDVs (each clamped to the input estimate, keeping the whole
@@ -538,6 +529,116 @@ bool pushedKeysGuaranteeReduction(const ExpressionStatistics & input_statistics,
         }
     }
     return composite * MIN_GUARANTEED_REDUCTION <= input_statistics.estimated_row_count;
+}
+
+/// The partial aggregation's key set and the classification behind it.
+struct PushdownKeys
+{
+    Names pushed_keys;      /// pushed-side `GROUP BY` keys + the pushed side's join-condition columns
+    NameSet pushed_key_set; /// `pushed_keys` as a set
+    bool has_other_side_keys = false;
+    bool condition_extends_keys = false;
+};
+
+/// Classifies the `GROUP BY` keys by join side and extends the pushed ones with the pushed
+/// side's join-condition columns (which participate in the condition but are not projected).
+/// Every key must resolve to exactly one side, confirmed by the join DAG's own attribution;
+/// other-side keys stay keys of the top merge and must be among the join's projected outputs.
+/// Nullopt on any violation, or on a duplicate key - duplicates would break the positional
+/// layout the merge relies on (see `buildMergeStep`).
+std::optional<PushdownKeys> classifyPushdownKeys(
+    const Aggregator::Params & params,
+    const Block & pushed_header,
+    const Block & other_header,
+    const NameSet & pushed_bindings,
+    const NameSet & other_bindings,
+    const Names & pushed_condition_inputs)
+{
+    PushdownKeys result;
+    NameSet other_key_set;
+    for (const auto & key : params.keys)
+    {
+        const bool in_pushed = pushed_header.has(key);
+        const bool in_other = other_header.has(key);
+        if (in_pushed == in_other)
+            return {};
+        if (!(in_pushed ? pushed_bindings : other_bindings).contains(key))
+            return {};
+        if (in_pushed)
+        {
+            if (!result.pushed_key_set.insert(key).second)
+                return {};
+            result.pushed_keys.push_back(key);
+        }
+        else if (!other_key_set.insert(key).second)
+            return {};
+    }
+    result.has_other_side_keys = !other_key_set.empty();
+
+    for (const auto & name : pushed_condition_inputs)
+        if (result.pushed_key_set.insert(name).second)
+        {
+            result.pushed_keys.push_back(name);
+            result.condition_extends_keys = true;
+        }
+    return result;
+}
+
+/// The positional layout the `only_merge` reader expects on its input (see
+/// `calculateKeysPositions`): all `GROUP BY` keys in `params.keys` order, then the aggregate
+/// columns in `params.aggregates` order.
+bool headerIsKeysThenAggregates(const Block & header, const Aggregator::Params & params)
+{
+    if (header.columns() != params.keys.size() + params.aggregates.size())
+        return false;
+    for (size_t i = 0; i < params.keys.size(); ++i)
+        if (header.getByPosition(i).name != params.keys[i])
+            return false;
+    for (size_t i = 0; i < params.aggregates.size(); ++i)
+        if (header.getByPosition(params.keys.size() + i).name != params.aggregates[i].column_name)
+            return false;
+    return true;
+}
+
+/// Builds variant A's merge-only `AggregatingStep` over the rebuilt join's output. A merge-only
+/// `AggregatingStep` rather than a `MergingAggregatedStep`: its `only_merge` consume path
+/// (`mergeOnBlock`) reads keys and states positionally and never requires `AggregatedChunkInfo`
+/// on input, so the rebuilt join's output needs no chunk annotation. The full `Params` copy
+/// keeps the spill and two-level settings alive for the merge. Input-LAYOUT properties of the
+/// original aggregation (the sort descriptions, the evenly-distributed-read flag) describe the
+/// ORIGINAL input and must not be carried onto a merge over rebuilt join output; behavior
+/// toggles are copied from the original step.
+std::unique_ptr<AggregatingStep> buildMergeStep(const AggregatingStep & agg_step, const SharedHeader & input_header)
+{
+    auto merge_params = agg_step.getParams();
+    merge_params.only_merge = true;
+    /// Same reasoning as the partial step's `setStatsCacheKey(0)` in the caller: this merge
+    /// consumes post-join states of a different shape than the original aggregation the key was
+    /// stamped for, so a shared key would cross-contaminate `HashTablesStatistics`.
+    merge_params.stats_collecting_params.setKey(0);
+
+    /// The `only_merge` reader is positional; only the caller's construction order guarantees
+    /// this layout (the caller's `check_header` compares names and types, not positions).
+    chassert(headerIsKeysThenAggregates(*input_header, merge_params));
+
+    auto merge_step = std::make_unique<AggregatingStep>(
+        input_header,
+        std::move(merge_params),
+        GroupingSetsParamsList{}, /// `checkPattern` bails on grouping sets
+        /*final_=*/true,
+        agg_step.getMaxBlockSize(),
+        agg_step.getMaxBlockSizeForAggregationInOrder(),
+        agg_step.getMergeThreads(),
+        agg_step.getTemporaryDataMergeThreads(),
+        /*storage_has_evenly_distributed_read_=*/false,
+        agg_step.isGroupByUseNulls(),
+        SortDescription{},
+        SortDescription{},
+        agg_step.shouldProduceResultsInBucketOrder(),
+        agg_step.usingMemoryBoundMerging(),
+        /*explicit_sorting_required_for_aggregation_in_order_=*/false);
+    merge_step->setStepDescription(fmt::format("Merge: {}", agg_step.getStepDescription()), 200);
+    return merge_step;
 }
 
 GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
@@ -566,40 +667,9 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
             if (!pushed_header.has(argument_name) || other_header.has(argument_name) || !pushed_bindings.contains(argument_name))
                 return nullptr;
 
-    /// Every `GROUP BY` key must resolve to exactly one side, confirmed by the join DAG's own
-    /// attribution. Other-side keys stay keys of the top merge and must be among the join's
-    /// projected outputs. Duplicate keys would break the positional layout the merge relies on
-    /// (see below) - bail out.
-    Names pushed_keys;
-    NameSet pushed_key_set;
-    NameSet other_key_set;
-    for (const auto & key : params.keys)
-    {
-        const bool in_pushed = pushed_header.has(key);
-        const bool in_other = other_header.has(key);
-        if (in_pushed == in_other)
-            return nullptr;
-        if (!(in_pushed ? pushed_bindings : other_bindings).contains(key))
-            return nullptr;
-        if (in_pushed)
-        {
-            if (!pushed_key_set.insert(key).second)
-                return nullptr;
-            pushed_keys.push_back(key);
-        }
-        else if (!other_key_set.insert(key).second)
-            return nullptr;
-    }
-
-    /// The pushed side's `GROUP BY` keys become the partial keys, extended with the pushed
-    /// side's join-condition columns (which participate in the condition but are not projected).
-    bool condition_extends_keys = false;
-    for (const auto & name : pushed_condition_inputs)
-        if (pushed_key_set.insert(name).second)
-        {
-            pushed_keys.push_back(name);
-            condition_extends_keys = true;
-        }
+    const auto keys = classifyPushdownKeys(params, pushed_header, other_header, pushed_bindings, other_bindings, pushed_condition_inputs);
+    if (!keys)
+        return nullptr;
 
     /// Cardinality gate, shared by variants A and B (for B `pushed_keys` is exactly `G`, see
     /// above): the pushed input group's statistics are already derived by the time this rule
@@ -608,15 +678,15 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     /// the widened key set shrinks the input - never let this rewrite be priced by a guess.
     const auto & pushed_input_group = *memo.getGroup(match.join_expression->inputs[pushed_input_index].group_id);
     if (!pushed_input_group.statistics
-        || !pushedKeysHaveReliableCardinality(*pushed_input_group.statistics, pushed_keys)
-        || !pushedKeysGuaranteeReduction(*pushed_input_group.statistics, pushed_keys))
+        || !pushedKeysHaveReliableCardinality(*pushed_input_group.statistics, keys->pushed_keys)
+        || !pushedKeysGuaranteeReduction(*pushed_input_group.statistics, keys->pushed_keys))
         return nullptr;
 
     /// Variant B: every `GROUP BY` key is on the pushed side and the join condition reads only
     /// `GROUP BY` keys of it, so the aggregation stays final below the join and no merge is
     /// needed above. B strictly dominates A here (same grouping, no merge) - emit only B.
     const auto & join_operator = join_step.getJoinOperator();
-    const bool full_pushdown = other_key_set.empty() && !condition_extends_keys
+    const bool full_pushdown = !keys->has_other_side_keys && !keys->condition_extends_keys
         && isFullPushdownAllowed(join_operator.kind, join_operator.strictness, side);
 
     /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split that
@@ -626,7 +696,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
 
     /// The rebuilt pushed-side header (keys + aggregate state columns) must have unique names
     /// disjoint from the other side's - `JoinExpressionActions` requires it.
-    NameSet new_pushed_names = pushed_key_set;
+    NameSet new_pushed_names = keys->pushed_key_set;
     for (const auto & aggregate : params.aggregates)
         if (!new_pushed_names.insert(aggregate.column_name).second)
             return nullptr;
@@ -652,7 +722,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     /// Unlike `TwoStageAggregationTransformation`, no bucket-order forcing under the
     /// memory-efficient merge: bucket annotations do not survive the join anyway, and the merge
     /// treats the join output as single-level data.
-    partial_step->rebaseOntoInput(std::move(partial_input_header), pushed_keys);
+    partial_step->rebaseOntoInput(std::move(partial_input_header), keys->pushed_keys);
     partial_step->setStepDescription(
         fmt::format("{}: {}", full_pushdown ? "Pushed" : "Partial", agg_step.getStepDescription()), 200);
 
@@ -663,11 +733,9 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
         if (!partial_header.getByName(name).type->equals(*pushed_header.getByName(name).type))
             return nullptr;
 
-    /// The rebuilt join projects exactly the merge's expected positional layout: all `GROUP BY`
-    /// keys in `params.keys` order (from whichever side each comes), then the aggregate columns
-    /// in `params.aggregates` order. The `only_merge` aggregator reads keys and states by
-    /// position (see `calculateKeysPositions`), so this order is load-bearing for variant A;
-    /// for variant B (all columns from the pushed side) it equals `params.getHeader` order.
+    /// The rebuilt join projects exactly the positional layout the merge expects (see
+    /// `headerIsKeysThenAggregates`), so this order is load-bearing for variant A; for
+    /// variant B (all columns from the pushed side) it equals `params.getHeader` order.
     Names output_names = params.keys;
     for (const auto & aggregate : params.aggregates)
         output_names.push_back(aggregate.column_name);
@@ -703,36 +771,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
             std::move(pushed_expression), std::move(join_alternative), /*merge_step=*/nullptr);
     }
 
-    auto merge_params = agg_step.getParams();
-    merge_params.only_merge = true;
-    /// Same reasoning as the partial's `setStatsCacheKey(0)` above: this merge consumes
-    /// post-join states of a different shape than the original aggregation the key was stamped
-    /// for, so a shared key would cross-contaminate `HashTablesStatistics`.
-    merge_params.stats_collecting_params.setKey(0);
-    /// A merge-only `AggregatingStep` rather than a `MergingAggregatedStep`: its `only_merge`
-    /// consume path (`mergeOnBlock`) reads keys and states positionally and never requires
-    /// `AggregatedChunkInfo` on input, so the rebuilt join's output needs no chunk annotation.
-    /// The full `Params` copy above keeps the spill and two-level settings alive for the merge.
-    /// Input-LAYOUT properties of the original aggregation (the sort descriptions, the
-    /// evenly-distributed-read flag) describe the ORIGINAL input and must not be carried onto a
-    /// merge over rebuilt join output; behavior toggles are copied from the original step.
-    auto merge_step = std::make_unique<AggregatingStep>(
-        new_join_step->getOutputHeader(),
-        std::move(merge_params),
-        GroupingSetsParamsList{}, /// `checkPattern` bails on grouping sets
-        /*final_=*/true,
-        agg_step.getMaxBlockSize(),
-        agg_step.getMaxBlockSizeForAggregationInOrder(),
-        agg_step.getMergeThreads(),
-        agg_step.getTemporaryDataMergeThreads(),
-        /*storage_has_evenly_distributed_read_=*/false,
-        agg_step.isGroupByUseNulls(),
-        SortDescription{},
-        SortDescription{},
-        agg_step.shouldProduceResultsInBucketOrder(),
-        agg_step.usingMemoryBoundMerging(),
-        /*explicit_sorting_required_for_aggregation_in_order_=*/false);
-    merge_step->setStepDescription(fmt::format("Merge: {}", agg_step.getStepDescription()), 200);
+    auto merge_step = buildMergeStep(agg_step, new_join_step->getOutputHeader());
 
     if (!check_header(*merge_step->getOutputHeader()))
         return nullptr;
