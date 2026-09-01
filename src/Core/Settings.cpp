@@ -8546,6 +8546,11 @@ Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficien
 It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
 The downside is potentially higher memory usage.
 )", 0) \
+    DECLARE(Bool, log_per_bucket_merge_timings, false, R"(
+Log one line per merged bucket of the final merge of two-level aggregation, with the wall-clock time the merge and conversion of that bucket took:
+`PerBucketMergeTiming: bucket=<N> actual_us=<U> instance=<I>`, where `instance` is the index of the merging source that processed the bucket.
+Purely an instrument for analyzing the skew between bucket merge costs; it does not change the execution in any way.
+)", 0) \
     DECLARE(Bool, enable_packed_string_keys_in_aggregation, true, R"(
 Use a hash table keyed by 16-byte packed string references (`PackedStringRef`) for `GROUP BY` with a single non-nullable `String` key. Keys of up to 11 bytes are stored inline in the packed reference; longer keys are referenced in an arena.
 This is faster for most workloads, but can be slower than the legacy method for `GROUP BY` with very few distinct keys longer than 11 bytes (most noticeably 12..24 bytes), where the legacy hash table keeps keys inline in the cell while the packed one dereferences the arena pointer on every probe.

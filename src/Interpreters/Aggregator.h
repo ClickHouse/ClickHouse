@@ -166,6 +166,12 @@ public:
 
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
+        /// Log one line per merged bucket of the two-level final merge with its wall-clock timing
+        /// (see `ConvertingAggregatedToChunksWithMergingSource`). Kept out of the constructor and
+        /// of the plan serialization deliberately, like `bucket_top_k`: a deserialized plan re-runs
+        /// with the instrument off, which is the safe direction (it never changes results).
+        bool log_per_bucket_merge_timings = false;
+
         /// Merge the per-thread single-level hash tables in parallel, partitioned by the key hash,
         /// instead of the serial merge.
         bool enable_parallel_single_level_merge = false;

@@ -178,6 +178,7 @@ namespace Setting
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const SettingsBool log_per_bucket_merge_timings;
     extern const SettingsBool enable_parallel_blocks_marshalling;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
@@ -693,6 +694,11 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+
+    /// Kept out of the constructor and of the plan serialization deliberately, like `bucket_top_k`:
+    /// a deserialized plan re-runs with the per-bucket timing instrument off, which is the safe
+    /// direction (it never changes results).
+    aggregator_params.log_per_bucket_merge_timings = settings[Setting::log_per_bucket_merge_timings];
 
     return aggregator_params;
 }
