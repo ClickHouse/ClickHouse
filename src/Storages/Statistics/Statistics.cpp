@@ -228,7 +228,7 @@ size_t ColumnsStatistics::memoryUsageBytes() const
     size_t res = 0;
     for (const auto & [column_name, column_stats] : *this)
     {
-        res += column_name.size() + sizeof(column_name) + sizeof(column_stats);
+        res += sizeof(String) + column_name.size() + sizeof(column_stats);
         if (column_stats)
             res += column_stats->memoryUsageBytes();
     }

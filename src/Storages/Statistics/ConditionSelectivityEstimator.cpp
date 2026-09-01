@@ -218,7 +218,7 @@ size_t ConditionSelectivityEstimator::memoryUsageBytes() const
     size_t res = sizeof(*this);
     for (const auto & [column_name, column_estimator] : column_estimators)
     {
-        res += column_name.size() + sizeof(column_name) + sizeof(column_estimator);
+        res += sizeof(String) + column_name.size() + sizeof(column_estimator);
         if (column_estimator.stats)
             res += column_estimator.stats->memoryUsageBytes();
     }
