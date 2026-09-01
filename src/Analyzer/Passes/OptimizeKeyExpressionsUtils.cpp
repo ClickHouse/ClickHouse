@@ -178,10 +178,6 @@ QueryTreeNodes unwrapInjectiveFunctionsInKeys(const QueryTreeNodes & keys, bool 
         }
     }
 
-    /// Dropping the last key would turn this into aggregation without keys, which always returns a row.
-    if (new_keys.empty())
-        return keys;
-
     return new_keys;
 }
 
