@@ -244,7 +244,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 # registry/network/mirror *failure* signatures. None of these strings appear in
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
-# fast on the first attempt. BUILDX_RETRY_DEADLINE below, not this count, is what
+# fast on the first attempt. `BUILDX_RETRY_DEADLINE` below, not this count, is what
 # bounds how long the ladder may run for.
 BUILDX_RETRIES = 4
 BUILDX_RETRY_ERRORS = [
@@ -396,7 +396,7 @@ BUILDX_JOB_RESERVE = 3600
 # has passed must never reach `timeout` as 0. Clamp to a floor that still expires.
 BUILDX_TIMEOUT_FLOOR = 60
 # Only attempts that run to their bound price the job envelope; a registry error fails in
-# about a second. So this, not BUILDX_RETRIES, is what buildx_timeout divides by.
+# about a second. So this, not `BUILDX_RETRIES`, is what `buildx_timeout` divides by.
 BUILDX_EXPENSIVE_ATTEMPTS = 2
 # Seconds after the first retryable failure past which no further attempt is started; an
 # attempt already running still gets its whole bound. Expiries stay bounded by

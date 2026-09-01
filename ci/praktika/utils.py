@@ -530,12 +530,12 @@ class Shell:
                     else:
                         return 1  # Return non-zero for failure
 
-        # There is no exit code when every attempt failed before Popen (a log-file or
+        # There is no exit code when every attempt failed before `Popen` (a log-file or
         # spawn error); 1 is what the exception path returns for that.
         returncode = 1 if proc is None else proc.returncode
 
         if verbose:
-            # A deadline cancellation happens before Popen, so that iteration counts an
+            # A deadline cancellation happens before `Popen`, so that iteration counts an
             # attempt that never ran; the exit code is still the last one that did.
             attempts = retry if deadline_cancelled else retry + 1
             print(
