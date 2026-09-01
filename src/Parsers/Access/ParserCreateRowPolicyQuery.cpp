@@ -480,6 +480,60 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 This works while the query is shipped as text, which is the default. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep `serialize_query_plan = 0` for users whose row policies must be enforced. See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
+## Engines which merge rows {#blending-table-engines}
+
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` and `GraphiteMergeTree` produce one
+row out of all the rows with the same sorting key, and the values of that row come from all of them —
+summed, aggregated, or taken from whichever row had a non-`NULL` value. A row policy cannot hide a row
+from that merge, only from its result, and by then the values of the hidden rows are already in it.
+
+```sql
+CREATE TABLE test (key String, data1 Nullable(String), data2 Nullable(String))
+ENGINE = CoalescingMergeTree ORDER BY key;
+
+INSERT INTO test VALUES ('key', 'sensitive_data', 'top_secret');
+INSERT INTO test VALUES ('key', 'not sensitive data', NULL);
+
+CREATE ROW POLICY sensitive_filter ON test USING data1 != 'sensitive_data' TO accountant;
+```
+
+Once the two parts are merged, the table holds a single row `('key', 'not sensitive data', 'top_secret')`,
+which passes the filter and shows `top_secret` to `accountant`.
+
+A row policy on such a table is therefore rejected:
+
+```text
+Received exception:
+Code: 36. DB::Exception: Table `default`.`test` has the CoalescingMergeTree engine, which merges rows with
+the same sorting key into one row taking the values of all of them, so a row policy on this table does not
+hide the values of the rows it filters out ...
+```
+
+Keep the raw rows in a plain `MergeTree` table and define the policy there, letting the users read a
+pre-aggregated table which contains nothing they are not allowed to see.
+
+If you still want the policy on the merging table, enable
+`allow_suspicious_row_policies_with_blending_engines`:
+
+```sql
+SET allow_suspicious_row_policies_with_blending_engines = 1;
+```
+
+In that case filter by the sorting key columns — rows with the same sorting key are always hidden or shown
+together, so nothing of a hidden row survives in a visible one:
+
+```sql
+CREATE ROW POLICY sensitive_filter ON test USING key != 'secret_key' TO accountant;
+```
+
+<Note>
+The same check runs for a policy on the whole database (`ON db.*`) when the database holds such a table, and
+for `CREATE TABLE` with one of these engines when a policy for it already exists. Policies which were created
+before the upgrade keep working. On these engines the policy is always applied before `FINAL`, regardless of
+`apply_row_policy_after_final`, so at least
+`FINAL` does not merge hidden rows into the result of a query.
+</Note>
+
 ## ON CLUSTER Clause {#on-cluster-clause}
 
 Allows creating row policies on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl). This is also the convenient way to create the policy on the local tables of every server of the cluster.
