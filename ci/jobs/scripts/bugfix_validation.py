@@ -1,3 +1,4 @@
+from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
@@ -31,8 +32,13 @@ def find_master_builds(build_types=None):
     build_types = build_types if build_types is not None else BUGFIX_BUILD_TYPES
     commits = Info().get_kv_data("master_commits") or []
     for sha in commits:
+        # The prefix has to come from the same function the artifact uploader
+        # uses, so that a reader and a writer cannot disagree about the layout.
+        prefix = _Environment.get_s3_prefix_static(
+            pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+        )
         urls = {
-            bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{bt}/clickhouse"
+            bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{prefix}/build_{bt}/clickhouse"
             for bt in build_types
         }
         if all(
