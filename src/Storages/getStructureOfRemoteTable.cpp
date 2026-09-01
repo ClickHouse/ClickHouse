@@ -16,6 +16,7 @@
 #include <Parsers/parseQuery.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/IStorage.h>
+#include <TableFunctions/PreserveTableFunctionSettings.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NetException.h>
 #include <Common/config_version.h>
@@ -60,6 +61,13 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
             /// depends on the session - `remote('127.0.0.{1,2}', merge(currentDatabase(), '^t'))` - has to be
             /// resolved here, on the initiator, or the other shards would resolve it against their own default
             /// database. Do not analyze a copy: the definition must become self-contained.
+            ///
+            /// Resolving in place must not lose anything the user wrote, though: `parseArguments` of some
+            /// functions (`mysql`, `PostgreSQL`, `ytsaurus`) consumes a function-local `SETTINGS` clause by
+            /// erasing it from the argument list, and for a storage-owned target that clause is part of the
+            /// persisted definition. The guard puts such a clause back, also when the analysis throws.
+            PreservedTableFunctionSettings preserved_settings(table_func_ptr);
+
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
             return table_function_ptr->getActualTableStructureWithAccess(context, is_insert_query);
         }

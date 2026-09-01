@@ -94,6 +94,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
+#include <TableFunctions/PreserveTableFunctionSettings.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
@@ -3052,6 +3053,13 @@ void registerStorageDistributed(StorageFactory & factory)
                 if (columns.empty() || has_local_shard)
                 {
                     const bool columns_were_omitted = columns.empty();
+
+                    /// The analysis below resolves the target's arguments in place, which is intended (the
+                    /// stored definition must be self-contained), but `parseArguments` of some functions
+                    /// (`mysql`, `PostgreSQL`, `ytsaurus`) also erases a function-local `SETTINGS` clause from
+                    /// the argument list. This target is persisted as written, so keep that clause.
+                    PreservedTableFunctionSettings preserved_settings(remote_table_function_ptr);
+
                     try
                     {
                         /// The `StorageID` is unused for a table-function target (the function is resolved
@@ -3611,6 +3619,10 @@ void registerStorageRemote(StorageFactory & factory)
             /// the structure was omitted, the analysis is the only source of columns and must always
             /// succeed.
             const bool tolerate_absent_target = !columns.empty();
+
+            /// As in the `Distributed` branch above: the analysis resolves the target in place on purpose,
+            /// but it must not drop a function-local `SETTINGS` clause from the persisted definition.
+            PreservedTableFunctionSettings preserved_settings(parsed.remote_table_function_ptr);
 
             try
             {
