@@ -437,8 +437,10 @@ public:
     /// its bucket number is `-1`, so the consumer partitions it again from the materialized values.
     /// `hash_table_sizes_are_representative` is false when dictionary shards replace producer-local
     /// tables: shard sizes cannot be reused as per-thread hints.
+    /// On cancellation, returns no variants and leaves partial results owned by `data_variants`.
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants,
+        std::atomic<bool> & is_cancelled,
         AdaptiveAggregationSession * adaptive_session,
         bool require_stable_bucket_hash = false,
         bool hash_table_sizes_are_representative = true) const;
@@ -612,7 +614,9 @@ private:
     static const IColumn * getSingleLowCardinalityDictionary(const AggregatedDataVariants & result);
     bool bindSingleLowCardinalityDictionary(
         AggregatedDataVariants & result, const ColumnRawPtrs & key_columns) const;
-    void normalizeSingleLowCardinalityDictionary(AggregatedDataVariants & result) const;
+    /// On cancellation, the partially transferred `result` is only valid for destruction.
+    void normalizeSingleLowCardinalityDictionary(
+        AggregatedDataVariants & result, const std::atomic<bool> * is_cancelled = nullptr) const;
 
     void executeImpl(
         AggregatedDataVariants & result,
