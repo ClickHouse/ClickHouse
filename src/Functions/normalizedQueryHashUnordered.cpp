@@ -50,12 +50,18 @@ bool isParsingError(int code)
         || code == ErrorCodes::TOO_SLOW_PARSING;
 }
 
-class FunctionNormalizedQueryHashUnordered final : public IFunction, WithContext
+class FunctionNormalizedQueryHashUnordered final : public IFunction
 {
 public:
-    FunctionNormalizedQueryHashUnordered(ContextPtr context_, String name_, ErrorHandling error_handling_)
-        : WithContext(context_), name(std::move(name_)), error_handling(error_handling_)
+    FunctionNormalizedQueryHashUnordered(ContextPtr context, String name_, ErrorHandling error_handling_)
+        : name(std::move(name_)), error_handling(error_handling_)
     {
+        const Settings & settings = context->getSettingsRef();
+        max_query_size = settings[Setting::max_query_size];
+        max_parser_depth = settings[Setting::max_parser_depth];
+        max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        implicit_select = settings[Setting::implicit_select];
+        allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
     }
 
     String getName() const override { return name; }
@@ -93,14 +99,6 @@ public:
         const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get());
         if (!col_query_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
-
-        /// read here rather than in the constructor: SETTINGS gives every scope its own parser knobs
-        const Settings & settings = getContext()->getSettingsRef();
-        const UInt64 max_query_size = settings[Setting::max_query_size];
-        const UInt64 max_parser_depth = settings[Setting::max_parser_depth];
-        const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
-        const bool implicit_select = settings[Setting::implicit_select];
-        const bool allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
 
         ColumnUInt8::MutablePtr col_null_map;
         if (error_handling == ErrorHandling::Null)
@@ -146,6 +144,12 @@ public:
 private:
     String name;
     ErrorHandling error_handling;
+
+    size_t max_query_size;
+    size_t max_parser_depth;
+    size_t max_parser_backtracks;
+    bool implicit_select;
+    bool allow_settings_after_format_in_insert;
 };
 
 }
