@@ -434,6 +434,10 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             # Track allocations in 1 MiB batches instead of the default 4 MiB, so more
             # allocations pass through the tracker and can draw an injected fault.
             client_options.append("max_untracked_memory=1048576")
+        # Write sampled allocations to system.trace_log as MemorySample. users.d/memory_profiler.xml
+        # sets memory_profiler_step and max_untracked_memory but leaves this at 0, so allocation
+        # sampling is off in every stress run today.
+        client_options.append("memory_profiler_sample_probability=0.01")
 
     if i % 5 == 1:
         client_options.append(
@@ -445,17 +449,27 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         # coordination step can draw a fault, exercising the retry and dedup logic.
         client_options.append("insert_keeper_fault_injection_probability=0.005")
         client_options.append("backup_restore_keeper_fault_injection_probability=0.005")
+        # Fault after the ReplicatedMergeTree metadata is written to Keeper but before the
+        # table is created, exercising dropIfEmpty() cleanup and re-creation over the leftover
+        # znodes. This one throws instead of retrying, and a CREATE is far rarer than an INSERT
+        # commit, so it gets a higher probability than the two above but stays low.
+        client_options.append(
+            "create_replicated_merge_tree_fault_injection_probability=0.01"
+        )
 
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
 
     # Widen NULL coverage the way join_use_nulls/group_by_use_nulls do: each of these rewrites
     # a broad query class (IN evaluation, every CAST, every aggregate over an empty set).
-    if i % 7 == 2:
+    # Independent draws so the three can combine, up to all three on one worker. Not keyed on
+    # `i`: --num-parallel is min(8, cpu_count()), so the earlier `i % 7 == 4` / `i % 7 == 6`
+    # arms never fired at all on a runner with fewer than 5 and 7 cores.
+    if random.random() < 1 / 3:
         client_options.append("transform_null_in=1")
-    if i % 7 == 4:
+    if random.random() < 1 / 3:
         client_options.append("cast_keep_nullable=1")
-    if i % 7 == 6:
+    if random.random() < 1 / 3:
         client_options.append("aggregate_functions_null_for_empty=1")
 
     # TODO: Enable implicit_transaction back after the issue with `assertHasValidVersionMetadata` will be fixed:
@@ -507,11 +521,8 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     if random.random() < 0.05:
         client_options.append("enable_join_runtime_filters=1")
 
-    # Both are 26.8 settings: the pre-upgrade load of the upgrade check runs against the
-    # previous release server, which may reject them as unknown.
-    if random.random() < 0.2 and not upgrade_check:
-        client_options.append("enable_adaptive_aggregator=1")
-
+    # A 26.8 setting: the pre-upgrade load of the upgrade check runs against the previous
+    # release server, which may reject it as unknown.
     if random.random() < 0.2 and not upgrade_check:
         client_options.append("enable_cascades_optimizer=1")
 
@@ -552,11 +563,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     if random.random() < 0.2:
         # Dependent materialized views are written in parallel instead of sequentially.
         client_options.append("parallel_view_processing=1")
-
-    if random.random() < 0.2:
-        # Extend insert deduplication through materialized view chains; composes with the
-        # Keeper fault injection arm, whose retries are what dedup exists to absorb.
-        client_options.append("deduplicate_blocks_in_dependent_materialized_views=1")
 
     if random.random() < 0.2:
         # Rewrite IN/JOIN to GLOBAL IN/GLOBAL JOIN; pays off in the replicated-database and
