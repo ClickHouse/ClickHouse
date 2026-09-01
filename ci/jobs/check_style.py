@@ -926,25 +926,18 @@ def _cast_operand(text, open_paren):
     """The argument of a cast whose '(' is at `open_paren`, or None when unbalanced."""
     depth = 0
     for i in range(open_paren, min(open_paren + 2000, len(text))):
-        if text[i] == "(":
-            depth += 1
-        elif text[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return " ".join(text[open_paren + 1 : i].split())
+        depth += (text[i] == "(") - (text[i] == ")")
+        if not depth:
+            return " ".join(text[open_paren + 1 : i].split())
     return None
 
 
 def check_storage_casts(files) -> str:
     """Require `castStorage` for casts to an engine that supports deferred loading.
 
-    A table in a database with `lazy_load_tables` lives behind `StorageTableProxy` until its first
-    access, and the catalog keeps handing out that proxy afterwards. A direct `dynamic_cast` to the
-    engine therefore fails for the whole lifetime of the table, silently skipping whatever the cast
-    guards. `castStorage` resolves the proxy first and makes the caller state whether an unloaded
-    table should be loaded or left alone.
+    Such a table lives behind `StorageTableProxy` until its first access and the catalog keeps
+    handing out that proxy afterwards, so a direct cast fails for the whole life of the table.
     """
-    violations = []
     types = "|".join(DEFERRABLE_STORAGE_CLASSES)
     cast_head = re.compile(
         r"\b(?P<cast>dynamic_cast|typeid_cast|dynamic_pointer_cast|static_pointer_cast)\s*<\s*"
@@ -952,44 +945,40 @@ def check_storage_casts(files) -> str:
     )
     # `IStorage::as<T>()` is a `typeid_cast` on the receiver, so the operand is what precedes it.
     as_cast = re.compile(
-        r"(?P<operand>[\w.\[\]()]+(?:->|\.))as\s*<\s*(?:const\s+)?(?:" + types + r")\s*>\s*\(\s*\)"
+        r"(?P<operand>[\w.\[\]()]+)(?:->|\.)as\s*<\s*(?:const\s+)?(?:" + types + r")\s*>\s*\(\s*\)"
     )
     resolvers = ("castStorage", "resolveStorageProxy", "resolveStorageProxyLoading")
 
+    violations = []
     for path in files:
-        if not path.endswith((".cpp", ".h")):
-            continue
         # The helpers and the proxy itself have to reach the nested storage directly.
-        if path.endswith(("StorageProxy.h", "StorageTableProxy.h", "StorageTableFunction.h")):
+        if not path.endswith((".cpp", ".h")) or path.endswith(
+            ("StorageProxy.h", "StorageTableProxy.h", "StorageTableFunction.h")
+        ):
             continue
         try:
             text = pathlib.Path(path).read_text(errors="replace")
         except OSError:
             continue
-        if not re.search("|".join(DEFERRABLE_STORAGE_CLASSES), text):
-            continue
 
-        found = [(m, _cast_operand(text, m.end() - 1), m.group("cast")) for m in cast_head.finditer(text)]
-        found += [(m, m.group("operand").removesuffix("->").removesuffix("."), "as") for m in as_cast.finditer(text)]
+        lines = text.splitlines()
+        casts = [(m, m.group("cast"), _cast_operand(text, m.end() - 1)) for m in cast_head.finditer(text)]
+        casts += [(m, "as", m.group("operand")) for m in as_cast.finditer(text)]
 
-        for match, operand, cast in found:
-            if not operand:
-                continue
-            if any(r in operand for r in resolvers) or _NOT_A_CATALOG_POINTER.match(operand):
+        for match, cast, operand in casts:
+            if not operand or _NOT_A_CATALOG_POINTER.match(operand) or any(r in operand for r in resolvers):
                 continue
             line = text.count("\n", 0, match.start()) + 1
             # The marker goes on the cast or, when the line is long, the one above it.
-            lines = text.splitlines()
             if any("NOLINT(storage-cast)" in lines[i] for i in (line - 1, line - 2) if i >= 0):
                 continue
             violations.append(
-                f"{path}:{line}: {cast} to a deferrable storage engine on "
-                f"`{operand[:60]}`. A table in a database with `lazy_load_tables` is reached through "
-                f"StorageTableProxy, so this cast fails for the whole life of the table and whatever "
-                f"it guards is silently skipped. Use castStorage<T>(ptr, StorageResolution::Load) if "
-                f"the query names this table, or StorageResolution::Peek if this walks every table "
-                f"and must not load one. If the pointer cannot come from DatabaseCatalog, say why in "
-                f"a `/// NOLINT(storage-cast)` comment on the cast or the line above it."
+                f"{path}:{line}: {cast} to a deferrable storage engine on `{operand[:60]}`. Such a table "
+                "is reached through StorageTableProxy, so this cast fails for the whole life of the table "
+                "and whatever it guards is silently skipped. Use castStorage<T>(ptr, "
+                "StorageResolution::Load) when the query names this table, or StorageResolution::Peek "
+                "when this walks every table and must not load one. If the pointer cannot come from "
+                "DatabaseCatalog, say why in a `/// NOLINT(storage-cast)` comment."
             )
     return "\n".join(violations)
 

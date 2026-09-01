@@ -40,14 +40,26 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(params=ENGINES, ids=[table for _, table in ENGINES])
-def engine(started_cluster, request):
-    """The table engine to use, with a matching database already created."""
-    db_engine, table_engine = request.param
+def create_lazy_database(db_engine="Atomic"):
     node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
     node.query(f"CREATE DATABASE {DB} ENGINE = {db_engine} SETTINGS lazy_load_tables = 1")
-    yield table_engine
+
+
+@pytest.fixture
+def lazy_database(started_cluster):
+    """A database that defers loading, for a test that does not vary the table engine."""
+    create_lazy_database()
+    yield
     # SYNC so the replicated tables release their coordination paths before the next test reuses them.
+    node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
+
+
+@pytest.fixture(params=ENGINES, ids=[table for _, table in ENGINES])
+def engine(started_cluster, request):
+    """The table engine to use, in a database created with the matching engine."""
+    db_engine, table_engine = request.param
+    create_lazy_database(db_engine)
+    yield table_engine
     node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
 
 
@@ -89,11 +101,9 @@ def test_deferred_table_reports_its_engine(engine):
     assert temporary == "1"
 
 
-def test_deferred_engines_outside_the_mergetree_family(started_cluster):
+def test_deferred_engines_outside_the_mergetree_family(lazy_database):
     """An engine keeping its data elsewhere is deferred too, and answers `has_own_data` from the
     engine while the storage does not exist."""
-    node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
-    node.query(f"CREATE DATABASE {DB} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
     node.query(
         f"""
         CREATE TABLE {DB}.lg (id UInt64) ENGINE = Log;
@@ -111,14 +121,11 @@ def test_deferred_engines_outside_the_mergetree_family(started_cluster):
 
     assert int(node.query(f"SELECT count() FROM {DB}.lg")) == 10
     assert int(node.query(f"SELECT count() FROM {DB}.km")) == 10
-    node.query(f"DROP DATABASE {DB} SYNC")
 
 
-def test_convert_to_replicated_finishes(started_cluster):
+def test_convert_to_replicated_finishes(lazy_database):
     """The `convert_to_replicated` flag is finalized by the startup job on the real storage, so a
     table that still carries it is loaded eagerly."""
-    node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
-    node.query(f"CREATE DATABASE {DB} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
     node.query(
         f"""
         CREATE TABLE {DB}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
@@ -144,7 +151,6 @@ def test_convert_to_replicated_finishes(started_cluster):
     assert "convert_to_replicated" not in node.exec_in_container(
         ["bash", "-c", f"ls {data_path}"], user="root"
     )
-    node.query(f"DROP DATABASE {DB} SYNC")
 
 
 def test_engines_that_work_in_the_background_stay_eager(started_cluster):
@@ -743,59 +749,52 @@ def test_populate_from_deferred_source(engine):
 ENDLESS_SYSTEM_TABLES = {"numbers", "numbers_mt", "zeros", "zeros_mt", "generate_series", "primes"}
 
 
-def test_no_system_table_loads_a_lazy_table(started_cluster):
+def test_no_system_table_loads_a_lazy_table(lazy_database):
     """Reading a system table is an observation, so none of them may materialize a table. This walks
     every system table rather than the few known to reach into storages, so a column added later that
     resolves the proxy is caught here instead of in production."""
-    node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
-    node.query(f"CREATE DATABASE {DB} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
-    try:
+    node.query(
+        f"""
+        CREATE TABLE {DB}.t (d Date, id UInt64, s String,
+            INDEX idx_s s TYPE bloom_filter GRANULARITY 1,
+            PROJECTION p (SELECT s, count() GROUP BY s))
+        ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY id;
+        INSERT INTO {DB}.t VALUES ('2026-01-01', 1, 'a');
+        {RELOAD}
+        """
+    )
+    assert loaded("t") == "0"
+
+    names = [
+        name
+        for name in node.query(
+            "SELECT name FROM system.tables WHERE database = 'system' ORDER BY name"
+        ).split()
+        if name not in ENDLESS_SYSTEM_TABLES
+    ]
+    assert len(names) > 50, names
+
+    def read_all(table):
+        # Some refuse to be read without a predicate, and a new endless one must not hang the
+        # test, neither of which is what this checks.
         node.query(
-            f"""
-            CREATE TABLE {DB}.t (d Date, id UInt64, s String,
-                INDEX idx_s s TYPE bloom_filter GRANULARITY 1,
-                PROJECTION p (SELECT s, count() GROUP BY s))
-            ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY id;
-            INSERT INTO {DB}.t VALUES ('2026-01-01', 1, 'a');
-            {RELOAD}
-            """
+            f"SELECT * FROM system.{table} FORMAT Null SETTINGS max_execution_time = 30",
+            ignore_error=True,
         )
-        assert loaded("t") == "0"
 
-        names = [
-            name
-            for name in node.query(
-                "SELECT name FROM system.tables WHERE database = 'system' ORDER BY name"
-            ).split()
-            if name not in ENDLESS_SYSTEM_TABLES
-        ]
-        assert len(names) > 50, names
+    for name in names:
+        read_all(name)
+    if loaded("t") == "0":
+        return
 
-        def read_all(table):
-            # Some refuse to be read without a predicate, and a new endless one must not hang the
-            # test, neither of which is what this checks.
-            node.query(
-                f"SELECT * FROM system.{table} FORMAT Null SETTINGS max_execution_time = 30",
-                ignore_error=True,
-            )
-
-        for name in names:
-            read_all(name)
-        if loaded("t") == "0":
-            return
-
-        # Something materialized it, so go again and name every table that does.
-        loaders = []
-        for name in names:
-            node.query(RELOAD)
-            read_all(name)
-            if loaded("t") != "0":
-                loaders.append(name)
-        assert not loaders, f"these system tables loaded the table: {loaders}"
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {DB} SYNC")
-
-
+    # Something materialized it, so go again and name every table that does.
+    loaders = []
+    for name in names:
+        node.query(RELOAD)
+        read_all(name)
+        if loaded("t") != "0":
+            loaders.append(name)
+    assert not loaders, f"these system tables loaded the table: {loaders}"
 def test_set_join_and_rocksdb_are_deferred(engine):
     """`Set` and `Join` read their whole contents into memory in the constructor and RocksDB opens
     its database there, so they are worth deferring, and each is reached by a concrete-type cast."""

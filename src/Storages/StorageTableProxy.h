@@ -96,6 +96,16 @@ public:
 
     bool isView() const override { return false; }
 
+    /// The answers that exist only once the storage does. An observer that walks every table gets
+    /// the empty answer rather than loading one.
+    template <typename Ask>
+    auto answerIfLoaded(Ask && ask) const
+    {
+        std::lock_guard lock{nested_mutex};
+        using Answer = decltype(ask(*nested));
+        return nested ? ask(*nested) : Answer{};
+    }
+
     /// `system.tables` reads these, so answering must not load the table. While the storage does not
     /// exist they are answered from the `CREATE` query, like `getName`, or reported as unknown.
     StoragePolicyPtr getStoragePolicy() const override
@@ -106,8 +116,7 @@ public:
 
     Strings getDataPaths() const override
     {
-        std::lock_guard lock{nested_mutex};
-        return nested ? nested->getDataPaths() : Strings{};
+        return answerIfLoaded([](const IStorage & storage) { return storage.getDataPaths(); });
     }
 
     bool supportsReplication() const override
@@ -218,52 +227,34 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->totalRows(query_context);
-        return std::nullopt;
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalRows(query_context); });
     }
 
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter, ContextPtr query_context) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->totalRowsByPartitionPredicate(filter, query_context);
-        return std::nullopt;
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalRowsByPartitionPredicate(filter, query_context); });
     }
 
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->totalBytesUncompressed(settings);
-        return std::nullopt;
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalBytesUncompressed(settings); });
     }
 
     /// `system.data_skipping_indices` and `system.columns` ask every table for these, so answering
     /// must not load one.
     IndexSizeByName getSecondaryIndexSizes() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getSecondaryIndexSizes();
-        return {};
+        return answerIfLoaded([](const IStorage & storage) { return storage.getSecondaryIndexSizes(); });
     }
 
     ColumnSizeByName getColumnSizes() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getColumnSizes();
-        return {};
+        return answerIfLoaded([](const IStorage & storage) { return storage.getColumnSizes(); });
     }
 
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getColumnSizes(columns, calculate_subcolumn_sizes);
-        return {};
+        return answerIfLoaded([&](const IStorage & storage) { return storage.getColumnSizes(columns, calculate_subcolumn_sizes); });
     }
 
     SerializationInfoByName getSerializationHints() const override
@@ -276,26 +267,17 @@ public:
 
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->totalBytes(query_context);
-        return std::nullopt;
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalBytes(query_context); });
     }
 
     std::optional<UInt64> lifetimeRows() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->lifetimeRows();
-        return std::nullopt;
+        return answerIfLoaded([](const IStorage & storage) { return storage.lifetimeRows(); });
     }
 
     std::optional<UInt64> lifetimeBytes() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->lifetimeBytes();
-        return std::nullopt;
+        return answerIfLoaded([](const IStorage & storage) { return storage.lifetimeBytes(); });
     }
 
 private:
