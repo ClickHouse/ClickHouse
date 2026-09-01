@@ -41,9 +41,6 @@
 #include <arrow/ipc/writer.h>
 #include <arrow/scalar.h>
 
-#include <limits>
-
-
 namespace DB
 {
 
@@ -124,7 +121,7 @@ namespace
     }
 
     /// Builds a SQL query from pre-split parts by joining them with "NULL".
-    /// Used for syntax validation and schema inference during CreatePreparedStatement.
+    /// Used for syntax validation and schema inference during `CreatePreparedStatement` and unbound `GetSchema`.
     String buildQueryWithNULLs(const std::vector<String> & query_parts)
     {
         String result;
@@ -345,38 +342,13 @@ namespace
         ch_to_arrow_converter->initializeArrowSchema();
         return ch_to_arrow_converter;
     }
-
-    arrow::Result<std::shared_ptr<arrow::Schema>> getCachedPreparedStatementSchema(
-        const arrow::flight::FlightDescriptor & descriptor, const CallsData & calls_data, const std::string & username)
-    {
-        if (descriptor.type != arrow::flight::FlightDescriptor::CMD
-            || descriptor.cmd.size() > static_cast<size_t>(std::numeric_limits<int>::max()))
-            return std::shared_ptr<arrow::Schema>{};
-
-        google::protobuf::Any any_msg;
-        if (!any_msg.ParseFromArray(descriptor.cmd.data(), static_cast<int>(descriptor.cmd.size()))
-            || !any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementQuery>())
-            return std::shared_ptr<arrow::Schema>{};
-
-        arrow::flight::protocol::sql::CommandPreparedStatementQuery command;
-        if (!any_msg.UnpackTo(&command))
-            return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
-
-        if (command.prepared_statement_handle().empty())
-            return std::shared_ptr<arrow::Schema>{};
-
-        ARROW_ASSIGN_OR_RAISE(auto ps_info, calls_data.getPreparedStatement(command.prepared_statement_handle(), username))
-        if (ps_info.bound_parameters && ps_info.bound_parameters->num_rows() > 0)
-            return std::shared_ptr<arrow::Schema>{};
-
-        return ps_info.dataset_schema;
-    }
 }
 
 
 arrow::Result<ArrowFlightServer::DecodeResult> ArrowFlightServer::decodeDescriptor(
     const arrow::flight::FlightDescriptor & descriptor,
     bool for_put_operation,
+    PreparedStatementParameterMode prepared_statement_parameter_mode,
     const std::string & username) const
 {
     switch (descriptor.type)
@@ -406,6 +378,13 @@ arrow::Result<ArrowFlightServer::DecodeResult> ArrowFlightServer::decodeDescript
                 auto ps_info_res = calls_data->getPreparedStatement(sql_set->sql, username);
                 ARROW_RETURN_NOT_OK(ps_info_res);
                 const auto & ps_info = ps_info_res.ValueUnsafe();
+
+                if (prepared_statement_parameter_mode == PreparedStatementParameterMode::SubstituteNullsIfUnbound
+                    && (!ps_info.bound_parameters || ps_info.bound_parameters->num_rows() == 0))
+                {
+                    return DecodeResult{buildQueryWithNULLs(ps_info.query_parts), sql_set->schema_modifier, sql_set->block_modifier, {}};
+                }
+
                 auto resolved_query_res = buildQueryWithValues(ps_info.query_parts, ps_info.bound_parameters);
                 ARROW_RETURN_NOT_OK(resolved_query_res);
                 return DecodeResult{std::move(resolved_query_res).ValueUnsafe(), sql_set->schema_modifier, sql_set->block_modifier, {}};
@@ -720,7 +699,9 @@ arrow::Status ArrowFlightServer::GetFlightInfo(
         std::shared_ptr<arrow::Table> table;
         std::shared_ptr<arrow::Schema> schema;
 
-        ARROW_ASSIGN_OR_RAISE(std::tie(sql, schema_modifier, block_modifier, table), decodeDescriptor(request, false, auth.getUsername()))
+        ARROW_ASSIGN_OR_RAISE(
+            std::tie(sql, schema_modifier, block_modifier, table),
+            decodeDescriptor(request, false, PreparedStatementParameterMode::RequireBoundParameters, auth.getUsername()))
         chassert(!sql.empty() || table);
 
         std::vector<arrow::flight::FlightEndpoint> endpoints;
@@ -794,11 +775,6 @@ arrow::Status ArrowFlightServer::GetSchema(
         std::shared_ptr<arrow::Schema> schema;
         const bool is_poll_descriptor = request.type == arrow::flight::FlightDescriptor::CMD && hasPollDescriptorPrefix(request.cmd);
 
-        if (!is_poll_descriptor)
-        {
-            ARROW_ASSIGN_OR_RAISE(schema, getCachedPreparedStatementSchema(request, *calls_data, auth.getUsername()))
-        }
-
         if (is_poll_descriptor)
         {
             const String & poll_descriptor = request.cmd;
@@ -808,14 +784,16 @@ arrow::Status ArrowFlightServer::GetSchema(
             const auto & poll_info = poll_info_res.ValueOrDie();
             schema = poll_info->schema;
         }
-        else if (!schema)
+        else
         {
             std::string sql;
             ArrowFlight::SchemaModifier schema_modifier;
             ArrowFlight::BlockModifier block_modifier;
             std::shared_ptr<arrow::Table> table;
 
-            ARROW_ASSIGN_OR_RAISE(std::tie(sql, schema_modifier, block_modifier, table), decodeDescriptor(request, false, auth.getUsername()))
+            ARROW_ASSIGN_OR_RAISE(
+                std::tie(sql, schema_modifier, block_modifier, table),
+                decodeDescriptor(request, false, PreparedStatementParameterMode::SubstituteNullsIfUnbound, auth.getUsername()))
             chassert(!sql.empty() || table);
 
             if (table)
@@ -923,7 +901,9 @@ arrow::Status ArrowFlightServer::PollFlightInfo(
             ArrowFlight::BlockModifier block_modifier;
             std::shared_ptr<arrow::Table> table;
 
-            ARROW_ASSIGN_OR_RAISE(std::tie(sql, schema_modifier, block_modifier, table), decodeDescriptor(request, false, auth.getUsername()))
+            ARROW_ASSIGN_OR_RAISE(
+                std::tie(sql, schema_modifier, block_modifier, table),
+                decodeDescriptor(request, false, PreparedStatementParameterMode::RequireBoundParameters, auth.getUsername()))
             chassert(!sql.empty() || table);
 
             if (table)
@@ -1255,7 +1235,9 @@ arrow::Status ArrowFlightServer::DoPut(
         ArrowFlight::BlockModifier block_modifier;
         std::shared_ptr<arrow::Table> table;
 
-        ARROW_ASSIGN_OR_RAISE(std::tie(sql, schema_modifier, block_modifier, table), decodeDescriptor(request, true, auth.getUsername()))
+        ARROW_ASSIGN_OR_RAISE(
+            std::tie(sql, schema_modifier, block_modifier, table),
+            decodeDescriptor(request, true, PreparedStatementParameterMode::RequireBoundParameters, auth.getUsername()))
         /// DoPut command should only produce sql query
         chassert(!sql.empty() && !schema_modifier && !block_modifier && !table);
 
