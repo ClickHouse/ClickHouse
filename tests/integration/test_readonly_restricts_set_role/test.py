@@ -62,3 +62,31 @@ def test_set_role_allowed_at_default_settings():
     answer, error = as_probe(node_off, "SET ROLE other_role; SELECT currentRoles()", 1)
     assert error == ""
     assert answer.strip() == "['other_role']"
+
+
+def in_session(node, session_id):
+    # Every request is a POST so the HTTP method contributes no `readonly` of its own
+    # (`setReadOnlyIfHTTPMethodIdempotent` exempts POST), leaving the session's own value as the
+    # only source. Reading the roles back needs the same session, which is why this is HTTP.
+    def post(sql):
+        return node.http_query_and_get_answer_with_error(
+            sql, method="POST", params={"session_id": session_id}, user="probe", password="x"
+        )
+
+    assert post("SET readonly = 1")[1] is None
+    _, error = post("SET ROLE other_role")
+    roles, roles_error = post("SELECT currentRoles()")
+    assert roles_error is None
+    return error, roles.strip()
+
+
+def test_set_role_refused_mid_session():
+    error, roles = in_session(node_on, "refused_mid_session")
+    assert "READONLY" in error
+    assert roles == "['ro_role']"
+
+
+def test_set_role_allowed_mid_session_at_default_settings():
+    error, roles = in_session(node_off, "allowed_mid_session")
+    assert error is None
+    assert roles == "['other_role']"

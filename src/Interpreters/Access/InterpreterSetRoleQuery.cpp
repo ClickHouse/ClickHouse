@@ -46,7 +46,7 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
         throw Exception(
             ErrorCodes::READONLY,
             "Cannot execute SET ROLE in readonly mode. "
-            "This is enabled by access_control_improvements.readonly_restricts_set_role");
+            "This restriction is enabled by access_control_improvements.readonly_restricts_set_role");
 
     if (query.kind == ASTSetRoleQuery::Kind::SET_ROLE_DEFAULT)
         session_context->setCurrentRolesDefault();

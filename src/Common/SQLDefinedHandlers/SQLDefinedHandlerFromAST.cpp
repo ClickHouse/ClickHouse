@@ -99,7 +99,10 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
         case IAST::QueryKind::Check:
         /// Session- and transaction-mutating statements (`USE`, `SET` / `SET ROLE`, `BEGIN` / `COMMIT` / `ROLLBACK` /
         /// `SET TRANSACTION SNAPSHOT`) run under `readonly = 2` - the mode the HTTP execution path sets for safe
-        /// methods such as `GET` - so this readonly-mirror predicate reports them as runnable over a safe method.
+        /// methods such as `GET` - apart from `SET ROLE` when
+        /// `access_control_improvements.readonly_restricts_set_role` is enabled. `QueryKind::Set` does not
+        /// distinguish `SET ROLE` from plain `SET`, so this readonly-mirror predicate reports the kind as
+        /// runnable over a safe method either way.
         /// Their session-visible side effects are fenced off separately by `queryKindHasSideEffectsUnderReadonly`,
         /// which requires *every* method of such a handler to be a mutating one.
         case IAST::QueryKind::Use:
@@ -220,7 +223,7 @@ bool queryWrapsBodyConsumingStatement(const IAST & query)
 ///   which forbids only changing `readonly` itself), `SET ROLE` changes the active roles (which `readonly` blocks
 ///   only when `access_control_improvements.readonly_restricts_set_role` is enabled), `USE` changes the
 ///   session database, and `BEGIN` / `COMMIT` / `ROLLBACK` / `SET TRANSACTION SNAPSHOT` mutate the current
-///   transaction - none of which `readonly` blocks. When the client uses `session_id`, these effects persist
+///   transaction - none of which `readonly` blocks by default. When the client uses `session_id`, these effects persist
 ///   across requests, so a `GET` could invisibly commit a transaction or alter session state.
 /// The runtime `readonly` enforcement cannot be relied on to fence these off. HTTP requires safe methods to be
 /// side-effect-free: `GET` is expected to have no effects, and a handler declared for `GET` is also served for
