@@ -1023,6 +1023,20 @@ def test_catalog_table_oids_differ_across_databases(started_cluster):
 
     assert oids[0] != oids[1]
 
+    # The same, inside a single session that switches the database with `USE`:
+    # the oid remembered before the switch must not name the other table after it.
+    ch = connect(databases[0])
+    cur = ch.cursor()
+    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+    remembered = int(cur.fetchall()[0][0])
+    cur.execute(f"USE {databases[1]}")
+    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+    after_switch = int(cur.fetchall()[0][0])
+    ch.close()
+
+    assert remembered != after_switch
+    assert {remembered, after_switch} == set(oids)
+
     ch = connect()
     cur = ch.cursor()
     for database in databases:
@@ -1149,5 +1163,22 @@ def test_catalog_oids_do_not_depend_on_a_colliding_peer(started_cluster):
     # Neither must dropping it again.
     sql([f"DROP DATABASE {colliding[1]}"])
     assert read_oids() == before
+
+    # The accepted cost of that stability: while both colliding databases exist,
+    # `pg_namespace` emits the same oid for both of them, so the join behind `\d`
+    # cannot tell them apart. Uniqueness and stability are not both achievable in a
+    # bounded oid space without a persistent oid counter, and stability wins - see the
+    # comment above the view. This asserts the trade-off rather than a correct join.
+    sql([f"CREATE DATABASE {colliding[1]}"])
+    joined = sql(
+        [
+            "SELECT c.relname, n.nspname FROM pg_class AS c "
+            "JOIN pg_namespace AS n ON n.oid = c.relnamespace "
+            "WHERE c.relname != '' ORDER BY c.relname, n.nspname"
+        ],
+        dbname=colliding[0],
+    )
+    assert {row[0] for row in joined} == set(colliding)
+    assert {row[1] for row in joined} == set(colliding)
 
     sql([f"DROP DATABASE IF EXISTS {name}" for name in colliding])
