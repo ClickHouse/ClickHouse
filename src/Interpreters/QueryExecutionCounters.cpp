@@ -1,25 +1,63 @@
 #include <Interpreters/QueryExecutionCounters.h>
 
+#include <Core/Block.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/CurrentThread.h>
+
+#include <utility>
 
 namespace DB
 {
 
-void QueryExecutionCounters::addExecutedJoin(const IJoin & join)
+namespace
 {
-    addExecutedJoin(join, join.getAlgorithm());
+
+/// The pipeline that is being built by this thread, when it is one that is built more than once for the
+/// same query, empty otherwise, which is the usual case. See `RepeatedPipelineBuildScope`.
+thread_local String repeated_pipeline_build_scope;
+
+/// The key of a join inside a `RepeatedPipelineBuildScope`: the scope, and the shape of the join, i.e. the
+/// columns and the types of its sides. The shape is the same every time the same pipeline is built, and it
+/// differs between the joins of one pipeline, because the analyzer qualifies the columns of every table
+/// expression of a query with a name of its own.
+String makeJoinKey(std::string_view scope, const SharedHeaders & input_headers)
+{
+    WriteBufferFromOwnString key;
+    key << scope;
+    for (const auto & header : input_headers)
+        key << '\n' << header->dumpStructure();
+    return key.str();
 }
 
-void QueryExecutionCounters::addExecutedJoin(const IJoin & join, std::string_view algorithm)
+}
+
+QueryExecutionCounters::RepeatedPipelineBuildScope::RepeatedPipelineBuildScope(String scope)
+    : scope_to_restore(std::exchange(repeated_pipeline_build_scope, std::move(scope)))
+{
+}
+
+QueryExecutionCounters::RepeatedPipelineBuildScope::~RepeatedPipelineBuildScope()
+{
+    repeated_pipeline_build_scope = std::move(scope_to_restore);
+}
+
+void QueryExecutionCounters::addExecutedJoin(const IJoin & join, const SharedHeaders & input_headers)
+{
+    addExecutedJoin(join, join.getAlgorithm(), input_headers);
+}
+
+void QueryExecutionCounters::addExecutedJoin(const IJoin & join, std::string_view algorithm, const SharedHeaders & input_headers)
 {
     const auto & table_join = join.getTableJoin();
-    addExecutedJoin(table_join.kind(), table_join.strictness(), algorithm);
+    addExecutedJoin(table_join.kind(), table_join.strictness(), algorithm, input_headers);
 }
 
-void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm)
+void QueryExecutionCounters::addExecutedJoin(
+    JoinKind kind, JoinStrictness strictness, std::string_view algorithm, const SharedHeaders & input_headers)
 {
     auto counters = getForCurrentQuery();
     if (!counters)
@@ -27,11 +65,25 @@ void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness stric
 
     std::lock_guard lock(counters->mutex);
 
+    /// The algorithm is recorded even for a join that an earlier build of the pipeline already counted:
+    /// the algorithms are a set, and a build is free to pick another algorithm than the one before it,
+    /// in which case both of them were used.
+    counters->used_join_algorithms.emplace(algorithm);
+
+    if (counters->isCountedByAnEarlierBuild(input_headers))
+        return;
+
     counters->used_joins.emplace(
         toString(kind),
         toString(strictness));
+}
 
-    counters->used_join_algorithms.emplace(algorithm);
+bool QueryExecutionCounters::isCountedByAnEarlierBuild(const SharedHeaders & input_headers)
+{
+    if (repeated_pipeline_build_scope.empty())
+        return false;
+
+    return !joins_of_repeated_builds.emplace(makeJoinKey(repeated_pipeline_build_scope, input_headers)).second;
 }
 
 QueryExecutionCounters::Snapshot QueryExecutionCounters::getSnapshot() const

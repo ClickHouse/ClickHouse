@@ -139,7 +139,7 @@ QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelin
     /// stays SEMI and ANTI stays ANTI, only the side changes.
     const auto executed_kind = swap_inputs ? reverseJoinKind(query_kind) : query_kind;
 
-    QueryExecutionCounters::addExecutedJoin(executed_kind, query_strictness, toString(JoinAlgorithm::IE_JOIN));
+    QueryExecutionCounters::addExecutedJoin(executed_kind, query_strictness, toString(JoinAlgorithm::IE_JOIN), getInputHeaders());
 
     if (swap_inputs)
         std::swap(pipelines[0], pipelines[1]);

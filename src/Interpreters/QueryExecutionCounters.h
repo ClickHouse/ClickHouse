@@ -1,13 +1,17 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Core/Joins.h>
 #include <base/defines.h>
 #include <base/types.h>
+
+#include <boost/noncopyable.hpp>
 
 #include <memory>
 #include <mutex>
 #include <set>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -21,16 +25,18 @@ class IJoin;
 struct QueryExecutionCounters
 {
     /// Records one physical join, taking its kind, strictness and algorithm from the join itself.
-    static void addExecutedJoin(const IJoin & join);
+    /// `input_headers` are the headers of the sides of the join, which tell it apart from the other joins
+    /// of the same pipeline, see `RepeatedPipelineBuildScope`.
+    static void addExecutedJoin(const IJoin & join, const SharedHeaders & input_headers);
 
     /// For a join whose algorithm the `IJoin` alone cannot name, because it is decided while
     /// the pipeline is assembled, e.g. `full_sorting_merge` and `parallel_full_sorting_merge` build the same
     /// `FullSortingMergeJoin`.
-    static void addExecutedJoin(const IJoin & join, std::string_view algorithm);
+    static void addExecutedJoin(const IJoin & join, std::string_view algorithm, const SharedHeaders & input_headers);
 
     /// For a join that has no `IJoin` at all because the whole algorithm lives in a query plan step,
     /// like `ie_join`. `kind` and `strictness` must be the ones the query asked for.
-    static void addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm);
+    static void addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm, const SharedHeaders & input_headers);
 
     /// Records an algorithm a join switched to while the query was already running, so that both the
     /// original one and this one are reported.
@@ -39,9 +45,31 @@ struct QueryExecutionCounters
     /// Records that `operator_name` wrote temporary data to disk, e.g. `join` or `aggregation`.
     static void markSpilledToDisk(std::string_view operator_name);
 
+    /// A region in which the pipeline of one query is built more than once, namely the `SELECT` of a
+    /// materialized view, which `ExecutingInnerQueryFromViewTransform` builds once for every block of the
+    /// `INSERT` that triggers it and once for every insert stream, all of these builds sharing the counters
+    /// of the `INSERT`. A join registered inside such a region is counted once per `scope` and per shape of
+    /// the join, instead of once per build, so that `number_of_joins` counts the joins of the view and not
+    /// the blocks that were consumed. `scope` names the pipeline, e.g. the view the `SELECT` belongs to,
+    /// and keeps the joins of two views that happen to have the same shape apart.
+    ///
+    /// Only the region where the pipeline is built has to be marked: the counters that are recorded while
+    /// the pipeline runs, the algorithms and the operators that spilled to disk, are sets and a repeated
+    /// build cannot add anything to them twice.
+    class [[nodiscard]] RepeatedPipelineBuildScope : private boost::noncopyable
+    {
+    public:
+        explicit RepeatedPipelineBuildScope(String scope);
+        ~RepeatedPipelineBuildScope();
+
+    private:
+        String scope_to_restore;
+    };
+
     /// A consistent copy of all the counters. `join_kinds` and `join_strictness` are positionally aligned
     /// and have `number_of_joins` elements each, one per physical join, so that repeated combinations are
-    /// reported as many times as they occur.
+    /// reported as many times as they occur. A pipeline that is built more than once for the same query
+    /// contributes its joins once, see `RepeatedPipelineBuildScope`.
     struct Snapshot
     {
         UInt64 number_of_joins = 0;
@@ -69,11 +97,22 @@ private:
     /// One element per physical join executed by the query, which is also how `number_of_joins` is counted.
     /// Keeps both elements together, to avoid mis-aligned items. A `multiset` and not a `set`, because
     /// every physical join must be reported, even when another join of the query has the same kind and
-    /// strictness, so that the arrays have one element per join counted in `number_of_joins`.
+    /// strictness, so that the arrays have one element per join counted in `number_of_joins`. A join of a
+    /// pipeline that is built more than once has one element all the same, see
+    /// `RepeatedPipelineBuildScope`.
     std::multiset<std::pair<String, String>> used_joins TSA_GUARDED_BY(mutex);
 
     /// Operators that wrote temporary data to disk
     std::set<String> spilled_to_disk TSA_GUARDED_BY(mutex);
+
+    /// The joins that were registered inside a `RepeatedPipelineBuildScope`, by the scope and the shape of
+    /// the join, so that another build of the same pipeline does not count them once more.
+    std::unordered_set<String> joins_of_repeated_builds TSA_GUARDED_BY(mutex);
+
+    /// Registers a join in `joins_of_repeated_builds` and tells whether an earlier build of the same
+    /// pipeline already counted it. Outside a `RepeatedPipelineBuildScope` there is nothing to
+    /// deduplicate and the answer is always false.
+    bool isCountedByAnEarlierBuild(const SharedHeaders & input_headers) TSA_REQUIRES(mutex);
 };
 
 using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
