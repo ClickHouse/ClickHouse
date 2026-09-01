@@ -401,12 +401,26 @@ Token Lexer::nextTokenImpl()
                 ++pos;
             return Token(TokenType::Equals, token_begin, pos);
         }
-        case '!':   /// !=
+        case '!':   /// !=, !~, !~*
         {
             ++pos;
             if (pos < end && *pos == '=')
                 return Token(TokenType::NotEquals, token_begin, ++pos);
+            if (pos < end && *pos == '~')
+            {
+                ++pos;
+                if (pos < end && *pos == '*')
+                    return Token(TokenType::NotTildeAsterisk, token_begin, ++pos);
+                return Token(TokenType::NotTilde, token_begin, pos);
+            }
             return Token(TokenType::ErrorSingleExclamationMark, token_begin, pos);
+        }
+        case '~':   /// ~, ~* - regular expression match operators, PostgreSQL-style
+        {
+            ++pos;
+            if (pos < end && *pos == '*')
+                return Token(TokenType::TildeAsterisk, token_begin, ++pos);
+            return Token(TokenType::Tilde, token_begin, pos);
         }
         case '<':   /// <, <=, <>, <=>
         {
@@ -576,7 +590,7 @@ const char * getErrorTokenDescription(TokenType type)
         case TokenType::ErrorBackQuoteIsNotClosed:
             return "Back quoted string is not closed";
         case TokenType::ErrorSingleExclamationMark:
-            return "Exclamation mark can only occur in != operator";
+            return "Exclamation mark can only occur in !=, !~ and !~* operators";
         case TokenType::ErrorSinglePipeMark:
             return "Pipe symbol could only occur in || operator";
         case TokenType::ErrorWrongNumber:

@@ -1,6 +1,6 @@
 ---
 description: 'ウィンドウ関数の概要ページ'
-sidebarTitle: 'ウィンドウ関数'
+sidebarTitle: '概要'
 slug: /sql-reference/window-functions/
 title: 'ウィンドウ関数'
 doc_type: 'reference'
@@ -24,7 +24,7 @@ ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準
 | `ROWS` フレーム                                                          | ✅          |                                                                                                                                                                                                                                                                                                                         |
 | `RANGE` フレーム                                                         | ✅          | フレーム が明示的に指定されていない場合は、デフォルトで使用されます (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`) 。                                                                                                                                                                                                                              |
 | `DateTime` `RANGE OFFSET` フレーム 用の `INTERVAL` 構文                      | ❌          | 代わりに秒数を指定してください (`RANGE` は任意の数値型で使用できます) 。                                                                                                                                                                                                                                                                              |
-| `GROUPS` フレーム                                                        | ❌          |                                                                                                                                                                                                                                                                                                                         |
+| `GROUPS` フレーム                                                        | ✅          | フレーム境界はピア グループ全体 (`ORDER BY` キーで等しい行) を数えます。`N PRECEDING` および `N FOLLOWING` は、現在の行のピア グループの前後にある `N` 個のピア グループを数えます。                                                                                                                                                                                                    |
 | フレーム に対する 集約関数 の計算 (`sum(value) OVER (ORDER BY time)`)               | ✅          | すべての 集約関数 がサポートされています。                                                                                                                                                                                                                                                                                                  |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`               | ✅          |                                                                                                                                                                                                                                                                                                                         |
 | `percent_rank()`/`percentRank()`                                     | ✅          | パーティション内での値の相対順位を効率的に計算します。これは、`ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)` で表される、より冗長でコンピュート負荷の高い手動の SQL 計算を置き換えます。                                                                                                                                      |
@@ -39,18 +39,18 @@ ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - 結果セットをどのようにグループに分けるかを定義します。
 * `ORDER BY` - aggregate&#95;function の計算時に、グループ内の行をどのような順序で並べるかを定義します。
-* `ROWS or RANGE` - フレームの境界を定義し、aggregate&#95;function はそのフレーム内で計算されます。
+* `ROWS`、`RANGE`、または `GROUPS` - フレームの境界を定義し、aggregate&#95;function はそのフレーム内で計算されます。`ROWS` は物理行を数え、`RANGE` は `ORDER BY` の値を数え、`GROUPS` はピアグループ (`ORDER BY` キーが等しい行) を数えます。
 * `WINDOW` - 複数の式で同じウィンドウ定義を使えるようにします。
 
 ```text
@@ -526,6 +526,44 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
+
+<div id="groups-frame">
+  ### GROUPS フレーム
+</div>
+
+`GROUPS` フレームは、物理的な行 (`ROWS`) や `ORDER BY` 値 (`RANGE`) ではなく、`ORDER BY` キーが等しい行の集合である *ピアグループ* 全体を数えます。`N PRECEDING` と `N FOLLOWING` は、現在の行のピアグループの前後にある `N` 個のピアグループを数え、範囲に含まれるピアグループは常にそのすべての行を含みます。
+
+以下のクエリでは、`ROWS`、`RANGE`、`GROUPS` フレームに同じ `1 PRECEDING AND 1 FOLLOWING` 境界を適用します。`order` カラムには重複した非連続の値が含まれるため、3 つのモードで対象となる行は異なります。
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+各モードで境界の解釈は異なります。
+
+* `ROWS` は物理的な行数に基づくため、フレームは最大で連続する3行、つまり現在の行とその前後それぞれ1行になります。
+* `RANGE` は `order` 値に基づくため、`1 PRECEDING` と `1 FOLLOWING` には、現在の行の `order` 値との差が1以内の行が含まれます。間隔が10ある場合、隣接行は条件を満たさないため、フレームには現在の `order` を共有する行のみが含まれます。
+* `GROUPS` はピアグループに基づくため、`1 PRECEDING` と `1 FOLLOWING` には、`order` 値間のギャップにかかわらず、隣接するグループ全体が常に含まれます。
 
 <div id="real-world-examples">
   ## 実践的な例

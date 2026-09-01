@@ -84,11 +84,14 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
 {
     hash_state.update(func_name.size());
     hash_state.update(func_name);
+    /// `parameters` and `lambda` are not children, so `updateTreeHash` is needed to reach their own
+    /// subtrees; `updateTreeHashImpl` alone stops at the node itself, and the arguments of
+    /// `APPLY quantile(0.5)` live below it.
     if (parameters)
-        parameters->updateTreeHashImpl(hash_state, ignore_aliases);
+        parameters->updateTreeHash(hash_state, ignore_aliases);
 
     if (lambda)
-        lambda->updateTreeHashImpl(hash_state, ignore_aliases);
+        lambda->updateTreeHash(hash_state, ignore_aliases);
 
     hash_state.update(lambda_arg.size());
     hash_state.update(lambda_arg);
@@ -280,7 +283,7 @@ void ASTColumnsTransformerList::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     children = r.readChildren();
 
-    /// `IASTColumnsTransformer::transform` only dispatches `ColumnsApplyTransformer`,
+    /// `applyColumnsTransformer` only dispatches `ColumnsApplyTransformer`,
     /// `ColumnsExceptTransformer`, and `ColumnsReplaceTransformer`, silently ignoring any
     /// other child type. Reject foreign children from malformed `clickhouse_json` here so
     /// they cannot be formatted in the AST while being skipped during semantic transformation.
@@ -308,10 +311,10 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
     lambda_arg = r.getString("lambda_arg");
     column_name_prefix = r.getString("column_name_prefix");
 
-    /// `formatImpl`, `appendColumnName`, `updateTreeHashImpl`, and `transform`
+    /// `formatImpl`, `appendColumnName`, `updateTreeHashImpl`, and `applyColumnsApplyTransformer`
     /// all branch on either a lambda or a function name; exactly one of the two
     /// mutually exclusive shapes must be present. The lambda branch takes priority
-    /// in `formatImpl`/`transform` and silently drops `func_name`/`parameters`,
+    /// in `formatImpl`/`applyColumnsApplyTransformer` and silently drops `func_name`/`parameters`,
     /// so accepting both at once would lose information the parser never produces.
     bool has_function_mode = !func_name.empty();
     bool has_lambda_mode = lambda != nullptr;
@@ -330,7 +333,7 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ColumnsApplyTransformer with parameters requires a function name during AST JSON deserialization");
 
-    /// `transform` substitutes the current column for `lambda_arg` inside the lambda body,
+    /// `applyColumnsApplyTransformer` substitutes the current column for `lambda_arg` inside the lambda body,
     /// so a lambda without its argument name would be meaningless, and the argument name
     /// must not appear without a lambda.
     if (has_lambda_mode && lambda_arg.empty())
@@ -341,7 +344,7 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ColumnsApplyTransformer with a lambda argument requires a lambda during AST JSON deserialization");
 
-    /// `transform` reads the lambda body as `lambda->as<const ASTFunction &>().arguments->children.at(1)`,
+    /// `applyColumnsApplyTransformer` reads the lambda body as `lambda->as<const ASTFunction &>().arguments->children.at(1)`,
     /// so the lambda must carry the parser-produced shape: a non-null `arguments` list with at least the
     /// argument tuple and the body. Reject a function-shaped lambda missing them, which would otherwise
     /// fail later as an internal null-deref / out-of-range access instead of `BAD_ARGUMENTS`.
@@ -367,7 +370,7 @@ void ASTColumnsExceptTransformer::readJSON(const Poco::JSON::Object & json)
     /// `ASTIdentifier`, so reject any other child type here.
     children = r.readChildrenOfType<ASTIdentifier>("ColumnsExceptTransformer");
 
-    /// `formatImpl`, `appendColumnName`, and `transform` rely on exactly one of the two
+    /// `formatImpl`, `appendColumnName`, and `applyColumnsExceptTransformer` rely on exactly one of the two
     /// mutually exclusive shapes: a regexp `pattern` or an explicit list of column children.
     if (pattern && !children.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -387,7 +390,7 @@ void ASTColumnsReplaceTransformer::Replacement::readJSON(const Poco::JSON::Objec
             "ASTColumnsReplaceTransformer::Replacement JSON requires a non-empty 'name'");
     children = r.readChildren();
 
-    /// `formatImpl`, `appendColumnName`, `updateTreeHashImpl`, and `transform`
+    /// `formatImpl`, `appendColumnName`, `updateTreeHashImpl`, and `applyColumnsReplaceTransformer`
     /// all access `children[0]`, so the invariant must hold after JSON deserialization.
     if (children.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -399,7 +402,7 @@ void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     is_strict = r.getBool("is_strict");
-    /// `transform` downcasts every child with `replace_child->as<Replacement &>()` and then
+    /// `applyColumnsReplaceTransformer` downcasts every child with `replace_child->as<Replacement &>()` and then
     /// reads `replacement.children[0]`, so a foreign child type from malformed `clickhouse_json`
     /// must be rejected here instead of reaching that downcast during execution.
     children = r.readChildrenOfType<ASTColumnsReplaceTransformer::Replacement>("ColumnsReplaceTransformer");

@@ -96,6 +96,14 @@ public:
 
     void recordAggregationKeySizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types);
 
+    /// For a conversion that materialized only some of the groups (the bucket Top-K):
+    /// `full_key_bytes` is the byte size all keys would occupy materialized, measured on the
+    /// hash table, and the chunk provides the compression-ratio sample only. The statistics
+    /// must describe the untruncated output because they price the parallel-replicas plan,
+    /// whose partial aggregation materializes every group.
+    void recordAggregationKeySizes(
+        const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types, size_t full_key_bytes);
+
     /// Estimates compressed size of aggregate state columns in the output chunk.
     /// Mirrors the logic of Aggregator::estimateSizeOfCompressedState but works on ColumnAggregateFunction columns
     /// rather than a hash table. Used by in-order aggregation where states are already materialized into columns (single-stream case).
@@ -118,7 +126,10 @@ public:
 private:
     static bool shouldSampleBlock(Statistics & statistics, size_t block_rows);
 
-    static void recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols);
+    /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
+    /// are only a sample of the dataflow being accounted.
+    static void
+    recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes = {});
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;

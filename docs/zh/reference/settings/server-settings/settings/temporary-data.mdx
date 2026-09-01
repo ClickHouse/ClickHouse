@@ -16,9 +16,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   ## temporary_data_in_cache
 </div>
 
-使用此选项时，临时数据将存储在特定 disk 的 cache 中。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
+
+使用此选项时，临时数据将存储在特定 disk 的缓存中。
 本节中，应指定类型为 `cache` 的 disk 名称。
-在这种情况下，cache 与临时数据将共享同一存储空间，并且可以清退 disk cache 以为临时数据腾出空间。
+在这种情况下，缓存与临时数据将共享同一存储空间，并且可以清退 disk 缓存以为临时数据腾出空间。
 
 <Note>
   只能使用以下一个选项来配置临时数据 storage：`tmp_path` ,`tmp_policy`, `temporary_data_in_cache`。
@@ -26,7 +28,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 **示例**
 
-`local_disk` 的 cache 和临时数据都将存储在 filesystem 中的 `/tiny_local_cache`，由 `tiny_local_cache` 管理。
+`local_disk` 的缓存和临时数据都将存储在 filesystem 中的 `/tiny_local_cache`，由 `tiny_local_cache` 管理。
 
 ```xml highlight={9-16,20}
 <clickhouse>

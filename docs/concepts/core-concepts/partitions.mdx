@@ -134,9 +134,14 @@ ClickHouse processes that query by applying a sequence of pruning techniques to 
 
 <br/>
 
-① **Partition pruning**: [MinMax indexes](/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) are used to ignore whole partitions (sets of parts) that logically can't match the query's filter on columns used in the table's partition key.
-
-② **Granule pruning**: For the remaining data parts after step ①, their [primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) is used to ignore all [granules](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocks of rows) that logically can't match the query's filter on columns used in the table's primary key.
+<Steps>
+<Step title="Partition pruning">
+[MinMax indexes](/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) are used to ignore whole partitions (sets of parts) that logically can't match the query's filter on columns used in the table's partition key.
+</Step>
+<Step title="Granule pruning">
+For the remaining data parts after the partition pruning step, their [primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) is used to ignore all [granules](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocks of rows) that logically can't match the query's filter on columns used in the table's primary key.
+</Step>
+</Steps>
 
 We can observe these data pruning steps by [inspecting](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw&run_query=true&tab=results) the physical query execution plan for our example query from above via an [EXPLAIN](/reference/statements/explain) clause :
 
@@ -180,14 +185,19 @@ WHERE date >= '2020-12-01'
 
 The output above shows:
 
-① Partition pruning: Row 7 to 18 of the EXPLAIN output above show that ClickHouse first uses the `date` field's [MinMax index](/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) to identify 11 out of 3257 existing [granules](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocks of rows) stored in 1 out of 436 existing active data parts that contain rows matching the query's `date` filter.
-
-② Granule pruning: Row 19 to 24 of the EXPLAIN output above indicate that ClickHouse then uses the [primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) (created over the `town`-field) of the data part identified in step ① to further reduce the number of granules (that contain rows potentially also matching the query's `town` filter) from 11 to 1. This is also reflected in the ClickHouse-client output that we printed further above for the query run:
+<Steps>
+<Step title="Partition pruning">
+Rows 7 to 18 of the `EXPLAIN` output above show that ClickHouse first uses the `date` field's [MinMax index](/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) to identify 11 out of 3257 existing [granules](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocks of rows) stored in 1 out of 436 existing active data parts that contain rows matching the query's `date` filter.
+</Step>
+<Step title="Granule pruning">
+Rows 19 to 24 of the `EXPLAIN` output above indicate that ClickHouse then uses the [primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) (created over the `town` field) of the data part identified in the partition pruning step to further reduce the number of granules (that contain rows potentially also matching the query's `town` filter) from 11 to 1. This is also reflected in the ClickHouse client output that we printed further above for the query run:
 
 ```response
 ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
 Peak memory usage: 2.73 MiB.
 ```
+</Step>
+</Steps>
 
 Meaning that ClickHouse scanned and processed 1 granule (block of [8192](/reference/settings/merge-tree-settings/index-granularity#index_granularity) rows) in 6 milliseconds for calculating the query result.
 

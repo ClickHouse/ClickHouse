@@ -1,18 +1,21 @@
 ---
 slug: /use-cases/observability
-title: 'Observability'
-description: 'Page d’accueil du guide sur le cas d’usage Observability'
+title: 'observabilité'
+sidebarTitle: 'Vue d’ensemble'
+description: 'Page d’accueil du guide sur le cas d’usage observabilité'
 keywords: ['observability', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
 doc_type: 'guide'
 ---
 
+import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 ClickHouse offre une vitesse, une scalabilité et une efficacité économique inégalées pour l’observabilité. Ce guide propose deux options selon vos besoins :
 
 <div id="clickstack">
-  ## ClickStack - la pile d’observabilité ClickHouse
+  ## ClickStack - la stack d’observabilité ClickHouse
 </div>
 
-La pile d’observabilité ClickHouse est notre **approche recommandée** pour la plupart des utilisateurs.
+La stack d’observabilité ClickHouse est notre **approche recommandée** pour la plupart des utilisateurs.
 
 **ClickStack** est une plateforme d’observabilité prête pour la production, construite sur ClickHouse et OpenTelemetry (OTel), qui unifie les logs, les traces, les métriques et les sessions dans une solution unique, performante et évolutive, allant du déploiement sur un seul nœud jusqu’à une échelle de **plusieurs pétaoctets**.
 
@@ -24,7 +27,7 @@ La pile d’observabilité ClickHouse est notre **approche recommandée** pour l
 | [Architecture](/fr/clickstack/architecture)                        | Architecture du système et vue d’ensemble des composants           |
 | [Déploiement](/fr/clickstack/deployment/overview)                  | Guides et options de déploiement                                   |
 | [Configuration](/fr/clickstack/managing/config)                    | Options de configuration et paramètres détaillés                   |
-| [Ingestion des données](/fr/clickstack/ingesting-data/index)       | Recommandations pour l’ingestion des données dans ClickStack       |
+| [Ingestion des données](/fr/clickstack/ingesting-data/overview)    | Recommandations pour l’ingestion des données dans ClickStack       |
 | [Recherche](/fr/clickstack/features/search)                        | Comment rechercher et interroger vos données d’observabilité       |
 | [Production](/fr/clickstack/managing/production)                   | Bonnes pratiques pour le déploiement en production                 |
 
@@ -42,3 +45,11 @@ Pour les utilisateurs ayant des **besoins spécifiques** — tels que des pipeli
 | [Intégration d’OpenTelemetry](/fr/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | Collecte et export des logs et des traces à l’aide d’OpenTelemetry avec ClickHouse.                                                                                                             |
 | [Utilisation des outils de visualisation](/fr/guides/use-cases/observability/build-your-own/grafana)       | Découvrez comment utiliser les outils de visualisation pour l’observabilité avec ClickHouse, notamment HyperDX et Grafana.                                                                      |
 | [Application de démonstration](/fr/guides/use-cases/observability/build-your-own/demo-application)         | Découvrez l’OpenTelemetry demo application adaptée pour fonctionner avec ClickHouse pour les logs et les traces.                                                                                |
+
+<div id="prometheus-metrics">
+  ## Métriques Prometheus
+</div>
+
+<CloudNotSupportedBadge />
+
+ClickHouse peut stocker des métriques Prometheus dans une table [`TimeSeries`](/fr/reference/engines/table-engines/integrations/time-series) et exécuter des requêtes PromQL. Consultez [Protocoles Prometheus et PromQL](/fr/concepts/features/interfaces/prometheus) pour configurer l’ingestion, les requêtes et les visualisations.

@@ -138,6 +138,22 @@ public:
     }
 
     const ASTPtr & getExplainedQuery() const { return query; }
+
+    /// Replace the explained query, keeping the `children` entry in sync (the explained query is
+    /// stored both in `query` and in `children`, see `setExplainedQuery`).
+    void replaceExplainedQuery(ASTPtr query_)
+    {
+        for (auto & child : children)
+        {
+            if (child == query)
+            {
+                child = query_;
+                break;
+            }
+        }
+        query = std::move(query_);
+    }
+
     const ASTPtr & getSettings() const { return ast_settings; }
     /// Empty unless this query came from the parser - see `setSettings`.
     const String & getSettingsText() const { return settings_text; }

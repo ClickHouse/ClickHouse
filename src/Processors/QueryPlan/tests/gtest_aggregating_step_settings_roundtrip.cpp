@@ -51,7 +51,7 @@ bool wireCarriesSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 
     WriteBufferFromOwnString out;
     written.writeChangedBinary(out);
 
-    return out.str().find("serialize_string_in_memory_with_zero_byte") != std::string::npos;
+    return out.str().contains("serialize_string_in_memory_with_zero_byte");
 }
 
 SharedHeader makeHeader()
@@ -91,8 +91,7 @@ std::unique_ptr<AggregatingStep> makeAggregatingStep(bool serialize_string_with_
         /*group_by_sort_description=*/SortDescription{},
         /*should_produce_results_in_order_of_bucket_number=*/false,
         /*memory_bound_merging_of_aggregation_results_enabled=*/false,
-        /*explicit_sorting_required_for_aggregation_in_order=*/false,
-        /*enable_sharding_aggregator=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
 }
 
 std::unique_ptr<MergingAggregatedStep> makeMergingAggregatedStep(bool serialize_string_with_zero_byte)
