@@ -6,6 +6,7 @@
 SELECT '--- JIT ---';
 SET compile_expressions = 1, min_count_to_compile_expression = 0;
 
+-- The `Float ->` direction is evaluated by the interpreter: see #117442.
 SELECT '--- Float -> 128-bit / 256-bit integers ---';
 SELECT toInt128 (materialize(1.5) + materialize(0.5));
 SELECT toUInt128(materialize(1.5) + materialize(0.5));
