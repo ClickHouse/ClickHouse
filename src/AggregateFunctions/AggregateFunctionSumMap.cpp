@@ -805,10 +805,10 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description sumMappedArrays_description = R"(
 Totals one or more `value` arrays according to the keys specified in the `key` array. Returns a tuple of arrays: keys in sorted order, followed by values summed for the corresponding keys without overflow.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and all `value` arrays must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax sumMappedArrays_syntax = R"(
 sumMappedArrays(key, value1 [, value2, ...])
@@ -897,10 +897,10 @@ FROM multi_metrics;
     FunctionDocumentation::Description minMappedArrays_description = R"(
 Calculates the minimum from `value` array according to the keys specified in the `key` array.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax minMappedArrays_syntax = R"(
 minMappedArrays(key, value)
@@ -940,10 +940,10 @@ FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1])
     FunctionDocumentation::Description maxMappedArrays_description = R"(
 Calculates the maximum from `value` array according to the keys specified in the `key` array.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax maxMappedArrays_syntax = R"(
 maxMappedArrays(key, value)
@@ -986,10 +986,10 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
 Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.
 It differs from the [`sumMap`](/reference/functions/aggregate-functions/sumMap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
-:::note
+<Note>
 - Passing a tuple of key and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax sumMapWithOverflow_syntax = R"(
 sumMapWithOverflow(key, value)

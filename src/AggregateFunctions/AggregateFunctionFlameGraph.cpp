@@ -706,11 +706,11 @@ void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 Builds a [flamegraph](https://www.brendangregg.com/flamegraphs.html) using the list of stacktraces.
 Outputs an array of strings which can be used by the [flamegraph.pl](https://github.com/brendangregg/FlameGraph) utility to render an SVG of the flamegraph.
 
-:::note
+<Note>
 In the case where `ptr != 0`, a flameGraph will map allocations (size > 0) and deallocations (size < 0) with the same size and ptr.
 Only allocations which were not freed are shown.
 Non mapped deallocations are ignored.
-:::
+</Note>
 
 **Recipes.**
 The stacktraces come from `system.trace_log`, which the query profiler fills in, and the array of

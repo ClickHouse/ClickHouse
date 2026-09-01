@@ -10,13 +10,13 @@ REGISTER_FUNCTION(RunningDifferenceStartingWithFirstValue)
     FunctionDocumentation::Description description = R"(
 Calculates the difference between consecutive row values in a data block, but unlike [`runningDifference`](#runningDifference), it returns the actual value of the first row instead of `0`.
 
-:::warning Deprecated
+<Warning title="Deprecated">
 Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.
 It is advised to use [window functions](/reference/functions/window-functions) instead.
 
 You can use setting `allow_deprecated_error_prone_window_functions` to allow usage of this function.
-:::
+</Warning>
 )";
     FunctionDocumentation::Syntax syntax = "runningDifferenceStartingWithFirstValue(x)";
     FunctionDocumentation::Arguments arguments = {{"x", "Column for which to calculate the running difference.", {"Any"}}};

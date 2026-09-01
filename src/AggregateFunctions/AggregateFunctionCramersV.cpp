@@ -63,9 +63,9 @@ void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory)
 The result of the `cramersV` function ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other.
 It may be viewed as the association between two variables as a percentage of their maximum possible variation.
 
-:::note
+<Note>
 For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](/reference/functions/aggregate-functions/cramersVBiasCorrected)
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "cramersV(column1, column2)";
     FunctionDocumentation::Arguments arguments = {

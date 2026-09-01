@@ -209,9 +209,9 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [max_processing_time_sec_before_commit = 0,]
 ```
 
-:::warning
+<Warning>
 Before `24.7`, it is required to use `s3queue_` prefix for all settings apart from `mode`, `after_processing` and `keeper_path`.
-:::
+</Warning>
 
 **Engine parameters**
 
@@ -251,13 +251,13 @@ SETTINGS
 
 To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
-:::note Setting Names (24.7+)
+<Note title="Setting Names (24.7+)">
 Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
 - **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
 - **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
 
 Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
-:::
+</Note>
 
 ### Mode {#mode}
 
@@ -416,9 +416,9 @@ Default value: Number of CPUs or 16.
 By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
 But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
 
-:::note
+<Note>
 `INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
-:::
+</Note>
 
 Default value: `false`.
 

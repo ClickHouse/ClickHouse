@@ -279,11 +279,11 @@ void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description_groupConcat = R"(
 Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.
 
-:::note
+<Note>
 If delimiter is specified without limit, it must be the first parameter. If both delimiter and limit are specified, delimiter must precede limit.
 
 Also, if different delimiters are specified as parameters and arguments, the delimiter from arguments will be used only.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_groupConcat = R"(
 groupConcat[(delimiter [, limit])](expression)

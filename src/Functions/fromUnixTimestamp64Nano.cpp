@@ -12,9 +12,9 @@ Converts a Unix timestamp in nanoseconds to a [`DateTime64`](/reference/data-typ
 
 The input value is treated as a Unix timestamp with nanosecond precision (number of nanoseconds since 1970-01-01 00:00:00 UTC).
 
-:::note
+<Note>
 Please note that the input value is treated as a UTC timestamp, not the timezone of the input value.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "fromUnixTimestamp64Nano(value[, timezone])";
     FunctionDocumentation::Arguments arguments = {

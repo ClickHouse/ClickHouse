@@ -140,7 +140,7 @@ REGISTER_FUNCTION(TupleHammingDistance)
     FunctionDocumentation::Description description = R"(
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
 
-:::note
+<Note>
 The result type is determined the same way it is for [Arithmetic functions](/reference/functions/regular-functions/arithmetic-functions), based on the number of elements in the input tuples.
 
 ```sql
@@ -157,7 +157,7 @@ SELECT
 │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
 └───────┴────────┴────────┴────────┴────────┘
 ```
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "tupleHammingDistance(t1, t2)";
     FunctionDocumentation::Arguments arguments = {

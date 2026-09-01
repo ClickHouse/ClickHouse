@@ -11,9 +11,9 @@ REGISTER_FUNCTION(ToUnixTimestamp64Milli)
 Converts a [`DateTime64`](/reference/data-types/datetime64) to a [`Int64`](/reference/data-types/int-uint) value with fixed millisecond precision.
 The input value is scaled up or down appropriately depending on its precision.
 
-:::note
+<Note>
 The output value is relative to UTC, not to the timezone of the input value.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "toUnixTimestamp64Milli(value)";
     FunctionDocumentation::Arguments arguments = {

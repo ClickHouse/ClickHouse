@@ -17,10 +17,10 @@ REGISTER_FUNCTION(IndexOfAssumeSorted)
 Returns the index of the first element with value 'x' (starting from `1`) if it is in the array.
 If the array does not contain the searched-for value, the function returns `0`.
 
-:::note
+<Note>
 Unlike the `indexOf` function, this function assumes that the array is sorted in
 ascending order. If the array is not sorted, results are undefined.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "indexOfAssumeSorted(arr, x)";
     FunctionDocumentation::Arguments arguments = {

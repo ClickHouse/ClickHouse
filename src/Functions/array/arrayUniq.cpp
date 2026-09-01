@@ -331,9 +331,9 @@ It will then count the number of unique tuples. In this case `2`.
 
 All arrays passed must have the same length.
 
-:::tip
+<Tip>
 If you want to get a list of unique items in an array, you can use `arrayReduce('groupUniqArray', arr)`.
-:::
+</Tip>
 )";
     FunctionDocumentation::Syntax syntax = "arrayUniq(arr1[, arr2, ..., arrN])";
     FunctionDocumentation::Arguments arguments = {

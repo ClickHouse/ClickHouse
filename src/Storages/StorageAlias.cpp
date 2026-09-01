@@ -596,18 +596,18 @@ CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_db, target_table)
 ```
 
-:::note
+<Note>
 The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
-:::
+</Note>
 
 ## Engine Parameters {#engine-parameters}
 
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
 
-:::note
+<Note>
 When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
-:::
+</Note>
 
 ## Supported Operations {#supported-operations}
 

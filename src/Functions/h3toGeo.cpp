@@ -142,10 +142,10 @@ REGISTER_FUNCTION(H3ToGeo)
     FunctionDocumentation::Description description = R"(
 Returns the centroid latitude and longitude corresponding to the provided [H3](https://h3geo.org/docs/core-library/h3Indexing/) index.
 
-:::note
+<Note>
 In ClickHouse v24.12 or older, `h3ToGeo()` accepts arguments in the order `(lon, lat)`. As per ClickHouse v25.1, the returned values are ordered `(lat, lon)`.
 The previous behavior can be restored using setting `h3togeo_lon_lat_result_order = true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "h3ToGeo(h3Index)";
     FunctionDocumentation::Arguments arguments = {

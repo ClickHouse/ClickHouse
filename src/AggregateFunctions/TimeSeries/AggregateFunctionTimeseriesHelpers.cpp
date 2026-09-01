@@ -255,9 +255,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::warning
+<Warning>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesRateToGrid = R"(
 timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -346,9 +346,9 @@ The value is the total extrapolated increase of a counter over the window. A dec
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::warning
+<Warning>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesIncreaseToGrid = R"(
 timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -436,9 +436,9 @@ For each point on the grid the samples for calculating `delta` are considered wi
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::warning
+<Warning>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesDeltaToGrid = R"(
 timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -526,9 +526,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::warning
+<Warning>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesInstantRateToGrid = R"(
 timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -617,9 +617,9 @@ For each point on the grid the samples for calculating `idelta` are considered w
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::warning
+<Warning>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesInstantDeltaToGrid = R"(
 timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -707,9 +707,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesDerivToGrid = R"(
 timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -795,9 +795,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesPredictLinearToGrid = R"(
 timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, staleness, predict_offset)(timestamp, value)
@@ -888,9 +888,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesChangesToGrid = R"(
 timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -976,9 +976,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesResetsToGrid = R"(
 timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -1067,9 +1067,9 @@ Alias: `timeSeriesLastToGrid`.
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::warning
+<Warning>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
-:::
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesResampleToGridWithStaleness = R"(
 timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step, staleness_window)(timestamp, value)

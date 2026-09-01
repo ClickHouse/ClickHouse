@@ -3167,9 +3167,9 @@ INTO OUTFILE 'football.orc'
 FORMAT ORC
 ```
 
-:::tip
+<Tip>
 ORC is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output ORC files.
-:::
+</Tip>
 
 ## Format settings {#format-settings}
 

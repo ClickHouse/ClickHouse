@@ -241,14 +241,14 @@ The following aggregate functions are supported:
 - [`minMap` (`minMappedArrays`)](/reference/functions/aggregate-functions/minMap)
 - [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/maxMap)
 
-:::note
+<Note>
 Values of the `SimpleAggregateFunction(func, Type)` have the same `Type`,
 so unlike with the `AggregateFunction` type there is no need to apply
 `-Merge`/`-State` combinators.
 
 The `SimpleAggregateFunction` type has better performance than the `AggregateFunction`
 for the same aggregate functions.
-:::
+</Note>
 
 ## Example {#example}
 

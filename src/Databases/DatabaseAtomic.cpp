@@ -915,10 +915,10 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         .description = R"DOCS_MD(
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 
-:::note
+<Note>
 On ClickHouse Cloud, the [`Shared` database engine](/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) is used by default and also supports
 the above mentioned operations.
-:::
+</Note>
 
 ## Creating a database {#creating-a-database}
 
@@ -946,9 +946,9 @@ For example:
 CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
 ```
 
-:::note
+<Note>
 You can use the [show_table_uuid_in_table_create_query_if_not_nil](/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) setting to display the UUID with the `SHOW CREATE` query.
-:::
+</Note>
 
 ### RENAME TABLE {#rename-table}
 

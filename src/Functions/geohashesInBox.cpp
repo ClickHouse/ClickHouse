@@ -226,9 +226,9 @@ REGISTER_FUNCTION(GeohashesInBox)
     FunctionDocumentation::Description description = R"(
 Returns an array of [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, essentially a 2D grid flattened into an array.
 
-:::note
+<Note>
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
-:::
+</Note>
 
 This function throws an exception if the size of the resulting array exceeds more than 10,000,000 items.
     )";

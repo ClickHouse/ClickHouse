@@ -1569,9 +1569,9 @@ void registerStorageBuffer(StorageFactory & factory)
         .description = R"DOCS_MD(
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
-:::note
+<Note>
 A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/concepts/features/operations/insert/asyncinserts).
-:::
+</Note>
 
 ```sql
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
@@ -1647,9 +1647,9 @@ If the set of columns in the Buffer table does not match the set of columns in a
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
 
-:::note
+<Note>
 Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-:::
+</Note>
 
 If the server is restarted abnormally, the data in the buffer is lost.
 

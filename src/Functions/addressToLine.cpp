@@ -65,9 +65,9 @@ REGISTER_FUNCTION(AddressToLine)
     FunctionDocumentation::Description description = R"(
 Converts a virtual memory address inside the ClickHouse server process to a filename and line number in ClickHouse's source code.
 
-:::note
+<Note>
 This function is slow and may impose security considerations.
-:::
+</Note>
 
 To enable this introspection function:
 

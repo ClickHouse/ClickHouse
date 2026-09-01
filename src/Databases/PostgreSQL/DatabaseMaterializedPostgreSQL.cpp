@@ -855,20 +855,20 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::note
+<Note>
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
+</Note>
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
 Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In this case you should use `ATTACH`/ `DETACH PERMANENTLY` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
-:::note
+<Note>
 This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
 ```sql
 SET allow_experimental_database_materialized_postgresql=1
 ```
-:::
+</Note>
 
 ## Creating a database {#creating-a-database}
 
@@ -907,9 +907,9 @@ After `MaterializedPostgreSQL` database is created, it does not automatically de
 ATTACH TABLE postgres_database.new_table;
 ```
 
-:::warning
+<Warning>
 Before version 22.1, adding a table to replication left a non-removed temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
-:::
+</Warning>
 
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
 
@@ -997,9 +997,9 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::note
+<Note>
 [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
-:::
+</Note>
 
 ## Settings {#settings}
 

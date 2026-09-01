@@ -80,10 +80,10 @@ REGISTER_FUNCTION(Initcap)
 Converts the first letter of each word to upper case and the rest to lower case.
 Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
 
-:::note
+<Note>
 Because `initcap` converts only the first letter of each word to upper case you may observe unexpected behaviour for words containing apostrophes or capital letters.
 This is a known behaviour and there are no plans to fix it currently.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "initcap(s)";
     FunctionDocumentation::Arguments arguments = {

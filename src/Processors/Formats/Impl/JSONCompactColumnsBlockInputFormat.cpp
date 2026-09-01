@@ -53,9 +53,9 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
 
 In this format, all data is represented as a single JSON Array.
 
-:::note
+<Note>
 The `JSONCompactColumns` output format buffers all data in memory to output it as a single block which can lead to high memory consumption.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 

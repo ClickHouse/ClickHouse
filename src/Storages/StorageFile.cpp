@@ -3199,9 +3199,9 @@ Usage scenarios:
 - Convert data from one format to another.
 - Updating data in ClickHouse via editing a file on a disk.
 
-:::note
+<Note>
 This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/reference/functions/table-functions/s3).
-:::
+</Note>
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
@@ -3220,9 +3220,9 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](/reference/statements/attach) it to table information with matching name, so you can query data from that file.
 
-:::note
+<Note>
 Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
-:::
+</Note>
 
 ## Example {#example}
 

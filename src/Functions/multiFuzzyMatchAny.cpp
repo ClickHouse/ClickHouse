@@ -24,9 +24,9 @@ Like [`multiMatchAny`](#multiMatchAny) but returns 1 if any pattern matches the 
 This function relies on the experimental feature of [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) library, and can be slow for some edge cases.
 The performance depends on the edit distance value and patterns used, but it's always more expensive compared to non-fuzzy variants.
 
-:::note
+<Note>
 `multiFuzzyMatch*()` function family do not support UTF-8 regular expressions (it treats them as a sequence of bytes) due to restrictions of hyperscan.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
         multiFuzzyMatchAny(haystack, distance, [pattern1, pattern2, ..., patternN])

@@ -800,19 +800,19 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::note
+<Note>
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
+</Note>
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
-:::note
+<Note>
 This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
 
 ```sql
 SET allow_experimental_materialized_postgresql_table=1
 ```
-:::
+</Note>
 
 If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
@@ -876,9 +876,9 @@ PRIMARY KEY key;
 SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
-:::note
+<Note>
 [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
-:::
+</Note>
 )DOCS_MD",
             .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password') ORDER BY key",
             .related = {"PostgreSQL"}});

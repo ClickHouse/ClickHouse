@@ -1525,6 +1525,14 @@ if __name__ == "__main__":
                 command=check_embedded_doc_snippets,
             )
         )
+    testname = "legacy_admonitions"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command="python3 ci/jobs/scripts/docs/check_legacy_admonitions.py .",
+            )
+        )
     testname = "ruff"
     if testpattern.lower() in testname.lower():
         results.append(

@@ -648,9 +648,9 @@ The output will be in tab separated format:
 
 Differs from the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format in that rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 For a comparison of the `TabSeparatedRaw` format and the `RawBlob` format see: [Raw Formats Comparison](/reference/formats/RawBLOB#raw-formats-comparison)
 
@@ -732,9 +732,9 @@ The output will be in tab separated format:
 Differs from the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format,
 in that the rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -816,9 +816,9 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 Differs from the [`TabSeparatedWithNamesAndTypes`](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format,
 in that the rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 

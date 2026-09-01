@@ -155,9 +155,9 @@ Allows to store special marker ([NULL](/reference/syntax)) that denotes "missing
 
 However, composite data types **can contain** `Nullable` type values, e.g. `Array(Nullable(Int8))` or `Tuple(Nullable(String), Nullable(Int64))`.
 
-:::note Beta: Nullable Tuples
+<Note title="Beta: Nullable Tuples">
 * [Nullable(Tuple(...))](/reference/data-types/tuple#nullable-tuple) is supported when `enable_nullable_tuple_type = 1` is enabled.
-:::
+</Note>
 
 A `Nullable` type field can't be included in table indexes.
 
@@ -167,9 +167,9 @@ A `Nullable` type field can't be included in table indexes.
 
 To store `Nullable` type values in a table column, ClickHouse uses a separate file with `NULL` masks in addition to normal file with values. Entries in masks file allow ClickHouse to distinguish between `NULL` and a default value of corresponding data type for each table row. Because of an additional file, `Nullable` column consumes additional storage space compared to a similar normal one.
 
-:::note
+<Note>
 Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
-:::
+</Note>
 
 ## Finding NULL {#finding-null}
 

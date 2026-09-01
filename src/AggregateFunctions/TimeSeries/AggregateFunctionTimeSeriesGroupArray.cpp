@@ -97,9 +97,9 @@ Sorts time series data by timestamp in ascending order.
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 timeSeriesGroupArray(timestamp, value)

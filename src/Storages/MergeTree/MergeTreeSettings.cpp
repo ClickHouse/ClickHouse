@@ -934,9 +934,9 @@ If the number of inactive parts in a single partition in the table exceeds
 the `inactive_parts_to_delay_insert` value, an `INSERT` is artificially
 slowed down.
 
-:::tip
+<Tip>
 It is useful when a server fails to clean up parts quickly enough.
-:::
+</Tip>
 
 Possible values:
 - Any positive integer.
@@ -981,9 +981,9 @@ If the number of blobs pending removal in the dead blobs queues of the table's d
 The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
 dropped tables), so size the threshold for the whole disk rather than a single table.
 
-:::tip
+<Tip>
 It is useful when a server fails to clean up blobs quickly enough.
-:::
+</Tip>
 
 Possible values:
 - Any positive integer.
@@ -1223,11 +1223,11 @@ insert is not executed. Note that this setting:
 Possible values:
 - Any positive integer.
 
-:::note
+<Note>
 If both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert`
 are specified, ClickHouse will count on the value that will allow to perform
 inserts on a bigger amount of free memory.
-:::
+</Note>
 )", 0) \
     DECLARE(Float, min_free_disk_ratio_to_perform_insert, 0.0, R"(
 The minimum free to total disk space ratio to perform an `INSERT`. Must be a
@@ -1371,13 +1371,13 @@ Possible values:
 When this setting has a value greater than zero only a single replica starts
 the merge immediately if merged part on shared storage.
 
-:::note
+<Note>
 Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and
 higher.
 
 This feature is not recommended for production use.
-:::
+</Note>
 
 Possible values:
 - Any positive integer.
@@ -1980,9 +1980,9 @@ Default value: `0` (no limit).
 The minimal number of marks read by the query for applying the [max_concurrent_queries](#max_concurrent_queries)
 setting.
 
-:::note
+<Note>
 Queries will still be limited by other `max_concurrent_queries` settings.
-:::
+</Note>
 
 Possible values:
 - Positive integer.
@@ -2221,9 +2221,9 @@ Run zero-copy in compatible mode during conversion process.
 Force read-through filesystem cache for merges
 )", EXPERIMENTAL) \
     DECLARE(Bool, cache_populated_by_fetch, false, R"(
-:::note
+<Note>
 This setting applies only to ClickHouse Cloud.
-:::
+</Note>
 
 When `cache_populated_by_fetch` is disabled (the default setting), new data
 parts are loaded into the filesystem cache only when a query is run that requires
@@ -2240,9 +2240,9 @@ to trigger such an action.
 - [cache_warmer_threads](/reference/settings/session-settings/other#cache_warmer_threads)
 )", 0) \
     DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
-:::note
+<Note>
 This setting applies only to ClickHouse Cloud.
-:::
+</Note>
 
 If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
 )", 0) \

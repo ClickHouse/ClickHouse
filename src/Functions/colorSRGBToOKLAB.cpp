@@ -37,11 +37,11 @@ Converts a colour encoded in the **sRGB** colour space to the perceptually unifo
 
 If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
 
-:::note
+<Note>
 **OKLAB** is a perceptually uniform color space.
 Its three coordinates are `L` (the lightness in the range `[0...1]`), `a (Green-Red axis)` and `b (Blue-Yellow axis)`.
 OKLab is designed to be perceptually uniform while remaining cheap to compute.
-:::
+</Note>
 
 The conversion consists of two stages:
 1) sRGB to Linear sRGB

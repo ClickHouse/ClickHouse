@@ -548,9 +548,9 @@ void registerStorageJoin(StorageFactory & factory)
             .description = R"DOCS_MD(
 Optional prepared data structure for usage in [JOIN](/reference/statements/select/join) operations.
 
-:::note
+<Note>
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
-:::
+</Note>
 
 ## Creating a table {#creating-a-table}
 

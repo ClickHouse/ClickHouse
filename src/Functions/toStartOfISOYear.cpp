@@ -13,9 +13,9 @@ REGISTER_FUNCTION(ToStartOfISOYear)
     FunctionDocumentation::Description description = R"(
 Rounds down a date or date with time to the first day of the ISO year, which can be different than a regular year. See [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 toStartOfISOYear(value)

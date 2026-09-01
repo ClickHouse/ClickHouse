@@ -144,9 +144,9 @@ If the number of **idle** threads in the Global Thread pool is greater than [`ma
     DECLARE(UInt64, thread_pool_queue_size, 10000, R"(
 The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [`max_thread_pool_size`](/reference/settings/server-settings/settings/max-thread#max_thread_pool_size).
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 **Example**
 
@@ -163,9 +163,9 @@ If the number of **idle** threads in the IO Thread pool exceeds `max_io_thread_p
     DECLARE(UInt64, io_thread_pool_queue_size, 10000, R"(
 The maximum number of jobs that can be scheduled on the IO Thread pool.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_prefixes_deserialization_thread_pool_size, 100, R"(
 ClickHouse uses threads from the prefixes deserialization Thread pool for parallel reading of metadata of columns and subcolumns from file prefixes in Wide parts in MergeTree. `max_prefixes_deserialization_thread_pool_size` limits the maximum number of threads in the pool.
@@ -176,9 +176,9 @@ If the number of **idle** threads in the prefixes deserialization Thread pool ex
     DECLARE(UInt64, prefixes_deserialization_thread_pool_thread_pool_queue_size, 10000, R"(
 The maximum number of jobs that can be scheduled on the prefixes deserialization Thread pool.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
 Maximum total number of threads to use for parsing input.
@@ -189,9 +189,9 @@ Maximum number of idle standby threads to keep in the thread pool for parsing in
     DECLARE(UInt64, format_parsing_thread_pool_queue_size, 10000, R"(
 The maximum number of jobs that can be scheduled on thread pool for parsing input.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
@@ -209,39 +209,39 @@ A value of `0` means unlimited.
     DECLARE(UInt64, max_remote_read_network_bandwidth_for_server, 0, R"(
 The maximum speed of data exchange over the network in bytes per second for read.
 
-:::note
+<Note>
 A value of `0` (default) means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_remote_write_network_bandwidth_for_server, 0, R"(
 The maximum speed of data exchange over the network in bytes per second for write.
 
-:::note
+<Note>
 A value of `0` (default) means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_local_read_bandwidth_for_server, 0, R"(
 The maximum speed of local reads in bytes per second.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_local_write_bandwidth_for_server, 0, R"(
 The maximum speed of local writes in bytes per seconds.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_backups_io_thread_pool_size, 1000, R"(ClickHouse uses threads from the Backups IO Thread pool to do S3 backup IO operations. `max_backups_io_thread_pool_size` limits the maximum number of threads in the pool.)", 0) \
     DECLARE(UInt64, max_backups_io_thread_pool_free_size, 0, R"(If the number of **idle** threads in the Backups IO Thread pool exceeds `max_backup_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.)", 0) \
     DECLARE(UInt64, backups_io_thread_pool_queue_size, 0, R"(
 The maximum number of jobs that can be scheduled on the Backups IO Thread pool. It is recommended to keep this queue unlimited due to the current S3 backup logic.
 
-:::note
+<Note>
 A value of `0` (default) means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(NonZeroUInt64, backup_threads, 16, R"(The maximum number of threads to execute `BACKUP` requests.)", 0) \
     DECLARE(UInt64, max_backup_bandwidth_for_server, 0, R"(The maximum read speed in bytes per second for all backups on server. Zero means unlimited.)", 0) \
@@ -284,20 +284,20 @@ The value can be overridden for a specific endpoint of a composable protocol wit
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
 
-:::note
+<Note>
 Recommendations for using object storage as `tmp_policy`:
 - Use separate `bucket:path` on each server
 - Use `metadata_type=plain`
 - You may also want to set TTL for this bucket
-:::
+</Note>
 
-:::note
+<Note>
 - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
 - `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` and are ignored.
 - Policy should have exactly *one volume*
 
 For more information see the [MergeTree Table Engine](/reference/engines/table-engines/mergetree-family/mergetree) documentation.
-:::
+</Note>
 
 **Example**
 
@@ -339,9 +339,9 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
 The maximum amount of storage that could be used for external aggregation, joins or sorting.
 Queries that exceed this limit will fail with an exception.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 See also:
 - [`max_temporary_data_on_disk_size_for_user`](/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
@@ -352,9 +352,9 @@ With this option, temporary data will be stored in the cache for the particular 
 In this section, you should specify the disk name with the type `cache`.
 In that case, the cache and temporary data will share the same space, and the disk cache can be evicted to create temporary data.
 
-:::note
+<Note>
 Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
-:::
+</Note>
 
 **Example**
 
@@ -394,9 +394,9 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
     DECLARE(UInt64, max_server_memory_usage, 0, R"(
 The maximum amount of memory the server is allowed to use, expressed in bytes.
 
-:::note
+<Note>
 The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage_to_ram_ratio`.
-:::
+</Note>
 
 As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
 )", 0) \
@@ -430,17 +430,17 @@ This ratio is applied in two ways:
 
 Setting the ratio to `0` disables both the startup cap and the runtime adjustment. The runtime adjustment is also a no-op on non-Linux systems and in `clickhouse-keeper`, which does not expose this setting. To keep the static startup/reload cap but disable the runtime adjustment (the behavior of previous versions), set `memory_worker_dynamic_hard_limit` to `0`.
 
-:::note
+<Note>
 The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage`.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, merges_mutations_memory_usage_soft_limit, 0, R"(
 Sets the limit on how much RAM is allowed to use for performing merge and mutation operations.
 If ClickHouse reaches the limit set, it won't schedule any new background merge or mutation operations but will continue to execute already scheduled tasks.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 **Example**
 
@@ -475,16 +475,16 @@ If false, the defaults from the [`default_normal_view_sql_security`](/reference/
 
 Refreshable materialized views always receive the defaults, regardless of this setting.
 
-:::note
+<Note>
 Changing this setting affects only views created afterwards; the stored definitions of existing views stay unchanged.
-:::
+</Note>
 )", 0)  \
     DECLARE(UInt64, max_build_vector_similarity_index_thread_pool_size, 16, R"(
 The maximum number of threads to use for building vector indexes.
 
-:::note
+<Note>
 A value of `0` means all cores.
-:::
+</Note>
 )", 0) \
     \
     /* Database Catalog */ \
@@ -499,9 +499,9 @@ If some subdirectory is not used by clickhouse-server and this directory was not
 removing all access rights. It also works for directories that clickhouse-server does not
 expect to see inside `store/`.
 
-:::note
+<Note>
 A value of `0` means "immediately".
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(
 Parameter of a task that cleans up garbage from `store/` directory.
@@ -512,17 +512,17 @@ and this directory was not modified for last
 It also works for directories that clickhouse-server does not
 expect to see inside `store/`.
 
-:::note
+<Note>
 A value of `0` means "never". The default value corresponds to 30 days.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(
 Parameter of a task that cleans up garbage from `store/` directory.
 Sets scheduling period of the task.
 
-:::note
+<Note>
 A value of `0` means "never". The default value corresponds to 1 day.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
@@ -538,38 +538,38 @@ See also:
 - [`max_concurrent_select_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)
 - [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
 
-:::note
+<Note>
 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_concurrent_insert_queries, 0, R"(
 Limit on total number of concurrent insert queries.
 
-:::note
+<Note>
 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_concurrent_select_queries, 0, R"(
 Limit on total number of concurrently select queries.
 
-:::note
+<Note>
 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, max_waiting_queries, 0, R"(
 Limit on total number of concurrently waiting queries.
 Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases).
 
-:::note
+<Note>
 Waiting queries are not counted when limits controlled by the following settings are checked:
 
 - [`max_concurrent_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)
@@ -579,14 +579,14 @@ Waiting queries are not counted when limits controlled by the following settings
 - [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
-:::
+</Note>
 
-:::note
+<Note>
 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+</Note>
 )", 0) \
     \
     DECLARE(Double, cache_size_to_ram_max_ratio, 0.5, R"(Set cache size to RAM max ratio. Allows lowering the cache size on low-memory systems.)", 0) \
@@ -598,20 +598,20 @@ There is one shared cache for the server. Memory is allocated on demand. The cac
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 
-:::note
+<Note>
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache policy name.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
 Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family) family of tables).
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, mark_cache_size_ratio, DEFAULT_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
@@ -641,56 +641,60 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache policy name.", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_size, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE, R"(Size of cache for vector similarity indexes. Zero means disabled.
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::)", 0) \
+</Note>
+)", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
     DECLARE(String, text_index_tokens_cache_policy, DEFAULT_TEXT_INDEX_TOKENS_CACHE_POLICY, "Text index tokens cache policy name.", 0) \
     DECLARE(UInt64, text_index_tokens_cache_size, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE, R"(Size of cache for text index tokens. Zero means disabled.
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::)", 0) \
+</Note>
+)", 0) \
     DECLARE(UInt64, text_index_tokens_cache_max_entries, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES, "Size of cache for text index tokens in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_tokens_cache_size_ratio, DEFAULT_TEXT_INDEX_TOKENS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index tokens cache relative to the cache's total size.", 0) \
     DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache policy name.", 0) \
     DECLARE(UInt64, text_index_header_cache_size, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE, R"(Size of cache for text index headers. Zero means disabled.
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::)", 0) \
+</Note>
+)", 0) \
     DECLARE(UInt64, text_index_header_cache_max_entries, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_ENTRIES, "Size of cache for text index header in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_header_cache_size_ratio, DEFAULT_TEXT_INDEX_HEADER_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index header cache relative to the cache's total size.", 0) \
     DECLARE(String, text_index_postings_cache_policy, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_POLICY, "Text index posting list cache policy name.", 0) \
     DECLARE(UInt64, text_index_postings_cache_size, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE, R"(Size of cache for text index posting lists. Zero means disabled.
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::)", 0) \
+</Note>
+)", 0) \
     DECLARE(UInt64, text_index_postings_cache_max_entries, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES, "Size of cache for text index posting list in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_postings_cache_size_ratio, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index posting list cache relative to the cache's total size.", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
 Maximum size of cache for uncompressed blocks of `MergeTree` indices.
 
-:::note
+<Note>
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Secondary index mark cache policy name.)", 0) \
     DECLARE(UInt64, index_mark_cache_size, DEFAULT_INDEX_MARK_CACHE_MAX_SIZE, R"(
 Maximum size of cache for index marks.
 
-:::note
+<Note>
 
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, index_mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of index mark cache to fill during prewarm.)", 0) \
@@ -709,11 +713,11 @@ The amount of data in mapped files can be monitored in the following system tabl
 - `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` in [`system.metrics`](/reference/system-tables/metrics), [`system.metric_log`](/reference/system-tables/metric_log)
 - `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` in [`system.events`](/reference/system-tables/events), [`system.processes`](/reference/system-tables/processes), [`system.query_log`](/reference/system-tables/query_log), [`system.query_thread_log`](/reference/system-tables/query_thread_log), [`system.query_views_log`](/reference/system-tables/query_views_log)
 
-:::note
+<Note>
 The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](/concepts/features/performance/caches/caches).)", 0) \
     \
@@ -723,24 +727,24 @@ Maximum size in bytes of the cache of preprocessed polygons used by the function
 Entries above the limit are evicted in least recently used order.
 Setting it to `0` disables the cache: all cached polygons are evicted, and every subsequent query preprocesses its constant polygon anew.
 The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](/reference/statements/system#drop-point-in-polygon-cache) query.
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
 Maximum size of the query condition cache.
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
     DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache policy name.", 0) \
     DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
 Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, encryption_header_cache_size_ratio, DEFAULT_ENCRYPTION_HEADER_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the encryption header cache relative to the cache's total size.", 0) \
     \
@@ -762,11 +766,11 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](/reference/statements/drop) query or [`TRUNCATE`](/reference/statements/truncate) query.
 
-:::note
+<Note>
 A value of `0` means that you can delete all tables without any restrictions.
 
 This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
-:::
+</Note>
 
 **Example**
 
@@ -780,11 +784,11 @@ Restriction on dropping partitions.
 If the size of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](/reference/statements/alter/partition#drop-partitionpart) query.
 This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
-:::note
+<Note>
 The value `0` means that you can drop partitions without any restrictions.
 
 This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](/reference/settings/session-settings/max#max_table_size_to_drop)
-:::
+</Note>
 
 **Example**
 
@@ -867,9 +871,9 @@ If the number of active parts exceeds the specified value, clickhouse server wil
     DECLARE(UInt64, max_named_collection_num_to_throw, 0lu, R"(
 If number of named collections is greater than this value, server will throw an exception.
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -891,9 +895,9 @@ Only counts tables for database engines:
 - Replicated
 - Lazy
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -909,9 +913,9 @@ Only counts tables for database engines:
 - Replicated
 - Lazy
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -927,9 +931,9 @@ Only counts tables for database engines:
 - Replicated
 - Lazy
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -945,9 +949,9 @@ Only counts tables for database engines:
 - Replicated
 - Lazy
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -960,16 +964,16 @@ The maximum number of authentication methods a user can be created with or alter
 Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.
 Non authentication create/alter queries will succeed.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_num, 0, R"(
 The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get at least one thread to run. Query can upscale to desired number of threads during execution if more threads become available.
 
-:::note
+<Note>
 A value of `0` (default) means unlimited.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 2, "Same as [`concurrent_threads_soft_limit_num`](#concurrent_threads_soft_limit_num), but with ratio to cores.", 0) \
     DECLARE(Bool, concurrent_threads_lazy_allocation, true, R"(
@@ -991,16 +995,16 @@ Possible values:
     DECLARE(UInt64, background_pool_size, 16, R"(
 Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
 
-:::note
+<Note>
 - This setting could also be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start.
 - You can only increase the number of threads at runtime.
 - To lower the number of threads you have to restart the server.
 - By adjusting this setting, you manage CPU and disk load.
-:::
+</Note>
 
-:::danger
+<Danger>
 Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-:::
+</Danger>
 
 Before changing it, please also take a look at related MergeTree settings, such as:
 - [`number_of_free_entries_in_pool_to_lower_max_size_of_merge`](/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_lower_max_size_of_merge).
@@ -1018,11 +1022,11 @@ Sets a ratio between the number of threads and the number of background merges a
 
 For example, if the ratio equals to 2 and [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size) is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority.
 
-:::note
+<Note>
 You can only increase this ratio at runtime. To lower it you have to restart the server.
 
 As with the [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size) setting [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) could be applied from the `default` profile for backward compatibility.
-:::
+</Note>
 )", 0) \
     DECLARE(String, background_merges_mutations_scheduling_policy, "round_robin", R"(
 The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
@@ -1048,16 +1052,16 @@ Possible values:
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, R"(
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
 
-:::note
+<Note>
 A value of `0` means all available CPUs will be used.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt64, tables_loader_background_pool_size, 0, R"(
 Sets the number of threads performing asynchronous load jobs in background pool. The background pool is used for loading tables asynchronously after server start in case there are no queries waiting for the table. It could be beneficial to keep low number of threads in background pool if there are a lot of tables. It will reserve CPU resources for concurrent query execution.
 
-:::note
+<Note>
 A value of `0` means all available CPUs will be used.
-:::
+</Note>
 )", 0) \
     DECLARE(Bool, async_load_databases, true, R"(
 Asynchronous loading of databases and tables.
@@ -1161,9 +1165,9 @@ When enabled, the server waits for background blob removal to complete before ac
     DECLARE(UInt64, max_materialized_views_count_for_table, 0, R"(
 A limit on the number of materialized views attached to a table.
 
-:::note
+<Note>
 Only directly dependent views are considered here, and the creation of one view on top of another view is not considered.
-:::
+</Note>
 )", 0) \
     DECLARE(UInt32, max_database_replicated_create_table_thread_pool_size, 1, R"(The number of threads to create tables during replica recovery in DatabaseReplicated. Zero means number of threads equal number of cores.)", 0) \
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
@@ -1407,14 +1411,14 @@ Controls if the user can change settings related to the different feature tiers.
 
 This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` features.
 
-:::note
+<Note>
 A value of `0` means that all settings can be changed.
-:::
+</Note>
 
-:::note
+<Note>
 `2` previously meant "production settings only". It now also allows beta settings, so a configuration
 that pinned `2` to allow production settings only must use `3`.
-:::
+</Note>
 )", 0) \
     DECLARE(Bool, dictionaries_lazy_load, 1, R"(
 Lazy loading of dictionaries.
@@ -1422,10 +1426,10 @@ Lazy loading of dictionaries.
 - If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 - If `false`, then the server loads all dictionaries at startup.
 
-:::note
+<Note>
 The server will wait at startup until all the dictionaries finish their loading before receiving any connections
 (exception: if [`wait_dictionaries_load_at_startup`](/reference/settings/server-settings/settings/other#wait_dictionaries_load_at_startup) is set to `false`).
-:::
+</Note>
 
 **Example**
 
@@ -1570,16 +1574,16 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
     DECLARE(UInt64, max_open_files, 0, R"(
 The maximum number of open files.
 
-:::note
+<Note>
 We recommend using this option in macOS since the getrlimit() function returns an incorrect value.
-:::
+</Note>
 )", 0) \
     DECLARE(String, path, DBMS_DEFAULT_PATH, R"(
 The path to the directory containing data.
 
-:::note
+<Note>
 The trailing slash is mandatory.
-:::
+</Note>
 
 **Example**
 
@@ -1695,10 +1699,10 @@ Note that configuration files that are loaded separately from the main server co
     DECLARE(String, tmp_path, "/var/lib/clickhouse/tmp/", R"(
 Path on the local filesystem to store temporary data for processing large queries.
 
-:::note
+<Note>
 - Only one option can be used to configure temporary data storage: tmp_path, tmp_policy, temporary_data_in_cache.
 - The trailing slash is mandatory.
-:::
+</Note>
 
 **Example**
 
@@ -1777,9 +1781,9 @@ Maximum backoff delay in seconds between consecutive OOM canary relaunches.
     DECLARE(Bool, remap_executable, false, R"(
 Setting to reallocate memory for machine code ("text") using huge pages.
 
-:::note
+<Note>
 This feature is highly experimental.
-:::
+</Note>
 
 **Example**
 
@@ -1790,9 +1794,9 @@ This feature is highly experimental.
     DECLARE(Bool, mlock_executable, false, R"(
 Perform `<mlockall>` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load.
 
-:::note
+<Note>
 Enabling this option is recommended but will lead to increased startup time for up to a few seconds. Keep in mind that this setting would not work without "CAP_IPC_LOCK" capability.
-:::
+</Note>
 
 **Example**
 

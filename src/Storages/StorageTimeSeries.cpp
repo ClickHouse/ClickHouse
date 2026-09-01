@@ -746,12 +746,12 @@ metric_name1[tag1=value1, tag2=value2, ...] = {timestamp1: value1, timestamp2: v
 metric_name2[...] = ...
 ```
 
-:::info
+<Info>
 This is an experimental feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
 with [allow_experimental_time_series_table](/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) setting.
 Input the command `set allow_experimental_time_series_table = 1`.
-:::
+</Info>
 
 ## Syntax {#syntax}
 
@@ -763,9 +763,9 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
 ```
 
-:::note
+<Note>
 The keyword `SAMPLES` has an alias `DATA` which is kept for backwards compatibility.
-:::
+</Note>
 
 ## Usage {#usage}
 
@@ -1057,11 +1057,11 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 This statement will add columns `instance` and `job` to the inner [tags](#tags-table) target table.
 The values of the tags `instance` and `job` will be stored both in those columns and in the `tags` column.
 
-:::note
+<Note>
 In tables created by older versions of ClickHouse the `tags` column contains only the tags without dedicated
 columns and without the metric name, and the `all_tags` column is an ephemeral column which was filled on insertion
 with all the tags except the metric name.
-:::
+</Note>
 
 ## Table engines of inner target tables {#inner-table-engines}
 

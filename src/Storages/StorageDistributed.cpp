@@ -2340,10 +2340,10 @@ void registerStorageDistributed(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-:::warning Distributed engine in Cloud
+<Warning title="Distributed engine in Cloud">
 To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions.
 The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
-:::
+</Warning>
 
 Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used if they exist.
@@ -2428,7 +2428,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
 
-:::note
+<Note>
 **Durability settings** (`fsync_...`):
 
 - Affect only background `INSERT`s (i.e. `distributed_foreground_insert=false`) when data is first stored on the initiator node disk and later, in the background, when sent to shards.
@@ -2440,7 +2440,7 @@ For **Insert limit settings** (`..._insert`) see also:
 - [`distributed_foreground_insert`](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting
 - [`prefer_localhost_replica`](/reference/settings/session-settings/prefer#prefer_localhost_replica) setting
 - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
-:::
+</Note>
 
 **Example**
 
@@ -2585,9 +2585,9 @@ To learn more about how distributed `in` and `global in` queries are processed, 
 
 `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](/reference/data-types/int-uint).
 
-:::note
+<Note>
 Since [`remote`](/reference/functions/table-functions/remote) and [`cluster`](/reference/functions/table-functions/cluster) table functions internally create temporary Distributed table, `_shard_num` is available there too.
-:::
+</Note>
 
 **See Also**
 

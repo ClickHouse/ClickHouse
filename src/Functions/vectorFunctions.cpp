@@ -1793,9 +1793,9 @@ Calculates the element-wise product of two or more tuples of the same size.
     FunctionDocumentation::Description description_tupleDivide = R"(
 Calculates the element-wise division of two or more tuples of the same size, applied left-to-right.
 
-:::note
+<Note>
 Division by zero will return `inf`.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax_tupleDivide = "tupleDivide(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tupleDivide = {
@@ -1955,9 +1955,9 @@ WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVA
     FunctionDocumentation::Description description_addInterval = R"(
 Adds an interval to another interval or tuple of intervals.
 
-:::note
+<Note>
 Intervals of the same type will be combined into a single interval. For instance if `toIntervalDay(1)` and `toIntervalDay(2)` are passed then the result will be `(3)` rather than `(1,1)`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_addInterval = R"(
 addInterval(interval_1, interval_2)
@@ -2052,9 +2052,9 @@ Returns a tuple with all elements multiplied by a number.
     FunctionDocumentation::Description description_tupleDivideByNumber = R"(
 Returns a tuple with all elements divided by a number.
 
-:::note
+<Note>
 Division by zero will return `inf`.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax_tupleDivideByNumber = "tupleDivideByNumber(tuple, number)";
     FunctionDocumentation::Arguments arguments_tupleDivideByNumber = {

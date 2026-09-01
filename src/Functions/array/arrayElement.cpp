@@ -3428,9 +3428,9 @@ The index elements may be nullable. A `NULL` index produces `NULL` (and makes th
 wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), a `NULL` index produces the
 default value instead. This is the same behavior as for a scalar `NULL` index.
 
-:::note
+<Note>
 Arrays in ClickHouse are one-indexed.
-:::
+</Note>
 
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
@@ -3467,9 +3467,9 @@ When `n` is an array of integers, returns an array of the elements at the specif
 This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
 Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array, following the same rule as for a scalar index.
 
-:::note
+<Note>
 Arrays in ClickHouse are one-indexed.
-:::
+</Note>
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 )";
