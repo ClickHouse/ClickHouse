@@ -1057,7 +1057,13 @@ String documentationAnchor(const String & name)
 
 String renderDescriptionCatalog(std::vector<std::pair<String, String>> entries)
 {
-    std::ranges::sort(entries, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    std::ranges::sort(entries, [](const auto & lhs, const auto & rhs)
+    {
+        const int case_insensitive_result = Poco::icompare(lhs.first, rhs.first);
+        if (case_insensitive_result != 0)
+            return case_insensitive_result < 0;
+        return lhs.first < rhs.first;
+    });
 
     String result;
     for (const auto & [name, description] : entries)
