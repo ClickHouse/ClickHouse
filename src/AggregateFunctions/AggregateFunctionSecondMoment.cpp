@@ -27,10 +27,10 @@ Where:
 - $\bar{x}$ is the arithmetic mean of the data set
 - $n$ is the number of data points in the data set
 
-The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](/sql-reference/aggregate-functions/reference/varPop) instead.
+The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](/reference/functions/aggregate-functions/varPop) instead.
 
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varSampStable`](/sql-reference/aggregate-functions/reference/varsampstable) function. It works slower but provides a lower computational error.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varSampStable`](/reference/functions/aggregate-functions/varSampStable) function. It works slower but provides a lower computational error.
 :::
     )";
     FunctionDocumentation::Syntax syntax_varSamp = R"(
@@ -86,7 +86,7 @@ Where:
 - $n$ is the population size
 
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varPopStable`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varpopstable) function. It works slower but provides a lower computational error.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varPopStable`](/reference/functions/aggregate-functions/varPopStable) function. It works slower but provides a lower computational error.
 :::
     )";
     FunctionDocumentation::Syntax syntax_varPop = R"(
@@ -127,11 +127,11 @@ FROM test_data;
     factory.registerFunction("varPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::varPop>, documentation_varPop});
     FunctionDocumentation::Description description_stddevSamp = R"(
 Returns the sample standard deviation of a numeric data sequence.
-The result is equal to the square root of [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp).
+The result is equal to the square root of [`varSamp`](/reference/functions/aggregate-functions/varSamp).
 
 :::note
 This function uses a numerically unstable algorithm.
-If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevSampStable`](/sql-reference/aggregate-functions/reference/stddevsampstable) function. It works slower but provides a lower computational error.
+If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevSampStable`](/reference/functions/aggregate-functions/stddevSampStable) function. It works slower but provides a lower computational error.
 :::
     )";
     FunctionDocumentation::Syntax syntax_stddevSamp = R"(
@@ -172,10 +172,10 @@ FROM test_data;
     factory.registerFunction("stddevSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::stddevSamp>, documentation_stddevSamp});
     FunctionDocumentation::Description description_stddevPop = R"(
 Returns the population standard deviation of a numeric data sequence.
-The result is equal to the square root of [`varPop`](/sql-reference/aggregate-functions/reference/varPop).
+The result is equal to the square root of [`varPop`](/reference/functions/aggregate-functions/varPop).
 
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevPopStable`](/sql-reference/aggregate-functions/reference/stddevpopstable) function. It works slower but provides a lower computational error.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevPopStable`](/reference/functions/aggregate-functions/stddevPopStable) function. It works slower but provides a lower computational error.
 :::
     )";
     FunctionDocumentation::Syntax syntax_stddevPop = R"(

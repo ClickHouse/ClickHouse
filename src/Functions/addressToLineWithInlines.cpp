@@ -40,9 +40,10 @@ protected:
 
     ColumnPtr getResultColumn(const typename ColumnVector<UInt64>::Container & data, size_t input_rows_count) const override
     {
-        auto result_column = ColumnArray::create(ColumnString::create());
-        ColumnString & result_strings = typeid_cast<ColumnString &>(result_column->getData());
-        ColumnArray::Offsets & result_offsets = result_column->getOffsets();
+        auto result_strings_column = ColumnString::create();
+        auto result_offsets_column = ColumnArray::ColumnOffsets::create();
+        ColumnString & result_strings = *result_strings_column;
+        ColumnArray::Offsets & result_offsets = result_offsets_column->getData();
 
         ColumnArray::Offset current_offset = 0;
 
@@ -55,7 +56,7 @@ protected:
             result_offsets.push_back(current_offset);
         }
 
-        return result_column;
+        return ColumnArray::create(std::move(result_strings_column), std::move(result_offsets_column));
     }
 
     void setResult(StringViews & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> & inline_frames) const override

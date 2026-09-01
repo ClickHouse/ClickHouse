@@ -6,7 +6,7 @@ tags: ['Rendimiento y optimización']
 keywords: ['Consultas costosas', 'Uso de memoria']
 ---
 
-<div id="using-the-systemquery_log-table">
+<div id="using-the-systemquery-log-table">
   ## Uso de la tabla `system.query_log`
 </div>
 
@@ -16,7 +16,7 @@ Un par de comentarios sobre esta consulta:
 
 * los resultados se calculan a partir del último día (`now() - toIntervalDay(1))`), pero puedes modificar fácilmente el intervalo de tiempo
 * se asume que tienes un clúster llamado `default`, que es el nombre de tu clúster en [ClickHouse Cloud](https://console.clickhouse.cloud). Cambia `default` por el nombre de tu clúster
-* si no tienes un clúster, consulta la query que aparece al final de este artículo
+* si no tienes un clúster, consulta la consulta que aparece al final de este artículo
 
 ```sql
 SELECT
@@ -29,6 +29,7 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
+    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -50,7 +51,13 @@ La respuesta tiene este aspecto:
 ```
 
 <Note>
-  Si no tienes una tabla `system.query_log`, es probable que no tengas habilitado el registro de consultas. Consulta la [configuración `query_log`](/es/reference/settings/server-settings/settings#server_configuration_parameters-query-log) para ver cómo habilitarlo.
+  Si no tienes una tabla `system.query_log`, es probable que no tengas habilitado el registro de consultas. Consulta la [configuración `query_log`](/es/reference/settings/server-settings/settings/query#query_log) para ver cómo habilitarlo.
+</Note>
+
+<Note>
+  **`query_log` contiene más que las consultas que enviaste**
+
+  Una sola consulta enviada puede aparecer como varias filas: la consulta inicial (`is_initial_query = 1`) más pasos derivados o internos (`is_initial_query = 0`), como consultas secundarias para la ejecución distribuida o las consultas internas que se usan para evaluar vistas. Esas filas internas tienen sus propios valores de `query_id` —asignados por ClickHouse y, a veces, con una etiqueta como `queryView...`—, así que no des por hecho que cada `query_id` coincide con lo que informó tu client. Para atribuir el uso a la consulta tal como la ejecutaste, filtra por `is_initial_query = 1` o haz coincidir `query_id = initial_query_id`. Consulta [Cómo identificar las consultas más costosas](/es/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id) y la [referencia de `query_log`](/es/reference/system-tables/query_log) para obtener más detalles.
 </Note>
 
 Si no tienes un clúster, puedes consultar directamente tu única tabla `system.query_log`:
@@ -66,6 +73,7 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
+    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

@@ -30,7 +30,7 @@ title: データ型の対応
 | `fixed(32)`                                 | [Int256/UInt256](/ja/reference/data-types/int-uint)                                                | `fixed(32)`                   |
 | `record`                                    | [Tuple](/ja/reference/data-types/tuple)                                                            | `record`                      |
 
-* `bytes` がデフォルトで、設定 [`output_format_avro_string_column_pattern`](/ja/reference/settings/formats#output_format_avro_string_column_pattern) で制御されます
+* `bytes` がデフォルトで、設定 [`output_format_avro_string_column_pattern`](/ja/reference/settings/formats/output-format#output_format_avro_string_column_pattern) で制御されます
 
 **  [Variant 型](/ja/reference/data-types/variant) は `null` をフィールド値として暗黙的に受け入れるため、たとえば Avro の `union(T1, T2, null)` は `Variant(T1, T2)` に変換されます。
 そのため、ClickHouse から Avro を生成する際には、Avro の `union` 型の候補に常に `null` 型を含める必要があります。これは、スキーマ推論の時点では、実際に `null` となる値があるかどうか分からないためです。

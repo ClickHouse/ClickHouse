@@ -197,7 +197,7 @@ The Private Endpoint Resource ID is exposed in the Azure Portal. Open the Privat
 
 <Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Private Endpoint View" border />
 
-Under properties, find `id` field and copy this value:
+Copy the top-level `id` field (the private endpoint's Resource ID, in the form `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — don't use the nested `id` fields inside the `properties` object:
 
 **Preferred method: Using Resource ID**
 <Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Private Endpoint Resource ID" border />

@@ -23,6 +23,20 @@ struct EquivalenceClasses
     using ClassPtr = std::shared_ptr<Class>;
     using ConstClassPtr = std::shared_ptr<const Class>;
 
+    EquivalenceClasses() = default;
+
+    /// The default copy would share the class lists between the copy and the source.
+    /// Single-member classes (from `add(a, a)`) are not copied; they carry no information.
+    EquivalenceClasses(const EquivalenceClasses & other) { merge(other); }
+
+    EquivalenceClasses & operator=(EquivalenceClasses other)
+    {
+        member_to_class = std::move(other.member_to_class);
+        return *this;
+    }
+
+    EquivalenceClasses(EquivalenceClasses &&) = default;
+
     void add(const T & a, const T & b)
     {
         auto & class_a = member_to_class[a];

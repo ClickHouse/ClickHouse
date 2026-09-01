@@ -67,10 +67,17 @@ function thread_cancel
             SIGNAL="KILL"
         fi
 
-        PID=$(grep -Fa "query_id=$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Fav insert_data | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
+        # Poll (10ms) until an insert client is in flight, then kill it at once. A single blind
+        # snapshot plus long random sleeps misses the short in-flight window on fast builds, so
+        # no insert gets cancelled and the "did we cancel anything" guard below flips to 0.
+        PID=""
+        while [ $SECONDS -lt "$TIMELIMIT" ]
+        do
+            PID=$(grep -Fa "query_id=$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Fav insert_data | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
+            if [ ! -z "$PID" ]; then break; fi
+            sleep 0.01;
+        done
         if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID"; fi
-        sleep 0.$RANDOM;
-        sleep 0.$RANDOM;
         sleep 0.$RANDOM;
     done
 }

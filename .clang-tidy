@@ -112,6 +112,8 @@ Checks: [
   '-google-readability-function-size',
   '-google-readability-namespace-comments',
   '-google-readability-todo',
+  '-google-runtime-float', # `long double` is used deliberately in a few places, e.g. `shift10` relies on it to delay
+        # rounding until after the decimal shift, which `readFloatTextFastImpl` needs for correct Float64 parsing
 
   '-hicpp-avoid-c-arrays',
   '-hicpp-avoid-goto',
