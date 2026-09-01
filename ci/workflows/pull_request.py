@@ -204,7 +204,7 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.buzz_fuzzer_jobs
+            for job in JobConfigs.lacasadeldolor_jobs
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
