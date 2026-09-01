@@ -2245,6 +2245,7 @@ enum JoinStepLogicalIdentityTag : UInt64
     JOIN_SETTINGS_MAX_BLOCK_SIZE_TAG = 14,
     JOIN_SETTINGS_TEMPORARY_FILES_CODEC_TAG = 15,
     JOIN_SETTINGS_TEMPORARY_FILES_BUFFER_SIZE_TAG = 16,
+    JOIN_OUTPUT_CACHE_KEY_TAG = 17,
 };
 
 /// Sorted by column name: the map's iteration order is not part of its value.
@@ -2333,6 +2334,10 @@ void JoinStepLogical::writeFullDigest(StepDigestWriter & writer) const
     /// it too.
     writer.addVarUInt(RIGHT_HASH_TABLE_CACHE_KEY_TAG, right_hash_table_cache_key);
 
+    /// The same, for the second `StatsCollectingParams` key `buildPhysicalJoin` derives - the one that
+    /// preallocates the join output. Also off the wire, also set by `optimizeJoin`.
+    writer.addVarUInt(JOIN_OUTPUT_CACHE_KEY_TAG, join_output_cache_key);
+
     /// The right side's estimate becomes `JoinAlgorithmParams::rhs_size_estimation`, which picks the
     /// join algorithm; the left side's is read by `joinRuntimeFilter`.
     addOptionalRows(writer, LEFT_ESTIMATED_ROWS_TAG, left_relation.estimated_rows);
@@ -2417,9 +2422,10 @@ void JoinStepLogical::writeLogicalDigest(StepDigestWriter & writer) const
     /// Out, planner bookkeeping - it informs later passes and does not change this join's rows:
     /// `optimized`, `disjunctions_optimization_applied`, `result_rows_estimation`,
     /// `imprecise_estimate`, `result_column_stats`, `left_relation` / `right_relation`,
-    /// `table_stats_hint`, `right_hash_table_cache_key`, `join_analyze_mode`. Excluding them lets two
-    /// joins that differ only in how far the reordering pass got share one group; it does not make a
-    /// rule-rebuilt join match an ingested one, whose input group list differs by construction.
+    /// `table_stats_hint`, `right_hash_table_cache_key`, `join_output_cache_key`, `join_analyze_mode`.
+    /// Excluding them lets two joins that differ only in how far the reordering pass got share one
+    /// group; it does not make a rule-rebuilt join match an ingested one, whose input group list
+    /// differs by construction.
     /// Out, algorithm and execution: `join_algorithms` and every threshold that steers it, the block
     /// sizes, the partial-merge and grace-hash bucketing, the spill thresholds, the temporary-file
     /// codec and buffer size, `max_rows_in_set_to_optimize_join` (an exact pre-filter),

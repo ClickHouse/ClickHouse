@@ -1097,7 +1097,8 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
 namespace
 {
-/// Cascades digest extras tags for `AggregatingStep`. Unique within the step; never reused.
+/// Cascades digest extras tags for `AggregatingStep`. Unique within the step, and renumbered freely:
+/// a digest is compared only against digests taken in the same process, never stored or shipped.
 /// `final` and `params.stats_collecting_params.key` need no tag: both are gated on `for_cache_key`,
 /// which the full digest always sets to `false`, so both are on the wire.
 enum AggregatingStepIdentityTag : UInt64
@@ -1107,15 +1108,14 @@ enum AggregatingStepIdentityTag : UInt64
     SKIP_MERGING_TAG = 3,
     STORAGE_HAS_EVENLY_DISTRIBUTED_READ_TAG = 4,
     GROUP_BY_SORT_DESCRIPTION_TAG = 5,
-    ENABLE_SHARDING_AGGREGATOR_TAG = 6,
-    LIMIT_HINT_TAG = 7,
-    PARAMS_MAX_THREADS_TAG = 8,
-    PARAMS_MAX_BLOCK_SIZE_TAG = 9,
-    PARAMS_ONLY_MERGE_TAG = 10,
-    BUCKET_TOP_K_TAG = 11,
-    BUCKET_TOP_K_ASCENDING_TAG = 12,
-    BUCKET_TOP_K_COUNT_INDEX_TAG = 13,
-    PARAMS_TOP_K_TAG = 14,
+    LIMIT_HINT_TAG = 6,
+    PARAMS_MAX_THREADS_TAG = 7,
+    PARAMS_MAX_BLOCK_SIZE_TAG = 8,
+    PARAMS_ONLY_MERGE_TAG = 9,
+    BUCKET_TOP_K_TAG = 10,
+    BUCKET_TOP_K_ASCENDING_TAG = 11,
+    BUCKET_TOP_K_COUNT_INDEX_TAG = 12,
+    PARAMS_TOP_K_TAG = 13,
 };
 
 String encodeTopKParams(const Aggregator::Params::TopKParams & top_k)
@@ -1148,6 +1148,12 @@ void AggregatingStep::writeFullDigest(StepDigestWriter & writer) const
         return;
     }
 
+    /// This covers the three adaptive-aggregator params without a tag of their own:
+    /// `serializeSettings` writes them from
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR` on, and the digest always
+    /// serializes at `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`. `transformPipeline` clears
+    /// `params.enable_adaptive_aggregator` when the pipeline rejects the admission, which runs after
+    /// interning and plan extraction and so never moves a value already digested.
     writer.addStepWireEncoding(*this);
 
     /// Not on the wire (`deserialize` passes 0 and `updateThreadsValues` re-derives both from session
@@ -1164,9 +1170,6 @@ void AggregatingStep::writeFullDigest(StepDigestWriter & writer) const
     /// Written by `serialize` only together with a non-empty `sort_description_for_merging`, which
     /// `isSerializable` excludes; a free field otherwise.
     writer.addSortDescription(GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
-
-    /// Selects the shard-by-hash aggregation pipeline (`canUseShardedAggregation`).
-    writer.addBool(ENABLE_SHARDING_AGGREGATOR_TAG, enable_sharding_aggregator);
 
     /// Truncates the aggregation result where it is read; a free field, set by
     /// `optimizeLimitForAggregationInOrder`.
@@ -1285,12 +1288,12 @@ void AggregatingStep::writeLogicalDigest(StepDigestWriter & writer) const
     /// `getTraits(...).returns_single_stream` is built from it - a declared trait later passes read -
     /// and because `transformPipeline` collapses the aggregation output to a single stream on it;
     /// `setProduceResultsInBucketOrder` can also flip it after construction.
-    /// The other two are inert for every opted-in instance: `memoryBoundMergingWillBeUsed` and
-    /// `canUseShardedAggregation` both need a non-empty `sort_description_for_merging`, which
-    /// `isSerializable()` excludes, so `getSortDescription()` never returns `group_by_sort_description`
-    /// here (unlike in `MergingAggregatedStep`, where it does). They are written anyway, so the tag
-    /// set does not depend on that coupling and widening the predicate later cannot silently drop
-    /// them; at worst they cost a merge.
+    /// The other two are inert for every opted-in instance: `memoryBoundMergingWillBeUsed`, the only
+    /// reader left, needs a non-empty `sort_description_for_merging`, which `isSerializable()`
+    /// excludes, so `getSortDescription()` never returns `group_by_sort_description` here (unlike in
+    /// `MergingAggregatedStep`, where it does). They are written anyway, so the tag set does not
+    /// depend on that coupling and widening the predicate later cannot silently drop them; at worst
+    /// they cost a merge.
     writer.addSortDescription(LOGICAL_GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
     writer.addBool(LOGICAL_RESULTS_IN_BUCKET_ORDER_TAG, should_produce_results_in_order_of_bucket_number);
     writer.addBool(LOGICAL_MEMORY_BOUND_MERGING_TAG, memory_bound_merging_of_aggregation_results_enabled);
@@ -1298,11 +1301,12 @@ void AggregatingStep::writeLogicalDigest(StepDigestWriter & writer) const
     /// Out, parallelism and chunking: `merge_threads`, `temporary_data_merge_threads`,
     /// `params.max_threads`, `max_block_size`, `params.max_block_size`,
     /// `aggregation_in_order_max_block_bytes`, `storage_has_evenly_distributed_read` (suppresses a
-    /// resize), `enable_sharding_aggregator` (picks the shard-by-hash pipeline).
+    /// resize).
     /// Out, memory and spill: the two-level thresholds, `max_bytes_before_external_group_by`,
     /// `min_free_disk_space`, the hash-table stats collection, `enable_prefetch`, the adaptive
-    /// aggregator, the packed-string-key and zero-byte string layouts, the consecutive-keys
-    /// optimization, `optimize_group_by_constant_keys` - all exact, all execution-only.
+    /// aggregator and its two freeze thresholds, the packed-string-key and zero-byte string layouts,
+    /// the consecutive-keys optimization, `optimize_group_by_constant_keys` - all exact, all
+    /// execution-only.
     /// Out by predicate: `sort_description_for_merging` and
     /// `explicit_sorting_required_for_aggregation_in_order` (in-order aggregation), excluded with
     /// the whole instance by `isSerializable()`; `skip_merging`, see `hasLogicalDigest`.

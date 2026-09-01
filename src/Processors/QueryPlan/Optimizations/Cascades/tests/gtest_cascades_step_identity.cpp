@@ -157,8 +157,7 @@ std::unique_ptr<AggregatingStep> makeAggregatingStep(
         /*group_by_sort_description=*/SortDescription{},
         /*should_produce_results_in_order_of_bucket_number=*/false,
         /*memory_bound_merging_of_aggregation_results_enabled=*/false,
-        /*explicit_sorting_required_for_aggregation_in_order=*/false,
-        /*enable_sharding_aggregator=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
 
     if (limit_hint)
         step->setLimitHint(limit_hint);
@@ -205,7 +204,8 @@ Aggregator::Params makeLimitedAggregatedParams(const AggregationLimits & limits)
         /*enable_parallel_single_level_merge_=*/false,
         /*enable_packed_string_keys_=*/true,
         /*enable_adaptive_aggregator_=*/false,
-        /*adaptive_aggregator_freeze_threshold_=*/0);
+        /*adaptive_aggregator_freeze_threshold_=*/0,
+        /*adaptive_aggregator_freeze_threshold_bytes_=*/0);
 }
 
 /// Knobs and flags a logical-audit pin has to vary on `AggregatingStep`. Everything not listed here
@@ -242,8 +242,7 @@ std::unique_ptr<AggregatingStep> makeAggregatingVariant(const AggregatingVariant
         variant.group_by_sort_description,
         variant.results_in_bucket_order,
         variant.memory_bound_merging,
-        /*explicit_sorting_required_for_aggregation_in_order=*/false,
-        /*enable_sharding_aggregator=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
 }
 
 /// The same for `MergingAggregatedStep`.
@@ -1059,6 +1058,20 @@ TEST(CascadesStepIdentity, JoinStepLogicalDisjunctionsFlagIsPartOfIdentity)
     EXPECT_FALSE(a->fullyEqualTo(*b));
 }
 
+/// The second statistics key `buildPhysicalJoin` derives, the one that preallocates the join output.
+TEST(CascadesStepIdentity, JoinStepLogicalJoinOutputCacheKeyIsPartOfIdentity)
+{
+    auto a_step = makeJoinStepLogical();
+    auto b_step = makeJoinStepLogical();
+    b_step->setJoinOutputCacheKey(42);
+
+    auto a = std::make_shared<GroupExpression>(std::move(a_step));
+    auto b = std::make_shared<GroupExpression>(std::move(b_step));
+
+    EXPECT_NE(a->fullFingerprint(), b->fullFingerprint());
+    EXPECT_FALSE(a->fullyEqualTo(*b));
+}
+
 /// The right-side hash table cache key reaches `JoinAlgorithmParams` and the statistics key that
 /// seeds the right-side size estimate, so it is not display-only.
 TEST(CascadesStepIdentity, JoinStepLogicalRightHashTableCacheKeyIsPartOfIdentity)
@@ -1635,6 +1648,40 @@ TEST(CascadesStepIdentity, LogicalDigestExcludesAggregatingParamsMaxBlockSize)
     expectLogicallyEqualButNotFully(*a, *b);
 }
 
+/// The adaptive aggregator is exact - it only moves where a key is aggregated - so it is a knob, and
+/// its two freeze thresholds with it. All three ride the full digest through `serializeSettings`,
+/// which writes them at the digest's serialization version; no extras tag pins them.
+TEST(CascadesStepIdentity, LogicalDigestExcludesAdaptiveAggregator)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto [off, on] = logicalPair(
+        makeAggregatingVariant({}),
+        makeAggregatingVariant({.tweak_params = [](Aggregator::Params & p) { p.enable_adaptive_aggregator = true; }}));
+    expectLogicallyEqualButNotFully(*off, *on);
+
+    auto [no_keys, keys] = logicalPair(
+        makeAggregatingVariant({.tweak_params = [](Aggregator::Params & p) { p.enable_adaptive_aggregator = true; }}),
+        makeAggregatingVariant(
+            {.tweak_params = [](Aggregator::Params & p)
+             {
+                 p.enable_adaptive_aggregator = true;
+                 p.adaptive_aggregator_freeze_threshold = 1000;
+             }}));
+    expectLogicallyEqualButNotFully(*no_keys, *keys);
+
+    auto [no_bytes, bytes] = logicalPair(
+        makeAggregatingVariant({.tweak_params = [](Aggregator::Params & p) { p.enable_adaptive_aggregator = true; }}),
+        makeAggregatingVariant(
+            {.tweak_params = [](Aggregator::Params & p)
+             {
+                 p.enable_adaptive_aggregator = true;
+                 p.adaptive_aggregator_freeze_threshold_bytes = 4096;
+             }}));
+    expectLogicallyEqualButNotFully(*no_bytes, *bytes);
+}
+
 /// The partial/final stage marker of an aggregation.
 TEST(CascadesStepIdentity, LogicalDigestAggregatingFinalIsRelationDefining)
 {
@@ -1849,6 +1896,7 @@ TEST(CascadesStepIdentity, LogicalDigestExcludesJoinPlannerBookkeeping)
     b_step->setOptimized(/*estimated_rows_=*/1000);
     b_step->setDisjunctionsOptimizationApplied(true);
     b_step->setRightHashTableCacheKey(42);
+    b_step->setJoinOutputCacheKey(43);
     b_step->setTableStatsHint("t1:1000");
 
     auto [a, b] = logicalPair(makeJoinStepLogical(), std::move(b_step));
