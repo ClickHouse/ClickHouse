@@ -71,20 +71,20 @@ def test_create() -> None:
     def do_checks() -> None:
         common_select_part = "select count() from system.scheduler where path ilike"
 
-        assert node.query(f"{common_select_part} '%/admin/%' and type='fifo'") == "1\n"
+        assert node.query(f"{common_select_part} '%/admin/%' and type='request_queue'") == "1\n"
 
         assert (
             node.query(f"{common_select_part} '%/admin' and type='workload' and priority=0") == "1\n"
         )
 
-        assert node.query(f"{common_select_part} '%/production/%' and type='fifo'") == "1\n"
+        assert node.query(f"{common_select_part} '%/production/%' and type='request_queue'") == "1\n"
 
         assert (
             node.query(f"{common_select_part} '%/production' and type='workload' and weight=9")
             == "1\n"
         )
 
-        assert node.query(f"{common_select_part} '%/development/%' and type='fifo'") == "1\n"
+        assert node.query(f"{common_select_part} '%/development/%' and type='request_queue'") == "1\n"
 
         assert (
             node.query(

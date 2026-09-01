@@ -23,7 +23,7 @@ def start_cluster():
 def dequeued_requests():
     return int(
         node.query(
-            "select sum(dequeued_requests) from system.scheduler where resource = 'io_s3' and type = 'fifo'"
+            "select sum(dequeued_requests) from system.scheduler where resource = 'io_s3' and type = 'request_queue'"
         ).strip()
     )
 
