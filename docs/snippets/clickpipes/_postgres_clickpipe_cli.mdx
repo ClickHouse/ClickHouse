@@ -91,11 +91,30 @@ The command validates the connection to the source before creating the pipe, so 
 
 Notes:
 
-- `--table-mapping` is repeatable, one `schema.table:target_table` per source table. The replicated tables land in the `default` database on the ClickHouse service, named by the mapping targets — mapping to a different target name is how you rename a table during replication
+- `--table-mapping` is required and repeatable, one `schema.table:target_table` per source table. The replicated tables land in the `default` database on the ClickHouse service, named by the mapping targets — mapping to a different target name is how you rename a table during replication
 - One command serves the whole Postgres family: pass `--postgres-type` for a managed provider (`supabase`, `neon`, `alloydb`, `planetscale`, `rdspostgres`, `aurorapostgres`, `cloudsqlpostgres`, `azurepostgres`, `crunchybridge`, `tigerdata`); the default is `postgres`
 - The publication and replication slot are created automatically, with the publication scoped to the mapped tables. Pass `--publication-name` and `--replication-slot-name` to use ones you created yourself in the prerequisites step
 - `--replication-mode` selects `cdc` (initial snapshot plus continuous replication, the default), `snapshot` (one-time copy), or `cdc_only` (skip the initial snapshot)
-- If the source presents a certificate signed by a CA that isn't publicly trusted, the create fails with `x509: certificate signed by unknown authority`; pass the CA bundle with `--ca-certificate <path-to-pem>` (and `--tls-host` if the certificate name differs from the connection hostname)
+
+### Source TLS and certificate authorities {#source-tls}
+
+TLS and certificate verification are enabled by default, and a source whose certificate chain is publicly trusted needs no extra flags. If the source presents a certificate signed by a CA that isn't publicly trusted — which includes [ClickHouse Managed Postgres](/cloud/managed-postgres) — the connection check fails before the pipe is created, and the error names the flag that fixes it:
+
+```text
+Error: BAD_REQUEST: failed to establish connection: failed to connect to `user=postgres database=postgres`: 203.0.113.10:5432 (postgres.example.com): failed to write startup message: write failed: tls: failed to verify certificate: x509: certificate signed by unknown authority
+
+Hint: The source certificate chain is not publicly trusted. For a private or self-signed source CA, pass its PEM CA bundle with `--ca-certificate <PATH>`.
+```
+
+Pass the source CA bundle in PEM form with `--ca-certificate`. For ClickHouse Managed Postgres, `clickhousectl` fetches the bundle for you:
+
+```bash
+clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+```
+
+Then re-run the create command with `--ca-certificate pg-ca.pem` added.
+
+If instead the certificate is valid but issued for a different name than the one you connect to, the error carries a different hint, pointing at `--tls-host <HOSTNAME>` to set the hostname that certificate verification should use.
 
 ## Wait for the pipe to reach Running {#wait-for-running}
 
