@@ -39,11 +39,11 @@ void ObjectFilterStep::serialize(Serialization & ctx) const
 {
     /// Position, not name, for a cache key - see `FilterStep::serialize`.
     if (ctx.for_cache_key)
-        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name), ctx.out);
+        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name, ctx.input_header), ctx.out);
     else
         writeStringBinary(filter_column_name, ctx.out);
 
-    actions_dag.serialize(ctx.out, ctx.registry);
+    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
 }
 
 std::unique_ptr<IQueryPlanStep> ObjectFilterStep::deserialize(Deserialization & ctx)

@@ -123,7 +123,10 @@ public:
         /// `build_independent` leaves out what differs between two builds of the same query: the composed
         /// names of derived nodes and prepared-set values, and the index of the analyzer-generated table
         /// qualifier in an INPUT name. See the comment on the definition.
-        void updateHash(SipHash & hash_state, bool build_independent = false) const;
+        /// `input_header`, when given, is the header the DAG reads: an INPUT is then identified by where
+        /// it sits in it as well as by its normalized name, which tells `__table1.id` and `__table2.id`
+        /// apart after the qualifier index is erased. See `writeCacheKeyColumnName`.
+        void updateHash(SipHash & hash_state, bool build_independent = false, const Block * input_header = nullptr) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -158,7 +161,7 @@ public:
     /// serializing for a cache key: the name reads `greater(__table1.x, 5_UInt8)` in a shipped fragment
     /// and `greater(__table2.x, 5_UInt8)` in the plan enclosing it, while this is equal in both. Output
     /// position is not usable here - the same expression can sit at a different index in the two builds.
-    UInt64 getOutputIdentity(const std::string & name) const;
+    UInt64 getOutputIdentity(const std::string & name, const Block * input_header = nullptr) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 
@@ -174,7 +177,7 @@ public:
     std::vector<const Node *> getIdToNode() const;
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
-    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
+    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header = nullptr) const;
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).

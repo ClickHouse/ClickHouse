@@ -267,7 +267,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, const Block * input_header) const
 {
     hash_state.update(type);
 
@@ -287,6 +287,13 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) 
     /// together stay apart on everything else.
     if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
         hash_state.update(build_independent ? normalizeGeneratedTableQualifiers(result_name) : result_name);
+
+    /// Two inputs of the same type whose names normalize together - `__table1.id` and `__table2.id`, the
+    /// same column taken from two join inputs - are told apart by where each sits in the header the DAG
+    /// reads. Only when that header is known: at a read there is none, and there an input's own name is
+    /// already a physical column name.
+    if (build_independent && type == ActionType::INPUT && input_header)
+        hash_state.update(input_header->has(result_name) ? input_header->getPositionByName(result_name) : input_header->columns());
 
     if (result_type)
         hash_state.update(result_type->getName());
@@ -345,10 +352,10 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent) 
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state, build_independent);
+        child->updateHash(hash_state, build_independent, input_header);
 }
 
-UInt64 ActionsDAG::getOutputIdentity(const std::string & name) const
+UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * input_header) const
 {
     const auto * node = tryFindInOutputs(name);
     /// Every caller names an output of its own DAG - a filter column, an array-joined column - so a
@@ -358,7 +365,7 @@ UInt64 ActionsDAG::getOutputIdentity(const std::string & name) const
     SipHash hash;
     if (node)
     {
-        node->updateHash(hash, /*build_independent=*/true);
+        node->updateHash(hash, /*build_independent=*/true, input_header);
     }
     else
     {
@@ -4498,7 +4505,7 @@ static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reorde
 };
 
 
-void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
+void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header) const
 {
     size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
@@ -4525,7 +4532,12 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         /// A cache key must not depend on branch-local column names, and must still tell two same-typed
         /// inputs apart - see `Node::updateHash`, which this mirrors.
         if (registry.for_cache_key)
-            writeStringBinary(node.type == ActionType::INPUT ? normalizeGeneratedTableQualifiers(node.result_name) : String{}, out);
+        {
+            if (node.type == ActionType::INPUT)
+                writeCacheKeyColumnName(node.result_name, input_header, out);
+            else
+                writeStringBinary(String{}, out);
+        }
         else
             writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);

@@ -190,7 +190,7 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
     if (actions_dag)
     {
         ctx.writeColumnName(filter_column_name);
-        actions_dag->serialize(ctx.out, ctx.registry);
+        actions_dag->serialize(ctx.out, ctx.registry, ctx.input_header);
     }
 }
 
