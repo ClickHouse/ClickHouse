@@ -220,9 +220,7 @@ def test_bare_stack_trace_uses_the_same_addresses_as_the_symbolized_one(started_
     for block in blocks:
         # Subtracting the load base is what makes the two comparable, so this is substantive only for
         # a position independent binary; with a fixed load address the base is zero and both sides are
-        # the runtime address. Every Linux glibc amd64 and aarch64 build except the three
-        # `ENABLE_THINLTO` ones is position independent, and shared-library frames are position
-        # independent everywhere.
+        # the runtime address. Every Linux glibc amd64 and aarch64 build is position independent.
         assert block["resolved"], (
             "no frame resolved to a symbol, so the symbol index is unusable here and the comparison "
             "below cannot tell a normalized address from a runtime one"
