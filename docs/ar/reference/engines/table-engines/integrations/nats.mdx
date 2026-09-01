@@ -43,7 +43,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -66,14 +66,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_max_reconnect` – مهمل وليس له أي تأثير، إذ تتم إعادة الاتصال بشكل دائم مع مهلة `nats&#95;reconnect&#95;wait`.
 * `nats_reconnect_wait` – مقدار الوقت بالمللي ثانية للانتظار بين كل محاولة إعادة اتصال. القيمة الافتراضية: `2000`.
 * `nats_server_list` - قائمة الخوادم الخاصة بالاتصال. يمكن تحديدها للاتصال بعنقود NATS.
-* `nats_skip_broken_messages` - مدى تحمّل محلل رسائل NATS للرسائل غير المتوافقة مع `schema` لكل `block`. القيمة الافتراضية: `0`. إذا كان `nats_skip_broken_messages = N` فسيتخطى الـ engine عدد *N* من رسائل NATS التي يتعذر تحليلها (الرسالة الواحدة تعادل صفًا واحدًا من البيانات).
+* `nats_skip_broken_messages` - مدى تحمّل محلل رسائل NATS للرسائل غير المتوافقة مع `schema` لكل `block`. القيمة الافتراضية: `0`. إذا كان `nats_skip_broken_messages = N` فسيتخطى المحرك عدد *N* من رسائل NATS التي يتعذر تحليلها (الرسالة الواحدة تعادل صفًا واحدًا من البيانات).
 * `nats_max_block_size` - عدد الـ `row` التي تجمعها عملية أو عمليات `poll` لتفريغ البيانات من NATS. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `nats_flush_interval_ms` - مهلة تفريغ البيانات المقروءة من NATS. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_wait_for_flush_interval` - إذا كانت القيمة `true`، فستبقى دورة البث في الخلفية مفتوحة طوال فترة التفريغ (`nats_flush_interval_ms`، أو `stream_flush_interval_ms` بخلاف ذلك) بدلًا من الانتهاء بمجرد تفريغ queue المستهلك، مما يتيح تراكم المزيد من الرسائل في `block` واحد مقابل زمن استيعاب إضافي يصل إلى فترة تفريغ واحدة. القيمة الافتراضية: `false` (سلوك تفريغ فوري منخفض الكمون).
-* `nats_username` - اسم مستخدم NATS.
-* `nats_password` - كلمة مرور NATS.
-* `nats_token` - رمز مصادقة NATS.
-* `nats_credential_file` - مسار ملف بيانات اعتماد NATS.
+* `nats_username` - اسم مستخدم NATS. عند تخزينه في مجموعة مسماة معرّفة في ملف إعدادات الخادم، لا يمكن لـ query تجاوز `nats_url` أو `nats_server_list` الخاصين بالمجموعة.
+* `nats_password` - كلمة مرور NATS. عند تخزينها في مجموعة مسماة معرّفة في ملف إعدادات الخادم، لا يمكن لـ query تجاوز `nats_url` أو `nats_server_list` الخاصين بالمجموعة.
+* `nats_token` - رمز مصادقة NATS. عند تخزينه في مجموعة مسماة معرّفة في ملف إعدادات الخادم، لا يمكن لـ query تجاوز `nats_url` أو `nats_server_list` الخاصين بالمجموعة.
+* `nats_credential_file` - مسار ملف بيانات اعتماد NATS. لا يُقبل إلا من مجموعة مسماة معرّفة في ملف إعدادات الخادم لا يتم تجاوز `nats_url` و`nats_server_list` الخاصين بها بواسطة query، لأن الخادم يفتح المسار بصلاحياته الخاصة. في query، مرّر محتويات الملف في `nats_credentials` بدلًا من ذلك.
+* `nats_credentials` - محتوى بيانات اعتماد NATS (نفس الحمولة الموجودة في ملف `.creds` الذي يتضمن JWT المستخدم والبذرة). نظرًا إلى أنه الصيغة الوحيدة التي يمكن لـ query استخدامها، فإنه يستبدل `nats_credential_file` الموروث من مجموعة مسماة بدلًا من التعارض معه، ما لم يقفل المشغّل ذلك المسار باستخدام `<nats_credential_file overridable="false">`. لا يمكن تعيين سلسلة فارغة له لإزالة بيانات الاعتماد التي تحملها مجموعة مسماة.
 * `nats_startup_connect_tries` - عدد محاولات الاتصال عند بدء التشغيل. القيمة الافتراضية: `5`.
 * `nats_max_rows_per_message` — الحد الأقصى لعدد `rows` المكتوبة في رسالة NATS واحدة للتنسيقات المعتمدة على الصفوف. (القيمة الافتراضية: `1`).
 * `nats_commit_on_select` - ثبّت الرسائل عند تنفيذ query. ينطبق على JetStream فقط؛ إذ لا يحتوي NATS core على إقرارات. القيمة الافتراضية: `0`.
@@ -87,10 +88,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 الكتابة في جدول NATS:
 
-إذا كان الجدول يقرأ فقط من موضوع واحد، فسيُنشَر أي إدراج إلى نفس الموضوع.
-ومع ذلك، إذا كان الجدول يقرأ من عدة مواضيع، فسنحتاج إلى تحديد الموضوع الذي نرغب في النشر إليه.
-لذلك، عند الإدراج في جدول يقرأ من عدة مواضيع، يلزم ضبط `stream_like_engine_insert_queue`.
-يمكنك اختيار أحد المواضيع التي يقرأ منها الجدول ونشر بياناتك هناك. على سبيل المثال:
+إذا كان الجدول يقرأ فقط من subject واحد، فسيُنشَر أي إدراج إلى نفس subject.
+ومع ذلك، إذا كان الجدول يقرأ من عدة subject، فسنحتاج إلى تحديد الـ subject الذي نرغب في النشر إليه.
+لذلك، عند الإدراج في جدول يقرأ من عدة subject، يلزم ضبط `stream_like_engine_insert_queue`.
+يمكنك اختيار أحد الـ subject التي يقرأ منها الجدول ونشر بياناتك هناك. على سبيل المثال:
 
 ```sql
 CREATE TABLE queue (
