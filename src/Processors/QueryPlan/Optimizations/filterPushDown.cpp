@@ -655,12 +655,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     Names equivalent_columns_to_push_down;
 
     /// A name substituted into a pushed-down filter must carry the type that name has in the JOIN
-    /// output, because that is what the filter's nodes were typed against, and it must evaluate to the
-    /// value that output column holds, because the filter's own semantics are defined on that value.
-    /// When the JOIN converts a key, the substitution has to be that key cast the way the JOIN casts it.
-    ///
-    /// The cast node itself is only added once we know a filter really reaches that side, so the two
-    /// lists below carry what is needed to build it.
+    /// output and evaluate to that column's value, so a key the JOIN converts is substituted by that
+    /// key cast the way the JOIN casts it. The cast is built only once a filter reaches that side.
     struct CrossTypeReplacement
     {
         JoinActionRef source;
@@ -679,14 +675,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         return name;
     };
 
-    /// Makes `replaced_name` substitutable by the opposite side's key on a side the JOIN reports as type
-    /// changing. Only the key's type differs there, its name in the JOIN output is the same one, so the
-    /// opposite key cast to that type satisfies both halves of the invariant above: the two keys are equal
-    /// on a matched row, hence the cast of one equals the output column holding the cast of the other.
-    ///
-    /// The conversion is read off the output header key by key, because a side is reported as type
-    /// changing as a whole while `join_use_nulls` widens only those of its keys that can be inside
-    /// `Nullable`.
+    /// Makes `replaced_name` substitutable by the opposite side's key on a type-changing side: only the
+    /// key's type differs there and the two keys are equal on a matched row, so the cast of one equals
+    /// that output column. The conversion is per key: only `Nullable`-capable keys are widened.
     auto add_converted_key_substitution = [&](
         std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_columns,
         std::vector<CrossTypeReplacement> & replacements,
@@ -806,12 +797,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     /// Register the cross-type equi-key pairs that `buildEquialentSetsForJoinStepLogical` skips: its
     /// Union-Find needs the two input types to be equal, plain name substitution does not.
     ///
-    /// A cross-type equi-key satisfies the invariant above once the replacement is cast the way the JOIN
-    /// casts that key: the two sides are compared in their least supertype, so `CAST(<opposite side>,
-    /// supertype)` is exactly what is behind the JOIN output column. Demanding that the JOIN output type
-    /// is that supertype keeps the cast widening - a narrowing one would change what the predicate
-    /// returns - and rejects a column the JOIN altered for an unrelated reason, where the replacement no
-    /// longer matches the output.
+    /// A cross-type equi-key satisfies that invariant once the replacement is cast to the least
+    /// supertype the two sides are compared in. Demanding that the JOIN output type IS that supertype
+    /// keeps the cast widening and rejects a column the JOIN altered for an unrelated reason.
     if (logical_join
         && (!left_stream_filter_push_down_input_columns_available
             || !right_stream_filter_push_down_input_columns_available))

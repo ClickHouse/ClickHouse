@@ -17,10 +17,10 @@ DROP TABLE IF EXISTS t_infer_r;
 CREATE TABLE t_infer_l (id UInt64, lk UInt64, lv UInt64) ENGINE = MergeTree ORDER BY lk;
 CREATE TABLE t_infer_r (id UInt64, rk UInt64, rv UInt64) ENGINE = MergeTree ORDER BY rk;
 
--- The two key ranges overlap in [50, 119] only, so 5000 left rows and 30 right rows have no match, which the
--- `r.rk IS NULL` row further down counts. The probed key 80 is matched on both sides, so no unmatched row of
--- this fixture can satisfy a predicate on the key; the composite key fixture at the end of this section is
--- where an unmatched row that does satisfy one is asserted.
+-- The two key ranges overlap in [50, 119] only, so 5000 left rows have no match, which the `r.rk IS NULL`
+-- row further down counts, and 30 right rows have no match. The probed key 80 is matched on both sides, so
+-- no unmatched row of this fixture can satisfy a predicate on the key; the composite key fixture at the
+-- end of this section is where an unmatched row that does satisfy one is asserted.
 INSERT INTO t_infer_l SELECT number, number % 120, number FROM numbers(12000);
 INSERT INTO t_infer_r SELECT number, 50 + number, number FROM numbers(100);
 
