@@ -180,7 +180,7 @@ private:
     DeserializeStates deserialize_states;
 
     void readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache);
-    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
+    void readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
     void checkArrayOffsets(const IColumn & column, const String & column_name) const;
     bool isFinished();
 };
@@ -269,12 +269,12 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
     /// Second, read the data of all physical columns/subcolumns.
     for (const auto & name_type : physical_columns)
     {
-        ColumnPtr column;
+        MutableColumnPtr column;
         auto name_type_on_disk = getColumnOnDisk(name_type);
 
         try
         {
-            column = name_type_on_disk.type->createColumn();
+            column = name_type_on_disk.type->createColumn(*IDataType::getSerialization(name_type_on_disk));
             readData(name_type_on_disk, column, max_rows_to_read, caches[getCacheKey(name_type_on_disk)]);
         }
         catch (Exception & e)
@@ -286,22 +286,6 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
         if (!column->empty())
             result_columns.emplace_back(std::move(column));
     }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// Before the substreams caches and deserialize states go out of scope, verify that the reference
-    /// counts of the columns shared between them and the result columns account for all those holders.
-    /// `getCacheKey` deliberately shares a cache across the subcolumns of a `Nested` group, so a broken
-    /// copy-on-write reference count on a shared child (e.g. `Nested` array offsets) would free it here
-    /// while it is still referenced from the result, leading to use-after-free (issue #105626).
-    ColumnsOwnershipValidator ownership_validator;
-    for (const auto & [_, cache] : caches)
-        ownership_validator.add(cache);
-    for (const auto & [_, states] : deserialize_states_caches)
-        ownership_validator.add(states);
-    for (const auto & [_, state] : deserialize_states)
-        ownership_validator.add(state);
-    ownership_validator.validate(result_columns);
-#endif
 }
 
 void LogSource::fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
@@ -340,7 +324,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name_and_type.name], &deserialize_state_cache);
 }
 
-void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
+void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
@@ -366,7 +350,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
         return &it->second.compressed.value();
     };
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(*column, max_rows_to_read, settings, deserialize_states[name], &cache);
     if (column->getDataType() != name_and_type.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1005,6 +989,22 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
+}
+
+size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
+{
+    if (!use_marks_file)
+        return 1;
+
+    const auto lock_timeout = getLockTimeout(local_context);
+    loadMarks(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    /// An empty table still produces one `NullSource` in `createReadingPipe`.
+    return std::min(num_streams, std::max(1uz, data_files[INDEX_WITH_REAL_ROW_COUNT].marks.size()));
 }
 
 void StorageLog::drop()
