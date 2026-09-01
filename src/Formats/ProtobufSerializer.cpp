@@ -1921,7 +1921,18 @@ namespace
                 aggregate_function->destroy(old_data);
             }
             else
-                column_af.getData().push_back(data);
+            {
+                try
+                {
+                    /// Until `push_back` succeeds nothing owns `data`.
+                    column_af.getData().push_back(data);
+                }
+                catch (...)
+                {
+                    aggregate_function->destroy(data);
+                    throw;
+                }
+            }
         }
 
         void insertDefaults(size_t row_num) override
