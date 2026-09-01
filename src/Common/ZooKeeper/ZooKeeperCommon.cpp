@@ -1399,6 +1399,25 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
     }
 }
 
+void promoteMultiResponseError(MultiResponse & response)
+{
+    if (response.error != Error::ZOK)
+        return;
+
+    /// Mirror the aggregate-error promotion in ZooKeeperMultiResponse::readImpl:
+    /// the first failed operation carries the real error, later operations carry
+    /// ZRUNTIMEINCONSISTENCY. Skip the latter so the aggregate reflects the
+    /// operation that actually failed.
+    for (const auto & sub : response.responses)
+    {
+        if (sub->error != Error::ZOK && sub->error != Error::ZRUNTIMEINCONSISTENCY)
+        {
+            response.error = sub->error;
+            break;
+        }
+    }
+}
+
 void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 {
     for (const auto & response : responses)
