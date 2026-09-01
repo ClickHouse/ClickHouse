@@ -78,6 +78,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperGetACL;
     extern const Event ZooKeeperListRecursive;
+    extern const Event ZooKeeperListWithOptions;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -1298,6 +1299,7 @@ void ZooKeeper::receiveEvent()
                 case OpNum::List:
                 case OpNum::FilteredList:
                 case OpNum::FilteredListWithStatsAndData:
+                case OpNum::ListWithOptions:
                     is_list_request = true;
                     break;
                 default:
@@ -1993,6 +1995,33 @@ void ZooKeeper::listRecursive(
     ProfileEvents::increment(ProfileEvents::ZooKeeperListRecursive);
 }
 
+void ZooKeeper::listWithOptions(
+    const String & path,
+    const ListOptions & options,
+    ListWithOptionsCallback callback,
+    WatchCallbackPtrOrEventPtr watch)
+{
+    options.validate();
+    if (options.recursive && watch)
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+    if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions request type cannot be used because it is not supported by the server");
+
+    auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+    request->path = path;
+    request->options_version = requiredListOptionsVersion(options);
+    request->options = options;
+    request->has_watch = static_cast<bool>(watch);
+
+    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+    RequestInfo request_info;
+    request_info.request = std::move(request);
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListWithOptionsResponse &>(response)); };
+    request_info.watch = std::move(watch);
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperListWithOptions);
+}
+
 void ZooKeeper::exists(
     const String & path,
     ExistsCallback callback,
@@ -2209,8 +2238,17 @@ void ZooKeeper::multi(
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
         for (const auto & subrequest : request.requests)
+        {
+            if (const auto * list_with_options = dynamic_cast<const ListWithOptionsRequest *>(subrequest.get()))
+            {
+                if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS))
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions in MultiRead is not supported by the server");
+                if (list_with_options->options.recursive && subrequest->watch_callback)
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+            }
             if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
+        }
     }
 
     instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeMulti);

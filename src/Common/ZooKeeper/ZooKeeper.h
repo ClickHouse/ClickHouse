@@ -547,6 +547,13 @@ public:
         bool with_stat = false,
         bool with_data = false);
 
+    using FutureListWithOptions = std::future<Coordination::ListWithOptionsResponse>;
+    FutureListWithOptions asyncListWithOptions(const std::string & path, const Coordination::ListOptions & options);
+    FutureListWithOptions asyncTryListWithOptionsNoThrow(
+        const std::string & path,
+        const Coordination::ListOptions & options,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback = {});
+
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
     /// Like the previous one but don't throw any exceptions on future.get()
