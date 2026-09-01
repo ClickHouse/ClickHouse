@@ -238,7 +238,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
     /// Add comment to AST. So it will be saved when the table will be renamed.
-    const char * comment_addendum = "\n\n.description\nIt is safe to truncate or drop this table at any time.";
+    constexpr std::string_view comment_addendum = "It is safe to truncate or drop this table at any time.";
     String merged_comment = comment;
     if (storage_with_comment.comment)
     {
@@ -249,7 +249,12 @@ std::shared_ptr<TSystemLog> createSystemLog(
         /// Replace the configured comment instead of appending a second `COMMENT` clause.
         log_settings.engine = storage_with_comment.storage->formatWithSecretsOneLine();
     }
-    log_settings.engine += fmt::format(" COMMENT {} ", quoteString(merged_comment + comment_addendum));
+    if (!merged_comment.contains(comment_addendum))
+    {
+        merged_comment += "\n\n.description\n";
+        merged_comment += comment_addendum;
+    }
+    log_settings.engine += fmt::format(" COMMENT {} ", quoteString(merged_comment));
 
     /// The optional `create_union_system_log_tables` section requests the creation of `all_...`
     /// tables querying the set of rotated tables (`query_log`, `query_log_0`, `query_log_1`, ...)

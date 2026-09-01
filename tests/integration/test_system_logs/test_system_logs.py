@@ -95,7 +95,7 @@ def test_system_logs_engine_expr(start_cluster):
     )
     assert ".examples" in comment
     assert "Configured query log comment." in comment
-    assert "It is safe to truncate or drop this table at any time." in comment
+    assert comment.count("It is safe to truncate or drop this table at any time.") == 1
 
 
 def test_system_logs_engine_s3_plain_rw_expr(start_cluster):
