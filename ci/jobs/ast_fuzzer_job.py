@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import os
 import random
 import re
-import sys
 import traceback
 from pathlib import Path
 
@@ -594,9 +594,8 @@ def run_fuzz_job(check_name: str):
 
 
 if __name__ == "__main__":
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("check_name")
+    args = parser.parse_args()
 
-    run_fuzz_job(check_name)
+    run_fuzz_job(args.check_name)
