@@ -300,7 +300,7 @@ SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))
 ```
 
 ```response title=Response
-([1, 2], [2, 2])
+([1,2],[2,2])
 ```
 
 <div id="mapAll">
@@ -564,10 +564,10 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
 ```
 
 ```response title=Response
-┌─mapContainsV⋯ke(a, 'a%')─┐
-│                        1 │
-│                        0 │
-└──────────────────────────┘
+┌─mapContainsValueLike(a, 'a%')─┐
+│                             1 │
+│                             0 │
+└───────────────────────────────┘
 ```
 
 <div id="mapExists">
@@ -736,7 +736,7 @@ SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))
 
 Introduit dans : v23.3.0
 
-Crée un Map à partir d&#39;un Array ou d&#39;un Map de clés et d&#39;un Array ou d&#39;un Map de valeurs.
+Crée un Map à partir d&#39;un tableau ou d&#39;un Map de clés et d&#39;un tableau ou d&#39;un Map de valeurs.
 La fonction est une alternative pratique à la syntaxe `CAST([...], 'Map(key_type, value_type)')`.
 
 **Syntaxe**
@@ -749,8 +749,8 @@ mapFromArrays(keys, values)
 
 **Arguments**
 
-* `keys` — Array ou map de clés utilisée pour créer la map. [`Array`](/fr/reference/data-types/array) ou [`Map`](/fr/reference/data-types/map)
-* `values` — Array ou map de valeurs utilisée pour créer la map. [`Array`](/fr/reference/data-types/array) ou [`Map`](/fr/reference/data-types/map)
+* `keys` — tableau ou map de clés utilisée pour créer la map. [`tableau`](/fr/reference/data-types/array) ou [`Map`](/fr/reference/data-types/map)
+* `values` — tableau ou map de valeurs utilisée pour créer la map. [`tableau`](/fr/reference/data-types/array) ou [`Map`](/fr/reference/data-types/map)
 
 **Valeur renvoyée**
 
@@ -775,7 +775,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 ```
 
 ```response title=Response
-{1:('a', 1), 2:('b', 2), 3:('c', 3)}
+{1:('a',1),2:('b',2),3:('c',3)}
 ```
 
 <div id="mapKeys">
@@ -927,17 +927,17 @@ SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)
 ```
 
 ```response title=Response
-{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}
+{1:10,2:0,3:0,4:0,5:20,6:0}
 ```
 
-**Avec des tableaux transformés**
+**Avec des tableaux associés**
 
 ```sql title=Query
 SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)
 ```
 
 ```response title=Response
-([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])
+([1,2,3,4,5],[11,22,0,44,0])
 ```
 
 <div id="mapReverseSort">
@@ -1053,7 +1053,7 @@ SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt3
 ```
 
 ```response title=Response
-([1, 2], [-1, 0])
+([1,2],[-1,0])
 ```
 
 <div id="mapUpdate">

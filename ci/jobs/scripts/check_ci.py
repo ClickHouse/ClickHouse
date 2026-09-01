@@ -407,7 +407,12 @@ class CommitStatusCheck:
             f"https://s3.amazonaws.com/clickhouse-test-reports/"
             f"{ref_prefix}/{commit_sha}/{workflow}/result_{workflow}.json"
         )
-        _ = Shell.check(f"curl {report_url} -o /tmp/result_pr.json > /dev/null 2>&1")
+        # -f so a missing report fails here instead of downloading the S3 error
+        # body and blowing up later in Result.from_file with an opaque parse error.
+        if not Shell.check(
+            f"curl -f {report_url} -o /tmp/result_pr.json > /dev/null 2>&1"
+        ):
+            raise RuntimeError(f"Failed to fetch CI report from {report_url}")
         return Result.from_file("/tmp/result_pr.json")
 
     @staticmethod
