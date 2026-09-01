@@ -9,6 +9,8 @@
 #include <Interpreters/QueryOracles/OracleCompare.h>
 #include <Interpreters/QueryOracles/OracleGate.h>
 #include <Interpreters/QueryOracles/OracleFixture.h>
+#include <Interpreters/QueryOracles/OracleRunner.h>
+#include <fmt/format.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -64,6 +66,17 @@ extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
 extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
 extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
 extern const Event ASTFuzzerOracleCodecRoundtripChecks;
+extern const Event ASTFuzzerOracleEngineEquivalenceChecks;
+extern const Event ASTFuzzerOraclePartitionEquivalenceChecks;
+extern const Event ASTFuzzerOracleLowCardinalityEquivalenceChecks;
+extern const Event ASTFuzzerOracleSampleEquivalenceChecks;
+extern const Event ASTFuzzerOracleProjectionEquivalenceChecks;
+extern const Event ASTFuzzerOracleAggregateIfIdentityChecks;
+extern const Event ASTFuzzerOracleNullIdentityChecks;
+extern const Event ASTFuzzerOracleCastRoundtripChecks;
+extern const Event ASTFuzzerOracleAggregateStateColumnChecks;
+extern const Event ASTFuzzerOracleTupleSummingChecks;
+extern const Event ASTFuzzerOracleSchemaRoundtripChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -1030,60 +1043,57 @@ const ASTSelectQuery * QueryOracleChecker::extractSimpleSelect(const ASTPtr & as
 }
 
 
-bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
+bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select, GateRelax relax)
 {
-    /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause
-    /// stays identical across all TLP partitions, only WHERE changes.
-    /// ARRAY JOIN clause and PASTE JOIN are NOT safe. Neither is the `arrayJoin()`
-    /// *function* appearing anywhere in the query: it multiplies rows, breaking
-    /// `count(Q) == countIf(WHERE)` (NoREC) and the partitioned-vs-whole-table
-    /// row-count equality the TLP oracles depend on.
-    if (hasArrayJoin(select) || hasPasteJoin(select))
+    /// The standard structural gate. Each rejection clause below can be individually relaxed by a
+    /// GateRelax bit; an oracle that sets a bit takes ownership of the soundness obligation that
+    /// clause was protecting. The default (GateRelax::None) enables every clause — identical to the
+    /// historical single-argument gate, so all existing callers are unchanged.
+
+    /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause stays identical
+    /// across all TLP partitions, only WHERE changes. The ARRAY JOIN clause multiplies rows
+    /// (relaxable, task 04); PASTE JOIN and the `arrayJoin()` *function* are always unsafe (they
+    /// multiply/zip rows, breaking the partitioned-vs-whole-table row-count equality the oracles
+    /// depend on).
+    if (!hasRelax(relax, GateRelax::AllowArrayJoinClause) && hasArrayJoin(select))
+        return false;
+    if (hasPasteJoin(select))
         return false;
     if (hasArrayJoinFunction(select.clone()))
         return false;
     /// `system.*` / `INFORMATION_SCHEMA.*` views are non-deterministic.
     if (referencesNonDeterministicDatabase(select))
         return false;
-    if (select.distinct)
+    if (!hasRelax(relax, GateRelax::AllowDistinct) && select.distinct)
         return false;
-    if (select.limitLength())
+    /// LIMIT / LIMIT BY / bare OFFSET are order-sensitive: `stripOrderAndLimit` deletes them for the
+    /// reference/rewrite runs, so a rewrite that changes rows only inside the skipped prefix would
+    /// raise a false mismatch. Reject at the gate rather than silently deleting them (relaxable for
+    /// identical-text-both-sides oracles that keep the LIMIT on both runs).
+    if (!hasRelax(relax, GateRelax::AllowLimit) && (select.limitLength() || select.limitBy() || select.limitOffset()))
         return false;
-    if (select.limitBy())
-        return false;
-    /// Bare `OFFSET` (without `LIMIT`) is order-sensitive: `stripOrderAndLimit`
-    /// deletes it for the reference/rewrite runs, so if a rewrite changes rows
-    /// only inside the skipped prefix the stripped bags differ and we raise a
-    /// false mismatch even though the observable post-`OFFSET` result matches.
-    /// Reject at the gate instead of silently deleting it.
-    if (select.limitOffset())
-        return false;
-    /// PREWHERE can interact unpredictably with WHERE partitioning — the fuzzer
-    /// may produce PREWHERE expressions with suspicious type coercions that
-    /// silently succeed in some contexts but fail in others, causing false
-    /// positive mismatches. Skip queries with PREWHERE.
-    if (select.prewhere())
+    /// PREWHERE can interact unpredictably with WHERE partitioning (suspicious type coercions that
+    /// succeed in some contexts but fail in others) — relaxable.
+    if (!hasRelax(relax, GateRelax::AllowPrewhere) && select.prewhere())
         return false;
     if (select.qualify())
         return false;
     if (!select.tables())
         return false;
-    if (select.group_by_with_rollup || select.group_by_with_cube
-        || select.group_by_with_totals || select.group_by_with_grouping_sets)
+    if (!hasRelax(relax, GateRelax::AllowGroupingModifiers)
+        && (select.group_by_with_rollup || select.group_by_with_cube
+            || select.group_by_with_totals || select.group_by_with_grouping_sets))
         return false;
-    /// `GROUP BY ALL` sets `select.group_by_all` but leaves `select.groupBy()`
-    /// empty, so the per-oracle grouping guards (which test `select.groupBy()`)
-    /// do not recognise it and a grouping query slips into the non-grouping
-    /// TLP / NoREC / DISTINCT paths. There the reference side drops `WHERE` and
-    /// keeps one row per group, while the partitioned side runs three
-    /// `GROUP BY ALL` branches and `UNION ALL`s them, duplicating groups that
-    /// span more than one partition — a false `AST_FUZZER_ORACLE_MISMATCH`.
-    /// Skip the whole query rather than special-case every oracle.
-    if (select.group_by_all)
+    /// `GROUP BY ALL` sets `select.group_by_all` but leaves `select.groupBy()` empty, so the
+    /// per-oracle grouping guards (which test `select.groupBy()`) do not recognise it and a grouping
+    /// query slips into the non-grouping paths, duplicating groups across the UNION ALL partitions —
+    /// a false mismatch. Gated with the same bit as the other grouping modifiers.
+    if (!hasRelax(relax, GateRelax::AllowGroupingModifiers) && select.group_by_all)
         return false;
 
-    /// Window functions are never safe for oracle testing.
-    if (select.select())
+    /// Window functions are never safe for oracle testing (relaxable for task 03's ordered-window
+    /// oracle, which applies its own allowlist on top).
+    if (!hasRelax(relax, GateRelax::AllowWindow) && select.select())
     {
         SafeAggregateScan data;
         scanAggregatesSafe(select.select(), data);
@@ -1258,7 +1268,6 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
         String message = fmt::format(
             "TLP WHERE oracle mismatch!\n"
@@ -1293,7 +1302,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
             }
         }
 
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH, "{}", message);
+        raiseOracleMismatch(fmt::format( "{}", message), context);
     }
 
     LOG_TRACE(logger, "TLP WHERE oracle passed ({} rows)", ref_rows.size());
@@ -1376,14 +1385,13 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
 
     if (opt_count != unopt_count)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "NoREC oracle mismatch!\n"
             "Optimized query (count={}): {}\n"
             "Unoptimized query (count={}): {}",
             opt_count, opt_sql,
-            unopt_count, unopt_sql);
+            unopt_count, unopt_sql), context);
     }
 
     LOG_TRACE(logger, "NoREC oracle passed (count={})", opt_count);
@@ -1463,13 +1471,12 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "TLP DISTINCT oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Partitioned query ({} rows): {}",
             ref_rows.size(), ref_sql,
-            part_rows.size(), union_sql);
+            part_rows.size(), union_sql), context);
     }
 
     LOG_TRACE(logger, "TLP DISTINCT oracle passed ({} rows)", ref_rows.size());
@@ -1545,13 +1552,12 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "TLP GROUP BY oracle mismatch!\n"
             "Reference query ({} unique rows): {}\n"
             "Partitioned query ({} unique rows): {}",
             ref_rows.size(), ref_sql,
-            part_rows.size(), union_sql);
+            part_rows.size(), union_sql), context);
     }
 
     LOG_TRACE(logger, "TLP GROUP BY oracle passed ({} unique rows)", ref_rows.size());
@@ -1613,13 +1619,12 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "TLP HAVING oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Partitioned query ({} rows): {}",
             ref_rows.size(), ref_sql,
-            part_rows.size(), union_sql);
+            part_rows.size(), union_sql), context);
     }
 
     LOG_TRACE(logger, "TLP HAVING oracle passed ({} unique rows)", ref_rows.size());
@@ -1696,14 +1701,13 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
 
         if (default_rows != variant_rows)
         {
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            raiseOracleMismatch(fmt::format(
                 "DQP oracle mismatch! Setting: {}\n"
                 "Default ({} rows): {}\n"
                 "With {}=off ({} rows): {}",
                 setting_name,
                 default_rows.size(), query_sql,
-                setting_name, variant_rows.size(), query_sql);
+                setting_name, variant_rows.size(), query_sql), context);
         }
     }
     catch (const Exception & e)
@@ -2007,14 +2011,13 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
 
     if (ref_rows != meta_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "TLP Aggregate oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Metamorphic query ({} rows): {}",
             ref_rows.size(), ref_sql,
-            meta_rows.size(), metamorphic_sql);
+            meta_rows.size(), metamorphic_sql), context);
     }
 
     LOG_TRACE(logger, "TLP Aggregate oracle passed ({} rows, {} aggregates)", ref_rows.size(), state_idx);
@@ -2147,12 +2150,11 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     {
         if (ref_rows != rows)
         {
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            raiseOracleMismatch(fmt::format(
                 "Identity WHERE ({}) oracle mismatch!\n"
                 "Reference query ({} rows): {}\n"
                 "Variant query ({} rows): {}",
-                name, ref_rows.size(), ref_sql, rows.size(), sql);
+                name, ref_rows.size(), ref_sql, rows.size(), sql), context);
         }
     };
 
@@ -2253,13 +2255,12 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
         if (!ref_rows_again_opt || *ref_rows_again_opt != ref_rows)
             return false;
 
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "Subquery wrap oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Wrapped query ({} rows): {}",
             ref_rows.size(), ref_sql,
-            wrapped_rows.size(), wrapped_sql);
+            wrapped_rows.size(), wrapped_sql), context);
     }
 
     LOG_TRACE(logger, "Subquery wrap oracle passed ({} rows)", ref_rows.size());
@@ -2274,19 +2275,6 @@ namespace
 /// earlier `SET`/`SETTINGS` mutations have drifted the session) is
 /// reproducible standalone — without this, many real-looking mismatches
 /// could not be reproduced because the active settings were unknown.
-String formatChangedSettings(const ContextPtr & context)
-{
-    WriteBufferFromOwnString buf;
-    bool first = true;
-    for (const auto & change : context->getSettingsRef().changes())
-    {
-        if (!first)
-            buf << ", ";
-        first = false;
-        buf << change.name << "=" << applyVisitor(FieldVisitorToString(), change.value);
-    }
-    return buf.str();
-}
 }
 
 bool QueryOracleChecker::checkGroupByKeyPermutation(const ASTSelectQuery & select, const ContextMutablePtr & context)
@@ -2345,14 +2333,13 @@ bool QueryOracleChecker::checkGroupByKeyPermutation(const ASTSelectQuery & selec
 
     if (!OracleCompare::equal(*ref_rows_opt, *perm_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "GROUP BY key permutation oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Permuted-keys query ({} rows): {}\n{}",
             ref_rows_opt->size(), ref_sql,
             perm_rows_opt->size(), perm_sql,
-            OracleCompare::diffSummary(*ref_rows_opt, *perm_rows_opt));
+            OracleCompare::diffSummary(*ref_rows_opt, *perm_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "GROUP BY key permutation oracle passed ({} rows)", ref_rows_opt->size());
@@ -2435,14 +2422,13 @@ bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, 
 
     if (!OracleCompare::equal(*ref_rows_opt, *gb_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "DISTINCT-via-GROUP-BY oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Grouped query ({} rows): {}\n{}",
             ref_rows_opt->size(), ref_sql,
             gb_rows_opt->size(), gb_sql,
-            OracleCompare::diffSummary(*ref_rows_opt, *gb_rows_opt));
+            OracleCompare::diffSummary(*ref_rows_opt, *gb_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "DISTINCT-via-GROUP-BY oracle passed ({} rows)", ref_rows_opt->size());
@@ -2504,14 +2490,13 @@ bool QueryOracleChecker::checkPrewhereEquivalence(const ASTSelectQuery & select,
 
     if (!OracleCompare::equal(*ref_rows_opt, *pw_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "PREWHERE-equivalence oracle mismatch!\n"
             "Reference (WHERE) query ({} rows): {}\n"
             "PREWHERE query ({} rows): {}\n{}",
             ref_rows_opt->size(), ref_sql,
             pw_rows_opt->size(), pw_sql,
-            OracleCompare::diffSummary(*ref_rows_opt, *pw_rows_opt));
+            OracleCompare::diffSummary(*ref_rows_opt, *pw_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "PREWHERE-equivalence oracle passed ({} rows)", ref_rows_opt->size());
@@ -2559,12 +2544,11 @@ bool QueryOracleChecker::checkSkipIndexEquivalence(const ASTSelectQuery & select
 
     if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "skip-index-equivalence oracle mismatch!\n"
             "use_skip_indexes=0 ({} rows) vs use_skip_indexes=1 ({} rows): {}\n{}",
             off_rows_opt->size(), on_rows_opt->size(), sql,
-            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "skip-index-equivalence oracle passed ({} rows)", off_rows_opt->size());
@@ -2625,12 +2609,11 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
 
     if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "setting-flip-sweep oracle mismatch!\n"
             "{}=0 ({} rows) vs {}=1 ({} rows): {}\n{}",
             flip, off_rows_opt->size(), flip, on_rows_opt->size(), sql,
-            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt));
+            OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt)), context);
     }
 
     LOG_TRACE(logger, "setting-flip-sweep oracle passed ({}, {} rows)", flip, off_rows_opt->size());
@@ -2675,16 +2658,669 @@ bool QueryOracleChecker::checkCodecRoundtrip(const ASTSelectQuery &, const Conte
 
     if (!OracleCompare::equal(*plain_rows_opt, *coded_rows_opt))
     {
-        fixture.preserve(); /// keep the two tables for triage
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+        raiseOracleMismatch(fmt::format(
             "codec round-trip oracle mismatch!\n"
             "CODEC(NONE) table {} ({} rows) vs codec table {} ({} rows)\n{}",
             plain, plain_rows_opt->size(), coded, coded_rows_opt->size(),
-            OracleCompare::diffSummary(*plain_rows_opt, *coded_rows_opt));
+            OracleCompare::diffSummary(*plain_rows_opt, *coded_rows_opt)), context, &fixture);
     }
 
     LOG_TRACE(logger, "codec round-trip oracle passed ({} rows)", plain_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkEngineEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: the storage engine must not change the logical data. Identical schema and
+    /// deterministic seed in a MergeTree vs a row-based engine must read back the identical multiset;
+    /// a difference is a real engine read/serialization bug. Rate-limited to keep fixture churn low.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("engine", context);
+    if (!fixture.valid())
+        return false;
+
+    static constexpr std::array<std::string_view, 4> row_engines = {"Memory", "TinyLog", "StripeLog", "Log"};
+    const std::string_view other_engine = row_engines[thread_local_rng() % row_engines.size()];
+
+    const String mt = fixture.allocName("mt");
+    const String other = fixture.allocName("row");
+
+    /// A schema with varied types to stress each engine's serialization.
+    const String columns = " (k UInt64, i Int64, f Float64, s String, n Nullable(Int64),"
+                           " a Array(Int32), fs FixedString(4), dt DateTime)";
+    if (!fixture.execute("CREATE TABLE " + mt + columns + " ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + other + columns + " ENGINE = " + String(other_engine)))
+        return false;
+
+    const String seed = " SELECT number, toInt64(number) * 3 - 200, number * 0.25,"
+                        " toString(number % 91), if(number % 6 = 0, NULL, toInt64(number)),"
+                        " range(number % 5), toFixedString(toString(number % 900), 4),"
+                        " toDateTime('2021-01-01 00:00:00') + number FROM numbers(400)";
+    if (!fixture.execute("INSERT INTO " + mt + seed) || !fixture.execute("INSERT INTO " + other + seed))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "engine-equivalence oracle: {} (MergeTree) vs {} ({})", mt, other, other_engine);
+
+    auto mt_rows_opt = OracleExec::executeRows("SELECT * FROM " + mt, context, ResultShape::SortedBag);
+    auto other_rows_opt = OracleExec::executeRows("SELECT * FROM " + other, context, ResultShape::SortedBag);
+    if (!mt_rows_opt || !other_rows_opt)
+        return false;
+
+    if (!OracleCompare::equal(*mt_rows_opt, *other_rows_opt))
+    {
+        raiseOracleMismatch(fmt::format(
+            "engine-equivalence oracle mismatch!\n"
+            "MergeTree table {} ({} rows) vs {} table {} ({} rows)\n{}",
+            mt, mt_rows_opt->size(), other_engine, other, other_rows_opt->size(),
+            OracleCompare::diffSummary(*mt_rows_opt, *other_rows_opt)), context, &fixture);
+    }
+
+    LOG_TRACE(logger, "engine-equivalence oracle passed ({} rows)", mt_rows_opt->size());
+    return true;
+}
+
+bool QueryOracleChecker::checkPartitionEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: PARTITION BY is transparent to query results. The same query over
+    /// identical data in a partitioned vs a non-partitioned MergeTree must return the identical
+    /// multiset; a difference is a real partition-pruning or cross-partition-merge bug. Only exact
+    /// (integer) aggregates are used, so cross-partition merging cannot differ by float rounding.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("partition", context);
+    if (!fixture.valid())
+        return false;
+
+    const String part = fixture.allocName("part");
+    const String nopart = fixture.allocName("nopart");
+    const String cols = " (k UInt64, g UInt8, v Int64, s String)";
+    if (!fixture.execute("CREATE TABLE " + part + cols + " ENGINE = MergeTree PARTITION BY g ORDER BY k"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + nopart + cols + " ENGINE = MergeTree ORDER BY k"))
+        return false;
+
+    const String seed = " SELECT number, number % 8, toInt64(number) * 3 - 500, toString(number % 53) FROM numbers(600)";
+    if (!fixture.execute("INSERT INTO " + part + seed) || !fixture.execute("INSERT INTO " + nopart + seed))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "partition-equivalence oracle: {} (partitioned) vs {}", part, nopart);
+
+    /// Representative queries; each must return the same multiset from both tables. {prefix, suffix}
+    /// with the table name spliced in between.
+    static const std::array<std::pair<std::string_view, std::string_view>, 3> query_shapes = {{
+        {"SELECT k, g, v, s FROM ", ""},
+        {"SELECT g, count(), sum(v), min(v), max(v) FROM ", " GROUP BY g"},
+        {"SELECT k, v FROM ", " WHERE v > 0 AND g < 4"},
+    }};
+
+    for (const auto & [prefix, suffix] : query_shapes)
+    {
+        const String qp = String(prefix) + part + String(suffix);
+        const String qn = String(prefix) + nopart + String(suffix);
+        auto part_rows_opt = OracleExec::executeRows(qp, context, ResultShape::SortedBag);
+        auto nopart_rows_opt = OracleExec::executeRows(qn, context, ResultShape::SortedBag);
+        if (!part_rows_opt || !nopart_rows_opt)
+            return false;
+
+        if (!OracleCompare::equal(*part_rows_opt, *nopart_rows_opt))
+        {
+            raiseOracleMismatch(fmt::format(
+                "partition-equivalence oracle mismatch!\n"
+                "partitioned ({} rows): {}\n"
+                "non-partitioned ({} rows): {}\n{}",
+                part_rows_opt->size(), qp,
+                nopart_rows_opt->size(), qn,
+                OracleCompare::diffSummary(*part_rows_opt, *nopart_rows_opt)), context, &fixture);
+        }
+    }
+
+    LOG_TRACE(logger, "partition-equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkLowCardinalityEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: LowCardinality(T) is a storage encoding of T with identical logical
+    /// values. The same query over identical data stored as LowCardinality(String) vs plain String
+    /// must read back and group identically; a difference is a real LowCardinality bug.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("lowcard", context);
+    if (!fixture.valid())
+        return false;
+
+    const String lc = fixture.allocName("lc");
+    const String plain = fixture.allocName("plain");
+    if (!fixture.execute("CREATE TABLE " + lc + " (k UInt64, s LowCardinality(String), n Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + plain + " (k UInt64, s String, n Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+
+    const String seed = " SELECT number, toString(number % 37), toInt64(number) * 5 - 300 FROM numbers(500)";
+    if (!fixture.execute("INSERT INTO " + lc + seed) || !fixture.execute("INSERT INTO " + plain + seed))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "LowCardinality-equivalence oracle: {} (LC) vs {}", lc, plain);
+
+    static const std::array<std::pair<std::string_view, std::string_view>, 3> query_shapes = {{
+        {"SELECT k, s, n FROM ", ""},
+        {"SELECT s, count(), sum(n) FROM ", " GROUP BY s"},
+        {"SELECT k, s FROM ", " WHERE s > '2'"},
+    }};
+
+    for (const auto & [prefix, suffix] : query_shapes)
+    {
+        const String qlc = String(prefix) + lc + String(suffix);
+        const String qpl = String(prefix) + plain + String(suffix);
+        auto lc_rows_opt = OracleExec::executeRows(qlc, context, ResultShape::SortedBag);
+        auto plain_rows_opt = OracleExec::executeRows(qpl, context, ResultShape::SortedBag);
+        if (!lc_rows_opt || !plain_rows_opt)
+            return false;
+
+        if (!OracleCompare::equal(*lc_rows_opt, *plain_rows_opt))
+        {
+            raiseOracleMismatch(fmt::format(
+                "LowCardinality-equivalence oracle mismatch!\n"
+                "LowCardinality ({} rows): {}\n"
+                "plain ({} rows): {}\n{}",
+                lc_rows_opt->size(), qlc,
+                plain_rows_opt->size(), qpl,
+                OracleCompare::diffSummary(*lc_rows_opt, *plain_rows_opt)), context, &fixture);
+        }
+    }
+
+    LOG_TRACE(logger, "LowCardinality-equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkSampleEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: SAMPLE 1.0 reads the entire table (sample coefficient 1 = 100%), so on a
+    /// table with a SAMPLE BY key the same query with SAMPLE 1.0 must return the identical multiset
+    /// as without it; a difference is a real sampling bug. Rate-limited.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("sample", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    /// SAMPLE BY must be part of the primary key.
+    if (!fixture.execute(
+            "CREATE TABLE " + tbl + " (k UInt64, v Int64, s String) ENGINE = MergeTree"
+            " ORDER BY (intHash32(k)) SAMPLE BY intHash32(k)"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, toInt64(number) * 2 - 100, toString(number % 61) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "SAMPLE-equivalence oracle: {}", tbl);
+
+    static const std::array<std::pair<std::string_view, std::string_view>, 2> query_shapes = {{
+        {"SELECT k, v, s FROM ", ""},
+        {"SELECT count(), sum(v) FROM ", ""},
+    }};
+
+    for (const auto & [prefix, suffix] : query_shapes)
+    {
+        const String q_full = String(prefix) + tbl + String(suffix);
+        const String q_sample = String(prefix) + tbl + " SAMPLE 1.0" + String(suffix);
+        auto full_rows_opt = OracleExec::executeRows(q_full, context, ResultShape::SortedBag);
+        auto sample_rows_opt = OracleExec::executeRows(q_sample, context, ResultShape::SortedBag);
+        if (!full_rows_opt || !sample_rows_opt)
+            return false;
+
+        if (!OracleCompare::equal(*full_rows_opt, *sample_rows_opt))
+        {
+            raiseOracleMismatch(fmt::format(
+                "SAMPLE-equivalence oracle mismatch!\n"
+                "no SAMPLE ({} rows): {}\n"
+                "SAMPLE 1.0 ({} rows): {}\n{}",
+                full_rows_opt->size(), q_full,
+                sample_rows_opt->size(), q_sample,
+                OracleCompare::diffSummary(*full_rows_opt, *sample_rows_opt)), context, &fixture);
+        }
+    }
+
+    LOG_TRACE(logger, "SAMPLE-equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkProjectionEquivalence(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: a projection is a redundant re-sorted/aggregated copy that must never
+    /// change results. The same query with optimize_use_projections=0 vs =1 must be identical; a
+    /// difference is a real projection bug. Only INTEGER aggregates are used: float sums are
+    /// non-associative, so the projection (pre-aggregated) vs base-table (aggregated at read) paths
+    /// could differ by rounding and produce a false positive.
+    if (thread_local_rng() % 50 != 0)
+        return false;
+
+    OracleFixture fixture("projection", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute(
+            "CREATE TABLE " + tbl + " (k UInt64, g UInt8, v Int64,"
+            " PROJECTION agg (SELECT g, sum(v), count() GROUP BY g)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, number % 10, toInt64(number) * 3 - 500 FROM numbers(2000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "projection-equivalence oracle: {}", tbl);
+
+    const std::vector<std::pair<String, Field>> proj_off{{"optimize_use_projections", Field(UInt64(0))}};
+    const std::vector<std::pair<String, Field>> proj_on{
+        {"optimize_use_projections", Field(UInt64(1))}, {"optimize_use_implicit_projections", Field(UInt64(1))}};
+
+    static const std::array<std::string_view, 2> queries = {
+        "SELECT g, sum(v), count() FROM ",
+        "SELECT g, count() FROM ",
+    };
+    for (const std::string_view q_prefix : queries)
+    {
+        const String sql = String(q_prefix) + tbl + " GROUP BY g";
+        auto off_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, proj_off);
+        auto on_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, proj_on);
+        if (!off_rows_opt || !on_rows_opt)
+            return false;
+
+        if (!OracleCompare::equal(*off_rows_opt, *on_rows_opt))
+        {
+            raiseOracleMismatch(fmt::format(
+                "projection-equivalence oracle mismatch!\n"
+                "optimize_use_projections=0 ({} rows) vs =1 ({} rows): {}\n{}",
+                off_rows_opt->size(), on_rows_opt->size(), sql,
+                OracleCompare::diffSummary(*off_rows_opt, *on_rows_opt)), context, &fixture);
+        }
+    }
+
+    LOG_TRACE(logger, "projection-equivalence oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkAggregateIfIdentity(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: the -If aggregate combinator must equal the same aggregate computed by a
+    /// DIFFERENT path (arithmetic/if masking), not via FILTER (which may just be rewritten to -If,
+    /// making the check vacuous). All identities below are provably exact for integer inputs:
+    ///   countIf(c)      == sum(toUInt64(c))
+    ///   sumIf(v, c)     == sum(v * toInt64(c))            (v*0=0, v*1=v; both sum the same values)
+    ///   maxIf(v, c)     == max(if(c, v, NULL))            (max ignores the NULL else)
+    ///   minIf(v, c)     == min(if(c, v, NULL))
+    ///   uniqExactIf(v,c)== uniqExact(if(c, v, NULL))      (uniqExact ignores NULL)
+    /// A divergence is a real -If / aggregation bug. Comparison is a single server-side boolean
+    /// (typed computation policy), read via executeScalar.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("aggif", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, v Int64, c UInt8) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, toInt64(number) * 7 - 300, toUInt8(number % 3) FROM numbers(800)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "aggregate-If identity oracle: {}", tbl);
+
+    const String probe =
+        "SELECT (countIf(c = 1) IS NOT DISTINCT FROM sum(toUInt64(c = 1)))"
+        " AND (sumIf(v, c = 1) IS NOT DISTINCT FROM sum(v * toInt64(c = 1)))"
+        " AND (maxIf(v, c = 1) IS NOT DISTINCT FROM max(if(c = 1, v, NULL)))"
+        " AND (minIf(v, c = 1) IS NOT DISTINCT FROM min(if(c = 1, v, NULL)))"
+        " AND (uniqExactIf(v, c = 1) IS NOT DISTINCT FROM uniqExact(if(c = 1, v, NULL)))"
+        " FROM " + tbl;
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false; /// could not evaluate the identity — skip rather than risk a false positive
+
+    UInt64 all_hold = 0;
+    try
+    {
+        all_hold = value->safeGet<UInt64>();
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    if (all_hold != 1)
+    {
+        raiseOracleMismatch(fmt::format(
+            "aggregate-If identity oracle mismatch!\n"
+            "One of countIf/sumIf/maxIf/minIf/uniqExactIf disagrees with its masking equivalent on table {}.\n"
+            "Probe: {}",
+            tbl, probe), context, &fixture);
+    }
+
+    LOG_TRACE(logger, "aggregate-If identity oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkNullIdentity(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: sound NULL-handling equivalences that must hold for every row over
+    /// Nullable data (each verified with IS NOT DISTINCT FROM so NULL==NULL counts as equal):
+    ///   ifNull(a, b)   == if(isNull(a), b, a)
+    ///   coalesce(a, b) == ifNull(a, b)
+    ///   nullIf(a, b)   == if(a = b, NULL, a)
+    ///   isNull(a)      == (a IS NULL)
+    ///   isNotNull(a)   == (a IS NOT NULL)
+    /// The probe counts violating rows across all identities; a non-zero count is a real bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("nullid", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, a Nullable(Int64), b Nullable(Int64)) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    /// Mix of NULL/non-NULL, and rows where a=b, a!=b, either NULL.
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number,"
+            " if(number % 4 = 0, NULL, toInt64(number % 20)),"
+            " if(number % 5 = 0, NULL, toInt64(number % 20)) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "NULL-identity oracle: {}", tbl);
+
+    const String probe =
+        "SELECT countIf(NOT (ifNull(a, b) IS NOT DISTINCT FROM if(isNull(a), b, a)))"
+        " + countIf(NOT (coalesce(a, b) IS NOT DISTINCT FROM ifNull(a, b)))"
+        " + countIf(NOT (nullIf(a, b) IS NOT DISTINCT FROM if(a = b, NULL, a)))"
+        " + countIf(isNull(a) != (a IS NULL))"
+        " + countIf(isNotNull(a) != (a IS NOT NULL))"
+        " FROM " + tbl;
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false;
+
+    UInt64 violations = 0;
+    try
+    {
+        violations = value->safeGet<UInt64>();
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    if (violations != 0)
+    {
+        raiseOracleMismatch(fmt::format(
+            "NULL-identity oracle mismatch!\n"
+            "{} rows violate a NULL-handling identity (ifNull/coalesce/nullIf/isNull) on table {}.\n"
+            "Probe: {}",
+            violations, tbl, probe), context, &fixture);
+    }
+
+    LOG_TRACE(logger, "NULL-identity oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkCastRoundtrip(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle: integers and Dates have an exact textual representation, so a round-trip
+    /// through String must return the original value: CAST(CAST(x AS String) AS T) == x. A violation
+    /// is a real CAST / number-or-date parsing bug. (Floats are deliberately excluded — text
+    /// round-trips are not guaranteed bit-exact.) The probe counts violating rows (expected 0).
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("cast", context);
+    if (!fixture.valid())
+        return false;
+
+    const String tbl = fixture.allocName();
+    if (!fixture.execute("CREATE TABLE " + tbl + " (k UInt64, i Int64, u UInt64, d Date) ENGINE = MergeTree ORDER BY k"))
+        return false;
+    if (!fixture.execute(
+            "INSERT INTO " + tbl + " SELECT number, toInt64(number) * 7 - 500, toUInt64(number) * 3,"
+            " toDate('2000-01-01') + (number % 9000) FROM numbers(1000)"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "CAST round-trip oracle: {}", tbl);
+
+    const String probe =
+        "SELECT countIf(CAST(CAST(i AS String) AS Int64) != i)"
+        " + countIf(CAST(CAST(u AS String) AS UInt64) != u)"
+        " + countIf(CAST(CAST(d AS String) AS Date) != d)"
+        " + countIf(CAST(i AS Int64) != i)"
+        " FROM " + tbl;
+
+    auto value = OracleExec::executeScalar(probe, context);
+    if (!value || value->isNull())
+        return false;
+
+    UInt64 violations = 0;
+    try
+    {
+        violations = value->safeGet<UInt64>();
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    if (violations != 0)
+    {
+        raiseOracleMismatch(fmt::format(
+            "CAST round-trip oracle mismatch!\n"
+            "{} rows fail an integer/Date String round-trip on table {}.\n"
+            "Probe: {}",
+            violations, tbl, probe), context, &fixture);
+    }
+
+    LOG_TRACE(logger, "CAST round-trip oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkAggregateStateColumn(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_39): an AggregateFunction column stores the intermediate -State. A
+    /// state written with -State into an AggregatingMergeTree, persisted across parts, and read back
+    /// with -Merge must equal the direct aggregate over the raw data. Exact aggregates only
+    /// (sum over Int64, count) so cross-part merge cannot differ by float rounding.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("aggstate", context);
+    if (!fixture.valid())
+        return false;
+
+    const String raw = fixture.allocName("raw");
+    const String amt = fixture.allocName("amt");
+    if (!fixture.execute("CREATE TABLE " + raw + " (key UInt8, x Int64) ENGINE = MergeTree ORDER BY key"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + raw + " SELECT number % 8, toInt64(number) * 3 - 400 FROM numbers(1000)"))
+        return false;
+    if (!fixture.execute(
+            "CREATE TABLE " + amt + " (key UInt8, cs AggregateFunction(sum, Int64), cc AggregateFunction(count))"
+            " ENGINE = AggregatingMergeTree ORDER BY key"))
+        return false;
+    /// Two disjoint partitions of raw -> multiple state rows per key, combined at read time.
+    if (!fixture.execute("INSERT INTO " + amt + " SELECT key, sumState(x), countState() FROM " + raw + " WHERE key < 4 GROUP BY key"))
+        return false;
+    if (!fixture.execute("INSERT INTO " + amt + " SELECT key, sumState(x), countState() FROM " + raw + " WHERE key >= 4 GROUP BY key"))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "aggregate-state-column oracle: {} (states) vs {} (raw)", amt, raw);
+
+    auto merge_rows_opt = OracleExec::executeRows(
+        "SELECT key, sumMerge(cs), countMerge(cc) FROM " + amt + " GROUP BY key", context, ResultShape::SortedBag);
+    auto direct_rows_opt = OracleExec::executeRows(
+        "SELECT key, sum(x), count() FROM " + raw + " GROUP BY key", context, ResultShape::SortedBag);
+    if (!merge_rows_opt || !direct_rows_opt)
+        return false;
+
+    if (!OracleCompare::equal(*merge_rows_opt, *direct_rows_opt))
+    {
+        raiseOracleMismatch(fmt::format(
+            "aggregate-state-column oracle mismatch!\n"
+            "-Merge read of {} ({} rows) vs direct aggregate over {} ({} rows)\n{}",
+            amt, merge_rows_opt->size(), raw, direct_rows_opt->size(),
+            OracleCompare::diffSummary(*merge_rows_opt, *direct_rows_opt)), context, &fixture);
+    }
+
+    LOG_TRACE(logger, "aggregate-state-column oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkTupleSumming(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_38): a SummingMergeTree collapses rows sharing the ORDER BY key by
+    /// summing each non-key column, including per-element for a Tuple value column (under the table
+    /// setting allow_tuple_element_aggregation). A FINAL (query-time merged) read must equal an
+    /// element-wise sum over the same rows flattened into a plain MergeTree. Integer elements only
+    /// (exact). The FINAL here is in the oracle's OWN query, not the fuzzed query, so the global
+    /// FINAL gate does not apply.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("tuplesum", context);
+    if (!fixture.valid())
+        return false;
+
+    const String smt = fixture.allocName("smt");
+    const String raw = fixture.allocName("raw");
+    if (!fixture.execute(
+            "CREATE TABLE " + smt + " (k UInt16, t Tuple(a Int64, b Int64), v Int64) ENGINE = SummingMergeTree"
+            " ORDER BY k SETTINGS allow_tuple_element_aggregation = 1"))
+        return false;
+    if (!fixture.execute("CREATE TABLE " + raw + " (k UInt16, t1 Int64, t2 Int64, v Int64) ENGINE = MergeTree ORDER BY k"))
+        return false;
+
+    /// Three INSERT blocks -> three parts each side, forcing SummingMergeTree to collapse on FINAL.
+    for (int block = 0; block < 3; ++block)
+    {
+        const String off = std::to_string(block * 300);
+        const String smt_seed =
+            "INSERT INTO " + smt + " SELECT number % 15, (toInt64(number % 7) - 3, toInt64(number % 5)), toInt64(number % 3)"
+            " FROM numbers(" + off + ", 300)";
+        const String raw_seed =
+            "INSERT INTO " + raw + " SELECT number % 15, toInt64(number % 7) - 3, toInt64(number % 5), toInt64(number % 3)"
+            " FROM numbers(" + off + ", 300)";
+        if (!fixture.execute(smt_seed) || !fixture.execute(raw_seed))
+            return false;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "tuple-summing oracle: {} FINAL vs recomputed from {}", smt, raw);
+
+    auto smt_rows_opt = OracleExec::executeRows(
+        "SELECT k, t.a, t.b, v FROM " + smt + " FINAL", context, ResultShape::SortedBag);
+    auto raw_rows_opt = OracleExec::executeRows(
+        "SELECT k, sum(t1), sum(t2), sum(v) FROM " + raw + " GROUP BY k", context, ResultShape::SortedBag);
+    if (!smt_rows_opt || !raw_rows_opt)
+        return false;
+
+    if (!OracleCompare::equal(*smt_rows_opt, *raw_rows_opt))
+    {
+        raiseOracleMismatch(fmt::format(
+            "tuple-summing oracle mismatch!\n"
+            "SummingMergeTree {} FINAL ({} rows) vs recomputed sum over {} ({} rows)\n{}",
+            smt, smt_rows_opt->size(), raw, raw_rows_opt->size(),
+            OracleCompare::diffSummary(*smt_rows_opt, *raw_rows_opt)), context, &fixture);
+    }
+
+    LOG_TRACE(logger, "tuple-summing oracle passed");
+    return true;
+}
+
+bool QueryOracleChecker::checkSchemaRoundtrip(const ASTSelectQuery &, const ContextMutablePtr & context)
+{
+    /// Self-seeded oracle (task_45): a table's DDL must be an idempotent fixed point. Take SHOW
+    /// CREATE of a feature-rich table, recreate a copy from that exact statement, and SHOW CREATE the
+    /// copy: normalized (table name erased) the two DDL strings must be byte-identical. If
+    /// re-parsing ClickHouse's own emitted DDL and re-serializing yields a different string, the
+    /// metadata round-trip is lossy/non-deterministic — a real serialization bug.
+    if (thread_local_rng() % 40 != 0)
+        return false;
+
+    OracleFixture fixture("schemart", context);
+    if (!fixture.valid())
+        return false;
+
+    const String t1 = fixture.allocName("a");
+    const String t2 = fixture.allocName("b");
+
+    if (!fixture.execute(
+            "CREATE TABLE " + t1 + " (k UInt64, a Int64 CODEC(Delta, LZ4), s String CODEC(ZSTD), d Date,"
+            " m Map(String, UInt32), INDEX ix a TYPE minmax GRANULARITY 3)"
+            " ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY (k, a)"))
+        return false;
+
+    /// Read the DDL without the UUID so the recreate cannot collide and the compare is name-only.
+    const std::vector<std::pair<String, Field>> no_uuid{
+        {"show_table_uuid_in_table_create_query_if_not_nil", Field(UInt64(0))}};
+
+    auto ddl1_opt = OracleExec::executeScalar("SHOW CREATE TABLE " + t1, context, no_uuid);
+    if (!ddl1_opt || ddl1_opt->isNull())
+        return false;
+    String ddl1;
+    try { ddl1 = ddl1_opt->safeGet<String>(); } catch (...) { return false; }
+
+    /// Recreate t2 from t1's own DDL (only the table name changes).
+    String create2 = ddl1;
+    for (size_t pos = 0; (pos = create2.find(t1, pos)) != String::npos; pos += t2.size())
+        create2.replace(pos, t1.size(), t2);
+    if (!fixture.execute(create2))
+        return false;
+
+    auto ddl2_opt = OracleExec::executeScalar("SHOW CREATE TABLE " + t2, context, no_uuid);
+    if (!ddl2_opt || ddl2_opt->isNull())
+        return false;
+    String ddl2;
+    try { ddl2 = ddl2_opt->safeGet<String>(); } catch (...) { return false; }
+
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    LOG_TRACE(logger, "schema round-trip oracle: {} vs recreated {}", t1, t2);
+
+    /// Normalize away the table identity (replace each table's own name with a placeholder).
+    auto normalize = [](String s, const String & name)
+    {
+        for (size_t pos = 0; (pos = s.find(name, pos)) != String::npos; pos += 1)
+            s.replace(pos, name.size(), "T");
+        return s;
+    };
+    const String norm1 = normalize(ddl1, t1);
+    const String norm2 = normalize(ddl2, t2);
+
+    if (norm1 != norm2)
+    {
+        raiseOracleMismatch(fmt::format(
+            "schema round-trip oracle mismatch!\n"
+            "original DDL (normalized): {}\n"
+            "recreated DDL (normalized): {}",
+            norm1, norm2), context, &fixture);
+    }
+
+    LOG_TRACE(logger, "schema round-trip oracle passed");
     return true;
 }
 
@@ -2835,43 +3471,29 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     bool any_check_performed = false;
 
-    /// Dispatch over the ordered registry instead of a hand-written try/catch ladder, so
-    /// adding an oracle is one registry line. Each oracle's own mismatch
-    /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the reproduction
-    /// settings by the outer handler below; any other execution error means the rewrite
-    /// was not comparable on this query (e.g. a function the rewrite cannot analyse), so
-    /// it is swallowed and the remaining oracles still run.
-    try
+    /// Dispatch over the ordered registry instead of a hand-written try/catch ladder, so adding an
+    /// oracle is one registry line. A real mismatch is reported via `raiseOracleMismatch` (which
+    /// annotates the active settings and preserves any fixture), so it propagates straight out; any
+    /// other execution error means the rewrite was not comparable on this query (e.g. a function the
+    /// rewrite cannot analyse) and is swallowed so the remaining oracles still run.
+    for (const auto & oracle : OracleRegistry::instance().oracles())
     {
-        for (const auto & oracle : OracleRegistry::instance().oracles())
+        const auto & name = oracle->traits().name;
+        try
         {
-            const auto & name = oracle->traits().name;
-            try
-            {
-                if (oracle->run(*this, *select, context))
-                    any_check_performed = true;
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                    throw;
-                LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
-            }
-            catch (...)
-            {
-                LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
-            }
+            if (oracle->run(*this, *select, context))
+                any_check_performed = true;
         }
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+        catch (const Exception & e)
         {
-            const String changed = formatChangedSettings(context);
-            if (!changed.empty())
-                e.addMessage("Active non-default settings (for reproduction): {}", changed);
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw;
+            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
         }
-        throw;
+        catch (...)
+        {
+            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
+        }
     }
 
     return any_check_performed;

@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/SelectUnionMode.h>
+#include <Interpreters/QueryOracles/OracleGate.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -86,6 +87,60 @@ public:
     /// Creates its own fixture tables via OracleFixture; rate-limited.
     bool checkCodecRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// Engine-equivalence oracle (self-seeded): identical schema + data stored in a MergeTree vs a
+    /// row-based engine (Memory/TinyLog/Log/StripeLog) must read back the identical multiset. A
+    /// difference is a real engine read/serialization bug.
+    bool checkEngineEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Partition-equivalence oracle (self-seeded): PARTITION BY is transparent to results. The same
+    /// query over identical data in a partitioned vs non-partitioned MergeTree must return the
+    /// identical multiset; a difference is a real partition-pruning / cross-partition-merge bug.
+    bool checkPartitionEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// LowCardinality-equivalence oracle (self-seeded): LowCardinality(T) stores the same logical
+    /// values as T. Identical data as LowCardinality(String) vs plain String must read back and
+    /// group identically; a difference is a real LowCardinality bug.
+    bool checkLowCardinalityEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// SAMPLE-equivalence oracle (self-seeded): SAMPLE 1.0 reads the whole table, so on a table
+    /// with a SAMPLE BY key `SELECT ... SAMPLE 1.0` must equal `SELECT ...`; a difference is a
+    /// real sampling bug.
+    bool checkSampleEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Projection-equivalence oracle (self-seeded): an aggregating projection must not change
+    /// results. The same integer-aggregate query with optimize_use_projections=0 vs =1 must be
+    /// identical; a difference is a real projection bug. Integer aggregates only (float sums are
+    /// non-associative across the projection vs base-table paths).
+    bool checkProjectionEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Aggregate-If identity oracle (self-seeded): `aggIf(x, cond)` must equal the same aggregate
+    /// computed by arithmetic/if masking (e.g. sumIf(v,c)=sum(v*c), maxIf(v,c)=max(if(c,v,NULL))).
+    /// Compares the -If combinator against a DIFFERENT computation path; a divergence is a real bug.
+    bool checkAggregateIfIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// NULL-identity oracle (self-seeded): sound NULL-handling equivalences (ifNull/coalesce/
+    /// nullIf/isNull) must hold row-for-row over Nullable data; a violation is a real bug.
+    bool checkNullIdentity(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// CAST round-trip oracle (self-seeded): integer and Date values survive a String round-trip
+    /// exactly (CAST(CAST(x AS String) AS T) == x); a violation is a real CAST/parse bug.
+    bool checkCastRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Aggregate-state-column oracle (self-seeded): a -State written into an AggregatingMergeTree
+    /// column, persisted across parts, and read back with -Merge must equal the direct aggregate
+    /// over the raw data; a difference is a real aggregate state-I/O bug.
+    bool checkAggregateStateColumn(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Tuple-summing oracle (self-seeded): a SummingMergeTree with a Tuple value column collapses
+    /// rows per key by summing each element; a FINAL read must equal an element-wise sum over the
+    /// same rows flattened into a plain MergeTree. A difference is a real SummingSortedAlgorithm bug.
+    bool checkTupleSumming(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Schema round-trip oracle (self-seeded): a table's DDL must be an idempotent fixed point —
+    /// recreating a table from its own SHOW CREATE and re-serializing must yield the identical DDL
+    /// (modulo the table name). A difference is a real metadata serialization bug.
+    bool checkSchemaRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
 private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
@@ -113,7 +168,7 @@ private:
     static const ASTSelectQuery * extractSimpleSelect(const ASTPtr & ast);
 
     /// Check if a SELECT query is structurally safe for oracle testing.
-    static bool isSafeForOracle(const ASTSelectQuery & select);
+    static bool isSafeForOracle(const ASTSelectQuery & select, GateRelax relax = GateRelax::None);
 
     /// Check if the AST contains non-deterministic functions. Uses
     /// `FunctionFactory::isDeterministic` as the primary source of truth and
