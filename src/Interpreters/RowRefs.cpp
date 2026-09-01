@@ -1,19 +1,26 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
-#include <Common/Exception.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType.h>
-#include <base/types.h>
-#include <Common/RadixSort.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/RowDataStore.h>
+#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/RadixSort.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
+#include <limits>
 #include <mutex>
 
 
@@ -24,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -309,16 +317,13 @@ void StoredColumnsIndex::invalidateEmitTable()
 }
 
 void StoredColumnsIndex::resolveEmitColumns(
-    size_t saved_columns_count,
-    const std::vector<size_t> & positions,
-    std::vector<const IColumn * const *> & out_columns,
-    std::vector<const ColumnReplicated * const *> & out_replicated)
+    size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<DirectGatherColumn> & out_direct_gather)
 {
     std::lock_guard guard(mutex);
 
     if (emit_generation != blocks_generation)
     {
-        /// Blocks changed since the table was last built: every cached `const IColumn *` is stale. Drop
+        /// Blocks changed since the table was last built: every cached plane pointer is stale. Drop
         /// the whole table; positions other queries still need will be rebuilt when they ask for them.
         emit_columns.clear();
         emit_columns.resize(saved_columns_count); /// value-initializes to null unique_ptrs (no copy)
@@ -330,28 +335,71 @@ void StoredColumnsIndex::resolveEmitColumns(
     }
 
     const size_t num_blocks = blocks.size();
-    out_columns.assign(saved_columns_count, nullptr);
-    out_replicated.assign(saved_columns_count, nullptr);
-    for (size_t pos : positions)
+    out_direct_gather.assign(saved_columns_count, {});
+    for (const EmitColumnRequest & request : requests)
     {
+        const size_t pos = request.position;
         chassert(pos < saved_columns_count);
         if (!emit_columns[pos]) /// not built yet for this generation: build this requested position
         {
             auto emit_column = std::make_unique<EmitColumn>();
-            emit_column->by_block.resize(num_blocks);
-            emit_column->repl_by_block.resize(num_blocks);
+            bool any_replicated = false;
+            std::vector<DirectGatherRowRemap> remap(num_blocks);
             for (size_t b = 0; b < num_blocks; ++b)
             {
+                /// A cleared/popped slot is skipped: no live ref points to it (mirrors `at()`).
                 const StoredBlock * block = blocks[b];
-                /// A cleared/popped slot keeps a null entry: no live ref points to it (mirrors `at()`).
-                emit_column->by_block[b] = block ? block->columns[pos].get() : nullptr;
-                emit_column->repl_by_block[b] = block ? block->replicated_columns[pos] : nullptr;
+                if (!block)
+                    continue;
+
+                const IColumn * column = block->columns[pos].get();
+                /// A replicated stored column gathers through its indexes: `row' = indexes[row]`
+                /// addresses the nested column, so the planes come from the nested column and the
+                /// remap entry carries the indexes plane (see `DirectGatherRowRemap`).
+                if (const ColumnReplicated * replicated = block->replicated_columns[pos])
+                {
+                    const IColumn & indexes = *replicated->getIndexes().getIndexes();
+                    const size_t index_width = indexes.isFixedAndContiguous() ? indexes.sizeOfValueIfFixed() : 0;
+                    if (index_width != 1 && index_width != 2 && index_width != 4 && index_width != 8)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR, "Replicated join column has indexes of {} bytes", index_width);
+                    const std::string_view indexes_raw = indexes.getRawData();
+                    /// A column that delegates `getRawData` hands back a buffer that is not its own rows.
+                    if (indexes_raw.size() != indexes.size() * index_width)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR, "Replicated join column indexes do not hold exactly their own rows");
+                    remap[b] = {.indexes_data = indexes_raw.data(), .index_width = static_cast<UInt8>(index_width)};
+                    any_replicated = true;
+                    column = replicated->getNestedColumn().get();
+                    /// `remapFlatWord` puts `indexes[row]` back in a ref word's 32-bit row field, so
+                    /// the nested column the indexes address is under the same limit as a block. A
+                    /// source row that expands to no rows at all is what lets it exceed one.
+                    if (column->size() > std::numeric_limits<UInt32>::max())
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Too many deduplicated rows in right table block for HashJoin: {}",
+                            column->size());
+                }
+
+                resolveGatherNode(emit_column->gather_root, request.type, *column, b, num_blocks);
             }
+            /// A set `column_type` means a live block decided the shape. Without one - an empty right
+            /// side, or one whose blocks were all cleared - the join still emits, with every row a
+            /// default, so the shape comes from a column of the output type instead. It is kept alive
+            /// here to keep the node's plane pointers valid; no ref word can name a block, so none is read.
+            if (!emit_column->gather_root.column_type)
+            {
+                emit_column->shape_prototype = request.type->createColumn();
+                resolveGatherNode(emit_column->gather_root, request.type, *emit_column->shape_prototype, 0, 1);
+            }
+            if (any_replicated)
+                emit_column->gather_remap_by_block = std::move(remap);
             emit_columns[pos] = std::move(emit_column);
         }
         const EmitColumn & emit_column = *emit_columns[pos];
-        out_columns[pos] = emit_column.by_block.data();
-        out_replicated[pos] = emit_column.repl_by_block.data();
+        out_direct_gather[pos]
+            = {.node = &emit_column.gather_root,
+               .remap_by_block = emit_column.gather_remap_by_block.empty() ? nullptr : emit_column.gather_remap_by_block.data()};
     }
 }
 
