@@ -1,0 +1,11 @@
+equals	1
+equals, ground truth	1
+notEquals	0
+notEquals, ground truth	0
+zero inside a tuple constant	1
+zero inside a tuple constant, ground truth	1
+non-zero constant	1
+non-zero constant	Granules: 2/3
+zero constant, transform keeps the values equal	1
+zero constant, transform keeps the values equal, ground truth	1
+zero constant, transform keeps the values equal	Granules: 1/3
