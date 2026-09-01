@@ -79,8 +79,17 @@ public:
     DataTypePtr getType(const String & type_name);
     SerializationPtr getSerialization(const String & type_name);
 
+    /// Same as getSerialization(type_name), but on a cache miss reuses the already
+    /// constructed `type` instead of parsing `type_name` through DataTypeFactory.
+    /// `type_name` must be equal to `type->getName()`.
+    SerializationPtr getSerialization(const String & type_name, const DataTypePtr & type);
+
 private:
-    static constexpr size_t MAX_ELEMENTS = 16;
+    /// Sized to cover a full set of Dynamic variants (up to 255) plus types from the
+    /// shared variant, so that interleaved values of many distinct non-simple types
+    /// (e.g. a Dynamic(max_types=N) column with N > 16 complex variants) do not
+    /// constantly clear and rebuild the cache. Matches ColumnDynamic::SERIALIZATION_CACHE_MAX_SIZE.
+    static constexpr size_t MAX_ELEMENTS = 256;
 
     struct Element
     {
@@ -88,7 +97,8 @@ private:
         SerializationPtr serialization;
     };
 
-    const Element & getCacheElement(const String & type_name);
+    /// If `known_type` is provided, it is used on a cache miss instead of a DataTypeFactory lookup.
+    const Element & getCacheElement(const String & type_name, const DataTypePtr * known_type = nullptr);
 
     /// Clear the cache if the thread is now attached to a different query context
     /// than the one the cache was populated under.

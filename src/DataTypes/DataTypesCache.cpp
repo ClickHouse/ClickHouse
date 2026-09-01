@@ -125,6 +125,15 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name)
     return getCacheElement(type_name).serialization;
 }
 
+SerializationPtr DataTypesCache::getSerialization(const String & type_name, const DataTypePtr & type)
+{
+    /// Check the thread-local cache of simple types first.
+    if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
+        return elem->serialization;
+
+    return getCacheElement(type_name, &type).serialization;
+}
+
 void DataTypesCache::clearIfQueryContextChanged()
 {
     ContextPtr current_query_context = CurrentThread::tryGetQueryContext();
@@ -142,7 +151,7 @@ void DataTypesCache::clearIfQueryContextChanged()
     query_context = current_query_context;
 }
 
-const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name)
+const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name, const DataTypePtr * known_type)
 {
     clearIfQueryContextChanged();
 
@@ -154,7 +163,7 @@ const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & t
     if (cache.size() >= MAX_ELEMENTS)
         cache.clear();
 
-    auto type = DataTypeFactory::instance().get(type_name);
+    auto type = known_type ? *known_type : DataTypeFactory::instance().get(type_name);
     it = cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first;
     return it->second;
 }
