@@ -1037,7 +1037,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Pre-patch recompression infos must not pick the output codec (a patch can move the TTL
     /// either way); the recalculated infos let a later recompression merge apply it instead.
     IMergeTreeDataPart::TTLInfos codec_ttl_infos;
-    if (global_ctx->future_part->patch_parts.empty())
+    if (!ctx->recalculate_ttl_for_patches)
         codec_ttl_infos = global_ctx->new_data_part->ttl_infos;
     auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->metadata_snapshot,
