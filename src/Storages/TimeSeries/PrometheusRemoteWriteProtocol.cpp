@@ -19,8 +19,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Common/quoteString.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -49,7 +47,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int UNEXPECTED_TABLE_ENGINE;
 }
 
 namespace
@@ -304,52 +301,12 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
-    /// The INSERT check comes first: the engine-specific refusals below must not tell a caller
-    /// without write access what kind of table hides behind the name.
+    /// Grant before existence: a probe without the right must not learn whether the name exists.
     context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
-    /// Check the engine of the target table: a Distributed target is written through its own sink,
-    /// which routes the rows to the TimeSeries table of each shard.
-    if (auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage))
-    {
-        /// The read path proves the shard engine inside the generated selector; an insert has no
-        /// later guard, so probe here and fail closed rather than acknowledge unreadable rows.
-        const auto & remote_id = distributed_target->remote_time_series_storage_id;
-        String probe_query = "SELECT countIf(engine != 'TimeSeries') FROM cluster("
-            + backQuoteIfNeed(distributed_target->cluster_name) + ", system.tables) WHERE name = "
-            + quoteString(remote_id.table_name) + " AND database = "
-            + (remote_id.database_name.empty() ? String("currentDatabase()") : quoteString(remote_id.database_name));
-        /// On the server's own context: the caller needs only INSERT on the wrapper, and the
-        /// probe runs after that check, so it fingerprints nothing the caller may not see.
-        auto probe_context = Context::createCopy(context_->getGlobalContext());
-        probe_context->makeQueryContext();
-        probe_context->setSetting("skip_unavailable_shards", false);
-        auto [probe_ast, probe_io] = executeQuery(probe_query, probe_context, QueryFlags{ .internal = true });
-        PullingPipelineExecutor probe_executor(probe_io.pipeline);
-        UInt64 wrong_engine_shards = 0;
-        Block probe_block;
-        while (probe_executor.pull(probe_block))
-            if (probe_block.rows())
-                wrong_engine_shards = probe_block.getByPosition(0).column->getUInt(0);
-        if (wrong_engine_shards)
-            throw Exception(
-                ErrorCodes::UNEXPECTED_TABLE_ENGINE,
-                "This operation is not supported over table {}: {} shard-local target(s) named {} are not TimeSeries "
-                "tables, and the prometheus surfaces reading them back would reject the written samples",
-                time_series_storage->getStorageID().getNameForLogs(), wrong_engine_shards,
-                backQuoteIfNeed(remote_id.table_name));
-        /// The 204 acknowledgement must mean the samples reached the shards: Prometheus never
-        /// retries an acknowledged write, so a queued async insert would be silent data loss.
-        context_->setSetting("distributed_foreground_insert", true);
-        /// A profile- or URL-provided skip_unavailable_shards would let the sink drop a failed
-        /// shard yet still acknowledge; the 204 contract needs every shard write to count.
-        context_->setSetting("skip_unavailable_shards", false);
-        /// A URL- or profile-provided insert_shard_id narrows the sink to one shard (DistributedSink
-        /// start/end), bypassing the wrapper's sharding key behind the same 204.
-        context_->setSetting("insert_shard_id", UInt64(0));
-        /// And insert_distributed_one_random_shard: on a keyless multi-shard wrapper it sends the
-        /// whole batch to one arbitrary shard where the write should instead fail closed.
-        context_->setSetting("insert_distributed_one_random_shard", false);
-    }
+    /// A Distributed target is written through its own sink, exactly like any other INSERT into a
+    /// Distributed table: its settings, sharding key and acknowledgement semantics are the caller's
+    /// to choose, and the endpoint does not override them.
+    resolvePrometheusQueryTarget(*time_series_storage);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
