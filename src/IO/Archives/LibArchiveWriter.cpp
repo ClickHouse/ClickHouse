@@ -245,8 +245,6 @@ void LibArchiveWriter::createArchive()
 {
     std::lock_guard lock{mutex};
     archive = archive_write_new();
-    if (!archive)
-        throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't create archive writer");
     setFormatAndSettings();
     if (stream_info)
     {

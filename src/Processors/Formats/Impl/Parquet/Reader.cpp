@@ -7,7 +7,6 @@
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
-#include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -35,6 +34,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace ProfileEvents
@@ -124,7 +124,7 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         {
             /// Can't use CompressionMethod::Snappy because it dispatches to HadoopSnappyReadBuffer,
             /// which expects some additional header before the compressed block.
-            size_t actual_uncompressed_size = 0;
+            size_t actual_uncompressed_size;
             if (!snappy::GetUncompressedLength(data, compressed_size, &actual_uncompressed_size))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Malformed snappy compressed page (couldn't get uncompressed length)");
             if (actual_uncompressed_size != uncompressed_size)
@@ -210,7 +210,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     if (memcmp(buf.data() + initial_read_size - 4, "PAR1", 4) != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the end of file)");
 
-    int32_t metadata_size_i32 = 0;
+    int32_t metadata_size_i32;
     memcpy(&metadata_size_i32, buf.data() + initial_read_size - 8, 4);
     if (metadata_size_i32 <= 0 || size_t(metadata_size_i32) + 8 > file_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Bad metadata size in parquet file: {} bytes", metadata_size_i32);
@@ -380,10 +380,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
-        if (meta->num_rows < 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
-        if (meta->num_rows == 0)
-            continue; /// Empty row groups are valid in Parquet; skip them.
+        if (meta->num_rows <= 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
@@ -582,6 +580,7 @@ void Reader::initializePrefetches()
                 {
                     size_t len = size_t(column.meta->meta_data.bloom_filter_length);
                     max_header_length = std::min(max_header_length, len);
+                    column.bloom_filter_data_bytes = len;
                     column.bloom_filter_data_prefetch = prefetcher.registerRange(
                         size_t(column.meta->meta_data.bloom_filter_offset),
                         len, /*likely_to_be_used=*/ false);
@@ -667,6 +666,7 @@ void Reader::initializePrefetches()
                 auto it = std::upper_bound(all_offsets.begin(), all_offsets.end(), offset);
                 size_t end = it == all_offsets.end() ? prefetcher.getFileSize() : *it;
 
+                column.bloom_filter_data_bytes = end - offset;
                 column.bloom_filter_data_prefetch = prefetcher.registerRange(
                     offset, end - offset, /*likely_to_be_used=*/ false);
             }
@@ -803,6 +803,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     const size_t bytes_per_block = 32;
     if (column.bloom_filter_header.numBytes <= 0 || column.bloom_filter_header.numBytes % bytes_per_block != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bloom filter size.");
+    /// The bitset must fit in the bloom filter byte range the file declared, otherwise the block
+    /// subranges below would point outside the data we fetched.
+    if (header_size > column.bloom_filter_data_bytes ||
+        size_t(column.bloom_filter_header.numBytes) > column.bloom_filter_data_bytes - header_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter bitset of {} bytes doesn't fit in {} bytes of bloom filter "
+            "data (including a {}-byte header) at offset {}. Use setting input_format_parquet_bloom_filter_push_down=0 to ignore.",
+            column.bloom_filter_header.numBytes, column.bloom_filter_data_bytes, header_size, column.meta->meta_data.bloom_filter_offset);
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / bytes_per_block;
 
     const auto & hashes = column_info.bloom_filter_hashes;
@@ -824,10 +831,7 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
     for (size_t block_idx : block_idxs)
         subranges.emplace_back(base_offset + block_idx * bytes_per_block, bytes_per_block);
-
-    std::vector<PrefetchHandle> prefetches;
-    if (!subranges.empty()) // can be empty e.g. if `WHERE x IN ()`
-        prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
+    auto prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
 
     column.bloom_filter_blocks.reserve(block_idxs.size());
     for (size_t i = 0; i < block_idxs.size(); ++i)
@@ -1267,7 +1271,7 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
 
 double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const
 {
-    double column_chunk_bytes = 0;
+    double column_chunk_bytes;
     if (column.meta->meta_data.__isset.size_statistics &&
         column.meta->meta_data.size_statistics.__isset.unencoded_byte_array_data_bytes)
     {
@@ -1278,7 +1282,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
     else if (column.meta->meta_data.__isset.dictionary_page_offset)
     {
         /// Dictionary-encoded strings. No way to know the decoded length in advance.
-        double avg_string_length = 0;
+        double avg_string_length;
         if (column.dictionary.isInitialized())
         {
             /// We've read the dictionary. Use the average string length in the dictionary as a guess
@@ -1290,12 +1294,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
             /// We have no idea how long the strings are. Use some made up number (not chosen carefully).
             avg_string_length = 20;
         }
-        /// Null values don't contribute to string data. Subtract null_count when available
-        /// to avoid massive overestimation for columns with high null rates and large dictionary entries.
-        double non_null_values = static_cast<double>(column.meta->meta_data.num_values);
-        if (column.meta->meta_data.statistics.__isset.null_count)
-            non_null_values = std::max(0., non_null_values - static_cast<double>(column.meta->meta_data.statistics.null_count));
-        column_chunk_bytes = avg_string_length * non_null_values;
+        column_chunk_bytes = avg_string_length * static_cast<double>(column.meta->meta_data.num_values);
     }
     else
     {
@@ -1308,7 +1307,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
 
 double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
 {
-    double res = 0;
+    double res;
     if (column_info.output_type->haveMaximumSizeOfValue())
         /// Fixed-size values, e.g. numbers or FixedString.
         res = 1. * static_cast<double>(column_info.output_type->getMaximumSizeOfValueInMemory())
@@ -1332,7 +1331,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 {
     /// Allocate columns for values, null map, and array offsets.
 
-    size_t output_num_values_estimate = 0;
+    size_t output_num_values_estimate;
     if (column_info.levels.back().rep == 0)
         output_num_values_estimate = row_subgroup.filter.rows_pass; // no arrays, rows == values
     else if (row_subgroup.filter.rows_pass == size_t(row_group.meta->num_rows))
@@ -1596,7 +1595,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     {
         uint32_t crc = arrow::internal::crc32(0, page_data.data(), page_data.size());
         if (crc != uint32_t(header.crc))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Page CRC checksum verification failed");
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Page CRC checksum verification failed");
     }
 
     return {header, page_data};
@@ -1696,7 +1695,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             /// <def length> <def> [<rep length> <rep>] <values>
             decompressPageIfCompressed(page);
 
-            UInt32 n = 0;
+            UInt32 n;
             if (column_info.levels.back().rep > 0)
             {
                 if (page.data.size() < 4)

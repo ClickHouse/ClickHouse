@@ -7,6 +7,8 @@ keywords: ['EXCEPT', 'clause']
 doc_type: 'reference'
 ---
 
+# EXCEPT clause
+
 > The `EXCEPT` clause returns only those rows that result from the first query without the second. 
 
 - Both queries must have the same number of columns in the same order and data type.
@@ -147,7 +149,7 @@ LIMIT 10;
 
 Now suppose we have a table named `holdings` that contains a list of cryptocurrencies that we own, along with the number of coins:
 
-```sql title="Query"
+```sql
 CREATE TABLE holdings
 (
     crypto_name String,
