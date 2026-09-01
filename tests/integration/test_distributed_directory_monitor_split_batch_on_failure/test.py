@@ -293,3 +293,57 @@ def test_broken_file_during_split_removes_sent_files(started_cluster):
             "select sum(data_files) from system.distribution_queue where table='dist'"
         )
     ) == 0
+
+
+def test_recovery_after_broken_file_followed_by_sent_file(started_cluster):
+    drop_tables()
+    for _, node in cluster.instances.items():
+        node.query("create table data (key Int, value Int) engine=MergeTree order by key")
+
+    node1.query(
+        """
+            create table dist as data engine=Distributed(test_cluster, currentDatabase(), data, key)
+                settings background_insert_batch=1, background_insert_split_batch_on_failure=1;
+            system stop distributed sends dist;
+        """
+    )
+    for value in (1, 2):
+        node1.query(
+            f"insert into dist values (1, {value})",
+            settings={"distributed_foreground_insert": 0},
+        )
+
+    queue_path = node1.query(
+        "select data_path from system.distribution_queue where table='dist' and data_files=2"
+    ).strip()
+    files = node1.exec_in_container(
+        ["bash", "-c", f"ls -1 {queue_path}/*.bin | sort -V"]
+    ).strip().splitlines()
+    assert len(files) == 2
+    file_indices = [file.rsplit("/", 1)[-1][:-4] for file in files]
+    # A is quarantined locally, B is then sent successfully.
+    node1.exec_in_container(["truncate", "-s", "0", files[0]])
+
+    node1.query("system start distributed sends dist")
+    node1.query("system flush distributed dist")
+    assert int(node1.query("select count() from dist")) == 1
+
+    # Simulate a shutdown right after B was acknowledged and removed, but before the
+    # batch metadata was rewritten: `A` sits in `broken/`, `B` is gone, and the stale
+    # `current_batch.txt` still lists both of them.
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '%s\\n' {' '.join(file_indices)} > {queue_path}/current_batch.txt",
+        ]
+    )
+
+    node1.query("system flush distributed dist")
+    # The acknowledged file must not be sent again and the queue must drain.
+    assert int(node1.query("select count() from dist")) == 1
+    assert int(
+        node1.query(
+            "select sum(data_files) from system.distribution_queue where table='dist'"
+        )
+    ) == 0
