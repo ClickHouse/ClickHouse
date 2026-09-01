@@ -1,0 +1,126 @@
+-- arraySlice and arrayElement consume a lazily replicated array produced by ARRAY_JOIN or JOINs
+-- Results must be identical with lazy replication disabled and enabled.
+
+SELECT '-- numeric array, dynamic offset';
+{% for i in range(2) -%}
+SELECT x, big[x], big[-x], arraySlice(big, x, 2), length(big)
+FROM (SELECT range(10 + number) AS big, [1, 2, 5, 100] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- string array, constant and dynamic slices';
+{% for i in range(2) -%}
+SELECT x, arraySlice(big, 2, 3), arraySlice(big, -2), arraySlice(big, x), arraySlice(big, x, x), big[2]
+FROM (SELECT arrayMap(i -> 's' || toString(i + number), range(5)) AS big, [1, -1, 0, 3] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- Array(LowCardinality(String)) elements and slices';
+{% for i in range(2) -%}
+SELECT x, toTypeName(big), big[x], big[2], arraySlice(big, x, 2), arraySlice(big, 2, 3), arraySlice(big, -2)
+FROM (SELECT arrayMap(i -> 'lc_' || toString((i + number) % 3), range(5))::Array(LowCardinality(String)) AS big, [1, 2, 5, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- nullable elements';
+{% for i in range(2) -%}
+SELECT x, big[x], arrayElementOrNull(big, x), arraySlice(big, x, 2)
+FROM (SELECT arrayMap(i -> if(i % 2 = 0, NULL, i + number), range(6))::Array(Nullable(UInt64)) AS big, [1, 2, 7, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- negative and nullable offsets, negative length';
+{% for i in range(2) -%}
+SELECT x, arraySlice(big, -3, 2), arraySlice(big, 2, -1), arraySlice(big, if(x % 2 = 0, NULL, x)::Nullable(Int64), 2)
+FROM (SELECT range(8 + number % 3) AS big, [1, 2, 3, -2] AS r FROM numbers(3)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- tuple elements and replicated empty arrays';
+{% for i in range(2) -%}
+SELECT x, big[x], arraySlice(big, 1, x), small_arr[x], arraySlice(small_arr, 1, 2)
+FROM (SELECT arrayMap(i -> (i + number, 't' || toString(i)), range(4)) AS big, range(number % 2) AS small_arr, [1, 4, 5] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- array produced by lazy JOIN replication';
+{% for i in range(2) -%}
+SELECT x, big[x], arraySlice(big, x, 2)
+FROM (SELECT 42 AS k, number + 1 AS x FROM numbers(4)) AS l
+INNER JOIN (SELECT 42 AS k, materialize(arrayMap(i -> 's' || toString(i), range(5))) AS big) AS r ON l.k = r.k
+ORDER BY x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- replication indexes of type UInt16 (more than 255 rows in a block)';
+{% for i in range(2) -%}
+SELECT sum(big[x + 1]), sum(length(arraySlice(big, x + 1, 3))), sum(arraySlice(big, x + 1, 3)[1])
+FROM (SELECT range(number, number + 10) AS big, range(2) AS r FROM numbers(300)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- arrayElement with a non-constant Nullable index';
+{% for i in range(2) -%}
+SELECT x, big[if(x % 2 = 0, NULL, x)::Nullable(Int64)], arrayElementOrNull(big, if(x % 2 = 0, NULL, x)::Nullable(Int64))
+FROM (SELECT arrayMap(i -> 's' || toString(i + number), range(5)) AS big, [1, 2, 5, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- arrayElement with a lazily replicated Nullable index (AST fuzzer)';
+{% for i in range(2) -%}
+SELECT DISTINCT sum(big[2 + x]), quantileTDigestDistinct(notEmpty(arraySlice(big, positiveModuloOrNull(x, 65535), 3))), sum(arraySlice(big, NULL + x, 3)[materialize(toNullable(100))])
+FROM (SELECT DISTINCT range(number, number + 2) AS big, range(2) AS r FROM numbers(300)) LEFT ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1;
+{% endfor %}
+
+SELECT '-- array and index replicated by the same expansion';
+-- `big` and `idx` are both non-joined columns, so lazy ARRAY JOIN wraps them in ColumnReplicated
+-- sharing one indexes column: `big[idx]` takes the compute-on-nested fast path and stays lazy.
+-- `range(x + 3)[idx]` mixes a full array (built from the expanded column) with a replicated index,
+-- which pins the materialize fallback for an index replicated independently of the array.
+{% for i in range(2) -%}
+SELECT x, big[idx], arraySlice(big, idx, 2), range(x + 3)[idx]
+FROM (SELECT range(10 + number) AS big, number + 2 AS idx, [1, 2, 5] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- unused nested rows are compacted away before the recursion on nested columns';
+-- Only 2 of the 20 source rows have a non-empty `r`, so the shared replication indexes reference
+-- only those nested rows: the compute-on-nested path must compact the unused ones away
+-- and adjust the indexes, for both a replicated (`big[idx]`) and a constant (`big[2]`) index.
+{% for i in range(2) -%}
+SELECT x, big[idx], big[2], arraySlice(big, idx, 2)
+FROM (SELECT range(10 + number) AS big, intDiv(number, 10) + 1 AS idx, if(number % 10 = 0, [1, 2], []) AS r FROM numbers(20)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
+SELECT '-- out-of-order replication indexes (JOIN probe order) with unused nested rows';
+-- A hash JOIN references build-side rows in probe order: left keys [9, 4, 7, 4] give a
+-- non-monotonic index sequence with a repeat (e.g. [8, 3, 6, 3]) over 10 nested rows,
+-- 7 of which are never referenced. The used rows are not a prefix, so the compaction must
+-- remap the surviving indexes to new positions ([2, 0, 1, 0]). This covers index remapping
+-- for the shared-indexes (`big[idx]`) and constant-index (`big[2]`) paths, and the
+-- random-access gather (`big[l.k]`: full index over a replicated array).
+{% for i in range(2) -%}
+SELECT l.k, big[idx], big[2], big[l.k], arraySlice(big, idx, 2)
+FROM (SELECT arrayJoin([9, 4, 7, 4]) AS k) AS l
+INNER JOIN (SELECT number + 1 AS k, range(number + 3) AS big, number % 3 + 1 AS idx FROM numbers(10)) AS r ON l.k = r.k
+ORDER BY ALL
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0;
+{% endfor %}
+
+SELECT '-- large array is not materialized per joined row';
+{% for i in range(2) -%}
+SELECT sum(length(arraySlice(big, x, 2))) + sum(length(big[x]))
+FROM (SELECT arrayMap(i -> repeat('a', 100) || toString(i + number), range(1000)) AS big, range(50) AS r FROM numbers(100)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, max_block_size = 65536, log_queries = 1, log_comment = '04628_replicated_{{ ['eager', 'lazy'][i] }}'
+FORMAT Null;
+{% endfor %}
+
+SYSTEM FLUSH LOGS query_log;
+
+-- With lazy replication the big array stays compact (one copy per source row) and only the
+-- requested slices/elements are copied, so the peak memory usage must be much lower.
+SELECT
+    (SELECT max(memory_usage) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04628_replicated_lazy')
+    < 0.5 * (SELECT max(memory_usage) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04628_replicated_eager');

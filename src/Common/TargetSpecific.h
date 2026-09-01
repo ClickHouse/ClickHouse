@@ -72,8 +72,8 @@
  * // All target-specific and default implementations are available here via
  * TargetSpecific::<Arch>::funcImpl. Use runtime detection to choose one.
  *
- * If you want to write IFunction or IExecutableFunctionImpl with several implementations
- * see PerformanceAdaptors.h.
+ * An IFunction with several implementations picks one in its constructor, based on
+ * isArchSupported, and forwards executeImpl to it. See FunctionSHA1.cpp for an example.
  */
 
 namespace DB
@@ -129,7 +129,8 @@ String toString(TargetArch arch);
 /// `X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE` is needed for TUs explicitly pinned to `-march=x86-64-v2`
 /// (e.g. `FunctionsHashingMisc.cpp`, `arrayDistance.cpp`, `arrayNorm.cpp`, see their CMakeLists.txt
 /// overrides). At v2 the `Default` namespace inherits v2 codegen (SSE2/XMM), so without a per-function
-/// v3 specialization the runtime dispatcher has no AVX2/YMM body to pick on hosts that support it.
+/// v3 specialization there is no AVX2/YMM body to call at all. Selecting it needs no runtime check:
+/// multi-target code is only built when the whole binary targets x86-64-v3 (see `src/CMakeLists.txt`).
 /// Same rationale applies to `MULTITARGET_FUNCTION_X86_V4_V3` below.
 #define X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3")))
 #define X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,no-prefer-256-bit")))
@@ -162,8 +163,8 @@ String toString(TargetArch arch);
 
 /// Goes hand in hand with the `-march=x86-64-v2` override on `FunctionsHashingMisc.cpp` (and other v2-overridden TUs):
 /// when the file is compiled at v2, the `Default` namespace inherits v2 codegen. The `x86_64_v3` per-function attribute
-/// here is what gives those template instantiations an AVX2/YMM specialization the runtime dispatcher can pick. Removing
-/// it caused +12-18% regressions on `general_purpose_hashes_on_UUID #30/#32` (hiveHash/javaHash on UUID columns).
+/// here is what gives those template instantiations an AVX2/YMM specialization callers can use. Removing it caused
+/// +12-18% regressions on `general_purpose_hashes_on_UUID #30/#32` (hiveHash/javaHash on UUID columns).
 #define DECLARE_X86_64_V3_SPECIFIC_CODE(...) \
 BEGIN_X86_64_V3_SPECIFIC_CODE \
 namespace TargetSpecific::x86_64_v3 { \
