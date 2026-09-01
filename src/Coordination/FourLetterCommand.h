@@ -437,6 +437,34 @@ struct YieldLeadershipCommand : public IFourLetterCommand
     ~YieldLeadershipCommand() override = default;
 };
 
+/// Ask the leader to slow down for replicas that cannot keep up: while on, it
+/// holds the commit index back for a replica that fell behind and stopped
+/// catching up, so that it can close the gap instead of drifting further.
+struct SlowMemberBackpressureOnCommand : public IFourLetterCommand
+{
+    explicit SlowMemberBackpressureOnCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "bpon"; }
+    String run() override;
+    ~SlowMemberBackpressureOnCommand() override = default;
+};
+
+/// Ask the leader to stop slowing down for replicas that cannot keep up.
+struct SlowMemberBackpressureOffCommand : public IFourLetterCommand
+{
+    explicit SlowMemberBackpressureOffCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "bpof"; }
+    String run() override;
+    ~SlowMemberBackpressureOffCommand() override = default;
+};
+
 #if USE_JEMALLOC
 struct JemallocDumpStats : public IFourLetterCommand
 {

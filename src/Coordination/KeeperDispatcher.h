@@ -295,6 +295,19 @@ public:
         server->yieldLeadership();
     }
 
+    /// Ask the leader to slow down, or stop slowing down, for replicas that
+    /// cannot keep up.
+    bool requestSlowMemberBackpressure(bool enable)
+    {
+        return server->requestSlowMemberBackpressure(enable);
+    }
+
+    /// Whether a hold time is configured, without which turning it on does nothing.
+    bool isSlowMemberBackpressureConfigured() const
+    {
+        return server->isSlowMemberBackpressureConfigured();
+    }
+
     void recalculateStorageStats()
     {
         server->recalculateStorageStats();

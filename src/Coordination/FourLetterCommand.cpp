@@ -197,6 +197,12 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
         factory.registerCommand(feature_flags_command);
 
+        FourLetterCommandPtr backpressure_on_command = std::make_shared<SlowMemberBackpressureOnCommand>(keeper_dispatcher);
+        factory.registerCommand(backpressure_on_command);
+
+        FourLetterCommandPtr backpressure_off_command = std::make_shared<SlowMemberBackpressureOffCommand>(keeper_dispatcher);
+        factory.registerCommand(backpressure_off_command);
+
         FourLetterCommandPtr yield_leadership_command = std::make_shared<YieldLeadershipCommand>(keeper_dispatcher);
         factory.registerCommand(yield_leadership_command);
 
@@ -322,6 +328,7 @@ String MonitorCommand::run()
     print(ret, "outstanding_requests", keeper_info.outstanding_requests_count);
 
     print(ret, "server_state", keeper_info.getRole());
+    print(ret, "slow_member_backpressure", keeper_info.is_slow_member_backpressure ? 1 : 0);
 
     const auto storage_stats = state_machine.getStorageStats();
 
@@ -657,6 +664,29 @@ String FeatureFlagsCommand::run()
     }
 
     return ret.str();
+}
+
+String SlowMemberBackpressureOnCommand::run()
+{
+    if (!keeper_dispatcher.requestSlowMemberBackpressure(true))
+        return "Failed to send slow member backpressure ON request to leader.";
+
+    /// Turning it on is not enough on its own: with no duration configured the
+    /// leader never slows down, and reporting plain success would put a `1` in
+    /// `mntr` for a feature that does nothing.
+    if (!keeper_dispatcher.isSlowMemberBackpressureConfigured())
+        return "Sent slow member backpressure ON request to leader, but "
+               "slow_member_backpressure_max_duration_ms is 0 on this node, so "
+               "it will have no effect until that is configured.";
+
+    return "Sent slow member backpressure ON request to leader.";
+}
+
+String SlowMemberBackpressureOffCommand::run()
+{
+    return keeper_dispatcher.requestSlowMemberBackpressure(false)
+        ? "Sent slow member backpressure OFF request to leader."
+        : "Failed to send slow member backpressure OFF request to leader.";
 }
 
 String YieldLeadershipCommand::run()
