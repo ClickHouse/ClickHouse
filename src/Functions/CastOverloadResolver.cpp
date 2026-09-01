@@ -235,7 +235,9 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
                 "Instead there is non-constant column of type {}", getName(), arguments.back().type->getName());
 
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
+        /// The type name can arrive wrapped, e.g. from `CAST(x, toLowCardinality('String'))`.
+        const auto full_column = column->convertToFullColumnIfLowCardinality();
+        const auto * type_col = checkAndGetColumnConst<ColumnString>(full_column.get());
         if (!type_col)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
                 "Instead there is a column with the following structure: {}", getName(), column->dumpStructure());

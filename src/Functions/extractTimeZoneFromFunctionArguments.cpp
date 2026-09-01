@@ -19,7 +19,10 @@ namespace ErrorCodes
 
 std::string extractTimeZoneNameFromColumn(const IColumn * column, const String & column_name)
 {
-    const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(column);
+    /// The name can arrive wrapped, e.g. from `now(toLowCardinality('UTC'))`. The column is absent
+    /// when the argument is not a constant, and the check below reports that.
+    const auto full_column = column ? column->convertToFullColumnIfLowCardinality() : nullptr;
+    const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(full_column.get());
 
     if (!time_zone_column)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,

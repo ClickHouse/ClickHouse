@@ -1,0 +1,34 @@
+least and greatest
+1
+1
+5
+5
+UInt64
+1
+7
+division by a LowCardinality(Nullable) denominator
+\N
+3
+\N
+1
+\N
+1
+\N
+\N
+\N
+\N
+other resolvers that branch on the argument type
+2020-01-01
+2020-01-01
+1
+constant arguments
+1
+0
+1
+1
+String
+1,"a"\n
+1
+the plain and LowCardinality forms agree
+1
+1
