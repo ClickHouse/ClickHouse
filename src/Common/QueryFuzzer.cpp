@@ -2557,12 +2557,17 @@ static const Strings text_index_tokenizers
        "sparseGrams",
        "sparse_grams",
        "splitByNonAlpha",
+       "splitByRegexp",
        "splitByString",
        "tokenbf_v1",
        "unicodeWord",
        "unicode_word"};
 /// Non-empty separators for the splitByString tokenizer (empty ones are rejected).
 static const Strings tokenizer_separators = {" ", ",", ";", ".", "\t", "\n", "ab", "叫", "😉"};
+/// Separator patterns for splitByRegexp, whose regexp is mandatory and must be non-empty. `|` and
+/// `a*` can match the empty string, which `nextRegexpMatch` reports as "no separator" instead of
+/// looping, and `(` does not compile - both are rejections worth reaching.
+static const Strings tokenizer_regexps = {"\\s+", "[,;]", "[^a-zA-Z0-9]+", "-+", "\\d", "|", "a*", "("};
 /// `icu` is the one tokenizer with a mandatory argument. ICU accepts any well-formed tag,
 /// including one naming no real locale, so `xx_YY` is a valid value rather than a bad one.
 static const Strings tokenizer_icu_locales = {"en", "de", "zh", "ja", "ru", "en_US", "ja_JP", "xx_YY"};
@@ -2600,6 +2605,10 @@ ASTPtr QueryFuzzer::makeTextIndexTokenizer()
             separators.push_back(pickRandomly(fuzz_rand, tokenizer_separators));
         args->children.push_back(make_intrusive<ASTLiteral>(std::move(separators)));
     }
+    else if (name == "splitByRegexp")
+    {
+        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_regexps)));
+    }
     else if (name == "icu")
     {
         args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_icu_locales)));
@@ -2610,8 +2619,8 @@ ASTPtr QueryFuzzer::makeTextIndexTokenizer()
     }
 
     /// Prefer the bare string form half the time, and always for the tokenizers taking no
-    /// arguments. `icu` is the exception: it throws unless given its locale.
-    if (args->children.empty() || (name != "icu" && fuzz_rand() % 2 == 0))
+    /// arguments. `icu` and `splitByRegexp` are the exceptions: both throw unless given theirs.
+    if (args->children.empty() || (name != "icu" && name != "splitByRegexp" && fuzz_rand() % 2 == 0))
         return make_intrusive<ASTLiteral>(name);
 
     auto tokenizer_fn = make_intrusive<ASTFunction>();
@@ -2702,6 +2711,13 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                         for (size_t i = 0; i < num_separators; ++i)
                             separators.push_back(pickRandomly(fuzz_rand, tokenizer_separators));
                         tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(std::move(separators));
+                    }
+                    else if (
+                        tok_fn->name == "splitByRegexp" && tok_fn->arguments && !tok_fn->arguments->children.empty()
+                        && fuzz_rand() % 5 == 0)
+                    {
+                        /// Re-roll the separator pattern
+                        tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_regexps));
                     }
                 }
             }
