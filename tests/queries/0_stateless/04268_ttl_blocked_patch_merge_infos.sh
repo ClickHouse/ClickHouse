@@ -168,7 +168,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by;"
 ${CLICKHOUSE_CLIENT} -q "
     SELECT max(group_by_ttl_info.max[1]) > now(), min(group_by_ttl_info.min[1]) < now()
     FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by' AND active AND rows = 100;
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by' AND active
+      AND partition_id NOT LIKE 'patch-%';
 "
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by;"
@@ -283,7 +284,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_future;"
 ${CLICKHOUSE_CLIENT} -q "
     SELECT min(group_by_ttl_info.min[1]) > now()
     FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by_future' AND active AND rows = 100;
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by_future' AND active
+      AND partition_id NOT LIKE 'patch-%';
 "
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START TTL MERGES t_ttl_patch_group_by_future;"
