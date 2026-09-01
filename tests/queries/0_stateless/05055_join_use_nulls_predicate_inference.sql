@@ -17,9 +17,10 @@ DROP TABLE IF EXISTS t_infer_r;
 CREATE TABLE t_infer_l (id UInt64, lk UInt64, lv UInt64) ENGINE = MergeTree ORDER BY lk;
 CREATE TABLE t_infer_r (id UInt64, rk UInt64, rv UInt64) ENGINE = MergeTree ORDER BY rk;
 
--- The two key ranges overlap in [50, 119] only, so 5000 left rows and 30 right rows have no match. A filter
--- pushed into the side an outer join does not preserve would drop them, which the result rows below see.
--- The probed key 80 is matched on both sides.
+-- The two key ranges overlap in [50, 119] only, so 5000 left rows and 30 right rows have no match, which the
+-- `r.rk IS NULL` row further down counts. The probed key 80 is matched on both sides, so no unmatched row of
+-- this fixture can satisfy a predicate on the key; the composite key fixture at the end of this section is
+-- where an unmatched row that does satisfy one is asserted.
 INSERT INTO t_infer_l SELECT number, number % 120, number FROM numbers(12000);
 INSERT INTO t_infer_r SELECT number, 50 + number, number FROM numbers(100);
 
@@ -49,6 +50,13 @@ SELECT substring(explain, position(explain, 'Condition:')) FROM (
     WHERE l.lk = 80
     SETTINGS join_use_nulls = 1
 ) WHERE explain LIKE '%Condition:%';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_infer_l AS l
+    RIGHT JOIN t_infer_r AS r ON l.lk = r.rk
+    WHERE l.lk = 80
+    SETTINGS join_use_nulls = 1
+) WHERE trim(explain) LIKE 'Type:%';
 
 -- A predicate on the right key alone admits a right-only row, whose left side is null, so the left not
 -- matched rows may be dropped but the right ones may not: FULL becomes RIGHT. The join kind is read off the
@@ -160,6 +168,9 @@ RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
 SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 0;
 SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
 RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), sum(l.id), sum(r.id) FROM t_infer_l AS l
+RIGHT JOIN t_infer_r AS r ON l.lk = r.rk WHERE l.lk = 80
 SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
 
 -- The not preserved side of a FULL join contributes rows whose columns are null under join_use_nulls = 1 and
@@ -213,6 +224,70 @@ SETTINGS join_use_nulls = 1;
 
 DROP TABLE t_infer_l;
 DROP TABLE t_infer_r;
+
+-- With a single equi-key, a predicate on a matched key filters every unmatched row out before it can be
+-- observed. A composite key separates the two: a row whose second member matches nothing is unmatched, while
+-- its first member still satisfies a predicate written on the first member. Such a row is what the side an
+-- outer join preserves must still emit, and what a filter pushed into that side would wrongly drop.
+DROP TABLE IF EXISTS t_infer_c_l;
+DROP TABLE IF EXISTS t_infer_c_r;
+
+CREATE TABLE t_infer_c_l (id UInt64, lk UInt64, lv UInt64) ENGINE = MergeTree ORDER BY lk;
+CREATE TABLE t_infer_c_r (id UInt64, rk UInt64, rv UInt64) ENGINE = MergeTree ORDER BY rk;
+
+-- Every row joins on `lv = rv = 0` except the two planted ones. Their second members, 998 and 999, each occur
+-- on one side only, so neither planted row has a match, and both carry the probed key 80 in the first member.
+INSERT INTO t_infer_c_l SELECT number, 50 + number % 70, 0 FROM numbers(7000);
+INSERT INTO t_infer_c_l VALUES (100000, 80, 998);
+INSERT INTO t_infer_c_r SELECT number, 50 + number, 0 FROM numbers(70);
+INSERT INTO t_infer_c_r VALUES (200000, 80, 999);
+
+-- The witness is the preserved side's own column, which carries a real value under either join_use_nulls
+-- setting; the not preserved side is null at 1 and default at 0, which is what `coalesce` absorbs.
+SELECT '-- FULL JOIN converted to RIGHT: an unmatched right row satisfying the predicate still survives';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_infer_c_l AS l
+    FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv
+    WHERE r.rk = 80
+    SETTINGS join_use_nulls = 1
+) WHERE trim(explain) LIKE 'Type:%';
+SELECT count(), countIf(r.rv = 999), sum(coalesce(l.id, 0)) FROM t_infer_c_l AS l
+FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv WHERE r.rk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), countIf(r.rv = 999), sum(coalesce(l.id, 0)) FROM t_infer_c_l AS l
+FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv WHERE r.rk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 0;
+SELECT count(), countIf(r.rv = 999), sum(coalesce(l.id, 0)) FROM t_infer_c_l AS l
+FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv WHERE r.rk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), countIf(r.rv = 999), sum(coalesce(l.id, 0)) FROM t_infer_c_l AS l
+FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv WHERE r.rk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
+
+SELECT '-- FULL JOIN converted to LEFT: an unmatched left row satisfying the predicate still survives';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_infer_c_l AS l
+    FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv
+    WHERE l.lk = 80
+    SETTINGS join_use_nulls = 1
+) WHERE trim(explain) LIKE 'Type:%';
+SELECT count(), countIf(l.lv = 998), sum(coalesce(r.id, 0)) FROM t_infer_c_l AS l
+FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv WHERE l.lk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), countIf(l.lv = 998), sum(coalesce(r.id, 0)) FROM t_infer_c_l AS l
+FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv WHERE l.lk = 80
+SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 0;
+SELECT count(), countIf(l.lv = 998), sum(coalesce(r.id, 0)) FROM t_infer_c_l AS l
+FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv WHERE l.lk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 1;
+SELECT count(), countIf(l.lv = 998), sum(coalesce(r.id, 0)) FROM t_infer_c_l AS l
+FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv WHERE l.lk = 80
+SETTINGS join_use_nulls = 0, query_plan_convert_outer_join_to_inner_join = 0;
+
+DROP TABLE t_infer_c_l;
+DROP TABLE t_infer_c_r;
 
 -- A side is reported as type changing as a whole, but join_use_nulls widens only the keys that can be
 -- inside Nullable. A key that cannot must keep the type it has, not be rejected as an illegal argument.
