@@ -535,8 +535,15 @@ bool FailPointInjection::waitForPause(const String & fail_point_name, std::optio
 
     auto channel = iter->second;
 
-    auto paused_or_disabled = [&] {
-        return channel->pause_epoch > channel->resume_epoch || channel->disabled;
+    /// The wait predicate must also wake on a disable, so a timed-out or aborted target thread does
+    /// not leave the waiter hanging; but the *returned* success value must report only a real pause.
+    /// A disable bumps `resume_epoch` and sets `disabled` without touching `pause_epoch`, so checking
+    /// `pause_epoch > resume_epoch` alone tells the caller a thread actually re-paused since the most
+    /// recent resume. Reporting `disabled` as success would make "someone disabled the failpoint"
+    /// indistinguishable from "the target really paused there", recreating the false positive this
+    /// boolean API exists to remove.
+    auto paused = [&] {
+        return channel->pause_epoch > channel->resume_epoch;
     };
 
     /// Wait until a thread has paused at this failpoint after the most recent resume. `timeout_ms`
@@ -546,11 +553,11 @@ bool FailPointInjection::waitForPause(const String & fail_point_name, std::optio
         channel->pause_cv.wait_until(
             lock,
             std::chrono::steady_clock::now() + std::chrono::milliseconds(*timeout_ms),
-            paused_or_disabled);
+            paused);
     else
-        channel->pause_cv.wait(lock, paused_or_disabled);
+        channel->pause_cv.wait(lock, paused);
 
-    return paused_or_disabled();
+    return paused();
 }
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
