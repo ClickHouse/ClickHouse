@@ -38,6 +38,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -158,6 +159,15 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             "Injected failure of the MaterializedPostgreSQL database startup");
     });
 
+    /// A partially applied `DROP DATABASE` is recorded next to the database metadata, because the
+    /// recovery this database object performs (see `recoverAfterRefusedDrop`) can be interrupted by a
+    /// server restart, which reconstructs the object from that metadata and loses the in-memory decision.
+    /// Re-apply it on every startup until one of them completes: for a ClickHouse-managed slot this
+    /// re-arms the create-style startup that reloads the removed tables, and for a user-managed slot it
+    /// fails closed again below.
+    if (getDisk()->existsFile(getPartialDropRecoveryMarkerPath()))
+        applyPartialDropRecoveryMode();
+
     /// A refused DROP DATABASE removed some of the nested tables of a database with a user-managed
     /// replication slot, which cannot be repaired automatically (see `recoverAfterRefusedDrop`). Refuse to
     /// resume replication rather than replicate a silently truncated set of tables while the slot advances.
@@ -230,6 +240,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             storage->as<StorageMaterializedPostgreSQL>()->setDatabaseReplicationReady();
     }
     synchronization_started = true;
+
+    /// Replication is running with the full set of tables again, so a partially applied `DROP DATABASE`
+    /// (if there was one) is repaired and must not force a create-style startup after the next restart.
+    removePartialDropRecoveryMarker();
 }
 
 
@@ -403,6 +417,10 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
             /// shut the local nested replicated table down before the database-level method rejects
             /// the statement, and the promised no-op rejection would be lost.
             wrapper->setCoordinated(isCoordinated());
+            /// ... and the replication-readiness state too, for the same reason: this wrapper can be the
+            /// object a `DETACH TABLE ... PERMANENTLY` is checked against.
+            if (isReplicationReady())
+                wrapper->setDatabaseReplicationReady();
             return wrapper;
         }
     }
@@ -1138,42 +1156,18 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapsh
     /// `synchronization_started` is still set: the flag would make the restarted task a no-op with the handler
     /// staying dead. Discard the stopped handler and clear the flag, so the startup task rebuilds replication
     /// from scratch.
-    /// A refused generic `DROP DATABASE` can already have removed some nested tables before a
-    /// later removal throws. This is also possible in the attach/restart window, before a
-    /// replication handler has been rebuilt. Rebuild as a CREATE-style startup in either case:
-    /// it recreates the missing nested tables, clears the ones that survived the partial drop
-    /// (otherwise the reloaded snapshot would be appended to their pre-drop contents, resurrecting
-    /// the rows PostgreSQL deleted while replication was down) and reloads a snapshot from an
-    /// empty slot.
-    ///
-    /// This is impossible for a user-managed replication slot (`materialized_postgresql_replication_slot`):
-    /// the slot belongs to the user, so the create-style startup neither drops nor recreates it and there is
-    /// no fresh exported snapshot to load - it would reuse the original `materialized_postgresql_snapshot`
-    /// token, which the documentation explicitly allows the user to invalidate (by ending the exporting
-    /// PostgreSQL transaction) once the initial sync is confirmed. Forcing a create-style startup there would
-    /// first clear the nested tables that survived the partial drop and only then fail to load them back.
-    /// Fail close instead: keep the attach-style recovery, which touches no data, and refuse to resume
-    /// replication until the operator repairs the database. Resuming would be worse than refusing: the tables
-    /// the refused drop removed would be silently skipped while the shared slot's `confirmed_flush_lsn`
-    /// advances past their changes, so their data would be lost for good.
+    /// The nested tables that the refused drop removed must be brought back - or the database must fail
+    /// closed, when they cannot be. `applyPartialDropRecoveryMode` decides which of the two applies.
     if (force_resnapshot)
     {
-        if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
-        {
-            manual_repair_required = true;
-
-            LOG_ERROR(log,
-                "A refused DROP DATABASE has already removed some of the nested tables, and this database uses a "
-                "user-managed replication slot `{}`, for which the missing tables cannot be reloaded automatically "
-                "(a new snapshot cannot be exported from a slot this server does not manage, and the original "
-                "`materialized_postgresql_snapshot` token is not guaranteed to be valid anymore). Replication will "
-                "not be resumed, so that the changes of the removed tables are not skipped while the replication "
-                "slot advances past them. Drop the database and recreate it with a freshly created replication slot "
-                "and the snapshot exported with it",
-                (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value);
-        }
-        else
-            is_attach = false;
+        /// The decision below lives in this object only, but the re-armed startup can be interrupted by a
+        /// server restart, which reconstructs the database from its metadata - with `is_attach` back to
+        /// true and `manual_repair_required` back to false. The steady-state attach path would then look
+        /// for the nested tables the refused drop has removed and retry forever. Record the partial drop
+        /// next to the database metadata first, so the same decision is taken again on every startup until
+        /// one completes (see `startSynchronization`).
+        persistPartialDropRecoveryMarker();
+        applyPartialDropRecoveryMode();
     }
 
     if (replication_handler && replication_handler->isStopped())
@@ -1197,6 +1191,87 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapsh
         }
         startup_task->activateAndSchedule();
     }
+}
+
+
+String DatabaseMaterializedPostgreSQL::getPartialDropRecoveryMarkerPath() const
+{
+    /// The name starts with a dot on purpose: `DatabaseOnDisk::iterateMetadataFiles` skips such entries,
+    /// while every other extension in a metadata directory is rejected as an incorrect file name.
+    /// `getMetadataPath` ends with a separator, exactly like in `DatabaseOnDisk::getObjectMetadataPath`.
+    return getMetadataPath() + ".partial_drop_recovery";
+}
+
+
+void DatabaseMaterializedPostgreSQL::persistPartialDropRecoveryMarker()
+{
+    const auto marker_path = getPartialDropRecoveryMarkerPath();
+    try
+    {
+        auto db_disk = getDisk();
+        if (!db_disk->existsFile(marker_path))
+            db_disk->createFile(marker_path);
+    }
+    catch (...)
+    {
+        /// The in-memory recovery still runs, so this is no worse than before the marker existed: only a
+        /// server restart before the re-armed startup finishes would lose the decision. Report it loudly,
+        /// because such a restart leaves the database retrying a startup that cannot succeed.
+        tryLogCurrentException(log,
+            "Could not persist the partial-drop recovery marker " + marker_path + ". If this server is "
+            "restarted before replication is started again, the database will have to be dropped and recreated");
+    }
+}
+
+
+void DatabaseMaterializedPostgreSQL::removePartialDropRecoveryMarker()
+{
+    const auto marker_path = getPartialDropRecoveryMarkerPath();
+    auto db_disk = getDisk();
+    if (db_disk->existsFile(marker_path))
+    {
+        db_disk->removeFileIfExists(marker_path);
+        LOG_INFO(log, "The database recovered from a partially applied DROP DATABASE, removed {}", marker_path);
+    }
+}
+
+
+void DatabaseMaterializedPostgreSQL::applyPartialDropRecoveryMode()
+{
+    /// A refused generic `DROP DATABASE` can already have removed some nested tables before a
+    /// later removal throws. This is also possible in the attach/restart window, before a
+    /// replication handler has been rebuilt. Rebuild as a CREATE-style startup in either case:
+    /// it recreates the missing nested tables, clears the ones that survived the partial drop
+    /// (otherwise the reloaded snapshot would be appended to their pre-drop contents, resurrecting
+    /// the rows PostgreSQL deleted while replication was down) and reloads a snapshot from an
+    /// empty slot.
+    ///
+    /// This is impossible for a user-managed replication slot (`materialized_postgresql_replication_slot`):
+    /// the slot belongs to the user, so the create-style startup neither drops nor recreates it and there is
+    /// no fresh exported snapshot to load - it would reuse the original `materialized_postgresql_snapshot`
+    /// token, which the documentation explicitly allows the user to invalidate (by ending the exporting
+    /// PostgreSQL transaction) once the initial sync is confirmed. Forcing a create-style startup there would
+    /// first clear the nested tables that survived the partial drop and only then fail to load them back.
+    /// Fail close instead: keep the attach-style recovery, which touches no data, and refuse to resume
+    /// replication until the operator repairs the database. Resuming would be worse than refusing: the tables
+    /// the refused drop removed would be silently skipped while the shared slot's `confirmed_flush_lsn`
+    /// advances past their changes, so their data would be lost for good.
+    if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
+    {
+        manual_repair_required = true;
+
+        LOG_ERROR(log,
+            "A refused DROP DATABASE has already removed some of the nested tables, and this database uses a "
+            "user-managed replication slot `{}`, for which the missing tables cannot be reloaded automatically "
+            "(a new snapshot cannot be exported from a slot this server does not manage, and the original "
+            "`materialized_postgresql_snapshot` token is not guaranteed to be valid anymore). Replication will "
+            "not be resumed, so that the changes of the removed tables are not skipped while the replication "
+            "slot advances past them. Drop the database and recreate it with a freshly created replication slot "
+            "and the snapshot exported with it",
+            (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value);
+    }
+    else
+        is_attach = false;
 }
 
 
@@ -1293,6 +1368,8 @@ StoragePtr DatabaseMaterializedPostgreSQL::getTableForRead(const String & table_
     /// the coordinated flag, which the storage-level DDL guards check (see tryGetTable).
     auto wrapper = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
     wrapper->setCoordinated(isCoordinated());
+    if (isReplicationReady())
+        wrapper->setDatabaseReplicationReady();
     return wrapper;
 }
 

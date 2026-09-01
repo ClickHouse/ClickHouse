@@ -107,6 +107,14 @@ public:
     /// nested tables are Replicated/Shared and the replication slot is shared between replicas.
     bool isCoordinated() const;
 
+    /// True once `startSynchronization` has published the wrappers and started (or rejoined) replication,
+    /// so the startup window of `StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently` is
+    /// over. Wrappers that are built outside `startSynchronization` - the per-query one of
+    /// `DatabaseCatalog::getTableImpl` and the on-the-fly ones of `tryGetTable` / `getTableForRead` -
+    /// must carry this state, otherwise the object `InterpreterDropQuery` actually sees would keep
+    /// refusing the supported `DETACH TABLE ... PERMANENTLY` with the transient startup-window error.
+    bool isReplicationReady() const { return synchronization_started.load(); }
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
@@ -123,6 +131,18 @@ private:
     /// already stopped the handler, discard it and clear `synchronization_started`; then re-arm the startup
     /// task so replication is rebuilt. Must be called under `handler_mutex`.
     void recoverAfterRefusedDrop(bool force_resnapshot = false);
+
+    /// A `DROP DATABASE` that was refused after it had already removed some of the nested tables leaves the
+    /// database in a state that only a create-style startup (or, for a user-managed replication slot, an
+    /// operator) can repair. The startup that performs the repair is asynchronous and can be interrupted by
+    /// a server restart, which rebuilds this object from its metadata and forgets `is_attach` /
+    /// `manual_repair_required`, so the decision is also recorded as a marker file in the database metadata
+    /// directory and re-applied on every startup until one of them succeeds.
+    String getPartialDropRecoveryMarkerPath() const;
+    void persistPartialDropRecoveryMarker();
+    void removePartialDropRecoveryMarker();
+    /// Must be called under `handler_mutex`.
+    void applyPartialDropRecoveryMode();
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 
@@ -165,7 +185,9 @@ private:
     /// task idempotent: it may be rescheduled after synchronization has already started (e.g. by a refused
     /// fail-close DROP DATABASE restoring the task it had deactivated), and replacing a live handler would
     /// leak its running consumer.
-    bool synchronization_started = false;
+    /// Atomic so that `isReplicationReady` can be read without `handler_mutex` (see its comment); every
+    /// write still happens under `handler_mutex`.
+    std::atomic_bool synchronization_started = false;
 
     /// Set when a refused `DROP DATABASE` removed some of the nested tables of a database with a
     /// user-managed `materialized_postgresql_replication_slot`, for which they cannot be reloaded

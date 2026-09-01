@@ -479,6 +479,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             /// Carry the coordinated flag onto this per-query wrapper so `checkTableCanBeDetached` refuses
             /// DETACH before `InterpreterDropQuery` shuts the table (and its replication) down.
             wrapper->setCoordinated(mat_pg_database->isCoordinated());
+            /// Carry the replication-readiness state as well: this per-query wrapper - not the one cached
+            /// in the database - is the object `InterpreterDropQuery` resolves and calls
+            /// `checkTableCanBeDetachedPermanently` on, so without it the supported
+            /// `DETACH TABLE ... PERMANENTLY` would always fail with the transient startup-window error.
+            if (mat_pg_database->isReplicationReady())
+                wrapper->setDatabaseReplicationReady();
             db_and_table.second = std::move(wrapper);
         }
 #endif

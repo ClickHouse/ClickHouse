@@ -2575,6 +2575,101 @@ def test_plain_refused_drop_does_not_resurrect_deleted_rows(started_cluster):
     assert not publication_exists()
 
 
+def test_plain_refused_drop_recovery_survives_a_restart(started_cluster):
+    # The recovery mode chosen after a partially applied refused `DROP DATABASE` used to live in the
+    # database object only, so a server restart before the re-armed startup finished reconstructed the
+    # database from its metadata as an ordinary attach: the steady-state startup then looked for the
+    # nested table the drop had already removed and retried forever, instead of reloading it. The
+    # decision is therefore persisted as a marker next to the database metadata and re-applied on every
+    # startup until one of them completes.
+    pg_manager.create_postgres_table("first_table")
+    pg_manager.create_postgres_table("second_table")
+    for table in ("first_table", "second_table"):
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(50)"
+        )
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'first_table,second_table'"
+        ],
+    )
+    check_tables_are_synchronized(instance, "first_table")
+    check_tables_are_synchronized(instance, "second_table")
+
+    failpoint_config_path = (
+        "/etc/clickhouse-server/config.d/matpg_startup_failpoint.xml"
+    )
+    pause_failpoint = "database_materialized_postgresql_pause_before_table_drop"
+    try:
+        # Keep the handler null after every restart below, so the re-armed startup never completes
+        # while the recovery decision is supposed to survive.
+        instance.replace_config(
+            failpoint_config_path,
+            "<clickhouse><fail_points_active>"
+            "<materialized_postgresql_fail_database_startup>1"
+            "</materialized_postgresql_fail_database_startup>"
+            "</fail_points_active></clickhouse>",
+        )
+        instance.stop_clickhouse()
+        instance.start_clickhouse()
+
+        instance.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+        drop_error = []
+
+        def run_drop():
+            drop_error.append(
+                instance.query_and_get_error("DROP DATABASE test_database SYNC")
+            )
+
+        drop_thread = threading.Thread(target=run_drop)
+        drop_thread.start()
+
+        # Let the first nested table be removed, then stop at the second removal and make it fail.
+        instance.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+        instance.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+        drop_thread.join()
+        assert drop_error
+        assert "Injected failure while dropping a nested table" in drop_error[0]
+
+        # Replication is down and the recovery snapshot has not run yet, exactly as in
+        # `test_plain_refused_drop_does_not_resurrect_deleted_rows`.
+        for table in ("first_table", "second_table"):
+            pg_query(f"DELETE FROM {table} WHERE key >= 25")
+
+        # The restart the recovery has to survive: everything the refused drop decided in memory is
+        # gone afterwards, and only the persisted marker can tell the fresh database object that its
+        # startup must recreate and reload the removed table instead of attaching to it.
+        instance.stop_clickhouse()
+        instance.start_clickhouse()
+    finally:
+        instance.exec_in_container(["rm", "-f", failpoint_config_path])
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        instance.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+
+    # Both tables - the one the refused drop removed and the one that survived it - must end up as the
+    # exact current PostgreSQL state.
+    for table in ("first_table", "second_table"):
+        check_tables_are_synchronized(instance, table)
+        assert int(instance.query(f"SELECT count() FROM test_database.{table}")) == 25
+        assert int(instance.query(f"SELECT max(key) FROM test_database.{table}")) == 24
+
+    instance.query("DROP DATABASE test_database SYNC")
+    assert not replication_slot_exists()
+    assert not publication_exists()
+
+
 def test_plain_refused_drop_with_user_managed_slot_refuses_to_resume(started_cluster):
     # The create-style recovery of a partially completed refused `DROP DATABASE` reloads the whole
     # snapshot, which is impossible for a user-managed `materialized_postgresql_replication_slot`: the

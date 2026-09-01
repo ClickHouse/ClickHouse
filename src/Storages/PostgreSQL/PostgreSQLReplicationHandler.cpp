@@ -86,6 +86,148 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
+namespace
+{
+
+/// Retries the release of a `/leader` ephemeral node whose removal could not be confirmed while a
+/// replication handler was shutting down, until the ambiguity is resolved for good.
+///
+/// The node lives under the server's shared Keeper session, which outlives the handler, so an unconfirmed
+/// removal is not self-healing: as long as that session stays alive the node stays too, every peer of the
+/// setup keeps seeing a leader and stays on standby, and the shared replication slot is not consumed by
+/// anyone. The handler itself cannot resolve this - after `shutdown` it never re-enters the election, and a
+/// removal that fails right now cannot be distinguished from a transient disconnect that heals long before
+/// the session expires - so the pending release is handed over here, to a task that outlives the handler and
+/// keeps retrying against the same shared session.
+///
+/// An entry is resolved when the node is gone, when it no longer belongs to the recorded replica name and
+/// Keeper session (a peer has won a fresh election in the meantime, or Keeper removed the node together with
+/// the session that owned it), or when the owner- and version-checked removal succeeds.
+class LeakedLeaderNodeReleaser
+{
+public:
+    static LeakedLeaderNodeReleaser & instance()
+    {
+        /// Intentionally never destroyed: it owns a task of the global background schedule pool, which the
+        /// server destroys long before static destructors run.
+        static LeakedLeaderNodeReleaser * releaser = new LeakedLeaderNodeReleaser;
+        return *releaser;
+    }
+
+    void add(const ContextPtr & context, const String & leader_path, const String & replica_name, Int64 session_id)
+    {
+        std::lock_guard lock(mutex);
+        pending.push_back({leader_path, replica_name, session_id});
+
+        if (!task)
+        {
+            /// The global context outlives every database, and only a weak reference is kept, so a server
+            /// that is shutting down is not held alive by a pending release.
+            global_context = context;
+            task = context->getSchedulePool()->createTask(
+                StorageID::createEmpty(), "PostgreSQLReplicaLeaderRelease", []{ instance().run(); });
+        }
+        task->activateAndSchedule();
+    }
+
+private:
+    struct Entry
+    {
+        String path;
+        String replica_name;
+        Int64 session_id;
+    };
+
+    static constexpr UInt64 retry_ms = 5000;
+
+    std::mutex mutex;
+    std::vector<Entry> pending TSA_GUARDED_BY(mutex);
+    std::weak_ptr<const Context> global_context TSA_GUARDED_BY(mutex);
+    BackgroundSchedulePoolTaskHolder task TSA_GUARDED_BY(mutex);
+    LoggerPtr log = getLogger("PostgreSQLReplicaLeaderRelease");
+
+    void run()
+    {
+        auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::releaseLeakedLeaderNodes");
+
+        std::vector<Entry> entries;
+        ContextPtr context;
+        {
+            std::lock_guard lock(mutex);
+            /// Taken out of the list, so a release added while this iteration runs is not lost when the
+            /// unresolved ones are put back below.
+            entries.swap(pending);
+            context = global_context.lock();
+        }
+
+        if (entries.empty())
+            return;
+
+        std::vector<Entry> unresolved;
+        if (!context)
+        {
+            /// The server is going away, and with it the Keeper session the nodes live under.
+            LOG_INFO(log, "Not releasing {} replication leader node(s): the server is shutting down", entries.size());
+        }
+        else
+        {
+            for (const auto & entry : entries)
+            {
+                try
+                {
+                    if (!release(context, entry))
+                        unresolved.push_back(entry);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Could not release the replication leader node " + entry.path);
+                    unresolved.push_back(entry);
+                }
+            }
+        }
+
+        std::lock_guard lock(mutex);
+        pending.insert(pending.end(), unresolved.begin(), unresolved.end());
+        if (!pending.empty())
+            task->scheduleAfter(retry_ms);
+    }
+
+    /// Returns true when the node is no longer this replica's to release.
+    bool release(const ContextPtr & context, const Entry & entry)
+    {
+        auto zookeeper = context->getZooKeeper();
+
+        if (zookeeper->getClientID() != entry.session_id)
+        {
+            LOG_INFO(log, "The Keeper session that owned the replication leader node {} has ended, so Keeper "
+                          "removed the node with it", entry.path);
+            return true;
+        }
+
+        Coordination::Stat stat;
+        String leader_name;
+        if (!zookeeper->tryGet(entry.path, leader_name, &stat))
+            return true;
+
+        /// Exactly the conditions of `PostgreSQLReplicationHandler::removeLeakedOwnLeaderNode`: only a node
+        /// that still carries this replica's name and belongs to the recorded session may be removed - any
+        /// other node is held by a peer that legitimately owns the leadership now.
+        if (leader_name != entry.replica_name || stat.ephemeralOwner != entry.session_id)
+            return true;
+
+        const auto code = zookeeper->tryRemove(entry.path, stat.version);
+        if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
+        {
+            LOG_INFO(log, "Released the replication leader node {} that a shutdown could not release", entry.path);
+            return true;
+        }
+
+        return false;
+    }
+};
+
+}
+
 namespace FailPoints
 {
     extern const char materialized_postgresql_fail_teardown_after_shutdown[];
@@ -934,6 +1076,9 @@ void PostgreSQLReplicationHandler::releaseLeadershipAtShutdown()
         return;
 
     const String leader_path = coordination_keeper_path + "/leader";
+    /// The session the ephemeral node belongs to. Recorded before anything can fail, so that a release that
+    /// has to be finished in the background can tell the node apart from one a peer creates later.
+    const Int64 leadership_session_id = coordination_zookeeper->getClientID();
 
     try
     {
@@ -987,12 +1132,18 @@ void PostgreSQLReplicationHandler::releaseLeadershipAtShutdown()
         }
     }
 
-    /// Every re-check failed, so Keeper is unreachable from this server - then the shared session cannot be
-    /// kept alive either, and Keeper removes the ephemeral node when the session expires. Peers take over
-    /// after that; nothing is permanently wedged, so just report it.
+    /// Every immediate re-check failed. That is not proof that the ephemeral node is gone: Keeper being
+    /// unreachable for the few milliseconds these attempts take can just as well be a transient disconnect
+    /// that heals long before the shared session expires - and then the node stays, with nobody left to
+    /// remove it, because this handler never re-enters the election after `shutdown`. Hand the release over
+    /// to a task that outlives this handler and keeps retrying against the same shared Keeper session, so
+    /// takeover cannot stay wedged.
     LOG_WARNING(log,
-        "Could not confirm the release of the replication leader node {} at shutdown. If it survived, it is "
-        "removed by Keeper when this server's Keeper session ends, and a peer takes over then", leader_path);
+        "Could not confirm the release of the replication leader node {} at shutdown, retrying it in the "
+        "background until it is resolved", leader_path);
+
+    LeakedLeaderNodeReleaser::instance().add(
+        getContext(), leader_path, coordination_replica_name, leadership_session_id);
 }
 
 
