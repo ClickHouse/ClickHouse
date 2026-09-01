@@ -8,9 +8,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# shellcheck source=./parts.lib
-. "$CUR_DIR"/parts.lib
-
 set -e
 
 R1=t_lwu_prune_empty_03100_58_r1
@@ -92,10 +89,29 @@ $CLICKHOUSE_CLIENT --query "SYSTEM START REPLICATION QUEUES $R1"
 
 wait
 
-$CLICKHOUSE_CLIENT --query "
+
+result=$($CLICKHOUSE_CLIENT --query "
 	SYSTEM SYNC REPLICA $R1;
 	SYSTEM SYNC REPLICA $R2;
 
 	SELECT count() FROM $R1 WHERE p = 2 AND v = 1 SETTINGS apply_patch_parts = 1;
-	SELECT count() FROM $R2 WHERE p = 2 AND v = 1 SETTINGS apply_patch_parts = 1;
-"
+	SELECT count() FROM $R2 WHERE p = 2 AND v = 1 SETTINGS apply_patch_parts = 1")
+
+if [[ "$result" != $'0\n0' ]]; then
+	echo "Unexpected unpatched-row counts:" >&2
+	echo "$result" >&2
+	$CLICKHOUSE_CLIENT --query "
+		SELECT 'patch parts', name, rows FROM system.parts
+		WHERE database = currentDatabase() AND table IN ('$R1', '$R2') AND startsWith(name, 'patch')
+		ORDER BY table, name;
+		SELECT 'partition 2 parts', table, name, rows, min_block_number, max_block_number FROM system.parts
+		WHERE database = currentDatabase() AND table IN ('$R1', '$R2') AND partition_id = '2'
+		ORDER BY table, name;
+		SELECT 'frozen mutation version', table, mutation_id, block_numbers.partition_id, block_numbers.number
+		FROM system.mutations
+		WHERE database = currentDatabase() AND table = '$R1'
+		ORDER BY create_time DESC;" >&2
+	exit 1
+fi
+
+echo "$result"
