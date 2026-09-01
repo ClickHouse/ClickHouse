@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -314,9 +313,6 @@ ProcessList::EntryPtr ProcessList::insert(
                     .metrics = {}, /// Metrics are set by child scopes
                 };
 
-                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
-
                 if (user_process_list.user_temp_data_on_disk)
                     query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                         user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
@@ -379,7 +375,7 @@ ProcessList::EntryPtr ProcessList::insert(
             increaseQueryKindAmount(query_kind);
         }
 
-        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
+        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
         res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
 
@@ -621,7 +617,7 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     return CancellationCode::CancelSent;
 }
 
-void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns)
+void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns)
 {
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
@@ -632,7 +628,11 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
                 additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);
+                throw Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED,
+                    "Timeout exceeded: {}maximum: {:.3f} ms",
+                    additional_error_part,
+                    static_cast<double>(max_execution_time_us) / 1000);
             throwQueryWasCancelled();
         }
     }
@@ -643,7 +643,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     /// In case of asynchronous distributed queries it is possible to call
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
-    UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+    UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
     throwProperExceptionIfNeeded(max_exec_time, 0);
 
     std::lock_guard lock(executors_mutex);
@@ -670,7 +670,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 bool QueryStatus::checkTimeLimit()
 {
     auto elapsed_ns = watch.elapsed();
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), elapsed_ns);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
 
     return limits.checkTimeLimit(elapsed_ns, overflow_mode);
 }
@@ -687,7 +687,7 @@ void QueryStatus::throwIfKilled()
 {
     if (!is_killed.load())
         return;
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), 0);
 }
 
 CancelReason QueryStatus::getCancelReason() const

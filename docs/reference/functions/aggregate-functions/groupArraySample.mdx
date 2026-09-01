@@ -42,19 +42,19 @@ Array of randomly selected x arguments. [`Array(T)`](/reference/data-types/array
 **Usage example**
 
 ```sql title=Query
-CREATE TABLE default.colors (
+CREATE TABLE colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES
+INSERT INTO colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
 (4, 'white'),
 (5, 'orange');
 
-SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(color) as newcolors FROM colors;
 ```
 
 ```response title=Response
@@ -67,20 +67,20 @@ SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
 
 ```sql title=Query
 -- Query with column name and different seed
-SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
 ```
 
 ```response title=Response
-┌─newcolors──────────────────┐
-│ ['red','orange','green']   │
-└────────────────────────────┘
+┌─newcolors────────────────┐
+│ ['red','orange','green'] │
+└──────────────────────────┘
 ```
 
 **Using an expression as an argument**
 
 ```sql title=Query
 -- Query with expression as argument
-SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
 ```
 
 ```response title=Response
