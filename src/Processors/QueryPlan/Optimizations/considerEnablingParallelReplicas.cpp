@@ -307,52 +307,6 @@ std::optional<size_t> selectedRowsOf(const QueryPlan::Node & branch)
     return analysis->selected_rows;
 }
 
-/// Whether the fragment already has the semi-join predicate applied to it in the single-replica plan, as a
-/// join runtime filter. `optimize_move_to_prewhere` decides where it sits - pushed into the read's PREWHERE,
-/// or a `FilterStep` above it - but either way it is inside the fragment and below its aggregation.
-///
-/// That makes it the same predicate this optimization ships, applied at the same point, and it means every
-/// statistic the cost model just used was measured with it applied: the probe read fewer bytes and the
-/// aggregation produced fewer groups than the replicas would without it. Those numbers describe the plan
-/// that ships the predicate, not the one that does not, so shipping is what makes them true. It also makes
-/// the join's own match rate useless here - the join counts what survived the filter, so it sees almost
-/// nothing but matches, and would price the predicate it is already benefiting from at zero.
-bool fragmentHasJoinRuntimeFilter(const QueryPlan::Node & fragment_top)
-{
-    const auto has_runtime_filter_atom = [](const ActionsDAG & dag, const String & filter_column_name)
-    {
-        const auto * predicate = dag.tryFindInOutputs(filter_column_name);
-        if (!predicate)
-            return false;
-        for (const auto * atom : ActionsDAG::extractConjunctionAtoms(predicate))
-            if (atom->type == ActionsDAG::ActionType::FUNCTION && atom->function_base
-                && atom->function_base->getName() == "__applyFilter")
-                return true;
-        return false;
-    };
-
-    std::vector<const QueryPlan::Node *> stack{&fragment_top};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get());
-            filter && has_runtime_filter_atom(filter->getExpression(), filter->getFilterColumnName()))
-            return true;
-
-        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
-            if (const auto & prewhere = read->getPrewhereInfo();
-                prewhere && has_runtime_filter_atom(prewhere->prewhere_actions, prewhere->prewhere_column_name))
-                return true;
-
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-
-    return false;
-}
-
 /// Whether shipping the join's semi-join predicate into the replicas' fragment pays for itself.
 ///
 /// Shipping trades one scan of the join's build side, done on the initiator to build the set, for the rows
@@ -363,21 +317,8 @@ bool fragmentHasJoinRuntimeFilter(const QueryPlan::Node & fragment_top)
 /// aggregating fragment produces - while the predicate filters the fragment's *input* rows. The two agree
 /// only when a key's group size does not depend on whether it matches; treat this as the estimate it is.
 bool shouldShipJoinPredicate(
-    const RuntimeDataflowStatistics & stats,
-    const JoinAboveFragment & join,
-    const QueryPlan::Node & fragment_top,
-    size_t rows_to_read,
-    size_t num_replicas)
+    const RuntimeDataflowStatistics & stats, const JoinAboveFragment & join, size_t rows_to_read, size_t num_replicas)
 {
-    if (fragmentHasJoinRuntimeFilter(fragment_top))
-    {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "The fragment is filtered by a join runtime filter on one node, which the replicas cannot be; "
-            "shipping the join predicate so that they filter the same way the statistics were measured with");
-        return true;
-    }
-
     if (!stats.join_probe_rows)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "No join match rate was measured, not shipping the join predicate");
@@ -632,9 +573,7 @@ void considerEnablingParallelReplicas(
                     const auto join_above_fragment
                         = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes);
 
-                    if (join_above_fragment
-                        && shouldShipJoinPredicate(
-                            *stats, *join_above_fragment, *corresponding_node_in_single_replica_plan, rows_to_read, num_replicas))
+                    if (join_above_fragment && shouldShipJoinPredicate(*stats, *join_above_fragment, rows_to_read, num_replicas))
                     {
                         /// `globalIn`: the initiator evaluates the set once and broadcasts it. Plain `in` would
                         /// make every replica repeat the scan of the build side, which costs more than sending
