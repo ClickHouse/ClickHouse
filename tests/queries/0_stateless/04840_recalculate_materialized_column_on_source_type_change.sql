@@ -246,3 +246,35 @@ SELECT count() FROM (SELECT toStartOfMinute(ts) AS k, count() FROM t_aggregate_p
 SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_aggregate_projection_key;
+
+-- Case 16: the altered column reaches the key MATERIALIZED column through another MATERIALIZED column,
+-- which is just as unrecalculable in place, so the ALTER is rejected as well.
+DROP TABLE IF EXISTS t_mat_source_key_chain;
+
+CREATE TABLE t_mat_source_key_chain (x Int64, m1 Int64 MATERIALIZED x, m2 Int64 MATERIALIZED m1 * 2)
+ENGINE = MergeTree ORDER BY m2 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_mat_source_key_chain SELECT 2147483640 + number FROM numbers(10);
+
+ALTER TABLE t_mat_source_key_chain MODIFY COLUMN x Int32; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+SELECT countIf(m1 = x AND m2 = m1 * 2) FROM t_mat_source_key_chain;
+
+DROP TABLE t_mat_source_key_chain;
+
+-- Case 17: a TTL reading the altered column directly must be recalculated too, so rows whose TTL the
+-- conversion moves into the past expire.
+DROP TABLE IF EXISTS t_ttl_source_type;
+
+CREATE TABLE t_ttl_source_type (x UInt64, s String) ENGINE = MergeTree ORDER BY s
+TTL toDateTime(x) + INTERVAL 1 SECOND SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_ttl_source_type SELECT 2000000000, 'row' || toString(number) FROM numbers(4);
+
+SELECT count() FROM t_ttl_source_type;
+
+ALTER TABLE t_ttl_source_type MODIFY COLUMN x UInt16 SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_ttl_source_type;
+
+DROP TABLE t_ttl_source_type;

@@ -69,6 +69,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/expressionSourceColumns.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -5430,16 +5431,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// of one of them changes its values. A mutation cannot apply that to an existing part: the sort
     /// order and the partition id are fixed when the part is written, which is also why MATERIALIZE
     /// COLUMN refuses key columns. Such an ALTER is allowed only when the conversion preserves values.
-    std::unordered_map<String, String> columns_used_in_key_materialized_columns;
+    Names key_materialized_columns;
     for (const auto & column : old_metadata.getColumns())
     {
-        if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression
-            || !columns_in_keys.contains(column.name))
-            continue;
-
-        for (const String & col : expressionSourceColumnsInStorage(column.default_desc.expression, old_metadata.getColumns(), local_context))
-            columns_used_in_key_materialized_columns.emplace(col, column.name);
+        if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
+            && columns_in_keys.contains(column.name))
+            key_materialized_columns.push_back(column.name);
     }
+
+    /// Nothing is analysed until a column is asked about below.
+    MaterializedColumnDependencies materialized_dependencies(old_metadata.getColumns(), local_context);
 
     NameSet dropped_columns;
 
@@ -5719,9 +5720,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                         it->second->getName(), command.data_type->getName());
                 }
 
-                if (auto materialized_it = columns_used_in_key_materialized_columns.find(command.column_name);
-                    materialized_it != columns_used_in_key_materialized_columns.end() && command.data_type)
+                for (const auto & key_materialized : key_materialized_columns)
                 {
+                    /// The altered column can reach the key column through other MATERIALIZED columns.
+                    if (!command.data_type
+                        || materialized_dependencies.findColumnsToRecalculate(key_materialized, {command.column_name}).empty())
+                        continue;
+
                     auto it = old_types.find(command.column_name);
                     if (it != old_types.end() && !isSafeForKeyConversion(it->second, command.data_type.get()))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -5729,7 +5734,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                         "values of the MATERIALIZED column {}, which is part of a key expression and "
                                         "cannot be recalculated", backQuoteIfNeed(command.column_name),
                                         it->second->getName(), command.data_type->getName(),
-                                        backQuoteIfNeed(materialized_it->second));
+                                        backQuoteIfNeed(key_materialized));
                 }
 
                 if (old_metadata.getColumns().has(command.column_name))

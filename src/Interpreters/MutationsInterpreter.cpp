@@ -1049,6 +1049,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// Base columns removed by CLEAR COLUMN also change data (to the type default) and so
         /// must enter dependency analysis alongside their derived MATERIALIZED closure below.
         columns_for_dependencies.insert(clear_column_names.begin(), clear_column_names.end());
+        /// A column read at another type changes data too, so a TTL over it has to be recalculated.
+        columns_for_dependencies.insert(type_changed_columns.begin(), type_changed_columns.end());
         /// MATERIALIZED columns recomputed by the mutation are not in updated_columns
         /// but their new values still drive dependencies (e.g. a TTL DELETE WHERE that
         /// references a MATERIALIZED column). Seed them so recalculation is triggered.
