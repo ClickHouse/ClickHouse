@@ -36,3 +36,37 @@ SELECT 'after blocked patch merge', x, x2, y FROM t_ttl_patch_expired;
 
 SYSTEM START TTL MERGES t_ttl_patch_expired;
 DROP TABLE t_ttl_patch_expired;
+
+-- The blocked patch merge must reach the TTL recalculation step even when an expired column rides
+-- along, and rules sharing a time expression must merge their shared rows-WHERE slot, not overwrite.
+DROP TABLE IF EXISTS t_ttl_patch_rows_where SYNC;
+
+CREATE TABLE t_ttl_patch_rows_where (ts DateTime, flag UInt8, flag2 UInt8, x DateTime TTL x + INTERVAL 1 SECOND, y Int32)
+ENGINE = MergeTree ORDER BY tuple()
+TTL ts + INTERVAL 50 YEAR DELETE WHERE flag = 1, ts + INTERVAL 50 YEAR DELETE WHERE flag2 = 1
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+
+-- One part; x expired an hour ago but was never merged out, so this part still stores it and the
+-- patch merge below classifies it expired-unread, which used to divert the recalculation step.
+INSERT INTO t_ttl_patch_rows_where VALUES
+    (toDateTime('2001-01-01 00:00:00'), 1, 0, now() - INTERVAL 1 HOUR, 1),
+    (toDateTime('2002-01-01 00:00:00'), 0, 1, now() - INTERVAL 1 HOUR, 1);
+
+SYSTEM STOP TTL MERGES t_ttl_patch_rows_where;
+
+UPDATE t_ttl_patch_rows_where SET y = 2 WHERE TRUE;
+
+OPTIMIZE TABLE t_ttl_patch_rows_where FINAL;
+
+-- One shared slot spanning both rules: min from the flag rule, max from the flag2 rule.
+SELECT 'rows-where bounds survive the blocked patch merge',
+       length(rows_where_ttl_info.expression),
+       rows_where_ttl_info.min[1] = toDateTime('2051-01-01 00:00:00'),
+       rows_where_ttl_info.max[1] = toDateTime('2052-01-01 00:00:00')
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_patch_rows_where' AND active;
+
+SELECT 'rows kept while blocked', count() FROM t_ttl_patch_rows_where WHERE y = 2;
+
+SYSTEM START TTL MERGES t_ttl_patch_rows_where;
+DROP TABLE t_ttl_patch_rows_where;

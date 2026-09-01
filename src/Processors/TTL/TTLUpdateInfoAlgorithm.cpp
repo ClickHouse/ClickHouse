@@ -60,7 +60,9 @@ void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) cons
     }
     else if (ttl_update_field == TTLUpdateField::ROWS_WHERE_TTL)
     {
-        data_part->ttl_infos.rows_where_ttl[ttl_update_key] = new_ttl_info;
+        /// Rules sharing a time expression share this slot (mirrors TTLDeleteAlgorithm); the
+        /// callers wipe ttl_infos before finalize, so the first update lands on an empty slot.
+        data_part->ttl_infos.rows_where_ttl[ttl_update_key].update(new_ttl_info);
         data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
     }
     else if (ttl_update_field == TTLUpdateField::TABLE_TTL)
