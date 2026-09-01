@@ -117,6 +117,9 @@ SELECT count() FROM prometheusQuery(ts_all, 'm', 140) SETTINGS additional_table_
 SELECT count() > 0 FROM prometheusQuery(shard_0.ts_local, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''};
 -- A filter aimed at the wrapper cannot be remapped into the generated read: fail closed.
 SELECT * FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
+-- A filter keyed by the shard-local table name would bind on every shard's plain path but has no
+-- table inside the selector rewrite: fail closed at the initiator, not with a shard error.
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
 
 SELECT '--- the TimeSeries table functions still need a real TimeSeries table ---';
 SELECT count() FROM timeSeriesData(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
