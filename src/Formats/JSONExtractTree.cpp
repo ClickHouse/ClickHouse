@@ -2218,7 +2218,7 @@ private:
         if (!is_root)
             path.append(".");
         if (insert_settings.escape_dots_in_json_keys)
-            path += escapeDotInJSONKey(String(key));
+            escapeDotInJSONKey(path, key);
         else
             path += key;
         return path;
