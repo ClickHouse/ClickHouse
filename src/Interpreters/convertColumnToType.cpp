@@ -31,24 +31,27 @@ namespace
 {
 
 /// Column-native conversion for plain native-numeric-to-native-numeric values: the same
-/// `accurate::convertNumeric` (strict: out-of-range / inexact narrowing -> not representable) that
-/// `convertFieldToType` applies, evaluated directly on the scalar instead of through a CAST function -
-/// building and executing a CAST per single-row conversion dominated callers such as the `IN` set
-/// builder, which converts every literal of the right-hand side separately. The equivalence with
-/// `convertFieldToType` (default and `strict` modes) is pinned by `gtest_convert_column_to_type`. Returns:
+/// `accurate::convertNumeric` that `convertFieldToType` applies, evaluated directly on the scalar
+/// instead of through a CAST function - building and executing a CAST per single-row conversion
+/// dominated callers such as the `IN` set builder, which converts every literal of the right-hand side
+/// separately. `exact` repeats the predicate of `convertNumericTypeImpl`: an out-of-range value is
+/// never representable, and the additional round-trip check that rejects an inexact conversion is
+/// relaxed only for a floating-point target under `convert_inexact_floats` - conversions to an integer
+/// target stay exact in every mode, so the flag must not disable the fast path wholesale (the `values`
+/// table function passes it for every conversion). The equivalence with `convertFieldToType` across
+/// `strict` / `convert_inexact_floats` is pinned by `gtest_convert_column_to_type`. Returns:
 ///   - the converted size-1 column of `to` on success,
 ///   - a null `ColumnPtr{}` when not representable,
 ///   - std::nullopt when this fast path does not apply (caller falls back to the `Field` path).
-/// Excluded: `convert_inexact_floats` mode (allows rounding), `Bool` (clamp/validity semantics), and
-/// anything non-native-numeric (Decimal/Date/Enum/String/wide-int/wrappers/composite).
+/// Excluded: `Bool` (clamp/validity semantics) and anything non-native-numeric
+/// (Decimal/Date/Enum/String/wide-int/wrappers/composite).
 std::optional<ColumnPtr> tryConvertNumericColumnNative(
     const IColumn & value,
     const DataTypePtr & from,
     const DataTypePtr & to,
+    bool strict,
     bool convert_inexact_floats)
 {
-    if (convert_inexact_floats)
-        return std::nullopt;
     if (!isNativeNumber(from) || !isNativeNumber(to) || isBool(from) || isBool(to))
         return std::nullopt;
 
@@ -59,8 +62,15 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
         using From = typename Types::LeftType;
         using To = typename Types::RightType;
 
+        const From source = assert_cast<const ColumnVector<From> &>(value).getData()[0];
+        const bool exact = strict || !convert_inexact_floats || !is_floating_point<To>;
+
         To converted{};
-        if (accurate::convertNumeric<From, To, true>(assert_cast<const ColumnVector<From> &>(value).getData()[0], converted))
+        const bool representable = exact
+            ? accurate::convertNumeric<From, To, true>(source, converted)
+            : accurate::convertNumeric<From, To, false>(source, converted);
+
+        if (representable)
         {
             auto column = ColumnVector<To>::create();
             column->insertValue(converted);
@@ -146,16 +156,16 @@ ColumnPtr convertColumnToTypeOrNull(
     chassert(value.size() == 1);
 
     /// Callers usually pass a `ColumnConst` (e.g. from `evaluateConstantExpressionAsColumn`); operate
-    /// on the underlying full column so the fast path's CAST returns a plain (non-const) column and the
-    /// `Field` fallback reads the value directly.
-    const ColumnPtr full = value.convertToFullColumnIfConst();
+    /// on the underlying full column so both the native fast path and the `Field` fallback read the
+    /// value directly.
+    ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
 
     /// Same as `convertFieldToType`, which returns the value untouched when `from` equals `to`.
     if (from->equals(*to))
         return full;
 
-    if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))
+    if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, strict, convert_inexact_floats))
         return std::move(*native);
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native

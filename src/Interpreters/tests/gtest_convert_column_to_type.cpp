@@ -193,6 +193,18 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true}, // scale loss -> null
         {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal64(2)", true},  // widen -> 33.30
 
+        /// `convert_inexact_floats` native-number matrix. The flag relaxes the exactness check only for
+        /// a floating-point target, so the column-native fast path serves it for every native-number
+        /// pair rather than falling back to the `Field` path - which matters because the `values` table
+        /// function passes it for every single conversion it makes.
+        {"Float64", Field(Float64(0.1)), "Float32", true, true},              // strict wins over inexact -> null
+        {"Float64", Field(Float64(3.0)), "Int32", false, true},               // integer target, exact -> 3
+        {"Float64", Field(Float64(3.5)), "Int32", false, true},               // integer target stays exact -> null
+        {"Int64", Field(Int64(9007199254740993ll)), "Float64", false, true},  // float target -> nearest
+        {"UInt64", Field(UInt64(5)), "UInt8", false, true},                   // integer target stays exact -> 5
+        {"UInt64", Field(UInt64(256)), "UInt8", false, true},                 // out of range -> null
+        {"Int64", Field(Int64(-1)), "UInt8", false, true},                    // negative -> null
+
         /// identical types: the value passes through untouched (including a genuine NULL)
         {"UInt64", Field(UInt64(5)), "UInt64", true},
         {"String", Field(String("abc")), "String", true},
