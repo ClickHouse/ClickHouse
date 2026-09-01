@@ -21,8 +21,8 @@ if (ENABLE_LLVM_LIBC_MATH)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 
     if (ARCH_AARCH64)
-        # Scalar exp/exp2/log/log10/atan/atan2 from ARM's optimized-routines;
-        # excluded from libllvmlibc there (see contrib/optimized-routines-cmake).
+        # AdvSIMD/MTE string routines from ARM's optimized-routines
+        # (see contrib/optimized-routines-cmake).
         link_directories("${CMAKE_BINARY_DIR}/contrib/optimized-routines-cmake")
         target_link_libraries(global-libs INTERFACE aor)
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -laor")
