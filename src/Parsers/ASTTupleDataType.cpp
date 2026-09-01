@@ -236,8 +236,15 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
         children.push_back(args);
 
     element_names = r.readStringArray("element_names");
+    const size_t argument_count = args ? args->children.size() : 0;
 
     const size_t element_codec_count = r.getUInt("element_codec_count");
+    if (element_codec_count != 0 && element_codec_count != argument_count)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "ASTTupleDataType has {} element codecs but {} element types during AST JSON deserialization",
+            element_codec_count,
+            argument_count);
     element_codecs.reserve(element_codec_count);
     for (size_t i = 0; i < element_codec_count; ++i)
     {
@@ -246,6 +253,12 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
     }
 
     const size_t element_codec_removal_count = r.getUInt("element_codec_removal_count");
+    if (element_codec_removal_count != 0 && element_codec_removal_count != argument_count)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "ASTTupleDataType has {} element codec removals but {} element types during AST JSON deserialization",
+            element_codec_removal_count,
+            argument_count);
     element_codec_removals.reserve(element_codec_removal_count);
     for (size_t i = 0; i < element_codec_removal_count; ++i)
         element_codec_removals.push_back(r.getBool(("element_codec_removal_" + std::to_string(i)).c_str()));
@@ -254,11 +267,10 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
     /// partial/oversized or empty-named list that the parser could never produce.
     if (!element_names.empty())
     {
-        const size_t num_args = args ? args->children.size() : 0;
-        if (element_names.size() != num_args)
+        if (element_names.size() != argument_count)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTTupleDataType has {} element names but {} element types during AST JSON deserialization",
-                element_names.size(), num_args);
+                element_names.size(), argument_count);
         for (const auto & elem_name : element_names)
             if (elem_name.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
