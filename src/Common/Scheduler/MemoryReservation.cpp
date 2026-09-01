@@ -33,6 +33,11 @@ namespace ErrorCodes
     extern const int MEMORY_RESERVATION_FAILED;
 }
 
+MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_)
+    : MemoryReservation(link, id_, reserved_size_, Settings{})
+{
+}
+
 MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_, Settings settings_)
     : ResourceAllocation(*link.allocation_queue, id_, settings_.pressure_policy)
     , reserved_size(reserved_size_)
