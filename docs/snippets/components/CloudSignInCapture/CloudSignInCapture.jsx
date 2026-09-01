@@ -35,33 +35,33 @@ export const CloudSignInCapture = () => (
 [data-ui-capture-root=clickhouse-cloud-sign-in] .chsc-31,[data-ui-capture-root=clickhouse-cloud-sign-in].chsc-31{display:block;box-sizing:border-box;width:420px;height:21px;margin:16px 0px 0px;grid-column:auto;grid-row:auto;border:0px none rgb(255, 255, 255);color:rgb(255, 255, 255);text-align:center}
 [data-ui-capture-root=clickhouse-cloud-sign-in] .chsc-32,[data-ui-capture-root=clickhouse-cloud-sign-in].chsc-32{display:block;box-sizing:border-box;width:420px;height:21px;grid-column:auto;grid-row:auto;border:0px none rgb(255, 255, 255)}
 [data-ui-capture-root=clickhouse-cloud-sign-in] .chsc-33,[data-ui-capture-root=clickhouse-cloud-sign-in].chsc-33{display:inline;box-sizing:border-box;padding:4px;grid-column:auto;grid-row:auto;border:0px none rgb(252, 255, 116);border-radius:3px;color:rgb(252, 255, 116);font-weight:700;line-height:21px}</style><div class="chsc-0" data-ui-capture-root="clickhouse-cloud-sign-in" aria-label="Example ClickHouse Cloud sign-in page">
-    
-    
 
-    
+
+
+
     <div class="chsc-1">
       <div class="chsc-2">
-        
-        
-        
-          
+
+
+
+
           <div class="chsc-3">
             <div class="chsc-4"></div>
             ClickHouse
           </div>
-        
+
 
         <main class="chsc-5"><section class="chsc-6"><div class="chsc-7"><div class="chsc-8"><header class="chsc-9"><h1 class="chsc-10">Sign in</h1></header><div class="chsc-11"><div class="chsc-12"><div class="chsc-12"><div class="chsc-13"><div class="chsc-14"><div class="chsc-14"><div class="chsc-14"><div class="chsc-15"><label class="chsc-16">Email <span class="chsc-17">*</span></label><input class="chsc-18" type="text" disabled aria-label="Email"></div></div></div></div><div class="chsc-19"><button class="chsc-20" type="button" disabled>Continue</button></div></div></div></div><div class="chsc-21"><span class="chsc-22">Or</span></div><div class="chsc-23"><div class="chsc-24"><button class="chsc-25" type="button" disabled><span class="chsc-26"></span><span class="chsc-27">Google sign in</span></button></div><div class="chsc-28"><button class="chsc-25" type="button" disabled><span class="chsc-29"></span><span class="chsc-30">Microsoft sign in</span></button></div></div></div></div></div></section></main>
 
 
-        
 
 
-        
 
-        
-        
-        
+
+
+
+
+
       <div class="chsc-31"><p class="chsc-32">Don't have an account yet? <span class="chsc-33">Register</span></p></div></div>
     </div>
   </div>
