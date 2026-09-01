@@ -8,10 +8,10 @@ set -o errexit
 set -o pipefail
 
 # Exercise `SHOW CREATE TABLE` for every attached system table while discarding
-# the large documentation comments from the output.
-${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.tables WHERE database = 'system' ORDER BY name FORMAT TSVRaw" |
-    while IFS= read -r table; do
-        ${CLICKHOUSE_CLIENT} --param_table "$table" --query "SHOW CREATE TABLE system.{table:Identifier} FORMAT Null"
-    done
+# the large documentation comments from the output. Run the statements through
+# one client connection so sanitizer builds do not spend minutes starting a
+# separate process for every table.
+${CLICKHOUSE_CLIENT} --query "SELECT format('SHOW CREATE TABLE system.{} FORMAT Null;', name) FROM system.tables WHERE database = 'system' ORDER BY name FORMAT TSVRaw" |
+    ${CLICKHOUSE_CLIENT} --multiquery
 
 echo OK
