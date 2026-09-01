@@ -3052,25 +3052,46 @@ static BlockIO executeQueryImpl(
                         return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled();
                     };
 
-                    QueryResultCache::HerdTokenPtr herd_token = query_result_cache->acquireOrWaitHerdToken(
-                        herd_key, herd_wait_timeout, context->getCurrentQueryId(), herd_is_cancelled);
-
-                    if (!herd_token)
+                    /// Retry loop, bounded by the overall herd_wait_timeout budget: a query that loses the race to
+                    /// take over as executor (tryBecomeHerdExecutor() returns nullptr because another concurrent
+                    /// query just became the new executor) must not fall through to independent, uncoalesced
+                    /// execution - it rejoins the herd by waiting on that new executor's token instead. Without
+                    /// this loop, a single executor timing out or dying could make every one of its waiters
+                    /// execute the query independently instead of exactly one of them taking over ("mini
+                    /// thundering herd"). The loop only truly gives up once the whole configured timeout budget
+                    /// is exhausted, at which point falling through and executing independently and uncoalesced
+                    /// is the correct, deliberate last resort, exactly as if this feature did not exist.
+                    const auto herd_wait_deadline = std::chrono::steady_clock::now() + herd_wait_timeout;
+                    QueryResultCache::HerdTokenPtr herd_token;
+                    while (true)
                     {
+                        const auto herd_wait_remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            herd_wait_deadline - std::chrono::steady_clock::now());
+                        if (herd_wait_remaining.count() <= 0)
+                            break;
+
+                        herd_token = query_result_cache->acquireOrWaitHerdToken(
+                            herd_key, herd_wait_remaining, context->getCurrentQueryId(), herd_is_cancelled);
+                        if (herd_token)
+                            break;
+
                         /// We waited rather than became the executor. Distinguish "waited and gave up/got woken"
                         /// from "was cancelled while waiting" exactly as the query would be without coalescing.
                         if (herd_wait_process_list_elem)
                             herd_wait_process_list_elem->throwIfKilled();
 
                         served_from_query_result_cache = get_result_from_query_result_cache();
-                        if (!served_from_query_result_cache)
-                        {
-                            /// Still a miss: the previous executor may have thrown, been cancelled, timed out, or
-                            /// the cache may have been cleared in the meantime. Try to take over as executor; if
-                            /// that also fails (lost a race to yet another concurrent query), fall through and
-                            /// execute independently and uncoalesced, exactly as if this feature did not exist.
-                            herd_token = query_result_cache->tryBecomeHerdExecutor(herd_key, context->getCurrentQueryId());
-                        }
+                        if (served_from_query_result_cache)
+                            break;
+
+                        /// Still a miss: the previous executor may have thrown, been cancelled, timed out, or the
+                        /// cache may have been cleared in the meantime. Try to take over as executor.
+                        herd_token = query_result_cache->tryBecomeHerdExecutor(herd_key, context->getCurrentQueryId());
+                        if (herd_token)
+                            break;
+
+                        /// Lost the takeover race to yet another concurrent query: loop back and wait on its new
+                        /// token instead of executing independently, as long as the overall budget allows.
                     }
 
                     if (herd_token)

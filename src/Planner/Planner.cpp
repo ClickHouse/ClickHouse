@@ -2558,11 +2558,25 @@ void Planner::buildPlanForQueryNode()
                 return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled();
             };
 
-            QueryResultCache::HerdTokenPtr herd_token = query_result_cache->acquireOrWaitHerdToken(
-                herd_key, herd_wait_timeout, query_context->getCurrentQueryId(), herd_is_cancelled);
-
-            if (!herd_token)
+            /// Retry loop, bounded by the overall herd_wait_timeout budget - see the identical loop and its
+            /// comment in executeQuery() for the full explanation. In short: a query that loses the race to take
+            /// over as executor must rejoin the herd by waiting on the new executor's token instead of planning
+            /// this subquery independently and uncoalesced, or a single executor timing out/dying could turn
+            /// into a "mini thundering herd" of duplicate, uncoalesced subquery executions.
+            const auto herd_wait_deadline = std::chrono::steady_clock::now() + herd_wait_timeout;
+            QueryResultCache::HerdTokenPtr herd_token;
+            while (true)
             {
+                const auto herd_wait_remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    herd_wait_deadline - std::chrono::steady_clock::now());
+                if (herd_wait_remaining.count() <= 0)
+                    break;
+
+                herd_token = query_result_cache->acquireOrWaitHerdToken(
+                    herd_key, herd_wait_remaining, query_context->getCurrentQueryId(), herd_is_cancelled);
+                if (herd_token)
+                    break;
+
                 /// Distinguish "waited and gave up/got woken" from "was cancelled while waiting" exactly as the
                 /// query would be without coalescing.
                 if (herd_wait_process_list_elem)
@@ -2580,10 +2594,13 @@ void Planner::buildPlanForQueryNode()
                 }
 
                 /// Still a miss: the previous executor may have thrown, been cancelled, timed out, or the cache
-                /// may have been cleared in the meantime. Try to take over as executor; if that also fails (lost
-                /// a race to yet another concurrent query), fall through and plan this subquery independently
-                /// and uncoalesced, exactly as if this feature did not exist.
+                /// may have been cleared in the meantime. Try to take over as executor.
                 herd_token = query_result_cache->tryBecomeHerdExecutor(herd_key, query_context->getCurrentQueryId());
+                if (herd_token)
+                    break;
+
+                /// Lost the takeover race to yet another concurrent query: loop back and wait on its new token
+                /// instead of planning this subquery independently, as long as the overall budget allows.
             }
 
             if (herd_token)

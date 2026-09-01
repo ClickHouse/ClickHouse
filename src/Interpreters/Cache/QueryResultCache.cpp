@@ -28,6 +28,9 @@
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
+#include <Common/thread_local_rng.h>
+
+#include <random>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
@@ -702,6 +705,13 @@ QueryResultCache::HerdTokenPtr QueryResultCache::acquireOrWaitHerdToken(
     /// without a condition_variable: `mutex` is unlocked by the executor exactly once, when it releases the
     /// token, which we detect via try_lock_for() succeeding.
     static constexpr auto poll_interval = std::chrono::milliseconds(100);
+    /// Randomize each poll's duration a little. Many waiters typically start waiting on the same token at
+    /// almost the same instant (they are concurrent, identical queries), so without jitter they would also
+    /// keep polling in lockstep; the moment the executor dies and the token becomes abandoned, all of them
+    /// would notice on the very same tick and immediately stampede the coalescing map's mutex together to
+    /// re-probe the cache and race for takeover. Jittering desynchronizes their poll phases so that stampede
+    /// is spread out over a short window instead.
+    static constexpr auto poll_jitter_max = std::chrono::milliseconds(40);
     const auto deadline = std::chrono::steady_clock::now() + timeout;
 
     while (true)
@@ -711,7 +721,8 @@ QueryResultCache::HerdTokenPtr QueryResultCache::acquireOrWaitHerdToken(
             break;
 
         const std::chrono::steady_clock::duration remaining = deadline - now;
-        const std::chrono::steady_clock::duration wait_for = std::min<std::chrono::steady_clock::duration>(poll_interval, remaining);
+        const auto jitter = std::chrono::milliseconds(std::uniform_int_distribution<int64_t>(0, poll_jitter_max.count())(thread_local_rng));
+        const std::chrono::steady_clock::duration wait_for = std::min<std::chrono::steady_clock::duration>(poll_interval + jitter, remaining);
 
         if (existing_token->mutex.try_lock_for(wait_for))
         {
