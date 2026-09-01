@@ -1760,7 +1760,11 @@ void TCPHandler::processTablesStatusRequest()
             continue;
 
         TableStatus status;
-        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get())
+        /// Only a replicated table has a delay to report, and the proxy of a table that is not loaded
+        /// yet answers that from the engine name, so a probe materializes nothing else.
+        if (auto * replicated_table = table->supportsReplication()
+                ? castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get()
+                : nullptr)
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
