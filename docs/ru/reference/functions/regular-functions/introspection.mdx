@@ -39,13 +39,17 @@ ClickHouse сохраняет отчёты профилировщика в си�
 Преобразует виртуальный адрес памяти в процессе сервера ClickHouse в имя файла и номер строки в исходном коде ClickHouse.
 
 <Note>
-  Эта функция работает медленно и может иметь последствия для безопасности.
+  Эта функция работает медленно и может представлять риск для безопасности.
 </Note>
 
 Чтобы включить эту функцию интроспекции:
 
 * Установите пакет `clickhouse-common-static-dbg`.
 * Установите значение настройки [`allow_introspection_functions`](/ru/reference/settings/session-settings/allow#allow_introspection_functions) равным `1`.
+
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -67,7 +71,7 @@ addressToLine(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -87,7 +91,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -106,7 +110,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -135,6 +139,10 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 * Установите пакет `clickhouse-common-static-dbg`.
 * Установите значение `1` для настройки [`allow_introspection_functions`](/ru/reference/settings/session-settings/allow#allow_introspection_functions).
+
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -232,6 +240,10 @@ WHERE
 
 Преобразует виртуальный адрес памяти в процессе сервера ClickHouse в символ из объектных файлов ClickHouse.
 
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -240,7 +252,7 @@ addressToSymbol(address_of_binary_instruction)
 
 **Аргументы**
 
-* `address_of_binary_instruction` — Адрес инструкции в работающем процессе. [`UInt64`](/ru/reference/data-types/int-uint)
+* `address_of_binary_instruction` — Адрес инструкции в выполняющемся процессе. [`UInt64`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
@@ -252,11 +264,11 @@ addressToSymbol(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
--- Поле `trace` содержит трассировку стека в момент сэмплирования.
+-- The `trace` field contains the stack trace at the moment of sampling.
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -272,7 +284,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -286,14 +298,14 @@ addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20Aggregat
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- Функция arrayMap позволяет обработать каждый отдельный элемент массива trace с помощью функции addressToSymbols.
--- Результат этой обработки отображается в столбце trace_symbols результирующего набора.
+-- The arrayMap function allows to process each individual element of the trace array by the addressToSymbols function.
+-- The result of this processing is shown in the trace_symbols column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -348,7 +360,7 @@ demangle(symbol)
 **Выбор первой строки из системной таблицы `trace_log`**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -368,7 +380,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -389,7 +401,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
