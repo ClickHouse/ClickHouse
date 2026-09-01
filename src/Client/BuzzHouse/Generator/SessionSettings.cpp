@@ -1919,22 +1919,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
             {{"filesystem_cache_name",
               CHSetting([&](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(fc.caches) + "'"; }, {}, false)}});
     }
-    if (!fc.function_implementations.empty())
-    {
-        /// Forces a specific SIMD implementation in functions using ImplementationSelector (hashing, MD5, SHA1,
-        /// greatCircleDistance). The values supported by the server's CPU were probed at startup, so none of them
-        /// errors on this host. The result must not depend on the implementation, so the oracles can swap them.
-        /// Static, so the lambda can reference it without copying the set into the closure.
-        static std::unordered_set<String> impls = {"''"};
-
-        for (const auto & entry : fc.function_implementations)
-        {
-            impls.insert("'" + entry + "'");
-        }
-        serverSettings.insert(
-            {{"function_implementation",
-              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.pickRandomly(impls); }, impls, false)}});
-    }
     for (const auto & setting : performanceSettings)
     {
         serverSettings.insert(setting);
@@ -2354,10 +2338,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"stream_poll_timeout_ms", CHSetting(timeoutMillisRange, {}, false)},
              {"tcp_keep_alive_timeout", CHSetting(timeoutSecondsRange, {}, false)},
              {"timeout_before_checking_execution_speed", CHSetting(timeoutSecondsRange, {}, false)},
-             {"wait_for_async_insert_timeout", CHSetting(timeoutSecondsRange, {}, false)},
-             {"wait_for_window_view_fire_signal_timeout", CHSetting(timeoutSecondsRange, {}, false)},
-             {"window_view_clean_interval", CHSetting(timeoutSecondsRange, {}, false)},
-             {"window_view_heartbeat_interval", CHSetting(timeoutSecondsRange, {}, false)}});
+             {"wait_for_async_insert_timeout", CHSetting(timeoutSecondsRange, {}, false)}});
     }
     if (fc.enable_force_settings)
     {
