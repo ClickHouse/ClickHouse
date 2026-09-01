@@ -17,11 +17,12 @@ SET explain_query_plan_default = 'legacy';
 -- { echo }
 
 -- `SELECT id, *, b` repeats `id` and `b` in the output header. The partitioned pipeline has to stay
--- correct for such a header.
-SELECT * FROM ((SELECT id, *, b FROM t_intersect_except_dup) EXCEPT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1)) ORDER BY id;
-SELECT * FROM ((SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1)) ORDER BY id;
-SELECT * FROM ((SELECT id, *, b FROM t_intersect_except_dup) EXCEPT ALL (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1)) ORDER BY id;
-SELECT * FROM ((SELECT id, *, b FROM t_intersect_except_dup) INTERSECT ALL (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1)) ORDER BY id;
+-- correct for such a header. The set operations stay top-level: the old analyzer deduplicates the
+-- names once the query is wrapped in `SELECT * FROM (...)`. Every result is a single row.
+(SELECT id, *, b FROM t_intersect_except_dup) EXCEPT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1);
+(SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1);
+(SELECT id, *, b FROM t_intersect_except_dup) EXCEPT ALL (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1);
+(SELECT id, *, b FROM t_intersect_except_dup) INTERSECT ALL (SELECT id, *, b FROM t_intersect_except_dup WHERE id = 1);
 
 -- Both inputs are still scattered, so one transform runs per partition.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%IntersectOrExcept %';
