@@ -49,21 +49,6 @@
 namespace ProfileEvents
 {
 extern const Event ASTFuzzerOracleChecks;
-extern const Event ASTFuzzerOracleTLPWhereChecks;
-extern const Event ASTFuzzerOracleNoRECChecks;
-extern const Event ASTFuzzerOracleTLPAggregateChecks;
-extern const Event ASTFuzzerOracleTLPDistinctChecks;
-extern const Event ASTFuzzerOracleTLPGroupByChecks;
-extern const Event ASTFuzzerOracleTLPHavingChecks;
-extern const Event ASTFuzzerOracleDQPChecks;
-extern const Event ASTFuzzerOracleIdentityWhereChecks;
-extern const Event ASTFuzzerOracleSubqueryWrapChecks;
-extern const Event ASTFuzzerOracleGroupByKeyPermutationChecks;
-extern const Event ASTFuzzerOracleDistinctViaGroupByChecks;
-extern const Event ASTFuzzerOraclePrewhereEquivalenceChecks;
-extern const Event ASTFuzzerOracleSkipIndexEquivalenceChecks;
-extern const Event ASTFuzzerOracleSettingFlipSweepChecks;
-extern const Event ASTFuzzerOracleCodecRoundtripChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -78,8 +63,6 @@ extern const SettingsBool ast_fuzzer_oracle;
 namespace ErrorCodes
 {
 extern const int AST_FUZZER_ORACLE_MISMATCH;
-extern const int TOO_MANY_ROWS;
-extern const int TOO_MANY_BYTES;
 }
 
 
