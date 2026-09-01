@@ -1098,6 +1098,12 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
     {
+        /// Without a spill threshold `grace_hash` cannot run, but `join_algorithm` is a preference list:
+        /// leave it to the next algorithm. Listed alone, the constructor says what to set.
+        if (!analyzed_join->legacyJoinSizeLimitsTriggerSpilling() && analyzed_join->maxBytesBeforeExternalJoin() == 0
+            && analyzed_join->getEnabledJoinAlgorithms().size() > 1)
+            return {};
+
         if (!context->getTempDataOnDisk())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
