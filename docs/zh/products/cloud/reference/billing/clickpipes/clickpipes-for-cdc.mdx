@@ -10,14 +10,14 @@ keywords: ['计费', 'clickpipes', 'cdc 定价', '成本', '定价']
 本节介绍 ClickPipes 中 CDC (变更数据捕获) 连接器的定价模式。
 
 <div id="cdc-oltp">
-  ## OLTP CDC
+  ## OLTP CDC（变更数据捕获）
 </div>
 
-| 连接器              | 功能生命周期      | 计费状态                                                                                                  |
-| ---------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
-| **Postgres CDC** | 正式发布 (GA)   | 按所列[定价维度](#pricing-dimensions-oltp)计费。                                                                |
-| **MySQL CDC**    | Public Beta | Public Beta 期间**免费**。该连接器于 **2026 年 9 月 1 日**晋升为正式发布 (GA) 后，将按所列[定价维度](#pricing-dimensions-oltp)开始计费。 |
-| **MongoDB CDC**  | Public Beta | Public Beta 期间**免费**。该连接器晋升为正式发布 (GA) 后，将按所列[定价维度](#pricing-dimensions-oltp)开始计费。                     |
+| 连接器              | 功能生命周期      | 计费状态                                                                              |
+| ---------------- | ----------- | --------------------------------------------------------------------------------- |
+| **Postgres CDC（变更数据捕获）** | 正式发布 (GA)   | 按所列[定价维度](#pricing-dimensions-oltp)计费。                                            |
+| **MySQL CDC（变更数据捕获）**    | 正式发布 (GA)   | 自 2026 年 9 月 1 日起，按所列[定价维度](#pricing-dimensions-oltp)计费。                          |
+| **MongoDB CDC（变更数据捕获）**  | Public Beta | Public Beta 期间**免费**。该连接器晋升为正式发布 (GA) 后，将按所列[定价维度](#pricing-dimensions-oltp)开始计费。 |
 
 <div id="pricing-dimensions-oltp">
   ### 定价维度
@@ -58,13 +58,13 @@ OLTP CDC 连接器的定价基于两个维度：[数据量](#data-volume-oltp)�
 </div>
 
 <Note>
-  本示例结合多个 connector，说明 CDC ClickPipes 的共享 compute 定价模式。请注意，[MySQL CDC 在 Public Beta 期间免费](#cdc-oltp)。
+  本示例结合多个 连接器，说明 CDC（变更数据捕获） ClickPipes 的共享 计算资源 定价模式。
 </Note>
 
 假设某个 **Scale** 层级的服务具有以下配置：
 
-* 1 个 **Postgres CDC** ClickPipe，复制 8 张表，初始加载量为 200 GB，每月 CDC 变更量为 100 GB。
-* 1 个 **MySQL CDC ClickPipe**，复制 5 张表，初始加载量为 100 GB，每月 CDC 变更量为 50 GB。
+* 1 个 **Postgres CDC（变更数据捕获）** ClickPipe，复制 8 张表，初始加载量为 200 GB，每月 CDC（变更数据捕获）变更量为 100 GB。
+* 1 个 **MySQL CDC（变更数据捕获） ClickPipe**，复制 5 张表，初始加载量为 100 GB，每月 CDC（变更数据捕获）变更量为 50 GB。
 
 <div id="cost-breakdown-oltp">
   #### 每月费用明细

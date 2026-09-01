@@ -13,11 +13,11 @@ Cette section présente le modèle tarifaire des connecteurs de capture des chan
   ## CDC OLTP
 </div>
 
-| Connecteur       | Cycle de vie de la fonctionnalité | Statut de facturation                                                                                                                                                                                                              |
-| ---------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Postgres CDC** | Disponibilité générale (GA)       | Facturé selon les [dimensions tarifaires](#pricing-dimensions-oltp) indiquées.                                                                                                                                                     |
-| **MySQL CDC**    | Bêta publique                     | **Gratuit** pendant la bêta publique. La facturation débutera lorsque le connecteur sera promu à la disponibilité générale (GA), le **1er septembre 2026**, selon les [dimensions tarifaires](#pricing-dimensions-oltp) indiquées. |
-| **MongoDB CDC**  | Bêta publique                     | **Gratuit** pendant la bêta publique. La facturation débutera lorsque le connecteur sera promu à la disponibilité générale (GA), selon les [dimensions tarifaires](#pricing-dimensions-oltp) indiquées.                            |
+| Connecteur       | Cycle de vie de la fonctionnalité | Statut de facturation                                                                                                                                                                                   |
+| ---------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Postgres CDC** | Disponibilité générale (GA)       | Facturé selon les [dimensions tarifaires](#pricing-dimensions-oltp) indiquées.                                                                                                                          |
+| **MySQL CDC**    | Disponibilité générale (GA)       | Facturé selon les [dimensions tarifaires](#pricing-dimensions-oltp) indiquées à compter du 1er septembre 2026.                                                                                          |
+| **MongoDB CDC**  | Bêta publique                     | **Gratuit** pendant la bêta publique. La facturation débutera lorsque le connecteur sera promu à la disponibilité générale (GA), selon les [dimensions tarifaires](#pricing-dimensions-oltp) indiquées. |
 
 <div id="pricing-dimensions-oltp">
   ### Dimensions tarifaires
@@ -58,13 +58,13 @@ Les ressources de calcul étant partagées, cette composante tarifaire reste **f
 </div>
 
 <Note>
-  Cet exemple combine plusieurs connecteurs pour illustrer le modèle de tarification du calcul partagé pour les ClickPipes CDC. Notez que [MySQL CDC est gratuit pendant la bêta publique](#cdc-oltp).
+  Cet exemple combine plusieurs connecteurs pour illustrer le modèle de tarification du calcul partagé pour les ClickPipes CDC.
 </Note>
 
-Prenons l&#39;exemple d&#39;un service du niveau **Scale** configuré comme suit :
+Prenons l&#39;exemple d&#39;un service du niveau **Scale** configuré comme suit :
 
-* 1 ClickPipe **Postgres CDC** répliquant 8 tables, avec un chargement initial de 200 Go et 100 Go de modifications (CDC) par mois.
-* 1 **ClickPipe MySQL CDC** répliquant 5 tables, avec un chargement initial de 100 Go et 50 Go de modifications (CDC) par mois.
+* 1 ClickPipe **Postgres CDC** répliquant 8 tables, avec un chargement initial de 200 Go et 100 Go de modifications (CDC) par mois.
+* 1 **ClickPipe MySQL CDC** répliquant 5 tables, avec un chargement initial de 100 Go et 50 Go de modifications (CDC) par mois.
 
 <div id="cost-breakdown-oltp">
   #### Répartition mensuelle des coûts

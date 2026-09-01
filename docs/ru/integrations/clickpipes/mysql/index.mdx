@@ -10,19 +10,11 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/ru/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.mdx';
 
-<BetaBadge />
-
-<Info>
-  Приём данных из MySQL в ClickHouse Cloud через ClickPipes доступен в рамках публичной бета-версии.
-</Info>
-
-MySQL ClickPipe предоставляет полностью управляемое и отказоустойчивое решение для приёма данных из баз данных MySQL и MariaDB в ClickHouse Cloud. Он поддерживает как **пакетную загрузку** для одноразовой ингестии, так и **CDC (фиксацию изменений данных) (фиксацию изменений данных)** для непрерывной ингестии.
+MySQL ClickPipe предоставляет полностью управляемое и отказоустойчивое решение для приёма данных из баз данных MySQL и MariaDB в ClickHouse Cloud. Он поддерживает как **пакетную загрузку** для одноразовой ингестии, так и **CDC (фиксацию изменений данных)** для непрерывной ингестии.
 
 MySQL ClickPipes можно развёртывать и управлять ими вручную через интерфейс ClickPipes, а также программно с использованием [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 

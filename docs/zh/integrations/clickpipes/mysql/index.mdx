@@ -2,27 +2,19 @@
 sidebarTitle: '从 MySQL 向 ClickHouse 摄取数据'
 description: '将您的 MySQL 或 MariaDB 数据库中的数据无缝摄取到 ClickHouse Cloud。'
 slug: /integrations/clickpipes/mysql
-title: '从 MySQL 向 ClickHouse 摄取数据（使用 CDC）'
+title: '从 MySQL 向 ClickHouse 摄取数据（使用 CDC（变更数据捕获））'
 doc_type: 'guide'
-keywords: ['MySQL', 'ClickPipes', 'CDC', '变更数据捕获', '数据库复制']
+keywords: ['MySQL', 'ClickPipes', 'CDC（变更数据捕获）', '变更数据捕获', '数据库复制']
 integration:
    - support_level: 'core'
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/zh/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/zh/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.mdx';
 
-<BetaBadge />
-
-<Info>
-  通过 ClickPipes 将数据从 MySQL 摄取到 ClickHouse Cloud 目前处于 Public Beta 阶段。
-</Info>
-
-MySQL ClickPipe 提供了一种全托管且可靠的方式，可将 MySQL 和 MariaDB 数据库中的数据摄取到 ClickHouse Cloud。它既支持用于一次性摄取的 **批量加载**，也支持用于持续摄取的 **CDC (变更数据捕获)&#x20;**。
+MySQL ClickPipe 提供了一种全托管且可靠的方式，可将 MySQL 和 MariaDB 数据库中的数据摄取到 ClickHouse Cloud。它既支持用于一次性摄取的 **批量加载**，也支持用于持续摄取的 **CDC (变更数据捕获)  (变更数据捕获)&#x20;**。
 
 MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
 
