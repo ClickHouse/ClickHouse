@@ -18,7 +18,9 @@ Estas opciones configuran el servidor de ClickHouse y se generan automáticament
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-Desactiva las consultas insert/alter/delete. Esta configuración puede habilitarse cuando se necesiten nodos de solo lectura para evitar que las inserciones y las mutaciones afecten al rendimiento de lectura. Las inserciones en motores externos (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc.) están permitidas a pesar de esta configuración.
+Desactiva las consultas `INSERT`, `ALTER` y `DELETE` para evitar que las réplicas de solo lectura creen partes de datos, mutaciones o tareas de fusión que afecten al rendimiento de lectura.
+
+Las escrituras en almacenamiento externo mediante motores como `S3`, `DataLake`, `MySQL`, `PostgreSQL` y `Kafka` siguen estando permitidas. La transmisión continua en segundo plano desde las tablas `Kafka`, `RabbitMQ`, `NATS` y `S3Queue` hacia vistas materializadas asociadas se desactiva porque genera partes de `MergeTree` y tareas de fusión en esta réplica.
 
 <div id="disable_internal_dns_cache">
   ## disable_internal_dns_cache

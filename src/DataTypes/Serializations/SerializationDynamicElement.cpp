@@ -281,4 +281,23 @@ size_t SerializationDynamicElement::allocatedBytes() const
     return sizeof(*this) + dynamic_element_name.capacity() + nested_subcolumn.capacity();
 }
 
+MutableColumnPtr SerializationDynamicElement::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// The null map subcolumn is a UInt8 column read through SerializationVariantElementNullMap;
+    /// nested_serialization serializes the requested type, which is not what is read here.
+    if (is_null_map_subcolumn)
+        return column;
+
+    /// Same level ownership as in SerializationVariantElement, which this delegates to at read time.
+    if (isColumnNullable(*column))
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+        return ColumnNullable::create(
+            nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
+            nullable.getNullMapColumnPtr()->cloneEmpty());
+    }
+
+    return nested_serialization->wrapColumnForDeserialization(std::move(column));
+}
+
 }
