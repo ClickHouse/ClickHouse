@@ -956,6 +956,68 @@ def test_rpc_abort_cancel_latched_timeout_after_distinct_grpc():
     )
 
 
+def test_rpc_abort_before_query_status_publish_grpc():
+    # A client abort that arrives while `Call::executeQuery()` is still building the query (i.e.
+    # before the query status is published into `RpcCancelState`) must not be lost: at that point
+    # the 'notify on done' callback observes a null query status, so it can only remember the
+    # abort in `transport_cancelled`, and `Call::executeQuery()` must replay
+    # `cancelQuery(CANCELLED_BY_USER)` right at publication. Without the replay the query would
+    # keep running to completion against the dead client with `cancel_reason` staying `UNDEFINED`.
+    query = "SELECT count() FROM numbers(100000000) FORMAT Null"
+    query_id = str(uuid.uuid4())
+
+    # Pause the server right before it publishes the query status; the client abort below then
+    # deterministically lands in the not-yet-published window (`RpcCancelState::query_status` is
+    # still null while the query is already registered in the process list).
+    node.query("SYSTEM ENABLE FAILPOINT grpc_call_execute_query_pause")
+
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    rpc = stub.ExecuteQuery.future(clickhouse_grpc_pb2.QueryInfo(query=query, query_id=query_id))
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fn, timeout=60):
+        future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {fn} PAUSE")
+        done, _ = concurrent.futures.wait([future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fn} not triggered within {timeout} s"
+        future.result()
+
+    try:
+        wait_failpoint("grpc_call_execute_query_pause")
+
+        assert rpc.cancel(), "client-side RPC abort did not succeed"
+
+        # Release the pause: `executeQuery()` publishes the query status and must replay the abort
+        # as a hard cancel instead of letting the query run against the dead client.
+        node.query("SYSTEM NOTIFY FAILPOINT grpc_call_execute_query_pause")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT grpc_call_execute_query_pause")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    # The client aborted the call, so the unary future must surface as cancelled.
+    deadline = time.monotonic() + 90
+    while not rpc.cancelled():
+        if time.monotonic() >= deadline:
+            assert False, "client-side unary RPC did not complete as cancelled within 90 s"
+        time.sleep(0.1)
+
+    node.query("SYSTEM FLUSH LOGS")
+    log_row = node.query(
+        f"SELECT type, cancel_reason, exception_code FROM system.query_log "
+        f"WHERE query_id = '{query_id}' ORDER BY event_time DESC LIMIT 1 FORMAT TSV"
+    ).strip()
+    fields = log_row.split("\t")
+    assert fields[1] == "CANCELLED_BY_USER", (
+        f"expected pre-publication RPC abort to set cancel_reason='CANCELLED_BY_USER', got: {fields!r}"
+    )
+    # The replayed cancel must interrupt the query (735 QUERY_WAS_CANCELLED_BY_CLIENT), not let it
+    # complete normally against the dead client.
+    assert fields[0] == "ExceptionWhileProcessing" and fields[2] == "735", (
+        f"expected the replayed cancel to interrupt the query with 735, got: {fields!r}"
+    )
+
+
 def test_compressed_output():
     query_info = clickhouse_grpc_pb2.QueryInfo(
         query="SELECT 0 FROM numbers(1000)", output_compression_type="lz4"

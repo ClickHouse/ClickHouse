@@ -9,6 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FailPoint.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -387,6 +388,7 @@ namespace
     {
         std::mutex mutex;
         bool query_finished = false;
+        bool transport_cancelled = false;
         QueryStatusPtr query_status;
     };
 
@@ -417,11 +419,20 @@ namespace
             {
                 {
                     std::lock_guard lock{state->mutex};
-                    if (!state->query_finished && state->query_status && context.IsCancelled())
-                        state->query_status->cancelQuery(
-                            CancelReason::CANCELLED_BY_USER,
-                            std::make_exception_ptr(
-                                Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
+                    if (context.IsCancelled())
+                    {
+                        /// The client aborted the RPC at the transport level. Remember this even when the
+                        /// query status has not been published yet, so that `executeQuery()` can replay
+                        /// the cancel once it publishes the status — otherwise an abort that arrives
+                        /// while the query is still being built would be lost and the query would keep
+                        /// running against a dead client.
+                        state->transport_cancelled = true;
+                        if (!state->query_finished && state->query_status)
+                            state->query_status->cancelQuery(
+                                CancelReason::CANCELLED_BY_USER,
+                                std::make_exception_ptr(
+                                    Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
+                    }
                 }
                 delete done_callback;
             };
@@ -1162,15 +1173,26 @@ namespace
         /// access from the call thread. The publish happens here, on the call thread, before the
         /// pipeline starts pulling, so cancels received after this point are applied immediately and
         /// cancels received before it are simply deferred until the first `isQueryCancelled()` poll
-        /// in `generateOutput()` (the transform cannot have latched a soft timeout yet).
+        /// in `generateOutput()` (the transform cannot have latched a soft timeout yet). If the
+        /// client already aborted the RPC before the publish, the cancel is replayed right here, so
+        /// a transport-level abort while the query is still being built is not lost.
+        /// A client abort during query construction is reproduced deterministically in the
+        /// `test_rpc_abort_before_query_status_publish_grpc` integration test by pausing on
+        /// `grpc_call_execute_query_pause` at this point.
         {
             std::lock_guard lock{query_context_mutex};
             query_status = query_context->getProcessListElementSafe();
         }
 
+        FailPointInjection::pauseFailPoint("grpc_call_execute_query_pause");
         {
             std::lock_guard lock{cancellation_state->mutex};
             cancellation_state->query_status = query_status;
+            if (cancellation_state->transport_cancelled && query_status)
+                query_status->cancelQuery(
+                    CancelReason::CANCELLED_BY_USER,
+                    std::make_exception_ptr(
+                        Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
         }
     }
 
