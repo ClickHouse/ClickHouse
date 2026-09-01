@@ -2382,28 +2382,114 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
-/// Whether the value holds a floating-point zero at any depth. `-0.` and `+0.` compare equal while
-/// being distinct values, and they are the only such pair on a floating-point domain: every other pair
-/// of distinct bit patterns compares unequal, and a `NaN` equals nothing. `Field` has no `Float32`, so
-/// `Float32` and `BFloat16` values arrive here as `Float64`.
+/// Whether the type is, or contains at any depth, a dynamically typed one. Such a type compares values
+/// of different types as equal, so a constant in that domain does not determine which values it stands
+/// for.
+static bool hasDynamicallyTypedComponent(const DataTypePtr & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & child)
+    {
+        const WhichDataType which(child);
+        result = result || which.isDynamic() || which.isVariant() || which.isObject();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
+
+/// Whether the value holds a floating-point zero at any depth.
+/// Iterative because `Field`s nest inside `Field`s and a recursive walk overflows the native stack.
 static bool fieldHoldsFloatZero(const Field & field)
 {
-    switch (field.getType())
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
     {
-        case Field::Types::Float64:
-            return field.safeGet<Float64>() == 0;
-        case Field::Types::Array:
-            return std::ranges::any_of(field.safeGet<Array>(), fieldHoldsFloatZero);
-        case Field::Types::Tuple:
-            return std::ranges::any_of(field.safeGet<Tuple>(), fieldHoldsFloatZero);
-        case Field::Types::Map:
-            return std::ranges::any_of(field.safeGet<Map>(), fieldHoldsFloatZero);
-        case Field::Types::Object:
-            return std::ranges::any_of(
-                field.safeGet<Object>(), [](const auto & entry) { return fieldHoldsFloatZero(entry.second); });
-        default:
-            return false;
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        switch (current->getType())
+        {
+            case Field::Types::Float64:
+                if (current->safeGet<Float64>() == 0)
+                    return true;
+                break;
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & element : current->safeGet<Map>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Object:
+                for (const auto & entry : current->safeGet<Object>())
+                    pending.push_back(&entry.second);
+                break;
+            default:
+                break;
+        }
     }
+
+    return false;
+}
+
+
+/// A predicate on a floating-point zero holds for both `-0.` and `+0.`, which are distinct values, so a
+/// key range built from one of them stands for the predicate only if the key transform sends both to key
+/// values the index compares as equal. `{-0., +0.}` is the only such pair on a floating-point domain:
+/// every other pair of distinct bit patterns compares unequal, and a `NaN` equals nothing. `Field` has
+/// no `Float32`, so `Float32` and `BFloat16` values arrive here as `Float64`.
+static bool keyTransformCanSeparateEqualValues(
+    const Field & value,
+    const DataTypePtr & value_type,
+    const String & input_name,
+    const DeterministicKeyTransformDag & dag)
+{
+    /// A stored `-0.` equals a `0` written as an integer in such a domain, so the constant does not
+    /// determine which values it stands for and no range can be built from it.
+    if (hasDynamicallyTypedComponent(dag.input_type))
+        return true;
+
+    const WhichDataType key_input_domain(removeNullable(removeLowCardinality(dag.input_type)));
+
+    /// The comparison reads the constant in the domain of the column the key expression consumes, and
+    /// that is where its equality class lives: `WHERE f = 0` over a `Float64` column compares two floats.
+    const Field key_input_value = tryConvertFieldToType(value, *dag.input_type, value_type.get());
+
+    /// A container holds one sign combination per zero inside it, so one sibling does not decide it.
+    if (key_input_value.getType() != Field::Types::Float64)
+        return fieldHoldsFloatZero(key_input_value);
+
+    const Float64 zero = key_input_value.safeGet<Float64>();
+    if (zero != 0)
+        return false;
+
+    /// Only a floating-point domain carries the other spelling, and only its columns accept a `Float64`
+    /// value, so anything else cannot be probed and is declined instead.
+    if (!key_input_domain.isFloat())
+        return true;
+
+    /// Both spellings go through in one column, in the transform's own input type, so neither the
+    /// conversion nor the transform can treat them differently.
+    auto probe_column = dag.input_type->createColumn();
+    probe_column->insert(Field(zero));
+    probe_column->insert(Field(-zero));
+
+    ColumnPtr transformed_column;
+    DataTypePtr transformed_type;
+    if (!applyDeterministicDagToColumn(
+            std::move(probe_column), dag.input_type, input_name, dag, transformed_column, transformed_type))
+        return true;
+
+    return !Range::equals((*transformed_column)[0], (*transformed_column)[1]);
 }
 
 bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
@@ -2447,12 +2533,6 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
         return false;
 
-    /// A key transform reads the bit pattern, so it can map `-0.` and `+0.` to two different key values
-    /// while the comparison feeding it treats them as one. A range built from one of them misses the
-    /// mark holding the other, so decline the atom instead.
-    if (fieldHoldsFloatZero(tryConvertFieldToType(out_value, *dag.input_type, out_type.get())))
-        return false;
-
     out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
 
     ColumnPtr const_column = out_type->createColumnConst(1, out_value);
@@ -2475,6 +2555,11 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     /// If the key transform produces NaN for the constant, the index cannot answer this predicate;
     /// fall back so the caller scans the granules.
     if (transformed_value.isNaN())
+        return false;
+
+    /// A point range built from one spelling of a floating-point zero misses the mark holding the other,
+    /// so the atom would be narrower than the predicate it stands for.
+    if (keyTransformCanSeparateEqualValues(out_value, out_type, expr_name, dag))
         return false;
 
     out_value = transformed_value;
