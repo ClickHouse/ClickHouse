@@ -74,8 +74,17 @@ public:
 
         std::string path;
         std::filesystem::file_time_type modification_time;
+        /// For a directory: the names and modification times of the files in it.
+        UInt64 directory_contents_hash = 0;
 
         bool changeIfModified(std::string new_path, LoggerPtr logger);
+    };
+
+    /// Trusted CA certificates from `caConfig` and, if `load_default_cas`, the default ones.
+    struct CAData
+    {
+        MultiVersion<CAStore> store;
+        bool load_default_cas = false;
     };
 
     struct MultiData
@@ -87,12 +96,13 @@ public:
         File cert_file{"certificate"};
         File key_file{"key"};
 
-        /// Trusted CA certificates. Empty if `caConfig` is not set for the prefix,
-        /// then verification keeps using the store the context was created with.
-        MultiVersion<CAStore> ca_store;
+        /// Empty if `caConfig` is not set for the prefix, then verification keeps using the store the context was created with.
+        CAData ca;
+        /// For additional contexts that assume another `loadDefaultCAFile` than Poco when it is not configured (the ones of Keeper).
+        std::optional<CAData> ca_with_other_default;
+        bool other_load_default_cas_default = false;
 
         File ca_file{"CA"};
-        bool load_default_cas = false;
 
         explicit MultiData(SSL_CTX * ctx_) : ctx(ctx_) {}
     };
@@ -114,11 +124,10 @@ public:
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
     /// Register an additional SSL_CTX to share certificates and trusted CAs with the primary context of `prefix`.
-    /// `load_default_cas` tells whether `ctx` was created with the default CA certificates, the reloaded CA certificates
-    /// are shared only if this matches the configuration of the primary context.
+    /// `load_default_cas_default` is what the caller assumes for `loadDefaultCAFile` when it is not configured.
     /// Returns true if the context will get its certificate and key from CertificateReloader,
     /// false if the caller has to configure them on the context itself.
-    bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix, bool load_default_cas);
+    bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix, bool load_default_cas_default);
 
     /// Handle configuration reload for all contexts
     void tryReloadAll(const Poco::Util::AbstractConfiguration & config);
@@ -126,8 +135,8 @@ public:
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
 
-    /// A callback for OpenSSL: verify the peer certificate in `store_ctx` against the current CA certificates.
-    int verifyCertificate(X509_STORE_CTX * store_ctx, const MultiData * pdata) const;
+    /// A callback for OpenSSL: verify the peer certificate in `store_ctx` against the current CA certificates in `ca_store`.
+    int verifyCertificate(X509_STORE_CTX * store_ctx, const MultiVersion<CAStore> * ca_store) const;
 
     /// The leaf certificate that is currently served for `prefix` connections, if there is one.
     /// It is not necessarily the certificate of the corresponding `SSL_CTX`: certificates are installed

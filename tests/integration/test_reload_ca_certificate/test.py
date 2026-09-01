@@ -40,9 +40,10 @@ node_with_default_cas = cluster.add_instance(
     env_variables={"SSL_CERT_FILE": f"{CONFIG_DIR}/ca2.crt"},
 )
 
-# Three nodes with embedded Keeper talking Raft over TLS.
+# Three nodes with embedded Keeper talking Raft over TLS. `loadDefaultCAFile` is not set for them: Keeper assumes `false` for
+# the Raft connections then, unlike everything else, and their CA certificates have to be reloaded all the same.
 keeper_nodes = [
-    cluster.add_instance(f"node{i}", main_configs=[f"configs/keeper{i}.xml", "configs/ssl.xml"] + CERT_FILES) for i in (1, 2, 3)
+    cluster.add_instance(f"node{i}", main_configs=[f"configs/keeper{i}.xml", "configs/ssl_with_default_cas.xml"] + CERT_FILES) for i in (1, 2, 3)
 ]
 
 
@@ -166,6 +167,26 @@ def test_system_certificates_follows_reload(started_cluster):
         assert node.query(query.format(2)) == f"{CONFIG_DIR}/ca2.crt\t1\n"
     finally:
         node.replace_in_config(f"{CONFIG_DIR}/ssl.xml", f"{CONFIG_DIR}/ca2.crt", f"{CONFIG_DIR}/ca.crt")
+        node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_ca_directory(started_cluster):
+    """`caConfig` can be a directory with certificates named by their subject hash. Replacing a certificate in it is noticed too."""
+    ca_dir = f"{CONFIG_DIR}/ca_dir"
+    node.exec_in_container(["bash", "-c", f"mkdir -p {ca_dir} && cp {CONFIG_DIR}/ca1.crt {ca_dir}/$(openssl x509 -noout -subject_hash -in {CONFIG_DIR}/ca1.crt).0"])
+    node.replace_in_config(f"{CONFIG_DIR}/ssl.xml", f"{CONFIG_DIR}/ca.crt", ca_dir)
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        assert https_request_with_client_certificate("cert1") == "1\n"
+        assert https_request_with_client_certificate("cert2") is None
+
+        # Overwrite the only file in place: the set of file names in the directory does not change.
+        node.exec_in_container(["bash", "-c", f"cat {CONFIG_DIR}/ca2.crt > {ca_dir}/$(openssl x509 -noout -subject_hash -in {CONFIG_DIR}/ca1.crt).0"])
+        node.query("SYSTEM RELOAD CONFIG")
+        assert https_request_with_client_certificate("cert1") is None
+    finally:
+        node.replace_in_config(f"{CONFIG_DIR}/ssl.xml", ca_dir, f"{CONFIG_DIR}/ca.crt")
+        node.exec_in_container(["rm", "-rf", ca_dir])
         node.query("SYSTEM RELOAD CONFIG")
 
 

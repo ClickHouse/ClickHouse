@@ -648,11 +648,11 @@ For `clickhouse-client`, you can also use the `--accept-invalid-certificate` CLI
 ## Rotating certificates and CA certificates without a restart {#rotating-certificates-without-restart}
 
 ClickHouse server and ClickHouse Keeper watch the files referenced by `certificateFile`, `privateKeyFile` and `caConfig`
-in the `openSSL.server` and `openSSL.client` sections (and in `protocols.*` for composable protocols). When one of these
-files changes, or when `SYSTEM RELOAD CONFIG` is executed, the certificates are reloaded and used for all new TLS
-connections, including HTTPS, the secure native protocol, interserver connections, connections to Keeper and the Raft
-connections between Keeper nodes (for Raft connections, `caConfig` is reloaded only if `loadDefaultCAFile` is set
-explicitly). Established connections keep using the certificates they were opened with.
+in the `openSSL.server` and `openSSL.client` sections (and in `protocols.*` for composable protocols), or the files in the
+directory if `caConfig` is a directory. When one of these files changes, or when `SYSTEM RELOAD CONFIG` is executed, the
+certificates are reloaded and used for all new TLS connections, including HTTPS, the secure native protocol, interserver
+connections, connections to Keeper and the Raft connections between Keeper nodes. Established connections keep using the
+certificates they were opened with.
 
 To rotate a CA without downtime, first replace the `caConfig` file with a bundle that contains both the old and the new
 CA certificate, then switch the node and client certificates to ones issued by the new CA, and finally replace the bundle

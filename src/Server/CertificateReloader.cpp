@@ -3,6 +3,7 @@
 #if USE_SSL
 
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Poco/Net/Context.h>
@@ -42,8 +43,8 @@ int callSetCertificate(SSL * ssl, void * arg)
 /// Called by OpenSSL instead of `X509_verify_cert` to verify the peer's certificate.
 int callVerifyCertificate(X509_STORE_CTX * store_ctx, void * arg)
 {
-    const CertificateReloader::MultiData * pdata = reinterpret_cast<CertificateReloader::MultiData *>(arg);
-    return CertificateReloader::instance().verifyCertificate(store_ctx, pdata);
+    const MultiVersion<CertificateReloader::CAStore> * ca_store = reinterpret_cast<MultiVersion<CertificateReloader::CAStore> *>(arg);
+    return CertificateReloader::instance().verifyCertificate(store_ctx, ca_store);
 }
 
 int defaultVerifyCertificate(X509_STORE_CTX * store_ctx)
@@ -137,18 +138,18 @@ int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::Mu
 }
 
 /// This is callback for OpenSSL. It will be called on every connection that verifies the certificate of the peer.
-int CertificateReloader::verifyCertificate(X509_STORE_CTX * store_ctx, const CertificateReloader::MultiData * pdata) const
+int CertificateReloader::verifyCertificate(X509_STORE_CTX * store_ctx, const MultiVersion<CAStore> * ca_store) const
 {
     try
     {
-        auto ca_store = pdata->ca_store.get();
+        auto current = ca_store->get();
         X509 * certificate = X509_STORE_CTX_get0_cert(store_ctx);
 
         /// Raw public keys (RFC 7250) are verified without CA certificates.
-        if (!ca_store || !certificate)
+        if (!current || !certificate)
             return defaultVerifyCertificate(store_ctx);
 
-        return verifyCertificateWithStore(store_ctx, certificate, ca_store->store);
+        return verifyCertificateWithStore(store_ctx, certificate, current->store);
     }
     catch (...)
     {
@@ -253,7 +254,7 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
 
         /// Verify peer certificates against the reloadable CA certificates of this prefix.
         /// Until (and unless) they are loaded, the callback does exactly what OpenSSL does without it.
-        SSL_CTX_set_cert_verify_callback(ctx, callVerifyCertificate, reinterpret_cast<void *>(&*it));
+        SSL_CTX_set_cert_verify_callback(ctx, callVerifyCertificate, reinterpret_cast<void *>(&it->ca.store));
     }
     return it;
 }
@@ -294,7 +295,6 @@ void CertificateReloader::tryLoadACMECertificate(SSL_CTX * ctx, const std::strin
 void CertificateReloader::tryLoadCAImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
     std::string new_ca_path = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
-    bool new_load_default_cas = config.getBool(prefix + Poco::Net::SSLManager::CFG_ENABLE_DEFAULT_CA, Poco::Net::SSLManager::VAL_ENABLE_DEFAULT_CA);
 
     /// Without `caConfig` the trusted certificates come only from the system locations (if at all), there is nothing to reload.
     /// But if `caConfig` was there before, keep following the configuration, like a restart would.
@@ -308,16 +308,23 @@ void CertificateReloader::tryLoadCAImpl(const Poco::Util::AbstractConfiguration 
     try
     {
         auto it = findOrInsert(ctx, prefix);
-
         bool ca_file_changed = it->ca_file.changeIfModified(std::move(new_ca_path), log);
-        bool has_ca_store = it->ca_store.get() != nullptr;
-        if (ca_file_changed || !has_ca_store || new_load_default_cas != it->load_default_cas)
+
+        auto load = [&](CAData & ca, bool load_default_cas_default)
         {
+            bool new_load_default_cas = config.getBool(prefix + Poco::Net::SSLManager::CFG_ENABLE_DEFAULT_CA, load_default_cas_default);
+            if (!ca_file_changed && ca.store.get() && new_load_default_cas == ca.load_default_cas)
+                return;
+
             LOG_DEBUG(log, "Reloading CA certificates ({}), load default CAs: {}.", it->ca_file.path, new_load_default_cas);
-            it->ca_store.set(loadCAStore(it->ca_file.path, new_load_default_cas));
-            it->load_default_cas = new_load_default_cas;
+            ca.store.set(loadCAStore(it->ca_file.path, new_load_default_cas));
+            ca.load_default_cas = new_load_default_cas;
             LOG_INFO(log, "Reloaded CA certificates ({}), load default CAs: {}.", it->ca_file.path, new_load_default_cas);
-        }
+        };
+
+        load(it->ca, Poco::Net::SSLManager::VAL_ENABLE_DEFAULT_CA);
+        if (it->ca_with_other_default)
+            load(*it->ca_with_other_default, it->other_load_default_cas_default);
     }
     catch (...)
     {
@@ -388,7 +395,7 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 }
 
 
-bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix, bool load_default_cas)
+bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix, bool load_default_cas_default)
 {
     if (!ctx)
         return false;
@@ -405,13 +412,20 @@ bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::st
 
     MultiData * pdata = &*(it->second);
 
-    /// Share the reloadable CA certificates of this prefix (see `findOrInsert`),
-    /// unless this context trusts a different set of CA certificates than the primary one.
-    if (!pdata->ca_store.get() || load_default_cas == pdata->load_default_cas)
-        SSL_CTX_set_cert_verify_callback(ctx, callVerifyCertificate, reinterpret_cast<void *>(pdata));
-    else
-        LOG_INFO(log, "CA certificates of the additional context for prefix '{}' will not be reloaded without restart, "
-            "set `loadDefaultCAFile` explicitly to enable it.", prefix);
+    /// Share the reloadable CA certificates of this prefix (see `findOrInsert`). A context that assumes another default
+    /// for `loadDefaultCAFile` may trust other CA certificates than the primary one, so it gets its own ones.
+    /// They are loaded by the next `tryLoad`, until then the context keeps using the store it was created with.
+    CAData * ca = &pdata->ca;
+    if (load_default_cas_default != Poco::Net::SSLManager::VAL_ENABLE_DEFAULT_CA)
+    {
+        if (!pdata->ca_with_other_default)
+        {
+            pdata->ca_with_other_default.emplace();
+            pdata->other_load_default_cas_default = load_default_cas_default;
+        }
+        ca = &*pdata->ca_with_other_default;
+    }
+    SSL_CTX_set_cert_verify_callback(ctx, callVerifyCertificate, reinterpret_cast<void *>(&ca->store));
 
     /// Verify that certificate data was actually loaded, not just the entry created.
     /// If data is null, return false so caller can use fallback (static cert loading).
@@ -457,7 +471,7 @@ std::optional<Poco::Net::Context::CAPaths> CertificateReloader::getCAPaths(const
     if (it == data_index.end())
         return {};
 
-    auto current = it->second->ca_store.get();
+    auto current = it->second->ca.store.get();
     if (!current)
         return {};
 
@@ -499,10 +513,24 @@ bool CertificateReloader::File::changeIfModified(std::string new_path, LoggerPtr
         return false;
     }
 
-    if (new_path != path || new_modification_time != modification_time)
+    /// `caConfig` can be a directory with certificates, replacing one of them is a change too.
+    UInt64 new_directory_contents_hash = 0;
+    if (std::filesystem::is_directory(new_path, ec))
+    {
+        SipHash hash;
+        for (const auto & entry : std::filesystem::directory_iterator(new_path, ec))
+        {
+            hash.update(entry.path().filename().string());
+            hash.update(std::filesystem::last_write_time(entry.path(), ec).time_since_epoch().count());
+        }
+        new_directory_contents_hash = hash.get64();
+    }
+
+    if (new_path != path || new_modification_time != modification_time || new_directory_contents_hash != directory_contents_hash)
     {
         path = new_path;
         modification_time = new_modification_time;
+        directory_contents_hash = new_directory_contents_hash;
         return true;
     }
 
