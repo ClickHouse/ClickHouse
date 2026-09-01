@@ -1,0 +1,28 @@
+### ClickPipes for Streaming {#clickpipes-for-streaming}
+
+| Connector | Feature lifecycle | Data sources |
+|-----------|-------------------|--------------|
+| <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka logo" className="integration-table-logo" width="24" height="24" /> [Kafka](/integrations/clickpipes/kafka) | <Badge color="green">GA</Badge> | Apache Kafka, [Confluent Cloud](/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes), Redpanda, [AWS MSK](/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes), Google Cloud Managed Service for Apache Kafka, [Azure Event Hubs](/integrations/clickpipes/kafka/faq#azure-eventhubs), [WarpStream](/integrations/clickpipes/kafka/best-practices#warpstream-settings), and other Kafka API-compatible data sources. |
+| <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Amazon Kinesis logo" className="integration-table-logo" width="24" height="24" /> [Amazon Kinesis](/integrations/clickpipes/kinesis) | <Badge color="green">GA</Badge> | |
+| <img src="/images/integrations/logos/google_pubsub.svg" alt="Google Cloud Pub/Sub logo" className="integration-table-logo" width="24" height="24" /> [GCP Pub/Sub](/integrations/clickpipes/pubsub) | <Badge color="purple">Private Preview</Badge> | |
+
+### ClickPipes for Object Storage {#clickpipes-for-object-storage}
+
+| Connector | Feature lifecycle | Data sources |
+|-----------|-------------------|--------------|
+| <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 logo" className="integration-table-logo" width="24" height="24" /> [Amazon S3](/integrations/clickpipes/object-storage/s3/overview) | <Badge color="green">GA</Badge> | [Amazon S3](/integrations/clickpipes/object-storage/s3/get-started), Cloudflare R2, DigitalOcean Spaces, OVH Object Storage, and other S3 API-compatible data sources. |
+| <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage logo" className="integration-table-logo" width="24" height="24" /> [Google Cloud Storage](/integrations/clickpipes/object-storage/gcs/overview) | <Badge color="green">GA</Badge> | |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage logo" className="integration-table-logo" width="24" height="24" /> [Azure Blob Storage](/integrations/clickpipes/object-storage/abs/overview) | <Badge color="green">GA</Badge> | |
+
+### ClickPipes for CDC {#clickpipes-for-cdc}
+
+| Connector | Feature lifecycle | Data sources |
+|-----------|-------------------|--------------|
+| <img src="/images/integrations/logos/postgresql.svg" alt="Postgres logo" className="integration-table-logo" width="24" height="24" /> [Postgres](/integrations/clickpipes/postgres) | <Badge color="green">GA</Badge> | [Amazon RDS](/integrations/clickpipes/postgres/source/rds), [Amazon Aurora](/integrations/clickpipes/postgres/source/aurora), [Google Cloud SQL](/integrations/clickpipes/postgres/source/google-cloudsql), [AlloyDB](/integrations/clickpipes/postgres/source/alloydb), [Azure Flexible Server](/integrations/clickpipes/postgres/source/azure-flexible-server-postgres), [Supabase](/integrations/clickpipes/postgres/source/supabase), [Neon](/integrations/clickpipes/postgres/source/neon-postgres), [Crunchy Bridge](/integrations/clickpipes/postgres/source/crunchy-postgres), [TimescaleDB](/integrations/clickpipes/postgres/source/timescale), [PlanetScale](/integrations/clickpipes/postgres/source/planetscale), [self-managed](/integrations/clickpipes/postgres/source/generic), and other compatible data sources. |
+| <img src="/images/integrations/logos/mysql.svg" alt="MySQL logo" className="integration-table-logo" width="24" height="24" /> [MySQL](/integrations/clickpipes/mysql) | <Badge color="yellow">Public Beta</Badge> | [Amazon RDS](/integrations/clickpipes/mysql/source/rds), [Amazon Aurora](/integrations/clickpipes/mysql/source/aurora), [Cloud SQL](/integrations/clickpipes/mysql/source/gcp), [Azure Flexible Server](/integrations/clickpipes/mysql/source/azure-flexible-server-mysql), [self-managed MySQL](/integrations/clickpipes/mysql/source/generic), [Amazon RDS for MariaDB](/integrations/clickpipes/mysql/source/rds_maria), [self-managed MariaDB](/integrations/clickpipes/mysql/source/generic_maria), and other compatible data sources. |
+| <img src="/images/integrations/logos/mongodb.svg" alt="MongoDB logo" className="integration-table-logo" width="24" height="24" /> [MongoDB](/integrations/clickpipes/mongodb) | <Badge color="yellow">Public Beta</Badge> | [MongoDB Atlas](/integrations/clickpipes/mongodb/source/atlas), [Amazon DocumentDB](/integrations/clickpipes/mongodb/source/documentdb), [self-managed](/integrations/clickpipes/mongodb/source/generic), and other compatible data sources. |
+| <img src="/images/logo-bigquery.svg" alt="BigQuery logo" className="integration-table-logo" width="24" height="24" /> [BigQuery](/integrations/clickpipes/bigquery/overview) | <Badge color="purple">Private Preview</Badge> | |
+
+<Tip>
+For unlisted services: due to differences in API implementations and replication support across service providers, not every compatible service is guaranteed to work out-of-the-box. If you're running into issues with a service that isn't listed, please [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes).
+</Tip>
