@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -124,8 +125,27 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name)
     return getCacheElement(type_name).serialization;
 }
 
+void DataTypesCache::clearIfQueryContextChanged()
+{
+    ContextPtr current_query_context = CurrentThread::tryGetQueryContext();
+
+    /// Owner-based identity comparison. It does not lock the weak_ptr, and since we hold
+    /// the weak_ptr (keeping the control block alive), an expired context cannot be
+    /// confused with a new one allocated at the same address.
+    if (!query_context.owner_before(current_query_context) && !current_query_context.owner_before(query_context))
+        return;
+
+    /// The thread is now serving a different query. Cached types/serializations may depend
+    /// on the previous query's context (e.g. `session_timezone` captured by DateTime types),
+    /// so they must not be reused.
+    cache.clear();
+    query_context = current_query_context;
+}
+
 const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name)
 {
+    clearIfQueryContextChanged();
+
     auto it = cache.find(type_name);
     if (it != cache.end())
         return it->second;

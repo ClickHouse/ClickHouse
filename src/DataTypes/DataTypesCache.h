@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <array>
 #include <unordered_map>
@@ -61,6 +62,17 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// Thread-local cache for data type lookups by name.
 /// Checks the thread-local SimpleDataTypesCache first; only caches
 /// non-simple types (e.g. DateTime64(9), Variant types) in its own map.
+///
+/// The cache is scoped to a single query: a type name does not uniquely identify
+/// a type/serialization across queries, because construction depends on the current
+/// query context. For example, `DateTime` without an explicit timezone captures
+/// the query's `session_timezone` setting at construction (see TimezoneMixin and
+/// `DateLUT::instance`), and `JSON` serializations are built against the current
+/// query context and hold mutable per-use state that must not be shared between
+/// queries (see the comment in SerializationJSON::create). Since the cache lives
+/// in a long-lived thread, it must be cleared whenever the thread starts serving
+/// a different query; otherwise a stale entry produces wrong results (e.g. DateTime
+/// values rendered in another query's timezone).
 class DataTypesCache
 {
 public:
@@ -78,7 +90,16 @@ private:
 
     const Element & getCacheElement(const String & type_name);
 
+    /// Clear the cache if the thread is now attached to a different query context
+    /// than the one the cache was populated under.
+    void clearIfQueryContextChanged();
+
     std::unordered_map<String, Element> cache;
+
+    /// The query context the cached entries were created under (null for threads
+    /// not attached to any query). Holding a weak_ptr keeps the control block alive,
+    /// which makes the owner-based identity comparison immune to address reuse.
+    ContextWeakPtr query_context;
 };
 
 /// Return instance of a thread local cache.
