@@ -105,6 +105,8 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;
 
+    const bool lazy_init = args.mode >= LoadingStrictnessLevel::ATTACH;
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
@@ -122,7 +124,9 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,
         partition_by,
-        order_by);
+        order_by,
+        /* is_table_function */ false,
+        lazy_init);
 }
 
 #endif
