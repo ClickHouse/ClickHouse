@@ -137,9 +137,27 @@ SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_n
 SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_nullable_live WHERE mn = map('k', 5.) AND mn >= map('k', 0.) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_nullable_live WHERE mn = map('k', 5.) AND mn >= map('k', 0.) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 
+-- 16) The same divergence one container further out, in a `JSON` value. It is the fourth container that
+--     nests `Field`s, and the only one held as a map rather than as a vector, so a walk written over the
+--     other three does not reach it. `ColumnObject::compareAt` delegates each path's value, which puts a
+--     typed `Nullable` path back on `ColumnNullable`.
+DROP TABLE IF EXISTS t_element_wise_json;
+CREATE TABLE t_element_wise_json (id UInt32, j JSON(a Nullable(UInt32))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_element_wise_json VALUES (1, '{"a":null}');
+SELECT count() FROM t_element_wise_json WHERE j <= '{"a":null}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_json WHERE j <= '{"a":1}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_json WHERE j <= '{"a":null}'::JSON(a Nullable(UInt32)) AND j <= '{"a":1}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+SELECT count() FROM t_element_wise_json WHERE j <= '{"a":null}'::JSON(a Nullable(UInt32)) AND j <= '{"a":1}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+
+-- 17) The `JSON` fold that must survive, on the same type and the same table: only the constants differ
+--     from the arm above, so this is the one a screen on the type rather than on the constant gives up.
+SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_json WHERE j = '{"a":5}'::JSON(a Nullable(UInt32)) AND j >= '{"a":0}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_json WHERE j = '{"a":5}'::JSON(a Nullable(UInt32)) AND j >= '{"a":0}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+
 DROP TABLE t_element_wise_array;
 DROP TABLE t_element_wise_tuple;
 DROP TABLE t_element_wise_const_string;
 DROP TABLE t_element_wise_live;
 DROP TABLE t_element_wise_nested_null;
 DROP TABLE t_element_wise_nullable_live;
+DROP TABLE t_element_wise_json;

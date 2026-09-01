@@ -20,6 +20,8 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <absl/container/inlined_vector.h>
+
 #include <algorithm>
 
 
@@ -440,11 +442,11 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
 }
 
 /// The pruning analysis orders constants with `FieldAccurateComparison`, which places `NaN` after every
-/// ordinary value. A comparison follows that order only where it ends in `IColumn::compareAt`, which is
-/// faithful for nested values, so only the top level has to be classified; a nested `NULL` is the exception
-/// and the constant screen in `addComparisonFilter` handles it. Two shapes instead decompose the container
-/// into per-element applications of the comparison function, under which a comparison against a `NaN` is
-/// false and nothing is ordered: two top-level `Tuple`s, which `executeTuple` takes before the equal-types
+/// ordinary value. Reaching `IColumn::compareAt` is necessary for a comparison to follow that order, and
+/// not sufficient: a nested `NULL` is ordered the other way round, which the constant screen in
+/// `addComparisonFilter` handles. Two shapes do not reach it at all, decomposing the container into
+/// per-element applications of the comparison function, under which a comparison against a `NaN` is false
+/// and nothing is ordered: two top-level `Tuple`s, which `executeTuple` takes before the equal-types
 /// shortcut and therefore even for identical types, and two `Array`s with no least supertype, which reach
 /// `executeArrayLexicographic`. A `Map` has no such shape.
 static bool comparisonDecomposesContainer(const DataTypePtr & expr_type, const DataTypePtr & constant_type)
@@ -467,26 +469,43 @@ static bool comparisonDecomposesContainer(const DataTypePtr & expr_type, const D
 }
 
 /// `Field` orders a `Null` by its type tag, before every value, while `IColumn::compareAt` with a
-/// direction hint of 1 orders it after every value. A constant carrying one is therefore ordered
-/// differently here than in execution, whatever the shape it is nested in.
+/// direction hint of 1 orders it after every value, at any depth. Iterative because `Field`s nest
+/// inside `Field`s and a recursive walk overflows the native stack for a deeply nested value.
 static bool fieldContainsNull(const Field & field)
 {
-    if (field.isNull())
-        return true;
+    absl::InlinedVector<const Field *, 16> pending{&field};
 
-    /// `Array`, `Tuple` and `Map` all derive from `FieldVector`, so one loop covers the three.
-    const FieldVector * elements = nullptr;
-    switch (field.getType())
+    while (!pending.empty())
     {
-        case Field::Types::Array: elements = &field.safeGet<Array>(); break;
-        case Field::Types::Tuple: elements = &field.safeGet<Tuple>(); break;
-        case Field::Types::Map: elements = &field.safeGet<Map>(); break;
-        default: return false;
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        if (current->isNull())
+            return true;
+
+        switch (current->getType())
+        {
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & element : current->safeGet<Map>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Object:
+                for (const auto & [_, element] : current->safeGet<Object>())
+                    pending.push_back(&element);
+                break;
+            default:
+                break;
+        }
     }
 
-    for (const auto & element : *elements)
-        if (fieldContainsNull(element))
-            return true;
     return false;
 }
 
