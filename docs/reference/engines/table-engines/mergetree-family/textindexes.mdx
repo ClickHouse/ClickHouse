@@ -574,7 +574,7 @@ Such an index is written in the `v3_with_scoring` format regardless of the confi
 The argument requires a posting list codec (`posting_list_codec = 'bitpacking'`) and a tokenizer that supports scoring.
 Storing scoring data increases the on-disk size of the index and the write cost, so it is opt-in.
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
-Creating an index with `enable_scoring = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_scoring`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_scoring) to be enabled.
+Creating an index with `enable_scoring = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_scoring`](/reference/settings/merge-tree-settings/allow-experimental) to be enabled.
 
 To read the `_bm25_score` virtual column, enable the setting `allow_experimental_bm25_score_column`.
 The query must filter with `hasToken`, `hasAnyTokens` or `hasAllTokens` on the column of exactly one scoring-enabled text index, and the direct read from the text index ([`query_plan_direct_read_from_text_index`](/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index)) must be enabled:
@@ -590,7 +590,7 @@ SETTINGS allow_experimental_bm25_score_column = 1;
 
 <Warning>
 This argument is experimental and should only be used for testing.
-Set MergeTree setting [`allow_experimental_text_index_scoring`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_scoring) to enable storing BM25 scoring data.
+Set MergeTree setting [`allow_experimental_text_index_scoring`](/reference/settings/merge-tree-settings/allow-experimental) to enable storing BM25 scoring data.
 </Warning>
 
 <details markdown="1">
