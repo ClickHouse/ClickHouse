@@ -44,7 +44,7 @@ Cloud でのデフォルト値: レプリカあたりのメモリ量の半分。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "ハッシュ結合のディスクへの自動スピルを制御する新しい設定です。0 以外の値を指定するとスピルが有効になり、バイト単位のしきい値が設定されます。"}]}]} />
 
-0 以外の値に設定し、`join_algorithm` が `hash`、`parallel_hash`、`default`、または `auto` の場合、右側のデータがこのバイト数を超えると、ディスクへのスピルを有効にするためにハッシュ結合は自動的に Grace Hash Join に変換されます。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。自動スピルを完全に無効にするには、両方を `0` に設定してください。通常、スピルする可能性がある結合では、結合を介した順序読み取りの最適化は行えません。ただし、最適化が適用され、代わりに結合がメモリに固定される条件については、[`query_plan_read_in_order_through_spilling_join`](/ja/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) を参照してください。
+0 以外の値に設定し、`join_algorithm` が `hash`、`parallel_hash`、`default`、または `auto` の場合、右側のデータがこのバイト数を超えると、ディスクへのスピルを有効にするためにハッシュ結合は自動的に Grace Hash Join に変換されます。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。自動スピルを完全に無効にするには、両方を `0` に設定してください。これにより、JOIN 最適化による順序どおりの読み取りは行えなくなります。
 
 <div id="max_bytes_before_external_sort">
   ## max_bytes_before_external_sort
@@ -150,8 +150,6 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 `max_bytes_before_external_join` と `max_bytes_ratio_before_external_join` の両方が設定されている場合は、結果として小さい方のしきい値が使用されます。比率が `0` の場合は、絶対値の設定のみが適用されます。
 
 `join_algorithm` が `hash`、`parallel_hash`、`default`、`auto` のいずれかで、かつ一時データパスが設定されている場合にのみ効果があります。
-
-通常、スピルする可能性がある結合では、結合を介した順序読み取りの最適化は行われません。この最適化が適用される場合でも結合がメモリに固定され、その結果この比率に達しても Grace Hash Join に変換されない条件については、[`query_plan_read_in_order_through_spilling_join`](/ja/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) を参照してください。
 
 <div id="max_bytes_ratio_before_external_sort">
   ## max_bytes_ratio_before_external_sort
