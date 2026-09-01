@@ -887,7 +887,53 @@ void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
     inlineAliasColumnsImpl(query_tree_to_modify);
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
+/** Collects the top-most `IN (subquery)` functions so their sets can be materialized once on the initiator
+  * and shipped to the replicas as temporary tables, instead of every replica re-executing the subquery
+  * before it can even announce for the coordinated scan.
+  *
+  * They join the list the `GLOBAL IN` rewrite already builds, so the same machinery handles them:
+  * `executeSubqueryNode` fills an external table and registers it, and the external tables are forwarded to
+  * the replicas anyway. What is deliberately *not* borrowed from `GLOBAL IN` is its function name - only the
+  * right argument is swapped for the temporary table, and the predicate stays an `in`. That matters because
+  * `MergeTreeWhereOptimizer::cannotBeMoved` rejects `globalIn` outright, so a shipped `globalIn` costs the
+  * replica its PREWHERE and it reads every column for every row instead of the filter column first.
+  *
+  * Nested `IN`s below a collected one are skipped: materializing the outer subquery already evaluates them
+  * on the initiator, so shipping the inner set as well would be pure waste.
+  */
+void collectInSubqueriesToShip(
+    const QueryTreeNodePtr & node,
+    size_t subquery_depth,
+    std::vector<DistributedProductModeRewriteInJoinVisitor::InFunctionOrJoin> & result)
+{
+    if (!node)
+        return;
+
+    if (const auto * function_node = node->as<FunctionNode>();
+        function_node && isNameOfLocalInFunction(function_node->getFunctionName()))
+    {
+        const auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() == 2)
+        {
+            const auto argument_type = arguments[1]->getNodeType();
+            if (argument_type == QueryTreeNodeType::QUERY || argument_type == QueryTreeNodeType::UNION)
+            {
+                result.push_back({node, subquery_depth});
+                return;
+            }
+        }
+    }
+
+    const bool is_subquery = node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION;
+    for (const auto & child : node->getChildren())
+        collectInSubqueriesToShip(child, subquery_depth + (is_subquery ? 1 : 0), result);
+}
+
+QueryTreeNodePtr buildQueryTreeForShard(
+    const PlannerContextPtr & planner_context,
+    QueryTreeNodePtr query_tree_to_modify,
+    bool allow_global_join_for_right_table,
+    bool ship_in_subqueries)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
@@ -898,7 +944,9 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     visitor.visit(query_tree_to_modify);
 
     auto replacement_map = visitor.getReplacementMap();
-    const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
+    auto global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
+    if (ship_in_subqueries)
+        collectInSubqueriesToShip(query_tree_to_modify, 0, global_in_or_join_nodes);
 
     QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
 

@@ -8194,9 +8194,11 @@ Possible values:
   parallel replicas, never into the single-node plan, and only when the join's match rate - measured while a
   previous run of the query executed - says the rows it removes are worth more than the scan of the build
   side needed to build the set. Nothing is shipped on a query's first run, which is what measures the rate.
-- 1 - Always inject `IN (SELECT key FROM <build side>)`. Each replica evaluates the subquery itself.
-- 2 - Always inject `GLOBAL IN (SELECT key FROM <build side>)`. The initiator evaluates it once and
-  broadcasts the set. This is the form the automatic decision uses.
+- 1 - Always inject `IN (SELECT key FROM <build side>)`. The initiator materializes the set once and ships
+  it to the replicas as a temporary table, so none of them repeats the scan, and the predicate keeps the
+  `in` form that `PREWHERE` accepts. This is the form the automatic decision uses.
+- 2 - Always inject `GLOBAL IN (SELECT key FROM <build side>)`. The set is materialized once as well, but
+  `PREWHERE` refuses to move a `globalIn`, so the replicas read every column for every row they scan.
 )", EXPERIMENTAL) \
     DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables

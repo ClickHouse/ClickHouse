@@ -65,6 +65,7 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsUInt64 parallel_replicas_ship_join_predicate;
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -1245,7 +1246,11 @@ void executeQueryWithParallelReplicas(
     /// would drop an ALIAS column's expression and make the replica read it as physical.
     inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    /// The predicate `ShipJoinPredicateToParallelReplicasPass` injects is an `IN` over a subquery the
+    /// replicas would otherwise each re-execute; ship its set instead, as a temporary table.
+    modified_query_tree = buildQueryTreeForShard(
+        planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true,
+        /*ship_in_subqueries*/ context->getSettingsRef()[Setting::parallel_replicas_ship_join_predicate] != 0);
 
     auto [header, new_planner_context]
         = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());

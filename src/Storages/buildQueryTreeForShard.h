@@ -23,7 +23,13 @@ using ContextPtr = std::shared_ptr<const Context>;
 
 class Block;
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table);
+QueryTreeNodePtr buildQueryTreeForShard(
+    const PlannerContextPtr & planner_context,
+    QueryTreeNodePtr query_tree_to_modify,
+    bool allow_global_join_for_right_table,
+    /// Materialize the sets of top-most `IN (subquery)` on the initiator and ship them as temporary
+    /// tables, keeping the predicate's `in` form so the replica can still move it into PREWHERE.
+    bool ship_in_subqueries = false);
 
 /** Replace every `ALIAS` column node with its defining expression, so the expression is evaluated on the shard/replica
   * that reads the real table instead of the column being resolved there as if it were physical.
