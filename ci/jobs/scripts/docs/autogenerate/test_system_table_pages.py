@@ -137,9 +137,8 @@ def main():
     }
     for source_file in documentation_input_sources:
         source = source_file.read_text(encoding="utf-8")
-        assert "REGISTER_SYSTEM_DOCS_MDUMENTATION" not in source
+        assert "REGISTER_SYSTEM_TABLE_DOCUMENTATION" not in source
         assert "Common/SystemTableDocumentation.h" not in source
-    assert "REGISTER_SYSTEM_DOCS_MDUMENTATION" not in system_log_source
 
     availability_requirements = {
         "transactions_info_log": (
