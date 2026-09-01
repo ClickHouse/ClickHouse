@@ -208,6 +208,24 @@ void assertNotEOF(ReadBuffer & buf)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF");
 }
 
+void skipDateTimeFractionalSeconds(ReadBuffer & buf)
+{
+    if (buf.eof() || *buf.position() != '.')
+        return;
+
+    ++buf.position();
+
+    bool has_digits = false;
+    while (!buf.eof() && isNumericASCII(*buf.position()))
+    {
+        has_digits = true;
+        ++buf.position();
+    }
+
+    if (!has_digits)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the fractional seconds of a date and time value");
+}
+
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {

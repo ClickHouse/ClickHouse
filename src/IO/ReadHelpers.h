@@ -213,6 +213,14 @@ void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
 void assertNotEOF(ReadBuffer & buf);
 
+/// Consume a fractional-seconds tail of a date and time value, if there is one, and drop it.
+/// A plain `DateTime` has no place for subsecond precision, so `readDateTimeText` stops in front of
+/// the dot, while external sources such as MySQL, SQLite, Redis or PostgreSQL render the fraction
+/// anyway. Callers that read a complete, already isolated value follow this with `assertEOF`, so the
+/// tail has to be recognized here to avoid rejecting a legitimate value. A dot with no digit after
+/// it is not a fraction and is rejected instead of being silently accepted.
+void skipDateTimeFractionalSeconds(ReadBuffer & buf);
+
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
 inline bool checkChar(char c, ReadBuffer & buf)

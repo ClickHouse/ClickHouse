@@ -245,12 +245,7 @@ void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::Valu
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
             /// SQLite may store fractional seconds; tolerate them (a plain DateTime has no use for
             /// them), but reject any other trailing characters instead of silently dropping them.
-            if (!in.eof() && *in.position() == '.')
-            {
-                ++in.position();
-                while (!in.eof() && isNumericASCII(*in.position()))
-                    ++in.position();
-            }
+            skipDateTimeFractionalSeconds(in);
             assertEOF(in);
             time = std::max<time_t>(time, 0);
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
