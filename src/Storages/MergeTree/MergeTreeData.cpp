@@ -1035,24 +1035,33 @@ void MergeTreeData::checkProperties(
 
         for (const auto & name : key_columns)
         {
-            const auto column = new_metadata.columns.tryGetColumnDescription(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
-            if (!column || column->codec.empty())
+            const auto key_column = new_metadata.columns.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns(), name);
+            if (!key_column)
+                continue;
+
+            const auto * owning_column = new_metadata.columns.tryGet(key_column->getNameInStorage());
+            if (!owning_column || owning_column->codec.empty())
                 continue;
 
             /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
-            /// so lossiness is resolved per substream the way the part writer resolves it.
+            /// so lossiness is resolved per substream the way the part writer resolves it. For a key
+            /// subcolumn, enumerate only the serialization backing that subcolumn and resolve its paths
+            /// against the owning physical column. This avoids both skipping `x.k` and rejecting a lossy
+            /// codec on an unrelated sibling of `x.k`.
             bool is_lossy = false;
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {
                 if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
                     return;
-                const auto resolved = column->codec.resolve(getCodecPath(substream_path), nullptr);
+                const auto codec_path = getCodecPathForStream(*key_column, owning_column->type, substream_path);
+                const auto resolved = owning_column->codec.resolve(codec_path, nullptr);
                 if (resolved.ast)
                     is_lossy = CompressionCodecFactory::instance()
                                    .get(resolved.ast, substream_path.back().data.type.get())->isLossyCompression();
             };
-            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+            const auto serialization = IDataType::getSerialization(*key_column);
+            serialization->enumerateStreams(callback, key_column->type);
 
             if (is_lossy)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
