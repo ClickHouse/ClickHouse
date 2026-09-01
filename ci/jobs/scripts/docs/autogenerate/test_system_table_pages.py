@@ -17,6 +17,10 @@ GENERATOR = REPO_ROOT / "utils" / "generate-system-tables-docs"
 SOURCE_ROOT = REPO_ROOT / "src"
 ATTACH_SOURCE = SOURCE_ROOT / "Storages" / "System" / "attachSystemTables.cpp"
 SYSTEM_LOG_HEADER = SOURCE_ROOT / "Interpreters" / "SystemLog.h"
+SCHEMA_SPECIFIC_SYSTEM_LOG_DOCUMENTATION_SOURCES = {
+    "transposed": SOURCE_ROOT / "Interpreters" / "TransposedMetricLog.h",
+    "bucketed": SOURCE_ROOT / "Interpreters" / "BucketedMetricLog.h",
+}
 NON_LITERAL_ATTACH_DOCUMENTATION_SOURCES = {
     "ASYNCHRONOUS_METRICS_DOCUMENTATION": (
         SOURCE_ROOT / "Storages" / "System" / "StorageSystemAsynchronousMetrics.cpp"
@@ -149,6 +153,21 @@ def main():
     }
     assert len(system_log_documents) == EXPECTED_SYSTEM_LOG_DOCUMENTATION_COUNT
 
+    schema_specific_system_log_documents = {}
+    for schema, source_file in SCHEMA_SPECIFIC_SYSTEM_LOG_DOCUMENTATION_SOURCES.items():
+        source = source_file.read_text(encoding="utf-8")
+        documentation = re.search(
+            r'\bDOCUMENTATION\s*=\s*R"DOCS_MD\((.*?)\)DOCS_MD";',
+            source,
+            re.DOTALL,
+        )
+        assert documentation is not None
+        schema_specific_system_log_documents[schema] = documentation.group(1)
+    for documentation in schema_specific_system_log_documents.values():
+        assert documentation.count(".description") == 1
+        assert documentation.count(".examples") == 1
+        assert documentation.count(".see_also") == 1
+
     documents = attach_documents | system_log_documents
     assert len(documents) == EXPECTED_DOCUMENTATION_COUNT
     table_names = list(documents)
@@ -172,6 +191,7 @@ def main():
     documentation_input_sources = {
         ATTACH_SOURCE,
         SYSTEM_LOG_HEADER,
+        *SCHEMA_SPECIFIC_SYSTEM_LOG_DOCUMENTATION_SOURCES.values(),
         *NON_LITERAL_ATTACH_DOCUMENTATION_SOURCES.values(),
         *(REPO_ROOT / source for source in async_metrics_generator.SOURCE_FILES),
     }

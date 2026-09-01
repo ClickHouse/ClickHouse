@@ -1672,8 +1672,10 @@ class JobConfigs:
                 "./src/Common/AsynchronousMetricDocumentation.inc",
                 "./src/Common/AsynchronousMetrics.cpp",
                 "./src/Coordination/KeeperAsynchronousMetrics.cpp",
+                "./src/Interpreters/BucketedMetricLog.h",
                 "./src/Interpreters/ServerAsynchronousMetrics.cpp",
                 "./src/Interpreters/SystemLog.h",
+                "./src/Interpreters/TransposedMetricLog.h",
                 "./src/Storages/System/StorageSystemAsynchronousMetrics.cpp",
                 "./src/Storages/System/attachSystemTables.cpp",
                 # The source of truth for the generated Open source changelog

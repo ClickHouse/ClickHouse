@@ -402,7 +402,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
                 "metric_log",
                 config,
                 "metric_log",
-                TransposedMetricLog::DESCRIPTION,
+                TransposedMetricLog::DOCUMENTATION,
                 TransposedMetricLog::DOCUMENTATION_SOURCE);
         else if (schema == "bucketed")
             bucketed_metric_log = createSystemLog<BucketedMetricLog>(
@@ -411,7 +411,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
                 "metric_log",
                 config,
                 "metric_log",
-                BucketedMetricLog::DESCRIPTION,
+                BucketedMetricLog::DOCUMENTATION,
                 BucketedMetricLog::DOCUMENTATION_SOURCE);
     }
 

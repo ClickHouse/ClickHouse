@@ -76,6 +76,15 @@ def test_table_rotation(start_cluster):
         )
         == "src/Interpreters/TransposedMetricLog.h\n"
     )
+    documentation = node1.query(
+        "SELECT description FROM system.documentation"
+        " WHERE type = 'System Table' AND name = 'metric_log' FORMAT TSVRaw"
+    )
+    assert "This is the `transposed` schema" in documentation
+    assert "## Description {#description}" in documentation
+    assert "## Columns {#columns}" in documentation
+    assert "## Examples {#examples}" in documentation
+    assert "## See also {#see-also}" in documentation
 
     assert int(node1.query("select countDistinct(metric) from system.metric_log").strip()) > 1000
 
@@ -115,6 +124,15 @@ def test_bucketed_schema(start_cluster):
         )
         == "src/Interpreters/BucketedMetricLog.h\n"
     )
+    documentation = node2.query(
+        "SELECT description FROM system.documentation"
+        " WHERE type = 'System Table' AND name = 'metric_log' FORMAT TSVRaw"
+    )
+    assert "This is the `bucketed` schema" in documentation
+    assert "## Description {#description}" in documentation
+    assert "## Columns {#columns}" in documentation
+    assert "## Examples {#examples}" in documentation
+    assert "## See also {#see-also}" in documentation
 
     assert int(node2.query("select count() from system.metric_log").strip()) > 0
     assert int(node2.query("select max(length(metrics)) from system.metric_log").strip()) > 0
