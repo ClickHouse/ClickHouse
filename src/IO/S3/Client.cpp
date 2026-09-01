@@ -797,6 +797,15 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         Int64 attempt_no = 1;
         std::invoke_result_t<RequestFn, RequestType &> outcome;
 
+        std::function<void()> cancellation_hook;
+        if (request_.GetRequestRetryHandler())
+        {
+            cancellation_hook = [&request_]
+            {
+                request_.GetRequestRetryHandler()(request_);
+            };
+        }
+
         auto net_exception_handler = [&]() -> bool /// return true if we should retry
         {
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
@@ -818,6 +827,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
         for (attempt_no = 1; attempt_no <= max_attempts; ++attempt_no)
         {
+            if (cancellation_hook)
+                cancellation_hook();
+
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
@@ -838,7 +850,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
-            slowDownAfterRetryableError();
+            slowDownAfterRetryableError(cancellation_hook);
 
             try
             {
@@ -914,7 +926,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     }
 }
 
-void Client::slowDownAfterRetryableError() const
+void Client::slowDownAfterRetryableError(const std::function<void()> & cancellation_hook) const
 {
     if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
         return;
@@ -939,7 +951,17 @@ void Client::slowDownAfterRetryableError() const
         sleep_ms = static_cast<UInt64>(jitter * static_cast<double>(sleep_ms));
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
-        sleepForMilliseconds(sleep_ms);
+
+        constexpr UInt64 cancellation_check_interval_ms = 100;
+        while (sleep_ms != 0)
+        {
+            if (cancellation_hook)
+                cancellation_hook();
+
+            const auto current_sleep_ms = std::min(sleep_ms, cancellation_check_interval_ms);
+            sleepForMilliseconds(current_sleep_ms);
+            sleep_ms -= current_sleep_ms;
+        }
     }
 }
 

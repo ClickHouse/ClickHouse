@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <base/types.h>
 
@@ -315,7 +316,7 @@ private:
     RequestResult processRequestResult(RequestResult && outcome) const;
 
     void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
-    void slowDownAfterRetryableError() const;
+    void slowDownAfterRetryableError(const std::function<void()> & cancellation_hook) const;
 
     void logConfiguration() const;
     String initial_endpoint;
