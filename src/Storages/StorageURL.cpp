@@ -66,6 +66,8 @@
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
+#include <mutex>
+#include <optional>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -153,19 +155,49 @@ namespace
         body_context->setSetting("limit", UInt64(0));
         body_context->setSetting("offset", UInt64(0));
         auto subquery_options = SelectQueryOptions{}.subquery();
+        /// Interpreters rewrite the query they are given in place, and the stored body AST is shared
+        /// between all the requests a single read sends (schema inference, the read itself, retries,
+        /// and one request per URL of a glob, which may run in parallel). Interpret a private copy.
+        ASTPtr query = body_query->clone();
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             /// The analyzer accepts the `ASTSubquery` wrapper directly (it unwraps it internally).
-            return InterpreterSelectQueryAnalyzer(body_query, body_context, subquery_options).buildQueryPipeline();
+            return InterpreterSelectQueryAnalyzer(query, body_context, subquery_options).buildQueryPipeline();
         }
 
         /// The old planner's `InterpreterSelectWithUnionQuery` expects an `ASTSelectWithUnionQuery`,
         /// not the `ASTSubquery` wrapper that is stored for the body. Unwrap it here.
-        ASTPtr select_query = body_query;
-        if (const auto * subquery = body_query->as<ASTSubquery>())
-            select_query = subquery->children.at(0);
-        return InterpreterSelectWithUnionQuery(select_query, body_context, subquery_options).buildQueryPipeline();
+        if (const auto * subquery = query->as<ASTSubquery>())
+            query = subquery->children.at(0);
+        return InterpreterSelectWithUnionQuery(query, body_context, subquery_options).buildQueryPipeline();
     }
+
+    /// Holds the pipeline built for the output-format preflight, so that the first request the read
+    /// sends can reuse it instead of planning the body query a second time. The callback is shared
+    /// by every `StorageURLSource` of a read, and sources of a glob URL run in parallel, so the
+    /// hand-over has to be atomic: exactly one invocation takes the pipeline, all the others build
+    /// their own.
+    struct PreflightedBodyPipeline
+    {
+        std::mutex mutex;
+        std::optional<QueryPipelineBuilder> pipeline TSA_GUARDED_BY(mutex);
+
+        explicit PreflightedBodyPipeline(QueryPipelineBuilder pipeline_) : pipeline(std::move(pipeline_)) {}
+
+        std::optional<QueryPipelineBuilder> take()
+        {
+            std::lock_guard lock(mutex);
+            auto taken = std::move(pipeline);
+            pipeline.reset();
+            return taken;
+        }
+
+        Block getHeader()
+        {
+            std::lock_guard lock(mutex);
+            return pipeline->getHeader();
+        }
+    };
 }
 
 std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const ContextPtr & context) const
@@ -191,20 +223,19 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
     /// example, `Npy` requires exactly one column). Plan the body subquery once here and hand the
     /// prepared pipeline over to the callback, so that planning a subquery reading from a table
     /// function contacts its source no more often than evaluating the body alone would.
-    /// Redirects and retries invoke the callback again; a pipeline can be executed only once, so
-    /// those invocations rebuild it.
-    auto prepared_pipeline = std::make_shared<std::optional<QueryPipelineBuilder>>(buildBodyQueryPipeline(query, context));
+    /// Redirects and retries invoke the callback again, and a read of a glob URL shares the callback
+    /// between sources that may run in parallel; a pipeline can be executed only once, so exactly one
+    /// invocation takes the prepared one and every other invocation builds its own.
+    auto prepared_pipeline = std::make_shared<PreflightedBodyPipeline>(buildBodyQueryPipeline(query, context));
     {
         NullWriteBuffer null_buf;
-        auto preflight_format
-            = context->getOutputFormat(body_format, null_buf, materializeBlock((*prepared_pipeline)->getHeader()));
+        auto preflight_format = context->getOutputFormat(body_format, null_buf, materializeBlock(prepared_pipeline->getHeader()));
     }
 
     return [body_query = query, body_format, context, prepared_pipeline](std::ostream & os)
     {
-        QueryPipelineBuilder builder
-            = prepared_pipeline->has_value() ? std::move(**prepared_pipeline) : buildBodyQueryPipeline(body_query, context);
-        prepared_pipeline->reset();
+        auto prepared = prepared_pipeline->take();
+        QueryPipelineBuilder builder = prepared.has_value() ? std::move(*prepared) : buildBodyQueryPipeline(body_query, context);
 
         WriteBufferFromOStream out_buf(os);
         auto out_format = context->getOutputFormat(body_format, out_buf, materializeBlock(builder.getHeader()));

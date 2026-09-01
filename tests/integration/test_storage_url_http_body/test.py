@@ -249,6 +249,26 @@ def test_subquery_body_identical_across_schema_inference_and_read(started_cluste
         assert get_request_bodies() == [expected, expected]
 
 
+def test_subquery_body_with_glob_url_and_parallel_streams(started_cluster):
+    # A glob URL is read by one source per expanded URL, and all of them share the single body
+    # callback the storage created. Those sources can run in parallel, so the pipeline prepared for
+    # the output-format preflight must be handed over atomically: exactly one request may reuse it
+    # and the others must build their own. Reading four URLs with several streams used to race on
+    # the shared prepared pipeline. Assert that every request is answered and that all four bodies
+    # are delivered in full and identical.
+    expected = '{"n":0}\n{"n":1}\n{"n":2}\n'
+    for analyzer in (1, 0):
+        reset_request_count()
+        result = server.query(
+            "SELECT count() FROM url('http://localhost:8002/{a,b,c,d}', JSONEachRow, 'v UInt8', "
+            "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
+            f"SETTINGS enable_analyzer = {analyzer}, max_threads = 4, max_download_threads = 4"
+        )
+        assert result.strip() == "4"
+        assert get_request_count() == 4
+        assert get_request_bodies() == [expected] * 4
+
+
 def test_post_count_without_structure_is_two(started_cluster):
     # With `structure` omitted, schema inference sends one POST and the read sends another, so the
     # body-carrying request (and any subquery) is sent twice. This mirrors the pre-existing
