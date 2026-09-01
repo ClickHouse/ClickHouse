@@ -301,7 +301,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
 {
     Block source_block;
     for (const auto & column : metadata_snapshot->getColumns().getByNames(
-             GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), projection.required_columns))
+             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns))
         source_block.insert({column.type->createColumn(), column.type, column.name});
 
     /// This is a bad approach.
