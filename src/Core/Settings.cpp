@@ -3716,9 +3716,8 @@ It never makes a join spill to disk — that decision belongs to
 [`max_bytes_before_external_join`](#max_bytes_before_external_join)
 and
 [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join).
-Because it is a cap rather than a trigger, setting it at or below an explicitly
-set `max_bytes_before_external_join` makes the query fail before the join can
-spill at all; ClickHouse logs a warning for that combination.
+Because it is a cap rather than a trigger, setting it at or below the spill
+threshold makes the query fail before the join can spill at all.
 
 The limit counts what the hash tables hold, so a join that spilled reaches it as
 each bucket is loaded rather than while the right side is read: it can read more

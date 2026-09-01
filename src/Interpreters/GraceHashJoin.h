@@ -130,11 +130,10 @@ private:
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
     void repartitionCurrentBucket(size_t bucket_index, size_t prev_keys_num, Block leftover);
     bool canForceRepartition() const;
+    bool forcedSpillPending() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
-    bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
-    bool hasMemoryOverflow(const BlocksList & blocks) const;
 
     /// Add bucket_count new buckets
     /// Throws if a bucket creation fails

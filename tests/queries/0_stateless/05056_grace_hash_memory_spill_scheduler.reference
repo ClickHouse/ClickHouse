@@ -1,2 +1,3 @@
 no_scheduler_05056	0
 scheduler_spill_05056	1
+a spill request at the bucket limit does not fail the query

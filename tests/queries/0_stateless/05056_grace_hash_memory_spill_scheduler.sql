@@ -34,5 +34,10 @@ where current_database = currentDatabase() and log_comment in ('no_scheduler_050
     and type = 'QueryFinish' and event_date >= yesterday()
 order by log_comment;
 
+-- A spill request is a hint: at the bucket limit it is ignored, not turned into an error.
+select 'a spill request at the bucket limit does not fail the query';
+select t1.k, t2.x from grace_spill_05056_1 as t1 left join grace_spill_05056_2 as t2 on t1.k = t2.k Format Null
+settings join_algorithm = 'hash', grace_hash_join_max_buckets = 1;
+
 drop table if exists grace_spill_05056_1;
 drop table if exists grace_spill_05056_2;

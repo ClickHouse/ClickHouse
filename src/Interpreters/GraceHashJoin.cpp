@@ -387,9 +387,16 @@ bool GraceHashJoin::checkSizeLimits() const
         ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
+bool GraceHashJoin::forcedSpillPending() const
+{
+    /// A spill the scheduler asked for is a hint, so it must never fail the query on the bucket limit.
+    /// Left armed when the split is impossible: a bucket too small to split may still grow.
+    return force_spill && canForceRepartition();
+}
+
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
-    if (force_spill)
+    if (forcedSpillPending())
         return true;
     /// One row can't be split, avoid loop
     if (total_rows < 2)
@@ -409,30 +416,6 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
             ReadableSize(table_join->sizeLimits().max_bytes), table_join->sizeLimits().max_rows);
 
     return has_overflow;
-}
-
-bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
-{
-    if (force_spill)
-        return true;
-    size_t total_rows = 0;
-    size_t total_bytes = 0;
-    for (const auto & block : blocks)
-    {
-        total_rows += block.rows();
-        total_bytes += block.allocatedBytes();
-    }
-    return hasMemoryOverflow(total_rows, total_bytes);
-}
-
-bool GraceHashJoin::hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const
-{
-    if (force_spill)
-        return true;
-    size_t total_rows = hash_join_->getTotalRowCount();
-    size_t total_bytes = hash_join_->getTotalByteCount();
-
-    return hasMemoryOverflow(total_rows, total_bytes);
 }
 
 GraceHashJoin::Buckets GraceHashJoin::rehashBuckets()
@@ -959,10 +942,9 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
     {
         /// No rows for this bucket, but the scheduler asked us to spill: split what is in memory anyway,
         /// otherwise the request is dropped and it frees nothing.
-        if (force_spill)
         {
             std::lock_guard lock(hash_join_mutex);
-            if (canForceRepartition())
+            if (forcedSpillPending())
                 repartitionCurrentBucket(bucket_index, hash_join->getTotalRowCount(), {});
         }
         return;
@@ -1044,7 +1026,7 @@ void GraceHashJoin::onBuildPhaseFinish()
         return;
 
     /// The last spill the scheduler asked for may have arrived after the final block for this bucket.
-    if (force_spill && current_bucket && canForceRepartition())
+    if (current_bucket && forcedSpillPending())
         repartitionCurrentBucket(current_bucket->idx, hash_join->getTotalRowCount(), {});
 
     hash_join->onBuildPhaseFinish();
