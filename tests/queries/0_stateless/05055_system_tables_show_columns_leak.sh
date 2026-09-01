@@ -150,6 +150,8 @@ dependency_probe() {
         FROM system.tables WHERE database = '${db}' AND name = 'dict_src';
         SELECT has(loading_dependencies_database, '${dbx}') AS hidden_loading_dependency
         FROM system.tables WHERE database = '${db}' AND name = 'leaky_dict';
+        SELECT has(loading_dependencies_table, 'dict_src') AS visible_loading_dependency
+        FROM system.tables WHERE database = '${db}' AND name = 'local_dict';
         SELECT target_database = '${dbx}' AS hidden_target FROM system.tables
             WHERE database = '${db}' AND name = 'mv_cross';
         SELECT target_database = '${db}' AS visible_target FROM system.tables

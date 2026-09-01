@@ -1,0 +1,5 @@
+--- SHOW COLUMNS on the target: the temporary alias exposes the target's schema ---
+1	1	1
+--- target SHOW COLUMNS revoked: schema withheld, row still emitted ---
+0	0	1
+ACCESS_DENIED
