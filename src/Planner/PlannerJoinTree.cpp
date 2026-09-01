@@ -1582,12 +1582,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 table_expression_data.setFilterActions(it->second.filter_actions->clone());
         }
 
-        auto columns = table_expression_data.getColumns();
-        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, original_table_expression, query_context);
-
-        /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
-        /// WHERE/PREWHERE so initiator file listing sees the same predicate as a single-table
-        /// `icebergCluster` read. Same helper as `IStorageCluster::updateQueryWithJoinToSendIfNeeded`.
+        QueryTreeNodePtr wrap_where;
+        QueryTreeNodePtr wrap_prewhere;
         if (can_prefilter_wrapped_table)
         {
             auto copy_left_only = [&](const QueryTreeNodePtr & predicate) -> QueryTreeNodePtr
@@ -1598,17 +1594,41 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 return cloned;
             };
 
-            auto & wrap_query = table_expression->as<QueryNode &>();
             if (parent_query->hasWhere())
-            {
-                if (auto pred = copy_left_only(parent_query->getWhere()))
-                    wrap_query.getWhere() = std::move(pred);
-            }
+                wrap_where = copy_left_only(parent_query->getWhere());
             if (parent_query->hasPrewhere())
+                wrap_prewhere = copy_left_only(parent_query->getPrewhere());
+
+            /// `icebergCluster` reports `WithMergeableState`, so wrap planning does not add a
+            /// `WHERE` `FilterStep` (`isFirstStage` is false). Dummy analysis of
+            /// `count()` of `SELECT * … JOIN` can also miss the predicate. Build the listing
+            /// DAG from the copied conjuncts and include those columns in the wrap projection.
+            QueryTreeNodePtr listing_predicate = wrap_where ? wrap_where : wrap_prewhere;
+            if (listing_predicate)
             {
-                if (auto pred = copy_left_only(parent_query->getPrewhere()))
-                    wrap_query.getPrewhere() = std::move(pred);
+                collectSourceColumns(listing_predicate, planner_context, false /*keep_alias_columns*/);
+                if (!table_expression_data.getFilterActions())
+                {
+                    auto filter_info = buildFilterInfo(
+                        listing_predicate->clone(), original_table_expression, planner_context);
+                    table_expression_data.setFilterActions(std::move(filter_info.actions));
+                }
             }
+        }
+
+        auto columns = table_expression_data.getColumns();
+        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, original_table_expression, query_context);
+
+        /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
+        /// WHERE/PREWHERE so initiator file listing sees the same predicate as a single-table
+        /// `icebergCluster` read. Same helper as `IStorageCluster::updateQueryWithJoinToSendIfNeeded`.
+        if (can_prefilter_wrapped_table)
+        {
+            auto & wrap_query = table_expression->as<QueryNode &>();
+            if (wrap_where)
+                wrap_query.getWhere() = std::move(wrap_where);
+            if (wrap_prewhere)
+                wrap_query.getPrewhere() = std::move(wrap_prewhere);
         }
     }
 
