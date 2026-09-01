@@ -6687,10 +6687,10 @@ bool ReadFromMergeTree::supportsCascadesIdentity() const
         || !projection_index_read_desc.read_infos.empty())
         return false;
 
-    /// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node. Check every DAG the encoding
+    /// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node. Check every DAG the digest
     /// writes, not only the step-level filter that `hasCorrelatedExpressions()` looks at. These checks
     /// are not exhaustive - see the residual gap in Optimizations/Cascades/ARCHITECTURE.md,
-    /// "Cross-Group Expression Identity".
+    /// "Step digests and cross-group identity".
     if (hasCorrelatedExpressions())
         return false;
     if (query_info.filter_actions_dag && query_info.filter_actions_dag->hasCorrelatedColumns())
