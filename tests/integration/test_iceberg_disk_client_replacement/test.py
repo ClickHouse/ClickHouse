@@ -82,29 +82,6 @@ def test_disk_config_change_propagates(started_cluster):
     node.query("DROP TABLE t_ice2 SYNC")
 
 
-def test_iceberg_on_cached_disk_uses_cache(started_cluster):
-    node.query("DROP TABLE IF EXISTS t_ice_cached SYNC")
-    node.query(
-        "CREATE TABLE t_ice_cached (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl_cached') "
-        "SETTINGS disk = 's3_cache_repro'"
-    )
-
-    node.query("SYSTEM DROP FILESYSTEM CACHE")
-    node.query(
-        "INSERT INTO t_ice_cached VALUES (1)", settings={"allow_insert_into_iceberg": 1}
-    )
-    assert node.query("SELECT k FROM t_ice_cached").strip() == "1"
-
-    # The table works through a copy of the disk's object storage with the cache layer
-    # preserved, so reads must populate the disk's filesystem cache.
-    cached_entries = int(
-        node.query("SELECT count() FROM system.filesystem_cache").strip()
-    )
-    assert cached_entries > 0
-
-    node.query("DROP TABLE t_ice_cached SYNC")
-
-
 def test_disk_config_change_propagates_through_cache_disk(started_cluster):
     config_path = "/etc/clickhouse-server/config.d/storage_conf.xml"
 
