@@ -6901,9 +6901,11 @@ Used by the aggregate projection matcher (and any future projection matcher that
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
 )", 0) \
     DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, R"(
-Makes `max_rows_in_join` and `max_bytes_in_join` trigger spilling instead of capping the right side, the way they worked
-before the spill threshold became the single trigger. The join then spills at whichever of the two is reached first, and
-`join_algorithm = 'grace_hash'` accepts a zero spill threshold.
+Restores how `max_rows_in_join` and `max_bytes_in_join` worked before the spill threshold became the single trigger, for
+the part of a join that runs on disk: reaching one of them makes the join spill further instead of stopping the query, so
+it spills at whichever of the two and the spill threshold comes first. `join_algorithm = 'grace_hash'` also accepts a zero
+spill threshold again. The in-memory phase of `hash` / `parallel_hash` keeps treating the two as a hard cap, which is what
+it did before as well.
 
 For queries written against the earlier meaning of these two settings; `compatibility` enables it automatically.
 )", 0) \

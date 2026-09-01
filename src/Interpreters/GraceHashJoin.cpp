@@ -998,6 +998,10 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
 
         if (current_block.rows() > 0)
             hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+
+        /// One split per block, so a bucket can end the build phase above the threshold - a single huge block,
+        /// or one whose rows nearly all belong here. The threshold says when to start spilling, it is not a
+        /// ceiling on the bucket: splitting until it fits would fail outright on data one key cannot split.
     }
 }
 
