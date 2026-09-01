@@ -108,6 +108,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
+    extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
@@ -1186,20 +1187,37 @@ namespace
         /// `isQueryCancelled()` poll — they only poll the query context's interactive cancel
         /// callback, which GRPCServer never installs otherwise. Install one that surfaces both the
         /// explicit `QueryInfo.cancel` and a transport-level abort (recorded in
-        /// `RpcCancelState::transport_cancelled` by the `AsyncNotifyWhenDone` callback), so a cancel
-        /// received while the query is still being built reaches those executors instead of only
-        /// being replayed at status publication. `CompletedPipelineExecutor` and `PreparedSets`
-        /// respond to a `true` return by cancelling the executor, which aborts the set- or
-        /// subquery-build loop at its next poll.
+        /// `RpcCancelState::transport_cancelled` by the `AsyncNotifyWhenDone` callback). It also
+        /// records the cancel on the query status (`CANCELLED_BY_USER`) directly, so a cancel that
+        /// lands while these inner pipelines are running aborts them with
+        /// `QUERY_WAS_CANCELLED_BY_CLIENT` instead of only being replayed at status publication:
+        /// `PullingAsyncPipelineExecutor` (scalar subqueries) invokes the callback but ignores its
+        /// return value, and `PreparedSets` otherwise unwinds a raw `QUERY_WAS_CANCELLED` from
+        /// `executeQuery` when the cancelled set builder produced nothing — both would surface as an
+        /// exception and leave `cancel_reason` `UNDEFINED` without the status side effect. The
+        /// `CompletedPipelineExecutor` (set building) additionally cancels its executor on `true`.
+        /// Cancelling the status is idempotent (`QueryStatus::cancelQuery` short-circuits on
+        /// `is_killed`) and race-safe: `getProcessListElementSafe` reads the query context's process
+        /// list pointer, which is only mutated on the call thread before/after this lambda can run.
         query_context->setInteractiveCancelCallback(
-            [state = cancellation_state, this]()
+            [state = cancellation_state, ctx = query_context, this]()
             {
-                if (want_to_cancel)
-                    return true;
+                bool client_cancel_requested = want_to_cancel;
+                if (!client_cancel_requested)
                 {
                     std::lock_guard lock{state->mutex};
-                    return state->transport_cancelled;
+                    client_cancel_requested = state->transport_cancelled;
                 }
+                if (client_cancel_requested)
+                {
+                    if (auto status = ctx->getProcessListElementSafe())
+                        status->cancelQuery(
+                            CancelReason::CANCELLED_BY_USER,
+                            std::make_exception_ptr(
+                                Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
+                    return true;
+                }
+                return false;
             });
 
         io = ::DB::executeQuery(query, query_context).second;
@@ -1607,7 +1625,21 @@ namespace
     {
         io.onException();
 
-        bool is_clean_cancel = exception.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
+        /// `PreparedSets` can unwind a client cancel out of `::DB::executeQuery` as a raw
+        /// `QUERY_WAS_CANCELLED` (its set-building wrapper throws that directly when the cancelled
+        /// `CompletedPipelineExecutor` produced no set), which bypasses the `QUERY_WAS_CANCELLED_BY_CLIENT`
+        /// replay in `executeQuery()`. When a client cancel or transport abort is pending, treat a raw
+        /// `QUERY_WAS_CANCELLED` the same as code 735 so the clean-cancel wire contract (no exception
+        /// payload) is preserved; a `KILL QUERY` is never misclassified because neither flag is set.
+        bool client_cancel_pending = want_to_cancel;
+        if (!client_cancel_pending)
+        {
+            std::lock_guard lock{cancellation_state->mutex};
+            client_cancel_pending = cancellation_state->transport_cancelled;
+        }
+
+        bool is_clean_cancel = exception.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+            || (exception.code() == ErrorCodes::QUERY_WAS_CANCELLED && client_cancel_pending);
 
         if (is_clean_cancel)
             LOG_INFO(log, "Query was cancelled by the client, finalizing cleanly");
