@@ -116,10 +116,17 @@ void SerializationInfoNullable::syncData()
 
 bool canReuseSerializationInfoForTypeChange(const SerializationInfo & old_info, const SerializationInfo & new_info)
 {
-    return old_info.structureEquals(new_info)
-        || (typeid(old_info) == typeid(new_info)
-            && (dynamic_cast<const SerializationInfoNamed *>(&old_info)
-                || typeid_cast<const SerializationInfoNullable *>(&old_info)));
+    if (old_info.structureEquals(new_info))
+        return true;
+    if (typeid(old_info) != typeid(new_info))
+        return false;
+    if (dynamic_cast<const SerializationInfoNamed *>(&old_info))
+        return true;
+
+    const auto * old_nullable = typeid_cast<const SerializationInfoNullable *>(&old_info);
+    const auto * new_nullable = typeid_cast<const SerializationInfoNullable *>(&new_info);
+    return old_nullable && new_nullable
+        && canReuseSerializationInfoForTypeChange(*old_nullable->getNestedInfo(), *new_nullable->getNestedInfo());
 }
 
 MutableSerializationInfoPtr tryReuseSerializationInfoThroughNullable(

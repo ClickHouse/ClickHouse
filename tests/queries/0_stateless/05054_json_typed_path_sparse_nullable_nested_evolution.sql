@@ -60,3 +60,22 @@ SELECT count(), countIf(j.o.x = 'value')
 FROM json_sparse_nullable_nested_evolution;
 
 DROP TABLE json_sparse_nullable_nested_evolution;
+
+SET mutations_sync = 2;
+
+CREATE TABLE json_sparse_nullable_carrier_change
+(
+    j Nullable(JSON(x String, max_dynamic_paths = 0))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    ratio_of_defaults_for_sparse_serialization = 0.5,
+    serialization_info_version = 'with_subcolumns',
+    nullable_serialization_version = 'allow_sparse';
+
+INSERT INTO json_sparse_nullable_carrier_change SELECT NULL FROM numbers(10);
+ALTER TABLE json_sparse_nullable_carrier_change MODIFY COLUMN j Nullable(String);
+SELECT count(), countIf(isNull(j)) FROM json_sparse_nullable_carrier_change;
+
+DROP TABLE json_sparse_nullable_carrier_change;
