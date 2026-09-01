@@ -1066,29 +1066,35 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${MUT_DB}"
 # `InterpreterAlterQuery::executeToTable` resolves an unqualified `ALTER` target with the default
 # `ResolveAll`, so a session temporary table shadows the persistent one, while `InterpreterUpdateQuery`
 # and `InterpreterDeleteQuery` resolve theirs with an explicit `ResolveOrdinary` and are never shadowed.
-# The mutation preflight has to probe the table the statement will really hit: probing the persistent
-# `MergeTree` for a shadowed `ALTER` would let the hook detach the sources of a statement that fails on
-# its temporary target before reading any of them.
+# The mutation preflight has to follow the same namespace: for a shadowed `ALTER` the statement qualifies
+# the tables of its predicate with the temporary target's database (`_temporary_and_external_tables`) and
+# dies on that, so the same-named persistent table in the session's database is never read and must not be
+# detached — which is what would happen if the preflight probed the persistent target instead.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_shadow"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_shadow (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a"
+
 function check_source_not_detached_for_shadowed_alter()
 {
     query="$1"
-    check_if_detached_impl "CREATE TEMPORARY TABLE t_reattach_mut_mt (a UInt64) ENGINE = Memory; $query" "t_reattach_mut_src"
+    check_if_detached_impl "CREATE TEMPORARY TABLE t_reattach_mut_shadow (a UInt64, b UInt64) ENGINE = Memory; $query" "t_reattach_mut_src"
     if [ "$REATTACH_STATUS" -eq 0 ]; then
         echo "FAIL (query unexpectedly succeeded)"
-    elif ! echo "$REATTACH_OUTPUT" | grep -q "NOT_IMPLEMENTED"; then
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "DATABASE_ACCESS_DENIED"; then
         echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
     elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mut_src"; then
-        echo "FAIL (source detached for an ALTER failing on its shadowing temporary target)"
+        echo "FAIL (source detached for an ALTER hitting its shadowing temporary target)"
     else
         echo "OK"
     fi
 }
 
-check_source_not_detached_for_shadowed_alter "ALTER TABLE t_reattach_mut_mt DELETE WHERE a IN (SELECT a FROM t_reattach_mut_src)"
-check_source_not_detached_for_shadowed_alter "ALTER TABLE t_reattach_mut_mt UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)"
+check_source_not_detached_for_shadowed_alter "ALTER TABLE t_reattach_mut_shadow DELETE WHERE a IN (SELECT a FROM t_reattach_mut_src)"
+check_source_not_detached_for_shadowed_alter "ALTER TABLE t_reattach_mut_shadow UPDATE b = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)"
 
 # The same shapes without the shadowing temporary table do reach and randomize the source.
-check_if_detached "ALTER TABLE t_reattach_mut_mt UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS mutations_sync = 1" "t_reattach_mut_src"
+check_if_detached "ALTER TABLE t_reattach_mut_shadow UPDATE b = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS mutations_sync = 1" "t_reattach_mut_src"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_shadow"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_mt"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_log"
