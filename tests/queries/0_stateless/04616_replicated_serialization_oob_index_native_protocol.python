@@ -368,9 +368,122 @@ def truncatedElementsScenario():
         print("truncated elements: caught expected exception INCORRECT_DATA")
 
 
+def sendReplicatedBlockWithInvalidIndexTypeSize(s):
+    # The index type width is read straight off the wire; an unsupported value must be
+    # rejected with INCORRECT_DATA instead of hitting the switch's LOGICAL_ERROR default.
+    limit = 4
+
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)  # table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(limit, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("UInt64", ba)
+    ba.append(1)  # has_custom serialization
+    ba.append(4)  # KindStackBinarySerializationType::REPLICATED
+
+    # ReplicatedIndexes substream: correct row count, but an unsupported index type width.
+    writeVarUInt(limit, ba)
+    ba.append(3)  # size_of_index_type = 3 -- not one of sizeof(UInt8/16/32/64)
+
+    s.sendall(ba)
+    s.shutdown(socket.SHUT_WR)
+
+
+def invalidIndexTypeSizeScenario():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        connectAndStartInsert(s)
+        sendReplicatedBlockWithInvalidIndexTypeSize(s)
+        expectIncorrectData(s, "Unexpected size of index type")
+        print("invalid index type size: caught expected exception INCORRECT_DATA")
+
+
+def sendReplicatedBlockWithIndexRowCountMismatch(s):
+    # The index row count is read straight off the wire; a value that disagrees with the
+    # block row count must be rejected with INCORRECT_DATA, not LOGICAL_ERROR.
+    limit = 4
+
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)  # table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(limit, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("UInt64", ba)
+    ba.append(1)  # has_custom serialization
+    ba.append(4)  # KindStackBinarySerializationType::REPLICATED
+
+    # ReplicatedIndexes substream: advertise a row count that disagrees with the block.
+    writeVarUInt(limit + 1, ba)
+
+    s.sendall(ba)
+    s.shutdown(socket.SHUT_WR)
+
+
+def indexRowCountMismatchScenario():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        connectAndStartInsert(s)
+        sendReplicatedBlockWithIndexRowCountMismatch(s)
+        expectIncorrectData(s, "Unexpected number of rows in indexes column")
+        print("index row count mismatch: caught expected exception INCORRECT_DATA")
+
+
+def sendSparseOverReplicatedBlock(s):
+    # A Sparse-over-Replicated kind stack makes SerializationSparse hand its values column
+    # (a fresh ColumnSparse always seeds one default value) to the nested Replicated
+    # deserialization, which then hits the "non-empty column" check. That check is decided
+    # by the wire-supplied kind stack and must be INCORRECT_DATA, not LOGICAL_ERROR.
+    END_OF_GRANULE_FLAG = 1 << 62
+    limit = 4
+
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)  # table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(limit, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("UInt64", ba)
+    ba.append(1)  # has_custom serialization
+    # KindStackBinarySerializationType::COMBINATION: {Default, Replicated, Sparse}, which
+    # wraps as Sparse(Replicated(UInt64)) so Sparse is the outer serialization.
+    ba.append(5)  # COMBINATION
+    writeVarUInt(3, ba)  # number of kinds
+    ba.append(0)  # Kind::DEFAULT
+    ba.append(3)  # Kind::REPLICATED
+    ba.append(1)  # Kind::SPARSE
+
+    # SparseOffsets substream: a single end-of-granule group covering all rows with no
+    # non-default values, so offset reading returns cleanly before Replicated is invoked.
+    writeVarUInt(limit | END_OF_GRANULE_FLAG, ba)
+
+    s.sendall(ba)
+    s.shutdown(socket.SHUT_WR)
+
+
+def sparseOverReplicatedScenario():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        connectAndStartInsert(s)
+        sendSparseOverReplicatedBlock(s)
+        expectIncorrectData(s, "Reading into non-empty column ColumnReplicated")
+        print("sparse over replicated: caught expected exception INCORRECT_DATA")
+
+
 def main():
     outOfBoundsIndexScenario()
     truncatedElementsScenario()
+    invalidIndexTypeSizeScenario()
+    indexRowCountMismatchScenario()
+    sparseOverReplicatedScenario()
 
 
 if __name__ == "__main__":

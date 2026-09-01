@@ -8,4 +8,6 @@
     <query>SELECT number, count() FROM numbers_mt(5000000) GROUP BY number FORMAT Null;</query>
     <query>SELECT number, count() FROM numbers_mt(15000000) GROUP BY number FORMAT Null;</query>
     <query>SELECT number, count() FROM numbers_mt(30000000) GROUP BY number FORMAT Null;</query>
+    <query>SELECT number, count() FROM numbers_mt(60000000) GROUP BY number FORMAT Null;</query>
+    <query>SELECT number, count() FROM numbers_mt(100000000) GROUP BY number FORMAT Null;</query>
 </test>

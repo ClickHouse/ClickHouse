@@ -23,7 +23,9 @@ namespace
     /// not accepted from a `CREATE DICTIONARY` query in the first place).
     bool isSecretKey(const String & key)
     {
-        return key == "password" || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem";
+        return key == "password"
+            || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
+            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem";
     }
 }
 

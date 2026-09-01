@@ -1,0 +1,227 @@
+---
+slug: /integrations/probedeck
+sidebarTitle: 'ProbeDeck'
+description: 'Connectez ProbeDeck sur iOS ou iPadOS à ClickHouse Cloud ou à un serveur ClickHouse auto-hébergé.'
+title: 'Connecter ProbeDeck à ClickHouse'
+doc_type: 'guide'
+keywords: ['probedeck', 'sql client', 'ios', 'ipados', 'mobile', 'monitoring', 'on-call']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+ProbeDeck est un client iOS et iPadOS qui permet de vérifier l’état d’un serveur ClickHouse, d’inspecter
+les tables `system` et d’exécuter du SQL. Il se connecte à l’interface HTTP de ClickHouse via le réseau de l’appareil
+ou par l’intermédiaire d’un bastion SSH ; aucun serveur relais n’est nécessaire.
+
+<div id="before-you-begin">
+  ## Avant de commencer
+</div>
+
+* Installez [ProbeDeck depuis l’App Store](https://apps.apple.com/app/id6791261174).
+* Utilisez iOS ou iPadOS 17.0 ou une version ultérieure.
+* Autorisez l’appareil à accéder au point de terminaison HTTP ou HTTPS de ClickHouse via son réseau, un VPN ou un
+  bastion SSH.
+* Créez un utilisateur ClickHouse ayant accès aux bases de données que vous souhaitez interroger.
+* Accordez à l’utilisateur l’accès `SELECT` aux tables `system` pertinentes pour la supervision.
+
+| ProbeDeck                   | ClickHouse Cloud | ClickHouse auto-hébergé                    | Remarques                                                                                                                                                      |
+| --------------------------- | ---------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1.7 ou version ultérieure | Service actuel   | Aucune version minimale du serveur imposée | Utilise l’interface HTTP(S). Testez la connexion et vérifiez chaque section de supervision en fonction de la version de votre serveur et de vos autorisations. |
+
+Certaines sections de supervision dépendent de tables de logs facultatives ou de tables système plus récentes. Par exemple,
+`system.server_settings`, que ProbeDeck utilise pour la limite de mémoire configurée, nécessite ClickHouse
+23.3 ou une version ultérieure. ProbeDeck indique qu’une section concernée est limitée lorsque sa source n’est pas disponible.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+1. ProbeDeck envoie des requêtes SQL au point de terminaison HTTP(S) de ClickHouse.
+2. Il lit les données de monitoring dans les tables `system` à l’aide de l’utilisateur ClickHouse configuré.
+3. L’application affiche les résultats des requêtes et les vues de monitoring sur l’appareil. Un bastion SSH peut acheminer la
+   même connexion HTTP(S) lorsque le point de terminaison n’est pas directement accessible depuis l’appareil.
+
+<div id="connect-to-clickhouse-cloud">
+  ## Se connecter à ClickHouse Cloud
+</div>
+
+<Steps>
+  <Step title="Récupérer les informations de connexion au service" id="gather-cloud-details">
+    Dans la console ClickHouse Cloud, ouvrez votre service, sélectionnez **Connect**, puis choisissez **HTTPS**.
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="Ajouter la connexion dans ProbeDeck" id="add-cloud-connection">
+    1. Dans l’écran **Connections**, appuyez sur **+**.
+    2. Saisissez un nom de connexion et l’hôte sans `https://`.
+    3. Définissez **Port** sur `8443` et activez **TLS**.
+    4. Saisissez le nom d’utilisateur et le mot de passe de la base de données indiqués dans la boîte de dialogue **Connect**. Le nom de la base de données est
+       facultatif.
+    5. Appuyez sur **Test Connection**. Après une vérification réussie, ProbeDeck affiche la version du serveur et le temps d’aller-retour.
+    6. Appuyez sur **Save**.
+
+    ProbeDeck authentifie les requêtes SQL envoyées au point de terminaison de service à l’aide de ces identifiants de base de données.
+    ClickHouse Cloud utilise les clés au niveau de l’organisation de la page **API Keys** pour les points de terminaison de Cloud API et de Query API. Le processus de connexion SQL de ProbeDeck n’utilise pas ces clés.
+
+    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="Formulaire de connexion ProbeDeck configuré pour HTTPS sur le port 8443 avec un nom d’utilisateur ClickHouse" />
+  </Step>
+</Steps>
+
+<div id="connect-to-self-hosted-clickhouse">
+  ## Se connecter à une instance ClickHouse auto-hébergée
+</div>
+
+<Steps>
+  <Step title="Choisir le point de terminaison HTTP" id="choose-self-hosted-endpoint">
+    Utilisez le port `8123` pour l’interface HTTP non chiffrée par défaut. Pour HTTPS, activez **TLS** et utilisez le
+    port configuré sur votre serveur ; `8443` est un choix courant.
+
+    <Note>
+      Les ports `9000` et `9440` sont utilisés par le protocole natif de ClickHouse. ProbeDeck utilise l’interface HTTP(S) :
+      saisissez donc le port HTTP du serveur.
+    </Note>
+  </Step>
+
+  <Step title="Ajouter et tester la connexion" id="add-self-hosted-connection">
+    1. Dans l’écran **Connections**, appuyez sur **+**.
+    2. Saisissez l’hôte du serveur sans schéma d’URL.
+    3. Définissez le port HTTP(S) et l’option TLS.
+    4. Saisissez le nom d’utilisateur ClickHouse, le mot de passe et, éventuellement, la base de données.
+    5. Appuyez sur **Test Connection**, puis sur **Save**.
+
+    Pour un serveur sur le réseau local, iOS peut demander l’autorisation d’accéder au réseau local. Connectez d’abord l’appareil à
+    son VPN lorsque le point de terminaison n’est accessible que depuis un réseau d’entreprise.
+  </Step>
+</Steps>
+
+<div id="connect-through-an-ssh-bastion">
+  ## Se connecter via un bastion SSH
+</div>
+
+Activez **SSH Tunnel** dans le formulaire de connexion et renseignez :
+
+1. L’hôte du bastion et le port SSH (`22` par défaut).
+2. Le nom d’utilisateur SSH.
+3. Un mot de passe SSH ou une clé privée.
+
+ProbeDeck ouvre un canal SSH `direct-tcpip` entre le bastion, l’hôte ClickHouse et le port
+HTTP(S) indiqués dans la section **Server**. Lors de la première connexion, comparez l’empreinte
+SHA-256 de la clé d’hôte du bastion avec la valeur fournie par l’administrateur du serveur avant de l’accepter.
+
+<div id="configure-authentication-and-tls">
+  ## Configurer l’authentification et TLS
+</div>
+
+ProbeDeck envoie le nom d’utilisateur et le mot de passe de la base de données dans les en-têtes de requête
+`X-ClickHouse-User` et `X-ClickHouse-Key`. Il ne place pas les identifiants dans l’URL.
+
+Pour le TLS mutuel, activez **TLS Client Certificate** et importez un fichier PKCS#12 (`.p12`) contenant
+le certificat client et la clé privée, puis saisissez sa phrase secrète.
+
+Lorsqu’un point de terminaison auto-hébergé présente un certificat auto-signé ou un certificat émis par une
+CA privée, ProbeDeck affiche son empreinte SHA-256, son émetteur, son sujet et sa période de validité. Comparez
+l’empreinte à la valeur fournie par l’administrateur du serveur avant de l’accepter. ProbeDeck associe cette
+décision à la connexion ; tout changement de certificat interrompt la connexion jusqu’à ce que vous le vérifiiez.
+
+ProbeDeck stocke les secrets de connexion et les clés importées dans le trousseau iOS de l’appareil.
+
+<div id="monitor-clickhouse">
+  ## Surveiller ClickHouse
+</div>
+
+Ouvrez la connexion enregistrée et sélectionnez **Monitor**. Le tableau de bord récapitule les sources suivantes :
+
+| Domaine                                                 | Source ClickHouse                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Requêtes en cours, temps écoulé, mémoire et lignes lues | `system.processes`                                                        |
+| État de la réplication et file d’attente                | `system.replicas`, `system.replication_queue`                             |
+| Disques, parts et merges                                | `system.disks`, `system.parts`, `system.merges`                           |
+| Mutations                                               | `system.mutations`                                                        |
+| Métriques de la mémoire et du serveur                   | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
+| Débits historiques des requêtes et des disques          | `system.metric_log`, `system.asynchronous_metric_log`                     |
+
+<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="Tableau de bord de surveillance ProbeDeck affichant les requêtes en cours, la réplication, les disques, les parts, les mutations, les merges, le débit de requêtes et la mémoire" />
+
+Cliquez sur **Running queries** pour trier les requêtes actives par temps écoulé et examiner la mémoire et les lignes lues.
+
+<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="Liste des requêtes en cours de ProbeDeck triée par temps écoulé" />
+
+<div id="query-the-uk-property-price-dataset">
+  ## Interroger le jeu de données UK Property Price
+</div>
+
+Cet exemple utilise le [jeu de données UK Property Price](/fr/get-started/sample-datasets/uk-price-paid).
+Chargez le jeu de données dans `uk_price_paid`, puis :
+
+1. Ouvrez la connexion et sélectionnez **Data**.
+2. Ouvrez l’éditeur SQL.
+3. Exécutez cette requête en lecture seule et limitée :
+
+```sql
+SELECT
+    town,
+    count() AS sales,
+    round(avg(price)) AS average_price
+FROM uk_price_paid
+GROUP BY town
+ORDER BY sales DESC
+LIMIT 10
+```
+
+Le résultat doit contenir dix villes, avec leur nombre de transactions et leur prix moyen.
+
+<div id="known-limits">
+  ## Limites connues
+</div>
+
+* ProbeDeck fonctionne sous iOS et iPadOS 17.0 ou version ultérieure.
+* Les utilisateurs de la version gratuite peuvent enregistrer une seule connexion à la fois. Sa suppression libère l’emplacement ; ProbeDeck Pro permet
+  d’enregistrer un nombre illimité de connexions.
+* Il prend en charge l’interface HTTP(S) de ClickHouse, mais pas le protocole natif.
+* ProbeDeck charge les résultats SQL par pages de 200 lignes et limite chaque requête à 10 000 lignes. Utilisez une
+  clause `WHERE` sélective et `LIMIT` pour les grandes tables.
+* La visibilité dans Monitoring dépend des privilèges de l’utilisateur ClickHouse et des tables de logs facultatives.
+* L’appareil doit pouvoir atteindre le point de terminaison via son réseau, un VPN ou le tunnel SSH intégré.
+* Monitoring et le SQL en lecture seule ne nécessitent aucun achat intégré. `KILL QUERY`, `KILL MUTATION`,
+  les instructions d’écriture et DDL, ainsi que d’autres actions opérationnelles, nécessitent ProbeDeck Pro.
+
+<div id="troubleshooting">
+  ## Résolution des problèmes
+</div>
+
+<Accordion title="Échec de l'authentification">
+  Copiez à nouveau le nom d&#39;utilisateur et le mot de passe de la base de données. Pour le point de terminaison du service ClickHouse Cloud, utilisez les
+  identifiants de la base de données figurant dans la boîte de dialogue **Connect** du service. Ne les remplacez pas par une clé au niveau de l&#39;organisation
+  provenant de la page **API Keys** de ClickHouse Cloud.
+</Accordion>
+
+<Accordion title="La connexion a été refusée ou a expiré">
+  Vérifiez que l&#39;appareil peut atteindre l&#39;hôte et le port HTTP(S). Vérifiez la liste d&#39;accès IP Cloud, le VPN,
+  le pare-feu et le mappage des ports. N&#39;utilisez pas les ports du protocole natif `9000` ou `9440`.
+</Accordion>
+
+<Accordion title="Monitoring indique des autorisations limitées">
+  L&#39;utilisateur ClickHouse ne peut pas lire une ou plusieurs tables `system` requises. Demandez à l&#39;administrateur du serveur
+  les privilèges `SELECT` minimaux requis pour les sections de monitoring que vous prévoyez d&#39;utiliser, puis reconnectez-vous.
+</Accordion>
+
+<Accordion title="L'empreinte TLS a changé">
+  Demandez à l&#39;administrateur du serveur de confirmer la rotation du certificat avant d&#39;accepter la nouvelle
+  empreinte. Une modification inattendue peut indiquer un point de terminaison différent ou un chemin d&#39;interception TLS.
+</Accordion>
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* Consultez le [site web de ProbeDeck](https://probedeck.app) pour plus d’informations sur le produit.
+ * Consultez la [documentation de l’interface HTTP de ClickHouse](/fr/concepts/features/interfaces/http) pour configurer le serveur.

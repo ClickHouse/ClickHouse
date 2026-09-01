@@ -28,6 +28,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
+#include <Common/MemorySpillScheduler.h>
 
 #if defined(OS_LINUX)
 #   include <sys/time.h>
@@ -130,9 +131,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createForMaterializedView
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
-    : master_thread_id(parent->master_thread_id)
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
@@ -144,9 +145,9 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
 {
 }
 
-// c-tor for method createForFlushAsyncInsertQueue
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
-    : master_thread_id(CurrentThread::get().thread_id)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
@@ -250,7 +251,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
-        res_group = std::make_shared<ThreadGroup>(current_group);
+        res_group = ThreadGroupPtr(new ThreadGroup(current_group));
     }
     else
     {
@@ -261,9 +262,14 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
+ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
 {
-    auto res_group = std::make_shared<ThreadGroup>(context, parent);
+    return ThreadGroupPtr(new ThreadGroup(parent_thread_group));
+}
+
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group)
+{
+    auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent_thread_group));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
@@ -346,7 +352,9 @@ void ThreadStatus::applyQuerySettings()
         SignalUnsafeMutationGuard guard(is_query_id_usable);
         query_id = query_context_ptr->getCurrentQueryId();
     }
-    initQueryProfiler();
+
+    if (boundToOSThread())
+        initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
@@ -374,7 +382,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     thread_attach_time.setUp();
 
-    thread_group_->linkThread(thread_id);
+    if (boundToOSThread())
+        thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
     try
     {
@@ -396,9 +405,10 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl");
         });
 
-        initPerformanceCounters();
+        if (boundToOSThread())
+            initPerformanceCounters();
 
-        if (thread_group->os_threads_nice_value != 0)
+        if (boundToOSThread() && thread_group->os_threads_nice_value != 0)
         {
             OSThreadNiceValue::set(thread_group->os_threads_nice_value);
         }
@@ -420,8 +430,11 @@ void ThreadStatus::detachFromGroup()
     /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
-    finalizeQueryProfiler();
-    finalizePerformanceCounters();
+    if (boundToOSThread())
+    {
+        finalizeQueryProfiler();
+        finalizePerformanceCounters();
+    }
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
@@ -432,9 +445,10 @@ void ThreadStatus::detachFromGroup()
     /// total_memory_tracker_sample_probability rather than the query's stale config.
     resolveMemorySampleConfig();
 
-    thread_group->unlinkThread();
+    if (boundToOSThread())
+        thread_group->unlinkThread();
 
-    if (thread_group->os_threads_nice_value != 0)
+    if (boundToOSThread() && thread_group->os_threads_nice_value != 0)
     {
         OSThreadNiceValue::set(0);
     }
@@ -536,6 +550,8 @@ void ThreadStatus::initPerformanceCounters()
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
     memory_tracker.setDescription("Thread");
+    progress_in.reset();
+    progress_out.reset();
 
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();

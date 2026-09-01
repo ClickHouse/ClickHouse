@@ -68,15 +68,17 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
                 data->size(), last_offset);
     }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
     /// Matching the last offset with the size of the nested column is not enough: a decreasing offset
     /// in the middle makes `sizeAt` underflow to a huge value, and the consumers read the nested column
     /// out of bounds even though the last offset is correct. The offsets have to be non-decreasing.
-    /// The scan is linear, but it is cheap compared to filling the offsets in the first place.
+    /// The scan is linear - a heavy assertion, hence debug and sanitizer builds only.
     const auto * non_monotonic = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater<>());
     if (non_monotonic != offsets_data.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "offsets_column is not monotonically increasing: the offset {} at position {} is greater than the next offset {}",
             *non_monotonic, non_monotonic - offsets_data.begin(), *(non_monotonic + 1));
+#endif
 
     /** NOTE
       * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
