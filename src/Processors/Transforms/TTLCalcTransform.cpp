@@ -61,9 +61,9 @@ TTLCalcTransform::TTLCalcTransform(
     {
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
-            /// Preserve only for caller-declared expired columns, which the part no longer stores.
-            /// A column merely absent from this stream (recalculation reads only inputs) is rebuilt.
-            if (!header_->has(name) && expired_columns.contains(name))
+            /// Physical expiry is what the caller declares, not header presence: a merge keeps an
+            /// expired column in the header when an index or projection still reads it.
+            if (expired_columns.contains(name))
             {
                 preserved_column_ttls.emplace_back(name, old_ttl_infos.columns_ttl[name]);
                 continue;
