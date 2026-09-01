@@ -196,8 +196,7 @@ public:
     virtual bool canSpillToDisk() const { return false; }
     /// How many bytes of the right side are still sitting in memory and could go to disk.
     virtual size_t getSpillableBytes() const { return 0; }
-    /// Move the right side to disk at the next opportunity. Best-effort: `GraceHashJoin` acts on it when the
-    /// next right block lands in the bucket it is building, so a request with no such block left is dropped.
+    /// Move the right side to disk at the next opportunity, at the latest when the build phase ends.
     virtual void requestSpill() { }
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.

@@ -127,6 +127,10 @@ private:
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);
 
+    /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
+    void repartitionCurrentBucket(size_t bucket_index, size_t prev_keys_num, Block leftover);
+    bool canForceRepartition() const;
+
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
     bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;

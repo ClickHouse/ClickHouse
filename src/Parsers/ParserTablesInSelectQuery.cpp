@@ -1009,7 +1009,8 @@ To let a join keep running by spilling the right side to disk instead of failing
 
 These are the single spill trigger for every hash-based algorithm, including `grace_hash`. The `join_algorithm` you pick
 decides how a join spills — `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect
-it in memory and switch over when the threshold is crossed — not whether these settings apply.
+it in memory and switch over when the threshold is crossed — not whether these settings apply. The one exception is
+`legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both thresholds and spills on the two hard caps instead.
 
 ## Examples {#examples}
 
