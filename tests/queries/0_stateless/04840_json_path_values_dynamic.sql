@@ -341,6 +341,18 @@ SETTINGS force_data_skipping_indices = 'shared_path_tokens', text_index_like_min
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic
 WHERE multiSearchAnyUTF8(shared_path.text, ['43'])
 SETTINGS force_data_skipping_indices = 'shared_path_tokens', text_index_like_min_pattern_length = 2;
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic
+WHERE startsWith(shared_path.text, '4')
+SETTINGS force_data_skipping_indices = 'shared_path_tokens', text_index_like_min_pattern_length = 1;
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic
+WHERE shared_path.text LIKE '4%'
+SETTINGS force_data_skipping_indices = 'shared_path_tokens', text_index_like_min_pattern_length = 1;
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic
+WHERE shared_path.text ILIKE '4%'
+SETTINGS force_data_skipping_indices = 'shared_path_tokens', text_index_like_min_pattern_length = 1;
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic
+WHERE match(shared_path.text, '4')
+SETTINGS force_data_skipping_indices = 'shared_path_tokens', text_index_like_min_pattern_length = 1;
 
 SELECT 'Dynamic numeric edges';
 SELECT arraySort(groupArrayIf(id, shared_path.zero = 0.0)) FROM json_index_tokens_dynamic;
