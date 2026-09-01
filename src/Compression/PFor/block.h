@@ -138,15 +138,15 @@ inline size_t blockEncode(const T * residuals, unsigned cnt, uint8_t * out) noex
     return static_cast<size_t>(p - out);
 }
 
-// Reconstruct values from residuals in `out` (prefix sum + carry). SIMD for uint32, scalar for uint64; plus is 0 for d0, 1 for d1.
-template <typename T>
-inline ALWAYS_INLINE void deltaApply(T * out, unsigned cnt, T & prev, uint32_t plus) noexcept
+// Reconstruct values from residuals in `out` (prefix sum + carry). SIMD for uint32, scalar for uint64; `plus` is 0 for d0, 1 for d1.
+template <typename T, uint32_t plus>
+inline ALWAYS_INLINE void deltaApply(T * out, unsigned cnt, T & prev) noexcept
 {
 #if PFOR_HAS_VERTICAL
     if constexpr (sizeof(T) == 4)
     {
         uint32_t carry = static_cast<uint32_t>(prev);
-        deltaDecode32(reinterpret_cast<uint32_t *>(out), cnt, carry, plus);
+        deltaDecode32<plus>(reinterpret_cast<uint32_t *>(out), cnt, carry);
         prev = static_cast<T>(carry);
         return;
     }
@@ -169,7 +169,6 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
         return !end || (from <= end && static_cast<size_t>(end - from) >= bytes);
     };
 
-    const uint32_t plus = (mode == Delta::d1) ? 1u : 0u;
     if (!need(in, 1))
         return 0;
     const uint8_t b0 = in[0];
@@ -181,8 +180,10 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
         const T c = static_cast<T>(loadLE(in + 1, k));
         for (unsigned i = 0; i < cnt; ++i)
             out[i] = c;
-        if (mode != Delta::none)
-            deltaApply<T>(out, cnt, prev, plus);
+        if (mode == Delta::d1)
+            deltaApply<T, 1>(out, cnt, prev);
+        else if (mode == Delta::d0)
+            deltaApply<T, 0>(out, cnt, prev);
         return 1u + k;
     }
 
@@ -214,7 +215,10 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
         if (mode != Delta::none && e == 0 && cnt == BLOCK && b >= 1 && b <= 31)
         {
             uint32_t carry = static_cast<uint32_t>(prev);
-            unpackVertical32FusedDelta(p, b, reinterpret_cast<uint32_t *>(out), carry, plus);
+            if (mode == Delta::d1)
+                unpackVertical32FusedDelta<1>(p, b, reinterpret_cast<uint32_t *>(out), carry);
+            else
+                unpackVertical32FusedDelta<0>(p, b, reinterpret_cast<uint32_t *>(out), carry);
             prev = static_cast<T>(carry);
             return static_cast<size_t>((p + base_bytes) - in);
         }
@@ -243,8 +247,10 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
             out[pos[j]] |= patches[j] << b;
         }
     }
-    if (mode != Delta::none)
-        deltaApply<T>(out, cnt, prev, plus);
+    if (mode == Delta::d1)
+        deltaApply<T, 1>(out, cnt, prev);
+    else if (mode == Delta::d0)
+        deltaApply<T, 0>(out, cnt, prev);
     return static_cast<size_t>(p - in);
 }
 

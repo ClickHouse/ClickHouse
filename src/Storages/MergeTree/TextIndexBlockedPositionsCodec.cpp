@@ -116,11 +116,6 @@ void emitRanks(
     const size_t num_positions = std::accumulate(local_ranks.begin(), local_ranks.end(), size_t{},
         [&doc_offsets](size_t sum, UInt32 rank) { return sum + (doc_offsets[rank + 1] - doc_offsets[rank]); });
 
-    /// Offsets are UInt32; fail closed instead of silently wrapping the cumulative count.
-    if (positions.size() + num_positions > std::numeric_limits<UInt32>::max())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
-
     const size_t base = positions.size();
     positions.resize(base + num_positions);
     UInt32 * out = positions.data() + base;

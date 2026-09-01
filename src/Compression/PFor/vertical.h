@@ -121,7 +121,8 @@ inline ALWAYS_INLINE void unpackVertical32(const uint8_t * in, unsigned b, uint3
 // array, with a running carry across blocks. `plus` is 0 for d0 and 1 for d1 (gap-1).
 // Replaces the scalar prefix-sum: each 4-lane group does a 2-step in-vector scan
 // (lane-wise left shifts, which lower to a single byte-shift each) plus the carry.
-inline ALWAYS_INLINE void deltaDecode32(uint32_t * out, unsigned cnt, uint32_t & carry, uint32_t plus) noexcept
+template <uint32_t plus>
+inline ALWAYS_INLINE void deltaDecode32(uint32_t * out, unsigned cnt, uint32_t & carry) noexcept
 {
     const v4u32 plusv = {plus, plus, plus, plus};
     uint32_t c = carry;
@@ -149,8 +150,9 @@ inline ALWAYS_INLINE void deltaDecode32(uint32_t * out, unsigned cnt, uint32_t &
 // prefix-summed with the running carry and stored as final values, so there is no second
 // pass over the output. Valid only for exception-free blocks (residuals == decoded base).
 // plus is 0 for d0, 1 for d1.
+template <uint32_t plus>
 inline ALWAYS_INLINE void unpackVertical32FusedDelta(
-    const uint8_t * in, unsigned b, uint32_t * out, uint32_t & carry, uint32_t plus) noexcept
+    const uint8_t * in, unsigned b, uint32_t * out, uint32_t & carry) noexcept
 {
     const uint32_t m = (1u << b) - 1u; // b in [1,31]
     const v4u32 mask = {m, m, m, m};
