@@ -1420,6 +1420,9 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
         if (skip_drain)
             read_context->skipDrainOnCancel();
 
+        /// `cancel` destroys the coroutine, which unwinds the fiber and logs the fiber span right away,
+        /// so the status must be buffered as SpanStatus::OK before it, otherwise the span is logged with `UNSET`.
+        read_context->setSpanStatus(OpenTelemetry::SpanStatus::OK, {});
         read_context->cancel();
     }
 
