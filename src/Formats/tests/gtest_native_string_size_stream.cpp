@@ -241,9 +241,9 @@ TEST(NativeStringSizeStream, RejectionLeavesTheColumnUnchanged)
     const size_t num_rows_before = column->size();
     const size_t num_chars_before = column->getChars().size();
 
-    /// Two cumulative offsets whose difference is above `MAX_STRING_SIZE`, and a data stream that is
-    /// nowhere near large enough for them.
-    const UInt64 offsets[2] = {8, 8 + SerializationString::MAX_STRING_SIZE + 1};
+    /// Two cumulative offsets, continuing the offsets already in the column, whose difference is above
+    /// `MAX_STRING_SIZE`, and a data stream that is nowhere near large enough for them.
+    const UInt64 offsets[2] = {num_chars_before + 8, num_chars_before + 9 + SerializationString::MAX_STRING_SIZE};
     String offsets_data(reinterpret_cast<const char *>(offsets), sizeof(offsets));
     String chars_data(16, 'z');
 
@@ -266,7 +266,7 @@ TEST(NativeStringSizeStream, RejectionLeavesTheColumnUnchanged)
     int error_code = 0;
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, 2, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(*column, 2, settings, state, nullptr);
     }
     catch (const Exception & e)
     {
@@ -277,6 +277,6 @@ TEST(NativeStringSizeStream, RejectionLeavesTheColumnUnchanged)
     ASSERT_EQ(column->size(), num_rows_before);
     ASSERT_EQ(column->getChars().size(), num_chars_before);
     ASSERT_EQ(column->getOffsets().back(), column->getChars().size());
-    ASSERT_EQ(column->getDataAt(0).toString(), "previous");
-    ASSERT_EQ(column->getDataAt(1).toString(), "rows");
+    ASSERT_EQ(column->getDataAt(0), "previous");
+    ASSERT_EQ(column->getDataAt(1), "rows");
 }
