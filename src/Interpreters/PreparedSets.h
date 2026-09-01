@@ -60,6 +60,13 @@ public:
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 
+    /// The same, but never runs the subquery that fills the set: returns null if it is not built yet.
+    /// Its only caller is `ConditionSelectivityEstimator`, which wants a single selectivity number;
+    /// every other caller consumes the elements to prune or read data and so is entitled to build.
+    /// A cost model that executes a subquery gives planning a side effect of unbounded cost, for a
+    /// result the plan may end up not needing at all, so any further consult-only caller belongs here.
+    SetPtr getOrderedSetIfAlreadyBuilt(const ContextPtr & context);
+
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
 
@@ -112,12 +119,6 @@ public:
     Hash getContentHash() const;
     ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns() const;
-    /// Number of rows on the right-hand side *before* deduplication — the full length of the
-    /// original `IN (...)` list, including repeated and `NULL` values. Available in O(1) and without
-    /// materializing anything, unlike `getKeyColumns`. The deduplicated count is `get`'s
-    /// `getTotalRowCount`. Useful for callers whose cost is proportional to the original list length
-    /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
-    size_t getInputRowCount() const;
 private:
     void fillSetElementsOnce() const;
     Columns getUniqueKeyColumns() const;

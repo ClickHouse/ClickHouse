@@ -171,13 +171,12 @@ try
         UInt64 size = 0;
         readVarUInt(size, istr);
 
-        static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
-        if (size > max_string_size)
+        if (size > SerializationString::MAX_STRING_SIZE)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "Too large string size: {}. The maximum is: {}.",
                 size,
-                max_string_size);
+                SerializationString::MAX_STRING_SIZE);
 
         offset += size;
         if (unlikely(offset > data.size()))
@@ -523,7 +522,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
         readJSONField(field, istr, settings.json);
         Float64 tmp = 0;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
@@ -568,7 +567,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 
         Float64 tmp = 0;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
         {
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
             return true;

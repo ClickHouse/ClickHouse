@@ -154,8 +154,6 @@ public:
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
-
     bool hasEqualValues() const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -290,10 +288,6 @@ public:
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
     MutableColumnPtr cloneNullable() const;
-
-    /// Promote a non-nullable dictionary to `Nullable(T)` in place, rebuilding it with a NULL placeholder
-    /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
-    void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
 
     ColumnPtr cloneWithDefaultOnNull() const;
 

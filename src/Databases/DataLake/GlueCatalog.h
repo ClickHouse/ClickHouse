@@ -33,16 +33,13 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_,
-        bool allow_server_credentials_in_user_queries_);
+        DB::ASTPtr table_engine_definition_);
 
     ~GlueCatalog() override;
 
     bool empty() const override;
 
-    CatalogTables getTables() const override;
-
-    Namespaces getNamespaces() const override;
+    DB::Names getTables() const override;
 
     bool existsTable(const std::string & database_name, const std::string & table_name) const override;
 
@@ -68,6 +65,8 @@ public:
     }
 
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
@@ -95,8 +94,6 @@ public:
         const String & glue_column_type);
 
 private:
-    void createNamespaceIfNotExists(const String & namespace_name) const;
-
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
@@ -105,8 +102,7 @@ private:
     DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
-    CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
     void setCredentials(TableMetadata & metadata) const;
 
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.

@@ -2,6 +2,7 @@
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
+#include <Common/filesystemHelpers.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
 
@@ -33,7 +34,7 @@ static String validateSQLiteDatabasePath(const String & path, const String & use
 
     String absolute_user_files_path = fs::absolute(user_files_path).lexically_normal();
 
-    if (need_check && !absolute_path.starts_with(absolute_user_files_path))
+    if (need_check && !fileOrSymlinkPathStartsWith(absolute_path, absolute_user_files_path))
     {
         processSQLiteError(fmt::format("SQLite database file path '{}' must be inside 'user_files' directory", path), throw_on_error);
         return "";
@@ -65,11 +66,6 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
 
     if (status != SQLITE_OK)
     {
-        /// `sqlite3_open` allocates the connection handle even when it fails to open the database file
-        /// (the only exception being an out-of-memory condition, in which case the handle is left null).
-        /// The handle must be closed to avoid a memory leak, see https://www.sqlite.org/c3ref/open.html.
-        /// `sqlite3_close` is a harmless no-op when passed a null pointer.
-        sqlite3_close(tmp_sqlite_db);
         processSQLiteError(fmt::format("Cannot access sqlite database. Error status: {}. Message: {}",
                                        status, sqlite3_errstr(status)), throw_on_error);
         return nullptr;

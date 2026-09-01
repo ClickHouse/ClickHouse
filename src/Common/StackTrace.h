@@ -78,6 +78,11 @@ public:
     /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
     static void setShowAddresses(bool show);
 
+    /// Renders the demangled name of a frame for display: shortens well-known libc++ spellings, and returns
+    /// "?" for frames whose name carries no information. @param file is the source location of the frame.
+    /// Public only so that it can be unit tested; use @c toStringEveryLine to format a stack trace.
+    static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name);
+
 protected:
     void tryCapture();
 

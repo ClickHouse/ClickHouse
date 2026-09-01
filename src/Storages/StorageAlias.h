@@ -27,11 +27,7 @@ public:
 
     std::string getName() const override { return "Alias"; }
 
-    bool isMergeTree() const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->isMergeTree();
-    }
+    bool readsFromOtherTables() const override { return true; }
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
@@ -278,9 +274,6 @@ public:
     }
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
-
-    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context) override;
-    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
 

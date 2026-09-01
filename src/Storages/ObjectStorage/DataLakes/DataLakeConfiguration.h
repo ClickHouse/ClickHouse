@@ -36,6 +36,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Core/Settings.h>
 
 #include <fmt/ranges.h>
 
