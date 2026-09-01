@@ -774,49 +774,47 @@ static bool columnNamesOverlap(std::string_view updated, std::string_view requir
         && (updated.size() == required.size() || required[updated.size()] == '.');
 }
 
-/// True when any column from `updated_columns` overlaps any column from `required_columns`.
-static bool anyColumnOverlaps(const NameSet & updated_columns, const NameOrderedSet & required_columns)
+/// If a pending mutation changed what the values (or the name) of `column` mean without rewriting
+/// the part, what the part stores under `column` (data, statistics, skip-index structures) no longer
+/// describes what a read of that column returns. Returns the name the staleness comes from:
+/// - ALTER MODIFY COLUMN converts values on the fly — the overlapping updated column;
+/// - ALTER DROP COLUMN makes the part's data for the name invisible on read, so the name is only
+///   visible to the query because it has been re-added since — `column` itself;
+/// - ALTER RENAME COLUMN re-points the name at a different column — the rename target.
+/// Otherwise nullopt.
+static std::optional<std::string> getStalePartColumnName(const AlterConversions & alter_conversions, const std::string & column)
 {
-    for (const auto & updated : updated_columns)
-        for (const auto & required : required_columns)
-            if (columnNamesOverlap(updated, required))
-                return true;
-    return false;
+    for (const auto & updated : alter_conversions.getAllUpdatedColumns())
+        if (columnNamesOverlap(updated, column))
+            return updated;
+
+    if (alter_conversions.isColumnDropped(column))
+        return column;
+
+    for (const auto & rename_pair : alter_conversions.getRenameMap())
+        if (columnNamesOverlap(rename_pair.rename_to, column))
+            return rename_pair.rename_to;
+
+    return std::nullopt;
 }
 
 /// True when the statistics a part stores under one of `statistics_columns` no longer describe
-/// the values a read of that column returns, because a pending mutation changed what the column's
-/// values (or the name itself) mean without rewriting the part:
-/// - ALTER MODIFY COLUMN converts values on the fly (tracked in getAllUpdatedColumns());
-/// - ALTER RENAME COLUMN re-points the name at a different column, so the statistics stored under
-///   it belong to another column (tracked in getRenameMap());
-/// - ALTER DROP COLUMN makes the part's data for the name invisible on read, so the name is only
-///   visible to the query because it has been re-added since (tracked by isColumnDropped()).
+/// the values a read of that column returns (see getStalePartColumnName).
 static bool hasStaleStatisticsForColumns(
     const AlterConversions & alter_conversions, const NameOrderedSet & statistics_columns)
 {
-    if (anyColumnOverlaps(alter_conversions.getAllUpdatedColumns(), statistics_columns))
-        return true;
-
     for (const auto & column : statistics_columns)
-    {
-        if (alter_conversions.isColumnDropped(column))
+        if (getStalePartColumnName(alter_conversions, column))
             return true;
-
-        for (const auto & rename_pair : alter_conversions.getRenameMap())
-            if (columnNamesOverlap(rename_pair.rename_to, column))
-                return true;
-    }
-
     return false;
 }
 
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & all_updated_columns)
+    const AlterConversions & alter_conversions)
 {
-    if (all_updated_columns.empty())
+    if (alter_conversions.getAllUpdatedColumns().empty() && !alter_conversions.hasDroppedOrRenamedColumns())
         return {};
 
     auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
@@ -825,14 +823,11 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
 
     for (const auto & required_column : required_columns_list)
     {
-        for (const auto & updated_column : all_updated_columns)
+        if (auto stale_name = getStalePartColumnName(alter_conversions, required_column.name))
         {
-            if (columnNamesOverlap(updated_column, required_column.name))
-            {
-                return std::unexpected(PreformattedMessage::create(
-                    "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
-                    index->index.name, required_column.name, updated_column));
-            }
+            return std::unexpected(PreformattedMessage::create(
+                "Index {} depends on column `{}` whose data in the part is stale under a pending mutation (via `{}`)",
+                index->index.name, required_column.name, *stale_name));
         }
     }
 
@@ -945,6 +940,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 ///    advertises the pre-update values;
 ///  - an ALTER MODIFY COLUMN changes the indexed column's type, but the minmax still holds bytes
 ///    serialized with the old type, which order differently under the new type.
+///  - an ALTER DROP COLUMN (possibly re-added since) or RENAME COLUMN re-points the column's name
+///    at other values, but the minmax still advertises the data written under that name.
 /// The top-k granule optimization keeps only the globally extreme granules, so a part whose stale
 /// minmax advertises an extreme value can displace and prune a part that holds the live top rows,
 /// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
@@ -962,9 +959,11 @@ static bool partHasStaleTopKIndex(
         return true;
 
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
-    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or
+    /// patch); hasMetadataMutations() covers ALTER DROP / RENAME COLUMN.
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+            || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
 
@@ -974,10 +973,11 @@ static bool partHasStaleTopKIndex(
         if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
 
-        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
-        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
-        /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        /// A pending mutation that touches the indexed column (update / patch / MODIFY / DROP /
+        /// RENAME) makes its minmax stale. Reuse the same staleness check the regular skip-index
+        /// path uses (canUseIndex), so the top-k path is consistent with it. Changes to other
+        /// columns leave the index valid.
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, *alter_conversions))
             return true;
     }
 
@@ -1177,12 +1177,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns);
+                    auto check_result = canUseIndex(index, metadata_snapshot, *alter_conversions);
                     if (!check_result)
                     {
                         return std::unexpected(PreformattedMessage::create(

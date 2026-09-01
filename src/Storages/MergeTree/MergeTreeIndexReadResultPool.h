@@ -59,7 +59,7 @@ public:
         const MergeTreeDataPartInfoForReaderPtr & part_info,
         const SkipIndexReadInput & input,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const AlterConversions & alter_conversions);
 
     /// Whether `read` prunes by JOIN runtime filters. It snapshots them once per part, fail-open,
     /// so its result must not be built before the build side has published the filters.
@@ -246,7 +246,7 @@ public:
         const SkipIndexReadInput & input,
         const RangesInDataParts & projection_parts,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const AlterConversions & alter_conversions);
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
