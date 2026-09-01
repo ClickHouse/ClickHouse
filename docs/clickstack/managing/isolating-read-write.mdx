@@ -15,7 +15,7 @@ With ClickHouse Cloud [warehouses](/products/cloud/features/infrastructure/wareh
 
 <ScalePlanFeatureBadge feature="Compute-compute separation"/>
 
-Warehouses are a ClickHouse Cloud feature, so the topology described here applies to ClickStack running against ClickHouse Cloud. Self-managed ClickStack deployments have no equivalent way to serve the same data from separate compute.
+Warehouses are a ClickHouse Cloud feature, so the setup described here applies to ClickStack running against ClickHouse Cloud. Self-managed deployments can separate the two workloads by pointing ingestion and queries at different endpoints of a replicated cluster; what the warehouse adds is doing so over a single copy of the data, with each side sized, scaled and idled on its own.
 
 <Note>
 **When isolation is worth it**
