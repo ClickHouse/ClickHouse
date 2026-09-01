@@ -987,6 +987,49 @@ def test_catalog_oids_are_unique(started_cluster):
     ch.close()
 
 
+def test_catalog_table_oids_differ_across_databases(started_cluster):
+    """A session can switch the current database with `USE`, and `pg_class` then lists
+    the tables of the new one. Two same-named tables in two databases are different
+    objects, so their oids must differ - otherwise an oid a client remembered in the
+    first database silently resolves to the other table after the switch."""
+    node = started_cluster.instances["node"]
+
+    databases = ["pg_oids_qualified_a", "pg_oids_qualified_b"]
+
+    def connect(dbname=None):
+        return psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            **({"dbname": dbname} if dbname else {}),
+        )
+
+    ch = connect()
+    cur = ch.cursor()
+    for database in databases:
+        cur.execute(f"DROP DATABASE IF EXISTS {database}")
+        cur.execute(f"CREATE DATABASE {database}")
+        cur.execute(f"CREATE TABLE {database}.events (id Int32) ENGINE = Memory")
+    ch.close()
+
+    oids = []
+    for database in databases:
+        ch = connect(database)
+        cur = ch.cursor()
+        cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+        oids.append(int(cur.fetchall()[0][0]))
+        ch.close()
+
+    assert oids[0] != oids[1]
+
+    ch = connect()
+    cur = ch.cursor()
+    for database in databases:
+        cur.execute(f"DROP DATABASE IF EXISTS {database}")
+    ch.close()
+
+
 def test_catalog_oids_are_stable(started_cluster):
     """An oid identifies an object, and PostgreSQL clients are allowed to remember
     one and use it in a later query, so the oid of a database or a table must not
@@ -1054,7 +1097,7 @@ def test_catalog_oids_are_stable(started_cluster):
 def test_catalog_oids_do_not_depend_on_a_colliding_peer(started_cluster):
     """The oid of an object is a pure function of its name, so it must not change even
     when another name whose hash lands in the same slot appears or disappears. These two
-    names are a real collision of the synthesized oids: `sipHash64(name) % 2000000000`
+    names are a real collision of the namespace oids: `sipHash64(name) % 2000000000`
     is 7242078 for both."""
     node = started_cluster.instances["node"]
     colliding = ["collision_probe_121841", "collision_probe_264544"]

@@ -1359,9 +1359,10 @@ SELECT * FROM VALUES(
     /// (their well-known oids are hardcoded in some drivers, e.g. 11 for `pg_catalog`).
     /// The rest of the namespaces are the real databases. An oid identifies an object,
     /// and PostgreSQL clients are allowed to remember one and use it in a later query, so
-    /// it is a pure function of the name of the object: a hash of the name and nothing
-    /// else. Whatever else is currently visible - and therefore any unrelated DDL or
-    /// grant change - cannot renumber an object that a client already saw.
+    /// it is a pure function of the name of the object: a hash of the name - qualified
+    /// with the database for a relation - and nothing else. Whatever else is currently
+    /// visible - and therefore any unrelated DDL or grant change - cannot renumber an
+    /// object that a client already saw.
     /// The oids are also expected to be unique, because clients join `pg_class` to
     /// `pg_namespace` on them. A mapping into a bounded space cannot guarantee both
     /// properties at once, and PostgreSQL gets uniqueness only because it assigns oids
@@ -1402,6 +1403,10 @@ FROM system.databases)");
     /// The rest are the tables of the current database - the analog of the PostgreSQL
     /// search path - which makes commands like `\d` in psql list the actual tables.
     /// `relam` is the access method: 2 (`heap`) for tables and 0 for views, as in PostgreSQL.
+    /// The oid of a relation is a hash of its qualified name - the database and the table
+    /// name - and not of the table name alone: a session can switch the current database
+    /// with `USE`, and two same-named tables in two databases are different objects that
+    /// must not share an oid.
     /// `SQL SECURITY INVOKER` for the same reason as `pg_namespace` above:
     /// `system.tables` hides the tables the session user cannot `SHOW`.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY INVOKER AS
@@ -1418,7 +1423,7 @@ SELECT * FROM VALUES(
 )
 UNION ALL
 SELECT
-    toUInt32(16385 + 2 * (sipHash64(name) % 2000000000)) AS oid,
+    toUInt32(16385 + 2 * (sipHash64(database, name) % 2000000000)) AS oid,
     name AS relname,
     toUInt32(16384 + 2 * (sipHash64(currentDatabase()) % 2000000000)) AS relnamespace,
     toUInt32(10) AS relowner,
