@@ -150,6 +150,52 @@ TEST(DeltaLakeAzureKernelHelper, VendedSasTokenSetsAccountName)
     const auto container = findBuilderOption(options, "azure_container_name");
     ASSERT_TRUE(container.has_value());
     ASSERT_EQ(*container, "testcontainer");
+
+    /// The endpoint URL must be passed through as is, without connection string parsing.
+    const auto endpoint_url = findBuilderOption(options, "azure_endpoint");
+    ASSERT_TRUE(endpoint_url.has_value());
+    ASSERT_EQ(*endpoint_url, "https://testaccount.blob.core.windows.net");
+    ASSERT_FALSE(findBuilderOption(options, "azure_allow_http").has_value());
+}
+
+/// An explicit https endpoint (a sovereign cloud, a private link) must be passed to the
+/// kernel, which would otherwise derive the public host from the account name. Plain HTTP
+/// must stay disallowed.
+TEST(DeltaLakeAzureKernelHelper, ExplicitHttpsEndpointIsPassedToKernel)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.blob.core.chinacloudapi.cn";
+    params.endpoint.container_name = "testcontainer";
+    params.endpoint.account_name = "testaccount";
+    params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>("testaccount", "dGVzdGtleQ==");
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    const auto endpoint_url = findBuilderOption(options, "azure_endpoint");
+    ASSERT_TRUE(endpoint_url.has_value());
+    ASSERT_EQ(*endpoint_url, "https://testaccount.blob.core.chinacloudapi.cn");
+    ASSERT_FALSE(findBuilderOption(options, "azure_allow_http").has_value());
+}
+
+/// A plain-HTTP endpoint (the Azurite emulator) must additionally allow plain HTTP,
+/// since the object-store builder is https-only by default.
+TEST(DeltaLakeAzureKernelHelper, ExplicitHttpEndpointAllowsPlainHttp)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "http://127.0.0.1:10000/testaccount";
+    params.endpoint.container_name = "testcontainer";
+    params.endpoint.account_name = "testaccount";
+    params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>("testaccount", "dGVzdGtleQ==");
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    const auto endpoint_url = findBuilderOption(options, "azure_endpoint");
+    ASSERT_TRUE(endpoint_url.has_value());
+    ASSERT_EQ(*endpoint_url, "http://127.0.0.1:10000/testaccount");
+
+    const auto allow_http = findBuilderOption(options, "azure_allow_http");
+    ASSERT_TRUE(allow_http.has_value());
+    ASSERT_EQ(*allow_http, "true");
 }
 
 /// A real connection string (non-empty ConnectionString alternative) must still be parsed

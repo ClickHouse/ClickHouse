@@ -339,11 +339,12 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which
     /// otherwise derives the public `<account>.blob.core.windows.net` host from the account
     /// name (wrong for Azurite, sovereign clouds, private links). For ConnectionString auth
-    /// the endpoint was already set above from the parsed connection string. Plain HTTP must
-    /// be allowed explicitly, since the object-store builder is https-only by default.
+    /// `storage_account_url` holds the raw connection string, not a URL, and the endpoint was
+    /// already set above from the parsed connection string. Plain HTTP must be allowed
+    /// explicitly, since the object-store builder is https-only by default.
     if (endpoint.storage_account_url.starts_with("http://") || endpoint.storage_account_url.starts_with("https://"))
     {
-        set_option("azure_endpoint", connection_params.getConnectionURL());
+        set_option("azure_endpoint", endpoint.storage_account_url);
         if (endpoint.storage_account_url.starts_with("http://"))
             set_option("azure_allow_http", "true");
     }
