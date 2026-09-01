@@ -168,7 +168,7 @@ SET allow_experimental_bernoulli_sample = 1;
 | Setting | Type | Default | Purpose |
 |---|---|---|---|
 | `allow_experimental_bernoulli_sample` | `Bool` | `false` | Enables Bernoulli sampling for `MergeTree` tables without a `SAMPLE BY` key. |
-| `bernoulli_sample_seed` | `UInt64` | `1` | Seed for the Bernoulli sampler. `0` re-seeds randomly per query; any nonzero value is deterministic for a given list of parts in their natural enumeration order. Merges (and other operations that replace existing parts) will renumber surviving parts and draw a different sample for them. |
+| `bernoulli_sample_seed` | `UInt64` | `1` | Seed for the Bernoulli sampler. `0` re-seeds randomly per query; the seed is derived from the query id, so every read of the query - including reads that run on remote shards and replicas - uses the same seed. Any nonzero value is deterministic for a given list of parts in their natural enumeration order. Merges (and other operations that replace existing parts) will renumber surviving parts and draw a different sample for them. |
 
 ### Example {#bernoulli-example}
 

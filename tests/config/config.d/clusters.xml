@@ -7,7 +7,7 @@
             <shard>
                 <replica>
                     <host>localhost</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
         </test_shard_localhost>
@@ -15,13 +15,13 @@
             <shard>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
             <shard>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
         </test_cluster_two_shards>
@@ -30,14 +30,14 @@
                  <replica>
                      <default_database>shard_0</default_database>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
              <shard>
                  <replica>
                      <default_database>shard_1</default_database>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
         </test_cluster_two_shards_different_databases>
@@ -45,11 +45,11 @@
              <shard>
                  <replica>
                      <host>127.0.0.1</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
                  <replica>
                      <host>127.0.0.2</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
         </test_cluster_one_shard_two_replicas>
@@ -58,12 +58,12 @@
                  <replica>
                      <default_database>shard_0</default_database>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
                  <replica>
                      <default_database>shard_1</default_database>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
         </test_cluster_two_replicas_different_databases>
@@ -73,12 +73,12 @@
                  <replica>
                      <default_database>shard_0</default_database>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
                  <replica>
                      <default_database>shard_1</default_database>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
         </test_cluster_two_replicas_different_databases_internal_replication>
@@ -87,13 +87,13 @@
             <shard>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
             <shard>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
         </test_cluster_interserver_secret>
@@ -101,14 +101,14 @@
             <shard>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
             <shard>
                 <replica>
                     <default_database>shard_1</default_database>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
         </test_cluster_two_shards_different_databases_with_local>
@@ -117,43 +117,43 @@
                 <internal_replication>false</internal_replication>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.3</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.4</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.5</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.6</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.7</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.8</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.9</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.10</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <!-- Unavailable replica -->
                 <replica>
@@ -172,43 +172,43 @@
                 </replica>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.3</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.4</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.5</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.6</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.7</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.8</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.9</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.10</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
         </parallel_replicas_unavailable_first>
@@ -217,11 +217,11 @@
                 <internal_replication>false</internal_replication>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <!-- Unavailable replica -->
                 <replica>
@@ -235,30 +235,30 @@
                 <internal_replication>false</internal_replication>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.3</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
             <!--shard>
                 <internal_replication>false</internal_replication>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.3</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard-->
         </test_cluster_one_shard_three_replicas_localhost>
@@ -267,30 +267,30 @@
                 <internal_replication>false</internal_replication>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.3</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
             <shard>
                 <internal_replication>false</internal_replication>
                 <replica>
                     <host>127.0.0.4</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.5</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
                 <replica>
                     <host>127.0.0.6</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
         </test_cluster_two_shard_three_replicas_localhost>
@@ -298,13 +298,13 @@
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
         </test_cluster_two_shards_localhost>
@@ -312,31 +312,31 @@
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>9000</port>
+                     <port>19011</port>
                  </replica>
              </shard>
         </test_cluster_five_shards_localhost>
@@ -345,14 +345,14 @@
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>127.0.0.1</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>127.0.0.2</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
         </test_cluster_two_shards_internal_replication>
@@ -369,7 +369,7 @@
             <shard>
                 <replica>
                     <host>localhost</host>
-                    <port>9000</port>
+                    <port>19011</port>
                 </replica>
             </shard>
             <shard>

@@ -7747,7 +7747,7 @@ Approximate probability of failure for a keeper request during insert. Valid val
 0 - random seed, otherwise the setting value
 )", 0) \
     DECLARE(UInt64, bernoulli_sample_seed, 1, R"(
-Seed for the experimental Bernoulli sampling path (`allow_experimental_bernoulli_sample`). `0` re-seeds randomly per query; any nonzero value is deterministic per part. Has no effect on tables with a `SAMPLE BY` key.
+Seed for the experimental Bernoulli sampling path (`allow_experimental_bernoulli_sample`). `0` re-seeds randomly per query (the seed is derived from the query id, so every read of the query - including reads on remote shards and replicas - shares it). Any nonzero value is deterministic per part. Has no effect on tables with a `SAMPLE BY` key.
 )", 0) \
     DECLARE(Bool, force_aggregation_in_order, false, R"(
 The setting is used by the server itself to support distributed queries. Do not change it manually, because it will break normal operations. (Forces use of aggregation in order on remote nodes during distributed aggregation).

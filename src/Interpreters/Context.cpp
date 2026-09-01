@@ -3919,7 +3919,19 @@ UInt64 Context::getBernoulliSampleSeed() const
 {
     std::lock_guard lock(mutex);
     if (!bernoulli_sample_seed)
-        bernoulli_sample_seed = thread_local_rng();
+    {
+        /// Every read of one query must sample with the same seed, including reads that happen on
+        /// remote shards and replicas. Those nodes do not share this query context - they receive
+        /// only the settings, and the setting still holds the `0` marker - so a locally drawn random
+        /// number could not be shared with them. The initial query id is unique per query and is
+        /// forwarded to every node, so hashing it gives one shared random seed for free.
+        UInt64 seed = client_info.initial_query_id.empty()
+            ? thread_local_rng()
+            : sipHash64(client_info.initial_query_id.data(), client_info.initial_query_id.size());
+        while (seed == 0)
+            seed = thread_local_rng();
+        bernoulli_sample_seed = seed;
+    }
     return *bernoulli_sample_seed;
 }
 
