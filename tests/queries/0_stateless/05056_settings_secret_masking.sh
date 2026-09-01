@@ -85,3 +85,25 @@ for _ in {1..60}; do
     sleep 0.5
 done
 echo "$ALTERED"
+
+# 6. `system.distributed_ddl_queue` replays the entry that the hosts of the cluster execute, so the
+# entry in Keeper keeps the real values. Both the query text and the settings map of the entry must
+# still hide the secret when the table is read.
+DDL_QUERY_CANARY="c05056ddlqueuequery"
+DDL_SETTINGS_CANARY="c05056ddlqueuesettings"
+DDL_TABLE="t05056_ddl_$CLICKHOUSE_DATABASE"
+
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&distributed_ddl_output_mode=none&url_base=https%3A%2F%2Fu%3A$DDL_SETTINGS_CANARY%40example.com%2Fd%2F" \
+    --data-binary "CREATE TABLE $DDL_TABLE ON CLUSTER test_shard_localhost (x Int32) ENGINE = Kafka
+        SETTINGS kafka_broker_list = 'localhost:9092', kafka_topic_list = 't', kafka_group_name = 'g',
+                 kafka_format = 'CSV', kafka_sasl_password = '$DDL_QUERY_CANARY'" > /dev/null 2>&1
+
+$CLICKHOUSE_CLIENT -q "SELECT
+        countIf(position(query, '[HIDDEN]') > 0) > 0,
+        countIf(position(query, '$DDL_QUERY_CANARY') > 0),
+        countIf(position(settings['url_base'], '[HIDDEN]') > 0) > 0,
+        countIf(position(settings['url_base'], '$DDL_SETTINGS_CANARY') > 0)
+    FROM system.distributed_ddl_queue
+    WHERE position(query, '$DDL_TABLE') > 0"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $DDL_TABLE ON CLUSTER test_shard_localhost SYNC" > /dev/null 2>&1
