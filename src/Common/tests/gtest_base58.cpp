@@ -357,10 +357,7 @@ TEST(Base58, Generic)
 }
 
 /// Eleven characters is the only body length whose value may exceed a `UInt64`, since
-/// 58^10 <= 2^64 - 1 < 58^11, so it is the only length `decodeBase58Short` can decline for size. Such a
-/// body must reach the general path and decode, not be rejected as invalid. The sweep above cannot reach
-/// this: the values live in [2^64, 58^11), which is 0.14% of the nine-byte range, so a nine-byte body
-/// encodes to twelve or more characters almost always. Each string below is that boundary written out.
+/// 58^10 <= 2^64 - 1 < 58^11, so it is the only length the short decode path can decline for size.
 TEST(Base58, GenericElevenCharacterBoundary)
 {
     for (std::string_view encoded : {
