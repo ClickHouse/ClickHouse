@@ -1,14 +1,11 @@
 #pragma once
 
 #include <Client/Connection.h>
-#include <Core/Field.h>
-#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/QueryScope.h>
-#include <Common/ThreadStatus.h>
 
 
 namespace DB
@@ -29,26 +26,6 @@ struct LocalQueryState
 
     /// Query text.
     String query;
-    /// Parser-affecting settings captured when the query was received, before any query-local `SETTINGS`
-    /// from the query itself are applied during execution. The `input()` initializer reparses `query` and
-    /// must use the dialect/gate the query was originally accepted with — a JSON
-    /// `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'` (or `... enable_json_ast_dialect = 0`)
-    /// would otherwise be reparsed with the changed settings and fail.
-    Dialect parsed_dialect = Dialect::clickhouse;
-    bool enable_json_ast_dialect = false;
-    /// Parser limits and SQL parser flags captured at the same point. The `input()` initializer must
-    /// reparse with the settings that accepted the original query, not its query-local mutations.
-    UInt64 max_query_size = 0;
-    UInt64 max_parser_depth = 0;
-    UInt64 max_parser_backtracks = 0;
-    bool allow_settings_after_format_in_insert = false;
-    bool implicit_select = false;
-    String promql_database;
-    String promql_table;
-    Field promql_evaluation_time;
-    /// AST-size limits used only by the JSON dialect.
-    UInt64 json_ast_max_depth = 0;
-    UInt64 json_ast_max_elements = 0;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
     /// Current stream to pull blocks from.
@@ -128,8 +105,6 @@ public:
 
     void setDefaultDatabase(const String & database) override;
 
-    void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
-
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
                           UInt64 & version_major,
@@ -167,11 +142,7 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
-    void sendScalarsData(Scalars & data) override;
-
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
-
-    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -187,8 +158,6 @@ public:
     bool isConnected() const override { return true; }
 
     bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
-
-    bool checkConnectedWithoutRoundTrip() override { return true; }
 
     void disconnect() override {}
 
@@ -215,9 +184,6 @@ private:
     bool send_progress;
     bool send_profile_events;
     String server_display_name;
-    /// Optional callback to check if the query was cancelled (e.g. via Ctrl+C).
-    /// Set by the client application; used as `interactive_cancel_callback` on the query context.
-    std::function<bool()> is_cancelled_callback;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;

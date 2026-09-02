@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
 
-class ExecutableFunctionGetServerPort final : public IExecutableFunction
+class ExecutableFunctionGetServerPort : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionGetServerPort(UInt16 port_) : port(port_) {}
@@ -35,7 +35,7 @@ private:
     UInt16 port;
 };
 
-class FunctionBaseGetServerPort final : public IFunctionBase
+class FunctionBaseGetServerPort : public IFunctionBase
 {
 public:
     explicit FunctionBaseGetServerPort(bool is_distributed_, UInt16 port_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -57,9 +57,6 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
-
-    /// Read per executing node, so two nodes can disagree.
-    bool isServerConstant() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
@@ -74,7 +71,7 @@ private:
     DataTypePtr return_type;
 };
 
-class GetServerPortOverloadResolver final : public IFunctionOverloadResolver
+class GetServerPortOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "getServerPort";
@@ -93,9 +90,6 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isDeterministic() const override { return false; }
-
-    /// Read per executing node, so two nodes can disagree.
-    bool isServerConstant() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
     {

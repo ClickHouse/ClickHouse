@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 import pytest
 
@@ -109,7 +110,7 @@ def testModelPathIsNotAConstString(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query("system reload models")
+    result = instance.query("system reload models")
 
     err = instance.query_and_get_error(
         "select catboostEvaluate(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);"
@@ -135,7 +136,7 @@ def testWrongNumberOfFeatureArguments(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query("system reload models")
+    result = instance.query("system reload models")
 
     err = instance.query_and_get_error(f"select catboostEvaluate('{SIMPLE_MODEL}');")
     assert "Function catboostEvaluate expects at least 2 arguments" in err
@@ -153,7 +154,7 @@ def testFloatFeatureMustBeNumeric(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query("system reload models")
+    result = instance.query("system reload models")
 
     err = instance.query_and_get_error(
         f"select catboostEvaluate('{SIMPLE_MODEL}', 1.0, 'a', 3, 4, 5, 6, 7, 8, 9, 10, 11);"
@@ -165,7 +166,7 @@ def testCategoricalFeatureMustBeNumericOrString(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query("system reload models")
+    result = instance.query("system reload models")
 
     err = instance.query_and_get_error(
         f"select catboostEvaluate('{SIMPLE_MODEL}', 1.0, 2.0, 3, 4, 5, 6, 7, tuple(8), 9, 10, 11);"
@@ -210,7 +211,7 @@ def testInvalidLibraryPath(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query("system reload models")
+    result = instance.query("system reload models")
 
     # temporarily move library elsewhere
     instance.exec_in_container(
@@ -242,7 +243,7 @@ def testInvalidModelPath(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query("system reload models")
+    result = instance.query("system reload models")
 
     # A path inside user_files that does not exist still reports FILE_DOESNT_EXIST
     # (probing existence inside one's own sandbox is not an information leak).
