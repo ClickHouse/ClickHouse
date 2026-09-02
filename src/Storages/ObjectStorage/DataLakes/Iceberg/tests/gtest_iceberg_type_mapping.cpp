@@ -17,7 +17,7 @@ namespace
 std::string icebergTypeName(DataTypePtr type)
 {
     Int32 iter = 0;
-    auto [iceberg_type, required] = getIcebergType(type, iter);
+    auto [iceberg_type, required] = Iceberg::getIcebergType(type, iter);
     return iceberg_type.convert<std::string>();
 }
 
