@@ -85,8 +85,8 @@ void addBuildWarnings(ContextPtr context)
 {
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
     context->addOrUpdateWarningMessage(
-        Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE,
-        PreformattedMessage::create("Server was built in debug mode. It will work slowly."));
+        Context::WarningType::CLICKHOUSE_BUILT_IN_DEBUG_MODE,
+        PreformattedMessage::create("ClickHouse was built in debug mode. It will work slowly."));
 #endif
 
     if (ThreadFuzzer::instance().isEffective())
@@ -106,14 +106,14 @@ void addBuildWarnings(ContextPtr context)
         log_message = fmt::format("sanitizers ({})", fmt::join(sanitizers, ", "));
 
     context->addOrUpdateWarningMessage(
-        Context::WarningType::SERVER_BUILT_WITH_SANITIZERS,
-        PreformattedMessage::create("Server was built with {}. It will work slowly.", log_message));
+        Context::WarningType::CLICKHOUSE_BUILT_WITH_SANITIZERS,
+        PreformattedMessage::create("ClickHouse was built with {}. It will work slowly.", log_message));
 #endif
 
 #if WITH_COVERAGE
     context->addOrUpdateWarningMessage(
-        Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
-        PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
+        Context::WarningType::CLICKHOUSE_BUILT_WITH_COVERAGE,
+        PreformattedMessage::create("ClickHouse was built with code coverage. It will work slowly."));
 #endif
 }
 
@@ -137,9 +137,9 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
 {
     if (logger.is(Poco::Message::PRIO_TEST))
         context->addOrUpdateWarningMessage(
-            Context::WarningType::SERVER_LOGGING_LEVEL_TEST,
+            Context::WarningType::CLICKHOUSE_LOGGING_LEVEL_TEST,
             PreformattedMessage::create(
-                "Server logging level is set to 'test' and performance is degraded. This cannot be used in production."));
+                "ClickHouse logging level is set to 'test' and performance is degraded. This cannot be used in production."));
 #if defined(OS_LINUX)
     try
     {
@@ -328,7 +328,7 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
         if (getAvailableMemoryAmount() < (2l << 30))
             context->addOrUpdateWarningMessage(
                 Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
-                PreformattedMessage::create("Available memory at server startup is too low (2GiB)."));
+                PreformattedMessage::create("Available memory at startup is too low (2GiB)."));
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
@@ -339,7 +339,7 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
         if (!data_path.empty() && !enoughSpaceInDirectory(data_path, 1ull << 30))
             context->addOrUpdateWarningMessage(
                 Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
-                PreformattedMessage::create("Available disk space for data at server startup is too low (1GiB): {}", String(data_path)));
+                PreformattedMessage::create("Available disk space for data at startup is too low (1GiB): {}", String(data_path)));
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
@@ -353,7 +353,7 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
                 context->addOrUpdateWarningMessage(
                     Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
-                    PreformattedMessage::create("Available disk space for logs at server startup is too low (1GiB): {}", String(logs_parent)));
+                    PreformattedMessage::create("Available disk space for logs at startup is too low (1GiB): {}", String(logs_parent)));
         }
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
