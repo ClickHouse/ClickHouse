@@ -389,12 +389,18 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
+        /// Roles attached to this authentication by an external user directory (e.g. the `http`
+        /// directory). Session-scoped: they ride the same external-role machinery as interserver
+        /// pushed roles, but are not gated by push_external_roles_in_interserver_queries because
+        /// they are a local access-storage decision, not a remote push.
+        external_roles = auth_result.external_roles;
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
 
         if (!external_roles_.empty() && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
         {
-            external_roles = global_context->getAccessControl().find<Role>(external_roles_);
+            auto pushed_external_roles = global_context->getAccessControl().find<Role>(external_roles_);
+            external_roles.insert(external_roles.end(), pushed_external_roles.begin(), pushed_external_roles.end());
 
             LOG_DEBUG(log, "User {} has external_roles applied: [{}] ({})",
                       toString(*user_id), fmt::join(external_roles_, ", "), external_roles_.size());
