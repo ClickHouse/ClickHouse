@@ -144,6 +144,12 @@ struct SnapshotDetachedTable final
     bool is_permanently{};
 };
 
+struct PermanentlyDetachedTableInfo final
+{
+    UUID uuid;
+    String table_name;
+};
+
 class DatabaseDetachedTablesSnapshotIterator
 {
 private:
@@ -282,6 +288,9 @@ public:
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
+
+    /// Check the existence of the table not in memory (detached).
+    virtual bool isTableDetached(const String & /*table_name*/) const;
 
     /// Check the existence of the table in any state (in active / detached / detached permanently state).
     /// Throws exception when table exists.

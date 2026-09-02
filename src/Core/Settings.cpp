@@ -8808,6 +8808,28 @@ Enables the `SZ3` compression codec.
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_drop_detached_table, false, R"(
+Allows experimental drop detached table.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET allow_experimental_drop_detached_table=1;
+CREATE TABLE test_table (number UInt64) ENGINE=MergeTree ORDER BY number;
+INSERT INTO test_table SELECT number FROM system.numbers LIMIT 6;
+DETACH TABLE test_table;
+DROP DETACHED TABLE test_table SYNC;
+```
+)", EXPERIMENTAL) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <optional>
+
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
 #include <Storages/IStorage_fwd.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -50,12 +53,21 @@ public:
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
     void dropTableImpl(ContextPtr context, const String & table_name, bool sync);
+    virtual void
+    dropDetachedTable(
+        ContextPtr context,
+        const String & table_name,
+        bool sync,
+        const StoragePtr & detached_table,
+        const std::function<void()> & dependency_cleanup);
 
     void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & name) override;
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
+    boost::intrusive_ptr<ASTCreateQuery>
+    getCreateQueryFromDetachedMetadataByName(ContextPtr local_context, const String & table_name) const;
 
     void drop(ContextPtr /*context*/) override;
 
@@ -88,6 +100,23 @@ protected:
     using DetachedTables = std::unordered_map<UUID, StoragePtr>;
     [[nodiscard]] DetachedTables cleanupDetachedTables() TSA_REQUIRES(mutex);
 
+    struct DropDetachedTableInfo
+    {
+        String table_metadata_path;
+        std::optional<String> table_metadata_path_drop;
+        StorageID storage_id = StorageID::createEmpty();
+        scope_guard uuid_reservation;
+    };
+
+    DropDetachedTableInfo prepareDropDetachedTable(ContextPtr local_context, const String & table_name);
+    void commitDropDetachedTableMetadata(ContextPtr local_context, const String & table_name, DropDetachedTableInfo & drop_info);
+    void finishDropDetachedTable(
+        const String & table_name,
+        bool sync,
+        const StoragePtr & detached_table,
+        const std::function<void()> & dependency_cleanup,
+        DropDetachedTableInfo & drop_info);
+
     void createDirectories();
     void createDirectoriesUnlocked() TSA_REQUIRES(mutex);
 
@@ -105,6 +134,9 @@ protected:
     const UUID db_uuid;
 
     LoadTaskPtr startup_atomic_database_task TSA_GUARDED_BY(mutex);
+
+private:
+    String getPathSymlink(const String & table_name) const;
 };
 
 }

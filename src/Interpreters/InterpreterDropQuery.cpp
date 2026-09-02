@@ -1,33 +1,38 @@
+#include <memory>
+#include <Access/Common/AccessRightsElement.h>
+#include <Core/Settings.h>
+#include <Core/UUID.h>
+#include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Databases/TablesDependencyGraph.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ProcessList.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
-#include <IO/SharedThreadPools.h>
-#include <Access/Common/AccessRightsElement.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/UUID.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 #include <Common/likePatternToRegexp.h>
-#include <Common/FailPoint.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Core/Settings.h>
-#include <Core/UUID.h>
-#include <Databases/DatabaseReplicated.h>
+#include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include "config.h"
 
@@ -46,6 +51,7 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool allow_experimental_drop_detached_table;
     extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
     extern const SettingsFloat ignore_drop_queries_probability;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -56,10 +62,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ActionLocks
@@ -98,7 +106,7 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
-    if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
+    if (!drop.cluster.empty() && drop.table && !drop.detached && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
@@ -160,6 +168,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
+    if (query.detached)
+    {
+        if (table_id.database_name.empty())
+            query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
+
+        return executeToDetachedTable(context_, query, table_id, uuid_to_wait);
+    }
+
     if (query.isTemporary() || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
@@ -381,6 +397,130 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     return {};
 }
 
+BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_, ASTDropQuery & query, const StorageID & table_id, UUID & uuid_to_wait)
+{
+    if (!context_->getSettingsRef()[Setting::allow_experimental_drop_detached_table])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Experimental drop detached table feature is not enabled (the setting 'allow_experimental_drop_detached_table')");
+
+    auto new_query_ptr = query.clone();
+    if (!query.cluster.empty() && !maybeRemoveOnCluster(new_query_ptr, getContext()))
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccessForDDLOnCluster();
+        return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
+    }
+
+    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
+    auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
+    if (query.if_exists && !database)
+        return {};
+    if (!database)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName()));
+
+    const auto table_name = table_id.getTableName();
+    const bool table_exists = database->isTableExist(table_name, context_);
+    auto actual_database = std::dynamic_pointer_cast<DatabaseAtomic>(database);
+    if (!actual_database)
+    {
+        bool table_detached = false;
+        bool has_detached_table_state = false;
+        if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+        {
+            has_detached_table_state = true;
+            const auto table_metadata_path = database_on_disk->getObjectMetadataPath(table_name);
+            const bool table_detached_in_snapshot = database_on_disk->isTableDetached(table_name);
+            const bool table_metadata_exists = database_on_disk->getDisk()->existsFileOrDirectory(table_metadata_path);
+            table_detached = table_detached_in_snapshot || (!table_exists && table_metadata_exists);
+        }
+
+        if (query.if_exists && !table_exists && !table_detached)
+            return {};
+        if (!table_exists && !table_detached)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
+
+        context_->checkAccess(AccessType::DROP_TABLE, table_id);
+        if (has_detached_table_state)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "DROP DETACHED TABLE is not implemented for Database{}", database->getEngineName());
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "DROP DETACHED TABLE is unsupported for Database{}", database->getEngineName());
+    }
+
+    const bool table_detached = actual_database->isTableDetached(table_name);
+    const bool should_replicate_query = database->shouldReplicateQuery(getContext(), current_query_ptr);
+    if (query.if_exists)
+    {
+        if (!table_exists && !table_detached)
+            return {};
+    }
+    if (!table_exists && !table_detached)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
+
+    context_->checkAccess(AccessType::DROP_TABLE, table_id);
+
+    if (table_exists && !table_detached)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} must be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
+
+    /// Make sure we're really dropping a table, since view or dict could also be referenced
+    auto detached_create = actual_database->getCreateQueryFromDetachedMetadataByName(context_, table_name);
+    if (detached_create->isView())
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Detached object {} is a View and cannot be removed with DROP DETACHED TABLE",
+            table_id.getNameForLogs());
+    if (detached_create->is_dictionary)
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Detached object {} is a Dictionary and cannot be removed with DROP DETACHED TABLE",
+            table_id.getNameForLogs());
+
+    UUID detached_table_uuid = detached_create->uuid;
+    StorageID detached_table_id(table_id.getDatabaseName(), table_name, detached_table_uuid);
+
+    /// Load the table before metadata is moved to `metadata_dropped`.
+    /// The same "stub" StoragePtr is used for size checks and for the dropped-table queue.
+    String data_path = DatabaseCatalog::getStoreDirPath(detached_table_uuid);
+    detached_create->setDatabase(table_id.getDatabaseName());
+    detached_create->setTable(table_name);
+    auto detached_table
+        = createTableFromAST(*detached_create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE)
+              .second;
+    /// The temporary storage is not started and has no loaded parts.
+    /// Mark it as dropped so MergeTree checks the data directory size instead of the active parts size.
+    detached_table->is_dropped = true;
+    /// Each worker must authorize deleting its local data. Checking the initiator too would consume
+    /// its worker's one-shot `force_drop_table` flag and reject an otherwise permitted drop.
+    if (!should_replicate_query)
+        detached_table->checkTableCanBeDropped(getContext());
+
+    bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
+    bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
+    DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(detached_table_id, check_ref_deps, check_loading_deps, false);
+
+    if (should_replicate_query)
+    {
+        ddl_guard->releaseTableLock();
+        return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
+    }
+
+    if (query.sync)
+        uuid_to_wait = detached_table_uuid;
+
+    actual_database->dropDetachedTable(
+        context_,
+        table_name,
+        query.sync,
+        detached_table,
+        [detached_table_id, check_ref_deps, check_loading_deps]()
+        {
+            DatabaseCatalog::instance().removeDependencies(detached_table_id, check_ref_deps, check_loading_deps, false);
+            NamedCollectionFactory::instance().removeDependencies(detached_table_id);
+        });
+
+    return {};
+}
+
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
     /// The guard in `executeToTableImpl` only catches the explicit
@@ -412,7 +552,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 
     return {};
 }
-
 
 BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
 {
@@ -866,9 +1005,13 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     }
     else if (!drop.isTemporary())
     {
-        /// It can be view or table.
-        if (drop.kind == ASTDropQuery::Kind::Drop)
+        if (drop.detached)
+            required_access.emplace_back(AccessType::DROP_TABLE, drop.getDatabase(), drop.getTable());
+        else if (drop.kind == ASTDropQuery::Kind::Drop)
+        {
+            /// It can be view or table.
             required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.getDatabase(), drop.getTable());
+        }
         else if (drop.kind == ASTDropQuery::Kind::Truncate)
             required_access.emplace_back(AccessType::TRUNCATE, drop.getDatabase(), drop.getTable());
         else if (drop.kind == ASTDropQuery::Kind::Detach)
