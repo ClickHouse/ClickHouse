@@ -1,0 +1,55 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+    </logger>
+
+    <remote_servers>
+        <!-- The `Distributed` fan-out. Shard 2 has a single replica, and it is the initiator's own node, so
+             that shard is dispatched as a local plan and carries `_shard_num = 2` as a special scalar.
+             Shard 1 has 3 replicas so task-based parallel replicas stay enabled for the query. -->
+        <test_alien_fanout>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n4</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_alien_fanout>
+
+        <!-- `cluster_for_parallel_replicas` points here: one shard, unrelated to the fan-out above. The
+             shard scope of the fan-out says nothing about this cluster and must not be applied to it. -->
+        <test_alien_pr_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_alien_pr_cluster>
+    </remote_servers>
+</clickhouse>
