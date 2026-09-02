@@ -40,6 +40,21 @@ SELECT
     (SELECT groupArray((CounterID, EventDate)) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC, EventDate))
   = (SELECT groupArray((CounterID, EventDate)) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC, EventDate SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
+-- The result assertions above stay correct whenever read-in-order never runs, so pin the plan as a
+-- pair: the widened `DISTINCT` read must keep reverse in-order reading with the stale conversion
+-- dropped, while the same read without widening must still build one. The label prints as
+-- `Read type: ` or `ReadType: ` depending on `pretty`, so it is matched whitespace-insensitively.
+SELECT countIf(replaceAll(explain, ' ', '') ILIKE '%ReadType:InReverseOrder%') > 0
+   AND countIf(explain ILIKE '%Virtual row conversions%') = 0
+FROM (EXPLAIN actions = 1
+      SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC);
+
+SELECT countIf(replaceAll(explain, ' ', '') ILIKE '%ReadType:InReverseOrder%') > 0
+   AND countIf(explain ILIKE '%Virtual row conversions%') > 0
+FROM (EXPLAIN actions = 1
+      SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC
+      SETTINGS optimize_distinct_in_order = 0);
+
 DROP TABLE t_virtual_row_distinct;
 
 -- Fixed-key widening on key (a, b): ORDER BY a builds a one-column virtual row for a, then
