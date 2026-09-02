@@ -69,7 +69,7 @@ SKIP_FILES = {"home.mdx", "README.md"}
 LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
 CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
 INSTALL_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-install-page-banner"
-EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 42
+EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 43
 
 # The badge block the generator rewrites, same pattern as
 # update_quickstart_page in _site/scripts/update_quickstarts.py.
@@ -278,6 +278,14 @@ def check_localized_homepage_links(docs_root: Path) -> list:
     raw_internal_link = re.compile(
         r"href(?:=\{?|:)\s*['\"](?P<href>/[^'\"]+)['\"]"
     )
+    mcp_link = re.compile(
+        r"export const McpLink = \(\{ children \}\) => \{"
+        r".*?const path = localizeHref\("
+        r"['\"]/resources/support-center/knowledge-base/setup-installation/"
+        r"set-up-clickhouse-documentation-mcp-server['\"]\);"
+        r".*?href=\{href\}",
+        re.DOTALL,
+    )
     cloud_link = 'localizeHref("/get-started/setup/cloud")'
     errors = []
     for locale in LOCALES:
@@ -319,6 +327,12 @@ def check_localized_homepage_links(docs_root: Path) -> list:
             errors.append(
                 f"{page.relative_to(docs_root)}: raw internal homepage links "
                 "bypass localizeHref: " + ", ".join(raw_links)
+            )
+
+        if not mcp_link.search(source):
+            errors.append(
+                f"{page.relative_to(docs_root)}: McpLink must route its "
+                "knowledge-base path through localizeHref"
             )
 
         expected = f"/{locale}/get-started/setup/cloud"
