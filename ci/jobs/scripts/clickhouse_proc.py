@@ -15,7 +15,11 @@ from typing import List
 
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
-from ci.jobs.scripts.log_parser import EXPECTED_KILL_PATTERN, SANITIZER_OOM_PATTERN, FuzzerLogParser
+from ci.jobs.scripts.log_parser import (
+    EXPECTED_KILL_PATTERN,
+    SANITIZER_OOM_PATTERN,
+    FuzzerLogParser,
+)
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.info import Info
 from ci.praktika.result import Result

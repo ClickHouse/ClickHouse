@@ -373,7 +373,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         # is already set from a fatal anywhere in that whole family, so a fatal that landed
         # only in the plain (non-`.err.`) log must reach the parser too, or it is never seen.
         server_logs_family = _log_family(
-            server_log_path, lambda n: n.startswith("clickhouse-server")
+            server_log_path, lambda n: n.startswith("clickhouse-server") and ".log" in n
         )
         stderr_logs = _log_family(
             result_path, lambda n: n.startswith("stderr")
