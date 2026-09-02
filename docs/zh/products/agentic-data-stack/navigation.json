@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "开始使用",
       "pages": [
         "zh/products/agentic-data-stack/overview",
         "zh/products/agentic-data-stack/docker-setup"
       ]
     },
     {
-      "group": "Components",
+      "group": "组件",
       "pages": [
         "zh/products/agentic-data-stack/components/librechat",
         "zh/products/agentic-data-stack/components/mcp-server",

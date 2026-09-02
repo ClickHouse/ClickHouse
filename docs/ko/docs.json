@@ -4,7 +4,7 @@
       "pages": [
         "ko/index"
       ],
-      "tab": "Home"
+      "tab": "홈"
     },
     {
       "menu": [
@@ -21,7 +21,7 @@
           "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Database"
+      "tab": "데이터베이스"
     },
     {
       "menu": [
@@ -44,7 +44,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Open source"
+          "item": "오픈 소스"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -59,12 +59,12 @@
           "$ref": "./products/kubernetes-operator/navigation.json"
         }
       ],
-      "tab": "Solutions"
+      "tab": "솔루션"
     },
     {
       "menu": [
         {
-          "item": "Ecosystem",
+          "item": "생태계",
           "pages": [
             "ko/integrations/home",
             "ko/integrations/data-catalogs"
@@ -80,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrations"
+      "tab": "통합"
     },
     {
       "menu": [
@@ -97,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Resources"
+      "tab": "리소스"
     }
   ]
 }

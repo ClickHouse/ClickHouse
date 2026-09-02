@@ -1,6 +1,6 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "Get started",
+  "item": "시작하기",
   "pages": [
     {
       "group": "Get started",
@@ -11,7 +11,7 @@
         {
           "expandable": true,
           "expanded": true,
-          "group": "Introduction",
+          "group": "소개",
           "pages": [
             "ko/get-started/about/intro",
             "ko/get-started/about/why-clickhouse-is-so-fast",
@@ -20,7 +20,7 @@
         },
         {
           "expanded": true,
-          "group": "Use cases",
+          "group": "활용 사례",
           "pages": [
             "ko/get-started/use-cases/overview",
             "ko/get-started/use-cases/real-time-analytics",
@@ -41,11 +41,11 @@
         "ko/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Self-managed",
+          "group": "자가 관리형",
           "pages": [
             "ko/get-started/setup/self-managed/overview",
             {
-              "group": "Local development",
+              "group": "로컬 개발",
               "pages": [
                 "ko/get-started/setup/self-managed/quick-install",
                 "ko/get-started/setup/self-managed/clickhousectl",
@@ -54,7 +54,7 @@
               ]
             },
             {
-              "group": "Production server",
+              "group": "운영 서버",
               "pages": [
                 "ko/get-started/setup/self-managed/debian-ubuntu",
                 "ko/get-started/setup/self-managed/redhat",
@@ -68,13 +68,13 @@
     },
     {
       "expanded": true,
-      "group": "Sample datasets",
+      "group": "샘플 데이터셋",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "ko/get-started/sample-datasets/index",
         "ko/get-started/sample-datasets/playground",
         {
-          "group": "Benchmarks",
+          "group": "벤치마크",
           "pages": [
             "ko/get-started/sample-datasets/amplab-benchmark",
             "ko/get-started/sample-datasets/brown-benchmark",
@@ -86,7 +86,7 @@
           ]
         },
         {
-          "group": "Vector search & embeddings",
+          "group": "벡터 검색 및 임베딩",
           "pages": [
             "ko/get-started/sample-datasets/dbpedia",
             "ko/get-started/sample-datasets/hacker-news-vector-search",
@@ -95,7 +95,7 @@
           ]
         },
         {
-          "group": "Web & social analytics",
+          "group": "웹 및 소셜 분석",
           "pages": [
             "ko/get-started/sample-datasets/amazon-reviews",
             "ko/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -107,7 +107,7 @@
           ]
         },
         {
-          "group": "Geo & location",
+          "group": "Geo 및 위치",
           "pages": [
             "ko/get-started/sample-datasets/cell-towers",
             "ko/get-started/sample-datasets/foursquare-os-places",
@@ -115,7 +115,7 @@
           ]
         },
         {
-          "group": "Time series & sensors",
+          "group": "시계열 및 센서",
           "pages": [
             "ko/get-started/sample-datasets/environmental-sensors",
             "ko/get-started/sample-datasets/noaa",
@@ -124,7 +124,7 @@
           ]
         },
         {
-          "group": "Public records & open data",
+          "group": "공공 기록 및 오픈 데이터",
           "pages": [
             "ko/get-started/sample-datasets/covid19",
             "ko/get-started/sample-datasets/menus",
@@ -137,7 +137,7 @@
     },
     {
       "expanded": true,
-      "group": "Migrate",
+      "group": "마이그레이션",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "ko/get-started/migrate/overview",
@@ -146,7 +146,7 @@
           "pages": [
             "ko/get-started/migrate/postgres/overview",
             {
-              "group": "Migration guide",
+              "group": "마이그레이션 가이드",
               "pages": [
                 "ko/get-started/migrate/postgres/migration-guide/migration-guide-part1",
                 "ko/get-started/migrate/postgres/migration-guide/migration-guide-part2",
@@ -187,14 +187,14 @@
           ]
         },
         {
-          "group": "OSS to Cloud",
+          "group": "OSS에서 Cloud로",
           "pages": [
             "ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "ko/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
-          "group": "Other methods",
+          "group": "기타 메서드",
           "pages": [
             "ko/get-started/migrate/other-methods/clickhouse-local-etl",
             "ko/get-started/migrate/other-methods/etl-tool-to-clickhouse",

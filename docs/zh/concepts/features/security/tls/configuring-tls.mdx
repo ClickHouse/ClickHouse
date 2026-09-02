@@ -513,7 +513,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## 为独立运行的 ClickHouse Keeper 配置 OpenSSL
+  ## 为独立运行的 ClickHouse Keeper 配置 OpenSSL {#configure-openssl-for-standalone-clickhouse-keeper}
 </div>
 
 当 ClickHouse Keeper 以独立进程方式运行时 (而不是嵌入在 ClickHouse server 中) ，必须在 Keeper 配置文件中单独配置 OpenSSL 证书和相关设置。否则，Keeper 将无法为客户端通信 (`tcp_port_secure`) 或 Keeper 节点之间的 Raft 复制建立安全连接。
@@ -557,13 +557,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Note>
 
 <div id="openssl-verification-modes">
-  ## OpenSSL 验证模式和证书处理器
+  ## OpenSSL 验证模式和证书处理器 {#openssl-verification-modes}
 </div>
 
 `<openSSL>` 配置支持多种 `<verificationMode>` 和 `<invalidCertificateHandler>` 选项，用于控制 ClickHouse 如何验证 TLS 证书。这些设置适用于 clickhouse-server、clickhouse-client 以及独立运行的 ClickHouse Keeper。
 
 <div id="verification-modes">
-  ### 验证模式
+  ### 验证模式 {#verification-modes}
 </div>
 
 在 `<openSSL>` 的 `<server>` 或 `<client>` 部分中设置 `<verificationMode>`：
@@ -576,7 +576,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 | `strict`  | 要求提供对端证书并进行完整验证。如果证书缺失、已过期，或不是由受信任的 CA 签发，连接将失败。建议在生产环境中使用。 |
 
 <div id="invalid-certificate-handlers">
-  ### 无效证书处理器
+  ### 无效证书处理器 {#invalid-certificate-handlers}
 </div>
 
 在 `<openSSL>` 的 `<server>` 或 `<client>` 部分中设置 `<invalidCertificateHandler>`。该处理程序用于确定证书验证失败时如何处理。在服务器端，它控制对无效客户端证书的响应；在客户端，它控制对无效服务器证书的响应。
@@ -587,7 +587,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 | `AcceptCertificateHandler` | 即使证书无效，也接受连接。仅用于测试。      |
 
 <div id="disabling-certificate-verification">
-  ### 示例：禁用证书验证
+  ### 示例：禁用证书验证 {#disabling-certificate-verification}
 </div>
 
 <Warning>
@@ -667,8 +667,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </openSSL>
 ```
 
+## 无需重启即可轮换证书和 CA 证书 {#rotating-certificates-without-restart}
+
+ClickHouse server 和 ClickHouse Keeper 会监视 `openSSL.server` 和 `openSSL.client` 配置段 (以及可组合协议的 `protocols.*` 配置段) 中由 `certificateFile`、`privateKeyFile` 和 `caConfig` 引用的文件；如果 `caConfig` 指向的是一个目录，则监视该目录下的文件。当其中任一文件发生变化，或执行 `SYSTEM RELOAD CONFIG` 时，证书会被重新加载，并用于所有新建立的 TLS 连接，包括 HTTPS、安全的原生协议、服务器间连接、到 Keeper 的连接，以及 Keeper 节点之间的 Raft 连接。已建立的连接仍会继续使用其建立时所用的证书。
+
+若要在不停机的情况下轮换 CA，请先将 `caConfig` 文件替换为同时包含旧 CA 证书和新 CA 证书的证书包，然后将节点证书和客户端证书切换为由新 CA 签发的证书，最后再将该证书包替换为仅包含新 CA 证书的文件。
+
 <div id="summary">
-  ## 总结
+  ## 总结 {#summary}
 </div>
 
 本文重点介绍了如何为 ClickHouse 环境配置 TLS。生产环境中的具体设置会因需求不同而有所差异，例如证书验证级别、协议、密码套件等。不过，相信你现在已经对配置和建立安全连接所需的步骤有了较为清晰的认识。

@@ -513,7 +513,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## 독립 실행형 ClickHouse Keeper용 OpenSSL 구성
+  ## 독립 실행형 ClickHouse Keeper용 OpenSSL 구성 {#configure-openssl-for-standalone-clickhouse-keeper}
 </div>
 
 ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 서버에 내장되지 않은 형태)로 실행하는 경우, OpenSSL 인증서와 설정은 Keeper 설정 파일에서 별도로 구성해야 합니다. 이를 구성하지 않으면 Keeper는 클라이언트 통신(`tcp_port_secure`)이나 Keeper 노드 간 Raft 복제를 위한 보안 연결을 설정할 수 없습니다.
@@ -557,13 +557,13 @@ ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 
 </Note>
 
 <div id="openssl-verification-modes">
-  ## OpenSSL 검증 모드 및 인증서 핸들러
+  ## OpenSSL 검증 모드 및 인증서 핸들러 {#openssl-verification-modes}
 </div>
 
 `<openSSL>` 구성은 ClickHouse가 TLS 인증서를 검증하는 방식을 제어하는 `<verificationMode>` 및 `<invalidCertificateHandler>`에 대해 여러 옵션을 지원합니다. 이러한 설정은 clickhouse-server, clickhouse-client 및 독립 실행형 ClickHouse Keeper에 적용됩니다.
 
 <div id="verification-modes">
-  ### 검증 모드
+  ### 검증 모드 {#verification-modes}
 </div>
 
 `<openSSL>`의 `<server>` 또는 `<client>` 섹션에서 `<verificationMode>`를 설정합니다:
@@ -576,7 +576,7 @@ ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 
 | `strict`  | 피어 인증서를 요구하고 완전히 검증합니다. 인증서가 없거나 만료되었거나 신뢰할 수 있는 CA가 서명하지 않은 경우 연결이 실패합니다. 프로덕션 환경에 권장됩니다. |
 
 <div id="invalid-certificate-handlers">
-  ### 유효하지 않은 인증서 핸들러
+  ### 유효하지 않은 인증서 핸들러 {#invalid-certificate-handlers}
 </div>
 
 `<openSSL>`의 `<server>` 또는 `<client>` 섹션 내에 `<invalidCertificateHandler>`를 설정합니다. 이 핸들러는 인증서 검증에 실패했을 때 어떻게 처리할지를 결정합니다. server 측에서는 유효하지 않은 클라이언트 인증서에 대한 응답을 제어합니다. client 측에서는 유효하지 않은 server 인증서에 대한 응답을 제어합니다.
@@ -587,7 +587,7 @@ ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 
 | `AcceptCertificateHandler` | 인증서가 유효하지 않아도 connection을 허용합니다. 테스트 용도로만 사용하십시오.  |
 
 <div id="disabling-certificate-verification">
-  ### 예시: 인증서 검증 비활성화
+  ### 예시: 인증서 검증 비활성화 {#disabling-certificate-verification}
 </div>
 
 <Warning>
@@ -667,8 +667,19 @@ ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 
 </openSSL>
 ```
 
+## 재시작 없이 인증서 및 CA 인증서 교체하기 {#rotating-certificates-without-restart}
+
+ClickHouse 서버와 ClickHouse Keeper는 `openSSL.server` 및 `openSSL.client` 섹션(composable protocol의 경우 `protocols.*`)의
+`certificateFile`, `privateKeyFile`, `caConfig`가 참조하는 파일을 감시하며, `caConfig`가 디렉터리라면 해당 디렉터리 안의 파일을
+감시합니다. 이 파일 중 하나가 변경되거나 `SYSTEM RELOAD CONFIG`가 실행되면 인증서가 다시 로드되어 HTTPS, 보안 네이티브 프로토콜,
+서버 간(interserver) 연결, Keeper와의 연결, Keeper 노드 간 Raft 연결 등 모든 새 TLS 연결에 사용됩니다. 이미 수립된 연결은
+연결을 열 때 사용한 인증서를 계속 사용합니다.
+
+다운타임 없이 CA를 교체하려면 먼저 `caConfig` 파일을 기존 CA 인증서와 새 CA 인증서를 모두 포함하는 번들로 대체하고, 이어서 노드
+인증서와 클라이언트 인증서를 새 CA가 발급한 것으로 전환한 다음, 마지막으로 해당 번들을 새 CA 인증서만 담은 것으로 대체하십시오.
+
 <div id="summary">
-  ## 요약
+  ## 요약 {#summary}
 </div>
 
 이 문서에서는 TLS가 적용된 ClickHouse 환경을 구성하는 방법을 중점적으로 살펴보았습니다. 프로덕션 환경에서는 요구 사항에 따라 설정이 달라질 수 있습니다. 예를 들어 인증서 검증 수준, 프로토콜, 암호군 등이 달라질 수 있습니다. 이제 보안 연결을 구성하고 구현하는 데 필요한 단계는 충분히 이해할 수 있을 것입니다.
