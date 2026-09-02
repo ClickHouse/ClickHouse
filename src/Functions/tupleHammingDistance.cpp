@@ -141,7 +141,7 @@ REGISTER_FUNCTION(TupleHammingDistance)
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
 
 :::note
-The result type is determined the same way it is for [Arithmetic functions](/reference/functions/regular-functions/arithmetic-functions), based on the number of elements in the input tuples.
+The result type is determined the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
 
 ```sql
 SELECT

@@ -13,8 +13,7 @@ PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(
     const std::string & conf_name_,
 #endif
     const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_,
-    std::optional<String> default_session_user_)
+    const ProfileEvents::Event & write_event_)
     : server(server_)
     , log(getLogger("PostgreSQLHandlerFactory"))
     , read_event(read_event_)
@@ -23,7 +22,6 @@ PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(
     , conf_name(conf_name_)
 #endif
     , secure_required(secure_required_)
-    , default_session_user(std::move(default_session_user_))
 {
     auth_methods =
     {
@@ -39,9 +37,9 @@ Poco::Net::TCPServerConnection * PostgreSQLHandlerFactory::createConnectionImpl(
     LOG_TRACE(log, "PostgreSQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 
 #if USE_SSL
-    return new PostgreSQLHandler(socket, conf_name, server, tcp_server, ssl_enabled, secure_required, connection_id, default_session_user, auth_methods, read_event, write_event);
+    return new PostgreSQLHandler(socket, conf_name, server, tcp_server, ssl_enabled, secure_required, connection_id, auth_methods, read_event, write_event);
 #else
-    return new PostgreSQLHandler(socket, server, tcp_server, ssl_enabled, secure_required, connection_id, default_session_user, auth_methods, read_event, write_event);
+    return new PostgreSQLHandler(socket, server, tcp_server, ssl_enabled, secure_required, connection_id, auth_methods, read_event, write_event);
 #endif
 }
 

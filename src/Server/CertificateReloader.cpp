@@ -14,12 +14,6 @@
 namespace DB
 {
 
-CertificateReloader & CertificateReloader::instance()
-{
-    static CertificateReloader instance;
-    return instance;
-}
-
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;

@@ -135,7 +135,7 @@ struct SelectQueryInfo
 
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
-    TableExpressionNodePtr table_expression;
+    QueryTreeNodePtr table_expression;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -215,6 +215,9 @@ struct SelectQueryInfo
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
+
+    /// During read from MergeTree parts will be removed from snapshot after they are not needed
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
     bool isFinal() const;
 

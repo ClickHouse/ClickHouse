@@ -51,18 +51,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-def assert_socket_receive_timeout(error, expected_origin):
-    # receive_timeout=5 must surface as SOCKET_TIMEOUT reporting the 5000 ms it asked for.
-    # send_timeout stays distinct from it, or this value is ambiguous between the two settings,
-    # and stays below it, since a blocking secure read waits max(receive_timeout, send_timeout).
-    assert "Timeout exceeded while reading from socket" in error
-    assert "5000 ms" in error
-    assert "(SOCKET_TIMEOUT)" in error
-    # Each combination formats the socket description differently, so an ignored
-    # async_socket_for_remote or use_hedged_requests would show up as another arm's wording.
-    assert expected_origin in error, f"expected {expected_origin} in: {error}"
-
-
 def test(started_cluster):
     NODES["node2"].replace_config(
         "/etc/clickhouse-server/users.d/users.xml",
@@ -84,20 +72,31 @@ def test(started_cluster):
 
     assert attempts < 1000
 
-    error = NODES["node1"].query_and_get_error(
-        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=4, use_hedged_requests=0, async_socket_for_remote=0;"
+    start = time.time()
+    NODES["node1"].query_and_get_error(
+        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;"
     )
+    end = time.time()
+    assert end - start < 10
 
-    assert_socket_receive_timeout(error, "socket (peer: ")
-
+    start = time.time()
     error = NODES["node1"].query_and_get_error(
-        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=4, use_hedged_requests=0, async_socket_for_remote=1;"
+        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=1;"
     )
+    end = time.time()
 
-    assert_socket_receive_timeout(error, "socket (socket (")
+    assert end - start < 10
 
+    # Check that exception about timeout wasn't thrown from DB::ReadBufferFromPocoSocket::nextImpl().
+    assert error.find("DB::ReadBufferFromPocoSocket::nextImpl()") == -1
+
+    start = time.time()
     error = NODES["node1"].query_and_get_error(
-        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=4, use_hedged_requests=1, async_socket_for_remote=1;"
+        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=1, async_socket_for_remote=1;"
     )
+    end = time.time()
 
-    assert_socket_receive_timeout(error, "socket (node2:9440, receive timeout")
+    assert end - start < 10
+
+    # Check that exception about timeout wasn't thrown from DB::ReadBufferFromPocoSocket::nextImpl().
+    assert error.find("DB::ReadBufferFromPocoSocket::nextImpl()") == -1

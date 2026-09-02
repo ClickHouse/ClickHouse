@@ -355,7 +355,6 @@ struct AggregateFunctionSumKahanData
         T partial_compensations[unroll_count]{};
 
         ptr += start;
-        condition_map += start;
         size_t count = end - start;
 
         const auto * end_ptr = ptr + count;
@@ -556,7 +555,7 @@ public:
                 add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }

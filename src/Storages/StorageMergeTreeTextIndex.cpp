@@ -176,7 +176,7 @@ private:
 
                 size_t block_idx = matching_blocks[next_matching_block++];
                 dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
             else /// Sequential reading without filtering.
             {
@@ -186,7 +186,7 @@ private:
                     continue;
                 }
 
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
         }
     }
@@ -259,8 +259,7 @@ private:
         DataTypes key_types = {string_type};
 
         /// FieldRef can reference a column cell by pointer, avoiding string copies.
-        /// The sparse index is loaded without a cache here, so tokens are stored as a raw column.
-        ColumnsWithTypeAndName ref_columns = {{sparse_index.getTokensColumn(), string_type, "token"}};
+        ColumnsWithTypeAndName ref_columns = {{sparse_index.tokens, string_type, "token"}};
 
         for (size_t i = 0; i < num_blocks; ++i)
         {
