@@ -42,7 +42,6 @@ CREATE USER $user;
 GRANT CREATE TABLE, SELECT, INSERT ON $db.* TO $user;
 GRANT TABLE ENGINE ON Remote TO $user;
 GRANT REMOTE ON *.* TO $user;
-GRANT READ ON DISK TO $user;
 REVOKE SELECT, INSERT ON $db.protected_target FROM $user;
 EOF
 

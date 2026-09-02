@@ -38,10 +38,7 @@ class StorageUsage(MetaClasses.SerializableSingleton):
     def _init(cls):
         if not StorageUsage.exist():
             print("NOTE: UsageStorage data will be initialized")
-            Path(cls.file_name_static()).parent.mkdir(parents=True, exist_ok=True)
-            StorageUsage(
-                downloaded=0, uploaded=0, downloaded_details={}, uploaded_details={}
-            ).dump()
+            StorageUsage(downloaded=0, uploaded=0, downloaded_details={}, uploaded_details={}).dump()
 
     @classmethod
     def add_downloaded(cls, file_path):
@@ -53,7 +50,7 @@ class StorageUsage(MetaClasses.SerializableSingleton):
         file_zize = cls.get_size_bytes(file_path)
         usage.downloaded += file_zize
         if file_name in usage.downloaded_details:
-            # print(f"WARNING: Duplicated download for filename [{file_name}]")
+            print(f"WARNING: Duplicated download for filename [{file_name}]")
             usage.downloaded_details[file_name] += file_zize
         else:
             usage.downloaded_details[file_name] = file_zize
@@ -69,7 +66,7 @@ class StorageUsage(MetaClasses.SerializableSingleton):
         file_zize = cls.get_size_bytes(file_path)
         usage.uploaded += file_zize
         if file_name in usage.uploaded_details:
-            #print(f"WARNING: Duplicated upload for filename [{file_name}]")
+            print(f"WARNING: Duplicated upload for filename [{file_name}]")
             usage.uploaded_details[file_name] += file_zize
         else:
             usage.uploaded_details[file_name] = file_zize

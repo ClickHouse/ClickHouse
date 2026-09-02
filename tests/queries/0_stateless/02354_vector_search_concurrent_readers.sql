@@ -18,7 +18,8 @@ SET use_query_cache = 0;
 -- Session wide, so it also covers the statements that only read system tables.
 SET query_plan_try_use_vector_search = 1;
 
-DROP TABLE IF EXISTS vs_concurrent;
+-- ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op.
+DROP TABLE IF EXISTS vs_concurrent SETTINGS ignore_drop_queries_probability = 0;
 
 CREATE TABLE vs_concurrent
 (
@@ -286,4 +287,4 @@ SELECT 'diff_filtered', (
     )
 );
 
-DROP TABLE vs_concurrent;
+DROP TABLE vs_concurrent SETTINGS ignore_drop_queries_probability = 0;

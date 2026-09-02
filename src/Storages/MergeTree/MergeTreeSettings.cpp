@@ -210,23 +210,6 @@ additionally need `nullable_serialization_version = 'allow_sparse'`).
 Leaving it disabled keeps inserts/merges as fast as before; enabling it
 adds an O(rows) pass per sparse-eligible column.
 )", BETA) \
-    DECLARE(Bool, skip_empty_columns_on_insert, false, R"(
-If enabled, columns whose values are entirely type-defaults in a given INSERT
-block are not written to the data part on disk. When the part is later read,
-missing columns are filled with the default of their recorded type. This saves
-disk space for sparse-update workloads
-where most columns in each INSERT are left at their type's default value.
-Columns with `DEFAULT`, `MATERIALIZED`, or `ALIAS` expressions are never
-skipped, because the read path would evaluate the expression instead of
-returning the type-default that was explicitly inserted. Patch parts
-(used by lightweight UPDATE) are also excluded.
-This optimization records the missing columns in the part's
-`serialization.json` using the `with_missing_columns` format version, so it
-only takes effect when `serialization_info_version` is set to
-`with_missing_columns`. With a lower version (for example pinned to a lower
-value for a rolling upgrade so older servers can read freshly written parts)
-no columns are skipped.
-)", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128
@@ -309,18 +292,15 @@ Possible values:
 - `basic` - Basic format.
 - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
 This makes settings like `string_serialization_version` effective.
-- `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
-listing omitted columns and the type whose default represents their values.
-Required to enable `skip_empty_columns_on_insert`.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
+switch to `WITH_TYPES` to enable per-type serialization versions.
 )", 0) \
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
 Controls the serialization format for top-level `String` columns.
 
-This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
+This setting is only effective when `serialization_info_version` is set to "with_types".
 When set to `with_size_stream`, top-level `String` columns are serialized with a separate
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.
@@ -805,8 +785,9 @@ Possible values:
 - Positive integer.
 
 The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-setting must not exceed the product of [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size)
-and [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+setting should be less than the value of the
+[background_pool_size](/reference/settings/server-settings/settings/background#background_pool_size)
+* [background_merges_mutations_concurrency_ratio](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, remove_rolled_back_parts_immediately, 1, R"(
@@ -1079,58 +1060,6 @@ and increases ClickHouse boot time. Most often this is a consequence of an
 incorrect design (mistakes when choosing a partitioning strategy - too small
 partitions).
 )", 0) \
-    DECLARE(UInt64, max_table_size_rows, 0, R"(
-If the total number of rows in active data parts of the table exceeds this
-value, an `INSERT` is interrupted with the `Table size limit exceeded`
-exception. The limit is checked at the beginning of `INSERT` and when new
-data parts are committed to the working set, including the results of
-background merges and mutations (so a mutation that increases the table size
-beyond the limit will be retried without finishing). Inserts done by
-materialized views are also checked. The limit is not checked on replicated
-fetches, which permits a race condition when parallel inserts into multiple
-replicas overdraft the limit. Committing empty data parts is always allowed,
-so the data can be removed from a table that exceeds the limit, e.g. with
-`TRUNCATE` or `ALTER TABLE ... DROP PARTITION`.
-
-Possible values:
-- Any positive integer.
-- 0 — unlimited.
-
-It is useful for multi-tenant, temporary, and demo services.
-)", 0) \
-    DECLARE(UInt64, max_table_size_bytes_compressed, 0, R"(
-If the total number of compressed bytes (the size on disk) across all active
-and inactive data parts of the table exceeds this value, an `INSERT` is
-interrupted with the `Table size limit exceeded` exception. Inactive parts
-are counted as well because the purpose of this setting is to limit disk
-usage. Note that inactive parts are removed in the background (see the
-`old_parts_lifetime` setting), so the observed size can decrease over time.
-The limit is checked at the beginning of `INSERT` and when new data parts
-are committed to the working set, including the results of background merges
-and mutations. Inserts done by materialized views are also checked. The
-limit is not checked on replicated fetches, which permits a race condition
-when parallel inserts into multiple replicas overdraft the limit. Committing
-empty data parts is always allowed, so the data can be removed from a table
-that exceeds the limit, e.g. with `TRUNCATE` or `ALTER TABLE ... DROP
-PARTITION`.
-
-Possible values:
-- Any positive integer.
-- 0 — unlimited.
-
-It is useful for multi-tenant, temporary, and demo services.
-)", 0) \
-    DECLARE(UInt64, max_table_size_bytes_uncompressed, 0, R"(
-The same as `max_table_size_bytes_compressed`, but the limit is applied to
-the total number of uncompressed bytes across all active and inactive data
-parts of the table.
-
-Possible values:
-- Any positive integer.
-- 0 — unlimited.
-
-It is useful for multi-tenant, temporary, and demo services.
-)", 0) \
     DECLARE(Bool, async_insert, false, R"(
 If true, data from INSERT query is stored in queue and later flushed to
 table in background.
@@ -1218,12 +1147,8 @@ reduce memory usage
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
-Compared against the number of streams a wide part writes, which can greatly exceed its number
-of columns: a `Map` with many buckets, or a deeply nested `Array` or `Tuple`, writes many streams
-for a single column, and one write buffer is allocated per stream.
-
 Possible values:
-- 0 - disabled
+- 0 - unlimited
 - 1 - always enabled
 )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
@@ -1341,7 +1266,7 @@ Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one re
 compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
 default; this setting will be removed in a future release.
 )", 0) \
-    DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
+    DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
 replica. An inactive replica becomes lost when when this number exceed.
 
@@ -2293,6 +2218,7 @@ Requires `enable_block_number_column` and `enable_block_offset_column` to be ena
     DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
+Only integer-like types are currently adaptive.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
