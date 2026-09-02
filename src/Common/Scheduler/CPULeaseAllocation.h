@@ -217,7 +217,7 @@ private:
     /// Clamped at 0 (SlotCount is unsigned; `parked_count` can transiently exceed the ceiling).
     SlotCount effectiveMaxSlots() const
     {
-        return parked_count >= current_max_slots ? 0 : current_max_slots - parked_count;
+        return threads.parked_count >= current_max_slots ? 0 : current_max_slots - threads.parked_count;
     }
 
     /// Resource request failed.
@@ -258,6 +258,7 @@ private:
     ///  * released: lease object was not created or was destructed, has no CPU slot
     ///  * running: lease object owns a CPU slot
     ///  * preempted: lease object does not own a CPU slot
+    ///  * parked: lease object does not own a CPU slot (thread voluntarily entered a non-CPU wait: I/O or idle)
     /// Possible transitions:
     ///  * released -> running: initial acquire() or tryAcquire() call
     ///    - thread starts execution
@@ -269,10 +270,12 @@ private:
     ///    - renew() returns false and thread should stop itself
     ///  * running -> released: lease destruction and release() of its acquired slot
     ///    - thread execution stop voluntary (query is done/aborted/canceled)
+    ///  * running -> parked: thread enters a non-CPU wait via park() and releases its slot
+    ///    - thread execution continues (doing I/O or waiting for a task), not blocked on the scheduler
+    ///  * parked -> running: thread leaves the wait via unpark() and borrows a slot back
+    ///    - thread execution resumes
     /// IMPORTANT: `CPULeaseAllocation` does not provide one-to-one a mapping between slots and threads because
     /// IMPORTANT: a thread does not have an associated slot during preemption. On resuming, it gets a new slot.
-    ///  * parked: lease object does not own a CPU slot, but (unlike preempted) it is not waiting
-    ///    for a grant — the thread is doing a non-CPU wait (I/O or idle) and will `unpark` itself.
     struct Threads
     {
         explicit Threads(size_t max_threads_)
@@ -283,7 +286,7 @@ private:
         {}
         boost::dynamic_bitset<> leased; /// Thread lease object status bitmask (0=released; 1=preempted|parked|running)
         boost::dynamic_bitset<> preempted; /// Preempted threads bitmask (0=running|parked|released; 1=preempted)
-        boost::dynamic_bitset<> parked; /// Parked threads bitmask (0=running|preempted|released; 1=parked for I/O or idle)
+        boost::dynamic_bitset<> parked; /// Parked threads bitmask (0=running|preempted|released; 1=parked)
         std::vector<std::condition_variable> wake; /// To wake specific preempted thread
 
         /// A thread is "running" (holds a slot and is on CPU) iff leased and neither preempted nor parked.
@@ -292,6 +295,7 @@ private:
         // For optimization (could be computed based on leased, preempted and parked fields)
         size_t running_count = 0; /// Number of currently running threads (leased & !preempted & !parked)
         size_t last_running = boost::dynamic_bitset<>::npos; /// Highest thread num of a running threads
+        size_t parked_count = 0; /// Number of currently parked threads (count of set bits in `parked`)
     } threads;
 
     /// Resource accounting
@@ -306,11 +310,6 @@ private:
     /// eager default). Raised/lowered at runtime by `setMax`. `schedule()` stops issuing
     /// new requests once `allocated >= current_max_slots`.
     SlotCount current_max_slots = 0;
-
-    /// Number of threads currently parked for a non-CPU wait (I/O or idle). Lowers the effective
-    /// scheduling cap to `current_max_slots - parked_count` (see `effectiveMaxSlots`) so a parked
-    /// thread's slot demand is dropped and its semaphore unit can be freed for other queries.
-    SlotCount parked_count = 0;
 
     /// Scheduling control (for interaction with resource scheduler)
     /// A size-limited cyclic buffer of requests that are sent to the scheduler.

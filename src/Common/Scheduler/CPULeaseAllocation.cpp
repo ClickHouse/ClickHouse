@@ -438,7 +438,7 @@ void CPULeaseAllocation::parkLease(Lease & lease)
     // (1) Move running -> parked. Mirrors setPreempted's bookkeeping, but a distinct state and
     //     lighter: no clock read, no waitForGrant. The freed slot becomes granted (unacquired).
     threads.parked.set(thread_num);
-    ++parked_count;
+    ++threads.parked_count;
     --threads.running_count;
     if (threads.last_running == thread_num)
     {
@@ -481,7 +481,7 @@ void CPULeaseAllocation::parkLease(Lease & lease)
         park_span.addAttribute("thread_number", thread_num);
         park_span.addAttribute("allocated", allocated);
         park_span.addAttribute("running", threads.running_count);
-        park_span.addAttribute("parked", parked_count);
+        park_span.addAttribute("parked", threads.parked_count);
     }
     LOG_EVENT(K);
 }
@@ -498,7 +498,7 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
 
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlUnparks);
     parked_increment.sub(1);
-    --parked_count;
+    --threads.parked_count;
 
     // Restore parked -> running, borrowing a slot immediately (never block). Mirrors
     // resetPreempted minus the cv wake (this very thread is the one resuming). `--granted` may go
@@ -523,7 +523,7 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
         unpark_span.addAttribute("thread_number", thread_num);
         unpark_span.addAttribute("allocated", allocated);
         unpark_span.addAttribute("running", threads.running_count);
-        unpark_span.addAttribute("parked", parked_count);
+        unpark_span.addAttribute("parked", threads.parked_count);
     }
 
     // Tearing down: do not re-request; the thread stops at its next renew().
