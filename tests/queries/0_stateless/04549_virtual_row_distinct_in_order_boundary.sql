@@ -1,6 +1,6 @@
 -- Tags: long
--- ^ Every fixture needs several unmerged parts with small granules, so this file is slower than a
--- plain-read test and is exempted from the 180s flaky-check runtime gate.
+-- ^ Every fixture needs several unmerged parts of small granules, so the file is dominated by mark
+-- reads and costs tens of seconds in sanitizer lanes.
 
 -- Regression test for the "Virtual row boundary violated in MergingSortedAlgorithm" logical error
 -- (STID 2651-3359). ORDER BY builds a read-in-order virtual row for the sort-key prefix it needs
