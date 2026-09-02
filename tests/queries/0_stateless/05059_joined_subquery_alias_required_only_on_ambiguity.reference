@@ -37,6 +37,9 @@ brand	item_id	item.brand
 item_id
 1
 2
+-- Equally named columns of a single table expression do not need a qualification
+1	1
+1	1	3
 -- The restriction can be disabled entirely
 100
 100

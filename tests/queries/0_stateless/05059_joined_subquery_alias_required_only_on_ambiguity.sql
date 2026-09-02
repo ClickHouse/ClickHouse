@@ -69,6 +69,10 @@ SELECT * FROM (SELECT 100 AS brand), item ORDER BY item_id FORMAT TSVWithNames;
 SELECT * EXCEPT (brand) FROM item, (SELECT 100 AS brand) ORDER BY item_id FORMAT TSVWithNames;
 SELECT COLUMNS('brand') FROM item, (SELECT 100 AS brand); -- { serverError ALIAS_REQUIRED }
 
+SELECT '-- Equally named columns of a single table expression do not need a qualification';
+SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x));
+SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x)), (SELECT 3 AS y);
+
 SELECT '-- The restriction can be disabled entirely';
 SELECT brand FROM item, (SELECT s_brand AS brand FROM sales) ORDER BY brand SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM item, (SELECT toInt32(100) AS brand) ORDER BY item_id SETTINGS joined_subquery_requires_alias = 0 FORMAT TSVWithNames;

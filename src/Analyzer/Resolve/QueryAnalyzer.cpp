@@ -2417,24 +2417,41 @@ void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
             return;
     }
 
-    std::unordered_set<std::string_view> unique_projection_names;
-    std::unordered_set<std::string_view> duplicate_projection_names;
-    for (const auto & projection_name : matched_projection_names)
+    /// The table expression a matched node originates from. Subcolumns and `Nested` columns are wrapped into functions.
+    auto get_column_source = [](const QueryTreeNodePtr & node) -> const IQueryTreeNode *
     {
-        if (!unique_projection_names.emplace(projection_name).second)
-            duplicate_projection_names.emplace(projection_name);
-    }
+        const IQueryTreeNode * current = node.get();
+        while (current)
+        {
+            if (const auto * column_node = current->as<ColumnNode>())
+                return column_node->getColumnSourceOrNull().get();
 
-    if (duplicate_projection_names.empty())
-        return;
+            const auto * function_node = current->as<FunctionNode>();
+            if (!function_node || function_node->getArguments().getNodes().empty())
+                return nullptr;
 
+            current = function_node->getArguments().getNodes().front().get();
+        }
+        return nullptr;
+    };
+
+    /// Only equally named columns of different table expressions matter. A single table expression is allowed to expose
+    /// equally named columns (SELECT * FROM (SELECT x, x FROM t)), and they do not need a qualification.
+    std::unordered_map<std::string_view, size_t> projection_name_to_first_node_index;
     size_t matched_nodes_size = matched_nodes.size();
     for (size_t i = 0; i < matched_nodes_size; ++i)
     {
-        if (!duplicate_projection_names.contains(matched_projection_names[i]))
+        auto [it, inserted] = projection_name_to_first_node_index.emplace(matched_projection_names[i], i);
+        if (inserted)
             continue;
 
-        auto unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(matched_nodes[i]);
+        const auto & first_node = matched_nodes[it->second];
+        if (get_column_source(first_node) == get_column_source(matched_nodes[i]))
+            continue;
+
+        auto unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(first_node);
+        if (!unaliased_table_expression)
+            unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(matched_nodes[i]);
         if (!unaliased_table_expression)
             continue;
 
