@@ -157,12 +157,17 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
-            /// The plan sharded this join by primary-key ranges, but the stream counts diverged at
-            /// pipeline-building time (e.g. a data-dependent `PREWHERE` pruned one side down to a single
-            /// empty stream), so the per-shard pipeline cannot be built. Degrade to the single-stream
-            /// merge join instead of failing: each side's per-shard streams are sorted by the join keys
-            /// and the merge preserves the order the merge join requires.
-            if (!primary_key_sharding.empty() && join->getTableJoin().kind() != JoinKind::Paste)
+            /// A merge join consumes one sorted stream per side, but an input can arrive as several
+            /// streams that are each sorted by the join keys (its pre-join sort is always a sort by them, so
+            /// there is no other kind of multi-stream input here):
+            ///  - the plan sharded this join by primary-key ranges, but the stream counts diverged at
+            ///    pipeline-building time (e.g. a data-dependent `PREWHERE` pruned one side down to a single
+            ///    empty stream), so the per-shard pipeline cannot be built;
+            ///  - the input is a join below that was sharded, while this one was not, and the sharding pass
+            ///    left the pre-join sort partitioned per shard (`PartitionedFinishSorting`).
+            /// Degrade to the single-stream merge join instead of failing: merging the streams preserves
+            /// the order the merge join requires.
+            if (join->getTableJoin().kind() != JoinKind::Paste)
             {
                 auto merge_to_single_sorted_stream = [&](QueryPipelineBuilder & pipeline, const Names & key_names)
                 {
@@ -196,7 +201,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
                 std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
-            joined_pipeline->resize(max_streams);
+
+            /// Spread the single output stream over `max_streams` for the steps above - unless a step above
+            /// consumes the stream as it is: a merge join above that inherits this join's output order
+            /// (`keepLeftPipelineInOrder`, it would only merge the streams back into one), or, when this join
+            /// was sharded but had to degrade, a step above that pairs the streams positionally with the
+            /// shards of another input. A resize hands out chunks arbitrarily, so `max_streams` streams of it
+            /// must never be mistaken for `max_streams` shards.
+            if (primary_key_sharding.empty() && !keep_left_read_in_order)
+                joined_pipeline->resize(max_streams);
         }
         else
         {

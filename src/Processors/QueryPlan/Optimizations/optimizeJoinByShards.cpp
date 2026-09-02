@@ -475,8 +475,14 @@ void optimizeJoinByShards(QueryPlan::Node & root, bool only_parallel_sorted_merg
 
                 frame.results.back() = std::nullopt;
             }
-            else if (can_split_left_table)
+            else if (can_split_left_table && !full_sorting_merge_join)
             {
+                /// A hash join keeps its probe streams one-to-one (`keepLeftPipelineInOrder`), so a sharding
+                /// that a join above applies to the left subtree survives it. An unsharded merge join does
+                /// not: it joins one stream per side and gives one stream back, so the sharding of its left
+                /// subtree would be lost below it and the streams above it would no longer be the shards the
+                /// join above pairs positionally with its other input. The chain stops at such a join; the
+                /// joins collected below it are sharded on their own (`apply` below).
                 /// TODO : check if any type conversion is needed for join_use_nulls.
                 result = std::move(frame.results.front());
                 result->joins.joins_to_keep_in_order.emplace_back(join_step);

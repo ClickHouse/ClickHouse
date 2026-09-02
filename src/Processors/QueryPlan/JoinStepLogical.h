@@ -194,13 +194,22 @@ public:
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
     /// Whether both join inputs can be efficiently read in the order of the join keys, so that the
-    /// pre-join sorts of a merge join become cheap (`FinishSorting`) or disappear. This is what makes the
-    /// `sorted_merge` / `parallel_sorted_merge` algorithms selectable; the method returns false right away
-    /// when neither is in `join_algorithm`. Used by two passes that must agree: `tryAddJoinRuntimeFilter`
-    /// (an eligible sorted-merge join must not get a runtime filter, which would force a hash algorithm)
-    /// and `buildPhysicalJoin` (the actual selection). The result is memoized; `node` must be the plan node
-    /// holding this step.
+    /// pre-join sorts of a merge join become cheap (`FinishSorting`) or disappear. An input qualifies when
+    /// it is a `MergeTree` read whose primary key starts with its join keys, or the output of a nested merge
+    /// join sorted by them. This is what makes the `sorted_merge` / `parallel_sorted_merge` algorithms
+    /// selectable; the method returns false right away when neither is in `join_algorithm`. Used by two
+    /// passes that must agree: `tryAddJoinRuntimeFilter` (an eligible sorted-merge join must not get a
+    /// runtime filter, which would force a hash algorithm) and `buildPhysicalJoin` (the actual selection).
+    /// The result is memoized; `node` must be the plan node holding this step.
     bool inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node);
+
+    /// The order of this join's output, if the algorithm it is predicted to select is a merge join, as
+    /// `mergeJoinOutputOrder` of `JoinStepLogical.cpp` describes it: for every position of the merge-join
+    /// sort description, the output columns sorted at that position. Empty when a non-merge algorithm is
+    /// predicted or the output is not sorted. Only needed while a join above this one is inspected before
+    /// this one is physical (the runtime-filter pass with parallel replicas); on the physical plan the
+    /// selected algorithm is read from the `JoinStep` instead. `node` must be the plan node holding this step.
+    std::vector<Names> predictMergeJoinOutputOrder(const QueryPlan::Node & node);
     bool isPartialMergeJoinSupported() const;
 
     /// `applyParallelReplicas` may replace a join input with a distributed read after
@@ -241,6 +250,12 @@ protected:
     SortingStep::Settings sorting_settings;
 
     /// Runtime info, do not serialize
+
+    /// The join key pairs a merge join would sort its inputs by, in the order of its sort description
+    /// (equality keys first, the `ASOF` inequality key last), as the raw operand column names. Returns
+    /// false when the join has a shape a merge join cannot execute (kind, strictness, a one-sided or
+    /// disjunctive condition, differently typed or null-safe nullable keys).
+    bool collectMergeJoinKeys(Names & left_keys, Names & right_keys) const;
 
     /// Memoized result of `inputsCanBeReadInJoinKeyOrder`.
     std::optional<bool> inputs_can_be_read_in_join_key_order;
