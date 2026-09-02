@@ -131,6 +131,33 @@ select count() > 0 from Z as s final inner join Y as j on s.id = j.id settings e
 set parallel_replicas_for_queries_with_multiple_tables=0;
 select count() > 0 from Z as s final inner join Y as j on s.id = j.id settings enable_parallel_replicas = 2;
 
+-- A correlated subquery is planned through `buildPlannerForCorrelatedSubquery` by yet another independent
+-- `Planner`, built from the correlated subquery's own context, so the kill switch has to reach that context
+-- as well. The analyzer's `DisableParallelReplicasPass` already turns parallel replicas off for a correlated
+-- subquery and for the query that contains it, regardless of this setting, so no probe can observe the
+-- correlated subquery itself being read with parallel replicas: the query must simply run for both values
+-- of the setting.
+set allow_experimental_correlated_subqueries = 1;
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() > 0 from X as s inner join Y as j on s.id = j.id where exists (select 1 from Z final where Z.id = s.id)
+    settings enable_parallel_replicas = 2;
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() > 0 from X as s inner join Y as j on s.id = j.id where exists (select 1 from Z final where Z.id = s.id)
+    settings enable_parallel_replicas = 2;
+
+-- That analyzer pass turns parallel replicas off only for the query nodes it leaves after having met the
+-- correlated subquery, so a subquery table expression that precedes the correlated subquery in the query tree
+-- keeps them on. With the setting disabled the kill switch has to reach that subquery as well, even though the
+-- enclosing multi-table query already runs without parallel replicas because of the correlated subquery. The
+-- probe is the same `FINAL` refusal: with the setting enabled the query is refused (the control that the probe
+-- is not vacuous), with the setting disabled it must run.
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id where exists (select 1 from X where X.id = s.id)
+    settings enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id where exists (select 1 from X where X.id = s.id)
+    settings enable_parallel_replicas = 2;
+
 -- The legacy (pre-analyzer) interpreter must respect the setting as well: with
 -- parallel_replicas_only_with_analyzer = 0 task-based parallel replicas are allowed on that path,
 -- and the kill switch is applied in InterpreterSelectQuery before the storage read.
