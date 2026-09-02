@@ -1,0 +1,11 @@
+<clickhouse>
+    <remote_servers>
+        <secure>
+            <secret>foo</secret>
+            <node>
+                <host>node2</host>
+                <port>9000</port>
+            </node>
+        </secure>
+    </remote_servers>
+</clickhouse>
