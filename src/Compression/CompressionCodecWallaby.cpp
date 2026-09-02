@@ -151,11 +151,6 @@ constexpr UInt8 WALLABY_LEAD_CLASSES = 1 << WALLABY_LEAD_CLASS_BITS;
 /// candidate scales and to bound the exception count of a candidate from below.
 constexpr UInt32 WALLABY_MAX_SAMPLES = 256;
 
-/// How far into the vector the delta chain walk looks for the start of the smooth segment when
-/// the vector opens with values whose deltas do not fit the lane cap. Each skipped position
-/// costs one exception, so a prefix longer than this would lose to the exception budget anyway.
-constexpr UInt32 WALLABY_DELTA_PREFIX_WINDOW = 32;
-
 /// The cost of one stored exception: its position plus the raw value.
 template <typename T>
 constexpr UInt32 exceptionCost() { return sizeof(UInt16) + sizeof(T); }
@@ -583,6 +578,12 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         return best_total_size <= header_size ? 0 : (best_total_size - header_size) / exceptionCost<T>();
     };
 
+    /// The same break-even taken once, against the bound the vector starts with. The delta
+    /// chain-start search below needs a budget that does not move: it is replayed in the packing
+    /// phase, after the winning candidate has already tightened best_total_size, and both phases
+    /// must walk the chain identically. Freezing it only widens the search, never narrows it.
+    const UInt32 initial_exception_budget = exception_budget();
+
     /// Of the exceptions of the scale scanned last, how many are exceptions of every smaller
     /// scale as well - see monotone_exceptions_at below. A scan abandoned halfway still leaves a
     /// valid count here: every position it did visit is a real position of the vector.
@@ -724,10 +725,11 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
           * cannot be exiled the way an interior outlier is — the chain would stay on it and
           * every later delta would span the whole distance back to it, exiling the entire
           * vector. When the head pair does not fit the cap, the smooth segment may instead
-          * begin after a leading prefix of any length within a bounded window: exiling the
-          * whole prefix costs one exception per position, which is often far cheaper than
-          * losing the delta lanes altogether. Three anchors cover the possibilities — position
-          * zero (an interior outlier re-synchronizes on its own), the first position `f` that
+          * begin after a leading prefix of any length the exception budget can pay for:
+          * exiling the whole prefix costs one exception per position, which is often far
+          * cheaper than losing the delta lanes altogether. Three anchors cover the
+          * possibilities — position zero (an interior outlier re-synchronizes on its own),
+          * the first position `f` that
           * opens a fitting adjacent pair (skips the whole prefix), and the first prefix
           * position whose delta straight to `f` fits (keeps one more value in the lanes). The
           * exact walk is run from each candidate and the fewest exceptions win, so the choice
@@ -738,9 +740,16 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         if (count > 2
             && (is_quantization_exception[0] || is_quantization_exception[1] || !delta_fits(quantized[0], quantized[1])))
         {
-            const UInt32 window = std::min(count - 1, WALLABY_DELTA_PREFIX_WINDOW);
+            /// Anchoring the chain at `f` exiles the whole prefix before it, one exception
+            /// per position, so the search stops exactly where those exceptions alone would
+            /// already cost more than the best encoding of this vector known so far. This is
+            /// the same break-even the candidate scans use, so no prefix that can still win is
+            /// left out of the search — a fixed window would cut off, say, a vector of 33 head
+            /// outliers followed by a smooth ramp, whose cheapest encoding starts the chain
+            /// right after them.
+            const UInt32 prefix_limit = std::min(count - 1, initial_exception_budget);
             UInt32 first_fitting_pair = 0;
-            for (UInt32 f = 1; f < window; ++f)
+            for (UInt32 f = 1; f <= prefix_limit && f + 1 < count; ++f)
             {
                 if (!is_quantization_exception[f] && !is_quantization_exception[f + 1]
                     && delta_fits(quantized[f], quantized[f + 1]))
@@ -1326,6 +1335,18 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             }
             return;
         }
+
+        /// A sample whose tolerant vote picked a cheaper scale than the one that represents it
+        /// exactly still has to let that exact scale compete, even when the tolerant scale
+        /// completes the scan: the adjustment lanes make the tolerant scale *legal*, not
+        /// necessarily cheapest, and a scale that absorbs the same values into narrower packed
+        /// lanes can be much smaller. The widest-adjustment probes below cannot stand in for
+        /// this — they only fire once the adjustments grow beyond a fixed threshold, so a
+        /// vector whose exact scale is hidden behind uniformly small adjustments would keep the
+        /// tolerant scale as its only candidate.
+        for (UInt32 i = 0; i < sampled_alpha_count; ++i)
+            if (sampled_alphas[i] == candidate && sampled_exact_alphas[i] != sampled_alphas[i])
+                consider_candidate(sampled_exact_alphas[i]);
 
         if (!reference_filled)
         {
