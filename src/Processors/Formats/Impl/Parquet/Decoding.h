@@ -64,14 +64,22 @@ struct Dictionary
     /// Memory owned by the decoded dictionary (the decompression buffer, string offsets, and the
     /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
     size_t allocatedBytes() const;
-    void index(const ColumnUInt32 & indexes_col, IColumn & out);
+    /// `use_string_value_filter` = false gathers the raw values even when a `string_value_filter_mask`
+    /// was built, and does not report the observed selectivity to the shared `StringValueFilter`.
+    /// It is used by the dictionary materialization done for row-group pruning, which visits every
+    /// distinct value exactly once: letting it feed `updateStats` would make the adaptive disable be
+    /// driven by the dictionary's value mix instead of the row frequencies the scan actually sees.
+    void index(const ColumnUInt32 & indexes_col, IColumn & out, bool use_string_value_filter = true);
     /// Append the values at the given dictionary indexes to `out`. Same as `index`, from a plain
     /// array; `index` delegates here. The indexes must be within bounds.
-    void appendIndexes(const UInt32 * indexes, size_t n, IColumn & out);
+    void appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, bool use_string_value_filter = true);
     /// Append the value at dictionary index `idx` to `out`, `n` times. Used by the fused
     /// decode-and-index path (`PageDecoder::decodeAndIndex`) to turn an RLE run of a repeated
     /// index into a bulk fill, instead of expanding the run into explicit indexes and gathering
     /// them one by one.
+    /// The whole run references a single dictionary entry, so a `string_value_filter_mask` is
+    /// consulted once for the entire run, and the run is accounted in the filter statistics as a
+    /// whole - the adaptive disable covers repeated runs exactly as it covers explicit indexes.
     void appendRepeated(size_t idx, size_t n, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
     /// Checks every dictionary entry against the filter, see `string_value_filter_mask`.

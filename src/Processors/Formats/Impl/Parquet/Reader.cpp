@@ -1811,7 +1811,9 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
 
         auto values = column_info.decoded_type->createColumn();
         values->reserve(count);
-        column.dictionary.index(*indexes, *values);
+        /// Pruning sees each distinct value once, which says nothing about how often the scan will
+        /// meet it, so this materialization must not feed the shared `StringValueFilter` statistics.
+        column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
         hashes = parquetTryHashColumn(values.get(), &desc);
     }
     if (!hashes.has_value())

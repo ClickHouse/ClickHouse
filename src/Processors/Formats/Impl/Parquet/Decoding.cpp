@@ -1518,7 +1518,7 @@ static void indexImpl(const UInt32 * indexes, size_t size, std::span<const char>
         memcpy(to.data() + i * value_size, data.data() + indexes[i] * value_size, value_size);
 }
 
-void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
+void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out, bool use_string_value_filter)
 {
     const PaddedPODArray<UInt32> & indexes = indexes_col.getData();
     if (mode == Mode::Column)
@@ -1527,10 +1527,10 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
         out.insertRangeFrom(*temp, 0, indexes.size());
         return;
     }
-    appendIndexes(indexes.data(), indexes.size(), out);
+    appendIndexes(indexes.data(), indexes.size(), out, use_string_value_filter);
 }
 
-void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out)
+void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, bool use_string_value_filter)
 {
     switch (mode)
     {
@@ -1558,7 +1558,7 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out)
         {
             auto & c = assert_cast<ColumnString &>(out);
             c.reserve(c.size() + n);
-            if (!string_value_filter_mask.empty() && string_value_filter->isEnabled())
+            if (use_string_value_filter && !string_value_filter_mask.empty() && string_value_filter->isEnabled())
             {
                 /// Rows referencing dictionary entries that do not match the string filter from
                 /// PREWHERE are materialized as empty strings without copying the data.
@@ -1638,6 +1638,19 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
             auto & c = assert_cast<ColumnString &>(out);
             size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
             size_t len = offsets[idx] - start;
+            if (!string_value_filter_mask.empty() && string_value_filter->isEnabled())
+            {
+                /// The whole run references one dictionary entry, so the filter decision is the same
+                /// for all its rows. Report the run to the shared filter, so that repeated runs -
+                /// the hot path of low-cardinality files - drive the adaptive disable as well.
+                if (!string_value_filter_mask[idx])
+                {
+                    c.insertManyDefaults(n);
+                    string_value_filter->updateStats(n, n, len * n);
+                    break;
+                }
+                string_value_filter->updateStats(n, 0, 0);
+            }
             c.reserve(c.size() + n);
             for (size_t i = 0; i < n; ++i)
                 c.insertData(data.data() + start, len);

@@ -2,10 +2,16 @@
 -- from WHERE to PREWHERE even when they use all queried columns: they are still beneficial,
 -- because the reader skips copying the values that do not match them.
 
+-- The test is about the decision to move a condition to PREWHERE, so the optimization must be enabled
+-- (it is randomized in tests), and the queries below that turn it off do it explicitly.
+SET optimize_move_to_prewhere = 1;
+
 DROP TABLE IF EXISTS t_string_filter_move;
 
+-- The sparse serialization is not supported by the scan filter, and it is randomized in tests.
 CREATE TABLE t_string_filter_move (id UInt32, s String)
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;
 
 INSERT INTO t_string_filter_move
 SELECT number, if(number % 100 = 0, 'value with needle ' || toString(number), 'ordinary value ' || toString(number))
