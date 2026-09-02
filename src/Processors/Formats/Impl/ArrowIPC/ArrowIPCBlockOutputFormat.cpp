@@ -3,6 +3,7 @@
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/ArrowBatchRowLimit.h>
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Port.h>
 #include <Core/Block.h>
@@ -24,6 +25,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/NetUtils.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace DB
@@ -351,13 +353,8 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
     return {column, type};
 }
 
-void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
+void ArrowIPCBlockOutputFormat::writeRecordBatch(const Columns & columns, size_t num_rows)
 {
-    writeSchemaIfNeeded();
-
-    const size_t num_rows = chunk.getNumRows();
-    const Columns & columns = chunk.getColumns();
-
     /// Dictionary-encoded columns are replaced in the record batch by their integer index column; their
     /// values go into separate DictionaryBatch messages (extended across batches via deltas).
     Columns record_columns(columns.begin(), columns.end());
@@ -374,6 +371,49 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
     auto written = writeBatchMessage(batch);
     if (!stream)
         record_blocks.push_back({written.offset, written.metadata_length, written.body_length});
+}
+
+void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
+{
+    writeSchemaIfNeeded();
+
+    const size_t num_rows = chunk.getNumRows();
+    const Columns & columns = chunk.getColumns();
+
+    /// One record batch per chunk, unless the chunk exceeds what a record batch can address; then it is
+    /// split into several, each written by `writeRecordBatch` with the dictionary delta for its own rows.
+    size_t offset = 0;
+    do
+    {
+        /// Two columns never share an Arrow buffer, so the smallest per-column limit is the batch's limit.
+        size_t rows = num_rows - offset;
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            rows = std::min(
+                rows,
+                maxRowsFittingOneArrowBatch(
+                    *columns[i],
+                    column_types[i],
+                    offset,
+                    offset + rows,
+                    format_settings.arrow.output_fixed_string_as_fixed_byte_array));
+        }
+        /// A row that does not fit on its own cannot be represented at all; let the encoder reject it.
+        rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
+
+        if (rows == num_rows)
+        {
+            writeRecordBatch(columns, num_rows);
+        }
+        else
+        {
+            Columns batch_columns(columns.size());
+            for (size_t i = 0; i < columns.size(); ++i)
+                batch_columns[i] = columns[i]->cut(offset, rows);
+            writeRecordBatch(batch_columns, rows);
+        }
+        offset += rows;
+    } while (offset < num_rows);
 }
 
 void ArrowIPCBlockOutputFormat::finalizeImpl()

@@ -2,6 +2,7 @@
 
 #if USE_ARROW
 
+#include <Processors/Formats/Impl/ArrowBatchRowLimit.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
@@ -46,6 +47,17 @@ namespace DB::ArrowIPC
 
 namespace
 {
+
+/// Only reachable for a single oversized row: the writer splits an oversized chunk across batches.
+[[noreturn]] void throwValueDoesNotFitArrowBuffer(Int64 bytes)
+{
+    throw Exception(
+        ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+        "Cannot write a value of {} bytes to Arrow IPC: `Utf8`/`Binary` offsets are 32-bit, so a single value "
+        "cannot be larger than {} bytes",
+        bytes, MAX_ARROW_BUFFER_SIZE);
+}
+
 
 /// Pack one bit per input byte into `out` (size (num_rows + 7) / 8, zero-initialised by the caller):
 /// bit = 1 where the byte is non-zero, optionally inverted. Arrow validity uses invert = true (1 = not-null),
@@ -114,8 +126,13 @@ void RecordBatchEncoder::appendOffsets(const IColumn::Offsets & ch_offsets, size
     arrow_offsets[0] = 0;
     for (size_t i = 0; i < num_rows; ++i)
     {
-        if (ch_offsets[i] > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC offset {} exceeds 32 bits", ch_offsets[i]);
+        /// Only reachable for a single oversized row: the writer splits an oversized chunk across batches.
+        if (ch_offsets[i] > MAX_ARROW_BUFFER_SIZE)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cannot write a row of {} elements to Arrow IPC: `List` offsets are 32-bit, so a single row "
+                "cannot hold more than {} elements",
+                ch_offsets[i], MAX_ARROW_BUFFER_SIZE);
         arrow_offsets[i + 1] = static_cast<Int32>(ch_offsets[i]);
     }
     appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
@@ -358,22 +375,38 @@ void RecordBatchEncoder::encodeValues(
             const auto & offs = cs.getOffsets();
             const NullMap * null_map
                 = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
+            /// ClickHouse ColumnString stores no trailing '\0', so its offsets already are the Arrow ones.
+            const UInt64 total_bytes = offs[static_cast<ssize_t>(num_rows) - 1];
             PODArray<Int32> arrow_offsets(num_rows + 1);
-            PODArray<char> data;
             arrow_offsets[0] = 0;
+
+            if (!null_map)
+            {
+                /// The bytes of the whole range are contiguous, so no full-size temporary is needed.
+                if (total_bytes > MAX_ARROW_BUFFER_SIZE)
+                    throwValueDoesNotFitArrowBuffer(static_cast<Int64>(total_bytes));
+                for (size_t i = 0; i < num_rows; ++i)
+                    arrow_offsets[i + 1] = static_cast<Int32>(offs[i]);
+                appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
+                appendBuffer(chars.data(), total_bytes);
+                return;
+            }
+
+            PODArray<char> data;
+            data.reserve(total_bytes); /// An upper bound: null rows contribute nothing.
             Int64 cur = 0;
             for (size_t i = 0; i < num_rows; ++i)
             {
                 /// A null row carries an arbitrary nested value that the validity bitmap already masks as
                 /// NULL; emit a zero-length slot for it (matching the Apache Arrow writer's `AppendNull`)
                 /// so the bytes of a logically-NULL row never reach the IPC body.
-                if (!(null_map && (*null_map)[i]))
+                if (!(*null_map)[i])
                 {
                     const size_t start = i == 0 ? 0 : offs[i - 1];
-                    const size_t len = offs[i] - start; /// ClickHouse ColumnString stores no trailing '\0'
+                    const size_t len = offs[i] - start;
                     cur += static_cast<Int64>(len);
-                    if (cur > std::numeric_limits<Int32>::max())
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                    if (static_cast<UInt64>(cur) > MAX_ARROW_BUFFER_SIZE)
+                        throwValueDoesNotFitArrowBuffer(cur);
                     const size_t old = data.size();
                     data.resize(old + len);
                     if (len)
@@ -409,8 +442,8 @@ void RecordBatchEncoder::encodeValues(
                 for (size_t i = 0; i < num_rows; ++i)
                 {
                     const UInt64 end = static_cast<UInt64>(i + 1) * n;
-                    if (end > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                    if (end > MAX_ARROW_BUFFER_SIZE)
+                        throwValueDoesNotFitArrowBuffer(static_cast<Int64>(end));
                     arrow_offsets[i + 1] = static_cast<Int32>(end);
                 }
                 appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
@@ -427,8 +460,8 @@ void RecordBatchEncoder::encodeValues(
                 if (!(*null_map)[i])
                 {
                     cur += static_cast<Int64>(n);
-                    if (cur > std::numeric_limits<Int32>::max())
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                    if (static_cast<UInt64>(cur) > MAX_ARROW_BUFFER_SIZE)
+                        throwValueDoesNotFitArrowBuffer(cur);
                     const size_t old = data.size();
                     data.resize(old + n);
                     if (n)
@@ -528,8 +561,8 @@ void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows,
         {
             const std::string_view value = column.getDataAt(i);
             total += value.size();
-            if (total > static_cast<size_t>(std::numeric_limits<Int32>::max()))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC binary offset exceeds 32 bits");
+            if (total > MAX_ARROW_BUFFER_SIZE)
+                throwValueDoesNotFitArrowBuffer(static_cast<Int64>(total));
             data.insert(data.end(), value.data(), value.data() + value.size());
         }
         arrow_offsets[i + 1] = static_cast<Int32>(total);
@@ -621,7 +654,7 @@ void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr
         }
         type_ids[row] = static_cast<Int8>(variant_column.globalDiscriminatorByLocal(local));
         const UInt64 off = ch_offsets[row];
-        if (off > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
+        if (off > MAX_ARROW_BUFFER_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC dense union offset exceeds 32 bits");
         value_offsets[row] = static_cast<Int32>(off);
     }
