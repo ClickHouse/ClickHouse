@@ -13,6 +13,18 @@ OK
 OK
 OK
 OK
+-- sort keys the Parquet reader never sees: virtual columns and Hive partition columns are
+-- appended after the file is read, so the reader-side filter must not be armed for them;
+-- results with and without the optimization must agree, and no row group may be skipped
+OK
+OK
+OK
+OK
+1	1000
+1	1001
+1	1002
+-- all rows of both Hive files are read (nothing is pruned by a filter the reader cannot evaluate)
+rows_read: 2000
 -- collated ORDER BY: Parquet min/max statistics are bytewise, not collation-ordered, so the
 -- row-group shortcut must stay off; 'ä' sorts before 'b' in the 'de' locale but its UTF-8
 -- bytes are above 'z', so a stats-based skip of the second file would lose it

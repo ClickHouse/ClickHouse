@@ -380,8 +380,9 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
-    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`.
-    bool supportsTopKDynamicFilter() const override;
+    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
+    /// and only for a sort column it physically reads from the file.
+    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
     ReadFromFile(

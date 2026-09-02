@@ -2222,9 +2222,19 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
     return schema_cache.tryGetNumRows(key, get_last_mod_time);
 }
 
-bool ReadFromFile::supportsTopKDynamicFilter() const
+bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
 {
-    return boost::iequals(storage->format_name, "Parquet");
+    if (!boost::iequals(storage->format_name, "Parquet"))
+        return false;
+
+    /// The output header of this step is broader than what the format reads: `prepareReadingFromFormat`
+    /// appends Hive partition columns (taken from the file path) and virtual columns (`_path`,
+    /// `_file`, ...) after the format has produced its chunk, while the Parquet reader is built on
+    /// `format_header` and only sees the physical file columns. Arming the filter for a sort key
+    /// the reader cannot see would give no pruning but still pay its side effects (offset-index
+    /// prefetches for every column, no query condition cache writes), so gate on `format_header`.
+    const auto * format_column = info.format_header.findByName(sort_column.name);
+    return format_column && format_column->type->equals(*sort_column.type);
 }
 
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)

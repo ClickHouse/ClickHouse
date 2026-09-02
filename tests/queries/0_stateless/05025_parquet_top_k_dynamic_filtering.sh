@@ -73,6 +73,38 @@ for query in "${queries[@]}"; do
         && echo "OK"
 done
 
+echo "-- sort keys the Parquet reader never sees: virtual columns and Hive partition columns are"
+echo "-- appended after the file is read, so the reader-side filter must not be armed for them;"
+echo "-- results with and without the optimization must agree, and no row group may be skipped"
+mkdir -p "${DIR}/hive/p=2" "${DIR}/hive/p=1"
+"${LOCAL[@]}" --query "
+    INSERT INTO FUNCTION file('${DIR}/hive/p=2/data.parquet', Parquet)
+    SELECT number AS k FROM numbers(1000)
+    SETTINGS output_format_parquet_row_group_size = 100, engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${DIR}/hive/p=1/data.parquet', Parquet)
+    SELECT 1000 + number AS k FROM numbers(1000)
+    SETTINGS output_format_parquet_row_group_size = 100, engine_file_truncate_on_insert = 1;
+"
+virtual_queries=(
+    "SELECT _file, k FROM file('${DIR}/part{1,2}.parquet', Parquet) ORDER BY _file DESC, k LIMIT 3"
+    "SELECT _path LIKE '%part2%', k FROM file('${DIR}/part{1,2}.parquet', Parquet) ORDER BY _path DESC, k LIMIT 3"
+    "SELECT p, k FROM file('${DIR}/hive/**/*.parquet', Parquet) ORDER BY p, k LIMIT 3 SETTINGS use_hive_partitioning = 1"
+    "SELECT p, k FROM file('${DIR}/hive/**/*.parquet', Parquet) ORDER BY p DESC, k DESC LIMIT 3 SETTINGS use_hive_partitioning = 1"
+)
+for query in "${virtual_queries[@]}"; do
+    diff \
+        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
+        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
+        && echo "OK"
+done
+"${LOCAL[@]}" "${ON[@]}" --query "SELECT p, k FROM file('${DIR}/hive/**/*.parquet', Parquet) ORDER BY p, k LIMIT 3 SETTINGS use_hive_partitioning = 1"
+echo "-- all rows of both Hive files are read (nothing is pruned by a filter the reader cannot evaluate)"
+"${LOCAL[@]}" "${ON[@]}" --query "SELECT p, k FROM file('${DIR}/hive/**/*.parquet', Parquet) ORDER BY p, k LIMIT 3 SETTINGS use_hive_partitioning = 1" --format JSON | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print('rows_read:', d['statistics']['rows_read'])"
+
 echo "-- collated ORDER BY: Parquet min/max statistics are bytewise, not collation-ordered, so the"
 echo "-- row-group shortcut must stay off; 'ä' sorts before 'b' in the 'de' locale but its UTF-8"
 echo "-- bytes are above 'z', so a stats-based skip of the second file would lose it"

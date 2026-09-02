@@ -38,7 +38,7 @@ static size_t tryTopKForFormatSource(
     const Optimization::ExtraSettings & settings)
 {
     auto * source_step = dynamic_cast<SourceStepWithFilterBase *>(step);
-    if (!source_step || !source_step->supportsTopKDynamicFilter())
+    if (!source_step)
         return 0;
 
     if (!settings.use_top_k_dynamic_filtering)
@@ -58,6 +58,13 @@ static size_t tryTopKForFormatSource(
     /// from that very column.
     const auto * source_column = source_step->getOutputHeader()->findByName(sort_column_name);
     if (!source_column || !source_column->type->equals(*sort_column.type))
+        return 0;
+
+    /// Being in the output header is necessary but not sufficient: the source must physically
+    /// read the column itself. `ReadFromFile` appends virtual columns (`_path`, `_file`, ...) and
+    /// Hive partition columns after the format has read the file, so the format could never
+    /// evaluate the threshold against them; the source decides from its format-facing header.
+    if (!source_step->supportsTopKDynamicFilter(*source_column))
         return 0;
 
     auto threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_col_desc);
