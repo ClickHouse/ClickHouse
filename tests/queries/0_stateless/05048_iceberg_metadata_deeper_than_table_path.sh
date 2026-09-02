@@ -14,8 +14,8 @@ DIR="05048_iceberg_deeper/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 NC="--use_iceberg_metadata_files_cache 0"
 
 # Background Iceberg compaction, which the cloud build runs off a member flag rather than a
-# query setting, would rewrite and lock the metadata these arms read. The table functions have
-# no table definition to store the per-table setting in, so it is pinned for every query too.
+# query setting, would rewrite and lock the metadata these arms read. It is pinned off on every
+# carrier: stored per table, inline per table function, and query-level for everything else.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction 0"
 
 # t1: metadata `location` is an absolute path (the default).
@@ -29,13 +29,16 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 -q "
 
 echo -n 'A control  '
 ${CLICKHOUSE_CLIENT} $NC -q "
-    SELECT groupArray(x) FROM (SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t1/sub') ORDER BY x)"
+    SELECT groupArray(x) FROM (
+        SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t1/sub',
+            SETTINGS allow_experimental_iceberg_compaction = 0) ORDER BY x)"
 
 echo -n 'B absolute '
 ${CLICKHOUSE_CLIENT} $NC -q "
     SELECT groupArray(x) FROM (
         SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t1',
-            SETTINGS iceberg_metadata_file_path = 'sub/metadata/v2.metadata.json') ORDER BY x)"
+            SETTINGS iceberg_metadata_file_path = 'sub/metadata/v2.metadata.json',
+                allow_experimental_iceberg_compaction = 0) ORDER BY x)"
 
 # t2: metadata `location` is a full URI.
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 --write_full_path_in_iceberg_metadata 1 -q "
@@ -50,7 +53,8 @@ echo -n 'C full-uri '
 ${CLICKHOUSE_CLIENT} $NC -q "
     SELECT groupArray(x) FROM (
         SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t2',
-            SETTINGS iceberg_metadata_file_path = 'sub/metadata/v2.metadata.json') ORDER BY x)"
+            SETTINGS iceberg_metadata_file_path = 'sub/metadata/v2.metadata.json',
+                allow_experimental_iceberg_compaction = 0) ORDER BY x)"
 
 # t3: `location` names a directory DEEPER than the one the metadata document sits in, so the
 # document's own position is the only sound source for the table root. Re-rooting at the queried
@@ -87,7 +91,9 @@ print(json.dumps(m))
 
 echo -n 'D kept     '
 ${CLICKHOUSE_CLIENT} $NC -q "
-    SELECT groupArray(x) FROM (SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t3') ORDER BY x)"
+    SELECT groupArray(x) FROM (
+        SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t3',
+            SETTINGS allow_experimental_iceberg_compaction = 0) ORDER BY x)"
 
 # Every operation scoped to the queried path would reach the sibling tables under it, so all of
 # them are refused while the table root had to be derived. One arm per refusing site.
@@ -144,7 +150,8 @@ echo -n 'L kept     '
 ${CLICKHOUSE_CLIENT} $NC -q "
     SELECT groupArray(x) FROM (
         SELECT x FROM icebergS3(s3_conn, filename = '${DIR}/t4',
-            SETTINGS iceberg_metadata_file_path = 'archive/metadata/v2.metadata.json') ORDER BY x)"
+            SETTINGS iceberg_metadata_file_path = 'archive/metadata/v2.metadata.json',
+                allow_experimental_iceberg_compaction = 0) ORDER BY x)"
 
 ${CLICKHOUSE_CLIENT} $NC -q "
     DROP TABLE IF EXISTS t4_arch_05048;
