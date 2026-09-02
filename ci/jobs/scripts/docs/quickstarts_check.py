@@ -291,6 +291,9 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
             + ", ".join(LOCALES)
         )
 
+    redirects_path = docs_root / "_site" / "redirects.json"
+    redirects = json.loads(redirects_path.read_text(encoding="utf-8"))
+
     for locale in [None, *LOCALES]:
         prefix = f"{locale}/" if locale else ""
         legacy_page = (
@@ -304,6 +307,25 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
             errors.append(
                 f"{legacy_page.relative_to(docs_root)}: delete this legacy "
                 "page; the explorer card is generated separately"
+            )
+
+        locale_prefix = f"/{locale}" if locale else ""
+        redirect_source = (
+            f"{locale_prefix}/get-started/quickstarts/"
+            "create-your-first-service-on-cloud"
+        )
+        redirect_destination = f"{locale_prefix}/get-started/setup/cloud"
+        redirect_matches = [
+            item for item in redirects if item.get("source") == redirect_source
+        ]
+        if (
+            len(redirect_matches) != 1
+            or redirect_matches[0].get("destination") != redirect_destination
+        ):
+            errors.append(
+                f"{redirects_path.relative_to(docs_root)}: expected exactly "
+                f"one redirect from {redirect_source!r} to "
+                f"{redirect_destination!r}"
             )
 
         expected = {
@@ -324,7 +346,6 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
                     f"{locale or 'English'}: generated Cloud card {field} "
                     "does not match its configured explorer metadata"
                 )
-        locale_prefix = f"/{locale}" if locale else ""
         expected_href = f"{locale_prefix}/get-started/setup/cloud"
         if card.get("href") != expected_href:
             errors.append(

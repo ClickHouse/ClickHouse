@@ -81,6 +81,77 @@ NAVBAR_SIGN_IN_LABELS = {
     "ru": "Войти",
     "zh": "登录",
 }
+SIDEBAR_AD_COPY = {
+    "en": {
+        "dismissLabel": "Dismiss ClickHouse Cloud advert permanently",
+        "title": "Try ClickHouse Cloud for FREE",
+        "description": (
+            "Separation of storage and compute, automatic scaling, built-in "
+            "SQL console, and lots more. $300 in free credits when signing up."
+        ),
+        "linkLabel": "Try it for Free",
+    },
+    "ar": {
+        "dismissLabel": "إخفاء إعلان ClickHouse Cloud نهائيًا",
+        "title": "جرّب ClickHouse Cloud مجانًا",
+        "description": (
+            "فصل التخزين عن الحوسبة، والتوسّع التلقائي، "
+            "ووحدة تحكم SQL مضمّنة، وغير ذلك الكثير. "
+            "احصل على رصيد مجاني بقيمة 300 دولار عند التسجيل."
+        ),
+        "linkLabel": "جرّبه مجانًا",
+    },
+    "es": {
+        "dismissLabel": "Descartar permanentemente el anuncio de ClickHouse Cloud",
+        "title": "Prueba ClickHouse Cloud GRATIS",
+        "description": (
+            "Separación de almacenamiento y cómputo, escalado automático, "
+            "consola SQL integrada y mucho más. Obtén 300 USD en créditos "
+            "gratis al registrarte."
+        ),
+        "linkLabel": "Pruébalo gratis",
+    },
+    "fr": {
+        "dismissLabel": "Masquer définitivement l’annonce ClickHouse Cloud",
+        "title": "Essayez ClickHouse Cloud GRATUITEMENT",
+        "description": (
+            "Séparation du stockage et du calcul, mise à l’échelle automatique, "
+            "console SQL intégrée et bien plus encore. Recevez 300 $ de crédits "
+            "gratuits lors de votre inscription."
+        ),
+        "linkLabel": "Essayer gratuitement",
+    },
+    "ja": {
+        "dismissLabel": "ClickHouse Cloud の広告を今後表示しない",
+        "title": "ClickHouse Cloud を無料でお試しください",
+        "description": (
+            "ストレージとコンピューティングの分離、自動スケーリング、"
+            "組み込み SQL コンソールなどを利用できます。登録時に 300 "
+            "ドル分の無料クレジットを進呈します。"
+        ),
+        "linkLabel": "無料で試す",
+    },
+    "ko": {
+        "dismissLabel": "ClickHouse Cloud 광고를 영구적으로 닫기",
+        "title": "ClickHouse Cloud를 무료로 사용해 보세요",
+        "description": (
+            "스토리지와 컴퓨팅 분리, 자동 확장, 기본 제공 SQL 콘솔 등 "
+            "다양한 기능을 제공합니다. 가입하면 300달러의 무료 크레딧을 "
+            "받을 수 있습니다."
+        ),
+        "linkLabel": "무료로 사용해 보기",
+    },
+    "pt-BR": {
+        "dismissLabel": "Dispensar permanentemente o anúncio do ClickHouse Cloud",
+        "title": "Experimente o ClickHouse Cloud GRÁTIS",
+        "description": (
+            "Separação de armazenamento e computação, escalonamento automático, "
+            "console SQL integrado e muito mais. Receba US$ 300 em créditos "
+            "grátis ao se cadastrar."
+        ),
+        "linkLabel": "Experimente grátis",
+    },
+}
 
 
 def build_targets(docs_root):
@@ -158,6 +229,60 @@ def check_navbar_sign_in_labels(docs_root):
         violations.append(
             (rel, label_assignment, "missing-localized-sign-in", None)
         )
+    attributed_hrefs = (
+        "var SIGN_IN_HREF = 'https://console.clickhouse.cloud/signIn?loc=docs-nav-signIn-cta';",
+        "var CTA_HREF = 'https://clickhouse.cloud/signUp?loc=docs-nav-signUp-cta';",
+    )
+    for href in attributed_hrefs:
+        if source.count(href) != 1:
+            violations.append(
+                (rel, href, "missing-navbar-attribution", None)
+            )
+    return violations
+
+
+def check_sidebar_ad_localization(docs_root):
+    """Validate attributed, localized sidebar advert behavior."""
+    path = os.path.join(
+        docs_root, "_site", "customizations", "cloud-sidebar-ad.js"
+    )
+    source = open(path, encoding="utf-8", errors="replace").read()
+    rel = os.path.relpath(path, docs_root)
+    violations = []
+
+    required_markers = (
+        "var SIGNUP_HREF = 'https://clickhouse.cloud/signUp?loc=docs-card-banner';",
+        "return window.location.pathname.replace(/^\\/docs(?=\\/|$)/, '');",
+        "var localeMatch = normalizedPath().match(/^\\/(ar|es|fr|ja|ko|pt-BR)(?:\\/|$)/);",
+        "if (/^\\/(?:ru|zh)(?:\\/|$)/.test(path)) return false;",
+    )
+    for marker in required_markers:
+        if source.count(marker) != 1:
+            violations.append((rel, marker, "missing-sidebar-ad-rule", None))
+
+    for locale, expected_copy in SIDEBAR_AD_COPY.items():
+        key = re.escape(f"'{locale}'" if "-" in locale else locale)
+        match = re.search(
+            rf"^    {key}: \{{\n(?P<body>.*?)^    \}},$",
+            source,
+            re.MULTILINE | re.DOTALL,
+        )
+        if not match:
+            violations.append((rel, locale, "missing-sidebar-ad-copy", None))
+            continue
+        body = match.group("body")
+        for field, value in expected_copy.items():
+            marker = f"      {field}: '{value}',"
+            if body.count(marker) != 1:
+                violations.append(
+                    (rel, f"{locale}.{field}", "stale-sidebar-ad-copy", value)
+                )
+
+    for excluded_locale in ("ru", "zh"):
+        if re.search(rf"^    {excluded_locale}: \{{", source, re.MULTILINE):
+            violations.append(
+                (rel, excluded_locale, "sidebar-ad-must-be-suppressed", None)
+            )
     return violations
 
 
@@ -180,6 +305,7 @@ def main(argv=None):
 
     violations = check_sample_explorer_theme_images(docs_root)
     violations += check_navbar_sign_in_labels(docs_root)
+    violations += check_sidebar_ad_localization(docs_root)
     # Entries are (file, path or marker, kind, suggestion).
     fixed = 0
     for loc in LOCALE_DIRS:
