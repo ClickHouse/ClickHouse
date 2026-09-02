@@ -25,7 +25,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PARSE_UUID;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -180,26 +179,30 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                     auto table_directory = prefix_directory / table_it->name();
 
                     /// `SYSTEM UNFREEZE` receives only the on-disk path, unlike `ALTER TABLE ...
-                    /// UNFREEZE`. Resolve the UUID directory back to its storage before deleting
+                    /// UNFREEZE`. Resolve the table directory back to its storage before deleting
                     /// anything, so leader-election tables get the same admission-epoch fence.
-                    std::shared_ptr<MergeTreeData> merge_tree;
-                    try
+                    /// The snapshot mirrors the table's relative data path, so there are two
+                    /// layouts: `store/{prefix}/{uuid}` for UUID-backed tables (`Atomic` and
+                    /// `Replicated` databases) and `data/{database}/{table}` for `Ordinary` ones, with
+                    /// the names escaped for the file system.
+                    StoragePtr storage;
+                    if (store_path.filename() == "store")
                     {
-                        const UUID table_uuid = parseFromString<UUID>(table_it->name());
-                        auto storage = DatabaseCatalog::instance().tryGetByUUID(table_uuid).second;
-                        if (storage)
-                            merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+                        if (UUID table_uuid; tryParse(table_uuid, table_it->name()))
+                            storage = DatabaseCatalog::instance().tryGetByUUID(table_uuid).second;
                     }
-                    catch (const Exception & e)
+                    else
                     {
-                        /// Legacy `data/` paths need not be UUID directories. Preserve their
-                        /// existing behavior; UUID paths, which are used by leader election, are
-                        /// either resolved above or rejected below, before any deletion.
-                        if (e.code() != ErrorCodes::CANNOT_PARSE_UUID)
-                            throw;
+                        storage = DatabaseCatalog::instance().tryGetTable(
+                            StorageID(unescapeForFileName(prefix_it->name()), unescapeForFileName(table_it->name())),
+                            local_context);
                     }
 
-                    /// A missing UUID mapping means the table is not loaded on this node: it was
+                    std::shared_ptr<MergeTreeData> merge_tree;
+                    if (storage)
+                        merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+
+                    /// An unresolved directory means the table is not loaded on this node: it was
                     /// dropped locally, or never attached here. Removing the snapshot then still
                     /// makes sense for an ordinary table — that is exactly what `SYSTEM UNFREEZE`
                     /// is for — but a `leader_election` snapshot lives on storage shared with

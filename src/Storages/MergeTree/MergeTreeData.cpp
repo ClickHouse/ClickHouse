@@ -12729,8 +12729,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     if ((*settings)[MergeTreeSetting::leader_election])
     {
-        /// `SYSTEM UNFREEZE` gets only a path and resolves the table `UUID` back to a loaded
-        /// table to fence the removal. That resolution fails when the table was dropped locally,
+        /// `SYSTEM UNFREEZE` gets only a path and resolves the table directory (by `UUID` or by
+        /// database and table name) back to a loaded table to fence the removal. That resolution fails when the table was dropped locally,
         /// so mark the snapshot as owned by a lease: without the table there is no lease to check
         /// and the removal must be refused instead of deleting shared data owned by another node.
         for (const auto & disk : getStoragePolicy()->getDisks())
