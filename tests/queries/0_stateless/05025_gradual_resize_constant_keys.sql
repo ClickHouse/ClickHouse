@@ -20,6 +20,12 @@ SET max_threads = 4;
 -- single stream and removes every resize processor. Pin it off, the assertions below are about
 -- the pipeline shape.
 SET max_threads_min_free_memory_per_thread = 0;
+-- The number of read streams is capped a second time by the minimum number of marks per
+-- concurrent read, which is derived from `index_granularity_bytes` - a randomized `MergeTree`
+-- setting. A small granularity in bytes makes that cap huge, collapses the read to a single stream
+-- and removes every resize processor from the pipeline. Pin it off for the same reason.
+SET merge_tree_min_rows_for_concurrent_read = 0;
+SET merge_tree_min_bytes_for_concurrent_read = 0;
 -- Aggregation in order takes a different pipeline branch that has no pre-aggregation resize.
 SET optimize_aggregation_in_order = 0;
 
