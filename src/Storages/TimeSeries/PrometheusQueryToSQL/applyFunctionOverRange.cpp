@@ -64,6 +64,199 @@ namespace
         bool drop_metric_name = true;
     };
 
+    ASTPtr toFloat64(ASTPtr && x)
+    {
+        return makeASTFunction("toFloat64", std::move(x));
+    }
+
+    void checkPredictLinearArgumentTypes(const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    {
+        std::string_view function_name = "predict_linear";
+        if (arguments.size() != 2)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects 2 arguments, but was called with {} arguments",
+                            function_name, arguments.size());
+        }
+
+        const auto & range_arg = arguments[0];
+        if (range_arg.type != ResultType::RANGE_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects first argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::RANGE_VECTOR,
+                            getPromQLText(range_arg, context), range_arg.type);
+        }
+
+        const auto & scalar_arg = arguments[1];
+        if (scalar_arg.type != ResultType::SCALAR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects second argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::SCALAR,
+                            getPromQLText(scalar_arg, context), scalar_arg.type);
+        }
+    }
+
+    ASTPtr getStaticScalarParameter(SQLQueryPiece && scalar_arg, ConverterContext & context)
+    {
+        switch (scalar_arg.store_method)
+        {
+            case StoreMethod::CONST_SCALAR:
+            {
+                return timeSeriesScalarToAST(scalar_arg.scalar_value, context.scalar_data_type);
+            }
+            case StoreMethod::SINGLE_SCALAR:
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_arg.select_query), SQLSubqueryType::SCALAR});
+                auto subquery_id = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                /// Wrap with `assumeNotNull` because scalar subqueries make their result nullable,
+                /// but StoreMethod::SINGLE_SCALAR always means one row.
+                return makeASTFunction("assumeNotNull", std::move(subquery_id));
+            }
+            default:
+            {
+                throwUnexpectedStoreMethod(scalar_arg, context);
+            }
+        }
+    }
+
+    ASTPtr makeTimeGrid(TimestampType start_time, TimestampType end_time, DurationType step, const ConverterContext & context)
+    {
+        return makeASTFunction(
+            "timeSeriesRange",
+            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(step, context.timestamp_data_type));
+    }
+
+    struct PredictLinearTimestampShift
+    {
+        ASTPtr constant_value;
+        ASTPtr grid_values;
+    };
+
+    /// `predict_linear` predicts the value at `evaluation_timestamp + predict_offset`, so an `offset` or `@` modifier
+    /// applied to the range-vector argument shifts the prediction target relative to the aggregation timestamp.
+    PredictLinearTimestampShift getPredictLinearTimestampShift(
+        const SQLQueryPiece & range_argument,
+        TimestampType start_time,
+        TimestampType end_time,
+        DurationType step,
+        const ConverterContext & context)
+    {
+        if (!range_argument.node || range_argument.node->node_type != NodeType::Offset)
+            return {};
+
+        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(range_argument.node);
+        if (offset_node->hasAtModifier())
+        {
+            const auto & expression_range = context.node_range_getter.get(offset_node->getExpression());
+            auto fixed_evaluation_timestamp = timeSeriesTimestampToAST(expression_range.start_time, context.timestamp_data_type);
+
+            auto grid_values = makeASTFunction(
+                "arrayMap",
+                makeASTLambda(
+                    {"evaluation_timestamp"},
+                    toFloat64(makeASTFunction(
+                        "minus",
+                        make_intrusive<ASTIdentifier>("evaluation_timestamp"),
+                        std::move(fixed_evaluation_timestamp)))),
+                makeTimeGrid(start_time, end_time, step, context));
+
+            return PredictLinearTimestampShift{nullptr, std::move(grid_values)};
+        }
+
+        if (offset_node->offset_value)
+        {
+            auto constant_value = toFloat64(timeSeriesDurationToAST(*offset_node->offset_value, context.timestamp_data_type));
+            return PredictLinearTimestampShift{std::move(constant_value), nullptr};
+        }
+
+        return {};
+    }
+
+    ASTPtr makePredictOffsetArray(ASTPtr && predict_offset, TimestampType start_time, TimestampType end_time, DurationType step)
+    {
+        return makeASTFunction(
+            "arrayResize",
+            make_intrusive<ASTLiteral>(Array{}),
+            make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(start_time, end_time, step)),
+            std::move(predict_offset));
+    }
+
+    ASTPtr addConstantPredictOffsetShift(ASTPtr && predict_offsets, ASTPtr && timestamp_shift)
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTLambda(
+                {"predict_offset"},
+                makeASTFunction(
+                    "plus",
+                    make_intrusive<ASTIdentifier>("predict_offset"),
+                    std::move(timestamp_shift))),
+            std::move(predict_offsets));
+    }
+
+    ASTPtr addGridPredictOffsetShift(ASTPtr && predict_offsets, ASTPtr && timestamp_shifts)
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTLambda(
+                {"predict_offset", "timestamp_shift"},
+                makeASTFunction(
+                    "plus",
+                    make_intrusive<ASTIdentifier>("predict_offset"),
+                    make_intrusive<ASTIdentifier>("timestamp_shift"))),
+            std::move(predict_offsets),
+            std::move(timestamp_shifts));
+    }
+
+    ASTPtr applyPredictLinearScalarGridParameter(
+        ASTPtr && intercept_values,
+        ASTPtr && slope_values,
+        ASTPtr && predict_offsets)
+    {
+        auto is_null = makeASTFunction(
+            "or",
+            makeASTFunction("isNull", make_intrusive<ASTIdentifier>("intercept")),
+            makeASTFunction("isNull", make_intrusive<ASTIdentifier>("slope")));
+
+        /// `timeSeriesDerivToGrid` reports a per-second slope and `predict_offset` is expressed in seconds,
+        /// so the prediction needs no conversion to the timestamp tick resolution here.
+        auto prediction = makeASTFunction(
+            "plus",
+            makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("intercept")),
+            makeASTFunction(
+                "multiply",
+                makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("slope")),
+                make_intrusive<ASTIdentifier>("predict_offset")));
+
+        return makeASTFunction(
+            "arrayMap",
+            makeASTLambda(
+                {"intercept", "slope", "predict_offset"},
+                makeASTFunction(
+                    "if",
+                    std::move(is_null),
+                    make_intrusive<ASTLiteral>(Field{}),
+                    std::move(prediction))),
+            std::move(intercept_values),
+            std::move(slope_values),
+            std::move(predict_offsets));
+    }
+
+    /// A fixed @ expression is evaluated once by Prometheus. Repeat the single aggregate result on the outer
+    /// query grid instead of sliding the range function over the outer evaluation timestamps.
+    ASTPtr repeatFixedAggregateOnGrid(ASTPtr && aggregate_values, size_t result_grid_size, size_t aggregation_grid_size)
+    {
+        return makeASTFunction(
+            "arrayResize",
+            make_intrusive<ASTLiteral>(Array{}),
+            make_intrusive<ASTLiteral>(result_grid_size),
+            makeASTFunction("arrayElement", std::move(aggregate_values), make_intrusive<ASTLiteral>(aggregation_grid_size)));
+    }
+
     /// Returns information about how the specified prometheus function is implemented.
     /// Returns nullptr if not found.
     const ImplInfo * getImplInfo(std::string_view function_name)
@@ -124,7 +317,6 @@ namespace
              }},
 
             /// TODO:
-            /// predict_linear
             /// avg_over_time
             /// min_over_time
             /// max_over_time
@@ -154,7 +346,7 @@ namespace
 
 bool isFunctionOverRange(std::string_view function_name)
 {
-    return getImplInfo(function_name) != nullptr;
+    return (function_name == "predict_linear") || (getImplInfo(function_name) != nullptr);
 }
 
 
@@ -172,13 +364,45 @@ SQLQueryPiece applyFunctionOverRange(
     ConverterContext & context)
 {
     const auto * impl_info = getImplInfo(function_name);
-    chassert(impl_info);
+    const bool is_predict_linear = (function_name == "predict_linear");
+    chassert(impl_info || is_predict_linear);
 
-    checkArgumentTypes(function_name, arguments, context);
+    std::string_view ch_function_name;
+    bool drop_metric_name = true;
+    ASTPtr extra_parameter;
+    ASTPtr grid_parameter;
+
+    if (is_predict_linear)
+    {
+        checkPredictLinearArgumentTypes(arguments, context);
+        ch_function_name = "timeSeriesPredictLinearToGrid";
+    }
+    else
+    {
+        checkArgumentTypes(function_name, arguments, context);
+        ch_function_name = impl_info->ch_function_name;
+        drop_metric_name = impl_info->drop_metric_name;
+    }
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
         return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+    if (is_predict_linear)
+    {
+        if (arguments[0].store_method == StoreMethod::EMPTY || arguments[1].store_method == StoreMethod::EMPTY)
+            return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+        if (arguments[1].store_method == StoreMethod::SCALAR_GRID)
+        {
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(arguments[1].select_query), SQLSubqueryType::SCALAR});
+            grid_parameter = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+        }
+        else
+        {
+            extra_parameter = getStaticScalarParameter(std::move(arguments[1]), context);
+        }
+    }
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
@@ -186,6 +410,32 @@ SQLQueryPiece applyFunctionOverRange(
     auto window = node_range.window;
 
     auto argument = std::move(arguments[0]);
+
+    if (is_predict_linear)
+    {
+        auto timestamp_shift = getPredictLinearTimestampShift(argument, start_time, end_time, step, context);
+        if (grid_parameter)
+        {
+            if (timestamp_shift.constant_value)
+                grid_parameter = addConstantPredictOffsetShift(std::move(grid_parameter), std::move(timestamp_shift.constant_value));
+            else if (timestamp_shift.grid_values)
+                grid_parameter = addGridPredictOffsetShift(std::move(grid_parameter), std::move(timestamp_shift.grid_values));
+        }
+        else if (extra_parameter)
+        {
+            if (timestamp_shift.constant_value)
+            {
+                extra_parameter = makeASTFunction("plus", std::move(extra_parameter), std::move(timestamp_shift.constant_value));
+            }
+            else if (timestamp_shift.grid_values)
+            {
+                grid_parameter = addGridPredictOffsetShift(
+                    makePredictOffsetArray(std::move(extra_parameter), start_time, end_time, step),
+                    std::move(timestamp_shift.grid_values));
+                extra_parameter = nullptr;
+            }
+        }
+    }
 
     const auto * fixed_at_node = getFixedAtModifier(argument);
     auto aggregation_start_time = start_time;
@@ -269,12 +519,23 @@ SQLQueryPiece applyFunctionOverRange(
                 timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
                 timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
-            ts->setAlias(ColumnNames::TimeSeries);
-            timestamps = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(1));
 
-            /// time_series.2
-            values = makeASTFunction(
-                "tupleElement", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries), make_intrusive<ASTLiteral>(2));
+            if (is_predict_linear)
+            {
+                /// `predict_linear` builds two aggregate functions over the same time series, and the alias
+                /// must not be defined twice, so the expression is repeated instead of aliased.
+                timestamps = makeASTFunction("tupleElement", ts->clone(), make_intrusive<ASTLiteral>(1));
+                values = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(2));
+            }
+            else
+            {
+                ts->setAlias(ColumnNames::TimeSeries);
+                timestamps = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(1));
+
+                /// time_series.2
+                values = makeASTFunction(
+                    "tupleElement", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries), make_intrusive<ASTLiteral>(2));
+            }
 
             break;
         }
@@ -320,23 +581,62 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    auto aggregate_values = addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type));
-
-    if (fixed_at_node)
+    ASTPtr aggregate_values;
+    if (grid_parameter)
     {
-        /// A fixed @ expression is evaluated once by Prometheus. Repeat the single aggregate result on the outer
-        /// query grid instead of sliding the range function over the outer evaluation timestamps.
-        aggregate_values = makeASTFunction(
-            "arrayResize",
-            make_intrusive<ASTLiteral>(Array{}),
-            make_intrusive<ASTLiteral>(result_grid_size),
-            makeASTFunction(
-                "arrayElement", std::move(aggregate_values), make_intrusive<ASTLiteral>(aggregation_grid_size)));
+        /// The aggregate function parameter must be constant for `timeSeriesPredictLinearToGrid`,
+        /// but PromQL allows the `predict_linear` offset to be any scalar expression. Compute
+        /// `predict_linear(v, offset)` as the prediction at the evaluation timestamp plus the
+        /// regression slope multiplied by the per-step offset.
+        ASTPtr intercept_values = addParametersToAggregateFunction(
+            makeASTFunction(ch_function_name, timestamps->clone(), values->clone()),
+            timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type),
+            timeSeriesScalarToAST(0, context.scalar_data_type));
+
+        ASTPtr slope_values = addParametersToAggregateFunction(
+            makeASTFunction("timeSeriesDerivToGrid", std::move(timestamps), std::move(values)),
+            timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type));
+
+        if (fixed_at_node)
+        {
+            intercept_values = repeatFixedAggregateOnGrid(std::move(intercept_values), result_grid_size, aggregation_grid_size);
+            slope_values = repeatFixedAggregateOnGrid(std::move(slope_values), result_grid_size, aggregation_grid_size);
+        }
+
+        aggregate_values = applyPredictLinearScalarGridParameter(
+            std::move(intercept_values), std::move(slope_values), std::move(grid_parameter));
+    }
+    else
+    {
+        auto aggregate_function = makeASTFunction(ch_function_name, std::move(timestamps), std::move(values));
+        if (extra_parameter)
+        {
+            aggregate_values = addParametersToAggregateFunction(
+                std::move(aggregate_function),
+                timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
+                timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
+                timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
+                timeSeriesDurationToAST(window, context.timestamp_data_type),
+                std::move(extra_parameter));
+        }
+        else
+        {
+            aggregate_values = addParametersToAggregateFunction(
+                std::move(aggregate_function),
+                timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
+                timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
+                timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
+                timeSeriesDurationToAST(window, context.timestamp_data_type));
+        }
+
+        if (fixed_at_node)
+            aggregate_values = repeatFixedAggregateOnGrid(std::move(aggregate_values), result_grid_size, aggregation_grid_size);
     }
 
     builder.select_list.push_back(std::move(aggregate_values));
@@ -358,7 +658,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && impl_info->drop_metric_name)
+    if (has_group && drop_metric_name)
         res = dropMetricName(std::move(res), context);
 
     return res;

@@ -264,7 +264,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `predict_linear`, `changes`, `resets` |
 | Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -274,6 +274,10 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+
+**Note**: A series is considered absent only when all of its selected samples are stale markers. If a series is stale on a part of a range query, it is still present at the other evaluation timestamps, so two such series which are live at disjoint timestamps and collapse to the same labelset are reported as duplicate series instead of being matched step by step. The same applies to ordinary series which have samples in disjoint parts of the queried range.
+
+**Note**: Prometheus stale markers are recognized only when the sample value column of the `TimeSeries` table is `Float64`. The stale marker is a specific `NaN` payload, and a `Float32` value column cannot preserve it: the marker is downcast to an ordinary `NaN` on insert, so on such a table stale samples are treated as regular `NaN` values by selectors and range functions.
 
 ### Operators {#operators}
 
@@ -290,7 +294,7 @@ Unary operators `+` and `-`.
 ### Not yet supported {#not-yet-supported}
 
 - Aggregation operator `count_values`
-- Range functions `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Range functions `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 - Function `absent`
 
 ## Example {#example}
@@ -341,7 +345,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `predict_linear`, `changes`, `resets` |
 | Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -351,6 +355,10 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+
+**Note**: A series is considered absent only when all of its selected samples are stale markers. If a series is stale on a part of a range query, it is still present at the other evaluation timestamps, so two such series which are live at disjoint timestamps and collapse to the same labelset are reported as duplicate series instead of being matched step by step. The same applies to ordinary series which have samples in disjoint parts of the queried range.
+
+**Note**: Prometheus stale markers are recognized only when the sample value column of the `TimeSeries` table is `Float64`. The stale marker is a specific `NaN` payload, and a `Float32` value column cannot preserve it: the marker is downcast to an ordinary `NaN` on insert, so on such a table stale samples are treated as regular `NaN` values by selectors and range functions.
 
 ### Operators {#operators}
 
@@ -367,7 +375,7 @@ Unary operators `+` and `-`.
 ### Not yet supported {#not-yet-supported}
 
 - Aggregation operator `count_values`
-- Range functions `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Range functions `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 - Function `absent`
 
 ## Example {#example}
