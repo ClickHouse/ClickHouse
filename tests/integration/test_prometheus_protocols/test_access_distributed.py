@@ -1,8 +1,9 @@
 """Privileges on the Prometheus surfaces of a Distributed target.
 
-Every read surface checks the SELECT grant on the target before it looks at the table at all, and
-remote write checks the INSERT grant the same way. So a caller without the right learns nothing
-else: not the engine behind the name, and not whether the name exists.
+Every read surface, SQL table functions included, checks the SELECT grant on the target before it
+looks at the table at all, and remote write checks the INSERT grant the same way. So a caller
+without the right learns nothing else: not the engine behind the name, and not whether the name
+exists.
 
 The privileged caller runs each request first, so what the restricted caller is denied is always
 something that would otherwise have happened.
@@ -52,6 +53,14 @@ EVALUATION_TIME = 140
 
 HIDDEN_TABLE = "ts_dist"
 MISSING_TABLE = "no_such_table"
+
+# The table functions resolve their source table while their arguments are parsed, which is
+# where the grant is checked: DESCRIBE gets no further than SELECT does.
+TABLE_FUNCTIONS = [
+    f"prometheusQuery(ts_dist, 'm', {EVALUATION_TIME})",
+    f"prometheusQueryRange(ts_dist, 'm', 0, {EVALUATION_TIME}, 10)",
+    f"timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME})",
+]
 
 INSERT_TEST_DATA = """
 INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
@@ -152,7 +161,9 @@ def test_remote_read_needs_the_select_grant():
     allowed = get_response_to_remote_read(
         node.ip_address, 9093, f"{DIST}/read", read_request
     )
-    assert allowed.headers["X-ClickHouse-Exception-Code"] == error_code("NOT_IMPLEMENTED")
+    assert allowed.headers["X-ClickHouse-Exception-Code"] == error_code(
+        "NOT_IMPLEMENTED"
+    )
 
     # The restricted caller is stopped before that, so the refusal never reaches it.
     denied = get_response_to_remote_read(
@@ -212,3 +223,28 @@ def test_dynamic_table_hides_whether_the_table_exists():
     )
     assert "does not exist" not in hidden_denied, hidden_denied
     assert "Distributed" not in hidden_denied, hidden_denied
+
+
+@pytest.mark.parametrize("statement", ["SELECT count() FROM {}", "DESCRIBE TABLE {}"])
+@pytest.mark.parametrize("table_function", TABLE_FUNCTIONS)
+def test_table_functions_need_the_select_grant(table_function, statement):
+    sql = statement.format(table_function)
+    # The privileged caller runs it, so the restricted one is denied something that works.
+    node.query(sql)
+
+    denied = node.query_and_get_error(sql, user=NO_SELECT_USER)
+    assert "Not enough privileges" in denied, denied
+    assert "SELECT" in denied, denied
+
+
+def test_selector_access_denied_precedes_the_engine_error():
+    sql = f"SELECT count() FROM timeSeriesSelector(ts_dist, 'm', 0, {EVALUATION_TIME})"
+    # A caller that may read the wrapper learns that the selector wants a TimeSeries table...
+    engine_error = node.query_and_get_error(sql)
+    assert "is not TimeSeries" in engine_error, engine_error
+
+    # ...while a caller without the grant learns only that it has no grant.
+    denied = node.query_and_get_error(sql, user=NO_SELECT_USER)
+    assert "Not enough privileges" in denied, denied
+    assert "TimeSeries" not in denied, denied
+    assert "Distributed" not in denied, denied
