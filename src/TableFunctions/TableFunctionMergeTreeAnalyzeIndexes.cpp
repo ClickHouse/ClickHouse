@@ -226,6 +226,11 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
             static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
             static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
     }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unknown optimization {}, the only supported one is 'vector_search_index_analysis'", quoteString(optimization));
+    }
 }
 
 ColumnsDescription TableFunctionMergeTreeAnalyzeIndexes::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
