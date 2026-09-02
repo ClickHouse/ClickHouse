@@ -2378,15 +2378,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
-        /// The IN rewrites and set building below recognize only Tuple, so a Row left-hand
-        /// side is lowered to its named Tuple equivalent, like in comparisons.
+        /// The IN rewrites and set building below recognize only Tuple, so a left-hand side
+        /// containing Row anywhere is lowered to its named Tuple equivalent, like in comparisons.
         if (in_first_argument->getNodeType() != QueryTreeNodeType::LAMBDA)
         {
-            if (typeid_cast<const DataTypeRow *>(in_first_argument->getResultType().get()))
-                in_first_argument = castNodeToType(
-                    in_first_argument,
-                    lowerRowTypesToTuples(in_first_argument->getResultType()),
-                    scope);
+            const auto & left_type = in_first_argument->getResultType();
+            if (auto lowered_type = lowerRowTypesToTuples(left_type); lowered_type.get() != left_type.get())
+                in_first_argument = castNodeToType(in_first_argument, lowered_type, scope);
         }
 
         auto * table_node = in_second_argument->as<TableNode>();

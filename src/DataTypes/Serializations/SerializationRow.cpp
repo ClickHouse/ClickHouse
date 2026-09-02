@@ -349,11 +349,10 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
         for (size_t i = 0; i < num_fields; ++i)
             tuple.getColumn(i).reserve(tuple.getColumn(i).size() + limit);
 
-    /// `limit == 0` means "until the end of the stream". Every row is decoded from a
-    /// buffer bounded to its `row_size` payload, so a malformed field cannot bleed into
-    /// the next row and an incomplete payload fails at the row boundary.
+    /// Every row is decoded from a buffer bounded to its `row_size` payload, so a malformed
+    /// field cannot bleed into the next row and an incomplete payload fails at the row boundary.
     String row_payload;
-    for (size_t read = 0; (limit == 0 || read < limit) && !stream->eof(); ++read)
+    for (size_t read = 0; read < limit && !stream->eof(); ++read)
     {
         readRowPayload(row_payload, *stream, format_settings);
         ReadBufferFromString row_buf(row_payload);

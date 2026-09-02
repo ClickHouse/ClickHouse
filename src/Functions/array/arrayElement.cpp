@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -1782,8 +1783,9 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
     if (tuple_size == 0)
         return ColumnTuple::create(input_rows_count);
 
-    const DataTypes & tuple_types
-        = typeid_cast<const DataTypeTuple &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType()).getElements();
+    /// Row reuses ColumnTuple, so an Array(Row) is taken apart like the equivalent Array(Tuple).
+    const DataTypePtr tuple_type = lowerRowTypesToTuples(typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType());
+    const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*tuple_type).getElements();
 
     /** We will calculate the function for the tuple of the internals of the array.
       * To do this, create a temporary columns.

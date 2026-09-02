@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1625,7 +1626,9 @@ public:
             for (size_t i = first_data_argument; i < arguments.size(); ++i)
             {
                 const auto & col = arguments[i];
-                executeForArgument(key_cols, col.type.get(), col.column.get(), vec_to, is_first_argument);
+                /// Row reuses ColumnTuple, so it is flattened like the equivalent Tuple.
+                const DataTypePtr type = lowerRowTypesToTuples(col.type);
+                executeForArgument(key_cols, type.get(), col.column.get(), vec_to, is_first_argument);
             }
         }
 
