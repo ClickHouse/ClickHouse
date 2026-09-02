@@ -1136,7 +1136,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Only picks between the strict and the gradual pre-aggregation resize, so it does not belong
     /// to the hash table statistics cache key, and it needs no serialization version gate either:
     /// a peer that does not know the bit ignores it and falls back to the header-based constness
-    /// check, which is exactly the behaviour before this bit existed.
+    /// check, which is exactly the behavior before this bit existed.
     if (group_by_keys_semantically_constant && !ctx.for_cache_key)
         flags |= 128;
 
