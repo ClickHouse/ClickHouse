@@ -13,10 +13,16 @@ DIR="05048_iceberg_deeper/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 # The Iceberg metadata files cache would serve the copy read while the table was created.
 NC="--use_iceberg_metadata_files_cache 0"
 
+# Background Iceberg compaction, which the cloud build runs off a member flag rather than a
+# query setting, would rewrite and lock the metadata these arms read. The table functions have
+# no table definition to store the per-table setting in, so it is pinned for every query too.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction 0"
+
 # t1: metadata `location` is an absolute path (the default).
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 -q "
     DROP TABLE IF EXISTS t1_05048;
-    CREATE TABLE t1_05048 (x UInt32, s String) ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t1/sub');
+    CREATE TABLE t1_05048 (x UInt32, s String) ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t1/sub')
+    SETTINGS allow_experimental_iceberg_compaction = 0;
     INSERT INTO t1_05048 VALUES (1, 'a'), (2, 'b'), (3, 'c');
     DROP TABLE t1_05048;
 "
@@ -34,7 +40,8 @@ ${CLICKHOUSE_CLIENT} $NC -q "
 # t2: metadata `location` is a full URI.
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 --write_full_path_in_iceberg_metadata 1 -q "
     DROP TABLE IF EXISTS t2_05048;
-    CREATE TABLE t2_05048 (x UInt32, s String) ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t2/sub');
+    CREATE TABLE t2_05048 (x UInt32, s String) ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t2/sub')
+    SETTINGS allow_experimental_iceberg_compaction = 0;
     INSERT INTO t2_05048 VALUES (1, 'a'), (2, 'b'), (3, 'c');
     DROP TABLE t2_05048;
 "
@@ -50,7 +57,8 @@ ${CLICKHOUSE_CLIENT} $NC -q "
 # path must be kept here.
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 -q "
     DROP TABLE IF EXISTS t3_05048;
-    CREATE TABLE t3_05048 (x UInt32, s String) ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t3');
+    CREATE TABLE t3_05048 (x UInt32, s String) ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t3')
+    SETTINGS allow_experimental_iceberg_compaction = 0;
     INSERT INTO t3_05048 VALUES (7, 'd'), (8, 'e');
     DROP TABLE t3_05048;
 "
@@ -86,7 +94,7 @@ ${CLICKHOUSE_CLIENT} $NC -q "
 ${CLICKHOUSE_CLIENT} $NC -q "
     DROP TABLE IF EXISTS t1_deep_05048;
     CREATE TABLE t1_deep_05048 ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t1')
-    SETTINGS iceberg_metadata_file_path = 'sub/metadata/v2.metadata.json';
+    SETTINGS iceberg_metadata_file_path = 'sub/metadata/v2.metadata.json', allow_experimental_iceberg_compaction = 0;
 "
 echo -n 'E insert   '
 ${CLICKHOUSE_CLIENT} $NC --allow_experimental_insert_into_iceberg 1 -q "
@@ -120,7 +128,8 @@ ${CLICKHOUSE_CLIENT} $NC --allow_experimental_insert_into_iceberg 1 --allow_iceb
 # disagree and the table root must NOT be derived. Reads and writes stay as they are.
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 -q "
     DROP TABLE IF EXISTS t4_05048;
-    CREATE TABLE t4_05048 (x UInt32, s String) ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t4');
+    CREATE TABLE t4_05048 (x UInt32, s String) ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t4')
+    SETTINGS allow_experimental_iceberg_compaction = 0;
     INSERT INTO t4_05048 VALUES (5, 'g'), (6, 'h');
     DROP TABLE t4_05048;
 "
@@ -140,7 +149,7 @@ ${CLICKHOUSE_CLIENT} $NC -q "
 ${CLICKHOUSE_CLIENT} $NC -q "
     DROP TABLE IF EXISTS t4_arch_05048;
     CREATE TABLE t4_arch_05048 ENGINE = IcebergS3(s3_conn, filename = '${DIR}/t4')
-    SETTINGS iceberg_metadata_file_path = 'archive/metadata/v2.metadata.json';
+    SETTINGS iceberg_metadata_file_path = 'archive/metadata/v2.metadata.json', allow_experimental_iceberg_compaction = 0;
 "
 echo -n 'M write    '
 if ${CLICKHOUSE_CLIENT} $NC --allow_experimental_insert_into_iceberg 1 -q "
