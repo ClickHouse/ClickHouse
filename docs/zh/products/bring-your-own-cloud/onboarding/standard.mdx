@@ -98,11 +98,43 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       * **Azure**：`/23`
       * **GCP**：`/20`
 
-      这些是下限，而非建议值：每个副本都会占用 IP 地址，因此规模较大的部署需要更大的范围。
+      这些是最低要求，而非建议值：每个副本都会占用 IP 地址，因此规模较大的部署需要更大的范围。
 
     * **可用区**：如果计划使用 VPC 对等连接，将源账户与 BYOC 账户的可用区对齐有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户中可能对应不同的物理可用区 ID。有关详细信息，请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="设置 BYOC 基础设施" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="配置 BYOC 基础设施" background="black" />
+
+    #### 预检验证
+
+    当您点击 **Set up Infrastructure** 时，ClickHouse Cloud 会在创建任何资源之前，针对您的账户运行一组**只读**的预检检查。如果全部通过，预配将继续进行。如果某项检查未通过，设置将暂停，控制台会明确显示问题所在，以便您在创建任何资源之前予以修复。
+
+    这些检查会确认：
+
+    * **权限** — 管理身份 (IAM role / 服务账号 / 服务主体) 拥有 ClickHouse Cloud 预配和运行部署所需的权限。
+    * **已启用的服务** *(GCP)* — 您的项目已启用所需的 Google Cloud API (Compute Engine、Kubernetes Engine、Cloud Storage、Network Connectivity、IAM)。
+    * **网络** *(AWS 自带 VPC)* — 您的 VPC 和子网符合[网络要求](/zh/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)：包括子网大小、所需标签、可用区分布、出站连接和可用 IP 地址。
+    * **配额和防护措施** *(AWS)* — 您的账户拥有充足的服务配额 (VPC、NAT gateways、Elastic IPs、EKS clusters、vCPUs)，且没有任何组织策略 (SCP) 阻止执行所需操作。
+
+    当检查未通过时，每一项都会列出其对应的操作及失败原因 (例如 `iam:CreateRole · explicitDeny`) 。展开 **Show passed checks** 即可查看所有通过的检查项。
+
+    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="BYOC 预检验证报告 cloud-setup 检查失败" background="black" />
+
+    要解决这些失败，请重新运行最新的 ClickHouse CloudFormation 或 Terraform 堆栈 — 或将报告中列出的 actions 授予管理身份 (IAM role / 服务账号 / 服务主体) — 然后选择以下方式之一：
+
+    * **重新验证** — 重新运行预检。修复已报告的问题后，使用此选项确认设置已准备就绪，可进行预配。
+    * **仍要继续** — 即使检查失败也继续预配。仅当您确信报告的失败是误报时才使用此选项；否则预配很可能会中途失败。
+
+    请参照下表排查常见故障。
+
+    | 验证错误                                                                         | 可能原因                                                                                 | 解决方法                                                                                                  |
+    | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+    | **无法 assume management role** *(AWS)*                                        | Onboarding 技术栈未完成，或者角色或外部 ID 不匹配                                                     | 重新运行最新的 onboarding 堆栈，并确认控制台中显示的[外部 ID](#aws-external-id)与信任策略中的值一致                                   |
+    | **无法模拟管理服务账号** *(GCP)*                                                       | Onboarding Terraform 未完成，或 `clickhouse-management` 服务账号不存在，或未授予 ClickHouse 对其进行模拟的权限 | 重新运行最新的 onboarding Terraform，并确认 `clickhouse-management` 服务账号存在，且已授予 ClickHouse 模拟该账号的权限              |
+    | **缺少权限** (例如创建 VPC、创建 IAM role、创建 Kubernetes 集群)                             | 管理身份缺少所需权限，通常是由于使用了自定义或过期的技术栈                                                        | 重新运行最新的 onboarding 堆栈，该堆栈会授予完整的权限集；如果您有意限制权限，请补充所报告的权限                                                |
+    | **未启用所需的 API** *(GCP)*                                                       | 项目中必需的 Google Cloud 服务 API 已被禁用                                                      | 启用该 API，例如：`gcloud services enable compute.googleapis.com --project <your-project>`                   |
+    | **子网或 VPC 配置问题** *(AWS 自带 VPC)* — CIDR 范围过小、缺少标签、可用区数量不足、无出站网络访问，或可用 IP 地址不足 | 提供的 VPC 不符合 BYOC 网络要求                                                                | 调整 VPC，使其满足[网络要求](/zh/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc) |
+    | **service 配额不足** *(AWS)*                                                     | 您的账户中所需资源的配额过低                                                                       | 向您的云提供商申请提高配额；请参阅 [AWS 服务限制](/zh/products/bring-your-own-cloud/reference/aws-service-limits)             |
+    | **受组织策略 / SCP 阻止** *(AWS)*                                                   | 组织级防护策略禁止该账户执行所需操作                                                                   | 请与云管理员协作，允许 BYOC 账户执行该操作                                                                              |
   </Step>
 </Steps>
 

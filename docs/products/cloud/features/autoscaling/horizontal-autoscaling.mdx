@@ -38,7 +38,7 @@ To enable it:
 2. Set maximum replicas greater than minimum replicas. The autoscaler operates within these bounds. Setting the two values equal pins the service to a fixed replica count and disables horizontal autoscaling.
 
 <Note>
-Services can scale horizontally to a maximum of 20 replicas. If you need additional replicas, contact our support team.
+For the replica limits that apply to your service, see [Usage limits](/cloud/bestpractices/usage-limits). Contact our support team if you need additional replicas.
 </Note>
 
 ## Configure your clients {#configure-your-clients}
@@ -76,5 +76,5 @@ Scaling events are visible on the service's metrics dashboard in the ClickHouse 
 
 - Horizontal autoscaling is in Private Preview and must be enabled for your organization by the ClickHouse support team.
 - The vertical replica size must be pinned by setting minimum memory equal to maximum memory.
-- Each service is limited to a maximum of 20 replicas. Contact support if you need additional replicas.
+- Replica limits apply; see [Usage limits](/cloud/bestpractices/usage-limits) for the limits that apply to your service, and contact support if you need additional replicas.
 - Recommendations are made every 10 minutes; horizontal autoscaling isn't designed to absorb sub-minute spikes. For predictable peaks, consider [scheduled scaling](/products/cloud/features/autoscaling/scheduled-scaling).
