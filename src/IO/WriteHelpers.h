@@ -190,9 +190,44 @@ inline void writeString(std::string_view ref, WriteBuffer & buf)
  */
 inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeChar('"', buf);
-    for (const char * it = begin; it != end; ++it)
+    /// A byte with a nonzero entry cannot be copied verbatim and goes through the switch below.
+    /// 0xE2 is in the table because U+2028 and U+2029 are three-byte sequences: stopping the scan on the lead byte
+    /// is what keeps the `end - it >= 3` lookahead below inside a single run, so it can neither read past `end` nor
+    /// straddle a run boundary. A lone 0x80, 0xA8 or 0xA9 is an ordinary continuation byte and stays in the run.
+    static constexpr auto stop_tables = []
     {
+        std::array<std::array<UInt8, 256>, 2> tables{};
+        for (auto & table : tables)
+        {
+            for (size_t i = 0; i <= 0x1F; ++i)
+                table[i] = 1;
+            table['"'] = 1;
+            table['\\'] = 1;
+            table[0xE2] = 1;
+        }
+        tables[true]['/'] = 1;
+        return tables;
+    }();
+    const auto & stop = stop_tables[settings.json.escape_forward_slashes];
+
+    writeChar('"', buf);
+
+    const char * it = begin;
+    const char * run_end = it;
+    while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
+        ++run_end;
+
+    while (true)
+    {
+        if (run_end != it)
+        {
+            buf.write(it, static_cast<size_t>(run_end - it));
+            it = run_end;
+        }
+
+        if (it == end)
+            break;
+
         switch (*it)
         {
             case '\b':
@@ -261,7 +296,14 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 else
                     writeChar(*it, buf);
         }
+
+        ++it;
+
+        run_end = it;
+        while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
+            ++run_end;
     }
+
     writeChar('"', buf);
 }
 
