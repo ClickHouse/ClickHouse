@@ -438,6 +438,22 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
     }
 }
 
+/// `IColumn::compareAt` orders a value that carries its own type by that type's place in the
+/// name-sorted alternative list before it looks at the value, while this analysis orders a `Field` by
+/// its own type tag; for `Variant(Float64, Int64)` the two are reversed.
+static bool comparisonOrdersTypeBeforeValue(const DataTypePtr & type)
+{
+    /// `hasDynamicStructure` reaches `Dynamic` and `JSON` at any depth, including a `JSON` with no
+    /// declared path, which is the only thing `forEachChild` walks for it. It is false for a `Variant`
+    /// of static alternatives, which `ColumnVariant::compareAt` still orders by discriminator.
+    if (type->hasDynamicStructure() || isVariant(type))
+        return true;
+
+    bool found = false;
+    type->forEachChild([&](const IDataType & child) { found = found || isVariant(child); });
+    return found;
+}
+
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
 /// Returns the converted Field if successful, or std::nullopt if the conversion is lossy or fails.
 static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant_node, const DataTypePtr & expr_type)
@@ -911,6 +927,16 @@ static AddComparisonFilterResult addComparisonFilter(
     /// Step 1: convert the constant to the column's type for uniform comparison.
     const auto & raw_type = expression->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
+
+    /// The order this analysis puts such a value in is not the order the comparison applies to it, so
+    /// the condition's position relative to the others carries no information. Either operand decides:
+    /// a comparison is evaluated at the least common supertype, which is self-typed iff an operand is.
+    if (comparisonOrdersTypeBeforeValue(raw_type)
+        || comparisonOrdersTypeBeforeValue(new_filter.constant_node->getResultType()))
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 

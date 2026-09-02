@@ -1,0 +1,11 @@
+json, excluding bound alone	0
+json, chain pruned	0
+json, chain kept	0
+array(dynamic), excluding bound alone	0
+array(dynamic), chain pruned	0
+array(dynamic), chain kept	0
+array(variant), excluding bound alone	0
+array(variant), chain pruned	0
+array(variant), chain kept	0
+shared field, chain pruned	0
+shared field, chain kept	0
