@@ -16,7 +16,6 @@ SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_def
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 1000000000, enable_join_runtime_filters = 0;
-SET automatic_parallel_replicas_mode = 0;
 
 SELECT '-- GROUPING SETS rejected';
 SELECT a, b, sum(v) AS s FROM t_agg_guard GROUP BY GROUPING SETS ((a), (b), ()); -- { serverError SUPPORT_IS_DISABLED }
