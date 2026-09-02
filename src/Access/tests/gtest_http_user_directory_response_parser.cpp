@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <map>
 #include <sstream>
 
 #include <Access/HTTPUserDirectoryResponseParser.h>
@@ -126,12 +127,11 @@ TEST(HTTPUserDirectoryResponseParser, MalformedMetadataThrows)
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"roles": [1]})"), Exception);
     /// settings is not an object.
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": ["max_threads"]})"), Exception);
-    /// Unknown setting name must fail (strict), unlike the legacy parser.
-    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"no_such_setting_xyz": "1"}})"), Exception);
-    /// Unknown setting name must fail even when the value happens to look like a `Field` dump - the rejection
-    /// must be based on the setting name being unrecognized, not merely on the value failing to parse.
-    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"no_such_setting_xyz": "NULL"}})"), Exception);
-    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"no_such_setting_xyz": "Int64_5"}})"), Exception);
+    /// A setting value must be a JSON scalar.
+    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"max_threads": [4]}})"), Exception);
+    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"max_threads": {"v": 4}}})"), Exception);
+    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"max_threads": null}})"), Exception);
+    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"": "1"}})"), Exception);
     /// valid_until: negative, fractional, string, boolean.
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": -5})"), Exception);
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": 123.5})"), Exception);
@@ -141,13 +141,28 @@ TEST(HTTPUserDirectoryResponseParser, MalformedMetadataThrows)
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": true})"), Exception);
 }
 
-TEST(HTTPUserDirectoryResponseParser, MergeTreePrefixedSettingIsAccepted)
+TEST(HTTPUserDirectoryResponseParser, SettingValuesKeepJsonScalarType)
 {
-    /// A `merge_tree_`-prefixed name resolved through `resolveSetting` to `MergeTreeSettings` must still be
-    /// accepted as a known (builtin) setting, not rejected as unknown.
+    /// The parser does not know which names are settings: it returns every entry with a `Field` that
+    /// preserves the JSON scalar type. Name policy and built-in casting are the storage's job.
+    /// Entries are looked up by name: a JSON object has no defined member order.
     auto result = parseBody(Poco::Net::HTTPResponse::HTTP_OK,
-        R"({"settings": {"merge_tree_max_avg_part_size_for_too_many_parts": "1"}})");
+        R"({"settings": {"SQL_tenant": "acme", "SQL_region_id": 42, "SQL_offset": -7, "SQL_ratio": 0.5, "SQL_enabled": true, "max_threads": "4"}})");
     EXPECT_EQ(result.status, HTTPUserDirectoryResponseParser::Result::Status::Ok);
-    ASSERT_EQ(result.settings.size(), 1u);
-    EXPECT_EQ(result.settings[0].name, "merge_tree_max_avg_part_size_for_too_many_parts");
+    ASSERT_EQ(result.settings.size(), 6u);
+    std::map<String, Field> by_name;
+    for (const auto & change : result.settings)
+        by_name.emplace(change.name, change.value);
+    ASSERT_EQ(by_name.size(), 6u);
+    EXPECT_EQ(by_name.at("SQL_tenant").getType(), Field::Types::String);
+    EXPECT_EQ(by_name.at("SQL_tenant").safeGet<String>(), "acme");
+    EXPECT_EQ(by_name.at("SQL_region_id").getType(), Field::Types::UInt64);
+    EXPECT_EQ(by_name.at("SQL_region_id").safeGet<UInt64>(), 42u);
+    EXPECT_EQ(by_name.at("SQL_offset").getType(), Field::Types::Int64);
+    EXPECT_EQ(by_name.at("SQL_offset").safeGet<Int64>(), -7);
+    EXPECT_EQ(by_name.at("SQL_ratio").getType(), Field::Types::Float64);
+    EXPECT_EQ(by_name.at("SQL_enabled").getType(), Field::Types::Bool);
+    EXPECT_EQ(by_name.at("SQL_enabled").safeGet<bool>(), true);
+    EXPECT_EQ(by_name.at("max_threads").getType(), Field::Types::String);
+    EXPECT_EQ(by_name.at("max_threads").safeGet<String>(), "4");
 }

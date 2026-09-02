@@ -177,9 +177,14 @@ On HTTP `200`, the response body may be empty (equivalent to `{}`) or a JSON obj
   two simultaneous sessions of the same user may have different role sets. An empty
   delegation configuration denies every returned role.
 - `settings` — session settings, applied like the existing `IDENTIFIED WITH HTTP`
-  response settings, subject to the usual setting constraints. Every name must be a
-  built-in server setting; custom settings (see `custom_settings_prefixes`) are not
-  accepted from the response, and an unknown name fails the authentication attempt.
+  response settings, subject to the usual setting constraints. Every name must be either
+  a built-in server setting or a custom setting whose name matches
+  `custom_settings_prefixes`; any other name, or a built-in setting with a malformed
+  value, fails the authentication attempt. Values may be JSON strings, numbers or
+  booleans. A built-in setting is converted to its type (so `"4"` and `4` are equivalent),
+  while a custom setting keeps the JSON scalar type it was sent with, for example
+  `{"SQL_tenant": "acme", "SQL_region_id": 42}` is readable in queries as
+  `getSetting('SQL_tenant')` and `getSetting('SQL_region_id')`.
 - `valid_until` — absolute Unix timestamp limiting this authentication; `0` or absence
   means no expiry; a past or malformed value fails the attempt.
 

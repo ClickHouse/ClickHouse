@@ -4,9 +4,11 @@
 #include <istream>
 
 #include <Common/SettingsChanges.h>
+#include <Core/Field.h>
 #include <Core/Types.h>
 
 namespace Poco::Net { class HTTPResponse; }
+namespace Poco::Dynamic { class Var; }
 
 namespace DB
 {
@@ -17,6 +19,11 @@ namespace DB
 /// where malformed response metadata is silently skipped), any malformed or invalid metadata
 /// here fails the whole authentication attempt: silently dropping security metadata could hide
 /// a compromised or misconfigured authentication service.
+///
+/// This is a protocol parser only: `settings` entries are returned by name with their JSON scalar
+/// value as a `Field` (string, integer, float or boolean; anything else fails). Whether a name is an
+/// allowed setting (built-in, or matching `custom_settings_prefixes`) and how a built-in setting
+/// interprets the value is decided by `HTTPAccessStorage`, which owns the `AccessControl` policy.
 ///
 /// Status mapping:
 ///   200 -> Ok (body parsed strictly),
@@ -34,6 +41,7 @@ public:
         };
 
         Status status = Status::UserNotFound;
+        /// Raw entries: names unvalidated, values as JSON scalars.
         SettingsChanges settings;
         Strings role_names;
         /// Absolute Unix timestamp in seconds; 0 means no expiry.
@@ -45,6 +53,7 @@ public:
 private:
     /// Reads the whole body (so the connection stays reusable), failing once it exceeds a fixed limit.
     static String readBoundedBody(std::istream * body_stream);
+    static Field jsonScalarToField(const Poco::Dynamic::Var & value, const String & name);
 };
 
 }

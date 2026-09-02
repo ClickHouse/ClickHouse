@@ -56,6 +56,25 @@ MAIN_USERS = {
     "metrics_user": {"body": {}},
     # Creates a SQL SECURITY DEFINER view; external_definer is prefix-delegated.
     "definer_user": {"body": {"roles": ["external_definer"]}},
+    # Custom settings under the configured `SQL_` prefix keep their JSON scalar types; the
+    # built-in max_threads is sent as a JSON number to prove built-ins are cast, not parsed
+    # from strings only.
+    "custom_settings_user": {
+        "body": {
+            "settings": {
+                "SQL_tenant": "acme",
+                "SQL_region_id": 42,
+                "SQL_feature_enabled": True,
+                "max_threads": 4,
+            }
+        }
+    },
+    # A typo in a built-in name is neither built-in nor prefixed: fails closed.
+    "typo_setting_user": {"body": {"settings": {"max_threds": "4"}}},
+    # A custom setting outside custom_settings_prefixes: fails closed.
+    "unprefixed_setting_user": {"body": {"settings": {"other_tenant": "acme"}}},
+    # A built-in setting with a value of the wrong kind: fails closed at authentication.
+    "bad_value_setting_user": {"body": {"settings": {"max_threads": "many"}}},
 }
 MAIN_USERS.update({f"barrier_user_{i}": {"body": {}} for i in range(BARRIER_PARTIES)})
 

@@ -1,4 +1,5 @@
 <clickhouse>
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
     <http_authentication_servers>
         <main_server>
             <uri>http://localhost:8000/main</uri>

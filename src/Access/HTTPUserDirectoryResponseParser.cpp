@@ -1,9 +1,9 @@
 #include <Access/HTTPUserDirectoryResponseParser.h>
 
-#include <Access/resolveSetting.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 
+#include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPResponse.h>
@@ -15,6 +15,41 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
+}
+
+/// Converts a JSON scalar into a `Field` that preserves its JSON type: strings stay strings,
+/// integers stay integers, booleans stay booleans. Whether the name is an allowed setting and
+/// how a built-in setting interprets the value is decided by the storage, not here.
+Field HTTPUserDirectoryResponseParser::jsonScalarToField(const Poco::Dynamic::Var & value, const String & name)
+{
+    try
+    {
+        /// `isInteger` is also true for booleans, so booleans are classified first.
+        if (value.isBoolean())
+            return Field(value.convert<bool>());
+        if (value.isString())
+            return Field(value.convert<String>());
+        if (value.isInteger())
+        {
+            if (value.isSigned())
+            {
+                Int64 signed_value = value.convert<Int64>();
+                if (signed_value < 0)
+                    return Field(signed_value);
+                return Field(static_cast<UInt64>(signed_value));
+            }
+            return Field(value.convert<UInt64>());
+        }
+        if (value.isNumeric())
+            return Field(value.convert<Float64>());
+    }
+    catch (const Poco::Exception &)
+    {
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "The value of setting {} in the HTTP authentication server response is out of range", backQuote(name));
+    }
+    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+        "The value of setting {} in the HTTP authentication server response must be a string, number or boolean", backQuote(name));
 }
 
 String HTTPUserDirectoryResponseParser::readBoundedBody(std::istream * body_stream)
@@ -93,23 +128,10 @@ HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response,
 
         for (const auto & [name, value] : *settings_object)
         {
-            /// `settingStringToValueUtil` alone is not strict enough: `Settings` allows custom settings, so an
-            /// unrecognized name would silently fall through to `Field::restoreFromDump` instead of failing -
-            /// which would only reject values that happen not to look like a dumped `Field` (e.g. "NULL",
-            /// "Int64_5" would be silently accepted as a bogus custom setting). Reject unknown names explicitly.
-            if (!settingIsBuiltin(name))
+            if (name.empty())
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "Unknown setting {} in the HTTP authentication server response", backQuote(name));
-
-            try
-            {
-                result.settings.emplace_back(name, settingStringToValueUtil(name, value.toString()));
-            }
-            catch (...)
-            {
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "Cannot parse setting {} from the HTTP authentication server response", backQuote(name));
-            }
+                    "Empty setting name in the HTTP authentication server response");
+            result.settings.emplace_back(name, jsonScalarToField(value, name));
         }
     }
 

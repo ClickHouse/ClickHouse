@@ -4,6 +4,7 @@
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/Role.h>
+#include <Access/resolveSetting.h>
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Common/CurrentMetrics.h>
@@ -516,10 +517,35 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
                         "The HTTP authentication server returned an already expired valid_until");
             }
 
+            /// Returned settings follow the normal ClickHouse setting-name policy: a built-in
+            /// setting, or a custom setting matching `custom_settings_prefixes`; anything else
+            /// (a typo, an arbitrary name) fails the attempt. Built-in values are cast to the
+            /// setting's type here so a malformed value fails now, not at session creation;
+            /// custom values keep the JSON scalar type the helper sent.
+            SettingsChanges settings;
+            settings.reserve(response.settings.size());
+            for (const auto & change : response.settings)
+            {
+                try
+                {
+                    access_control.checkSettingNameIsAllowed(change.name);
+                    if (settingIsBuiltin(change.name))
+                        settings.emplace_back(change.name, settingCastValueUtil(change.name, change.value));
+                    else
+                        settings.emplace_back(change.name, change.value);
+                }
+                catch (...)
+                {
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                        "Invalid setting {} in the HTTP authentication server response: {}",
+                        backQuote(change.name), getCurrentExceptionMessage(false));
+                }
+            }
+
             AuthResult result;
             result.user_id = getOrCreateUser(user_name);
             result.user_name = user_name;
-            result.settings = std::move(response.settings);
+            result.settings = std::move(settings);
             result.external_roles = std::move(external_role_ids);
 
             AuthenticationData auth_data(AuthenticationType::HTTP);

@@ -1262,3 +1262,36 @@ def test_definer_view_rejected_for_user_with_helper_roles(started_cluster):
         ).strip()
         == "3"
     )
+
+
+def test_custom_settings_follow_prefix_policy(started_cluster):
+    # Returned settings follow AccessControl::checkSettingNameIsAllowed: built-in names and
+    # names under custom_settings_prefixes (SQL_ here) are accepted; anything else fails the
+    # authentication attempt. Custom values keep their JSON scalar type.
+    assert (
+        instance.query(
+            "SELECT getSetting('SQL_tenant'), getSetting('SQL_region_id'), "
+            "getSetting('SQL_feature_enabled'), getSetting('max_threads')",
+            user="custom_settings_user",
+            password=GOOD_PASSWORD,
+        ).strip()
+        == "acme\t42\ttrue\t4"
+    )
+    # The custom setting is usable where custom settings are meant to be used: in the query.
+    assert (
+        instance.query(
+            "SELECT count() FROM system.one WHERE getSetting('SQL_tenant') = 'acme'",
+            user="custom_settings_user",
+            password=GOOD_PASSWORD,
+        ).strip()
+        == "1"
+    )
+    for user in [
+        "typo_setting_user",
+        "unprefixed_setting_user",
+        "bad_value_setting_user",
+    ]:
+        error = instance.query_and_get_error(
+            "SELECT 1", user=user, password=GOOD_PASSWORD
+        )
+        assert "Authentication failed" in error, (user, error)
