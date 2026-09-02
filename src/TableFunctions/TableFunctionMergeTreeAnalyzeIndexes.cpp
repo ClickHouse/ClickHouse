@@ -45,37 +45,58 @@ namespace ErrorCodes
 
 /// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
 /// While for non-analyzer there is no _CAST
-static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
+static std::optional<Strings> tryExtractParts(const ASTPtr & argument, const ContextPtr & context)
 {
     ASTPtr array = argument;
     if (const auto * func = array->as<ASTFunction>())
     {
-        if (func->name == "_CAST" && func->arguments) /// _CAST([], 'Array(String)')
+        if (func->name == "_CAST" && func->arguments && func->arguments->children.size() == 2) /// _CAST([], 'Array(String)')
             array = func->arguments->children.at(0);
         else if (func->name == "array") /// array(ExpressionList)
             array = func->arguments;
         else
-            array = ASTPtr();
+            return {};
     }
 
-    if (array)
+    if (!array)
+        return {};
+
+    if (const auto * literal = array->as<ASTLiteral>())
     {
-        if (const auto * literal = array->as<ASTLiteral>())
-        {
-            Strings result;
-            for (const auto & element : literal->value.safeGet<Array>())
-                result.push_back(element.safeGet<String>());
-            return result;
-        }
+        if (literal->value.getType() != Field::Types::Array)
+            return {};
 
-        if (const auto * expr_list = array->as<ASTExpressionList>())
+        Strings result;
+        for (const auto & element : literal->value.safeGet<Array>())
         {
-            Strings result;
-            for (const auto & element : expr_list->children)
-                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
-            return result;
+            if (element.getType() != Field::Types::String)
+                return {};
+            result.push_back(element.safeGet<String>());
         }
+        return result;
     }
+
+    if (const auto * expr_list = array->as<ASTExpressionList>())
+    {
+        Strings result;
+        for (const auto & element : expr_list->children)
+        {
+            ASTPtr element_literal = evaluateConstantExpressionAsLiteral(element, context);
+            const Field & field = element_literal->as<ASTLiteral &>().value;
+            if (field.getType() != Field::Types::String)
+                return {};
+            result.push_back(field.safeGet<String>());
+        }
+        return result;
+    }
+
+    return {};
+}
+
+static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
+{
+    if (auto parts = tryExtractParts(argument, context))
+        return std::move(*parts);
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts must be an array of strings, got: {}", argument->formatForLogging());
 }
