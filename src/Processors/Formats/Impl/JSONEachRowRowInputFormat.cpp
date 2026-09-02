@@ -402,19 +402,10 @@ NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
 {
     if (first_row)
     {
+        /// The header rows of the `WithNames*` variants are consumed by `readSchema`, which also
+        /// clears `first_row`, so only the plain variants can get here.
         skipBOMIfExists(in);
-        if ((with_names || with_types) && !header_rows_read)
-        {
-            if (with_names)
-                JSONUtils::readStringFieldsFromJSONArrayRow(in, format_settings);
-            if (with_types)
-                JSONUtils::readStringFieldsFromJSONArrayRow(in, format_settings);
-            header_rows_read = true;
-        }
-        else if (!with_names && !with_types)
-        {
-            data_in_square_brackets = JSONUtils::checkAndSkipArrayStart(in);
-        }
+        data_in_square_brackets = JSONUtils::checkAndSkipArrayStart(in);
         first_row = false;
     }
     else
@@ -468,7 +459,6 @@ NamesAndTypesList JSONEachRowSchemaReader::readSchema()
     {
         column_names = JSONUtils::readStringFieldsFromJSONArrayRow(in, format_settings);
         first_row = false;
-        header_rows_read = true;
     }
 
     if (with_types)
@@ -528,8 +518,12 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSONL");
     factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRow");
 
-    markFormatWithNamesAndTypesSupportsSamplingColumns("JSONEachRow", factory);
-    markFormatWithNamesAndTypesSupportsSamplingColumns("JSONStringsEachRow", factory);
+    /// The data rows carry the column names, so - unlike the `JSONCompactEachRowWithNames*` formats -
+    /// reading a subset of columns never depends on `input_format_with_names_use_header`.
+    factory.markFormatSupportsSubsetOfColumns("JSONEachRowWithNames");
+    factory.markFormatSupportsSubsetOfColumns("JSONEachRowWithNamesAndTypes");
+    factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRowWithNames");
+    factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRowWithNamesAndTypes");
 
     factory.setDocumentation("JSONEachRow", Documentation{
         .description = R"DOCS_MD(
@@ -794,13 +788,15 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
             return;
         }
 
-        /// Header rows (names and/or types) are JSON arrays; read at least one data row together with them.
-        size_t min_rows = 1 + int(with_names) + int(with_types);
+        /// The header rows (names and/or types) are JSON arrays while the data rows are JSON objects,
+        /// so the segmentation engine has to treat both kinds of bracket as a row delimiter. Read at
+        /// least one data row together with the header rows.
+        const size_t min_rows = 1 + static_cast<size_t>(with_names) + static_cast<size_t>(with_types);
         factory.registerFileSegmentationEngineCreator(format_name, [min_rows](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
         {
             return [min_rows, max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
             {
-                return JSONUtils::fileSegmentationEngineJSONCompactEachRow(in, memory, min_bytes, min_rows, max_rows, max_row_size);
+                return JSONUtils::fileSegmentationEngineJSONEachRowWithHeaderRows(in, memory, min_bytes, min_rows, max_rows, max_row_size);
             };
         });
     };
