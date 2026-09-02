@@ -160,6 +160,12 @@ if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
     set (COMPILER_SUPPORTS_GZ_ZLIB ON)
 endif ()
 
+# Has to precede block_build_time_checks.cmake. `enable_language(CUDA)` runs CMake's own
+# compiler test through `try_compile`, and `FindCUDAToolkit` reaches `find_package(Threads)`,
+# which probes with `check_c_source_compiles`. Both are blocked below, so CUDA gets enabled
+# here for the same reason `project()` enables C/CXX/ASM before the guard is installed.
+include (cmake/cuda.cmake)
+
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
 # version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.

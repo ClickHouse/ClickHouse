@@ -112,6 +112,10 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_GPU)
+    add_subdirectory (GPU)
+endif ()
+
 if (ENABLE_EXAMPLES)
     add_subdirectory (Examples)
 endif()
@@ -563,6 +567,10 @@ endif()
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+
+if (ENABLE_GPU)
+    target_link_libraries (dbms PUBLIC clickhouse_gpu)
+endif ()
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::xxHash)
 if (TARGET ch_contrib::jemalloc)

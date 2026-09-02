@@ -7,11 +7,13 @@ if (ENABLE_GPU)
         message (FATAL_ERROR "ENABLE_GPU is only wired up for Linux x86_64 so far.")
     endif ()
 
-    if (NOT DISABLE_HERMETIC_BUILD)
-        message (FATAL_ERROR
-            "ENABLE_GPU requires -DDISABLE_HERMETIC_BUILD=1. nvcc compiles its host pass against "
-            "the system libc, which cannot be linked against the glibc in contrib/sysroot.")
-    endif ()
+    # nvcc's host pass uses system headers: contrib/sysroot ships no C++ stdlib and
+    # crt/math_functions.h includes <cmath>. The link still resolves against the sysroot's
+    # glibc 2.31, which works only because the C-ABI boundary keeps kernel host code to
+    # libc calls far older than that. Verify after touching the kernels:
+    #   nm -u src/GPU/libclickhouse_gpu_kernels.a | grep -E '__isoc2[0-9]_'
+    # Do not set DISABLE_HERMETIC_BUILD: contrib hardcodes feature answers for the bundled
+    # sysroot (every LIBURING_CONFIG_HAS_* is FALSE) and they go wrong on system headers.
 
     if (NOT DEFINED CMAKE_CUDA_COMPILER)
         find_program (GPU_NVCC
@@ -83,5 +85,5 @@ if (ENABLE_GPU)
     message (STATUS "  architectures: ${CMAKE_CUDA_ARCHITECTURES}")
     message (STATUS "  cudart:        ${GPU_CUDART_LIBRARY}")
 else ()
-    message (STATUS "GPU engine: disabled (use -DENABLE_GPU=1 -DDISABLE_HERMETIC_BUILD=1)")
+    message (STATUS "GPU engine: disabled (use -DENABLE_GPU=1)")
 endif ()
