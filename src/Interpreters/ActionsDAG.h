@@ -544,6 +544,15 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column = {},
         bool single_output_condition_node = true);
 
+    /// Same as the overload above, but the conjunction atoms to push down are chosen by `can_push`
+    /// rather than by which inputs are available. The atoms that stay are left in this DAG, so the
+    /// step owning it is rebuilt around what is left, exactly as in the other overload.
+    std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
+        const std::string & filter_name,
+        bool removes_filter,
+        const ColumnsWithTypeAndName & all_inputs,
+        const std::function<bool(const Node *)> & can_push);
+
     /// Check if `predicate` is a combination of AND functions.
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);

@@ -37,9 +37,8 @@ void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)
         FilterTransform::transformHeader(*output_header, &filter.actions, filter.column_name, filter.do_remove_column));
 
     auto filter_step = std::make_unique<FilterStep>(
-        query_plan->getCurrentHeader(), std::move(filter.actions), filter.column_name, filter.do_remove_column);
+        query_plan->getCurrentHeader(), std::move(filter.actions), std::move(filter.column_name), filter.do_remove_column);
     query_plan->addStep(std::move(filter_step));
-    pushed_conditions.insert(filter.column_name);
 }
 
 }

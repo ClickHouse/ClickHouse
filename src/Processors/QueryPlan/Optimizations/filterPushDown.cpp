@@ -1440,44 +1440,35 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         }
 
         /// Take the runtime filters out of the conjunction rather than giving up on the whole condition:
-        /// `WHERE ... ` merged with a runtime filter is the common shape, and the runtime filter is the
-        /// half worth having down there.
-        const auto & expression = filter->getExpression();
-        const auto * predicate = expression.tryFindInOutputs(filter->getFilterColumnName());
-        if (!predicate)
-            return 0;
+        /// `WHERE ...` merged with a runtime filter is the common shape, and the runtime filter is the
+        /// half worth having down there. What is left stays in this step's own condition.
+        auto split = filter->getExpression().splitActionsForFilterPushDown(
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn(),
+            child->getOutputHeader()->getColumnsWithTypeAndName(),
+            isOnlyJoinRuntimeFilters);
 
-        ActionsDAG::NodeRawConstPtrs pushable;
-        auto atoms = ActionsDAG::extractConjunctionAtoms(predicate);
-        for (const auto * atom : atoms)
-        {
-            if (isOnlyJoinRuntimeFilters(atom) && !parallel_replicas_local_plan->hasPushedCondition(atom->result_name))
-                pushable.push_back(atom);
-        }
-
-        if (pushable.empty())
-            return 0;
-
-        if (pushable.size() == atoms.size())
-        {
-            /// The whole condition may go in, so move it instead of leaving a copy behind.
-            FilterDAGInfo info{expression.clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
-            parallel_replicas_local_plan->addFilter(std::move(info));
-            std::swap(*parent_node, *child_node);
-            return 1;
-        }
-
-        auto split = ActionsDAG::createActionsForConjunction(pushable, child->getOutputHeader()->getColumnsWithTypeAndName());
         if (!split)
             return 0;
 
-        /// The rest of the condition stays above, and so does this part of it - filtering the same rows
-        /// twice is harmless, and rebuilding the original `Filter` without them is not: its actions may
-        /// compute more than the predicate.
-        String pushed_name = split->dag.getOutputs()[split->filter_pos]->result_name;
-        for (const auto * atom : pushable)
-            parallel_replicas_local_plan->notePushedCondition(atom->result_name);
-        parallel_replicas_local_plan->addFilter(FilterDAGInfo{std::move(split->dag), pushed_name, split->remove_filter});
+        String pushed_filter_column_name = split->dag.getOutputs()[split->filter_pos]->result_name;
+        parallel_replicas_local_plan->addFilter(
+            FilterDAGInfo{std::move(split->dag), std::move(pushed_filter_column_name), split->remove_filter});
+
+        /// Same as the other push-downs: if nothing is left to filter, the step becomes an expression,
+        /// otherwise it keeps filtering by what stayed.
+        const auto * remaining = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
+        if (!remaining || split->is_filter_const_after_push_down)
+        {
+            auto expression_step = std::make_unique<ExpressionStep>(child->getOutputHeader(), filter->getExpression().clone());
+            expression_step->setStepDescription(*filter);
+            parent = std::move(expression_step);
+        }
+        else
+        {
+            filter->updateInputHeader(child->getOutputHeader());
+        }
+
         return 1;
     }
 
