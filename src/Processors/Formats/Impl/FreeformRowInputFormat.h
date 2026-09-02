@@ -121,13 +121,16 @@ public:
 
     struct Solution
     {
-        mutable NamesAndTypes columns;
+        NamesAndTypes columns;
         std::vector<uint8_t> matchers_order;
         size_t score = 0;
         unsigned size = 0;
     };
 
-    explicit FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings);
+    /// The matcher does not own the buffer: the input format (or the schema reader) does, so that
+    /// the same `PeekableReadBuffer` is the one the format itself reads from, and so that the
+    /// buffer can be rebound when the format is reused for another stream.
+    FreeformFieldMatcher(PeekableReadBuffer & in_, const FormatSettings & settings);
     // iterates over max_rows_to_read and pick the solution with the highest score. Returns false if no solution is found.
     bool buildSolutionsAndPickBest();
     // parse the row based on solution, buildSolutionsAndPickBest() must be called prior or it will throw an exception
@@ -137,6 +140,8 @@ public:
     const FormatSettings::EscapingRule & getRule(unsigned index) { return rules[index]; }
     NamesAndTypes & getNamesAndTypes() { return final_solution.columns; }
     unsigned getSolutionLength() const { return final_solution.size; }
+    /// The number of rows the accepted solution was checked against.
+    size_t getRowsChecked() const { return rows_checked; }
 
 private:
     std::vector<FieldMatcherPtr> matchers;
@@ -150,13 +155,15 @@ private:
     // for now it's min(100, settings_.max_rows_to_read_for_schema_inference) to keep it fast
     // we could reconsider using settings_.max_rows_to_read_for_schema_inference once we are able to store solutions
     size_t max_rows_to_check;
-    std::unique_ptr<PeekableReadBuffer> in;
+    size_t rows_checked = 0;
+    PeekableReadBuffer & in;
 
     /// Rewinds the buffer to the checkpoint set at the beginning of the row and skips `offset` bytes.
     void seekInRow(size_t offset) const;
     void buildSolutions(Solution current_solution, std::vector<Solution> & solutions, bool one_string, size_t offset) const;
     // validateSolution iterates over the current row and try to parse and infer the types of the parsed fields. A solution is valid when the parsed types are valid.
-    bool validateSolution(Solution solution) const;
+    /// validateSolution also widens the types of `solution` to the union of the types seen in the checked rows.
+    bool validateSolution(Solution & solution);
     // readNextFields iterates over the list of matchers and try to parse all the possible fields.
     std::vector<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
 };
@@ -168,10 +175,24 @@ public:
 
     String getName() const override { return "FreeformRowInputFormat"; }
 
-private:
-    const FormatSettings format_settings;
-    FreeformFieldMatcher matcher;
+    /// The format may be reused for several streams (`StreamingFormatExecutor` rebinds the buffer
+    /// for every stream of an asynchronous insert): the peekable buffer wrapping the stream, the
+    /// solution inferred from it and the mapping of the solution onto the header all belong to
+    /// the stream and are rebuilt with it.
+    void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
+private:
+    FreeformRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
+
+    const FormatSettings format_settings;
+    std::unique_ptr<PeekableReadBuffer> buf;
+    std::unique_ptr<FreeformFieldMatcher> matcher;
+
+    /// For every field of the inferred solution, the position of the header column it is read into.
+    std::vector<size_t> header_positions;
+
+    void buildHeaderPositions();
     bool readField(unsigned index, MutableColumns & columns);
     bool readRow(MutableColumns &, RowReadExtension &) override;
     void syncAfterError() override;
@@ -185,6 +206,7 @@ public:
     NamesAndTypesList readSchema() override;
 
 private:
+    std::unique_ptr<PeekableReadBuffer> buf;
     FreeformFieldMatcher matcher;
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 };

@@ -5,6 +5,7 @@
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <base/sort.h>
+#include <fmt/ranges.h>
 #include <Common/logger_useful.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -26,7 +27,9 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -240,8 +243,12 @@ FieldMatcher::NamesAndFields QuotedFieldMatcher::readFieldsByEscapingRule(Peekab
 
 FieldMatcher::NamesAndFields EscapedFieldMatcher::readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const
 {
+    /// The field is kept as it is in the data, escape sequences included: it is inferred from
+    /// and later deserialized as an `Escaped` field, and decoding it here would make the final
+    /// `deserializeTextEscaped` decode it a second time (`\N` would stop being the null token, and
+    /// an escaped tab would split the field).
     String field;
-    readEscapedString(field, in);
+    readTSVField(field, in);
     return {{fmt::format("c{}", index), field}};
 }
 
@@ -252,9 +259,9 @@ FieldMatcher::NamesAndFields RawByWhitespaceFieldMatcher::readFieldsByEscapingRu
     return {{fmt::format("c{}", index), field}};
 }
 
-FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings_)
+FreeformFieldMatcher::FreeformFieldMatcher(PeekableReadBuffer & in_, const FormatSettings & settings_)
     : max_rows_to_check(std::min<size_t>(100, settings_.max_rows_to_read_for_schema_inference))
-    , in(std::make_unique<PeekableReadBuffer>(in_))
+    , in(in_)
 {
     // matchers are pushed in the order of priority, this helps with exiting early and reducing the search tree.
     matchers.emplace_back(std::make_unique<JSONFieldMatcher>(FormatSettings::EscapingRule::JSON, settings_));
@@ -269,8 +276,8 @@ void FreeformFieldMatcher::seekInRow(size_t offset) const
     /// A single checkpoint is kept at the beginning of the row, and every position inside the row is
     /// addressed by its offset from it. Nested checkpoints are deliberately not used here: the search
     /// rewinds the buffer over and over, and a single checkpoint keeps the bookkeeping trivial.
-    in->rollbackToCheckpoint();
-    in->ignore(offset);
+    in.rollbackToCheckpoint();
+    in.ignore(offset);
 }
 
 std::vector<FreeformFieldMatcher::Fields>
@@ -279,7 +286,7 @@ FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsi
     std::vector<Fields> next_fields;
     if (parse_till_newline_as_one_string)
     {
-        auto result = matchers.back()->parseField<true>(*in, index);
+        auto result = matchers.back()->parseField<true>(in, index);
         if (result.ok)
             next_fields.emplace_back(result, matchers.size() - 1);
 
@@ -289,7 +296,7 @@ FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsi
     size_t best_score = 0;
     for (uint8_t i = 0; const auto & matcher : matchers)
     {
-        auto result = matcher->parseField<true>(*in, index);
+        auto result = matcher->parseField<true>(in, index);
         if (result.ok)
         {
             // best_score <= 1 means that we've only found strings so far, in that case it's best to include all of the fields
@@ -311,18 +318,18 @@ void FreeformFieldMatcher::buildSolutions(
     Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string, size_t offset) const
 {
     seekInRow(offset);
-    skipWhitespacesAndDelimiters(*in);
+    skipWhitespacesAndDelimiters(in);
 
     /// Trailing delimiters before a line break end the row too: delimiter runs are collapsed
     /// by design, and the alternative of walking into the next physical line would stitch
     /// two rows into one.
-    if (atRowEnd(*in))
+    if (atRowEnd(in))
     {
         solutions.push_back(current_solution);
         return;
     }
 
-    const size_t offset_after_delimiters = in->offsetFromCheckpoint();
+    const size_t offset_after_delimiters = in.offsetFromCheckpoint();
 
     const auto next_fields = readNextFields(parse_till_newline_as_one_string, current_solution.size, offset_after_delimiters);
     for (const auto & fields : next_fields)
@@ -339,7 +346,7 @@ void FreeformFieldMatcher::buildSolutions(
     }
 }
 
-bool FreeformFieldMatcher::validateSolution(Solution solution) const
+bool FreeformFieldMatcher::validateSolution(Solution & solution)
 {
     try
     {
@@ -361,26 +368,36 @@ bool FreeformFieldMatcher::validateSolution(Solution solution) const
             // For each iteration, we try to parse fields and find the type union of the current row and the previously parsed rows. If it doesn't exist,
             // the solution is invalid. Additionally, we also try to check if for each row, we're getting the right number of columns and if we're ending
             // each row at \n
-            if (in->eof())
+
+            /// Blank lines are not rows, exactly as in `parseRow`: inference and reading must agree
+            /// on what a row is, or a file would be rejected by inference and accepted by the reader.
+            skipWhitespaceIfAny(in);
+            if (in.eof())
                 break;
 
+            rows_checked = row + 1;
 
             unsigned validated_columns = 0;
             for (const auto & i : solution.matchers_order)
             {
-                skipWhitespacesAndDelimiters(*in);
-                auto result = matchers[i]->parseField<false>(*in, validated_columns);
+                skipWhitespacesAndDelimiters(in);
+                auto result = matchers[i]->parseField<false>(in, validated_columns);
                 if (!result.ok)
                     break;
 
                 for (const auto & name_and_type : result.names_and_types)
                 {
                     auto type = name_and_type.type;
-                    auto name = name_and_type.name;
-                    if (!type || !column_index.contains(name))
-                        break;
+                    if (!type)
+                        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot infer the type of field '{}'", name_and_type.name);
 
-                    auto type_index = column_index[name];
+                    /// A key not seen in the first row (an extra key of a JSON object) is skipped, exactly
+                    /// as `parseRow` skips it: otherwise validation would depend on the order of the keys.
+                    auto it = column_index.find(name_and_type.name);
+                    if (it == column_index.end())
+                        continue;
+
+                    auto type_index = it->second;
                     matchers[i]->transformTypesIfPossible(solution.columns[type_index].type, type);
                     if (!solution.columns[type_index].type->equals(*type))
                         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Received unexpected type after transform attempt");
@@ -392,14 +409,14 @@ bool FreeformFieldMatcher::validateSolution(Solution solution) const
             if (validated_columns < solution.columns.size())
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unable to parse the desired number of fields");
 
-            skipWhitespacesAndDelimiters(*in);
-            if (!atRowEnd(*in))
+            skipWhitespacesAndDelimiters(in);
+            if (!atRowEnd(in))
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution did not end at newline character");
 
-            skipToNextLineOrEOF(*in);
+            skipToNextLineOrEOF(in);
         }
 
-        in->rollbackToCheckpoint();
+        in.rollbackToCheckpoint();
         return true;
     }
     catch (Exception & e)
@@ -407,7 +424,7 @@ bool FreeformFieldMatcher::validateSolution(Solution solution) const
         LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Solution fails: {}", e.message());
     }
 
-    in->rollbackToCheckpoint();
+    in.rollbackToCheckpoint();
     return false;
 }
 
@@ -421,18 +438,20 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
         // possibly by making use of the SchemaCache
         return true;
 
-    skipBOMIfExists(*in);
-    if (in->eof())
+    skipBOMIfExists(in);
+    /// Leading blank lines are not rows (see `parseRow`), and an input with no rows has no solution.
+    skipWhitespaceIfAny(in);
+    if (in.eof())
         return false;
 
-    in->setCheckpoint();
+    in.setCheckpoint();
 
     std::vector<Solution> solutions;
     buildSolutions(Solution{.columns = {}, .matchers_order = {}, .score = 0, .size = 0}, solutions, false, 0);
-    in->rollbackToCheckpoint();
+    in.rollbackToCheckpoint();
     if (solutions.empty())
     {
-        in->rollbackToCheckpoint(true);
+        in.rollbackToCheckpoint(true);
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solutions set");
     }
 
@@ -442,17 +461,19 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
         [](const Solution & first, const Solution & second)
         { return std::tie(first.score, first.matchers_order) > std::tie(second.score, second.matchers_order); });
 
-    // after finding and ranking the solutions, we now run them through the max_rows_to_check rows and pick the first one that works for all of them
-    for (const auto & solution : solutions)
+    // after finding and ranking the solutions, we now run them through the max_rows_to_check rows and pick the first one that works for all of them.
+    // Validation also widens the types of the solution to the union of the types seen in the checked rows (the first row alone
+    // does not tell whether a column of integers is nullable), so the validated solution is the one that becomes final.
+    for (auto & solution : solutions)
         if (validateSolution(solution))
         {
             final_solution = solution;
-            in->rollbackToCheckpoint(true);
+            in.rollbackToCheckpoint(true);
             LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Found solution");
             return true;
         }
 
-    in->rollbackToCheckpoint(true);
+    in.rollbackToCheckpoint(true);
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "None of the {} candidate solutions parses every checked row", solutions.size());
 }
 
@@ -460,8 +481,8 @@ bool FreeformFieldMatcher::parseRow()
 {
     /// Blank lines and whitespace at the end of the data are not rows, but a delimiter here
     /// would belong to a row, so only whitespace is skipped.
-    skipWhitespaceIfAny(*in);
-    if (in->eof() || final_solution.matchers_order.empty())
+    skipWhitespaceIfAny(in);
+    if (in.eof() || final_solution.matchers_order.empty())
         return false;
 
     /// Every field is reassigned below; a row that stops matching the solution must fail
@@ -472,8 +493,8 @@ bool FreeformFieldMatcher::parseRow()
     unsigned assigned_fields = 0;
     for (unsigned col{0}; const auto & i : final_solution.matchers_order)
     {
-        skipWhitespacesAndDelimiters(*in);
-        auto result = matchers[i]->parseField<false>(*in, col);
+        skipWhitespacesAndDelimiters(in);
+        auto result = matchers[i]->parseField<false>(in, col);
         if (!result.ok)
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
@@ -492,6 +513,7 @@ bool FreeformFieldMatcher::parseRow()
                 {
                     matched_fields[it->second] = result.fields[j];
                     ++assigned_fields;
+                    ++col;
                 }
             }
             else
@@ -510,10 +532,12 @@ bool FreeformFieldMatcher::parseRow()
                 rules[col] = matchers[i]->getEscapingRule();
                 matched_fields[col] = result.fields[j];
                 ++assigned_fields;
+                ++col;
             }
 
+            /// `col` is the position in the solution, so it does not advance over a skipped key:
+            /// the autogenerated `cN` name of a field that follows a JSON object depends on it.
             ++j;
-            ++col;
         }
     }
 
@@ -524,28 +548,112 @@ bool FreeformFieldMatcher::parseRow()
             assigned_fields,
             final_solution.size);
 
-    skipWhitespacesAndDelimiters(*in);
-    if (!atRowEnd(*in))
+    skipWhitespacesAndDelimiters(in);
+    if (!atRowEnd(in))
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Row does not end at a newline after all fields of the inferred solution");
 
     first_row = false;
-    skipToNextLineOrEOF(*in);
+    skipToNextLineOrEOF(in);
     return true;
 }
 
 FreeformRowInputFormat::FreeformRowInputFormat(
     ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_), format_settings(format_settings_), matcher(in_, format_settings_)
+    : FreeformRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
 {
+}
+
+FreeformRowInputFormat::FreeformRowInputFormat(
+    std::unique_ptr<PeekableReadBuffer> buf_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
+    : IRowInputFormat(header_, *buf_, params_)
+    , format_settings(format_settings_)
+    , buf(std::move(buf_))
+    , matcher(std::make_unique<FreeformFieldMatcher>(*buf, format_settings))
+{
+}
+
+void FreeformRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    /// The solution inferred from the previous stream is not carried over: the structure of this
+    /// format is inferred from the data, and this is another piece of data.
+    matcher.reset();
+    header_positions.clear();
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    matcher = std::make_unique<FreeformFieldMatcher>(*buf, format_settings);
+    IRowInputFormat::setReadBuffer(*buf);
+}
+
+void FreeformRowInputFormat::resetReadBuffer()
+{
+    matcher.reset();
+    header_positions.clear();
+    buf.reset();
+    IRowInputFormat::resetReadBuffer();
+}
+
+void FreeformRowInputFormat::buildHeaderPositions()
+{
+    /// `columns` and `serializations` are built from the header the caller provided (an explicit
+    /// structure of `file(...)` or the table of `INSERT ... FORMAT Freeform`), and the inferred
+    /// solution is not obliged to fit it. A field named by the data (a key of a root JSON object)
+    /// is read into the column of the same name; a field with an autogenerated `cN` name that the
+    /// header does not have is read into the N-th column. Anything else is a mismatch, and so are
+    /// two fields mapped onto one column.
+    const auto & header = getPort().getHeader();
+    const auto & inferred = matcher->getNamesAndTypes();
+
+    if (inferred.size() != header.columns())
+        throw Exception(
+            ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
+            "The inferred solution has {} fields per row, while {} columns are expected",
+            inferred.size(),
+            header.columns());
+
+    header_positions.assign(inferred.size(), 0);
+    std::vector<bool> is_column_mapped(header.columns(), false);
+    for (size_t i = 0; i < inferred.size(); ++i)
+    {
+        const auto & name = inferred[i].name;
+        size_t target;
+        if (header.has(name))
+            target = header.getPositionByName(name);
+        else if (name == fmt::format("c{}", i))
+            target = i;
+        else
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Field '{}' inferred from the data is not among the expected columns: {}",
+                name,
+                header.dumpNames());
+
+        if (is_column_mapped[target])
+        {
+            Names inferred_names;
+            for (const auto & column : inferred)
+                inferred_names.push_back(column.name);
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Two fields of the inferred solution ({}) would be read into the column '{}'",
+                fmt::join(inferred_names, ", "),
+                header.getByPosition(target).name);
+        }
+
+        is_column_mapped[target] = true;
+        header_positions[i] = target;
+    }
 }
 
 bool FreeformRowInputFormat::readField(unsigned index, MutableColumns & columns)
 {
-    const auto & type = matcher.getNamesAndTypes()[index].type;
-    const auto rule = matcher.getRule(index);
-    ReadBufferFromString field_buf(matcher.getField(index));
+    /// The field is deserialized as the column of the header, not as the inferred type: the header
+    /// is what the caller asked for, and the two may legitimately differ (a number read into a
+    /// `String`, a value read into a `Nullable` column).
+    const size_t target = header_positions[index];
+    const auto & type = getPort().getHeader().getByPosition(target).type;
+    const auto rule = matcher->getRule(index);
+    ReadBufferFromString field_buf(matcher->getField(index));
 
-    return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, rule, format_settings);
+    return deserializeFieldByEscapingRule(type, serializations[target], *columns[target], field_buf, rule, format_settings);
 }
 
 bool FreeformRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
@@ -553,26 +661,17 @@ bool FreeformRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     /// `buildSolutionsAndPickBest` returns false only for empty input (any other failure throws
     /// there), and the caller has already provided the structure, so an empty input is simply
     /// zero rows, as in every other input format. Only schema inference has to fail on it.
-    if (!matcher.buildSolutionsAndPickBest())
+    if (!matcher->buildSolutionsAndPickBest())
         return false;
 
-    if (matcher.parseRow())
+    if (header_positions.empty())
+        buildHeaderPositions();
+
+    if (matcher->parseRow())
     {
-        auto size = matcher.getSolutionLength();
-
-        /// `columns` and `serializations` are built from the header the caller provided
-        /// (an explicit structure of `file(...)` or `INSERT ... FORMAT Freeform`), and the
-        /// inferred solution is not obliged to fit it.
-        if (size != columns.size())
-            throw Exception(
-                ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
-                "The inferred solution has {} fields per row, while {} columns are expected",
-                size,
-                columns.size());
-
-        ext.read_columns.assign(size, false);
-        for (unsigned index = 0; index < size; ++index)
-            ext.read_columns[index] = readField(index, columns);
+        ext.read_columns.assign(columns.size(), false);
+        for (unsigned index = 0; index < header_positions.size(); ++index)
+            ext.read_columns[header_positions[index]] = readField(index, columns);
     }
 
     return !in->eof();
@@ -585,7 +684,7 @@ void FreeformRowInputFormat::syncAfterError()
 }
 
 FreeformSchemaReader::FreeformSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(in_, format_settings_), matcher(in_, format_settings_)
+    : IRowSchemaReader(in_, format_settings_), buf(std::make_unique<PeekableReadBuffer>(in_)), matcher(*buf, format_settings_)
 {
 }
 
@@ -597,7 +696,17 @@ NamesAndTypesList FreeformSchemaReader::readSchema()
     auto columns = matcher.getNamesAndTypes();
     NamesAndTypesList ret;
     for (const auto & column : columns)
+    {
+        /// A column whose every checked value is null (`\N` in an `Escaped` field) has no complete type.
+        if (!checkIfTypeIsComplete(column.type))
+            throw Exception(
+                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                "Cannot determine type for column '{}' by first {} rows of data, most likely this column contains only Nulls",
+                column.name,
+                matcher.getRowsChecked());
+
         ret.push_back(column);
+    }
 
     return ret;
 }
