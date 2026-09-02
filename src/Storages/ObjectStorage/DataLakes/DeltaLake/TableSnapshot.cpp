@@ -1009,7 +1009,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
             /// This waiter may be cancelled or time out; if so it throws and the build keeps
             /// running, staying installed in `inflight_load` for the other waiters and for
             /// later queries.
-            waitForSnapshotLoad(*load, *helper, log);
+            waitForSnapshotLoad(*load, *helper);
         }
         catch (...)
         {
@@ -1176,7 +1176,7 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
     return load;
 }
 
-void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log)
+void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper)
 {
     DB::QueryStatusPtr process_list_element;
     UInt64 timeout_ms = 0;
@@ -1231,7 +1231,7 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::loadKernelSna
     auto load = startKernelSnapshotLoad(kernel_helper, version_to_build, KernelClientOptions::fromCurrentQuery());
     try
     {
-        waitForSnapshotLoad(*load, *kernel_helper, log);
+        waitForSnapshotLoad(*load, *kernel_helper);
     }
     catch (...)
     {

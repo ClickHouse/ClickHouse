@@ -217,7 +217,7 @@ private:
     /// waiter only, while the build keeps running for the others. The kernel FFI is synchronous
     /// and has no cancellation hook, so this polling wait is the only cancellation point of a
     /// snapshot load (for example, one stuck on an object store which never answers).
-    static void waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log);
+    static void waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper);
 
     /// Marks a load as given up by every waiter (counted in DeltaLakeSnapshotLoadsStuck until
     /// the worker returns). For a shared load this is called under `mutex`, together with the
