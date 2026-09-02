@@ -129,7 +129,7 @@ Let's say you want to insert raw CSV data into ClickHouse:
 ```java
 public static void main(String[] args) {
     // Configure ClickHouseClient
-    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
     // Create an ElementConverter
     ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -143,7 +143,7 @@ public static void main(String[] args) {
             MAX_BATCH_SIZE_IN_BYTES,
             MAX_TIME_IN_BUFFER_MS,
             MAX_RECORD_SIZE_IN_BYTES,
-            clickHouseClientConfig
+            clientConfig
     );
 
     csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -185,7 +185,7 @@ For more detailed instructions, see the [Example Guide](https://github.com/Click
 
 | Parameters                  | Description                                                                                                                                        | Default Value | Required |
 |-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|---------------|----------|
-| `url`                       | Fully qualified Clickhouse URL                                                                                                                     | N/A           | Yes      |
+| `url`                       | Fully qualified ClickHouse URL                                                                                                                     | N/A           | Yes      |
 | `username`                  | ClickHouse database username                                                                                                                       | N/A           | Yes      |
 | `password`                  | ClickHouse database password                                                                                                                       | N/A           | Yes      |
 | `database`                  | ClickHouse database name                                                                                                                           | N/A           | Yes      |
@@ -219,7 +219,7 @@ Map<String, String> serverSettings = Map.of(
     "insert_deduplicate", "1"
 );
 
-ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
     url,
     username,
     password,
@@ -318,7 +318,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clickHouseClientConfig
+        clientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```

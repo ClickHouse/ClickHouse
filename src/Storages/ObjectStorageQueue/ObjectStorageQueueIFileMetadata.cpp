@@ -712,6 +712,8 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
 
+        permanently_failed = true;
+
         /// Remove Processing node.
         addProcessingNodeRemovalRequest(requests);
         /// Create Failed node.
@@ -749,6 +751,8 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     if (node_metadata.retries >= max_loading_retries)
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
+
+        permanently_failed = true;
 
         /// Remove Processing node.
         addProcessingNodeRemovalRequest(requests);

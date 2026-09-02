@@ -902,6 +902,16 @@ Parquet 인코딩을 여러 스레드로 수행합니다.
 
 String 컬럼에는 Binary 대신 Parquet String 타입을 사용합니다.
 
+<div id="output_format_parquet_wide_integer_as_decimal">
+  ## output_format_parquet_wide_integer_as_decimal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`Int128`, `UInt128`, `Int256`, `UInt256` 값을 표준 Parquet `DECIMAL` 값으로 기록하는 새로운 설정입니다. 이전 값은 레거시 리틀 엔디언 `FIXED_LEN_BYTE_ARRAY` 표현을 유지합니다."}]}]} />
+
+`Int128`, `UInt128`, `Int256`, `UInt256` 값을 빅 엔디언 바이트 순서로 표준을 준수하는 Parquet `DECIMAL` 값으로 기록합니다. 기본값은 이전 ClickHouse 버전과의 호환성을 위해 주석 없는 레거시 리틀 엔디언 `FIXED_LEN_BYTE_ARRAY` 표현을 유지합니다. Decimal 표현을 사용하면 상호 운용 가능한 숫자 통계를 지원하지만, 일부 Parquet 리더는 38 또는 76을 초과하는 정밀도를 지원하지 않습니다.
+
 <div id="output_format_parquet_write_bloom_filter">
   ## output_format_parquet_write_bloom_filter
 </div>

@@ -27,7 +27,9 @@
             "ru/clickstack/example-datasets/remote-demo-data",
             "ru/clickstack/example-datasets/session-replay",
             "ru/clickstack/example-datasets/chrome-extension",
-            "ru/clickstack/example-datasets/otelgen"
+            "ru/clickstack/example-datasets/otelgen",
+            "ru/clickstack/example-datasets/telemetrygen",
+            "ru/clickstack/example-datasets/instrument-application"
           ]
         },
         "ru/clickstack/architecture",
@@ -87,7 +89,8 @@
             "ru/clickstack/features/dashboards/overview",
             "ru/clickstack/features/dashboards/dashboard-templates",
             "ru/clickstack/features/dashboards/sql-visualizations",
-            "ru/clickstack/features/dashboards/row-click-drilldowns"
+            "ru/clickstack/features/dashboards/row-click-drilldowns",
+            "ru/clickstack/features/dashboards/release-markers"
           ]
         },
         "ru/clickstack/notebooks",
@@ -106,6 +109,8 @@
             {
               "group": "2026",
               "pages": [
+                "ru/clickstack/demo-days/2026/2026-08-15",
+                "ru/clickstack/demo-days/2026/2026-08-07",
                 "ru/clickstack/demo-days/2026/2026-07-31",
                 "ru/clickstack/demo-days/2026/2026-07-24",
                 "ru/clickstack/demo-days/2026/2026-07-17",
@@ -147,9 +152,9 @@
       "group": "Guides",
       "pages": [
         {
+          "expanded": true,
           "group": "Ingesting data",
           "pages": [
-            "ru/clickstack/ingesting-data/index",
             "ru/clickstack/ingesting-data/overview",
             "ru/clickstack/ingesting-data/opentelemetry",
             "ru/clickstack/ingesting-data/vector",
