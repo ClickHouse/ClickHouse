@@ -416,7 +416,10 @@ struct ReplaceRegexpImpl
         bool has_prev_haystack = false;
         CachedResult prev_result{0, 0, false};
 
-        auto copy_cached = [&](const CachedResult & cached)
+        /// `haystack_bytes_read` is the size of the haystack the compare or lookup scanned to find the
+        /// entry. Charging only the copied result would let a run of repeated multi-megabyte haystacks
+        /// with a tiny cached result advance the budget by little more than the per-row unit.
+        auto copy_cached = [&](const CachedResult & cached, size_t haystack_bytes_read)
         {
             res_data.resize(res_data.size() + cached.length);
             /// Plain memcpy: the gap to the source region can be smaller than the 15 bytes of
@@ -424,7 +427,7 @@ struct ReplaceRegexpImpl
             if (cached.length)
                 memcpy(&res_data[res_offset], &res_data[cached.start], cached.length);
             res_offset += cached.length;
-            budget.chargeUnits(cached.length / CancellationBudget::bytes_per_unit);
+            budget.chargeUnits((haystack_bytes_read + cached.length) / CancellationBudget::bytes_per_unit);
         };
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -468,7 +471,7 @@ struct ReplaceRegexpImpl
             /// differing byte (or at the length check).
             if (has_prev_haystack && haystack == prev_haystack)
             {
-                copy_cached(prev_result);
+                copy_cached(prev_result, haystack.size());
                 matched_in_window += prev_result.matched;
                 res_offsets[i] = res_offset;
                 continue;
@@ -506,11 +509,13 @@ struct ReplaceRegexpImpl
                 results_cache.emplace(haystack, it, inserted);
                 if (!inserted)
                 {
-                    copy_cached(it->getMapped());
+                    copy_cached(it->getMapped(), haystack.size());
                     row_matched = it->getMapped().matched;
                 }
                 else
                 {
+                    /// Hashing the key read the whole haystack before any of the paths below charge for it.
+                    budget.chargeUnits(haystack.size() / CancellationBudget::bytes_per_unit);
                     /// A rejected row is cached exactly like a processed one: it produces the same
                     /// output either way, and caching it is what spares its later repeats the reject.
                     if (precheck_non_matching
