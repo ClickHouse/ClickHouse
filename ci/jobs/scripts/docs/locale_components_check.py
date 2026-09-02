@@ -56,6 +56,9 @@ EXPLICIT_ANCHOR = re.compile(r"""\{#([^}\s]+)\}|\bid\s*=\s*['"]([^'"]+)['"]""")
 SAMPLE_EXPLORER = os.path.join(
     "components", "SampleDatasetExplorer", "SampleDatasetExplorer.jsx"
 )
+SAMPLE_EXPLORER_IMAGE = re.compile(
+    r"\bimg(?:Light|Dark)\s*:\s*(['\"])(/images/sample-datasets-grid/[^'\"]+\.jpg)\1"
+)
 THEME_IMAGE_REQUIRED = (
     "className={`sde-theme-image ${className || ",
     'role="img"',
@@ -199,6 +202,28 @@ def check_sample_explorer_theme_images(docs_root):
             if marker in source:
                 violations.append(
                     (rel, marker, "stale-theme-image-renderer", None)
+                )
+        webp_for_markers = (
+            "path.replace(/\\.jpg$/, '.webp')",
+            'path.replace(/\\.jpg$/, ".webp")',
+        )
+        if sum(source.count(marker) for marker in webp_for_markers) != 1:
+            violations.append(
+                (rel, "path.replace(..., .webp)", "missing-webp-renderer", None)
+            )
+        image_refs = {
+            match.group(2) for match in SAMPLE_EXPLORER_IMAGE.finditer(source)
+        }
+        if not image_refs:
+            violations.append(
+                (rel, "imgLight/imgDark", "missing-sample-image-metadata", None)
+            )
+        for image_ref in sorted(image_refs):
+            webp_ref = re.sub(r"\.jpg$", ".webp", image_ref)
+            webp_path = os.path.join(docs_root, webp_ref.lstrip("/"))
+            if not os.path.isfile(webp_path):
+                violations.append(
+                    (rel, webp_ref, "missing-sample-explorer-webp", None)
                 )
     return violations
 
