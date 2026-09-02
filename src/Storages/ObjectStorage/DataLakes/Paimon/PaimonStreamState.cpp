@@ -44,10 +44,11 @@ PaimonProcessingLock::~PaimonProcessingLock()
     {
         if (keeper->expired())
         {
-            /// The ephemeral node is gone together with the session; removing it
-            /// through any other session would delete whoever holds the lock now.
-            LOG_DEBUG(log, "Not releasing the processing lock at {}: the session that acquired it has expired",
-                path.string());
+            /// There is no live session left to remove it through, and removing it through
+            /// any other session would delete whoever holds the lock now. Keeper drops the
+            /// node itself once it expires the session server-side.
+            LOG_DEBUG(log, "Not releasing the processing lock at {}: the session that acquired it has expired, "
+                "Keeper will drop the node when that session times out", path.string());
             return;
         }
 
@@ -149,41 +150,37 @@ PaimonProcessingLockPtr PaimonStreamState::acquireProcessingLock()
     const Int64 session_id = lock_keeper->getClientID();
     const String token = fmt::format("{}/{}/{}", replica_name, active_node_identifier, session_id);
 
-    try
-    {
-        lock_keeper->create(processing_lock_path, token, zkutil::CreateMode::Ephemeral);
-    }
-    catch (const Coordination::Exception & e)
-    {
-        if (e.code == Coordination::Error::ZNODEEXISTS)
-            throw Exception(
-                ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
-                "Another incremental read is in progress (processing lock exists at {})",
-                processing_lock_path.string());
-        throw;
-    }
-
-    /// Rewrite the node we just created so its version leaves the default 0. The version is
-    /// what fences later transactions, and a node freshly created by somebody else also sits
-    /// at version 0 - starting above it means such a node can never pass our check op. The
-    /// CAS on version 0 also catches a competitor that replaced the node in between.
+    /// Create the node and stamp it in one transaction. The stamp exists because the node's
+    /// version is what fences later commits, and a node freshly created by another consumer
+    /// also sits at the default version 0 - ours has to leave it, or a check op cannot tell
+    /// the two apart.
     ///
-    /// Nothing is cleaned up when this fails, and that is deliberate: a user error means the
-    /// node at this path is not the one we created and must not be touched, while a hardware
-    /// error throws and takes the session with it, which removes our ephemeral anyway.
-    Coordination::Stat stat;
-    auto set_code = lock_keeper->trySet(processing_lock_path, token, /*version=*/0, &stat);
-    if (set_code != Coordination::Error::ZOK)
+    /// This has to be atomic. As two round trips, a hardware error on the second one would
+    /// leave an ephemeral lock nobody can clean up: the error finalizes this client, so there
+    /// is no live session left to remove the node through, and the node itself survives until
+    /// the server expires the session - blocking every incremental read on this table until
+    /// then. One transaction has no such intermediate state.
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(processing_lock_path, token, zkutil::CreateMode::Ephemeral));
+    ops.emplace_back(zkutil::makeSetRequest(processing_lock_path, token, /*version=*/0));
+
+    Coordination::Responses responses;
+    auto code = lock_keeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZNODEEXISTS)
         throw Exception(
-            ErrorCodes::INVALID_STATE,
-            "Processing lock at {} was taken over by another consumer immediately after this server created it: {}",
-            processing_lock_path.string(), set_code);
+            ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+            "Another incremental read is in progress (processing lock exists at {})",
+            processing_lock_path.string());
+    if (code != Coordination::Error::ZOK)
+        zkutil::KeeperMultiException::check(code, ops, responses);
+
+    const Int32 version = dynamic_cast<const Coordination::SetResponse &>(*responses[1]).stat.version;
 
     LOG_DEBUG(log, "Acquired processing lock at {} with token '{}' (version {})",
-        processing_lock_path.string(), token, stat.version);
+        processing_lock_path.string(), token, version);
 
     return std::make_unique<PaimonProcessingLock>(
-        std::move(lock_keeper), processing_lock_path, token, session_id, stat.version);
+        std::move(lock_keeper), processing_lock_path, token, session_id, version);
 }
 
 void PaimonStreamState::initializeKeeperNodes()

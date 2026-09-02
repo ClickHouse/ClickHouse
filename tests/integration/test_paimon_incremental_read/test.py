@@ -654,8 +654,9 @@ def test_paimon_incremental_read_expired_snapshot_is_skipped(started_cluster):
     count_query = f"SELECT count() FROM {CH_TABLE_NAME_EXPIRED}"
     _drain_baseline(count_query, "1\n")
 
-    # Snapshots 2, 3 and 4, then expire the 1..2 prefix the way Paimon does. Snapshot 2 is
-    # now below the earliest surviving id (3) and must be skipped; 3 and 4 must be delivered.
+    # Snapshots 2, 3 and 4, then delete ids 1..2 the way Paimon expiration does - it always
+    # expires starting at the earliest id, so what it removes is a prefix. Snapshot 2 is now
+    # below the earliest surviving id (3) and must be skipped; 3 and 4 must be delivered.
     _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=3)
     _warehouse_shell(
         writer_container_id, f"rm -f {snapshot_dir}/snapshot-1 {snapshot_dir}/snapshot-2"
@@ -694,10 +695,10 @@ def test_paimon_incremental_read_expired_snapshot_is_skipped(started_cluster):
 def test_paimon_incremental_read_missing_snapshot_is_not_expiration(started_cluster):
     """A hole in the middle of the snapshot range is not expiration.
 
-    Paimon expiration removes a prefix, so a snapshot that is missing while older ones
-    are still present was not expired - something else lost it. Treating every missing
-    file as expired (which is what assuming "removed by compaction" amounts to) would
-    drop it silently."""
+    Paimon only deletes snapshots from the ends of the id range, so the surviving ids are
+    always contiguous. A snapshot that is missing while older ones are still present was
+    therefore not expired - something else lost it. Treating every missing file as expired
+    (which is what assuming "removed by compaction" amounts to) would drop it silently."""
     writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
 
     warehouse_name = "warehouse_hole"

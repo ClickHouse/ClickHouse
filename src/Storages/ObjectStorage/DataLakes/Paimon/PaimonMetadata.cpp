@@ -753,11 +753,14 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         snapshots_to_reserve = static_cast<size_t>(max_snapshots_to_load);
     snapshots.reserve(snapshots_to_reserve);
 
-    /// Paimon expiration removes a prefix of the snapshot ids, so a snapshot below the earliest
-    /// one still present was legitimately expired and the watermark may move past it. Any other
-    /// failure to load a snapshot is real and must propagate: skipping it would let a single
-    /// transient object storage error advance the watermark and permanently drop a committed
-    /// snapshot. The watermark stays put on that path, so the read can simply be retried.
+    /// Paimon only ever deletes snapshots from the ends of the id range - expiration removes a
+    /// prefix (ExpireSnapshotsImpl always expires starting at `earliest`), rollback removes a
+    /// suffix - so the surviving ids are always contiguous. A snapshot below `earliest` was
+    /// therefore expired and the watermark may move past it, while anything at or above it must
+    /// still be readable. Any other failure to load a snapshot is real and must propagate:
+    /// skipping it would let a single transient object storage error advance the watermark and
+    /// permanently drop a committed snapshot. The watermark stays put on that path, so the read
+    /// can simply be retried.
     ///
     /// `earliest` is resolved on the failure path rather than before the loop so that a healthy
     /// read pays nothing for it - the EARLIEST hint may be absent, in which case resolving it
