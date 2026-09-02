@@ -1,0 +1,21 @@
+-- a local disk outside the base directory
+BAD_ARGUMENTS
+no directory
+-- a local disk that leaves the base directory through ..
+BAD_ARGUMENTS
+no directory
+-- a local object storage outside the base directory
+BAD_ARGUMENTS
+no directory
+-- the compatibility name of a local object storage outside the base directory
+BAD_ARGUMENTS
+no directory
+-- the metadata of an object storage disk outside the base directory
+BAD_ARGUMENTS
+no directory
+-- inside the base directory, every local backend the factories register is readable
+0
+0
+0
+0
+0

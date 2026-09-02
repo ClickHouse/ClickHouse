@@ -5,6 +5,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/loadLocalDiskConfig.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -91,20 +92,28 @@ static Poco::AutoPtr<Poco::Util::XMLConfiguration> getValidatedDiskConfig(
     return config;
 }
 
-/// A custom disk that is not remote must live inside `custom_local_disks_base_directory`: it is the only
-/// thing that keeps a user-described disk from exposing an arbitrary server path.
+/// The directory every local path of a user-described disk must be inside of: it is the only thing
+/// that keeps such a disk from exposing an arbitrary server path.
+static std::string getCustomLocalDisksBaseDirectory(ContextPtr context)
+{
+    static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
+    auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
+
+    if (disk_path_expected_prefix.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Base path for custom local disks must be defined in config file by `{}`",
+            custom_local_disks_base_dir_in_config);
+
+    return disk_path_expected_prefix;
+}
+
+/// A custom disk that is not remote must live inside `custom_local_disks_base_directory`.
 static void checkCustomLocalDiskIsInsideBaseDirectory(const DiskPtr & disk, ContextPtr context)
 {
     if (!disk->isRemote() && disk->getName() != "backup")
     {
-        static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
-        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
-
-        if (disk_path_expected_prefix.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Base path for custom local disks must be defined in config file by `{}`",
-                custom_local_disks_base_dir_in_config);
+        auto disk_path_expected_prefix = getCustomLocalDisksBaseDirectory(context);
 
         if (!pathStartsWith(disk->getPath(), disk_path_expected_prefix))
             throw Exception(
@@ -112,6 +121,46 @@ static void checkCustomLocalDiskIsInsideBaseDirectory(const DiskPtr & disk, Cont
                 "Path of the custom local disk must be inside `{}` directory",
                 disk_path_expected_prefix);
     }
+}
+
+/// The check above looks at the disk after it has been created, and creating a disk starts it: a
+/// local disk creates its directory in `DiskLocal::setup`, and a local object storage creates its
+/// directory in the constructor of `LocalObjectStorage` - for which `isRemote` is also true, so the
+/// check above never even looks at it. For a query-local disk that is too late: the query would have
+/// created a directory anywhere on the server before being rejected. So the local paths the resolved
+/// configuration can carry are checked here, before anything is created.
+static void checkTransientDiskLocalPathsAreInsideBaseDirectory(
+    const std::string & disk_name,
+    const Poco::Util::AbstractConfiguration & config,
+    ContextPtr context)
+{
+    auto disk_path_expected_prefix = getCustomLocalDisksBaseDirectory(context);
+
+    auto check = [&](const std::string & path, std::string_view what)
+    {
+        if (!pathStartsWith(path, disk_path_expected_prefix))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `{}` of a query-local disk must be inside `{}` directory",
+                what, disk_path_expected_prefix);
+    };
+
+    /// `local` is a disk of its own; every other type is an object storage disk, whose backend is
+    /// `object_storage_type` when it is given and the `type` itself otherwise (the compatibility
+    /// names), the same way `ObjectStorageFactory::create` picks it.
+    auto type = config.getString("type", "local");
+    auto backend = type == "local" ? type : config.getString("object_storage_type", type);
+    if (backend == "local" || backend == "local_blob_storage" || backend == "local_plain" || backend == "local_plain_rewritable")
+    {
+        String path;
+        UInt64 keep_free_space_bytes = 0;
+        loadDiskLocalConfig(disk_name, config, /* config_prefix */ "", context, path, keep_free_space_bytes);
+        check(path, "path");
+    }
+
+    /// The metadata of an object storage disk lives on a local disk of its own.
+    if (config.has("metadata_path"))
+        check(config.getString("metadata_path"), "metadata_path");
 }
 
 static std::string getOrCreateCustomDisk(
@@ -300,6 +349,10 @@ DiskPtr DiskFromAST::createTransientDisk(const ASTPtr & disk_function_ast, Conte
     auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
     auto disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
 
+    /// Creating the disk starts it, and starting a local disk creates its directory, so the paths
+    /// have to be confined before the disk exists.
+    checkTransientDiskLocalPathsAreInsideBaseDirectory(disk_name, *config, context);
+
     /// The disk is created the same way as a registered custom disk, but it is not put into the
     /// `DiskSelector` of the context: it lives only as long as the returned pointer, so a query
     /// cannot grow the global disk map.
@@ -307,6 +360,7 @@ DiskPtr DiskFromAST::createTransientDisk(const ASTPtr & disk_function_ast, Conte
         disk_name, *config, /* config_path */"", context, context->getDisksMap(), /* attach */false, /* custom_disk */true);
     disk->markDiskAsCustom(disk_settings_hash);
 
+    /// The same check as for a registered custom disk, on the disk that actually came out.
     checkCustomLocalDiskIsInsideBaseDirectory(disk, context);
 
     return disk;
