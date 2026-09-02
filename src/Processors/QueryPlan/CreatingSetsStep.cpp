@@ -357,13 +357,19 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureS
         }
 
         /// Deliberately NOT descending into `node->step->getChildPlans()`, unlike the other plan-wide
-        /// walks (`hasCorrelatedExpressions`, `DistributedPlanSets`). A set can sit inside a plan a
-        /// step owns that way, but `ReadFromMerge::getChildPlans` builds those plans on the spot
-        /// instead of just handing them out, and paying for that here loses more than the sharing
-        /// wins: on `SELECT ... WHERE key IN (SELECT ... FROM <merge table>)` under automatic
-        /// parallel replicas it made the nested subquery run one extra time rather than one time
-        /// fewer. Such a step is unsupported for dataflow statistics collection anyway, so it keeps
-        /// the whole optimization off the plan it appears in.
+        /// walks (`hasCorrelatedExpressions`, `DistributedPlanSets`). No set is missed by stopping
+        /// here, for a different reason per carrier.
+        ///
+        /// `ReadFromMerge` and `LazyReadReplacingFinalStep` build their child plans when asked for
+        /// them rather than handing them out, and paying for that here loses more than the sharing
+        /// wins: on `SELECT ... WHERE key IN (SELECT ... FROM <merge table>)` under automatic parallel
+        /// replicas it made the nested subquery run one extra time rather than one time fewer. Both
+        /// are also unsupported for dataflow statistics collection, which keeps the whole optimization
+        /// off the plan they appear in.
+        ///
+        /// `JoinStepLogicalLookup` is cheap to ask, but its child plan cannot hold a set at all: the
+        /// step is built only for a right side whose `useful_sets` is empty (see `PlannerJoinTree`),
+        /// and a set on that side is exactly what makes it non-empty.
         for (auto * child : node->children)
             stack.push_back(child);
     }
