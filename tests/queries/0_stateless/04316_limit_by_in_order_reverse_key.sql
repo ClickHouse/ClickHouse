@@ -54,6 +54,8 @@ SELECT (SELECT groupArray((a, b)) FROM (SELECT a, b FROM (SELECT a, b FROM test_
 DROP TABLE test_reverse_mixed;
 
 -- Merge engine over children whose sort keys disagree on direction (one ascending, one reverse).
+-- There is no single input order to describe both children, so the in-order LIMIT BY is not
+-- applied - only the plain one, which still produces the right rows (#111901).
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_1;
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_2;
 DROP TABLE IF EXISTS test_merge_mixed_dir_wrap;
