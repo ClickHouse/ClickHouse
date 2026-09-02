@@ -23,10 +23,11 @@ doc_type: 'reference'
 * `mutation_id` ([String](/zh/reference/data-types/string)) — 变更的 ID。对于复制表，这些 ID 对应于 ClickHouse Keeper 中 `<table_path_in_clickhouse_keeper>/mutations/` 目录内的 znode 名称。对于非复制表，这些 ID 对应于表数据目录中的文件名。
 * `command` ([String](/zh/reference/data-types/string)) — 变更命令字符串 (查询中 ALTER TABLE [db.]table 之后的部分) 。
 * `create_time` ([DateTime](/zh/reference/data-types/datetime)) — 提交变更命令以执行的日期和时间。
+* `finish_time` ([DateTime](/zh/reference/data-types/datetime)) — 变更完成的日期和时间。如果变更尚未完成或完成时间未知，则为零。对于非复制表，该值在内存中跟踪，并会在重新加载表时 (例如服务器重启时) 重置。对于复制表，该值按副本分别记录；重启后，最近完成的变更的完成时间会从 Keeper 恢复，而较早完成的变更则报告为零。
 * `block_numbers.partition_id` ([Array(String)](/zh/reference/data-types/array)) — 对于复制表的变更，该数组包含各分区的 ID (每个分区一条记录) 。对于非复制表的变更，该数组为空。
 * `block_numbers.number` ([Array(Int64)](/zh/reference/data-types/array)) — 对于复制表的变更，该数组每个分区包含一条记录，其中记录了该变更获取的块编号。该分区中仅包含编号小于此编号的块的数据分区片段会被变更。对于非复制表，所有分区中的块编号构成一个单一序列。这意味着，对于非复制表的变更，该列将包含一条记录，其中包含该变更获取的单个块编号。
 * `parts_in_progress_names` ([Array(String)](/zh/reference/data-types/array)) — 当前正在变更的数据分区片段名称数组。
-* `parts_to_do_names` ([Array(String)](/zh/reference/data-types/array)) — 完成该变更所需变更的数据分区片段名称数组。
+* `parts_to_do_names` ([Array(String)](/zh/reference/data-types/string)) — 完成该变更所需变更的数据分区片段名称数组。
 * `parts_to_do` ([Int64](/zh/reference/data-types/int-uint)) — 完成该变更所需变更的数据分区片段数量。注意：即使 `parts_to_do` = 0，复制表的变更也可能尚未完成，因为某个长时间运行的 INSERT 正在创建需要变更的新数据分区片段。
 * `parts_postpone_reasons` ([Map(String, String)](/zh/reference/data-types/map)) — 分片名称及其被推迟原因的映射。
 * `is_done` ([UInt8](/zh/reference/data-types/int-uint)) — 表示变更是否已完成的标志。可能的值：变更已完成时为 1，变更仍在进行时为 0。
@@ -46,7 +47,7 @@ doc_type: 'reference'
 * `is_killed` ([UInt8](/zh/reference/data-types/int-uint)) — 表示变更是否已被终止。**仅在 ClickHouse Cloud 中可用。**
 
 <Note>
-  `is_killed=1` 并不一定表示该变更已完全结束。变更可能长时间处于 `is_killed=1` 且 `is_done=0` 的状态。如果有其他长时间运行的变更阻塞了已终止的变更，就可能出现这种情况。这是正常现象。
+  `is_killed=1` 并不一定表示变更已完全完成。变更可能会长时间处于 `is_killed=1` 且 `is_done=0` 的状态。如果另一个长时间运行的变更阻塞了已终止的变更，就可能发生这种情况。这是正常情况。
 </Note>
 
 * `is_done` ([UInt8](/zh/reference/data-types/int-uint)) — 指示变更是否完成的标志。可能的值：
