@@ -40,7 +40,8 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "
     ALTER TABLE ${table}
-        MODIFY COLUMN arr Array(JSON(x Nullable(String), y UInt64, max_dynamic_paths = 0));
+        MODIFY COLUMN arr Array(JSON(x Nullable(String), y UInt64, max_dynamic_paths = 0))
+        SETTINGS mutations_sync = 2;
     SELECT dumpColumnStructure(arr) LIKE '%Sparse%' FROM ${table} LIMIT 1;
 "
 

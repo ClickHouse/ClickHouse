@@ -33,6 +33,13 @@ ALTER TABLE json_typed_path_sparse_nullable_tuple
     MODIFY COLUMN t Tuple(j Nullable(JSON(x Nullable(String), max_dynamic_paths = 0)), n UInt8)
     SETTINGS mutations_sync = 2;
 
+SELECT subcolumns.serializations[indexOf(subcolumns.names, 'j.x')]
+FROM system.parts_columns
+WHERE active
+    AND database = currentDatabase()
+    AND table = 'json_typed_path_sparse_nullable_tuple'
+    AND column = 't';
+
 SELECT count(), countIf(t.j.x = 'value'), countIf(isNull(t.j))
 FROM json_typed_path_sparse_nullable_tuple;
 
