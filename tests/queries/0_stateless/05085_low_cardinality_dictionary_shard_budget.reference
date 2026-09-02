@@ -1,0 +1,13 @@
+decoded
+1024	64	64	64	64
+index_single_level
+1024	64	64	64	64
+index_private
+1024	64	64	64	64
+index_shared
+1024	64	64	64	64
+query paths: name, finished, exception, all rows read, all parts selected, dictionary switches, two-level, spilled
+decoded	1	0	1	1	0	1	0
+index_private	1	0	1	1	32	1	0
+index_shared	1	0	1	1	32	1	0
+index_single_level	1	0	1	1	32	0	0
