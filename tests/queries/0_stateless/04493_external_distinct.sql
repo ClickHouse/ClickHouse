@@ -20,9 +20,11 @@ SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS k FROM n
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS k FROM numbers(1) SETTINGS max_bytes_before_external_distinct = 0) WHERE explain LIKE '%ExternalDistinctTransform%';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM (SELECT number AS k FROM numbers(10) ORDER BY k) SETTINGS max_bytes_before_external_distinct = 1, optimize_distinct_in_order = 1) WHERE explain LIKE '%ExternalDistinctTransform%';
 
--- A query that does not fit in memory fails without external DISTINCT and succeeds with it.
-SELECT count() FROM (SELECT DISTINCT number % 8000000 AS k FROM numbers(16000000)) SETTINGS max_memory_usage = '120M', max_bytes_before_external_distinct = 0; -- { serverError MEMORY_LIMIT_EXCEEDED }
-SELECT count() FROM (SELECT DISTINCT number % 8000000 AS k FROM numbers(16000000)) SETTINGS max_memory_usage = '120M', max_bytes_before_external_distinct = '30M';
+-- A query that does not fit in memory fails without external DISTINCT and succeeds with it. The
+-- preliminary DISTINCT must keep deduplicating in both runs: abandoning its set on this mostly-unique
+-- input would lower the memory usage and spoil the failing control.
+SELECT count() FROM (SELECT DISTINCT number % 8000000 AS k FROM numbers(16000000)) SETTINGS max_memory_usage = '120M', max_bytes_before_external_distinct = 0, allow_preliminary_distinct_abandoning = 0; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SELECT count() FROM (SELECT DISTINCT number % 8000000 AS k FROM numbers(16000000)) SETTINGS max_memory_usage = '120M', max_bytes_before_external_distinct = '30M', allow_preliminary_distinct_abandoning = 0;
 
 -- No temporary files are written when the feature is disabled.
 SELECT count() FROM (SELECT DISTINCT number % 1000 AS k FROM numbers(10000)) SETTINGS max_bytes_before_external_distinct = 0, log_comment = '04493_external_distinct/disabled';
