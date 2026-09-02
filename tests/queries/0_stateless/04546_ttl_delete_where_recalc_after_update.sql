@@ -278,3 +278,74 @@ SELECT count() FROM clear_column_direct_ttl_no_match;
 
 DROP TABLE clear_column_direct_ttl_recalc;
 DROP TABLE clear_column_direct_ttl_no_match;
+
+-- CLEAR COLUMN recomputes only MATERIALIZED columns that depend on the cleared
+-- column. Unrelated MATERIALIZED columns and their artifacts remain untouched;
+-- the metadata-only MODIFY below therefore does not rewrite existing value 1.
+-- min_bytes_for_full_part_storage = 0 pins Full storage: the runner randomizes that threshold,
+-- and a Packed part takes the all-column mutation path, which rebuilds the artifacts anyway
+-- and would make the assertions below pass without exercising the rebuild selection.
+-- enable_block_number_column and enable_block_offset_column are pinned off for the same reason
+-- in the other direction: the runner randomizes both, and with either one on the mutation does
+-- not recompute the MATERIALIZED columns at all (master behaves the same way), so the rows below
+-- would describe a case the run never reached.
+DROP TABLE IF EXISTS clear_column_unrelated_materialized;
+
+CREATE TABLE clear_column_unrelated_materialized
+(
+    id Int64,
+    c Int64,
+    d Int64 MATERIALIZED c + 1,
+    other Int64 MATERIALIZED 1,
+    PROJECTION p (SELECT other, count() GROUP BY other)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1, min_bytes_for_full_part_storage = 0,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO clear_column_unrelated_materialized (id, c) VALUES (1, 10), (2, 20);
+
+ALTER TABLE clear_column_unrelated_materialized MODIFY COLUMN other Int64 MATERIALIZED 2 SETTINGS mutations_sync = 2;
+-- No mutation is scheduled by the metadata-only MODIFY, so the part still holds other = 1.
+SELECT count() FROM system.mutations
+WHERE database = currentDatabase() AND table = 'clear_column_unrelated_materialized';
+
+ALTER TABLE clear_column_unrelated_materialized CLEAR COLUMN c SETTINGS mutations_sync = 2;
+
+-- The base part keeps unrelated `other = 1` and only recomputes c/d.
+SELECT id, c, d, other FROM clear_column_unrelated_materialized ORDER BY id;
+-- The projection remains consistent with the untouched stored value.
+SELECT other, count() FROM clear_column_unrelated_materialized
+GROUP BY other ORDER BY other SETTINGS force_optimize_projection = 1;
+
+DROP TABLE clear_column_unrelated_materialized;
+
+-- Same for a skip index on an unrelated MATERIALIZED column.
+DROP TABLE IF EXISTS clear_column_unrelated_materialized_index;
+
+CREATE TABLE clear_column_unrelated_materialized_index
+(
+    id Int64,
+    c Int64,
+    d Int64 MATERIALIZED c + 1,
+    other Int64 MATERIALIZED 1,
+    INDEX ix other TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1, min_bytes_for_full_part_storage = 0,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO clear_column_unrelated_materialized_index (id, c) VALUES (1, 10), (2, 20);
+
+ALTER TABLE clear_column_unrelated_materialized_index MODIFY COLUMN other Int64 MATERIALIZED 2 SETTINGS mutations_sync = 2;
+ALTER TABLE clear_column_unrelated_materialized_index CLEAR COLUMN c SETTINGS mutations_sync = 2;
+
+SELECT id, c, d, other FROM clear_column_unrelated_materialized_index ORDER BY id;
+SELECT count() FROM clear_column_unrelated_materialized_index
+WHERE other = 2 SETTINGS force_data_skipping_indices = 'ix';
+SELECT count() FROM clear_column_unrelated_materialized_index
+WHERE other = 1 SETTINGS force_data_skipping_indices = 'ix';
+
+DROP TABLE clear_column_unrelated_materialized_index;
