@@ -3704,31 +3704,25 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
             const auto user = access_control.read<User>(definer_name);
             if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
             {
+                /// The persistent shadow is a snapshot of the stored entity, and there is exactly one
+                /// shadow per username, replaced on every DEFINER creation. Roles attached to the
+                /// authentication only (external roles, e.g. from the `http` user directory) are not
+                /// part of the stored entity, and two simultaneous authentications of the same
+                /// username may carry different role sets, so no single shadow can represent them:
+                /// copying them would let a later creation by the same username silently change
+                /// the authorization of earlier views. Fail closed instead.
+                if (user->getName() == current_user_name && !context_->getExternalRoles().empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "SQL SECURITY DEFINER is not supported for user {}: its access rights come from "
+                        "authentication-scoped roles, which cannot be snapshotted into a persistent definer. "
+                        "Use SQL SECURITY INVOKER or SQL SECURITY NONE instead", backQuote(current_user_name));
+
                 definer_name = user->getName() + ":definer";
                 sql_security.definer = make_intrusive<ASTUserNameWithHost>(definer_name);
                 auto new_user = typeid_cast<std::shared_ptr<User>>(user->clone());
                 new_user->setName(definer_name);
                 new_user->authentication_methods.clear();
                 new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
-
-                /// The stored entity of an ephemeral user may not carry all of its effective access:
-                /// an external user directory (e.g. the `http` directory) attaches roles to the
-                /// authentication only, as external roles of the session, and never as grants on the
-                /// entity. The persistent shadow must keep the access rights the definer actually had
-                /// when creating the view, so grant those roles to it. Only the current user's own
-                /// external roles are known here, so this applies only when the definer is the
-                /// current user, never when another ephemeral user is named as DEFINER.
-                if (user->getName() == current_user_name)
-                {
-                    auto external_roles = context_->getExternalRoles();
-                    if (!external_roles.empty())
-                    {
-                        new_user->granted_roles.grant(external_roles);
-                        if (!new_user->default_roles.all)
-                            new_user->default_roles.add(external_roles);
-                    }
-                }
-
                 access_control.insertOrReplace(new_user);
             }
         }
