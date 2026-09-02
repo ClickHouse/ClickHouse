@@ -71,7 +71,7 @@ DROP TABLE ts_hist_clause;
 SELECT '-- an external histograms table must have all the columns with the exact types';
 CREATE TABLE hist_data
 (
-    id Tuple(UInt64, UUID),
+    id Tuple(UInt64, LowCardinality(UUID)),
     timestamp DateTime64(3),
     flags UInt8,
     `schema` Int8,
@@ -93,12 +93,12 @@ CREATE TABLE ts_ext ENGINE = TimeSeries HISTOGRAMS hist_data;
 SELECT count() FROM timeSeriesHistograms(ts_ext);
 DROP TABLE ts_ext;
 
-CREATE TABLE hist_missing_column (id Tuple(UInt64, UUID), timestamp DateTime64(3), flags UInt8) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE hist_missing_column (id Tuple(UInt64, LowCardinality(UUID)), timestamp DateTime64(3), flags UInt8) ENGINE = MergeTree ORDER BY (id, timestamp);
 CREATE TABLE ts_ext_missing ENGINE = TimeSeries HISTOGRAMS hist_missing_column; -- { serverError THERE_IS_NO_COLUMN }
 
 CREATE TABLE hist_bad_type
 (
-    id Tuple(UInt64, UUID),
+    id Tuple(UInt64, LowCardinality(UUID)),
     timestamp DateTime64(3),
     flags UInt8,
     `schema` Int32,

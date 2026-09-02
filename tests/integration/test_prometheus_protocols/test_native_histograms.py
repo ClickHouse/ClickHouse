@@ -12,7 +12,6 @@ from .prometheus_test_utils import (
     types_pb2,
 )
 
-
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(

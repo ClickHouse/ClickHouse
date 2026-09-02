@@ -7,7 +7,7 @@
 Array(Tuple(timestamp DateTime64(3), flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64)))
 1
 -- the inner histograms table schema
-id	Tuple(UInt64, UUID)
+id	Tuple(UInt64, LowCardinality(UUID))
 timestamp	DateTime64(3) CODEC(DoubleDelta, ZSTD(1))
 flags	UInt8
 schema	Int8
