@@ -38,11 +38,27 @@ select sumMap(map(1,2), map(1,3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_M
 
 -- array and tuple arguments
 select avgMap([1,1,1], [2,2,2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap((1,1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap(([1,1,1],1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap([1,1,1],1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap([1,1,1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap(([1,1,1])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select minMap((1,1)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select minMap(([1,1,1],1)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select minMap([1,1,1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select minMap(([1,1,1])); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- plain key argument
+SELECT maxMap(number, number % 2), medianMap(number, 1), arrayReduce('argMinMap', groupArray(number), groupArray(number - 1), groupArray(number % 3)), countMap(1, toString(number % 4)) FROM numbers(10);
+SELECT argMaxMapMerge(state) FROM (SELECT argMaxMapState(number, number, number % 3) AS state FROM numbers(10));
+SELECT avgMapMerge(state) FROM (SELECT avgMapState(number, number % 4) as state FROM numbers(100) GROUP BY number % 33);
+SELECT groupArrayResampleMap(0,3,1)(number, number, number % 3) FROM numbers(10);
+SELECT mapApply((k,v) -> (k, finalizeAggregation(v)), anyMapArgMax(state, partition, version)) FROM (SELECT number % 10 as partition, max(number) AS version, maxMapState(10 - number, number % 3) as state FROM numbers(100) GROUP BY partition);
+SELECT uniqExactMap(number, reinterpretAsUUID(number)) FROM numbers(3);
+SELECT argMinMapMerge(state) FROM (SELECT argMaxMapState(number, number, number % 3) AS state FROM numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- the nested function takes no arguments, so the only argument belongs to the combinator and is the key
+SELECT countMap(number % 3) FROM numbers(10);
+SELECT countMapMerge(state) FROM (SELECT countMapState(number % 3) AS state FROM numbers(10));
+
+-- all `NaN` keys are the same key regardless of the payload, and `-0` is the same key as `+0`
+SELECT length(mapKeys(m)), arraySort(mapValues(m)) FROM (SELECT sumMap(1, arrayJoin([nan, reinterpretAsFloat64(reverse(unhex('7FF8000000000001'))), reinterpretAsFloat64(reverse(unhex('FFF8000000000000'))), 0., -0.])) AS m);
+SELECT length(mapKeys(m)), arraySort(mapValues(m)) FROM (SELECT sumMap(1, arrayJoin([nan::BFloat16, reinterpretAsBFloat16(reverse(unhex('7FC1'))), reinterpretAsBFloat16(reverse(unhex('FFC1'))), 0::BFloat16, -0::BFloat16])) AS m);
 
 DROP TABLE IF EXISTS sum_map_decimal;
 
@@ -54,3 +70,11 @@ SELECT sumMap(statusMap) FROM sum_map_decimal;
 SELECT sumWithOverflowMap(statusMap) FROM sum_map_decimal;
 
 DROP TABLE sum_map_decimal;
+
+-- decimal keys are supported in both the map form and the plain key form
+SELECT sumMap(1, CAST(number % 3, 'Decimal(10, 2)')) FROM numbers(10);
+SELECT sumMap(map(CAST(number % 3, 'Decimal(10, 2)'), number)) FROM numbers(10);
+SELECT sumMapMerge(state) FROM (SELECT sumMapState(number, CAST(number % 3, 'Decimal(10, 2)')) AS state FROM numbers(10));
+SELECT toTypeName(sumMapState(1, CAST(1.01, 'Decimal(10, 2)')));
+SELECT countMap(CAST(number % 3, 'Decimal256(2)')) FROM numbers(10);
+SELECT maxMap(number, toDateTime64(number % 3, 3, 'UTC')) FROM numbers(10);
