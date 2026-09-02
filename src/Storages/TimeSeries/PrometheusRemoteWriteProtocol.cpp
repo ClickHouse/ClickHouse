@@ -305,7 +305,7 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
     /// Written through the wrapper's own sink on the caller's settings, like any other INSERT.
     /// The sink itself would accept shard targets no prometheus read surface can answer from.
-    checkPrometheusQueryDistributedTargets(*time_series_storage, context_);
+    checkPrometheusQueryDistributedWrite(*time_series_storage, context_);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
