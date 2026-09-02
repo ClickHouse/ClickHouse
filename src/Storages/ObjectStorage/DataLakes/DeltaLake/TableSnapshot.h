@@ -170,7 +170,7 @@ private:
     /// before the launch, and returns the shared in-flight state for waiters. Never blocks on
     /// the kernel. Static, so that the scan iterator can rebuild through the same path.
     static std::shared_ptr<InflightSnapshotLoad> startKernelSnapshotLoad(
-        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log);
+        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build);
 
     /// Waits for an in-flight build, re-checking the query status on every poll: `KILL QUERY`,
     /// `max_execution_time` and `delta_lake_snapshot_load_timeout_ms` abort the wait for this

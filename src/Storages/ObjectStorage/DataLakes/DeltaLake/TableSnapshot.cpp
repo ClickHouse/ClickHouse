@@ -938,7 +938,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
         auto load = inflight_load;
         if (!load)
         {
-            load = startKernelSnapshotLoad(helper, version_to_build, log);
+            load = startKernelSnapshotLoad(helper, version_to_build);
             inflight_load = load;
         }
 
@@ -992,7 +992,7 @@ namespace
 }
 
 std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelSnapshotLoad(
-    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
+    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build)
 {
     /// The kernel FFI is synchronous and has no cancellation hook: `snapshot_builder_build` reads
     /// `_delta_log` through the kernel's own object store client and blocks on a channel fed by
@@ -1105,7 +1105,7 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKern
 std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::loadKernelSnapshotState(
     KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
 {
-    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build, log);
+    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build);
     waitForSnapshotLoad(*load, *kernel_helper, log);
     /// Rethrows the build error, if any.
     return load->future.get();
