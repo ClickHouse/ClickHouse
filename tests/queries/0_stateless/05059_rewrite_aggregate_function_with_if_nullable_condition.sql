@@ -34,6 +34,7 @@ DROP TABLE IF EXISTS t_agg_if_plain_cond;
 CREATE TABLE t_agg_if_plain_cond (c UInt8, x Int64) ENGINE = Memory;
 INSERT INTO t_agg_if_plain_cond VALUES (1, 100), (0, 10);
 SELECT sum(if(c, 0, x)) FROM t_agg_if_plain_cond;
+SET enable_analyzer = 1;
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT sum(if(c, 0, x)) FROM t_agg_if_plain_cond) WHERE explain LIKE '%sumIf%';
 
 DROP TABLE t_agg_if_nullable_cond;
