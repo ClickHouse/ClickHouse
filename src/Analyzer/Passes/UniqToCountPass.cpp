@@ -158,13 +158,19 @@ public:
 
         auto & uniq_arguments_nodes = function_node->getArguments().getNodes();
 
-        /// `uniq` does not count a NULL, but the `count()` that would replace it counts the row
-        /// `SELECT DISTINCT` or `GROUP BY` emits for it, so the rewrite would report one distinct
-        /// value too many. `canContainNull` rather than `isNullable`, because `Variant` and
-        /// `Dynamic` carry a NULL through a discriminator.
+        /// `uniq` does not count a NULL, but an argument-less `count()` counts the row that
+        /// `SELECT DISTINCT` or `GROUP BY` emits for it, so replacing `uniq(x)` with `count()`
+        /// would report one distinct value too many. A single argument that can carry a NULL is
+        /// rewritten to `count(x)` instead, which skips a NULL exactly like `uniq` does. A
+        /// multi-argument `uniq(x, y)` has no such counterpart - it skips a row where any of the
+        /// arguments is NULL - so there the rewrite is declined. `canContainNull` rather than
+        /// `isNullable`, because `Variant` and `Dynamic` carry a NULL through a discriminator.
+        bool any_argument_can_contain_null = false;
         for (const auto & uniq_argument_node : uniq_arguments_nodes)
-            if (canContainNull(*uniq_argument_node->getResultType()))
-                return;
+            any_argument_can_contain_null |= canContainNull(*uniq_argument_node->getResultType());
+
+        if (any_argument_can_contain_null && uniq_arguments_nodes.size() != 1)
+            return;
 
         /// Whether query matches 'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)'
         auto match_subquery_with_distinct = [&]() -> bool
@@ -207,7 +213,9 @@ public:
         /// Replace uniq of initial query to count
         if (match_subquery_with_distinct() || match_subquery_with_group_by())
         {
-            function_node->getArguments().getNodes().clear();
+            /// A NULL-able argument is kept, so that `count(x)` skips a NULL like `uniq` does.
+            if (!any_argument_can_contain_null)
+                function_node->getArguments().getNodes().clear();
             resolveAggregateFunctionNodeByName(*function_node, "count");
         }
     }
