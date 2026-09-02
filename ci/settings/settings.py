@@ -1,22 +1,27 @@
+PROJECT_NAME = "ClickHouse"
+PROJECT_SLUG = "clickhouse"
+MAIN_BRANCH = "master"
+PRAKTIKA_BASE_VENV = "praktika-runtime-0.1.8"
+
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
 S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 
-
 class RunnerLabels:
-    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
-    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    AMD_TINY = ["self-hosted", "amd-tiny"]
+    ARM_TINY = ["self-hosted", "arm-tiny"]
 
 
 MAIN_BRANCH = "master"
-S3_ARTIFACT_PATH = S3_BUCKET_NAME
-CI_CONFIG_RUNS_ON = RunnerLabels.STYLE_CHECK_ARM
+S3_ARTIFACT_BUCKET = S3_BUCKET_NAME
+S3_REPORT_BUCKET = S3_REPORT_BUCKET_NAME
+CI_CONFIG_RUNS_ON = RunnerLabels.ARM_TINY
 
 ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
-DOCKER_MERGE_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
-DOCKER_BUILD_ARM_RUNS_ON = RunnerLabels.STYLE_CHECK_ARM
-DOCKER_BUILD_AMD_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
+DOCKER_MERGE_RUNS_ON = RunnerLabels.AMD_TINY
+DOCKER_BUILD_ARM_RUNS_ON = RunnerLabels.ARM_TINY
+DOCKER_BUILD_AMD_RUNS_ON = RunnerLabels.AMD_TINY
 
 CACHE_S3_PATH = f"{S3_BUCKET_NAME}/ci_ch_cache"
 ENABLE_SUBMODULE_CACHE = True
@@ -37,16 +42,18 @@ TEXT_CONTENT_EXTENSIONS = [
     ".jsonl",
 ]
 
-DOCKERHUB_USERNAME = "robotclickhouse"
-DOCKERHUB_SECRET = "dockerhub_robot_password"
+# Single JSON secret used by praktika docker login: {"username":..., "password":...}
+SECRET_DOCKER_REGISTRY = "clickhouse-dockerhub-registry"
 
 CI_DB_DB_NAME = "default"
 CI_DB_TABLE_NAME = "checks"
-SECRET_CI_DB_URL = "clickhouse-test-stat-url"
-SECRET_CI_DB_USER = "clickhouse-test-stat-login"
-SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
+# Single JSON connection secret used by praktika CIDB:
+# {"url": ..., "user": ..., "password": ...}
+SECRET_CI_DB_CONNECTION = "clickhouse-test-stat-connection"
 
-GH_AUTH_LAMBDA_NAME: str = "mint-token-pr-lambda-terraform"
+# Use the project's native token minter (deployed via github_token_minters);
+# its "{slug}-gh-token" name matches the orchestrator role's InvokeFunction grant.
+GH_AUTH_LAMBDA_NAME = f"{PROJECT_SLUG}-gh-token"
 GH_AUTH_LAMBDA_REGION: str = "us-east-1"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
@@ -62,8 +69,10 @@ CI_DB_READ_USER = "play"
 CI_DB_READ_URL = "https://play.clickhouse.com"
 
 EVENT_FEED_S3_PATH = "clickhouse-test-reports-private/slack_feed"
-CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infra/cloud.py"
+CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infrastructure/projects.py"
+
 AWS_REGION = "us-east-1"
+AWS_PROFILE = "default"
 
 # Substrings used to classify and categorize test failures based on error output.
 # Use the following query to find test failures NOT covered by current patterns:
