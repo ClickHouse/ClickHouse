@@ -1,6 +1,5 @@
 #include <filesystem>
 #include <optional>
-#include <vector>
 #include <Core/Settings.h>
 #include <Disks/LocalDirectorySyncGuard.h>
 #include <IO/FileEncryptionCommon.h>
@@ -56,41 +55,6 @@ namespace
     std::string getFileName(const std::string & collection_name)
     {
         return escapeForFileName(collection_name) + ".sql";
-    }
-
-    /// fsync the directory that holds `path` so a create/rename/remove of `path`
-    /// survives a power loss: an fsync of the file alone does not persist the
-    /// directory entry. A relative `path` with no directory part lives in the current
-    /// directory, so sync "." in that case rather than the empty string.
-    void fsyncParentDirectory(const std::string & path)
-    {
-        auto parent = fs::path(path).parent_path();
-        LocalDirectorySyncGuard sync_guard(parent.empty() ? "." : parent.string());
-    }
-
-    /// Creates `dir` (and any missing ancestors) and, when `fsync` is set, persists
-    /// every newly-created directory's entry in its parent so the first acknowledged
-    /// collection survives a power loss.
-    void createDirectoriesAndSync(const std::string & dir, bool fsync)
-    {
-        /// Strip a trailing separator so parent_path() walks real components.
-        fs::path normalized = dir;
-        if (!normalized.has_filename())
-            normalized = normalized.parent_path();
-
-        /// Collect the not-yet-existing components, deepest first, before creating them.
-        std::vector<fs::path> to_create; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        if (fsync)
-            for (fs::path p = normalized; !p.empty() && p != p.parent_path() && !fs::exists(p); p = p.parent_path())
-                to_create.push_back(p);
-
-        fs::create_directories(normalized);
-        if (!fsync)
-            return;
-
-        /// Persist each new component's entry in its parent, shallowest first.
-        for (auto it = to_create.rbegin(); it != to_create.rend(); ++it)
-            fsyncParentDirectory(it->string());
     }
 }
 
@@ -206,17 +170,18 @@ public:
             out.sync();
         out.close();
 
-        /// Open the parent directory before the rename so its fd is guaranteed; the guard's
-        /// destructor fsyncs it after the rename, so the new directory entry survives a power
-        /// loss (an fsync of the file content alone does not persist the directory entry).
-        /// Opening before the mutation avoids committing the rename and then reporting a
-        /// failed DDL if the directory open were to fail.
+        /// Opened before the rename, so a directory that cannot be opened does not leave the
+        /// rename committed, and synced after it, so the collection is not reported as created
+        /// until its new directory entry is durable.
         const auto final_path = getPath(file_name);
-        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+        std::optional<CheckedDirectorySync> dir_sync;
         if (fsync)
-            dir_sync_guard.emplace(fs::path(final_path).parent_path().string());
+            dir_sync.emplace(fs::path(final_path).parent_path().string());
 
         fs::rename(tmp_path, final_path);
+
+        if (dir_sync)
+            dir_sync->sync();
     }
 
     virtual std::string writeHook(const std::string & data) const
@@ -238,16 +203,20 @@ public:
     {
         const auto path = getPath(file_name);
 
-        /// Open the parent directory before the unlink so its fd is guaranteed; the guard's
-        /// destructor fsyncs it after the removal, so the deleted directory entry survives a
-        /// power loss (otherwise an acknowledged DROP could revert and resurrect the collection).
-        /// Opening before the unlink avoids committing the removal and then reporting a failed
-        /// DROP if the directory open were to fail.
-        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+        /// Opened before the unlink, so a directory that cannot be opened does not leave the
+        /// collection removed, and synced after it, so a DROP is not reported as done while the
+        /// removal could still revert and resurrect the collection.
+        std::optional<CheckedDirectorySync> dir_sync;
         if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            dir_sync_guard.emplace(fs::path(path).parent_path().string());
+            dir_sync.emplace(fs::path(path).parent_path().string());
 
-        return fs::remove(path);
+        if (!fs::remove(path))
+            return false;
+
+        if (dir_sync)
+            dir_sync->sync();
+
+        return true;
     }
 
 protected:

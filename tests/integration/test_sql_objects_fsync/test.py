@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -16,6 +17,11 @@ node = cluster.add_instance(
 )
 
 NAMED_COLLECTIONS_DIR = "/var/lib/clickhouse/named_collections"
+SQL_OBJECT_DIRS = [
+    NAMED_COLLECTIONS_DIR,
+    "/var/lib/clickhouse/user_defined",
+    "/var/lib/clickhouse/workload",
+]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -150,3 +156,51 @@ def test_corrupt_named_collection_does_not_brick_startup():
         ["bash", "-c", f"rm -f {NAMED_COLLECTIONS_DIR}/nc_torn.sql {NAMED_COLLECTIONS_DIR}/nc_garbage.sql"]
     )
     node.query("DROP NAMED COLLECTION nc_good")
+
+
+# (create, drop) per on-disk SQL-object store. A shared directory-sync helper can stop
+# syncing one store without the others noticing, so each is checked separately. A resource
+# stands in for the workload store: it is kept there too, and unlike a workload it needs no
+# parent, so this does not depend on which workloads other tests leave behind.
+FAILING_SYNC_CASES = [
+    ("CREATE FUNCTION {n} AS (x) -> x + 1", "DROP FUNCTION {n}"),
+    ("CREATE RESOURCE {n} (WRITE DISK {n}_disk)", "DROP RESOURCE {n}"),
+    ("CREATE NAMED COLLECTION {n} AS a = 1", "DROP NAMED COLLECTION {n}"),
+]
+
+
+def test_failed_directory_sync_fails_the_ddl():
+    """
+    A directory fsync that fails must fail the DDL. Reporting success for a change that
+    could not be made durable is what the fsync is there to prevent, so the sync is done
+    explicitly and its failure propagates instead of being logged and dropped.
+
+    `directory_sync_fail` makes the directory sync of every on-disk SQL-object store fail.
+    Each family is first exercised with the failpoint disabled: that both proves the DDL
+    itself is valid (so a raise below is caused by the failed sync, not by the statement)
+    and creates the store directory, so the failure under test is the commit sync rather
+    than a directory-creation sync.
+    """
+    try:
+        for i, (create, drop) in enumerate(FAILING_SYNC_CASES):
+            control = f"ds_control_{i}"
+            node.query(create.format(n=control), settings={"fsync_metadata": 1})
+
+            node.query("SYSTEM ENABLE FAILPOINT directory_sync_fail")
+
+            failing = f"ds_failing_{i}"
+            with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
+                node.query(create.format(n=failing), settings={"fsync_metadata": 1})
+
+            with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
+                node.query(drop.format(n=control), settings={"fsync_metadata": 1})
+
+            node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
+    finally:
+        # A DDL that failed after its rename or unlink leaves the store and the server's
+        # in-memory view disagreeing, which is the honest outcome of refusing to
+        # acknowledge it. Drop the files and restart so the module ends consistent.
+        node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
+        for directory in SQL_OBJECT_DIRS:
+            node.exec_in_container(["bash", "-c", f"rm -f {directory}/*ds_control_* {directory}/*ds_failing_*"])
+        node.restart_clickhouse()
