@@ -418,13 +418,25 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         "    return base + href;\n"
         "};"
     )
+    navigation_helper = (
+        "export const navigateTo = (event, href) => {\n"
+        "    if (event.defaultPrevented) return;\n"
+        "    if (event.metaKey || event.ctrlKey || event.shiftKey || "
+        "event.altKey || event.button !== 0) return;\n"
+        "    event.preventDefault();\n"
+        "    window.location.href = href;\n"
+        "};"
+    )
     docs_base_requirements = {
         "const assetBase = typeof window === 'undefined' || "
         "window.location.pathname.startsWith('/docs') ? '/docs' : '';": 3,
         "const resolvedHref = withDocsBase(href);": 1,
         "href={resolvedHref}": 2,
         "href={withDocsBase(link.href)}": 1,
-        "window.location.href = withDocsBase(link.href);": 1,
+        "onClick={(event) => navigateTo(event, resolvedHref)}": 2,
+        "onClick={(event) => navigateTo(event, "
+        "withDocsBase(link.href))}": 1,
+        "onClick={(event) => navigateTo(event, href)}": 3,
         "const href = withDocsBase(localizeHref('/integrations/home'));": 1,
         "const href = withDocsBase(path);": 2,
     }
@@ -441,6 +453,11 @@ def check_localized_homepage_links(docs_root: Path) -> list:
             errors.append(
                 f"{name}: withDocsBase must default to the canonical `/docs` "
                 "mount during server-side rendering"
+            )
+        if source.count(navigation_helper) != 1:
+            errors.append(
+                f"{name}: navigateTo must preserve modifier and non-primary "
+                "clicks before overriding same-tab navigation"
             )
         for marker, count in docs_base_requirements.items():
             if source.count(marker) != count:
