@@ -136,9 +136,9 @@ TEST(ContextExternalRoles, SetUserClearsStaleExternalRolesOnUserSwitch)
 /// The provenance rule for external roles and settings profiles. An external role is always effective for
 /// authorization (it is a current role of the context). Whether its attached settings profile - values and
 /// constraints - is installed into the context's creation-time settings snapshot depends on how the role
-/// arrived: only roles passed as `external_roles_for_settings_profiles_` (the authentication-time roles of a
-/// freshly created session) initialize profiles. A role set that is merely propagated or replayed (interserver,
-/// DDL worker, deferred executors) passes only `external_roles_` and must not rebuild profile state.
+/// arrived: only the authentication's roles of a freshly created session (`setUserFromAuthentication`)
+/// initialize profiles. A role set that is merely propagated or replayed (interserver, DDL worker, deferred
+/// executors) goes through the generic `setUser` and must not rebuild profile state.
 TEST(ContextExternalRoles, OnlyAuthenticationTimeExternalRolesInitializeProfiles)
 {
     auto context = getMutableContext().context;
@@ -184,12 +184,7 @@ TEST(ContextExternalRoles, OnlyAuthenticationTimeExternalRolesInitializeProfiles
     {
         auto login_context = Context::createCopy(context);
         login_context->makeQueryContext();
-        login_context->setUser(
-            user_id,
-            /*external_roles=*/ {role_id},
-            /*authentication_grants=*/ nullptr,
-            /*authentication_valid_until=*/ 0,
-            /*external_roles_for_settings_profiles=*/ {role_id});
+        login_context->setUserFromAuthentication(user_id, {.external_roles = {role_id}, .grants = nullptr, .valid_until = 0});
         EXPECT_TRUE(contains(login_context->getCurrentRoles(), role_id));
         EXPECT_EQ(login_context->getExternalRoles(), std::vector<UUID>{role_id});
         EXPECT_EQ(login_context->getSettingsRef().get("max_result_rows").safeGet<UInt64>(), 555u);

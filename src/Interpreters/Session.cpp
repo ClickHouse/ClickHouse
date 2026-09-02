@@ -396,13 +396,14 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         /// the pushed roles appended below, because only they are authentication-time input for
         /// settings-profile initialization. Both are replaced on every authentication.
         authentication_external_roles = auth_result.external_roles;
+        pushed_external_roles.clear();
         external_roles = authentication_external_roles;
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
 
         if (!external_roles_.empty() && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
         {
-            auto pushed_external_roles = global_context->getAccessControl().find<Role>(external_roles_);
+            pushed_external_roles = global_context->getAccessControl().find<Role>(external_roles_);
             external_roles.insert(external_roles.end(), pushed_external_roles.begin(), pushed_external_roles.end());
 
             LOG_DEBUG(log, "User {} has external_roles applied: [{}] ({})",
@@ -608,7 +609,10 @@ ContextMutablePtr Session::makeSessionContext()
 
     /// Set user information for the new context: current profiles, roles, access rights.
     /// A fresh authenticated context: the authentication-returned roles also initialize profiles.
-    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil(), authentication_external_roles);
+    new_session_context->setUserFromAuthentication(
+        *user_id,
+        {.external_roles = authentication_external_roles, .grants = getAuthenticationGrants(), .valid_until = getAuthenticationValidUntil()},
+        pushed_external_roles);
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -675,7 +679,10 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         {
             /// A fresh authenticated context: the authentication-returned roles also initialize
             /// profiles; this is the creation-time state that reattachment does not rebuild.
-            new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil(), authentication_external_roles);
+            new_session_context->setUserFromAuthentication(
+                *user_id,
+                {.external_roles = authentication_external_roles, .grants = getAuthenticationGrants(), .valid_until = getAuthenticationValidUntil()},
+                pushed_external_roles);
             max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
 
             /// Apply session settings received from the authentication server once, when the
@@ -848,26 +855,32 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
     /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
-    std::vector<UUID> effective_external_roles = external_roles;
+    std::vector<UUID> propagated_external_roles = pushed_external_roles;
     const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
         && query_context->getClientInfo().current_roles.has_value()
         && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     if (apply_initiator_roles)
     {
         const auto & role_names = *query_context->getClientInfo().current_roles;
-        effective_external_roles = global_context->getAccessControl().find<Role>(role_names);
+        propagated_external_roles = global_context->getAccessControl().find<Role>(role_names);
         /// Fail closed: a role unknown here cannot be honored; dropping it could drop a restrictive policy.
-        if (effective_external_roles.size() != role_names.size())
+        if (propagated_external_roles.size() != role_names.size())
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
+        /// The initiator's roles REPLACE this connection's external roles. That is equivalent to the
+        /// union computed by `setUserFromAuthentication` only because an interserver connection is
+        /// authenticated with `AlwaysAllowCredentials`, which never returns roles.
+        chassert(authentication_external_roles.empty());
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.
     /// This is the first context built from this session's authentication (no session context),
-    /// so the authentication-returned roles initialize profiles; the initiator's pushed roles in
-    /// `effective_external_roles` are authorization-only.
+    /// so the authentication-returned roles initialize profiles; propagated roles are authorization-only.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil(), authentication_external_roles);
+        query_context->setUserFromAuthentication(
+            *user_id,
+            {.external_roles = authentication_external_roles, .grants = getAuthenticationGrants(), .valid_until = getAuthenticationValidUntil()},
+            propagated_external_roles);
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);

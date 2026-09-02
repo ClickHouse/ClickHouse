@@ -165,6 +165,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
+#include <algorithm>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -2209,13 +2210,32 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(
-    const UUID & user_id_,
-    const std::vector<UUID> & external_roles_,
-    const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
-    time_t authentication_valid_until_,
-    const std::vector<UUID> & external_roles_for_settings_profiles_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
 {
+    setUserImpl(user_id_, external_roles_, /* profile_initialization_roles_= */ {}, authentication_grants_, authentication_valid_until_);
+}
+
+void Context::setUserFromAuthentication(const UUID & user_id_, const AuthenticatedUserParams & authentication, const std::vector<UUID> & propagated_external_roles_)
+{
+    auto effective_external_roles = authentication.external_roles;
+    effective_external_roles.insert(effective_external_roles.end(), propagated_external_roles_.begin(), propagated_external_roles_.end());
+    setUserImpl(user_id_, effective_external_roles, authentication.external_roles, authentication.grants, authentication.valid_until);
+}
+
+void Context::setUserImpl(
+    const UUID & user_id_,
+    const std::vector<UUID> & effective_external_roles_,
+    const std::vector<UUID> & profile_initialization_roles_,
+    const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
+    time_t authentication_valid_until_)
+{
+    /// A role whose profile is installed must also be effective for authorization; both public
+    /// entry points guarantee this by construction.
+    chassert(std::ranges::all_of(profile_initialization_roles_, [&](const UUID & role_id)
+    {
+        return std::ranges::find(effective_external_roles_, role_id) != effective_external_roles_.end();
+    }));
+
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
     /// so Context::getLocalLock() and Context::getGlobalLock() must be unlocked while we're doing this.
@@ -2229,7 +2249,7 @@ void Context::setUser(
     /// still become effective for access rights through `setExternalRolesWithLock` below;
     /// a role set that is merely propagated or replayed must not rebuild profile state.
     auto roles_for_profiles = default_roles;
-    roles_for_profiles.insert(roles_for_profiles.end(), external_roles_for_settings_profiles_.begin(), external_roles_for_settings_profiles_.end());
+    roles_for_profiles.insert(roles_for_profiles.end(), profile_initialization_roles_.begin(), profile_initialization_roles_.end());
     auto enabled_roles = access_control.getEnabledRolesInfo(roles_for_profiles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
@@ -2246,7 +2266,7 @@ void Context::setUser(
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
     setCurrentRolesWithLock(default_roles, lock);
-    setExternalRolesWithLock(external_roles_, lock);
+    setExternalRolesWithLock(effective_external_roles_, lock);
     setAuthenticationGrantsWithLock(authentication_grants_, lock);
     setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
 
