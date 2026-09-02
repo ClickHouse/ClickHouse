@@ -42,15 +42,17 @@ ClickPipes automates the end-to-end process:
 - Provides progress, replication-lag, and error monitoring.
 - Guides you through validation and cutover.
 
-Once the initial load is complete and replication lag is near zero:
+Once the initial load is complete and replication lag is near zero, cut over using the guided **Post-migration steps** tab in the ClickPipe detail view. See [Cut over traffic](/products/managed-postgres/migrations/clickpipes#cutover) for the full walkthrough. The wizard steps you through, in order:
 
-- stop writes to Neon
-- perform final data and schema validation
-- reset sequences
-- update the application connection string to point to ClickHouse Managed Postgres.
+1. Set Neon in read-only mode to stop writes.
+2. Validate row counts between source and target.
+3. Pause the pipe.
+4. Reset sequences on the target.
+5. Cut over traffic by updating the application connection string to point to ClickHouse Managed Postgres.
+6. Clean up by dropping the replication slot and deleting the ClickPipe.
 
 Keep Neon available in read-only mode for a short period, in case rollback is required.
-Once the new environment is stable, remove the ClickPipe and its replication slot.
+Once the new environment is stable, complete the clean-up step to remove the ClickPipe and its replication slot.
 </Step>
 </Steps>
 
