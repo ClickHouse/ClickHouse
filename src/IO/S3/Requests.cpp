@@ -62,9 +62,9 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
     if (is_s3express_bucket)
         return RequestChecksum::Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
 
-    /// Default to the SDK's `Content-MD5` path. Under FIPS that is unavailable and silently dropped, so upgrade to `SHA256`.
-    if (OpenSSLInitializer::instance().isFIPSEnabled())
-        return RequestChecksum::Algorithm::SHA256;
+    /// Default to the SDK's `Content-MD5` path. Under FIPS the SDK silently drops it, leaving the upload with no
+    /// checksum header - the pre-flexible-checksum behavior, which is kept as the default because support for
+    /// `x-amz-checksum-*` outside AWS is inconsistent. Set the setting explicitly to attach one.
     return RequestChecksum::Algorithm::MD5;
 }
 

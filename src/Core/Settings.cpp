@@ -752,9 +752,11 @@ to avoid interpreting '?' as a wildcard.
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
 )", 0) \
     DECLARE(String, s3_upload_checksum_algorithm, "", R"(
-The checksum algorithm used for `S3` upload requests. `CRC32` and `SHA256` are sent as flexible `x-amz-checksum-*` headers, while `MD5` is sent as a `Content-MD5` header. `s3_disable_checksum` suppresses this setting for non-`S3Express` buckets.
+The checksum algorithm used for `S3` upload requests. `CRC32` and `SHA256` are sent as flexible `x-amz-checksum-*` headers, while `MD5` is sent as a `Content-MD5` header.
 
-By default the value is empty and ClickHouse lets the AWS SDK compute `Content-MD5`. In FIPS mode `MD5` is unavailable, so an empty value uses `SHA256` instead and an explicit `MD5` is rejected. To send no checksum for non-`S3Express` buckets, set `s3_disable_checksum`.
+By default the value is empty and ClickHouse lets the AWS SDK compute `Content-MD5`. In FIPS mode `MD5` is unavailable, so the SDK silently omits `Content-MD5` and the upload carries no checksum at all: set this setting to `CRC32` or `SHA256` to attach a flexible checksum instead. An explicit `MD5` is rejected in FIPS mode.
+
+For non-`S3Express` buckets, `s3_disable_checksum` suppresses this setting, but only when it is configured for the disk or endpoint. Setting `s3_disable_checksum` per query does not suppress it, because the checksum is disabled when the connection is configured rather than per request.
 
 `S3Express` buckets require a flexible checksum and do not accept `Content-MD5`: an explicit `CRC32` or `SHA256` is honored, an empty value uses `CRC32`, and an explicit `MD5` is rejected.
 

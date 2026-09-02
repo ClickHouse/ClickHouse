@@ -265,12 +265,20 @@ struct InjectionModel
 
 struct Client : DB::S3::Client
 {
-    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store, bool disable_checksum = false, bool is_s3express_bucket = false)
+    /// `DB::S3::Client` derives the provider from the endpoint, so a test that depends on the provider
+    /// selects it by passing an endpoint here. The default is empty, which deduces `ProviderType::UNKNOWN`.
+    static constexpr std::string_view gcs_endpoint = "https://storage.googleapis.com";
+
+    explicit Client(
+        std::shared_ptr<S3MemStrore> mock_s3_store,
+        bool disable_checksum = false,
+        bool is_s3express_bucket = false,
+        std::string_view endpoint = {})
         : DB::S3::Client(
             100,
             DB::S3::ServerSideEncryptionKMSConfig(),
             std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-            GetClientConfiguration(),
+            GetClientConfiguration(endpoint),
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             DB::S3::ClientSettings{
                 .use_virtual_addressing = true,
@@ -281,14 +289,18 @@ struct Client : DB::S3::Client
         , store(mock_s3_store)
     {}
 
-    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket", bool disable_checksum = false, bool is_s3express_bucket = false)
+    static std::shared_ptr<Client> CreateClient(
+        String bucket = "mock-s3-bucket",
+        bool disable_checksum = false,
+        bool is_s3express_bucket = false,
+        std::string_view endpoint = {})
     {
         auto s3store = std::make_shared<S3MemStrore>();
         s3store->CreateBucket(bucket);
-        return std::make_shared<Client>(s3store, disable_checksum, is_s3express_bucket);
+        return std::make_shared<Client>(s3store, disable_checksum, is_s3express_bucket, endpoint);
     }
 
-    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration()
+    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(std::string_view endpoint = {})
     {
         DB::RemoteHostFilter remote_host_filter;
         auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -307,6 +319,8 @@ struct Client : DB::S3::Client
         /// that here -- otherwise chassert(client_configuration.retryStrategy) in Client::doRequest
         /// aborts every request in debug/sanitizer builds.
         configuration.retryStrategy = std::make_shared<DB::S3::Client::RetryStrategy>(configuration.retry_strategy);
+        if (!endpoint.empty())
+            configuration.endpointOverride = String(endpoint);
         return configuration;
     }
 
@@ -1297,8 +1311,9 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
     S3::S3RequestSettings request_settings;
     const bool fips = DB::OpenSSLInitializer::instance().isFIPSEnabled();
 
-    /// Empty setting: SHA256 under FIPS (Content-MD5 is unavailable there), otherwise defer to Content-MD5.
-    ASSERT_EQ(fips ? Algorithm::SHA256 : Algorithm::MD5,
+    /// Empty setting: always defer to the SDK's `Content-MD5`, including under FIPS where the SDK drops it.
+    /// Attaching a flexible checksum is opt-in, because support for `x-amz-checksum-*` outside AWS is inconsistent.
+    ASSERT_EQ(Algorithm::MD5,
         S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false));
 
     /// S3Express does not support `Content-MD5`, so the default upload checksum is `CRC32`.
@@ -1312,7 +1327,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
         S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true));
 
     /// S3Express cannot use MD5 (no Content-MD5), so an explicit MD5 is rejected rather than silently upgraded.
-    if (!DB::OpenSSLInitializer::instance().isFIPSEnabled())
+    if (!fips)
     {
         getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
         request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
@@ -1398,6 +1413,8 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultSinglepart)
 {
+    /// The empty setting keeps the SDK's `Content-MD5` path, including under FIPS where the SDK silently
+    /// omits the header. Attaching a flexible checksum is opt-in.
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
     setInjectionModel(injection);
 
@@ -1407,18 +1424,33 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultSinglepart)
     getAsyncPolicy().setAutoExecute(true);
     buffer->finalize();
 
-    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
-    {
-        ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
-        ASSERT_TRUE(injection->put_object_request_checksum_required);
-        ASSERT_FALSE(injection->put_object_should_compute_content_md5);
-    }
-    else
-    {
-        ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
-        ASSERT_FALSE(injection->put_object_request_checksum_required);
-        ASSERT_TRUE(injection->put_object_should_compute_content_md5);
-    }
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
+    ASSERT_FALSE(injection->put_object_request_checksum_required);
+    ASSERT_TRUE(injection->put_object_should_compute_content_md5);
+}
+
+TEST_F(WBS3Test, UploadChecksumAlgorithmGCSIgnoresSetting)
+{
+    /// `GCS` requires `x-goog-*` and rejects `SigV4`-signed requests carrying `x-amz-checksum-*`, so even
+    /// an explicit algorithm must not reach the request.
+    client = MockS3::Client::CreateClient(
+        bucket, /* disable_checksum */ false, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
+
+    auto buffer = getWriteBuffer("checksum_gcs_ignores_setting");
+    writeAsOneBlock(*buffer, 10);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
+    ASSERT_FALSE(injection->put_object_request_checksum_required);
+    ASSERT_TRUE(injection->put_object_should_compute_content_md5);
 }
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)
