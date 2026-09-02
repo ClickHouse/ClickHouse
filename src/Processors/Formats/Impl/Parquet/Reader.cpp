@@ -3151,6 +3151,58 @@ static UInt64 processRepDefLevelsForArray(
     return offset - first_offset;
 }
 
+/// Fused version of processRepDefLevelsForArray + processDefLevelsForInnermostColumn for the common
+/// case of exactly one array level. Then array_rep is 1, so `rep[i] <= array_rep` always holds, a new
+/// instance starts exactly at `rep[i] == 0`, and `array_def == max_array_def`; one pass over the
+/// levels can produce the offsets, the null map and the encoded value count. Nested arrays keep the
+/// general path.
+template <bool has_nulls>
+static void processRepDefLevelsForSingleArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 max_def, UInt8 max_array_def,
+    size_t num_new_instances, PaddedPODArray<UInt64> & out_offsets,
+    size_t & out_num_encoded_values, ColumnUInt8::Container * out_null_map)
+{
+    size_t prev_size = out_offsets.size();
+    out_offsets.resize(prev_size + num_new_instances);
+    UInt64 * out_offset = out_offsets.data() + prev_size - 1;
+    UInt64 offset = *out_offset;
+
+    UInt8 * out_null = nullptr;
+    if constexpr (has_nulls)
+    {
+        size_t null_prev_size = out_null_map->size();
+        out_null_map->resize(null_prev_size + num_values);
+        out_null = out_null_map->data() + null_prev_size;
+    }
+
+    size_t num_encoded_values = 0;
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        /// False for a value of an empty or null array, which produces no element at any output.
+        bool in_array = def[i] >= max_array_def;
+
+        *out_offset = offset;
+        out_offset += rep[i] == 0;
+        offset += in_array;
+
+        if constexpr (has_nulls)
+        {
+            bool is_null = def[i] != max_def;
+            *out_null = is_null;
+            out_null += in_array;
+            num_encoded_values += !is_null;
+        }
+        else
+            num_encoded_values += in_array;
+    }
+    *out_offset = offset;
+    if constexpr (has_nulls)
+        out_null_map->resize(out_null - out_null_map->data());
+
+    chassert(out_offset == out_offsets.data() + prev_size - 1 + num_new_instances);
+    out_num_encoded_values = num_encoded_values;
+}
+
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
 {
     PageState & page = column.page;
@@ -3173,7 +3225,8 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     advanceValueIdxUntilRow(end_row_idx, page);
 
     /// Produce array offsets.
-    if (!page.rep.empty())
+    const bool single_array_level = !page.rep.empty() && column_info.levels.back().rep == 1;
+    if (!page.rep.empty() && !single_array_level)
     {
         UInt8 parent_array_def = 0;
         /// The outermost array level has array_rep == 1, so it starts an instance exactly at each
@@ -3198,7 +3251,23 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     /// Populate null map and find how many encoded values to read.
     size_t encoded_values_to_read = 0;
-    if (page.def.empty())
+    if (single_array_level)
+    {
+        auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(0)).getData();
+        size_t num_new_instances = page.next_row_idx - first_row_idx;
+        if (subchunk.null_map)
+            processRepDefLevelsForSingleArray<true>(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, column_info.levels.back().def, column_info.max_array_def,
+                num_new_instances, offsets, encoded_values_to_read,
+                &assert_cast<ColumnUInt8 &>(*subchunk.null_map).getData());
+        else
+            processRepDefLevelsForSingleArray<false>(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, column_info.levels.back().def, column_info.max_array_def,
+                num_new_instances, offsets, encoded_values_to_read, nullptr);
+    }
+    else if (page.def.empty())
     {
         /// No nulls or arrays in this page.
         encoded_values_to_read = page.value_idx - prev_value_idx;
