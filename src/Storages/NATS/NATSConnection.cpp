@@ -12,6 +12,31 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration)
+{
+    if (!configuration.ca_file.empty())
+    {
+        auto status = natsOptions_LoadCATrustedCertificates(options, configuration.ca_file.c_str());
+        if (status != NATS_OK)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot load NATS trusted CA certificates from {}. Nats status text: {}. Last error message: {}",
+                configuration.ca_file, natsStatus_GetText(status), getNATSLastError());
+    }
+
+    if (!configuration.client_cert_file.empty())
+    {
+        auto status = natsOptions_LoadCertificatesChain(
+            options, configuration.client_cert_file.c_str(), configuration.client_key_file.c_str());
+        if (status != NATS_OK)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot load NATS client certificate chain from {} with key {}. Nats status text: {}. Last error message: {}",
+                configuration.client_cert_file, configuration.client_key_file,
+                natsStatus_GetText(status), getNATSLastError());
+    }
+}
+
 /// disconnectedCallback may be called after connection destroy
 LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
 
@@ -33,29 +58,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     if (configuration.secure)
     {
         natsOptions_SetSecure(options.get(), true);
-
-        /// Both calls parse the certificates right away, so an unusable file is reported here instead of at connect time.
-        if (!configuration.ca_file.empty())
-        {
-            auto ca_status = natsOptions_LoadCATrustedCertificates(options.get(), configuration.ca_file.c_str());
-            if (ca_status != NATS_OK)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot load NATS trusted CA certificates from {}. Nats status text: {}. Last error message: {}",
-                    configuration.ca_file, natsStatus_GetText(ca_status), getNATSLastError());
-        }
-
-        if (!configuration.client_cert_file.empty())
-        {
-            auto cert_status = natsOptions_LoadCertificatesChain(
-                options.get(), configuration.client_cert_file.c_str(), configuration.client_key_file.c_str());
-            if (cert_status != NATS_OK)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot load NATS client certificate chain from {} with key {}. Nats status text: {}. Last error message: {}",
-                    configuration.client_cert_file, configuration.client_key_file,
-                    natsStatus_GetText(cert_status), getNATSLastError());
-        }
+        loadNATSCertificates(options.get(), configuration);
     }
 
     // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert

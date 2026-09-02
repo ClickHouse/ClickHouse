@@ -25,6 +25,7 @@
 #include <Storages/NATS/NATSCoreProducer.h>
 #include <Storages/NATS/NATSJetStreamConsumer.h>
 #include <Storages/NATS/NATSJetStreamProducer.h>
+#include <Storages/NATS/NATSConnection.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
@@ -172,6 +173,11 @@ StorageNATS::StorageNATS(
     if (!configuration.secure && !(configuration.ca_file.empty() && configuration.client_cert_file.empty()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "TLS certificates are specified for a NATS table without nats_secure");
 
+    /// The files are checked for a definition the user supplies now, so an unusable one is reported
+    /// before the table exists even on a server which never connects to the broker.
+    if (fresh_definition && !(configuration.ca_file.empty() && configuration.client_cert_file.empty()))
+        loadNATSCertificates(event_handler.createOptions().get(), configuration);
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
@@ -190,9 +196,7 @@ StorageNATS::StorageNATS(
     }
     catch (...)
     {
-        /// A certificate the server cannot load is a mistake in the definition, unlike a broker which
-        /// is unreachable, so a definition the user supplies now is rejected instead of being kept.
-        if (throw_on_startup_failure || (fresh_definition && getCurrentExceptionCode() == ErrorCodes::BAD_ARGUMENTS))
+        if (throw_on_startup_failure)
         {
             stopEventLoop();
             throw;

@@ -41,6 +41,10 @@ struct NATSConfiguration
 
 using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
 
+/// Loads the TLS material into `options`. Both calls parse the files immediately, so one which
+/// cannot be read or parsed is reported here instead of at connect time.
+void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration);
+
 class NATSConnection
 {
     using Lock = std::lock_guard<std::mutex>;
