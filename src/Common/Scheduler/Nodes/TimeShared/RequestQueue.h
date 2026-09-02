@@ -644,6 +644,15 @@ public:
         // double-counted on top of what a previous `fair` stint left behind (re-keying the same
         // requests advances vruntime again). attained_cost is real accrued service, left untouched.
         // Resetting a context repeatedly is idempotent, so no dedup is needed before the push loop.
+        //
+        // Only queries that hold a pending request at the swap are reset here. A query that had
+        // already drained its queue keeps the vruntime from the previous `fair` instance, so its
+        // next request after a `fair -> other -> fair` toggle re-enters at max(system_vruntime,
+        // stale_vruntime) and is transiently deprioritized until system_vruntime catches up. This
+        // is bounded and self-correcting, and only reachable by live-reconfiguring a workload's
+        // scheduler between `fair` stints; eliminating it entirely would require storing vruntime
+        // per fair-instance (with drain-time cleanup to avoid an unbounded per-query map), which is
+        // not worth the added state and lifetime complexity for so rare a case.
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest * request : pending)
                 if (auto * ctx = request->scheduling_context)
