@@ -440,8 +440,8 @@ TYPED_TEST(MD5MultiBufTest, StressRandom)
 
 
 // ============================================================
-// Driver-level test. The driver groups rows by block count inside a window, and only a gtest can
-// reach every Ops width from one host.
+// Driver-level test. The driver groups rows by block count inside a window, and a server run reaches
+// only the one Ops width runtime dispatch picks; a gtest reaches every width this build compiles.
 // ============================================================
 
 enum class ColumnShape
@@ -452,6 +452,7 @@ enum class ColumnShape
     Periodic, /// one long row per window, all at the same offset: no window can gain
     AboveCapHalf, /// one-block first half, above-the-cap second half: the second half reaches stage 2
     LeadingSpread, /// one spread window, then constant length: only the first window can gain
+    MidSpread, /// the only window that can gain sits at the screen's last probe, behind declining ones
 };
 
 std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
@@ -460,10 +461,17 @@ std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
     std::vector<std::string> out;
     out.reserve(rows);
 
+    /// `md5GroupingPays` scores whole window `p * whole_windows / MD5_GROUP_PROBE_WINDOWS` for each p,
+    /// so this is the index of its last probe.
+    constexpr size_t window = DB::TargetSpecific::Default::MD5_GROUP_WINDOW;
+    const size_t last_probe_window = (DB::TargetSpecific::Default::MD5_GROUP_PROBE_WINDOWS - 1) * (rows / window)
+        / DB::TargetSpecific::Default::MD5_GROUP_PROBE_WINDOWS;
+
     for (size_t i = 0; i < rows; ++i)
     {
         bool spread = shape == ColumnShape::Spread || (shape == ColumnShape::Mixed && i < rows / 2)
-            || (shape == ColumnShape::LeadingSpread && i < DB::TargetSpecific::Default::MD5_GROUP_WINDOW);
+            || (shape == ColumnShape::LeadingSpread && i < DB::TargetSpecific::Default::MD5_GROUP_WINDOW)
+            || (shape == ColumnShape::MidSpread && i / window == last_probe_window);
 
         size_t len = 64;
         if (spread)
@@ -570,6 +578,18 @@ TYPED_TEST(MD5MultiBufTest, ColumnGroupingDeclineBudget)
     /// declining windows outrun grouped ones and the rest is hashed unscored. 14300 leaves that rest a
     /// partial batch wide on the wider kernels, so its trailing short batch is covered too.
     checkColumnMD5<TypeParam>(ColumnShape::LeadingSpread, 14300, /*grouped*/ 1024, /*declined*/ 10240);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnGroupingDeclineBudgetStopsBeforeProbedWindow)
+{
+    /// The mirror of the case above: the window the screen admits on is its LAST probe, and the budget
+    /// stops the driver before reaching it. 18433 rows leave 18 whole windows, so that probe is window
+    /// 9, the nine constant-length windows ahead of it each decline, and the ninth decline makes
+    /// 9 > 0 + MD5_GROUP_DECLINE_BUDGET at exactly that window. So nothing is grouped even though the
+    /// screen scored a window that would have, and the 9217 rows from there on are hashed unscored -
+    /// which is why the counters sum to less than the row count. 9217 is odd, so that unscored rest
+    /// ends in a partial batch at every width.
+    checkColumnMD5<TypeParam>(ColumnShape::MidSpread, 18433, /*grouped*/ 0, /*declined*/ 9216);
 }
 
 } // anonymous namespace
