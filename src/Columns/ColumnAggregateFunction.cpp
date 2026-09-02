@@ -814,13 +814,18 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 {
     auto res = create(func, concatArenas(foreign_arenas, my_arena));
     res->src = getPtr();
+    /// The view refers to the same states, so it must keep the state version:
+    /// the version affects how the states are serialized (e.g. in `groupArray` over a state column).
+    res->version = version;
+    res->type_string = type_string;
     return res;
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
     : COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>(src_),
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end()),
+    type_string(src_.type_string), version(src_.version)
 {
 }
 

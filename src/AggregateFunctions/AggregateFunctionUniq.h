@@ -10,6 +10,7 @@
 #include <base/bit_cast.h>
 
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -26,6 +27,7 @@
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Core/ProtocolDefines.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -252,6 +254,16 @@ struct IsUniqExactSet : std::false_type
 
 template <typename T1, typename T2>
 struct IsUniqExactSet<UniqExactSet<T1, T2>> : std::true_type
+{
+};
+
+template <typename T>
+struct IsUniquesHashSet : std::false_type
+{
+};
+
+template <typename Hash>
+struct IsUniquesHashSet<UniquesHashSet<Hash>> : std::true_type
 {
 };
 
@@ -548,6 +560,7 @@ private:
     static constexpr size_t num_args = 1;
     static constexpr bool is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
     static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
+    static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<DataSet>::value;
 
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
@@ -558,6 +571,34 @@ public:
     String getName() const override { return Data::getName(); }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
+    /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
+    bool isVersioned() const override { return is_uniques_hash_set; }
+
+    /// The default version - the one used when the type carries no explicit version - must stay 0,
+    /// so that unversioned `AggregateFunction(uniq, ...)` types in persisted data keep the byte
+    /// layout unversioned data always had. Version 1 applies only where it is spelled out
+    /// in the type name (see `getStateType`) or derived from the negotiated revision on the `Native` wire.
+    /// See the analogous comment for `quantileDeterministic` in AggregateFunctionQuantile.h for the full reasoning.
+    size_t getDefaultVersion() const override { return 0; }
+
+    /// The state type spells the version out, so that the type name and the payload stay consistent
+    /// on every medium the state can travel through.
+    DataTypePtr getStateType() const override
+    {
+        if constexpr (is_uniques_hash_set)
+            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
+        else
+            return IAggregateFunction::getStateType();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (is_uniques_hash_set && revision >= DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1)
+            return 1;
+        return 0;
+    }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -645,14 +686,20 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        this->data(place).set.write(buf);
+        if constexpr (is_uniques_hash_set)
+            this->data(place).set.write(buf, version.value_or(getDefaultVersion()) < 1);
+        else
+            this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
-        this->data(place).set.read(buf);
+        if constexpr (is_uniques_hash_set)
+            this->data(place).set.read(buf, version.value_or(getDefaultVersion()) < 1);
+        else
+            this->data(place).set.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -674,6 +721,7 @@ private:
 
     static constexpr size_t is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
     static constexpr size_t argument_is_tuple = Data::argument_is_tuple;
+    static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<typename Data::Set>::value;
 
     size_t num_args = 0;
 
@@ -690,6 +738,28 @@ public:
     String getName() const override { return Data::getName(); }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
+    /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
+    /// The versioning follows the same scheme as the single-argument `uniq` above, see the comments there.
+    bool isVersioned() const override { return is_uniques_hash_set; }
+
+    size_t getDefaultVersion() const override { return 0; }
+
+    DataTypePtr getStateType() const override
+    {
+        if constexpr (is_uniques_hash_set)
+            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
+        else
+            return IAggregateFunction::getStateType();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (is_uniques_hash_set && revision >= DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1)
+            return 1;
+        return 0;
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -752,14 +822,20 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        this->data(place).set.write(buf);
+        if constexpr (is_uniques_hash_set)
+            this->data(place).set.write(buf, version.value_or(getDefaultVersion()) < 1);
+        else
+            this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
-        this->data(place).set.read(buf);
+        if constexpr (is_uniques_hash_set)
+            this->data(place).set.read(buf, version.value_or(getDefaultVersion()) < 1);
+        else
+            this->data(place).set.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

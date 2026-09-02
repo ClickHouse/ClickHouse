@@ -96,6 +96,16 @@ public:
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
     virtual DataTypePtr getNormalizedStateType() const;
 
+    /// State type for a pass-through combinator - one that stores nested states inside its own state
+    /// and forwards `isVersioned` / `getDefaultVersion` to the nested function (`-If`, `-Array`,
+    /// `-ForEach`, `-Map`, `-ArgMin` / `-ArgMax`, `-OrNull` / `-OrDefault`, `-Resample`, `-Distinct`,
+    /// and the implicit adaptor for `Nullable` arguments).
+    /// If the nested function spells its current state version out in its state type, the combinator's
+    /// state type must spell the same version: a fresh state column otherwise falls back to the legacy
+    /// default version on local serialization round trips of the column (`groupArray` over the states,
+    /// sorting, views), losing the information the newer version carries.
+    DataTypePtr getStateTypeWithVersionOf(const IAggregateFunction & nested) const;
+
     /// Identifies the state representation variant used by this function.
     /// The default is Aggregation (normal GROUP BY implementation).
     virtual AggregateFunctionStateVariant getStateVariant() const

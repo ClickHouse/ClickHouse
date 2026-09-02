@@ -354,6 +354,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         /// Distinct state contains a history of unique values and can be merged across
