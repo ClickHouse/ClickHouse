@@ -46,7 +46,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_materialized_postgresql_table;
+    extern const SettingsBool enable_materialized_postgresql_table;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
 }
@@ -702,9 +702,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         metadata.setComment(args.comment);
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_materialized_postgresql_table])
+            && !args.getLocalContext()->getSettingsRef()[Setting::enable_materialized_postgresql_table])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
-                                " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
+                                " You can enable it with the `enable_materialized_postgresql_table` setting");
 
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -807,10 +807,10 @@ ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpi
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
 :::note
-This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
+This table engine is experimental. To use it, set `enable_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
 
 ```sql
-SET allow_experimental_materialized_postgresql_table=1
+SET enable_materialized_postgresql_table=1
 ```
 :::
 

@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ytsaurus_table_engine;
+    extern const SettingsBool enable_ytsaurus_table_engine;
 }
 
 namespace YTsaurusSetting
@@ -156,9 +156,9 @@ void registerStorageYTsaurus(StorageFactory & factory)
 {
     factory.registerStorage("YTsaurus", [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_engine])
+        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::enable_ytsaurus_table_engine])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental. "
-                "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
+                "Set `enable_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
             StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
@@ -196,11 +196,11 @@ The YTsaurus table engine allows you to import data from a YTsaurus cluster.
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in future releases.
 Enable usage of the YTsaurus table engine
-using setting [`allow_experimental_ytsaurus_table_engine`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine).
+using setting [`enable_ytsaurus_table_engine`](/reference/settings/session-settings/allow-experimental#enable_ytsaurus_table_engine).
 
 You can do so using:
 
-`SET allow_experimental_ytsaurus_table_engine = 1`.
+`SET enable_ytsaurus_table_engine = 1`.
 :::
 
 **Engine parameters**

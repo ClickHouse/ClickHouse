@@ -33,7 +33,7 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!feature_enabled)
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Support for polyglot SQL transpiler is disabled (turn on setting 'allow_experimental_polyglot_dialect')");
+            "Support for polyglot SQL transpiler is disabled (turn on setting 'enable_polyglot_dialect')");
 
     if (source_dialect.empty())
         throw Exception(

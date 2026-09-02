@@ -24,7 +24,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_eval_table_function;
+    extern const SettingsBool enable_eval_table_function;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -101,10 +101,10 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
 {
     const auto & settings = context->getSettingsRef();
 
-    if (!settings[Setting::allow_experimental_eval_table_function])
+    if (!settings[Setting::enable_eval_table_function])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Table function `eval` is experimental. Set `allow_experimental_eval_table_function = 1` to enable it");
+            "Table function `eval` is experimental. Set `enable_eval_table_function = 1` to enable it");
 
     if (!settings[Setting::allow_experimental_analyzer])
         throw Exception(

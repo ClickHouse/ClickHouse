@@ -39,7 +39,7 @@ namespace YTsaurusSetting
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ytsaurus_dictionary_source;
+    extern const SettingsBool enable_ytsaurus_dictionary_source;
 }
 
 
@@ -57,9 +57,9 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         const std::string & /* default_database */,
         bool created_from_ddl) -> DictionarySourcePtr
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_ytsaurus_dictionary_source])
+        if (!context->getSettingsRef()[Setting::enable_ytsaurus_dictionary_source])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Dictionary source YTsaurus is experimental. "
-                "Set `allow_experimental_ytsaurus_dictionary_source` setting to enable it");
+                "Set `enable_ytsaurus_dictionary_source` setting to enable it");
 
         const auto config_prefix = root_config_prefix + ".ytsaurus";
         std::shared_ptr<YTsaurusStorageConfiguration> configuration = nullptr;
@@ -122,7 +122,7 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 <Info>
 This is an experimental feature that may change in backwards-incompatible ways in future releases.
 Enable usage of the YTsaurus dictionary source
-using setting [`allow_experimental_ytsaurus_dictionary_source`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_dictionary_source).
+using setting [`enable_ytsaurus_dictionary_source`](/reference/settings/session-settings/allow-experimental#enable_ytsaurus_dictionary_source).
 </Info>
 
 Example of settings:
