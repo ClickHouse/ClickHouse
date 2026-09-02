@@ -80,11 +80,20 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// documented example is exactly the timezone case this cache already invalidates
 /// on). Reuse *within* one query is already an established, trusted pattern for the
 /// very same object (see ColumnDynamic's per-column `serialization_cache`, used
-/// throughout its binary insert/deserialize paths). One narrower gap is accepted:
-/// `DataTypeObject::doGetSerialization` also reads `allow_simdjson` at construction,
-/// which this cache does not track, so a client session that flips it in place keeps
-/// the previously-built parser until invalidated for another reason; this only
-/// selects between two semantically equivalent JSON parsers, not a correctness issue.
+/// throughout its binary insert/deserialize paths).
+///
+/// IMPORTANT: this safety only holds for the ways SerializationJSON is currently used
+/// through this cache (type resolution, binary serialization, and text *output*) - none
+/// of which touch the mutable extraction-tree caches or the parser choice. A cached
+/// serialization from here must never be used for *text deserialization*: that path is
+/// exactly what SerializationJSON::create's "do NOT pool" comment is about, and two
+/// gaps this cache does not track would then matter. First, `DataTypeObject::doGetSerialization`
+/// reads `allow_simdjson` at construction; a client session that flips it in place would
+/// keep the previously-built parser, and rapidjson (`RAPIDJSON_PARSE_DEFAULT_FLAGS` lacks
+/// `kParseFullPrecisionFlag`) is not a drop-in replacement for simdjson's parsing the way
+/// it is for output - it can round Float64 differently and has no nesting-depth cap. Second,
+/// the extraction tree's caches would then legitimately accumulate per-query state and need
+/// the same cross-query invalidation this cache does not extend to their internals.
 class DataTypesCache
 {
 public:

@@ -114,11 +114,15 @@ TEST(DataTypesCache, InvalidatesNonPoolableSerializationsAcrossQueries)
     ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
-    const ISerialization * first_serialization_ptr = nullptr;
+    /// Kept alive (not just its raw address) across both query scopes: if only the address
+    /// were recorded, the first cache entry could be destroyed once its query scope ends,
+    /// and an unrelated later allocation could reuse the same address, making the comparison
+    /// below pass even when invalidation was actually broken.
+    SerializationPtr first_serialization;
     {
         auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_1", "UTC");
         auto query_scope = QueryScope::create(query_context);
-        first_serialization_ptr = getDataTypesCache().getSerialization("JSON").get();
+        first_serialization = getDataTypesCache().getSerialization("JSON");
     }
 
     /// A new query on the same thread must not be served the previous query's pooled
@@ -127,7 +131,7 @@ TEST(DataTypesCache, InvalidatesNonPoolableSerializationsAcrossQueries)
     {
         auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_2", "UTC");
         auto query_scope = QueryScope::create(query_context);
-        ASSERT_NE(getDataTypesCache().getSerialization("JSON").get(), first_serialization_ptr);
+        ASSERT_NE(getDataTypesCache().getSerialization("JSON").get(), first_serialization.get());
     }
 }
 
