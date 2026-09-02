@@ -278,9 +278,10 @@ public:
             "scan state (refreshed via callback: {}, fingerprint drifted: {}). Original error: {}",
             refreshed_via_callback, fingerprint_drifted, msg);
 
-        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(
-            *helper,
-            std::optional<size_t>(kernel_snapshot_state->snapshot_version));
+        /// Rebuild through the interruptible load (permit-bounded, `KILL QUERY` and the timeouts
+        /// apply on this scan thread too) rather than blocking in the kernel synchronously.
+        kernel_snapshot_state = loadKernelSnapshotState(
+            helper, std::optional<size_t>(kernel_snapshot_state->snapshot_version), log);
         captured_credentials_fingerprint = post_fingerprint;
         scan = KernelScan();
         scan_data_iterator = KernelScanDataIterator();
@@ -937,7 +938,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
         auto load = inflight_load;
         if (!load)
         {
-            load = startKernelSnapshotLoad(version_to_build);
+            load = startKernelSnapshotLoad(helper, version_to_build, log);
             inflight_load = load;
         }
 
@@ -948,7 +949,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
         /// This waiter may be cancelled or time out; if so it throws and the build keeps
         /// running, staying installed in `inflight_load` for the other waiters and for later
         /// queries. `lock` does not own the mutex here, so unwinding it does not unlock twice.
-        waitForSnapshotLoad(*load);
+        waitForSnapshotLoad(*load, *helper, log);
         lock.lock();
 
         /// The build finished (successfully or not): it is no longer in flight.
@@ -990,7 +991,8 @@ namespace
     std::atomic<Int64> snapshot_load_worker_permits{0};
 }
 
-std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelSnapshotLoad(std::optional<size_t> version_to_build) const
+std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelSnapshotLoad(
+    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
 {
     /// The kernel FFI is synchronous and has no cancellation hook: `snapshot_builder_build` reads
     /// `_delta_log` through the kernel's own object store client and blocks on a channel fed by
@@ -1010,13 +1012,13 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
             "Refusing to load the snapshot of the Delta Lake table at {}: {} snapshot-load workers are "
             "already running or stuck inside delta-kernel ({} of them were given up by their queries, "
             "see the DeltaLakeSnapshotLoadsStuck metric); not starting another one until a worker returns",
-            helper->getTableLocation(), MAX_SNAPSHOT_LOAD_WORKERS,
+            kernel_helper->getTableLocation(), MAX_SNAPSHOT_LOAD_WORKERS,
             CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck));
     }
 
     auto load = std::make_shared<InflightSnapshotLoad>();
     auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
-        [kernel_helper = helper, version_to_build]
+        [kernel_helper, version_to_build]
         {
             /// Simulates a kernel call which never returns (used by tests).
             DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
@@ -1049,7 +1051,7 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
     return load;
 }
 
-void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load) const
+void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log)
 {
     DB::QueryStatusPtr process_list_element;
     UInt64 timeout_ms = 0;
@@ -1076,7 +1078,7 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load) const
                     DB::ErrorCodes::TIMEOUT_EXCEEDED,
                     "Timeout exceeded while loading the snapshot of the Delta Lake table at {}: "
                     "waited {} ms, delta_lake_snapshot_load_timeout_ms is {} ms",
-                    helper->getTableLocation(), watch.elapsedMilliseconds(), timeout_ms);
+                    kernel_helper.getTableLocation(), watch.elapsedMilliseconds(), timeout_ms);
         }
         catch (...)
         {
@@ -1092,12 +1094,21 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load) const
                     "Giving up waiting for the delta-kernel snapshot load of the table at {} after {} ms; "
                     "the worker thread keeps running until the kernel call returns "
                     "(stuck loads: {}, snapshot-load workers are capped at {})",
-                    helper->getTableLocation(), watch.elapsedMilliseconds(),
+                    kernel_helper.getTableLocation(), watch.elapsedMilliseconds(),
                     CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck), MAX_SNAPSHOT_LOAD_WORKERS);
             }
             throw;
         }
     }
+}
+
+std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::loadKernelSnapshotState(
+    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
+{
+    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build, log);
+    waitForSnapshotLoad(*load, *kernel_helper, log);
+    /// Rethrows the build error, if any.
+    return load->future.get();
 }
 
 std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::getKernelSnapshotState() const

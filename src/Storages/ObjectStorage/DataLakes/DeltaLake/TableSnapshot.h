@@ -168,15 +168,22 @@ private:
 
     /// Starts a snapshot build on a worker thread, reserving one of the bounded worker permits
     /// before the launch, and returns the shared in-flight state for waiters. Never blocks on
-    /// the kernel.
-    std::shared_ptr<InflightSnapshotLoad> startKernelSnapshotLoad(std::optional<size_t> version_to_build) const;
+    /// the kernel. Static, so that the scan iterator can rebuild through the same path.
+    static std::shared_ptr<InflightSnapshotLoad> startKernelSnapshotLoad(
+        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log);
 
     /// Waits for an in-flight build, re-checking the query status on every poll: `KILL QUERY`,
     /// `max_execution_time` and `delta_lake_snapshot_load_timeout_ms` abort the wait for this
     /// waiter only, while the build keeps running for the others. The kernel FFI is synchronous
     /// and has no cancellation hook, so this polling wait is the only cancellation point of a
     /// snapshot load (for example, one stuck on an object store which never answers).
-    void waitForSnapshotLoad(InflightSnapshotLoad & load) const;
+    static void waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log);
+
+    /// Convenience for a single waiter: start, wait (interruptibly) and take the result.
+    /// Every `KernelSnapshotState` construction must go through this or the two helpers
+    /// above, so that no code path blocks in the kernel without a cancellation point.
+    static std::shared_ptr<KernelSnapshotState> loadKernelSnapshotState(
+        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log);
 };
 
 using TableSnapshotPtr = std::shared_ptr<TableSnapshot>;
