@@ -5551,6 +5551,69 @@ def test_attach_table_keeps_schema_list_database_restartable(started_cluster):
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_detach_permanently_rejects_last_replicated_table(started_cluster):
+    # Regression for a review finding on https://github.com/ClickHouse/ClickHouse/pull/110493:
+    # `DETACH TABLE ... PERMANENTLY` used to be accepted for the last table a MaterializedPostgreSQL
+    # database replicates, which left the database unable to come back up: after the last detach the
+    # publication publishes nothing and no nested table is left on disk, so the next startup had no
+    # authoritative replicated set, bootstrapped it from the live PostgreSQL schema again
+    # (re-snapshotting exactly the tables that were detached on purpose) and then refused to resume
+    # replication, because the attach-time drift check sees an empty publication while the expected set
+    # was just repopulated from the schema. Detaching the last table is now rejected up front, so a
+    # query that succeeds can no longer leave the database unable to start.
+    tables = ["detach_last_a", "detach_last_b"]
+    tables_list = ",".join(tables)
+    cursor = pg_manager.get_db_cursor()
+    for table in tables:
+        cursor.execute(f"DROP TABLE IF EXISTS {table}")
+        cursor.execute(f"CREATE TABLE {table} (key integer PRIMARY KEY, value integer)")
+        cursor.execute(f"INSERT INTO {table} VALUES (1, 1)")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{tables_list}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    for table in tables:
+        check_tables_are_synchronized(
+            instance, table, postgres_database=pg_manager.get_default_database()
+        )
+
+    # Detaching a table while another one remains replicated stays allowed.
+    instance.query(f"DETACH TABLE test_database.{tables[0]} PERMANENTLY")
+
+    # The last one is refused, and the refused query changes nothing: the table keeps replicating.
+    error = instance.query_and_get_error(
+        f"DETACH TABLE test_database.{tables[1]} PERMANENTLY"
+    )
+    assert "QUERY_NOT_ALLOWED" in error
+    assert "it is the only table replicated by" in error
+
+    # The persisted definition still lists the table (the single quotes of the setting value are
+    # escaped in the TSV-formatted query result).
+    assert "materialized_postgresql_tables_list = \\'detach_last_b\\'" in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+    cursor.execute(f"INSERT INTO {tables[1]} VALUES (2, 2)")
+    check_tables_are_synchronized(
+        instance, tables[1], postgres_database=pg_manager.get_default_database()
+    )
+
+    # And the database still comes back up after a restart - the startup that used to throw.
+    instance.restart_clickhouse()
+    cursor.execute(f"INSERT INTO {tables[1]} VALUES (3, 3)")
+    check_tables_are_synchronized(
+        instance, tables[1], postgres_database=pg_manager.get_default_database()
+    )
+    assert 0 == int(instance.query(f"EXISTS TABLE test_database.{tables[0]}"))
+
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

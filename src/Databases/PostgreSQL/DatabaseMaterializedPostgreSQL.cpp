@@ -37,6 +37,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -569,6 +570,27 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             auto it = materialized_tables.find(table_name);
             if (it == materialized_tables.end() || !it->second)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
+
+            /// A MaterializedPostgreSQL database cannot durably replicate an empty set of tables:
+            /// nothing distinguishes "every table was detached on purpose" from "the initial
+            /// synchronization has not created anything yet". After a permanent detach of the last
+            /// table the publication publishes nothing and no nested table is left on disk, so the
+            /// next startup finds no authoritative on-disk set, bootstraps the replicated set from the
+            /// live PostgreSQL schema again - re-snapshotting exactly the tables that were detached on
+            /// purpose - and then refuses to resume replication, because the attach-time drift check
+            /// sees an empty publication while the expected set was just repopulated from the schema
+            /// (and, for a database whose PostgreSQL side has no live table left at all, startup fails
+            /// with `Got empty list of tables to replicate` instead). Reject the detach up front rather
+            /// than let a query that succeeds brick the database on the next restart. Nothing has been
+            /// changed at this point, neither in ClickHouse nor in PostgreSQL.
+            if (materialized_tables.size() == 1)
+                throw Exception(
+                    ErrorCodes::QUERY_NOT_ALLOWED,
+                    "Cannot detach table `{}` permanently: it is the only table replicated by "
+                    "MaterializedPostgreSQL database `{}`, and a database that replicates no table "
+                    "cannot be brought back up on the next server start. Use `DROP DATABASE {}` to "
+                    "stop replicating this PostgreSQL database entirely.",
+                    table_name, getDatabaseName(), backQuoteIfNeed(getDatabaseName()));
 
             table_to_delete = it->second;
             tables_to_replicate = getFormattedTablesList(table_name);
