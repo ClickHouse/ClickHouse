@@ -1,4 +1,5 @@
 off	0
+old_analyzer	0
 explain_analyze	0
 insert_select	0
 before_start	0

@@ -3,9 +3,6 @@
 -- Verifies system.query_plan_log: which queries are captured, which are not, and that the
 -- captured row contains the plan, its runtime statistics and correct metadata.
 --
--- Only InterpreterSelectQueryAnalyzer captures plans, so nothing at all is logged with
--- `enable_analyzer = 0` and every assertion below would fail.
---
 -- Rows are matched by joining on query_id against system.query_log restricted to
 -- currentDatabase(), so the assertions only see queries issued by this run of this test.
 -- Matching on query_string alone would also pick up rows left by an earlier run against the
@@ -22,6 +19,9 @@ SET log_query_plans = 0;
 SELECT count() FROM numbers(1000) WHERE number > 900 AND '05023_off' != '' FORMAT Null;
 
 SET log_query_plans = 1;
+
+-- Nothing is captured on the old interpreter path
+SELECT count() FROM numbers(1000) WHERE number > 900 AND '05023_old_analyzer' != '' SETTINGS enable_analyzer = 0 FORMAT Null;
 
 -- A plain SELECT is captured. A million rows keeps the per-step timings well above the
 -- resolution of the clock, so the statistics assertions below are not racing the noise floor.
@@ -73,6 +73,11 @@ SELECT 'off', count()
 FROM system.query_plan_log
 WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
   AND position(query_string, '05023_off') > 0;
+
+SELECT 'old_analyzer', count()
+FROM system.query_plan_log
+WHERE query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase())
+  AND position(query_string, '05023_old_analyzer') > 0;
 
 SELECT 'explain_analyze', countIf(position(query_string, 'EXPLAIN') = 1)
 FROM system.query_plan_log
