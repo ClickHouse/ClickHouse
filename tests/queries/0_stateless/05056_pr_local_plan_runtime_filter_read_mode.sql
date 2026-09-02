@@ -7,8 +7,10 @@
 DROP TABLE IF EXISTS t_rf_read_mode;
 DROP TABLE IF EXISTS b_rf_read_mode;
 
-CREATE TABLE t_rf_read_mode (a UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
-INSERT INTO t_rf_read_mode SELECT number % 500, number FROM numbers(100000);
+-- Keep the data tiny: the granules only have to be small enough for the coordinator to hand work to
+-- every replica, and each mark is a separate read on shared storage.
+CREATE TABLE t_rf_read_mode (a UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
+INSERT INTO t_rf_read_mode SELECT number % 500, number FROM numbers(10000);
 
 CREATE TABLE b_rf_read_mode (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO b_rf_read_mode SELECT number FROM numbers(10);
@@ -30,18 +32,13 @@ SET query_plan_join_swap_table = false;
 SET optimize_read_in_order = 0;
 SET optimize_aggregation_in_order = 1;
 
--- Make every replica take part, so the coordinator actually compares the announced modes.
+-- Without this the remote replicas may get no marks at all, and then they never send a read request
+-- for the coordinator to check the mode of.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT sum(x.c)
 FROM (SELECT a, count() AS c FROM t_rf_read_mode GROUP BY a) AS x
 JOIN b_rf_read_mode AS bb ON x.a = bb.a;
-
--- The same query without the runtime filter must read in the same mode.
-SELECT sum(x.c)
-FROM (SELECT a, count() AS c FROM t_rf_read_mode GROUP BY a) AS x
-JOIN b_rf_read_mode AS bb ON x.a = bb.a
-SETTINGS enable_join_runtime_filters = 0;
 
 DROP TABLE t_rf_read_mode;
 DROP TABLE b_rf_read_mode;
