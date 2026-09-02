@@ -793,8 +793,8 @@ std::optional<size_t> decodeBase58Short(const UInt8 * src, size_t body_length, U
         value = value * 58 + last;
     }
 
-    /// A `UInt64` already IS the little-endian byte form, so this only picks out the significant bytes
-    /// and reverses them, as the general path does.
+    /// Least significant byte first, extracted arithmetically, so the result does not depend on how the
+    /// host stores a `UInt64`. The general path leaves its own output in that order too, hence the reversal.
     size_t idx = 0;
     while (value > 0)
     {
