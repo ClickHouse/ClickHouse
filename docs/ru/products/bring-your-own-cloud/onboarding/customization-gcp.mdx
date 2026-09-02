@@ -33,6 +33,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   </Step>
 
   <Step title="Настройте инфраструктуру BYOC" id="set-up-byoc-infrastructure">
+    <Note>
+      При нажатии **Set up Infrastructure** ClickHouse Cloud автоматически выполняет [предварительную проверку](/ru/products/bring-your-own-cloud/onboarding/standard#preflight-validation) перед подготовкой инфраструктуры: проверяет, что учетная запись сервиса управления имеет необходимые разрешения и включены требуемые API Google Cloud. Автоматическая проверка VPC, предоставленной пользователем, пока не входит в предварительную проверку GCP, поэтому перед началом убедитесь, что ваша VPC соответствует приведенным выше [требованиям к сети](#configure-existing-vpc).
+    </Note>
+
     В консоли ClickHouse Cloud при настройке новой инфраструктуры укажите следующее:
 
     1. В разделе **VPC configuration** выберите **Use existing VPC**.
