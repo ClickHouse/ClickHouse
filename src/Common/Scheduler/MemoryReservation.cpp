@@ -142,14 +142,14 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
 
         actual_size = new_actual_size;
 
-        if (!fail_reason && actual_size > expected_allocated && enqueued_demand == 0)
+        if (actual_size > expected_allocated)
         {
             chassert(!removed);
             pending_increase = actual_size - expected_allocated;
             enqueued_demand = pending_increase;
             demand_increment.add(enqueued_demand);
         }
-        else if (!fail_reason && actual_size < expected_allocated && enqueued_decrease == 0)
+        else if (actual_size < expected_allocated && enqueued_decrease == 0)
         {
             chassert(!removed);
             pending_decrease = expected_allocated - actual_size;
