@@ -1,4 +1,0 @@
-columns format version: 1
-2 columns:
-`id` UInt64
-`j` JSON(max_dynamic_types=2, max_dynamic_paths=10, SHARED REGEXP '^tag_')
