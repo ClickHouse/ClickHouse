@@ -356,10 +356,10 @@ TEST(Base58, Generic)
     }
 }
 
-/// The callback fires on accumulated inner-loop work, so how often it fires must not depend on how
-/// many input elements one iteration consumes. The count is the sum over passes of
-/// `limb_count * CHUNK * <limb width>` divided by the threshold, an exact integer function of the
-/// body length: asserted exactly, so retuning the accounting or `work_per_check` must update it.
+/// The callback fires on accumulated inner-loop work, so how often it fires must not depend on how many
+/// input elements one iteration consumes. Each pass adds `limb_count * CHUNK * <limb width>` to a counter
+/// that resets to zero on reaching the threshold, discarding the overshoot: an exact integer function of
+/// the body length, asserted exactly, so retuning the accounting or `work_per_check` must update it.
 TEST(Base58, GenericCancellationInterval)
 {
     constexpr size_t expected_calls = 64;
