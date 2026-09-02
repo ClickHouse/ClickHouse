@@ -3,7 +3,7 @@ description: 'Lightweight updates simplify the process of updating data in the d
 keywords: ['update']
 sidebarTitle: 'UPDATE'
 slug: /sql-reference/statements/update
-title: 'The Lightweight UPDATE Statement'
+title: 'UPDATE'
 doc_type: 'reference'
 ---
 
@@ -86,36 +86,38 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 ## Details of the implementation {#details-of-the-implementation}
 
-Patch parts are the same as the regular parts, but contain only the updated columns, the columns of the sorting key of the table and the following system columns:
+Patch parts are the same as the regular parts, but contain only updated columns and several system columns:
 - `_part` - the name of the original part
+- `_part_offset` - the row number in the original part
 - `_block_number` - the block number of the row in the original part
 - `_block_offset` - the block offset of the row in the original part
 - `_data_version` - the data version of the updated data (block number allocated for the `UPDATE` query)
 
-The system columns help to find rows in the original part which should be updated.
-They are related to the [virtual columns](/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns) in the original part, which are added for reading if patch parts should be applied.
-Patch parts are sorted by the sorting key of the table with the `_block_number` and `_block_offset` columns appended to it.
-The storage overhead per updated row depends on the size of the values of the sorting key columns.
+On average it gives about 40 bytes (uncompressed data) of overhead per updated row in the patch parts.
+System columns help to find rows in the original part which should be updated.
+System columns are related to the [virtual columns](/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns) in the original part, which are added for reading if patch parts should be applied.
+Patch parts are sorted by `_part` and `_part_offset`.
 
 Patch parts belong to different partitions than the original part.
-The partition id of the patch part is `patch-<hash of the patch part structure>-<original_partition_id>`.
+The partition id of the patch part is `patch-<hash of column names in patch part>-<original_partition_id>`.
 Therefore patch parts with different columns are stored in different partitions.
 For example three updates `SET x = 1 WHERE <cond>`, `SET y = 1 WHERE <cond>` and `SET x = 1, y = 1 WHERE <cond>` will create three patch parts in three different partitions.
 
 Patch parts can be merged among themselves to reduce the amount of applied patches on `SELECT` queries and reduce the overhead. Merging of patch parts uses the [replacing](/reference/engines/table-engines/mergetree-family/replacingmergetree) merge algorithm with `_data_version` as a version column.
 Therefore patch parts always store the latest version for each updated row in the part.
 
-A patch part is applied by merging it with the data part by the sorting key of the table: a row is updated if the values of the sorting key columns and of the `_block_number` and `_block_offset` columns are equal in the data part and in the patch part.
-Applying patch parts requires reading the sorting key columns of the data part even if the query does not select them.
-The memory usage of applying a patch part is bounded by the largest range of rows with equal sorting key values.
+Lightweight updates don't wait for currently running merges and mutations to finish and always use a current snapshot of data parts to execute an update and produce a patch part.
+Because of that there can be two cases of applying patch parts.
 
-### Patch parts format in mixed-version clusters {#patch-parts-format-in-mixed-version-clusters}
+For example if we read part `A`, we need to apply patch part `X`:
+- if `X` contains part `A` itself. It happens if `A` was not participating in merge when `UPDATE` was executed.
+- if `X` contains part `B` and `C`, which are covered by part `A`. It happens if there was a merge (`B`, `C`) -> `A` running when `UPDATE` was executed.
 
-The format of newly written patch parts is controlled by the table-level setting [`patch_parts_version`](/reference/settings/merge-tree-settings).
-ClickHouse versions before 26.8 support only the legacy `v1` format and cannot read patch parts in the current `v2` format described above.
-During a rolling upgrade from such a version, keep writing the `v1` format until all replicas are upgraded: set `patch_parts_version = 'v1'` for tables with lightweight updates, or set the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting to the version you are upgrading from.
-After the upgrade is complete, remove the override to start writing patch parts in the `v2` format.
-Patch parts of both formats remain readable and applicable regardless of the setting value.
+For these two cases there are two ways to apply patch parts respectively:
+- Using merge by sorted columns `_part`, `_part_offset`.
+- Using join by `_block_number`, `_block_offset` columns.
+
+The join mode is slower and requires more memory than the merge mode, but it is used less often.
 
 ## Related Content {#related-content}
 

@@ -274,13 +274,21 @@ ASTPtr tryParseQuery(
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
     {
-        out_error_message = "Empty query";
         // Token iterator skips over comments, so we'll get this error for queries
         // like this:
         // "
         // -- just a comment
         // ;
         //"
+        out_error_message = "Empty query";
+
+        /// Name what was empty, the same way the syntax errors below do. The text is not always a query
+        /// the user has sent: it can be a fragment parsed on its own, such as the value of a setting
+        /// (`parallel_replicas_custom_key`, `additional_result_filter`) or a stored expression, and a
+        /// bare `Empty query` gives nothing to look for in that case.
+        if (!query_description.empty())
+            out_error_message += " (" + query_description + ")";
+
         // Advance the position, so that we can use this parser for stream parsing
         // even in presence of such queries.
         _out_query_end = token_iterator->begin;
