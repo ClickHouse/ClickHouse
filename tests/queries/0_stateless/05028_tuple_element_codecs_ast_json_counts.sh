@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Generate parser-valid AST JSON first, then corrupt only the vector counts. The
 # deserializer must reject the mismatch before reserve() or per-element reads.
-CODEC_JSON=$(${CLICKHOUSE_LOCAL} --allow_experimental_tuple_element_codecs 1 -q \
+CODEC_JSON=$(${CLICKHOUSE_LOCAL} --enable_tuple_element_codecs 1 -q \
     "SELECT parseQueryToJSON('CREATE TABLE t (x Tuple(a UInt8 CODEC(LZ4), b String)) ENGINE = Memory') FORMAT TSVRaw")
 CODEC_JSON=${CODEC_JSON/\"element_codec_count\":2/\"element_codec_count\":3}
 CODEC_OUT=$(${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect clickhouse_json -q "$CODEC_JSON" 2>&1)

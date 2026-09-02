@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS t_tuple_codec_alter_nested;
 DROP TABLE IF EXISTS t_tuple_codec_alter_json;
 DROP TABLE IF EXISTS t_tuple_codec_direct_tuple;
 
-SET allow_experimental_tuple_element_codecs = 1;
+SET enable_tuple_element_codecs = 1;
 
 -- Nested stores child types in ASTNameTypePair nodes. An annotation below that
 -- wrapper must be rejected instead of disappearing from the stored metadata.

@@ -3,6 +3,8 @@
 
 DROP TABLE IF EXISTS t_tuple_codec_compact;
 
+SET enable_tuple_element_codecs = 1;
+
 CREATE TABLE t_tuple_codec_compact
 (
     key UInt64,
@@ -82,7 +84,7 @@ SELECT
     countSubstrings(create_table_query, 'CODEC(') = 3,
     position(create_table_query, 'number UInt64 CODEC(Delta(8), LZ4)') > 0,
     position(create_table_query, 'text String CODEC(ZSTD(1))') > 0,
-    position(create_table_query, 'payload Tuple') > 0
+    position(create_table_query, '`payload` Tuple(') > 0
 FROM system.tables
 WHERE database = currentDatabase() AND name = 't_tuple_codec_compact';
 

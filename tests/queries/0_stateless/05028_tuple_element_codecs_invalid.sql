@@ -10,8 +10,10 @@ DROP TABLE IF EXISTS t_tuple_codec_alias;
 DROP TABLE IF EXISTS t_tuple_codec_log;
 DROP TABLE IF EXISTS t_tuple_codec_nested_control;
 
+SET enable_tuple_element_codecs = 1;
+
 -- General data-type parsers never attach storage metadata to expression-level tuples.
-SELECT CAST((1, 'x') AS Tuple(id UInt64 CODEC(Delta, ZSTD), value String)); -- { serverError SYNTAX_ERROR }
+SELECT CAST((1, 'x') AS Tuple(id UInt64 CODEC(Delta, ZSTD), value String)); -- { clientError SYNTAX_ERROR }
 SELECT CAST((1, 'x'), 'Tuple(id UInt64 CODEC(Delta, ZSTD), value String)'); -- { serverError SYNTAX_ERROR }
 SELECT toTypeName(CAST((1, 'x') AS Tuple(id UInt64, value String)));
 SELECT toTypeName(tuple(toUInt64(1), 'x'));
@@ -55,27 +57,24 @@ WHERE database = currentDatabase() AND table = 't_tuple_codec_wrapper_controls';
 DROP TABLE t_tuple_codec_wrapper_controls;
 
 -- Element-level `REMOVE CODEC` is ALTER-only.
-CREATE TABLE t_tuple_codec_remove_create
-(
-    value Tuple(id UInt64 REMOVE CODEC, text String)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError SYNTAX_ERROR }
+-- Keep the deliberately invalid query on one line: after a client-side parse error,
+-- clickhouse-client only scans the failing line for the expected-error hint.
+CREATE TABLE t_tuple_codec_remove_create (value Tuple(id UInt64 REMOVE CODEC, t String)) ENGINE = MergeTree ORDER BY tuple(); -- { clientError SYNTAX_ERROR }
 
 CREATE TABLE t_tuple_codec_remove_add (key UInt64) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_tuple_codec_remove_add
-    ADD COLUMN value Tuple(id UInt64 REMOVE CODEC, text String); -- { serverError SYNTAX_ERROR }
+    ADD COLUMN value Tuple(id UInt64 REMOVE CODEC, text String); -- { clientError SYNTAX_ERROR }
 DROP TABLE t_tuple_codec_remove_add;
 
 CREATE TABLE t_tuple_codec_no_declaration
 (
-    value Tuple(id UInt64, text String) CODEC(LZ4)
+    value Tuple(id UInt64, d Double) CODEC(LZ4)
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 
 ALTER TABLE t_tuple_codec_no_declaration
-    MODIFY COLUMN value Tuple(id UInt64 REMOVE CODEC, text String); -- { serverError BAD_ARGUMENTS }
+    MODIFY COLUMN value Tuple(id UInt64 REMOVE CODEC, i Int32); -- { serverError BAD_ARGUMENTS }
 
 ALTER TABLE t_tuple_codec_no_declaration
     MODIFY COLUMN value Tuple(

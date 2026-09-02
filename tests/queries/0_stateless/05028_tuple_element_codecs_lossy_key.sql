@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS t_tuple_codec_lossy_partition_key;
 DROP TABLE IF EXISTS t_tuple_codec_lossy_non_key_sibling;
 
 SET allow_experimental_codecs = 1;
-SET allow_experimental_tuple_element_codecs = 1;
+SET enable_tuple_element_codecs = 1;
 
 -- A lossy codec on the selected Tuple element would make the stored key value
 -- disagree with primary/min-max metadata computed before compression.

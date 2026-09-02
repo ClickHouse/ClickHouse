@@ -121,7 +121,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_tuple_element_codecs;
+    extern const SettingsBool enable_tuple_element_codecs;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
@@ -703,11 +703,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
         column.codec = codecDescriptionFromAST(col_decl, column.type, codec_validation_settings);
+        /// The setting gates new metadata only. ATTACH, startup, restore, and secondary CREATE must
+        /// remain able to materialize a policy that was already accepted and persisted elsewhere.
         if (mode == LoadingStrictnessLevel::CREATE && column.codec.hasSubcolumns()
-            && !context_->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
+            && !context_->getSettingsRef()[Setting::enable_tuple_element_codecs])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Tuple-element CODEC declarations are experimental. Set allow_experimental_tuple_element_codecs = 1 to enable them");
+                "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
         if (!column.codec.empty())
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)

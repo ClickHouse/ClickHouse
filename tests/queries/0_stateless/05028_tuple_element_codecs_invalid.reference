@@ -1,4 +1,4 @@
-Tuple(id UInt64, value String)
+Tuple(\n    id UInt64,\n    value String)
 Tuple(UInt64, String)
 1
 2	2

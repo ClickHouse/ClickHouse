@@ -3,6 +3,8 @@
 
 DROP TABLE IF EXISTS t_tuple_codec_wide;
 
+SET enable_tuple_element_codecs = 1;
+
 CREATE TABLE t_tuple_codec_wide
 (
     key UInt64,

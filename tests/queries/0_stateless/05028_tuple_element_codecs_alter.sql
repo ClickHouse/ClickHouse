@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS t_tuple_codec_alter;
 DROP TABLE IF EXISTS t_tuple_codec_alter_positional;
 DROP TABLE IF EXISTS t_tuple_codec_alter_removed_path;
 
+SET enable_tuple_element_codecs = 1;
+
 CREATE TABLE t_tuple_codec_alter
 (
     key UInt64,

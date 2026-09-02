@@ -70,7 +70,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
-    extern const SettingsBool allow_experimental_tuple_element_codecs;
+    extern const SettingsBool enable_tuple_element_codecs;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -2299,10 +2299,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (!command.declared_codec.empty())
             {
                 if (command.declared_codec.hasSubcolumns()
-                    && !context->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
+                    && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Tuple-element CODEC declarations are experimental. Set allow_experimental_tuple_element_codecs = 1 to enable them");
+                        "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
                 validateColumnCodecDescription(command.declared_codec, command.data_type, codec_validation_settings);
             }
 
@@ -2364,10 +2364,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto changed_tuple_codecs = getChangedTupleCodecDeclarations(
                     current_owner.codec, command.declared_codec, resulting_codec);
                 if (!changed_tuple_codecs.empty()
-                    && !context->getSettingsRef()[Setting::allow_experimental_tuple_element_codecs])
+                    && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Tuple-element CODEC declarations are experimental. Set allow_experimental_tuple_element_codecs = 1 to enable them");
+                        "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
 
                 auto declarations_to_admit = changed_tuple_codecs;
                 if (command.codec)

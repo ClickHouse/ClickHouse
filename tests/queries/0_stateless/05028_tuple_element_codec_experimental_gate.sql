@@ -16,7 +16,7 @@ CREATE TABLE tuple_element_codec_gate
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
-SET allow_experimental_tuple_element_codecs = 1;
+SET enable_tuple_element_codecs = 1;
 SET allow_suspicious_codecs = 1;
 
 CREATE TABLE tuple_element_codec_gate
@@ -27,7 +27,7 @@ CREATE TABLE tuple_element_codec_gate
 )
 ENGINE = MergeTree ORDER BY id;
 
-SET allow_experimental_tuple_element_codecs = 0;
+SET enable_tuple_element_codecs = 0;
 SET allow_suspicious_codecs = 0;
 
 -- Loading persisted metadata is compatibility-safe and must not require the session gate.
@@ -56,7 +56,7 @@ ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec CODEC(Delta); -- {
 
 -- Admission checks for a changed tuple declaration do not spill over to a retained
 -- suspicious declaration in the same column policy.
-SET allow_experimental_tuple_element_codecs = 1;
+SET enable_tuple_element_codecs = 1;
 ALTER TABLE tuple_element_codec_gate
     MODIFY COLUMN value Tuple(number UInt64 CODEC(ZSTD), retained UInt64, text String);
 
@@ -64,7 +64,7 @@ ALTER TABLE tuple_element_codec_gate
 -- genuine declaration change and must use the disabled session admission policy.
 ALTER TABLE tuple_element_codec_gate
     MODIFY COLUMN value Tuple(number UInt64 CODEC(Delta), retained UInt64, text String); -- { serverError BAD_ARGUMENTS }
-SET allow_experimental_tuple_element_codecs = 0;
+SET enable_tuple_element_codecs = 0;
 
 -- A real type change still checks the retained Delta declaration against the
 -- resulting type, but does so as trusted metadata rather than re-admitting it.
@@ -80,10 +80,10 @@ ALTER TABLE tuple_element_codec_gate
 ALTER TABLE tuple_element_codec_gate ADD COLUMN
     added Tuple(number UInt64 CODEC(ZSTD), text String); -- { serverError BAD_ARGUMENTS }
 
-SET allow_experimental_tuple_element_codecs = 1;
+SET enable_tuple_element_codecs = 1;
 ALTER TABLE tuple_element_codec_gate ADD COLUMN
     added Tuple(number UInt64 CODEC(ZSTD), text String);
-SET allow_experimental_tuple_element_codecs = 0;
+SET enable_tuple_element_codecs = 0;
 
 -- Removal does not introduce metadata and remains allowed with the gate disabled.
 ALTER TABLE tuple_element_codec_gate
