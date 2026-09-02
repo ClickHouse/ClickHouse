@@ -1051,7 +1051,7 @@ GROUP BY UserId
   ## Traitement parallèle ou séquentiel
 </div>
 
-Comme indiqué dans l’exemple précédent, une table peut servir de source à plusieurs vues matérialisées. L’ordre dans lequel elles sont exécutées dépend du paramètre [`parallel_view_processing`](/fr/reference/settings/session-settings#parallel_view_processing).
+Comme indiqué dans l’exemple précédent, une table peut servir de source à plusieurs vues matérialisées. L’ordre dans lequel elles sont exécutées dépend du paramètre [`parallel_view_processing`](/fr/reference/settings/session-settings/parallel#parallel_view_processing).
 
 Par défaut, ce paramètre vaut `0` (`false`), ce qui signifie que les vues matérialisées sont exécutées séquentiellement dans l’ordre des `uuid`.
 

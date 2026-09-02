@@ -29,7 +29,7 @@ estimateCompressionRatio([codec, block_size_bytes])(column)
 **매개변수**
 
 * `codec` — 압축 코덱 하나 또는 쉼표로 구분된 여러 코덱이 포함된 `String`입니다. [`String`](/ko/reference/data-types/string)
-* `block_size_bytes` — 압축 데이터의 블록 크기입니다. 이는 [`max_compress_block_size`](/ko/reference/settings/merge-tree-settings#max_compress_block_size)와 [`min_compress_block_size`](/ko/reference/settings/merge-tree-settings#min_compress_block_size)를 함께 설정하는 것과 유사합니다. 기본값은 1 MiB(1048576바이트)입니다. 허용되는 최대값은 256 MiB(268435456바이트)입니다. [`UInt64`](/ko/reference/data-types/int-uint)
+* `block_size_bytes` — 압축 데이터의 블록 크기입니다. 이는 [`max_compress_block_size`](/ko/reference/settings/merge-tree-settings/max#max_compress_block_size)와 [`min_compress_block_size`](/ko/reference/settings/merge-tree-settings/min#min_compress_block_size)를 함께 설정하는 것과 유사합니다. 기본값은 1 MiB(1048576바이트)입니다. 허용되는 최대값은 256 MiB(268435456바이트)입니다. [`UInt64`](/ko/reference/data-types/int-uint)
 
 **인수**
 

@@ -9,6 +9,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/Stopwatch.h>
 #include <functional>
+#include <optional>
+#include <string_view>
 #include <utility>
 
 namespace DB
@@ -19,8 +21,8 @@ struct JSONInferenceInfo;
 
 namespace JSONUtils
 {
-    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows);
-    std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
+    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, size_t max_row_size = 0);
+    std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size = 0);
 
     void skipRowForJSONEachRow(ReadBuffer & in);
     void skipRowForJSONCompactEachRow(ReadBuffer & in);
@@ -127,9 +129,9 @@ namespace JSONUtils
         bool yield_strings,
         const FormatSettings & settings,
         WriteBuffer & out,
-        const std::optional<String> & name = std::nullopt,
+        std::optional<std::string_view> name = std::nullopt,
         size_t indent = 0,
-        const char * title_after_delimiter = " ",
+        std::string_view title_after_delimiter = " ",
         bool pretty_json = false);
 
     void writeColumns(

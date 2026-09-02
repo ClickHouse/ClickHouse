@@ -68,7 +68,7 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
 4. 填写您在前置条件步骤中配置的源 MongoDB 数据库连接信息。
 
 <Info>
-  在开始添加连接信息之前，请确保已在防火墙规则中将 ClickPipes IP 地址加入允许名单。您可以在下一页查看 [ClickPipes IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
+  在开始添加连接信息之前，请确保已在防火墙规则中将 ClickPipes IP 地址加入允许名单。您可以在下一页查看 [ClickPipes IP 地址列表](/zh/integrations/clickpipes/networking/static-ips)。
   更多信息，请参阅本页[顶部](#prerequisites)链接的源 MongoDB 设置指南。
 </Info>
 
@@ -88,7 +88,7 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
 
 1. 打开“Use SSH Tunnelling”开关。
 
-2. 填写 SSH 连接详细信息。
+2. 填写 SSH 连接信息。
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH 隧道" size="lg" border />
 
@@ -97,10 +97,10 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
 4. 点击“Verify Connection”验证连接。
 
 <Note>
-  请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips) 加入允许列表，以便 ClickPipes 能够建立 SSH 隧道。
+  请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP 地址](/zh/integrations/clickpipes/networking/static-ips) 加入允许列表，以便 ClickPipes 能够建立 SSH 隧道。
 </Note>
 
-填写完连接详细信息后，点击 `Next`。
+填写完连接信息后，点击 `Next`。
 
 <div id="advanced-settings">
   #### 配置高级设置
@@ -145,4 +145,3 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
 * 需要使用 5.1.0 及以上版本的 MongoDB。
 * 我们使用 MongoDB 原生的 Change Streams API 来实现 CDC (变更数据捕获) ，该 API 依赖 MongoDB 的 oplog 捕获实时变更。
 * 默认情况下，MongoDB 中的文档会以 JSON 类型复制到 ClickHouse 中。这让 schema 管理更加灵活，并可使用 ClickHouse 丰富的 JSON 操作符进行查询和分析。你可以在[这里](/zh/reference/data-types/newjson)了解有关查询 JSON 数据的更多信息。
-* 目前暂不支持自助式 PrivateLink 配置。如果你使用 AWS 且需要 PrivateLink，请联系 db-integrations-support@clickhouse.com 或创建支持工单——我们会协助你完成启用。

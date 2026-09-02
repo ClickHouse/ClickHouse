@@ -22,7 +22,7 @@ set -euo pipefail
 #   NEEDS-ATTENTION - clean run, nothing pushed, but still CONFLICTING: needs a
 #                     human decision (resolve a huge conflict, or close as obsolete)
 #   FAILED / TIMEOUT - the worker errored or hit the per-PR timeout
-# A clean `claude` exit does not by itself mean progress, so the status is based
+# A clean agent exit does not by itself mean progress, so the status is based
 # on whether the PR head advanced rather than just the exit code.
 #
 # The per-PR lines are colored with a 24-bit (truecolor) color derived from a
@@ -55,19 +55,27 @@ set -euo pipefail
 #                         existing $CCACHE_DIR, else ~/.cache/ccache). A warm
 #                         shared cache keeps post-merge rebuilds fast.
 #   --ccache-size SIZE    ccache max size via CCACHE_MAXSIZE (default: 200G).
-#   --effort LEVEL        Reasoning effort for each worker `claude` (--effort);
-#                         default: medium.
-#   --api-key KEY         Use a custom Anthropic API key for the workers
-#                         (exported as ANTHROPIC_API_KEY). NOTE: visible in `ps`
+#   --agent AGENT         Agent CLI for each worker: claude (default) or codex.
+#   --model MODEL         Model for each worker. By default, use the selected
+#                         agent's configured default. Codex accepts Codex and
+#                         general-purpose GPT models. For recognized GPT models,
+#                         API cost is estimated from input, cached-input and
+#                         output token usage using the model's published rates.
+#   --effort LEVEL        Reasoning effort for each worker; default: medium.
+#                         Passed as `--effort` to `claude` and as the
+#                         `model_reasoning_effort` setting to `codex`.
+#   --api-key KEY         Use a custom credential for the workers. `claude`
+#                         reads it as `ANTHROPIC_API_KEY`; `codex` reads it as
+#                         `CODEX_ACCESS_TOKEN`. NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
-#   --api-key-file FILE   Read the custom Anthropic API key from FILE (not shown
-#                         in `ps`). Default: whatever ANTHROPIC_API_KEY / login
-#                         `claude` already uses.
+#   --api-key-file FILE   Read the custom credential from FILE (not shown
+#                         in `ps`). Default: whatever credential or login the
+#                         selected agent already uses.
 #   --no-status           Disable the persistent bottom status bar (two lines:
 #                         elapsed, rounds, ok/fail counts, cost and token totals,
 #                         plus the list of PR numbers needing attention). The bar
 #                         is shown by default on a TTY.
-#   --max-continue N      Max `claude` turns per PR. The worker runs once and is
+#   --max-continue N      Max agent turns per PR. The worker runs once and is
 #                         then resumed (same session) until it signals it is done
 #                         or this cap is hit (default: 4). The worker is told not
 #                         to run anything in the background and to push before
@@ -98,6 +106,8 @@ set -euo pipefail
 # Advanced/testing:
 #   Set CONTINUE_ALL_PRS_PRS_FILE=<file> to read the PR list (lines of
 #   "<number>\t<title>") from a file instead of querying GitHub.
+#   Set CONTINUE_ALL_PRS_MIN_FREE_GB=<integer> to override the minimum free
+#   disk space maintained by worktree cleanup (default: 100).
 
 REPO="ClickHouse/ClickHouse"
 
@@ -126,10 +136,14 @@ COLOR_WHEN="auto"
 DRY_RUN=0
 CCACHE_DIR_OPT=""      # shared ccache dir for all workers (default: existing $CCACHE_DIR, else ~/.cache/ccache)
 CCACHE_SIZE="200G"     # ccache max size, applied via CCACHE_MAXSIZE env (not persisted to ccache.conf)
-EFFORT="medium"        # reasoning effort passed to each worker `claude` (--effort)
+EFFORT="medium"        # reasoning effort passed to each worker
+AGENT="claude"         # agent CLI used by workers: claude or codex
+MODEL=""               # model passed to the selected agent (empty -> its configured default)
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
-API_KEY=""             # custom ANTHROPIC_API_KEY for the worker `claude` processes (--api-key)
+API_KEY=""             # custom provider credential for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
+API_KEY_PROVIDED=0      # whether either custom-key option was supplied
+MIN_FREE_GB="${CONTINUE_ALL_PRS_MIN_FREE_GB:-100}"
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -152,10 +166,12 @@ while [[ $# -gt 0 ]]; do
         --max-continue)   MAX_CONTINUE="$2"; shift 2 ;;
         --ccache-dir)     CCACHE_DIR_OPT="$2"; shift 2 ;;
         --ccache-size)    CCACHE_SIZE="$2"; shift 2 ;;
+        --agent)          AGENT="$2"; shift 2 ;;
+        --model)          MODEL="$2"; shift 2 ;;
         --effort)         EFFORT="$2"; shift 2 ;;
         --no-status)      SHOW_STATUS=0; shift ;;
-        --api-key)        API_KEY="$2"; shift 2 ;;
-        --api-key-file)   API_KEY_FILE="$2"; shift 2 ;;
+        --api-key)        API_KEY="$2"; API_KEY_PROVIDED=1; shift 2 ;;
+        --api-key-file)   API_KEY_FILE="$2"; API_KEY_PROVIDED=1; shift 2 ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -173,26 +189,118 @@ if ! [[ "$WORKERS" =~ ^[0-9]+$ ]] || (( WORKERS < 1 )); then
     exit 1
 fi
 
+if ! [[ "$MIN_FREE_GB" =~ ^[0-9]+$ ]] || (( MIN_FREE_GB < 1 )); then
+    echo "${S}Error: CONTINUE_ALL_PRS_MIN_FREE_GB must be a positive integer${R}" >&2
+    exit 1
+fi
+
+case "$AGENT" in
+    claude|codex) ;;
+    *) echo "${S}Error: --agent must be claude or codex${R}" >&2; exit 1 ;;
+esac
+
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
+WORKTREE_BASE="$(realpath -m "$WORKTREE_BASE")"
+
+# Install a defense-in-depth pre-push hook for ordinary worker pushes. The hook
+# is applied through command-scope environment configuration, so it also covers
+# branches checked out in linked worktrees without changing the user's repository
+# configuration. `git push --no-verify` bypasses hooks; the worker prompt's
+# explicit prohibition and safety gates remain the authoritative enforcement.
+PUSH_HOOKS_DIR="$(cd "$MAIN_REPO/utils/continue-all-prs-hooks" && pwd -P)"
+[[ -x "$PUSH_HOOKS_DIR/pre-push" ]] \
+    || { echo "${S}Error: missing executable pre-push hook: $PUSH_HOOKS_DIR/pre-push${R}" >&2; exit 1; }
+GIT_CONFIG_SLOT="${GIT_CONFIG_COUNT:-0}"
+[[ "$GIT_CONFIG_SLOT" =~ ^[0-9]+$ ]] \
+    || { echo "${S}Error: GIT_CONFIG_COUNT must be a non-negative integer${R}" >&2; exit 1; }
+printf -v "GIT_CONFIG_KEY_${GIT_CONFIG_SLOT}" '%s' core.hooksPath
+printf -v "GIT_CONFIG_VALUE_${GIT_CONFIG_SLOT}" '%s' "$PUSH_HOOKS_DIR"
+export "GIT_CONFIG_KEY_${GIT_CONFIG_SLOT}" "GIT_CONFIG_VALUE_${GIT_CONFIG_SLOT}"
+export GIT_CONFIG_COUNT=$((GIT_CONFIG_SLOT + 1))
 
 # No mode flag given -> select all categories (the default behavior).
 if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom Anthropic API key for the worker `claude` processes. `claude` auth is
-# strictly ANTHROPIC_API_KEY, so we export it and every worker inherits it.
+# Custom credential for worker processes. `claude` reads its API key from the
+# environment. `codex` receives its ChatGPT/Codex access token only in the worker
+# process and uses a worker-local `CODEX_HOME`, so it cannot fall back to or
+# overwrite an ambient Codex login.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
     API_KEY="$(tr -d ' \t\r\n' < "$API_KEY_FILE")"
 fi
-if [[ -n "$API_KEY" ]]; then
-    export ANTHROPIC_API_KEY="$API_KEY"
+if (( API_KEY_PROVIDED )); then
+    [[ -n "$API_KEY" ]] || { echo "${S}Error: --api-key must not be empty${R}" >&2; exit 1; }
+    if [[ "$AGENT" == "claude" ]]; then
+        export ANTHROPIC_API_KEY="$API_KEY"
+    fi
     CUSTOM_KEY=1
 else
     CUSTOM_KEY=0
+fi
+
+# Published OpenAI API prices in USD per million tokens. The Codex CLI reports
+# input tokens including cached input, so cost calculation subtracts cached
+# tokens before applying the uncached-input rate. This is an API-price estimate;
+# ChatGPT subscription usage is not billed per token.
+CODEX_INPUT_PRICE=""
+CODEX_CACHED_INPUT_PRICE=""
+CODEX_CACHE_WRITE_INPUT_PRICE=""
+CODEX_OUTPUT_PRICE=""
+CODEX_LONG_CONTEXT_PRICING=0
+
+configure_codex_pricing()
+{
+    case "$MODEL" in
+        gpt-5.6|gpt-5.6-sol|gpt-5.6-sol-*)
+            CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_CACHE_WRITE_INPUT_PRICE=6.25; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.6-terra|gpt-5.6-terra-*)
+            CODEX_INPUT_PRICE=2; CODEX_CACHED_INPUT_PRICE=0.2; CODEX_CACHE_WRITE_INPUT_PRICE=2.5; CODEX_OUTPUT_PRICE=12; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.6-luna|gpt-5.6-luna-*)
+            CODEX_INPUT_PRICE=0.2; CODEX_CACHED_INPUT_PRICE=0.02; CODEX_CACHE_WRITE_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=1.2; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.4|gpt-5.4-20*)
+            CODEX_INPUT_PRICE=2.5; CODEX_CACHED_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=15; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.5-pro|gpt-5.5-pro-*|gpt-5.4-pro|gpt-5.4-pro-*)
+            CODEX_INPUT_PRICE=30; CODEX_CACHED_INPUT_PRICE=30; CODEX_OUTPUT_PRICE=180; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.5|gpt-5.5-20*)
+            CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.4-mini|gpt-5.4-mini-*)
+            CODEX_INPUT_PRICE=0.75; CODEX_CACHED_INPUT_PRICE=0.075; CODEX_OUTPUT_PRICE=4.5 ;;
+        gpt-5.4-nano|gpt-5.4-nano-*)
+            CODEX_INPUT_PRICE=0.2; CODEX_CACHED_INPUT_PRICE=0.02; CODEX_OUTPUT_PRICE=1.25 ;;
+        gpt-5.3-codex|gpt-5.3-codex-*|gpt-5.2|gpt-5.2-*)
+            CODEX_INPUT_PRICE=1.75; CODEX_CACHED_INPUT_PRICE=0.175; CODEX_OUTPUT_PRICE=14 ;;
+        gpt-5.1|gpt-5.1-*|gpt-5|gpt-5-20*|gpt-5-codex|gpt-5-codex-*)
+            CODEX_INPUT_PRICE=1.25; CODEX_CACHED_INPUT_PRICE=0.125; CODEX_OUTPUT_PRICE=10 ;;
+        gpt-5-mini|gpt-5-mini-*)
+            CODEX_INPUT_PRICE=0.25; CODEX_CACHED_INPUT_PRICE=0.025; CODEX_OUTPUT_PRICE=2 ;;
+        gpt-5-nano|gpt-5-nano-*)
+            CODEX_INPUT_PRICE=0.05; CODEX_CACHED_INPUT_PRICE=0.005; CODEX_OUTPUT_PRICE=0.4 ;;
+    esac
+}
+
+estimate_codex_cost()
+{
+    local input_tokens="$1" cached_input_tokens="$2" output_tokens="$3" cache_write_input_tokens="$4"
+    [[ -n "$CODEX_INPUT_PRICE" ]] || { printf '0'; return; }
+    awk -v i="$input_tokens" -v ci="$cached_input_tokens" -v o="$output_tokens" -v cwi="$cache_write_input_tokens" \
+        -v ip="$CODEX_INPUT_PRICE" -v cip="$CODEX_CACHED_INPUT_PRICE" -v cwip="${CODEX_CACHE_WRITE_INPUT_PRICE:-$CODEX_INPUT_PRICE}" -v op="$CODEX_OUTPUT_PRICE" \
+        -v long="$CODEX_LONG_CONTEXT_PRICING" '
+        BEGIN {
+            uncached = i - ci - cwi;
+            if (uncached < 0) uncached = 0;
+            input_multiplier = (long && i > 272000) ? 2 : 1;
+            output_multiplier = (long && i > 272000) ? 1.5 : 1;
+            printf "%.9f", ((uncached * ip + ci * cip + cwi * cwip) * input_multiplier + o * op * output_multiplier) / 1000000;
+        }'
+}
+
+if [[ "$AGENT" == "codex" ]]; then
+    configure_codex_pricing
 fi
 
 # ----------------------------------------------------------------------------
@@ -332,7 +440,7 @@ status_stop()
 }
 
 # Distill a one-to-two sentence summary of what the worker did from its log.
-# In plain `--print` mode `claude` writes only its final message to the log, so
+# Both supported agents write their final message to the log, so
 # the opening of that message is a natural summary. We take the first one or two
 # sentences, but when those are conversational filler ("I've completed ...") we
 # fall back to the first markdown header instead, since `/continue-pr-auto` usually
@@ -471,27 +579,291 @@ setup_worktree_submodules()
 }
 
 # Create the worktree for a worker if it does not exist yet, otherwise reuse it.
+# Reusing an arbitrary pre-existing directory would make the worker cleanup
+# sequence operate on state which does not belong to this orchestrator.
 ensure_worktree()
 {
     local wt="$1"
+    local canonical_wt
 
-    if git -C "$MAIN_REPO" worktree list --porcelain | grep -qxF "worktree $wt"; then
-        banner "Reusing existing worktree: $wt"
+    # Do not use `grep -q` here: with a large worktree registry it closes the
+    # pipe after an early match, and `pipefail` turns Git's SIGPIPE into a false
+    # negative.
+    canonical_wt=$(realpath -m "$wt")
+
+    if git -C "$MAIN_REPO" worktree list --porcelain | grep -xF "worktree $canonical_wt" >/dev/null; then
+        banner "Reusing existing worktree: $canonical_wt"
         return 0
     fi
-    if [[ -e "$wt" ]]; then
-        banner "Path exists but is not a registered worktree, reusing as-is: $wt"
-        return 0
+    if [[ -e "$canonical_wt" ]]; then
+        echo "${S}ERROR: path exists but is not a registered worktree: $canonical_wt${R}" >&2
+        return 1
     fi
 
-    banner "Creating worktree: $wt"
-    git -C "$MAIN_REPO" worktree add --no-checkout --detach "$wt" HEAD
+    banner "Creating worktree: $canonical_wt"
+    git -C "$MAIN_REPO" worktree add --no-checkout --detach "$canonical_wt" HEAD
 
     if (( SKIP_SUBMODULES )); then
-        git -C "$wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
+        git -C "$canonical_wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
     else
-        setup_worktree_submodules "$wt"
+        setup_worktree_submodules "$canonical_wt"
     fi
+}
+
+# Return the available space, in KiB, on the filesystem containing the worker
+# pool. `df -P` keeps the available-space column stable across platforms.
+free_space_kib()
+{
+    df -Pk "$(dirname "$WORKTREE_BASE")" | awk 'NR == 2 { print $4 }'
+}
+
+is_registered_worktree()
+{
+    local candidate="$1"
+    git -C "$MAIN_REPO" worktree list --porcelain \
+        | grep -xF "worktree $candidate" >/dev/null
+}
+
+is_managed_worktree()
+{
+    local candidate="$1"
+    [[ "$candidate" != "$MAIN_REPO" && "$candidate" == "$WORKTREE_BASE-"* ]] \
+        && [[ "${candidate#"$WORKTREE_BASE"-}" =~ ^[0-9]+$ ]]
+}
+
+is_active_worker_worktree()
+{
+    local candidate="$1" i
+    for (( i = 0; i < WORKERS; ++i )); do
+        [[ "$candidate" == "${WORKTREE_BASE}-${i}" ]] && return 0
+    done
+    return 1
+}
+
+# List processes whose current directory is the worker or one of its
+# descendants. Agents can accidentally leave servers running after their turn;
+# those processes race with `git clean` by recreating files as it removes them.
+worktree_processes()
+{
+    local wt="$1" proc pid
+
+    while IFS= read -r proc; do
+        pid=${proc##*/}
+        [[ "$pid" != "$$" && "$pid" != "$BASHPID" ]] || continue
+        printf '%s\n' "$pid"
+    done < <(
+        find /proc -mindepth 2 -maxdepth 2 -type l -name cwd \
+            \( -lname "$wt" -o -lname "$wt (deleted)" -o -lname "$wt/*" \) \
+            -printf '%h\n' 2>/dev/null
+    )
+}
+
+stop_worktree_processes()
+{
+    local wt="$1" pid attempt
+    local -a pids=()
+
+    if ! is_active_worker_worktree "$wt" || ! is_registered_worktree "$wt"; then
+        echo "Refusing to stop processes in an unexpected worktree: $wt" >&2
+        return 1
+    fi
+
+    mapfile -t pids < <(worktree_processes "$wt")
+    (( ${#pids[@]} )) || return 0
+    echo "Stopping leftover processes in $wt: ${pids[*]}" >&2
+
+    for pid in "${pids[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || sudo -n kill -TERM "$pid" 2>/dev/null || true
+    done
+
+    # A watchdog can replace a server while the first process snapshot is
+    # being terminated. Rescan before escalating so the replacement is also
+    # removed. `SIGKILL` is appropriate here: these are orphaned processes from
+    # a completed task, and cleanup cannot safely proceed while they are live.
+    for attempt in 1 2 3; do
+        mapfile -t pids < <(worktree_processes "$wt")
+        (( ${#pids[@]} )) || return 0
+        for pid in "${pids[@]}"; do
+            kill -KILL "$pid" 2>/dev/null || sudo -n kill -KILL "$pid" 2>/dev/null || true
+        done
+        sleep 0.1
+    done
+
+    mapfile -t pids < <(worktree_processes "$wt")
+    (( ! ${#pids[@]} )) || {
+        echo "Could not stop leftover processes in $wt: ${pids[*]}" >&2
+        return 1
+    }
+}
+
+# Remove registered worktrees nested below a directory before deleting that
+# directory. Git otherwise leaves their administrative entries behind and can
+# refuse to remove the parent. Deepest paths go first.
+remove_registered_descendants()
+{
+    local parent="$1" candidate
+    local -a descendants=()
+
+    mapfile -t descendants < <(
+        git -C "$MAIN_REPO" worktree list --porcelain \
+            | sed -n 's/^worktree //p' \
+            | awk -v prefix="$parent/" 'index($0, prefix) == 1 { print length($0) "\t" $0 }' \
+            | sort -rn \
+            | cut -f2-
+    )
+    for candidate in "${descendants[@]}"; do
+        is_managed_worktree "$candidate" || {
+            echo "Refusing to remove unmanaged nested worktree: $candidate" >&2
+            return 1
+        }
+        if ! git -C "$MAIN_REPO" worktree remove --force "$candidate"; then
+            echo "Retrying worktree removal with elevated permissions: $candidate" >&2
+            sudo -n git -c safe.directory="$MAIN_REPO" -C "$MAIN_REPO" worktree remove --force "$candidate"
+        fi
+    done
+}
+
+# Prepare a reusable worker for a new PR. Root-level build directories remain
+# available for reuse; all other tracked, untracked and ignored changes go.
+prepare_worktree_for_task()
+{
+    local wt="$1"
+
+    if ! is_active_worker_worktree "$wt" || ! is_registered_worktree "$wt"; then
+        echo "Refusing to clean an unexpected worktree: $wt" >&2
+        return 1
+    fi
+
+    stop_worktree_processes "$wt"
+    git -C "$wt" reset --hard -q HEAD
+    git -C "$wt" checkout --detach -q HEAD
+    remove_registered_descendants "$wt"
+    # `git submodule foreach` visits only initialized submodules. Always clean
+    # those existing worktrees: `--skip-submodules` avoids initialization, but
+    # must not let dirt from an earlier non-skipped run leak into the next PR.
+    # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
+    git -C "$wt" submodule foreach --quiet --recursive \
+        'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
+    if (( SKIP_SUBMODULES )); then
+        # Restore initialized submodules to the superproject gitlinks without
+        # initializing absent ones. `submodule update` can nevertheless
+        # initialize submodules selected by `submodule.active`, so check out
+        # the recorded SHA directly in the submodules that `foreach` found.
+        git -C "$wt" submodule foreach --quiet --recursive \
+            'git checkout --detach -q "$sha1"'
+    else
+        git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
+    fi
+    # Integration tests can leave root-owned artifacts, and stale servers can
+    # briefly recreate files while cleanup is traversing a directory. Retry
+    # the identical, path-scoped cleanup after stopping any replacement
+    # processes. If elevation is unavailable, fail closed.
+    local attempt
+    for attempt in 1 2 3; do
+        git -C "$wt" clean -ffdx -e '/build*/' && return 0
+        stop_worktree_processes "$wt"
+        echo "Retrying cleanup with elevated permissions ($attempt/3): $wt" >&2
+        sudo -n git -c safe.directory="$wt" -C "$wt" clean -ffdx -e '/build*/' && return 0
+    done
+    echo "Worktree cleanup did not converge after 3 attempts: $wt" >&2
+    return 1
+}
+
+remove_managed_cache_dir()
+{
+    local wt="$1" candidate="$2" base
+    base="${candidate##*/}"
+
+    if ! is_registered_worktree "$wt" || ! is_managed_worktree "$wt" \
+        || [[ "$candidate" != "$wt/"* ]] \
+        || [[ "${candidate%/*}" != "$wt" ]] \
+        || { [[ "$base" != tmp ]] && [[ "$base" != build* ]]; }; then
+            echo "Refusing to remove unexpected cache directory: $candidate" >&2
+            return 1
+    fi
+
+    banner "Low disk space: removing $candidate"
+    remove_registered_descendants "$candidate"
+    if ! rm -rf -- "$candidate"; then
+        echo "Retrying cleanup with elevated permissions: $candidate" >&2
+        sudo -n rm -rf -- "$candidate"
+    fi
+}
+
+# Run only while the worker pool is idle. First discard old `tmp` and `build*`
+# directories, then stale managed worktrees, until the requested reserve is
+# restored. Active worker roots are never removed wholesale.
+cleanup_worktrees_if_disk_low()
+{
+    (( DRY_RUN )) && return 0
+
+    local minimum_kib=$(( MIN_FREE_GB * 1024 * 1024 )) available wt candidate mtime
+    local -a worktrees=() cache_candidates=() stale_worktrees=()
+    local -A worktree_mtime=()
+    available=$(free_space_kib)
+    [[ "$available" =~ ^[0-9]+$ ]] || {
+        echo "${S}Error: could not determine available disk space${R}" >&2
+        return 1
+    }
+    (( available < minimum_kib )) || return 0
+
+    banner "Low disk space: $(( available / 1024 / 1024 )) GiB free; cleaning managed worktrees to restore ${MIN_FREE_GB} GiB"
+    mapfile -t worktrees < <(git -C "$MAIN_REPO" worktree list --porcelain | sed -n 's/^worktree //p')
+
+    for wt in "${worktrees[@]}"; do
+        is_managed_worktree "$wt" || continue
+        [[ -d "$wt" ]] || continue
+        # Cache this before removing child directories, which changes the
+        # worktree root's mtime and would destroy the old-to-new ordering.
+        worktree_mtime["$wt"]=$(stat -c %Y "$wt")
+        while IFS= read -r -d '' candidate; do
+            mtime=$(stat -c %Y "$candidate")
+            cache_candidates+=("$mtime"$'\t'"$wt"$'\t'"$candidate")
+        done < <(find "$wt" -mindepth 1 -maxdepth 1 -type d \( -name tmp -o -name 'build*' \) -print0 2>/dev/null)
+    done
+
+    if (( ${#cache_candidates[@]} )); then
+        mapfile -t cache_candidates < <(printf '%s\n' "${cache_candidates[@]}" | sort -n)
+        for candidate in "${cache_candidates[@]}"; do
+            IFS=$'\t' read -r mtime wt candidate <<< "$candidate"
+            [[ -d "$candidate" ]] || continue
+            remove_managed_cache_dir "$wt" "$candidate"
+            available=$(free_space_kib)
+            (( available >= minimum_kib )) && return 0
+        done
+    fi
+
+    for wt in "${worktrees[@]}"; do
+        is_managed_worktree "$wt" || continue
+        is_active_worker_worktree "$wt" && continue
+        [[ -d "$wt" ]] || continue
+        mtime=${worktree_mtime["$wt"]:-$(stat -c %Y "$wt")}
+        stale_worktrees+=("$mtime"$'\t'"$wt")
+    done
+    if (( ${#stale_worktrees[@]} )); then
+        mapfile -t stale_worktrees < <(printf '%s\n' "${stale_worktrees[@]}" | sort -n)
+        for candidate in "${stale_worktrees[@]}"; do
+            wt=${candidate#*$'\t'}
+            # Removing a parent also unregisters its nested worktrees, which
+            # may still occur later in this snapshot.
+            is_registered_worktree "$wt" || continue
+            if ! is_managed_worktree "$wt" || is_active_worker_worktree "$wt"; then
+                echo "Refusing to remove unexpected worktree: $wt" >&2
+                return 1
+            fi
+            banner "Low disk space: removing stale worktree $wt"
+            remove_registered_descendants "$wt"
+            if ! git -C "$MAIN_REPO" worktree remove --force "$wt"; then
+                echo "Retrying worktree removal with elevated permissions: $wt" >&2
+                sudo -n git -c safe.directory="$MAIN_REPO" -C "$MAIN_REPO" worktree remove --force "$wt"
+            fi
+            available=$(free_space_kib)
+            (( available >= minimum_kib )) && return 0
+        done
+    fi
+
+    echo "${S}Error: only $(( available / 1024 / 1024 )) GiB free after cleaning managed worktrees; ${MIN_FREE_GB} GiB required${R}" >&2
+    return 1
 }
 
 # ----------------------------------------------------------------------------
@@ -505,28 +877,115 @@ LOGDIR="${MAIN_REPO}/tmp/continue-all-prs"
 STATSFILE="$LOGDIR/stats"
 STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
+CLEANUP_FAILURE_FILE="$LOGDIR/cleanup-failure"
+declare -a WORKER_PIDS=()
+
+stop_workers()
+{
+    local roots own_pgid entry pid pgid
+    local -a targets
+    local -a active_workers=() live_jobs=()
+    local -A target_groups=() worker_pid_set=()
+
+    # `WORKER_PIDS` retains exited child PIDs until `wait` completes. Resolve
+    # roots through the shell's live job table so a recycled PID can never be
+    # mistaken for a worker and signalled during interrupt handling.
+    for pid in "${WORKER_PIDS[@]}"; do
+        worker_pid_set["$pid"]=1
+    done
+    mapfile -t live_jobs < <(jobs -pr)
+    for pid in "${live_jobs[@]}"; do
+        [[ -n "${worker_pid_set[$pid]:-}" ]] && active_workers+=("$pid")
+    done
+    (( ${#active_workers[@]} )) || return 0
+    roots="${active_workers[*]}"
+    own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
+
+    # Snapshot the complete descendant tree before sending any signal. Commands
+    # started by an agent can create nested process groups, so killing only the
+    # worker's original group is insufficient.
+    mapfile -t targets < <(
+        ps -eo pid=,ppid=,pgid= | awk -v roots="$roots" '
+            BEGIN {
+                count = split(roots, root, " ");
+                for (i = 1; i <= count; ++i) selected[root[i]] = 1;
+            }
+            {
+                pid[NR] = $1;
+                parent[$1] = $2;
+                group[$1] = $3;
+            }
+            END {
+                changed = 1;
+                while (changed) {
+                    changed = 0;
+                    for (i = 1; i <= NR; ++i) {
+                        p = pid[i];
+                        if (!selected[p] && selected[parent[p]]) {
+                            selected[p] = 1;
+                            changed = 1;
+                        }
+                    }
+                }
+                for (i = 1; i <= NR; ++i) {
+                    p = pid[i];
+                    if (selected[p]) print p, group[p];
+                }
+            }'
+    )
+
+    for entry in "${targets[@]}"; do
+        read -r pid pgid <<< "$entry"
+        [[ -n "$pgid" && "$pgid" != "$own_pgid" ]] && target_groups["$pgid"]=1
+    done
+
+    # Freeze every captured group first so no descendant can spawn more work
+    # while shutdown is in progress, then terminate all groups and individual
+    # processes. Never signal the orchestrator's own process group.
+    for pgid in "${!target_groups[@]}"; do
+        kill -STOP -- "-$pgid" 2>/dev/null || true
+    done
+    for pgid in "${!target_groups[@]}"; do
+        kill -KILL -- "-$pgid" 2>/dev/null || true
+    done
+    for entry in "${targets[@]}"; do
+        read -r pid pgid <<< "$entry"
+        kill -KILL "$pid" 2>/dev/null || true
+    done
+    if (( ${#active_workers[@]} )); then
+        wait "${active_workers[@]}" 2>/dev/null || true
+    fi
+    WORKER_PIDS=()
+}
 
 cleanup()
 {
+    local wt
+
+    stop_workers
+    for wt in "${WT[@]:-}"; do
+        [[ -n "$wt" && "$wt" == "$WORKTREE_BASE-"* ]] || continue
+        rm -rf -- "$wt/tmp/continue-all-prs/codex-home"
+    done
     status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
     rm -f "$STATSLOCK" "$STATSFILE.tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
-trap 'echo; banner "Interrupted, stopping..."; exit 130' INT TERM
+trap 'trap - INT TERM; echo; banner "Interrupted, stopping..."; stop_workers; exit 130' INT TERM
 
 # Marker the worker prints (on its own line) when it considers the PR finished.
 DONE_MARKER='<<<CONTINUE-PR-DONE>>>'
 
-# Appended to the system prompt of every turn. Forbids backgrounding work (the
+# Added to every worker session. Forbids backgrounding work (the
 # root cause of merges that were prepared but never pushed: the worker started a
 # build in the background and ended its turn waiting for a notification that
 # never comes in single-shot `--print` mode).
-STEER_PROMPT="You are running in a non-interactive, single-shot batch session. Do NOT run any commands in the background and do NOT defer work expecting to be notified later - there is no later notification, and any background process is killed when your turn ends. Run builds, tests, and every long-running command synchronously in the foreground so they finish within your turn, and complete ALL work - including pushing your commits with 'git push' - before you end your turn. A passing (green) CI does NOT mean the PR is done: always fetch and address unresolved review comments and reviewer feedback - including automated or bot reviews such as clickhouse-gh[bot], and review threads that are merely COMMENTED rather than blocking - even when every check passes or the PR is already approved. Do not signal done while there are unaddressed review comments, unless addressing them genuinely requires a human decision. If the PR is CONFLICTING, resolve the conflicts (merge the base branch, resolve, and rework to build) and push whenever you can push - your own PRs, and fork PRs where maintainerCanModify is true; a contested/reserved/superseded note does not block mechanical conflict resolution. If you cannot push (e.g. a fork with maintainer edits disabled), supersede it: open your own PR from the main repo (crediting the author; re-author the commits yourself if the author has not signed the CLA) and close theirs with a comment linking the new PR - unless the change is obsolete, already fixed, or already superseded, in which case say so specifically rather than a bare 'needs attention'. Every GitHub comment you post (PR comments, issue comments, and review-thread replies) MUST begin with the 🕵 symbol followed by a space, so automated comments are identifiable. When, and only when, the PR is fully handled (changes pushed, or you have determined that no change is needed or that it needs a human decision), end your final message with a line containing exactly: ${DONE_MARKER}"
+STEER_PROMPT="You are running in a non-interactive, single-shot batch session. Do NOT run any commands in the background and do NOT defer work expecting to be notified later - there is no later notification, and any background process is killed when your turn ends. Run builds, tests, and every long-running command synchronously in the foreground so they finish within your turn, and complete ALL work - including pushing your commits with 'git push' - before you end your turn. Preserve the existing remote PR history: only add commits, never rebase, reset onto another base, amend published commits, force-push, use a '+' refspec, bypass hooks with --no-verify, or delete the remote branch. Before committing, inspect the staged name-status and stat, stage only explicit intended paths, and reject unrelated files or mass changes. Before pushing, require the freshly fetched remote PR head to be an ancestor of local HEAD and inspect the complete diff against the base branch; a scope or lineage anomaly is a hard safety stop to report, never something to work around. A passing (green) CI does NOT mean the PR is done: always fetch and address unresolved review comments and reviewer feedback - including automated or bot reviews such as clickhouse-gh[bot], and review threads that are merely COMMENTED rather than blocking - even when every check passes or the PR is already approved. Do not signal done while there are unaddressed review comments, unless addressing them genuinely requires a human decision. If the PR is CONFLICTING, resolve the conflicts (merge the base branch, resolve, and rework to build) and push whenever you have access; a contested/reserved/superseded note does not block mechanical conflict resolution. Determine pushability from repository and author ownership before maintainerCanModify: a same-repository PR and any PR authored by the authenticated gh user are pushable regardless of maintainerCanModify; that field only blocks pushing another author's cross-repository fork. If you cannot push (e.g. another author's fork with maintainer edits disabled), supersede it: open your own PR from the main repo (crediting the author; re-author the commits yourself if the author has not signed the CLA) and close theirs with a comment linking the new PR - unless the change is obsolete, already fixed, or already superseded, in which case say so specifically rather than a bare 'needs attention'. Every GitHub comment you post (PR comments, issue comments, and review-thread replies) MUST begin with the 🕵 symbol followed by a space, so automated comments are identifiable. When, and only when, the PR is fully handled (changes pushed, or you have determined that no change is needed or that it needs a human decision), end your final message with a line containing exactly: ${DONE_MARKER}"
 
 # Sent on each resume to nudge the worker to finish.
-NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
+NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. Preserve remote PR history and obey the staged-diff, full-PR-diff, and fast-forward-only safety gates; never force-push or bypass the pre-push hook. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
 # Run /continue-pr-auto in a worktree, resuming the same session until the worker
 # signals completion (DONE_MARKER), the per-PR time budget (TIMEOUT, shared
@@ -537,17 +996,35 @@ run_continue_pr()
 {
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
-    local sid deadline iter ec now remaining build_steer
-    sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null \
-        || uuidgen 2>/dev/null \
-        || python3 -c 'import uuid; print(uuid.uuid4())')
+    local sid deadline iter ec now remaining build_steer prompt usage codex_home
+    local -a codex_env
+    local u_i u_o u_ci u_co u_cost
+    local -a model_args
+    sid=""
+    if [[ "$AGENT" == "claude" ]]; then
+        sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null \
+            || uuidgen 2>/dev/null \
+            || python3 -c 'import uuid; print(uuid.uuid4())')
+    fi
+    model_args=()
+    [[ -n "$MODEL" ]] && model_args=(--model "$MODEL")
     # Steer the worker to a persistent, ccache-backed build directory in this
     # worktree so rebuilds are incremental instead of cold each pass.
     build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
     deadline=$(( $(date +%s) + TIMEOUT ))
-    : > "$log"
     iter=0
     ec=0
+
+    # Keep custom Codex access-token runs private to this worker, so a bad token
+    # cannot fall back to or modify the caller's ambient Codex login.
+    codex_home=""
+    codex_env=()
+    if [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]]; then
+        codex_home="$wt/tmp/continue-all-prs/codex-home"
+        codex_env=("CODEX_HOME=$codex_home")
+        mkdir -p "$codex_home"
+        export CODEX_ACCESS_TOKEN="$API_KEY"
+    fi
 
     while :; do
         iter=$(( iter + 1 ))
@@ -556,38 +1033,96 @@ run_continue_pr()
         (( remaining > 0 )) || { ec=124; break; }
         (( iter > MAX_CONTINUE )) && break
 
-        echo "===== turn $iter (session $sid, ${remaining}s budget left) =====" >> "$log"
+        echo "===== turn $iter (session ${sid:-pending}, ${remaining}s budget left) =====" >> "$log"
         ec=0
-        if (( iter == 1 )); then
-            ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
-                --output-format json --effort "$EFFORT" \
-                --session-id "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
-                "/continue-pr-auto $url"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
-        else
-            ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
-                --output-format json --effort "$EFFORT" \
-                --resume "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
-                "$NUDGE_PROMPT"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
-        fi
+        if [[ "$AGENT" == "claude" ]]; then
+            if (( iter == 1 )); then
+                ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
+                    --output-format json --effort "$EFFORT" "${model_args[@]}" \
+                    --session-id "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
+                    "/continue-pr-auto $url"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
+            else
+                ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
+                    --output-format json --effort "$EFFORT" "${model_args[@]}" \
+                    --resume "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
+                    "$NUDGE_PROMPT"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
+            fi
 
-        # Extract the final message text and accumulate token/cost usage. On a
-        # timeout/crash the JSON is empty or partial, so fall back to stderr.
-        if jq -e . "$log.json" >/dev/null 2>&1; then
-            jq -r '.result // ""' "$log.json" > "$log.last"
-            local usage u_i u_o u_ci u_co u_cost
-            usage=$(jq -r '[(.usage.input_tokens//0),(.usage.output_tokens//0),(.usage.cache_creation_input_tokens//0),(.usage.cache_read_input_tokens//0),(.total_cost_usd//0)]|@tsv' "$log.json" 2>/dev/null)
-            IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
-            stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
+            # Extract the final message text and accumulate token/cost usage.
+            if jq -e . "$log.json" >/dev/null 2>&1; then
+                jq -r '.result // ""' "$log.json" > "$log.last"
+                usage=$(jq -r '[(.usage.input_tokens//0),(.usage.output_tokens//0),(.usage.cache_creation_input_tokens//0),(.usage.cache_read_input_tokens//0),(.total_cost_usd//0)]|@tsv' "$log.json" 2>/dev/null)
+                IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
+                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
+            else
+                cat "$log.err" 2>/dev/null > "$log.last" || true
+            fi
         else
-            { cat "$log.err" 2>/dev/null || true; } > "$log.last"
+            rm -f "$log.last"
+            if (( iter == 1 )); then
+                prompt="/continue-pr-auto $url
+
+${STEER_PROMPT} ${build_steer}"
+                ( cd "$wt" || exit; \
+                    timeout "$remaining" env "${codex_env[@]}" codex exec \
+                    --dangerously-bypass-approvals-and-sandbox --json \
+                    --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
+                    --output-last-message "$log.last" - <<< "$prompt" \
+                ) > "$log.json" 2>"$log.err" || ec=$?
+                sid=$(jq -Rrs '[splits("\n") | fromjson? | select(.type == "thread.started") | .thread_id][0] // empty' "$log.json" 2>/dev/null || true)
+                if [[ -z "$sid" ]] && (( ec == 0 )); then
+                    echo "Codex did not report a session ID" >> "$log.err"
+                    ec=1
+                fi
+            else
+                ( cd "$wt" || exit; \
+                    timeout "$remaining" env "${codex_env[@]}" codex exec resume \
+                    --dangerously-bypass-approvals-and-sandbox --json \
+                    --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
+                    --output-last-message "$log.last" "$sid" - <<< "$NUDGE_PROMPT" \
+                ) > "$log.json" 2>"$log.err" || ec=$?
+            fi
+
+            # Codex emits JSONL and does not currently report cost. Its cached
+            # input tokens map to the status bar's cache-read counter.
+            if [[ -s "$log.json" ]]; then
+                usage=$(jq -Rrs '
+                    [splits("\n") | fromjson?] as $events
+                    | [([$events[] | select(.type == "turn.completed") | (.usage.input_tokens // 0)] | add // 0),
+                     ([$events[] | select(.type == "turn.completed") | (.usage.output_tokens // 0)] | add // 0),
+                     ([$events[] | select(.type == "turn.completed") | (.usage.cache_write_input_tokens // 0)] | add // 0),
+                     ([$events[] | select(.type == "turn.completed") | (.usage.cached_input_tokens // 0)] | add // 0),
+                     0] | @tsv' "$log.json" 2>/dev/null)
+                IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
+                u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}" "${u_ci:-0}")
+                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
+            fi
+            if [[ ! -s "$log.last" ]]; then
+                {
+                    jq -Rrs -r 'splits("\n") | fromjson? | select(.type == "error") | .message // empty' "$log.json" 2>/dev/null
+                    sed '/^Reading .*from stdin/d' "$log.err" 2>/dev/null || true
+                } > "$log.last"
+            fi
         fi
         cat "$log.last" >> "$log"
 
         # Done when the worker emits the marker on its own line; also stop on any
-        # hard failure or timeout of a turn.
+        # hard failure or timeout of a turn. A `SIGKILL` can affect all concurrent
+        # Codex processes at once (for example, an external resource manager).
+        # Once Codex has reported a session ID, resume that session within the
+        # existing turn and time limits instead of discarding its completed work.
         grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last" && break
+        if [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); then
+            echo "Codex was killed; resuming session $sid on the next turn." >> "$log"
+            continue
+        fi
         (( ec != 0 )) && break
     done
+
+    if [[ -n "$codex_home" ]]; then
+        rm -rf -- "$codex_home"
+        unset CODEX_ACCESS_TOKEN
+    fi
 
     return "$ec"
 }
@@ -595,7 +1130,7 @@ run_continue_pr()
 process_pr()
 {
     local i="$1" wt="$2" number="$3" title="$4"
-    local color ts log ec outcome status mark summary
+    local color ts log ec outcome status mark summary cleanup_failed=0
     local before_sha after pr_state pr_mergeable pr_review after_sha pushed
 
     color=$(pr_color_seq "$number")
@@ -609,16 +1144,28 @@ process_pr()
         status="DRY-RUN (not processed)"
         summary="(dry run)"
     else
+        log="$LOGDIR/pr-$number.log"
+        : > "$log"
+        if ! prepare_worktree_for_task "$wt" >> "$log" 2>&1; then
+            printf 'Worktree cleanup failed before starting PR #%s.\n' "$number" > "$log.last"
+            cat "$log.last" >> "$log"
+            ec=1
+            cleanup_failed=1
+            printf '%s\t%s\n' "$i" "$wt" >> "$CLEANUP_FAILURE_FILE"
+        else
+            ec=0
+        fi
+
         # PR head before the work, so we can tell whether the worker actually
-        # pushed anything (a clean `claude` exit does NOT imply progress: the
+        # pushed anything (a clean agent exit does NOT imply progress: the
         # /continue-pr-auto skill exits 0 when it finds nothing to do, or when it
         # punts an outward-facing decision such as closing an obsolete PR).
         before_sha=$(gh pr view "$number" --repo "$REPO" --json headRefOid \
             --jq '.headRefOid' 2>/dev/null || echo "")
 
-        log="$LOGDIR/pr-$number.log"
-        ec=0
-        run_continue_pr "$wt" "$number" "$log" || ec=$?
+        if (( ec == 0 )); then
+            run_continue_pr "$wt" "$number" "$log" || ec=$?
+        fi
 
         # Detach HEAD so the PR branch isn't held by this worktree, letting a
         # different worker check it out in a later round.
@@ -662,12 +1209,19 @@ process_pr()
     ts=$(date +%H:%M:%S)
     emit "$color" "$ts  $mark  worker $i  FINISHED  PR #$number  $title  --  $status"
     emit "$color" "            ^- $summary"
+    (( cleanup_failed == 0 ))
 }
 
 worker()
 {
     local i="$1" wt="$2"
     local line number title
+
+    # The parent enables job control only to place this worker in its own
+    # process group. Disable it inside the worker so `timeout`, the agent, and
+    # agent-started commands stay in that same group rather than creating a
+    # nested foreground process group that the interrupt trap cannot reach.
+    set +m
 
     # Per-worker file descriptor for the queue lock (its own open-file
     # description, so flock mutually excludes between workers).
@@ -685,7 +1239,10 @@ worker()
         [[ -z "$line" ]] && break
 
         IFS=$'\t' read -r number title <<< "$line"
-        process_pr "$i" "$wt" "$number" "$title" || true
+        # A cleanup failure makes this worktree unsafe for another assignment
+        # in the same round. Leave the remaining queue to healthy workers
+        # instead of reporting the same failure for every subsequent PR.
+        process_pr "$i" "$wt" "$number" "$title" || break
     done
 
     exec 9>&-
@@ -815,8 +1372,24 @@ banner "Selecting:       $MODES_DESC"
 (( MODE_RELATED )) && (( ${#EXCLUDED_AUTHOR[@]} )) && banner "Excluded (related): ${!EXCLUDED_AUTHOR[*]}"
 banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
+banner "Agent:           ${AGENT}"
+[[ -n "$MODEL" ]] && banner "Model:           ${MODEL}"
+if [[ "$AGENT" == "codex" ]]; then
+    if [[ -n "$CODEX_INPUT_PRICE" ]]; then
+        banner "Pricing:         input \$${CODEX_INPUT_PRICE}, cached \$${CODEX_CACHED_INPUT_PRICE}, output \$${CODEX_OUTPUT_PRICE} per MTok"
+    else
+        banner "Pricing:         unavailable for ${MODEL:-configured default}; cost will exclude Codex usage"
+    fi
+fi
 banner "Effort:          ${EFFORT}"
-(( CUSTOM_KEY )) && banner "API key:         custom (…${ANTHROPIC_API_KEY: -4})"
+banner "Disk reserve:    ${MIN_FREE_GB} GiB (managed worktrees are cleaned below this)"
+if (( CUSTOM_KEY )); then
+    if [[ "$AGENT" == "codex" ]]; then
+        banner "Access token:    custom (…${API_KEY: -4})"
+    else
+        banner "API key:         custom (…${API_KEY: -4})"
+    fi
+fi
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
 
@@ -832,6 +1405,7 @@ done
 
 # Create worktrees up front (unless dry-running).
 if (( ! DRY_RUN )); then
+    cleanup_worktrees_if_disk_low
     for (( i = 0; i < WORKERS; i++ )); do
         ensure_worktree "${WT[i]}"
     done
@@ -847,6 +1421,8 @@ status_start
 
 ROUND=0
 while true; do
+    cleanup_worktrees_if_disk_low
+    rm -f "$CLEANUP_FAILURE_FILE"
     ROUND=$((ROUND + 1))
     stats_add 1 0 0 0 0 0 0 0
     na_reset
@@ -867,12 +1443,23 @@ while true; do
 
     printf '%s\n' "$PRS" > "$QUEUEFILE"
 
-    pids=()
+    # Job control gives every asynchronous worker its own process group. This
+    # lets the interrupt trap terminate the worker and all of its descendants
+    # immediately instead of waiting for a running agent command to return.
+    set -m
+    WORKER_PIDS=()
     for (( i = 0; i < WORKERS; i++ )); do
         worker "$i" "${WT[i]}" &
-        pids+=($!)
+        WORKER_PIDS+=($!)
     done
-    wait "${pids[@]}" || true
+    set +m
+    wait "${WORKER_PIDS[@]}" || true
+    WORKER_PIDS=()
+
+    if [[ -s "$CLEANUP_FAILURE_FILE" ]]; then
+        banner "Worktree cleanup failed; stopping instead of retrying in another round"
+        exit 1
+    fi
 
     echo ""
     banner "===== Round ${ROUND} complete ====="

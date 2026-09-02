@@ -1,0 +1,14 @@
+renamed, dropped and re-added (wide)
+1000	7	7
+Wide
+renamed, dropped and re-added (compact)
+1000	7	7
+Compact
+dropped and re-added without a rename
+1000	7	7
+renamed only
+1000	100	1099
+dropped, then the name reused by a rename
+1000	100	1099
+the dropped name taken over by another rename
+1000	5000	5999

@@ -48,6 +48,7 @@
 #include "config.h"
 
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL
@@ -70,8 +71,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -118,6 +117,7 @@ Connection::Connection(const String & host_, UInt16 port_,
 #if USE_JWT_CPP && USE_SSL
     , std::shared_ptr<JWTProvider> jwt_provider_
 #endif
+    , SocketFactory socket_factory_
 )
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
@@ -137,6 +137,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , secure(secure_)
     , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
+    , socket_factory(std::move(socket_factory_))
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -145,6 +146,19 @@ Connection::Connection(const String & host_, UInt16 port_,
         user = "default";
 
     setDescription();
+}
+
+std::unique_ptr<Poco::Net::StreamSocket> Connection::defaultSocketFactory(bool secure)
+{
+    if (secure)
+    {
+#if USE_SSL
+        return std::make_unique<Poco::Net::SecureStreamSocket>();
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
+#endif
+    }
+    return std::make_unique<Poco::Net::StreamSocket>();
 }
 
 
@@ -204,11 +218,11 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
         if (isConnected())
             disconnect();
 
+        socket = socket_factory(static_cast<bool>(secure));
+
         if (static_cast<bool>(secure))
         {
 #if USE_SSL
-            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
-
             /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
             /// work we need to pass host name separately. It will be send into TLS Hello packet to let
             /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
@@ -230,8 +244,6 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
         }
         else
         {
-            socket = std::make_unique<Poco::Net::StreamSocket>();
-
             if (!bind_host.empty())
             {
                 Poco::Net::SocketAddress socket_address(bind_host, 0);
@@ -1042,11 +1054,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = (*settings)[Setting::network_zstd_compression_level];
 
-        CompressionCodecFactory::instance().validateCodec(
-            method,
-            level,
-            !(*settings)[Setting::allow_suspicious_codecs],
-            (*settings)[Setting::allow_experimental_codecs]);
+        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -1166,6 +1174,12 @@ void Connection::sendQuery(
     writeStringBinary(query, *out);
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+        /// Query parameters are written as custom (string-valued) fields, so a parameter whose
+        /// name collides with a built-in setting (e.g. `page`, now a `Double` setting) is not
+        /// parsed as that setting's type — which would throw for a non-numeric value
+        /// (`--param_page=foo`) or normalize a numeric-looking string. The server reads them back
+        /// with `readQueryParameters`, which SQL-unquotes the value so the original string
+        /// round-trips intact.
         writeQueryParameters(query_parameters, *out);
 
     maybe_compressed_in.reset();
