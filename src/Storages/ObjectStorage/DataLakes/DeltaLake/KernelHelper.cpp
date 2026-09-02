@@ -9,6 +9,9 @@
 #include <Common/SipHash.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -31,6 +34,12 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsUInt64 connect_timeout_ms;
     extern const S3AuthSettingsUInt64 request_timeout_ms;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsUInt64 s3_connect_timeout_ms;
+    extern const SettingsUInt64 s3_request_timeout_ms;
 }
 
 namespace DB::FailPoints
@@ -195,15 +204,30 @@ public:
         /// be given an unbounded timeout through its string options (a literal `0` makes every
         /// request time out immediately), so `0` intentionally leaves the option unset and
         /// object_store's built-in defaults (30 s request / 5 s connect) stay in effect.
-        if (connect_timeout_ms)
-            set_option("connect_timeout", fmt::format("{}ms", connect_timeout_ms));
+        /// The server's S3 client re-resolves these from the current query on every update
+        /// (`applyNewSettings`), so a query-level `SETTINGS s3_request_timeout_ms = ...` must
+        /// reach the kernel client as well: prefer the current query's changed settings over
+        /// the values captured when this helper was created.
+        UInt64 effective_connect_timeout_ms = connect_timeout_ms;
+        UInt64 effective_request_timeout_ms = request_timeout_ms;
+        if (auto query_context = DB::CurrentThread::tryGetQueryContext())
+        {
+            const auto & settings = query_context->getSettingsRef();
+            if (settings[DB::Setting::s3_connect_timeout_ms].changed)
+                effective_connect_timeout_ms = settings[DB::Setting::s3_connect_timeout_ms];
+            if (settings[DB::Setting::s3_request_timeout_ms].changed)
+                effective_request_timeout_ms = settings[DB::Setting::s3_request_timeout_ms];
+        }
+
+        if (effective_connect_timeout_ms)
+            set_option("connect_timeout", fmt::format("{}ms", effective_connect_timeout_ms));
         else
             LOG_WARNING(
                 log,
                 "s3_connect_timeout_ms = 0 (no timeout) cannot be forwarded to the delta-kernel "
                 "object store client; its default connect timeout stays in effect");
-        if (request_timeout_ms)
-            set_option("timeout", fmt::format("{}ms", request_timeout_ms));
+        if (effective_request_timeout_ms)
+            set_option("timeout", fmt::format("{}ms", effective_request_timeout_ms));
         else
             LOG_WARNING(
                 log,
@@ -217,7 +241,7 @@ public:
             "connect timeout: {} ms, request timeout: {} ms",
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
             !access_key_id.empty(), !secret_access_key.empty(), !token.empty(),
-            connect_timeout_ms, request_timeout_ms);
+            effective_connect_timeout_ms, effective_request_timeout_ms);
 
         return guard.release();
     }

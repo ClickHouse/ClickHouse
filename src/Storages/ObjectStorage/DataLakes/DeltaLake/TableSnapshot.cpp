@@ -955,9 +955,25 @@ void TableSnapshot::initOrUpdateSnapshot() const
         waitForSnapshotLoad(*load, *helper, log);
         lock.lock();
 
-        /// The build finished (successfully or not): it is no longer in flight.
-        if (inflight_load == load)
+        /// Only the load which is still registered as in flight may install its result. A load
+        /// that was given up on and superseded by a fresh one is stale whenever it completes,
+        /// before or after the fresh one: installing it could make the cached object resolve
+        /// to an older version, or flip between versions. Its waiters re-adopt the fresh load.
+        const bool is_current_load = (inflight_load == load);
+        if (is_current_load)
             inflight_load = nullptr;
+
+        if (!is_current_load)
+        {
+            if (kernel_snapshot_state)
+                break;  /// Installed by the fresh load (or by a sibling waiter of this one): keep it.
+            if (inflight_load)
+            {
+                LOG_TRACE(log, "Ignoring the completion of a superseded snapshot load; waiting for the current one");
+                continue;
+            }
+            /// Nothing newer exists any more (the fresh load failed): fall through and use this result.
+        }
 
         std::shared_ptr<KernelSnapshotState> built;
         try
@@ -971,19 +987,6 @@ void TableSnapshot::initOrUpdateSnapshot() const
                 throw;
             current_credentials_fingerprint = helper->getCredentialsFingerprint();
             continue;
-        }
-
-        /// A TableSnapshot never changes its version once one is installed. Two latest-version
-        /// loads on the same object (a fresh one started after the first was given up) may
-        /// resolve different versions; whichever completes second is stale and is ignored,
-        /// otherwise the cached object would flip between versions. Rebuilds after a
-        /// credentials refresh are pinned to the installed version, so they always pass.
-        if (kernel_snapshot_state && built->snapshot_version != kernel_snapshot_state->snapshot_version)
-        {
-            LOG_TRACE(
-                log, "Ignoring a stale snapshot load which resolved version {} after version {} was installed",
-                built->snapshot_version, kernel_snapshot_state->snapshot_version);
-            break;
         }
         kernel_snapshot_state = built;
         kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
