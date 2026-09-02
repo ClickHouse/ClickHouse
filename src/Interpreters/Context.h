@@ -924,6 +924,11 @@ public:
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
     UserPtr getUser() const;
 
+    /// Replaces the external roles of this context (including replacement by an empty set).
+    /// External roles are authentication-scoped: returned by an external user directory or
+    /// pushed by the initiator of an interserver query.
+    void setExternalRoles(const std::vector<UUID> & new_external_roles);
+
     /// Limits the access rights to the intersection with the elements (or resets the limit if null).
     /// See the GRANTS clause of the authentication methods in CREATE USER.
     void setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_);

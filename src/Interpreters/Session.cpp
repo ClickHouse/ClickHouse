@@ -646,39 +646,75 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
 
     auto new_session_context = new_named_session->context;
-    new_session_context->makeSessionContext();
-
-    /// Copy prepared client info to the session context, no matter it's been just created or not.
-    /// If we continue using a previously created session context found by session ID
-    /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
-    new_session_context->setClientInfo(*prepared_client_info);
-    prepared_client_info.reset();
-
-    auto access = new_session_context->getAccess();
     UInt64 max_sessions_for_user = 0;
-    /// Set user information for the new context: current profiles, roles, access rights.
-    if (!access->tryGetUser())
-    {
-        new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
-        max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
-    }
-    else
-    {
-        /// The session context is reused, but the current connection could be authenticated with
-        /// a different authentication method than the one which created the session. The access rights
-        /// limit must correspond to the method used by this connection: otherwise reattaching to a named session
-        /// would allow a credential with the GRANTS clause to use the full access rights of the user.
-        new_session_context->setAuthenticationGrants(getAuthenticationGrants());
-        /// The per-method expiry follows the same reasoning: the reused context must fail closed on the
-        /// expiry of the method used by this connection, not the one that originally created the session.
-        new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
 
-        // Always get setting from profile
-        // profile can be changed by ALTER PROFILE during single session
-        auto settings = access->getDefaultSettings();
-        const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
-        if (max_session_for_user_field)
-            max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+    /// `acquireSession` has already published a newly created session into the named-session map,
+    /// before this initialization runs. If it throws (e.g. a returned setting violates a
+    /// constraint), the session must not remain reusable half-initialized: only remove sessions
+    /// THIS call created.
+    try
+    {
+        new_session_context->makeSessionContext();
+
+        /// Copy prepared client info to the session context, no matter it's been just created or not.
+        /// If we continue using a previously created session context found by session ID
+        /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
+        new_session_context->setClientInfo(*prepared_client_info);
+        prepared_client_info.reset();
+
+        auto access = new_session_context->getAccess();
+        /// Set user information for the new context: current profiles, roles, access rights.
+        if (!access->tryGetUser())
+        {
+            new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+            max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
+
+            /// Apply session settings received from the authentication server once, when the
+            /// named session is created. Applied AFTER max_sessions_for_user is captured from
+            /// the login profiles (step 2), mirroring the unnamed makeSessionContext, so a
+            /// returned max_sessions_for_user does not change named-session admission. Not
+            /// re-applied on reattachment, so settings modified with SET persist.
+            new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+            new_session_context->applySettingsChanges(settings_from_auth_server);
+        }
+        else
+        {
+            /// The session context is reused, but the current connection could be authenticated with
+            /// a different authentication method than the one which created the session. The access rights
+            /// limit must correspond to the method used by this connection: otherwise reattaching to a named session
+            /// would allow a credential with the GRANTS clause to use the full access rights of the user.
+
+            /// Helper-returned roles are authentication-scoped, like the authentication grants and
+            /// expiry below: replace the previous authentication's external role set, including
+            /// replacement by an empty set. A named session must not retain the role set of the
+            /// authentication that created it. Role-derived settings/constraints installed at
+            /// session creation are deliberately NOT rebuilt here (see the docs).
+            new_session_context->setExternalRoles(external_roles);
+            new_session_context->setAuthenticationGrants(getAuthenticationGrants());
+            /// The per-method expiry follows the same reasoning: the reused context must fail closed on the
+            /// expiry of the method used by this connection, not the one that originally created the session.
+            new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
+
+            /// The wrapper obtained before the replacements above reflects the previous
+            /// authentication's roles/grants; re-acquire so the profile-derived values below
+            /// (max_sessions_for_user) are read from the recalculated access.
+            access = new_session_context->getAccess();
+
+            // Always get setting from profile
+            // profile can be changed by ALTER PROFILE during single session
+            auto settings = access->getDefaultSettings();
+            const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
+            if (max_session_for_user_field)
+                max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+        }
+    }
+    catch (...)
+    {
+        /// A newly created named session was already published by acquireSession; if its
+        /// initialization throws it must not remain reusable half-initialized.
+        if (new_named_session_created)
+            NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_name_, new_named_session);
+        throw;
     }
 
     /// Session context is ready.

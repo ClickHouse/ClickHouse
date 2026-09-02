@@ -803,3 +803,269 @@ def test_networks_reject_remote_client(started_cluster):
         ]
     )
     assert "Authentication failed" in output or "not allowed" in output
+
+
+def http_sess(sql, user, password, session):
+    return instance.http_query(
+        sql, user=user, password=password, params={"session_id": session}
+    )
+
+
+def test_named_session_rebind_replaces_roles(started_cluster):
+    session = "sess_rebind_roles"
+    assert (
+        http_sess(
+            "SELECT arrayJoin(currentRoles())", "dual_user", "password_a", session
+        ).strip()
+        == "role_a"
+    )
+    # Reattachment under a different authentication replaces the role set.
+    assert (
+        http_sess(
+            "SELECT arrayJoin(currentRoles())", "dual_user", "password_b", session
+        ).strip()
+        == "role_b"
+    )
+    # Replacement by an empty set also works.
+    assert (
+        http_sess(
+            "SELECT currentRoles()", "dual_user", "password_none", session
+        ).strip()
+        == "[]"
+    )
+
+
+def test_named_session_preserves_set_state(started_cluster):
+    session = "sess_persist"
+    http_sess("SELECT 1", "dual_user", "password_a", session)
+    http_sess("SET max_threads = 12", "dual_user", "password_a", session)
+    assert (
+        http_sess(
+            "SELECT getSetting('max_threads')", "dual_user", "password_a", session
+        ).strip()
+        == "12"
+    )
+    # Reattachment (even under a different authentication) must not reset SET state.
+    assert (
+        http_sess(
+            "SELECT getSetting('max_threads')", "dual_user", "password_b", session
+        ).strip()
+        == "12"
+    )
+
+
+def test_named_session_applies_auth_settings_at_creation_only(started_cluster):
+    session = "sess_auth_settings"
+    assert (
+        http_sess(
+            "SELECT getSetting('max_threads')", "settings_user", GOOD_PASSWORD, session
+        ).strip()
+        == "4"
+    )
+    http_sess("SET max_threads = 12", "settings_user", GOOD_PASSWORD, session)
+    # The next reattachment carries the same auth settings but must not stomp SET state.
+    assert (
+        http_sess(
+            "SELECT getSetting('max_threads')", "settings_user", GOOD_PASSWORD, session
+        ).strip()
+        == "12"
+    )
+
+
+def test_legacy_http_user_named_session_settings(started_cluster):
+    # Regression scope for the behavior change: a pre-created user with IDENTIFIED WITH
+    # HTTP now also gets its auth-server settings at named-session creation.
+    admin(
+        "CREATE USER IF NOT EXISTS legacy_settings_user IDENTIFIED WITH HTTP SERVER 'main_server' SCHEME 'BASIC'"
+    )
+    session = "sess_legacy"
+    assert (
+        http_sess(
+            "SELECT getSetting('max_threads')",
+            "legacy_settings_user",
+            GOOD_PASSWORD,
+            session,
+        ).strip()
+        == "4"
+    )
+    http_sess("SET max_threads = 12", "legacy_settings_user", GOOD_PASSWORD, session)
+    assert (
+        http_sess(
+            "SELECT getSetting('max_threads')",
+            "legacy_settings_user",
+            GOOD_PASSWORD,
+            session,
+        ).strip()
+        == "12"
+    )
+
+
+def test_named_session_role_profile_contract(started_cluster):
+    # Contract test (decided: login-time role-profile state). Role-derived settings and
+    # constraints are established when the named session is CREATED and are NOT rebuilt
+    # when a reattachment rebinds the role set. Privileges/row policies DO follow the
+    # rebind (covered by test_named_session_rebind_replaces_roles).
+    admin(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS cap_profile SETTINGS max_threads MAX 4"
+    )
+    admin("ALTER ROLE probe_role_b ADD PROFILES 'cap_profile'")
+    # Direction 1: a session CREATED under probe_role_b gets the constraint...
+    session_b = "sess_contract_created_b"
+    error = instance.http_query_and_get_error(
+        "SET max_threads = 16",
+        user="probe_user",
+        password="password_b",
+        params={"session_id": session_b},
+    )
+    assert "max_threads" in error  # constraint from creation-time role binds
+    # ...and the creation-time constraint PERSISTS after rebinding away to probe_role_a
+    # (role-derived constraints are creation-time named-session state).
+    error = instance.http_query_and_get_error(
+        "SET max_threads = 16",
+        user="probe_user",
+        password="password_a",
+        params={"session_id": session_b},
+    )
+    assert "max_threads" in error
+    # Direction 2: a session CREATED under probe_role_a (no constraint) keeps its
+    # looser settings state after a rebind to probe_role_b — documented behavior.
+    session_a = "sess_contract_created_a"
+    http_sess("SELECT 1", "probe_user", "password_a", session_a)
+    http_sess("SET max_threads = 16", "probe_user", "password_a", session_a)
+    http_sess(
+        "SET max_threads = 8", "probe_user", "password_b", session_a
+    )  # must succeed
+    assert (
+        http_sess(
+            "SELECT getSetting('max_threads')", "probe_user", "password_b", session_a
+        ).strip()
+        == "8"
+    )
+
+
+def test_two_established_sessions_expire_independently(started_cluster):
+    # ADR test 2, robust form. Two NATIVE (persistent TCP) connections authenticate ONCE
+    # each with different ABSOLUTE deadlines and are held open CONCURRENTLY. Per-query
+    # expiry enforcement (Session::checkIfUserIsStillValid on TCP) then applies to each
+    # connection independently — the short one must expire while the long one keeps working,
+    # proving neither authentication modifies the other's lifetime. Both clients start at
+    # the same time (background processes) and each sends statements spaced by client-side
+    # sleeps so their last statements run after the short deadline.
+    # ADAPTATION: this image does not provide a `clickhouse-client` binary (verified by
+    # other tests in this suite, e.g. `test_networks_reject_remote_client`); use
+    # `/usr/bin/clickhouse client` instead. `--multiquery` also errors on this version
+    # (multi-statement queries are the default now), so it is dropped.
+    import time
+
+    now = int(time.time())
+    mq = "SELECT 1; SELECT sleep(3); SELECT sleep(3); SELECT 1"
+    # Launch both concurrently; capture each client's combined output to a file.
+    script = (
+        f"/usr/bin/clickhouse client --user expiry_user --password until_{now + 4} "
+        f"--query '{mq}' > /tmp/short.out 2>&1 & "
+        f"/usr/bin/clickhouse client --user expiry_user --password until_{now + 3600} "
+        f"--query '{mq}' > /tmp/long.out 2>&1 & "
+        "wait"
+    )
+    instance.exec_in_container(["bash", "-c", script])
+    short = instance.exec_in_container(["bash", "-c", "cat /tmp/short.out"])
+    long = instance.exec_in_container(["bash", "-c", "cat /tmp/long.out"])
+    assert "USER_EXPIRED" in short or "expired" in short.lower(), short
+    assert "USER_EXPIRED" not in long, long
+
+
+def test_named_session_expiry_replaced_for_async_insert(started_cluster):
+    # ADR named-session expiry-replacement test, DETERMINISTIC deferred vehicle. A plain
+    # reattach cannot prove replacement — every HTTP request re-authenticates, so the
+    # request's own user_authenticated_with already carries the new deadline. An async
+    # INSERT is genuinely deferred: AsynchronousInsertQueue captures
+    # query_context->getAuthenticationValidUntil() at enqueue (the COPIED named-Context
+    # field, src/Interpreters/AsynchronousInsertQueue.cpp:631) and re-checks it at flush,
+    # throwing USER_EXPIRED if now > deadline (same file, ~line 1106).
+    #
+    # Create the named session under a SHORT deadline, reattach under a LONG one (which must
+    # WRITE the new expiry into the reused named Context via setAuthenticationValidUntil),
+    # then enqueue an async insert whose flush lands AFTER the short deadline. Setter present
+    # -> captured long deadline -> flush ok, row lands. Setter missing -> captured stale
+    # short deadline -> flush throws USER_EXPIRED, row does not land.
+    import time
+
+    admin(
+        "CREATE TABLE IF NOT EXISTS default.async_target (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    admin("GRANT INSERT ON default.async_target TO reader")
+    now = int(time.time())
+    session = "sess_async_expiry"
+    http_sess("SELECT 1", "expiry_user", f"until_{now + 5}", session)  # create, short
+    http_sess(
+        "SELECT 1", "expiry_user", f"until_{now + 3600}", session
+    )  # reattach, long
+    # wait_for_async_insert=1 blocks until flush; the busy timeout pushes the flush past the
+    # 5s short deadline. async_insert_use_adaptive_busy_timeout defaults to true, in which
+    # case async_insert_busy_timeout_max_ms is NOT the flush delay — it is only the ceiling
+    # the adaptive algorithm ramps toward from async_insert_busy_timeout_min_ms (default
+    # 50ms); the real delay would then be nondeterministic and could flush well before the
+    # short deadline, making this test vacuous. Disable adaptive behavior so
+    # async_insert_busy_timeout_max_ms is used directly (confirmed against
+    # AsynchronousInsertQueue.cpp: the non-adaptive branch returns max_ms as-is).
+    # http_query raises on any server error, so a missing setter (flush-time USER_EXPIRED)
+    # fails this test with the actual server error; http_query_and_get_error would be wrong
+    # here because it raises when the query SUCCEEDS. Explicit timeout: this request
+    # deliberately takes ~7 seconds.
+    started = time.monotonic()
+    instance.http_query(
+        "INSERT INTO default.async_target SETTINGS async_insert=1, wait_for_async_insert=1, "
+        "async_insert_use_adaptive_busy_timeout=0, async_insert_busy_timeout_max_ms=7000 VALUES (1)",
+        user="expiry_user",
+        password=f"until_{now + 3600}",
+        params={"session_id": session},
+        # ADAPTATION: http_query defaults to GET unless `data` is passed (see
+        # helpers/cluster.py: `method = "POST" if data else "GET"`), and INSERT over GET is
+        # rejected as readonly. Force POST explicitly, matching the precedent in
+        # test_insert_over_http_query_log/test.py.
+        method="POST",
+        timeout=20,
+    )
+    elapsed = time.monotonic() - started
+    # The request must have genuinely waited past the short (5s) deadline for the flush-time
+    # expiry re-check to be what's under test, rather than the setter having merely made an
+    # already-fast flush pass. A future change to the default busy timeout must fail this
+    # test rather than pass it vacuously.
+    assert elapsed > 5, (
+        f"async insert returned in {elapsed:.1f}s, too fast to have exercised "
+        "the flush-time expiry re-check"
+    )
+    assert instance.query("SELECT count() FROM default.async_target").strip() == "1"
+
+
+def test_failed_named_session_init_not_reusable(started_cluster):
+    # Regression for the Step 2b cleanup guard. Creating a named session fails when a
+    # returned setting violates a constraint from the returned role's profile
+    # (checkSettingsConstraints throws AFTER acquireSession has published the session).
+    # The failed session must not remain reusable: a later request with the same
+    # session_id must get a FRESH session that applies its own auth settings, not the
+    # half-initialized one (which took the reuse branch and applied no settings).
+    admin(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS guard_cap_profile SETTINGS max_threads MAX 4"
+    )
+    admin("ALTER ROLE capped_role ADD PROFILES 'guard_cap_profile'")
+    session = "sess_guard"
+    # Request 1: fails during named-session creation (max_threads=16 vs MAX 4).
+    err = instance.http_query_and_get_error(
+        "SELECT 1",
+        user="guard_user",
+        password="cause_fail",
+        params={"session_id": session},
+    )
+    assert err
+    # Request 2: same session_id, a VALID authentication returning max_result_rows=555.
+    # If the failed session were left reusable, request 2 would take the reuse branch and
+    # NOT apply auth settings, so max_result_rows would not be 555. The guard removed the
+    # failed session, so request 2 creates a fresh one and applies its settings.
+    value = instance.http_query(
+        "SELECT getSetting('max_result_rows')",
+        user="guard_user",
+        password="valid",
+        params={"session_id": session},
+    ).strip()
+    assert value == "555"

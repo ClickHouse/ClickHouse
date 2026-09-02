@@ -51,6 +51,7 @@ MAIN_USERS = {
     # receiving node's own HTTP server: authenticated only by `node`'s mock.
     "interserver_user": {"body": {"roles": ["cluster_role"]}},
     "http_user_concurrent": {"body": {"roles": ["reader"]}},
+    "legacy_settings_user": {"body": {"settings": {"max_threads": "4"}}},
 }
 MAIN_USERS.update({f"barrier_user_{i}": {"body": {}} for i in range(BARRIER_PARTIES)})
 
@@ -59,6 +60,24 @@ MAIN_USERS.update({f"barrier_user_{i}": {"body": {}} for i in range(BARRIER_PART
 DUAL_USER_PASSWORDS = {
     "password_a": {"roles": ["role_a"]},
     "password_b": {"roles": ["role_b"]},
+    "password_none": {"roles": []},
+}
+
+# probe_user: like dual_user, but with roles delegated for the named-session
+# role-profile contract test (probe_role_a/probe_role_b).
+PROBE_USER_PASSWORDS = {
+    "password_a": {"roles": ["probe_role_a"]},
+    "password_b": {"roles": ["probe_role_b"]},
+}
+
+# guard_user: used by test_failed_named_session_init_not_reusable. "cause_fail" returns a
+# role/setting combination that violates that role's profile constraint (checked at
+# named-session creation, AFTER acquireSession has already published the session) so the
+# named-session cleanup guard (Step 2b) is exercised; "valid" is a normal authentication
+# used afterwards to prove the failed session was not left reusable.
+GUARD_USER_PASSWORDS = {
+    "cause_fail": {"roles": ["capped_role"], "settings": {"max_threads": "16"}},
+    "valid": {"settings": {"max_result_rows": "555"}},
 }
 
 # Users known only to node4's directory (default_profile + networks).
@@ -97,9 +116,29 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def _auth_against(self, users):
         user, password = self._decode_basic_auth()
         SEEN_USERS.add(user)  # record that the directory actually consulted this server
+        if user == "expiry_user" and users is MAIN_USERS:
+            # password format: "until_<absolute_epoch>"; returns that valid_until and the
+            # reader role. Absolute, so a repeated auth returns the SAME deadline.
+            if password.startswith("until_"):
+                return self._reply(
+                    200,
+                    {
+                        "valid_until": int(password[len("until_") :]),
+                        "roles": ["reader"],
+                    },
+                )
+            return self._reply(401)
         if user == "dual_user" and users is MAIN_USERS:
             if password in DUAL_USER_PASSWORDS:
                 return self._reply(200, DUAL_USER_PASSWORDS[password])
+            return self._reply(401)
+        if user == "probe_user" and users is MAIN_USERS:
+            if password in PROBE_USER_PASSWORDS:
+                return self._reply(200, PROBE_USER_PASSWORDS[password])
+            return self._reply(401)
+        if user == "guard_user" and users is MAIN_USERS:
+            if password in GUARD_USER_PASSWORDS:
+                return self._reply(200, GUARD_USER_PASSWORDS[password])
             return self._reply(401)
         if user not in users:
             return self._reply(404)

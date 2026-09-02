@@ -2302,6 +2302,12 @@ void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_ro
     need_recalculate_access = true;
 }
 
+void Context::setExternalRoles(const std::vector<UUID> & new_external_roles)
+{
+    std::lock_guard lock(mutex);
+    setExternalRolesWithLock(new_external_roles, lock);
+}
+
 void Context::setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> &)
 {
     authentication_grants = authentication_grants_;
