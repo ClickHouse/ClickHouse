@@ -50,4 +50,21 @@ SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], _CAST('vec
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], _CAST('vector_search_index_analysis', 'String'), array('value', 'L2Distance', 1, [1.0], false, false));
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], _CAST('vector_search_index_analysis', 'String', 'extra'), array('value', 'L2Distance', 1, [1.0], false, false)); -- { serverError BAD_ARGUMENTS, NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- Each element of a six-element array has its own expected type, and an element of the wrong type is
+-- reported as `BAD_ARGUMENTS` rather than as a failed `Field` access. The remaining five elements are
+-- valid in every case below, so an element that stopped being checked would return an empty result
+-- instead of a second accepted error code.
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array(1, 'L2Distance', 1, [1.0], false, false)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array('value', 1, 1, [1.0], false, false)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array('value', 'L2Distance', 'one', [1.0], false, false)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array('value', 'L2Distance', 1, 'one', false, false)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array('value', 'L2Distance', 1, ['one'], false, false)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array('value', 'L2Distance', 1, [1.0], 'no', false)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array('value', 'L2Distance', 1, [1.0], false, 'no')); -- { serverError BAD_ARGUMENTS }
+
+-- A search vector of integers is accepted, as the optimization itself accepts one. A `Float64` with
+-- an integral value is formatted without a decimal point, so this is also the text the server sends
+-- to itself when it distributes the analysis of such a search vector.
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array('value', 'L2Distance', 1, [1, 2, 3], false, false));
+
 DROP TABLE data;
