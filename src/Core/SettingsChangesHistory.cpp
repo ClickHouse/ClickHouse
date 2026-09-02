@@ -65,6 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
+            {"query_plan_merge_filters_into_join", false, false, "New setting. Allow to merge `Filter` steps into the JOIN step during the join reordering optimization."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -116,7 +117,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_json_ast_dialect", false, false, "New setting to enable the `clickhouse_json` value of the `dialect` setting, which interprets queries as JSON ASTs (the output of `parseQueryToJSON`) instead of SQL text."},
             {"allow_metadata_only_named_tuple_alter", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
-            {"query_plan_merge_filters_into_join", false, false, "New setting. Allow to merge Filter step into JOIN step during join reordering optimization."},
             {"enable_parallel_single_level_merge", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."},
             {"ai_function_text_default_credentials", "", "", "New setting"},
             {"ai_function_embedding_default_credentials", "", "", "New setting"},
