@@ -1,0 +1,92 @@
+-- { echo }
+
+DROP TABLE IF EXISTS t_uniq;
+CREATE TABLE t_uniq (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_uniq SELECT number, number FROM numbers(40000);
+-- exact results through the abandoned path: the fully unique input flips the transforms to
+-- pass-through mid-query, recorded by the profile event (one increment per abandoning transform)
+SELECT count(), uniqExact(a) FROM (SELECT DISTINCT a FROM t_uniq) SETTINGS log_comment = '05045_abandoned';
+40000	40000
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['DistinctTransformsAbandonedDeduplication'] > 0 FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05045_abandoned' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1;
+1
+SELECT count() FROM (SELECT DISTINCT a, b FROM t_uniq);
+40000
+SELECT DISTINCT a FROM t_uniq ORDER BY a LIMIT 3;
+0
+1
+2
+SELECT count() FROM (SELECT DISTINCT a FROM t_uniq) SETTINGS enable_analyzer = 0;
+40000
+-- the behavior can be switched off
+SELECT count() FROM (SELECT DISTINCT a FROM t_uniq) SETTINGS allow_preliminary_distinct_abandoning = 0, log_comment = '05045_off';
+40000
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['DistinctTransformsAbandonedDeduplication'] FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05045_off' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1;
+0
+-- `DISTINCT` with `LIMIT`: the preliminary step carries a limit hint that stops the input after
+-- enough distinct rows, which requires counting them, so it does not abandon even when the hint
+-- never fires
+SELECT count() FROM (SELECT DISTINCT a FROM t_uniq LIMIT 100000) SETTINGS log_comment = '05045_hint';
+40000
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['DistinctTransformsAbandonedDeduplication'] FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05045_hint' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1;
+0
+-- the size limits survive abandoning: the final `DISTINCT` holds the global set and still enforces
+-- them
+SELECT count() FROM (SELECT DISTINCT a FROM t_uniq) SETTINGS max_rows_in_distinct = 10000; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+DROP TABLE t_uniq;
+-- duplicate-heavy input never abandons and stays exact
+DROP TABLE IF EXISTS t_dup;
+CREATE TABLE t_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_dup SELECT number % 100 FROM numbers(40000);
+SELECT count() FROM (SELECT DISTINCT a FROM t_dup) SETTINGS log_comment = '05045_kept';
+100
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['DistinctTransformsAbandonedDeduplication'] FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05045_kept' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1;
+0
+DROP TABLE t_dup;
+-- a duplicate tail arriving after the transforms abandoned is removed by the final `DISTINCT` alone
+DROP TABLE IF EXISTS t_uniq_head_dup_tail;
+CREATE TABLE t_uniq_head_dup_tail (a UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_uniq_head_dup_tail SELECT number FROM numbers(40000);
+INSERT INTO t_uniq_head_dup_tail SELECT number % 100 FROM numbers(40000);
+SELECT count() FROM (SELECT DISTINCT a FROM t_uniq_head_dup_tail);
+40000
+DROP TABLE t_uniq_head_dup_tail;
+-- `LowCardinality(Nullable)` keys go through the dictionary-index bookkeeping that abandoning also
+-- frees
+DROP TABLE IF EXISTS t_lc;
+CREATE TABLE t_lc (a LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lc SELECT if(number % 100 = 0, NULL, concat('k', toString(number))) FROM numbers(40000);
+SELECT count() FROM (SELECT DISTINCT a FROM t_lc);
+39601
+DROP TABLE t_lc;
+-- a final `DISTINCT` that skips stream merging (per-partition streams) still deduplicates every
+-- stream completely, so the preliminary step below it abandons and the result stays exact. The
+-- per-partition skip needs enough partitions relative to `max_threads` and zero distinct size limits
+-- (the CI stateless profile sets them, hence the explicit zeros).
+DROP TABLE IF EXISTS t_part;
+-- The per-partition read emits whole granules per chunk, so a small `index_granularity` is what gives
+-- each partition stream enough chunks to complete the observation window and abandon.
+CREATE TABLE t_part (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8 SETTINGS index_granularity = 512;
+INSERT INTO t_part SELECT number FROM numbers(40000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM t_part SETTINGS allow_distinct_partitions_independently = 1, max_rows_in_distinct = 0, max_bytes_in_distinct = 0, max_threads = 8, explain_query_plan_default = 'legacy') WHERE explain LIKE '%Skip stream merging%';
+Skip stream merging: 1
+SELECT count() FROM (SELECT DISTINCT a FROM t_part) SETTINGS allow_distinct_partitions_independently = 1, max_rows_in_distinct = 0, max_bytes_in_distinct = 0, max_threads = 8, log_comment = '05045_part';
+40000
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['DistinctTransformsAbandonedDeduplication'] > 0 FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05045_part' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1;
+1
+DROP TABLE t_part;
+-- reading in order turns the preliminary step into the sorted transform, which deduplicates by
+-- ranges of equal sort-prefix values and has nothing to abandon
+DROP TABLE IF EXISTS t_ord;
+CREATE TABLE t_ord (a UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_ord SELECT number FROM numbers(40000);
+SELECT count() FROM (SELECT DISTINCT a FROM t_ord) SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1, log_comment = '05045_in_order';
+40000
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['DistinctTransformsAbandonedDeduplication'] FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05045_in_order' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1;
+0
+DROP TABLE t_ord;
