@@ -3720,7 +3720,7 @@ TEST_F(WallabyTest, StartsTheDeltaChainAfterALongOutlierPrefix)
     /// The same chain-start search, but with a prefix longer than the fixed 32-slot window an
     /// earlier revision searched. 33 arbitrary head outliers are followed by a smooth `0, 1,
     /// 2, ...` ramp: anchoring the chain at slot 33 stores 33 exceptions and keeps the other
-    /// 991 values in 2-bit delta lanes (~600 bytes), while the window cut the search off before
+    /// 991 values in 2-bit delta lanes (615 bytes), while the window cut the search off before
     /// that anchor and left the vector to `XOR`, whose own lower bound here is ~1416 bytes. The
     /// search now stops on the exception budget, so any prefix that can still win is reachable.
     std::vector<Float64> values(1024);
@@ -3740,7 +3740,7 @@ TEST_F(WallabyTest, KeepsTheExactSampledScaleWhenTheTolerantScaleSucceeds)
     /// widest-adjustment probe reintroduces the exact scale: an encoder revision that dropped
     /// the sampled exact scales on a successful candidate settled for ~780 bytes of adjustment
     /// lanes, even though `alpha = 13` packs the same vector into 2-bit Frame-of-Reference
-    /// lanes (~270 bytes) and `XOR`'s own lower bound is ~1416 bytes.
+    /// lanes (285 bytes) and `XOR`'s own lower bound is ~1416 bytes.
     std::vector<Float64> values(1024);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = 100.0 + static_cast<Float64>(i % 4) * 1e-13;
