@@ -76,7 +76,7 @@ public:
         const String & path,
         const ListOptions & options,
         ListWithOptionsCallback callback,
-        WatchCallbackPtrOrEventPtr watch = {}) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void set(
         const String & path,

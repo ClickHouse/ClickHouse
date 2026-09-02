@@ -173,7 +173,7 @@ public:
         const String & path,
         const ListOptions & options,
         ListWithOptionsCallback callback,
-        WatchCallbackPtrOrEventPtr watch = {}) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void exists(
         const String & path,

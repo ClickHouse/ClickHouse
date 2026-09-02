@@ -1780,7 +1780,7 @@ std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncListWithOptio
         else
             promise->set_value(response);
     };
-    impl->listWithOptions(path, options, std::move(callback));
+    impl->listWithOptions(path, options, std::move(callback), {});
     return future;
 }
 

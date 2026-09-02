@@ -620,7 +620,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
             response.data.emplace_back(it->second.data);
     }
 
-    response.truncated = limit_reached;
+    response.truncated = response.truncated || limit_reached;
     response.error = Error::ZOK;
     return { std::make_shared<ListWithOptionsResponse>(response), {} };
 }

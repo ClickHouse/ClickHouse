@@ -1201,17 +1201,28 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperL
 }
 /// LIST Request ///
 
-static UInt64 listWithOptionsRank(int64_t session_id, Coordination::XID xid, std::string_view path, std::string_view child_name)
+static UInt64 listWithOptionsRank(
+    int64_t session_id,
+    Coordination::XID outer_xid,
+    size_t subrequest_index,
+    std::string_view path,
+    std::string_view child_name)
 {
-    SipHash hash(static_cast<UInt64>(session_id), static_cast<UInt64>(xid));
+    SipHash hash(static_cast<UInt64>(session_id), static_cast<UInt64>(outer_xid));
+    hash.update(static_cast<UInt64>(subrequest_index));
     hash.update(path);
     hash.update(child_name);
     return hash.get64();
 }
 
 template <typename Storage>
-static Coordination::ZooKeeperResponsePtr
-processLocal(const Coordination::ZooKeeperListWithOptionsRequest & zk_request, Storage & storage, int64_t session_id, bool check_acl)
+static Coordination::ZooKeeperResponsePtr processLocal(
+    const Coordination::ZooKeeperListWithOptionsRequest & zk_request,
+    Storage & storage,
+    int64_t session_id,
+    bool check_acl,
+    Coordination::XID outer_xid,
+    size_t subrequest_index)
 {
     ProfileEvents::increment(ProfileEvents::KeeperListWithOptionsRequest);
     auto response = std::static_pointer_cast<Coordination::ZooKeeperListWithOptionsResponse>(zk_request.makeResponse());
@@ -1258,8 +1269,8 @@ processLocal(const Coordination::ZooKeeperListWithOptionsRequest & zk_request, S
     {
         std::ranges::sort(candidates, [&](const String & lhs, const String & rhs)
         {
-            const UInt64 lhs_rank = listWithOptionsRank(session_id, zk_request.xid, zk_request.path, lhs);
-            const UInt64 rhs_rank = listWithOptionsRank(session_id, zk_request.xid, zk_request.path, rhs);
+            const UInt64 lhs_rank = listWithOptionsRank(session_id, outer_xid, subrequest_index, zk_request.path, lhs);
+            const UInt64 rhs_rank = listWithOptionsRank(session_id, outer_xid, subrequest_index, zk_request.path, rhs);
             return lhs_rank == rhs_rank ? lhs < rhs : lhs_rank < rhs_rank;
         });
     };
@@ -1283,6 +1294,27 @@ processLocal(const Coordination::ZooKeeperListWithOptionsRequest & zk_request, S
             response->data.emplace_back(child->getData());
         return true;
     };
+
+    if (!zk_request.options.recursive && zk_request.options.filter == Coordination::ListRequestType::ALL
+        && !zk_request.options.with_stat && !zk_request.options.with_data)
+    {
+        std::vector<String> children = storage.nodes.listCommittedChildrenNames(zk_request.path);
+        if (zk_request.options.shuffle)
+            sort_by_rank(children);
+
+        if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
+        {
+            response->names.assign(children.begin(), children.begin() + zk_request.options.max_results);
+            response->truncated = true;
+        }
+        else
+        {
+            response->names = std::move(children);
+        }
+
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
 
     std::vector<String> frontier{zk_request.path};
     for (size_t current = 0; current < frontier.size(); ++current)
@@ -1361,7 +1393,7 @@ static Coordination::ZooKeeperResponsePtr
 process(const Coordination::ZooKeeperListWithOptionsRequest & zk_request, Storage & storage, KeeperStorage::DeltaRange deltas, int64_t session_id)
 {
     chassert(deltas.empty());
-    return processLocal(zk_request, storage, session_id, /*check_acl=*/ true);
+    return processLocal(zk_request, storage, session_id, /*check_acl=*/true, zk_request.xid, /*subrequest_index=*/0);
 }
 
 /// CHECK Request ///
@@ -2278,6 +2310,8 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
     {
         size_t request_idx;
         int64_t session_id;
+        Coordination::XID outer_xid;
+        size_t subrequest_index;
         const Coordination::ZooKeeperRequestPtr * request;
         void * response;
         bool is_base_response_type;
@@ -2333,7 +2367,11 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
                 auto * resp = &response->responses[i];
                 static_assert(std::is_same_v<decltype(resp), Coordination::ResponsePtr *>);
                 tasks.push_back(Task {
-                    .request_idx = request_idx, .session_id = session_id, .request = &subrequest,
+                    .request_idx = request_idx,
+                    .session_id = session_id,
+                    .outer_xid = zk_request->xid,
+                    .subrequest_index = i,
+                    .request = &subrequest,
                     .response = static_cast<void*>(resp), .is_base_response_type = true,
                     .thread_safe = is_request_thread_safe(subrequest->getOpNum())});
             }
@@ -2344,7 +2382,11 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             auto * resp = &results[request_idx].response;
             static_assert(std::is_same_v<decltype(resp), Coordination::ZooKeeperResponsePtr *>);
             tasks.push_back(Task {
-                .request_idx = request_idx, .session_id = session_id, .request = &zk_request,
+                .request_idx = request_idx,
+                .session_id = session_id,
+                .outer_xid = zk_request->xid,
+                .subrequest_index = 0,
+                .request = &zk_request,
                 .response = static_cast<void*>(resp), .is_base_response_type = false,
                 .thread_safe = is_request_thread_safe(op)});
         }
@@ -2382,7 +2424,10 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
 
         const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(T & concrete_zk_request)
         {
-            response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
+            if constexpr (std::same_as<T, Coordination::ZooKeeperListWithOptionsRequest>)
+                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl, task.outer_xid, task.subrequest_index);
+            else
+                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
         };
 
         try

@@ -900,7 +900,7 @@ public:
         const String & path,
         const ListOptions & options,
         ListWithOptionsCallback callback,
-        WatchCallbackPtrOrEventPtr watch = {}) = 0;
+        WatchCallbackPtrOrEventPtr watch) = 0;
 
     virtual void exists(
         const String & path,
