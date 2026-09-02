@@ -102,8 +102,10 @@ public:
     /// The caller determined (from the pre-aggregation actions DAG, before `materialize` strips constness -
     /// see `allAggregationKeysAreSemanticallyConstant`) that every `GROUP BY` key is a constant, so the
     /// aggregation produces a single group and the gradual pre-aggregation resize must not be used.
-    /// Not serialized with the plan: a deserialized step merely falls back to the header-based
-    /// `ColumnConst` check, which affects only the choice between the strict and the gradual resize.
+    /// Preserved by `clone` and by the query plan serialization round-trip, so that a plan copied
+    /// by the cascades optimizer or shipped to a shard keeps the decision. A peer that predates the
+    /// serialized bit simply ignores it and falls back to the header-based `ColumnConst` check,
+    /// which affects only the choice between the strict and the gradual resize.
     void markGroupByKeysSemanticallyConstant() { group_by_keys_semantically_constant = true; }
     void setLimitHint(size_t limit) { limit_hint = limit; }
     size_t getLimitHint() const { return limit_hint; }

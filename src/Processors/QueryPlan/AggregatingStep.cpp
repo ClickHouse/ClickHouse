@@ -1116,7 +1116,8 @@ void AggregatingStep::serialize(Serialization & ctx) const
 {
     /// Flags encode boolean properties that affect the data format or plan structure.
     /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
-    ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required.
+    ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required,
+    ///             128=group_by_keys_semantically_constant.
     UInt8 flags = 0;
     if (final && !ctx.for_cache_key)
         flags |= 1;
@@ -1132,6 +1133,12 @@ void AggregatingStep::serialize(Serialization & ctx) const
         flags |= 32;
     if (explicit_sorting_required_for_aggregation_in_order)
         flags |= 64;
+    /// Only picks between the strict and the gradual pre-aggregation resize, so it does not belong
+    /// to the hash table statistics cache key, and it needs no serialization version gate either:
+    /// a peer that does not know the bit ignores it and falls back to the header-based constness
+    /// check, which is exactly the behaviour before this bit existed.
+    if (group_by_keys_semantically_constant && !ctx.for_cache_key)
+        flags |= 128;
 
     /// The in-order aggregation payload exists only since query plan serialization version 2.
     /// Throw rather than send bytes the other side would misread (deserialize checks the same).
@@ -1185,6 +1192,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool has_stats_key = bool(flags & 16);
     bool has_in_order = bool(flags & 32);
     bool explicit_sorting_required = bool(flags & 64);
+    bool group_by_keys_semantically_constant = bool(flags & 128);
 
     /// The in-order aggregation payload exists only since query plan serialization version 2;
     /// on an older stream these bits are garbage, so reject them (serialize checks the same).
@@ -1291,12 +1299,15 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging],
         explicit_sorting_required);
 
+    if (group_by_keys_semantically_constant)
+        aggregating_step->markGroupByKeysSemanticallyConstant();
+
     return aggregating_step;
 }
 
 QueryPlanStepPtr AggregatingStep::clone() const
 {
-    return std::make_unique<AggregatingStep>(
+    auto cloned = std::make_unique<AggregatingStep>(
         input_headers.front(),
         params,
         grouping_sets_params,
@@ -1313,6 +1324,13 @@ QueryPlanStepPtr AggregatingStep::clone() const
         memory_bound_merging_of_aggregation_results_enabled,
         explicit_sorting_required_for_aggregation_in_order
     );
+
+    /// Not a constructor argument: the planner derives it from the pre-aggregation actions DAG,
+    /// which a step consumer (the cascades optimizer, for one) no longer has at hand.
+    if (group_by_keys_semantically_constant)
+        cloned->markGroupByKeysSemanticallyConstant();
+
+    return cloned;
 }
 
 void AggregatingStep::setFinal(bool new_value)
