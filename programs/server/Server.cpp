@@ -3055,6 +3055,11 @@ try
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
+            getIcebergManifestDecodeThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+                new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
             global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);

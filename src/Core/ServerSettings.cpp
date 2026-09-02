@@ -3661,6 +3661,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"format_parsing_thread_pool_queue_size",
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_iceberg_manifest_decode_thread_pool_size",
+             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_iceberg_manifest_decode_thread_pool_free_size",
+             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"iceberg_manifest_decode_thread_pool_queue_size",
+             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 
