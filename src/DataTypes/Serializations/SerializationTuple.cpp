@@ -7,6 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/ParseError.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -21,6 +22,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -145,6 +147,10 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         restore_elements();
         if constexpr (throw_exception)
             throw;
+        /// Only a genuine parse failure means "this value did not parse"; other errors
+        /// (e.g. MEMORY_LIMIT_EXCEEDED) must propagate instead of being reported as a
+        /// failed parse and silently turned into a default/skip.
+        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
@@ -175,6 +181,23 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
             elems[i]->deserializeBinary(extractElementColumn(column, i), istr, settings);
         return true;
     });
+}
+
+void SerializationTuple::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const size_t level = settings.hive_text.nesting_level;
+    const char separator = getHiveTextDelimiter(settings, level);
+
+    auto child_settings = settings;
+    child_settings.hive_text.nesting_level = level + 1;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        if (i != 0)
+            writeChar(separator, ostr);
+
+        elems[i]->serializeTextHive(extractElementColumn(column, i), row_num, ostr, child_settings);
+    }
 }
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -232,7 +255,7 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
             }
             else
             {
-                bool ok;
+                bool ok = false;
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
                     ok = SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(element_column, istr, settings, elems[i]);
                 else
@@ -261,12 +284,22 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
         {
             if constexpr (throw_exception)
             {
-                /// Commit the row before throwUnexpectedDataAfterParsedValue, which expects
-                /// the parsed value to be in the column (it serializes it for the error message
-                /// and then pops it back). Without this, for Tuple() with no sub-columns,
-                /// the column size is still 0 and popBack would fail.
-                assert_cast<ColumnTuple &>(column).addSize(1);
-                throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
+                /// If empty tuple, temporarily increase size to make sure we can read the parsed
+                /// value via serializeText.
+                if (elems.empty())
+                    assert_cast<ColumnTuple &>(column).addSize(1);
+                WriteBufferFromOwnString ostr;
+                serializeText(column, column.size() - 1, ostr, settings);
+
+                /// Revert the temporarily added size increment for empty tuple.
+                if (elems.empty())
+                    assert_cast<ColumnTuple &>(column).popBack(1);
+
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                    "Unexpected data '{}' after parsed Tuple value '{}'",
+                    std::string(istr.position(), std::min(size_t(10), istr.available())),
+                    ostr.str());
             }
             return false;
         }
@@ -824,8 +857,7 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -839,13 +871,10 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         }
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
-            size_t prev_size = column->size();
-            auto mutable_column = column->assumeMutable();
-            auto ignored_size = stream->tryIgnore(rows_offset + limit);
-            auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
-            typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
-            column = std::move(mutable_column);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+            size_t prev_size = column.size();
+            auto ignored_size = stream->tryIgnore(limit);
+            typeid_cast<ColumnTuple &>(column).addSize(ignored_size);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         }
 
         return;
@@ -853,13 +882,12 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 
     auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
-    auto mutable_column = column->assumeMutable();
-    auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
+    auto & column_tuple = assert_cast<ColumnTuple &>(column);
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
         elems[i]->deserializeBinaryBulkWithMultipleStreams(
-            column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
+            column_tuple.getColumn(i), limit, settings, tuple_state->states[i], cache);
     }
 
     /// Verify that all Tuple elements have the same size.
@@ -870,7 +898,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, column_tuple.getColumn(i).size(), expected_size);
     }
 
-    typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
+    column_tuple.addSize(column_tuple.getColumn(0).size());
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const
@@ -895,6 +923,22 @@ bool SerializationTuple::supportsPooling() const
         if (!elem->supportsPooling())
             return false;
     return true;
+}
+
+MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// Rebuild the tuple with each element wrapped by its own serialization (element serializations are
+    /// SerializationNamed wrappers that forward to the real element serialization, so kinds compose).
+    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+    if (elems.empty())
+        return column;
+
+    MutableColumns wrapped;
+    wrapped.reserve(elems.size());
+    for (size_t i = 0; i != elems.size(); ++i)
+        wrapped.push_back(elems[i]->wrapColumnForDeserialization(tuple.getColumn(i).cloneEmpty()));
+
+    return ColumnTuple::create(std::move(wrapped));
 }
 
 }

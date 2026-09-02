@@ -1,0 +1,353 @@
+---
+description: 'ローカルディスクへの/からのバックアップと復元の詳細'
+sidebarTitle: 'ローカルディスク / S3ディスク'
+slug: /operations/backup/disk
+title: 'ディスクへの BACKUP / RESTORE'
+doc_type: 'guide'
+---
+
+import ExampleSetup from '/snippets/ja/_example_setup.mdx';
+import Syntax from '/snippets/ja/_syntax.mdx';
+
+<div id="syntax">
+  ## 構文
+</div>
+
+<Syntax />
+
+<div id="configure-backup-destinations-for-disk">
+  ## ディスク用のバックアップ保存先を設定する
+</div>
+
+<div id="configure-a-backup-destination">
+  ### ローカルディスクのバックアップ保存先を設定する
+</div>
+
+以下の例では、バックアップ保存先は `Disk('backups', '1.zip')` として指定されています。
+`Disk` バックアップエンジンを使用するには、まず以下のパスに
+バックアップ保存先を指定するファイルを追加する必要があります。
+
+```text
+/etc/clickhouse-server/config.d/backup_disk.xml
+```
+
+たとえば、以下の設定では `backups` という名前のディスクを定義し、そのディスクを
+**backups** の **allowed&#95;disk** リストに追加しています。
+
+```xml highlight={4,10-13}
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+</clickhouse>
+```
+
+<div id="backuprestore-using-an-s3-disk">
+  ### S3ディスクのバックアップ保存先を構成する
+</div>
+
+ClickHouseのストレージ構成でS3ディスクを設定することで、S3への`BACKUP`/`RESTORE`も可能になります。
+ローカルディスクで前述したように、`/etc/clickhouse-server/config.d`にファイルを追加して、次のようにディスクを設定します。
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_plain>
+                <type>s3_plain</type>
+                <endpoint></endpoint>
+                <access_key_id></access_key_id>
+                <secret_access_key></secret_access_key>
+            </s3_plain>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3_plain</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <backups>
+        <allowed_disk>s3_plain</allowed_disk>
+    </backups>
+</clickhouse>
+```
+
+S3ディスクの`BACKUP`/`RESTORE`は、ローカルディスクの場合と同様に行います:
+
+```sql
+BACKUP TABLE data TO Disk('s3_plain', 'cloud_backup');
+RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
+```
+
+<Note>
+  * このディスクは `MergeTree` 自体には使用せず、`BACKUP`/`RESTORE` にのみ使用してください
+  * テーブルのバックエンドが S3 storage で、ディスクの種類が異なる場合、
+    パーツを宛先バケットにコピーする際に `CopyObject` 呼び出しは使用されず、代わりに
+    ダウンロードしてからアップロードするため、非常に非効率です。この場合、この用途には
+    `BACKUP ... TO S3(<endpoint>)` 構文を使用することを推奨します。
+</Note>
+
+<div id="usage-examples">
+  ## ローカルディスクへのバックアップ/復元の使用例
+</div>
+
+<div id="backup-and-restore-a-table">
+  ### テーブルのバックアップと復元
+</div>
+
+<ExampleSetup />
+
+テーブルをバックアップするには、次を実行します。
+
+```sql title="Query"
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status─────────┐
+1. │ 065a8baf-9db7-4393-9c3f-ba04d1e76bcd │ BACKUP_CREATED │
+   └──────────────────────────────────────┴────────────────┘
+```
+
+テーブルが空の場合は、次のコマンドでバックアップから復元できます。
+
+```sql title="Query"
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status───┐
+1. │ f29c753f-a7f2-4118-898e-0e4600cd2797 │ RESTORED │
+   └──────────────────────────────────────┴──────────┘
+```
+
+<Note>
+  上記の `RESTORE` は、table `test.table` にデータが含まれている場合は失敗します。
+  設定 `allow_non_empty_tables=true` を指定すると、`RESTORE TABLE` で空でない table にデータを挿入できます。
+  これにより、table 内の既存データとバックアップから復元されたデータが混在します。
+  そのため、この設定を使用すると table 内でデータが重複する可能性があるため、注意して使用してください。
+</Note>
+
+すでにデータが入っている table を復元するには、次を実行します。
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+SETTINGS allow_non_empty_tables=true
+```
+
+テーブルは、新しい名前を付けて復元またはバックアップできます：
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backups', '1.zip')
+```
+
+このバックアップのバックアップアーカイブの構造は、次のとおりです。
+
+```text
+├── .backup
+└── metadata
+    └── test_db
+        └── test_table.sql
+```
+
+{/* TO DO: 
+  ここにバックアップのフォーマットに関する説明を追加。Issue 24a を参照
+  https://github.com/ClickHouse/clickhouse-docs/issues/3968
+  */}
+
+zip以外のフォーマットも使用できます。詳細は、以下の[&quot;tarアーカイブ形式のバックアップ&quot;](#backups-as-tar-archives)を参照してください。
+
+<div id="incremental-backups">
+  ### ディスクへの増分バックアップ
+</div>
+
+ClickHouse におけるベースバックアップとは、後続の
+増分バックアップを作成する基準となる最初のフルバックアップです。増分バックアップには、ベースバックアップ以降の
+変更分のみが保存されるため、どの増分バックアップからでも
+復元できるように、ベースバックアップを利用可能な状態にしておく必要があります。ベースバックアップの保存先は setting
+`base_backup` で設定できます。
+
+<Note>
+  増分バックアップはベースバックアップに依存します。増分バックアップから
+  復元できるようにするには、ベースバックアップを利用可能な状態にしておく必要があります。
+</Note>
+
+テーブルの増分バックアップを作成するには、まずベースバックアップを作成します。
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'd.zip')
+```
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'incremental-a.zip')
+SETTINGS base_backup = Disk('backups', 'd.zip')
+```
+
+増分バックアップとベースバックアップのすべてのデータは、次のコマンドで
+新しいテーブル `test_db.test_table2` に復元できます。
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table2
+FROM Disk('backups', 'incremental-a.zip');
+```
+
+<div id="assign-a-password-to-the-backup">
+  ### バックアップの保護
+</div>
+
+ディスクに書き込まれたバックアップでは、ファイルにパスワードを設定できます。
+パスワードは `password` 設定で指定できます。
+
+<Note>
+  パスワード保護は ZIP アーカイブ (`.zip`、`.zipx`) でのみサポートされています。
+  パスワードを使用するには、バックアップパスの末尾が `.zip` または `.zipx` である必要があります。
+  tar アーカイブや非アーカイブパスを含む、それ以外のフォーマットでパスワードを使用すると、
+  `BAD_ARGUMENTS` エラー: `Password is not applicable, backup cannot be encrypted` が発生します。
+</Note>
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+パスワード保護されたバックアップを復元するには、再度 `password` 設定で
+パスワードを指定する必要があります。
+
+```sql
+RESTORE TABLE test_db.test_table
+FROM Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+<div id="backups-as-tar-archives">
+  ### tar アーカイブ形式のバックアップ
+</div>
+
+バックアップは、zip アーカイブだけでなく、tar アーカイブとして保存することもできます。
+機能は zip の場合と同じですが、tar アーカイブではパスワード保護は
+サポートされません。さらに、tar アーカイブはさまざまな
+圧縮方式に対応しています。
+
+テーブルを tar アーカイブとしてバックアップするには:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar')
+```
+
+tarアーカイブから復元するには:
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.tar')
+```
+
+圧縮方式を変更するには、バックアップ名の末尾に適切なファイル接尾辞を
+付ける必要があります。たとえば、tar アーカイブを gzip で圧縮するには、次を実行します:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
+```
+
+サポートされている圧縮ファイルの接尾辞は以下のとおりです:
+
+* `tar.gz`
+* `.tgz`
+* `tar.bz2`
+* `tar.lzma`
+* `.tar.zst`
+* `.tzst`
+* `.tar.xz`
+
+<div id="compression-settings">
+  ### 圧縮設定
+</div>
+
+圧縮方式と圧縮レベルは、それぞれ設定 `compression_method` と `compression_level` で指定できます。
+
+{/* TO DO:
+  これらの設定についての詳しい説明と、これを行う理由に関する情報が必要
+  */}
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'filename.zip')
+SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="restore-specific-partitions">
+  ### 特定のパーティションを復元する
+</div>
+
+テーブルに関連付けられた特定のパーティションを復元する必要がある場合は、それらを指定できます。
+
+4 つのパーティションに分かれたシンプルなテーブルを作成し、データを insert してから、
+1 番目と 4 番目のパーティションだけをバックアップしてみましょう。
+
+<Accordion title="セットアップ">
+  ```sql
+  CREATE IF NOT EXISTS test_db;
+         
+  -- パーティション化されたテーブルを作成
+  CREATE TABLE test_db.partitioned (
+      id UInt32,
+      data String,
+      partition_key UInt8
+  ) ENGINE = MergeTree()
+  PARTITION BY partition_key
+  ORDER BY id;
+
+  INSERT INTO test_db.partitioned VALUES
+  (1, 'data1', 1),
+  (2, 'data2', 2),
+  (3, 'data3', 3),
+  (4, 'data4', 4);
+
+  SELECT count() FROM test_db.partitioned;
+
+  SELECT partition_key, count() 
+  FROM test_db.partitioned
+  GROUP BY partition_key
+  ORDER BY partition_key;
+  ```
+
+  ```response
+     ┌─count()─┐
+  1. │       4 │
+     └─────────┘
+     ┌─partition_key─┬─count()─┐
+  1. │             1 │       1 │
+  2. │             2 │       1 │
+  3. │             3 │       1 │
+  4. │             4 │       1 │
+     └───────────────┴─────────┘
+  ```
+</Accordion>
+
+パーティション 1 と 4 をバックアップするには、次のコマンドを実行します。
+
+```sql
+BACKUP TABLE test_db.partitioned PARTITIONS '1', '4'
+TO Disk('backups', 'partitioned.zip')
+```
+
+パーティション 1 と 4 を復元するには、次のコマンドを実行します。
+
+```sql
+RESTORE TABLE test_db.partitioned PARTITIONS '1', '4'
+FROM Disk('backups', 'partitioned.zip')
+SETTINGS allow_non_empty_tables=true
+```

@@ -33,7 +33,7 @@ namespace
         }
     }
 
-    class FunctionProfiles : public IFunction
+    class FunctionProfiles final : public IFunction
     {
     public:
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -48,8 +48,28 @@ namespace
 
         explicit FunctionProfiles(const ContextPtr & context_, Kind kind_)
             : kind(kind_)
-            , context(context_)
-        {}
+        {
+            const auto & manager = context_->getAccessControl();
+
+            UUIDs profile_ids;
+
+            switch (kind)
+            {
+                case Kind::currentProfiles:
+                    profile_ids = context_->getCurrentProfiles();
+                    break;
+                case Kind::enabledProfiles:
+                    profile_ids = context_->getEnabledProfiles();
+                    break;
+                case Kind::defaultProfiles:
+                    const auto user = context_->getAccess()->tryGetUser();
+                    if (user)
+                        profile_ids = user->settings.toProfileIDs();
+                    break;
+            }
+
+            profile_names = manager.tryReadNames(profile_ids);
+        }
 
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
@@ -61,47 +81,20 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
-            std::call_once(initialized_flag, [&]{ initialize(); });
-
-            auto col_res = ColumnArray::create(ColumnString::create());
-            ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
-            ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+            auto res_strings_column = ColumnString::create();
+            auto res_offsets_column = ColumnArray::ColumnOffsets::create();
+            ColumnString & res_strings = *res_strings_column;
+            ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
             for (const String & profile_name : profile_names)
                 res_strings.insertData(profile_name.data(), profile_name.length());
             res_offsets.push_back(res_strings.size());
+            auto col_res = ColumnArray::create(std::move(res_strings_column), std::move(res_offsets_column));
             return ColumnConst::create(std::move(col_res), input_rows_count);
         }
 
     private:
-        void initialize() const
-        {
-            const auto & manager = context->getAccessControl();
-
-            std::vector<UUID> profile_ids;
-
-            switch (kind)
-            {
-                case Kind::currentProfiles:
-                    profile_ids = context->getCurrentProfiles();
-                    break;
-                case Kind::enabledProfiles:
-                    profile_ids = context->getEnabledProfiles();
-                    break;
-                case Kind::defaultProfiles:
-                    const auto user = context->getAccess()->tryGetUser();
-                    if (user)
-                        profile_ids = user->settings.toProfileIDs();
-                    break;
-            }
-
-            profile_names = manager.tryReadNames(profile_ids);
-        }
-
-        mutable std::once_flag initialized_flag;
-
         Kind kind;
-        ContextPtr context;
-        mutable Strings profile_names;
+        Strings profile_names;
     };
 }
 
@@ -120,9 +113,9 @@ Returns an array of the setting profiles for the current user.
 SELECT currentProfiles();
         )",
         R"(
-┌─currentProfiles()─────────────────────────────┐
-│ ['default', 'readonly_user', 'web_analytics'] │
-└───────────────────────────────────────────────┘
+┌─currentProfiles()─┐
+│ ['default']       │
+└───────────────────┘
         )"
     }
     };
@@ -143,9 +136,9 @@ Returns an array of setting profile names which are enabled for the current user
 SELECT enabledProfiles();
         )",
         R"(
-┌─enabledProfiles()─────────────────────────────────────────────────┐
-│ ['default', 'readonly_user', 'web_analytics', 'batch_processing'] │
-└───────────────────────────────────────────────────────────────────┘
+┌─enabledProfiles()─┐
+│ ['default']       │
+└───────────────────┘
         )"
     }
     };

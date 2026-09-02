@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -61,6 +62,10 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
+    bool supportsStreaming() const override { return true; }
+
+    CursorPromotersMap buildPromoters() override;
+
     bool supportsTransactions() const override { return support_transaction; }
 
     void read(
@@ -95,8 +100,6 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
-
-    bool hasLightweightDeletedMask() const override;
 
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
@@ -216,6 +219,28 @@ private:
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
     Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
+
+    /// Result of `prepareMutationEntry`. Holds the block-number reservation
+    /// that must outlive the call to `addPreparedMutationEntry`.
+    struct PreparedMutationEntry
+    {
+        MergeTreeMutationEntry entry;
+        Int64 version;
+        String mutation_id;
+        String additional_info;
+        std::unique_ptr<PlainCommittingBlockHolder> block_holder;
+    };
+
+    /// Allocate a block number, build the mutation entry, and commit it to disk.
+    /// Touches no state guarded by `currently_processing_in_background_mutex`, so
+    /// it is safe to call without that lock. The result must subsequently be
+    /// passed to `addPreparedMutationEntry` under the mutex.
+    PreparedMutationEntry prepareMutationEntry(const MutationCommands & commands, ContextPtr query_context);
+
+    /// Register a prepared mutation in `current_mutations_by_version` and
+    /// increment `mutation_counters`. Caller must hold
+    /// `currently_processing_in_background_mutex`.
+    void addPreparedMutationEntry(PreparedMutationEntry prepared);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
@@ -255,6 +280,15 @@ private:
     /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
     /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
     UInt32 getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const;
+
+    /// Marks leading non-transactional mutations that have no parts left to process as done and
+    /// returns their count. Mutations with version >= `first_just_completed_version` were completed
+    /// by the calling event itself, so the current time is stamped as their `finish_time`; with the
+    /// default argument nothing is stamped — the caller observed the mutations as done without
+    /// knowing their actual completion moment, and `finish_time` stays zero (unknown).
+    /// Must be called under `currently_processing_in_background_mutex` (except in the constructor,
+    /// where locking is unnecessary — see `loadMutations`).
+    size_t markFinishedMutations(UInt64 first_just_completed_version = std::numeric_limits<UInt64>::max());
 
     size_t clearOldMutations(bool truncate = false);
 
@@ -297,12 +331,13 @@ private:
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
 
+    bool isTableReadonly() const;
     void assertNotReadonly() const;
 
     friend class MergeTreeSink;
@@ -365,7 +400,7 @@ private:
                             : retry_count(0ull)
                             , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)
-                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
+                            , max_postpone_power(max_postpone_time_ms_ ? static_cast<size_t>(std::log2(max_postpone_time_ms_)) : 0ull)
             {}
 
 

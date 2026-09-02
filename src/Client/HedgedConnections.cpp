@@ -1,10 +1,9 @@
 #include <Core/Protocol.h>
 #if defined(OS_LINUX)
 
-#include <cmath>
 #include <Client/HedgedConnections.h>
+#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Common/ProfileEvents.h>
-#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
@@ -23,6 +22,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsDialect dialect;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -136,6 +136,27 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
     pipeline_for_new_replicas.add(send_query_plan);
 }
 
+bool HedgedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
+{
+    /// The first replica is established before the query is sent, but a later hedge may
+    /// select any remaining replica: one whose version is not known yet, or an already
+    /// established usable but stale one that `setBestUsableReplica` keeps for later.
+    /// Use the SQL fallback rather than making that hedge unavailable after a timeout.
+    if (hedged_connections_factory.maySelectReplicaBelowQueryPlanSerializationVersion(version))
+        return false;
+
+    for (const OffsetState & offset_state : offset_states)
+    {
+        for (const ReplicaState & replica : offset_state.replicas)
+        {
+            if (replica.connection && replica.connection->getQueryPlanSerializationVersion() < version)
+                return false;
+        }
+    }
+
+    return true;
+}
+
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -158,23 +179,6 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
                 send_external_tables_data(replica);
 
     pipeline_for_new_replicas.add(send_external_tables_data);
-}
-
-void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    std::lock_guard lock(cancel_mutex);
-
-    if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
-
-    auto send_ignored_part_uuids = [&uuids](ReplicaState & replica) { replica.connection->sendIgnoredPartUUIDs(uuids); };
-
-    for (auto & offset_state : offset_states)
-        for (auto & replica : offset_state.replicas)
-            if (replica.connection)
-                send_ignored_part_uuids(replica);
-
-    pipeline_for_new_replicas.add(send_ignored_part_uuids);
 }
 
 void HedgedConnections::sendQuery(
@@ -219,18 +223,9 @@ void HedgedConnections::sendQuery(
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;
 
-        /// Scale interactive_delay by sqrt(fanout) with jitter, same as in MultiplexedConnections.
-        {
-            size_t total_fanout = distributed_fanout * offset_states.size();
-            if (total_fanout > 1)
-            {
-                UInt64 delay = modified_settings[Setting::interactive_delay];
-                double scale = std::sqrt(static_cast<double>(total_fanout));
-                double jitter = 1.0 + (thread_local_rng() % 1000) / 1000.0;
-                delay = static_cast<UInt64>(std::ceil(static_cast<double>(delay) * scale * jitter));
-                modified_settings[Setting::interactive_delay] = delay;
-            }
-        }
+        modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
+            modified_settings[Setting::interactive_delay],
+            distributed_fanout * offset_states.size());
 
         if (disable_two_level_aggregation)
         {
@@ -252,6 +247,13 @@ void HedgedConnections::sendQuery(
         /// In other words, the initiator always controls whether the analyzer enabled or not for
         /// all servers involved in the distributed query processing.
         modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+
+        /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
+        /// servers of a distributed query must agree on it even when it comes only from server/profile
+        /// defaults. Force it into the changed set, so it is always sent to the remote servers.
+        modified_settings.set(
+            "enable_packed_string_keys_in_aggregation",
+            static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
@@ -386,7 +388,18 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
+    {
+        /// A reader can get here after `RemoteQueryExecutor::finish` cancelled and drained these
+        /// connections from another pipeline thread: `onUpdatePorts` runs in parallel with `read`
+        /// once LIMIT closes the port. Nothing is left to read then, and that is not an error.
+        if (cancelled)
+        {
+            Packet res;
+            res.type = Protocol::Server::EndOfStream;
+            return res;
+        }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+    }
 
     if (epoll.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending events in epoll.");
@@ -406,7 +419,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             return location;
     }
 
-    int event_fd;
+    int event_fd = 0;
     while (true)
     {
         /// Get ready file descriptor from epoll and process it.
@@ -471,7 +484,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
-    epoll_event event;
+    epoll_event event{};
     event.data.fd = -1;
     size_t events_count = 0;
     bool blocking = !static_cast<bool>(async_callback);

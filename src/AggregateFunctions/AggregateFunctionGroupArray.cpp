@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -212,7 +213,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -342,12 +343,17 @@ public:
                 readBinaryLittleEndian(element, buf);
         }
 
-        if constexpr (Trait::last)
+        if constexpr (Trait::last || Trait::sampler == Sampler::RNG)
+        {
             readBinaryLittleEndian(this->data(place).total_values, buf);
+            if (static_cast<UInt64>(this->data(place).value.size()) != std::min<UInt64>(max_elems, this->data(place).total_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed {} state: {} stored elements, but total_values = {} with max_elems = {}",
+                    getName(), this->data(place).value.size(), this->data(place).total_values, max_elems);
+        }
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(this->data(place).total_values, buf);
             std::string rng_string;
             readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
@@ -416,7 +422,7 @@ struct GroupArrayNodeBase
     /// Reads and allocates node from ReadBuffer's data (doesn't set next)
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         checkElementSize(size, AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE);
 
@@ -572,7 +578,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = data(place);
         auto & rhs_elems = data(rhs);
@@ -603,7 +609,7 @@ public:
 
     void ALWAYS_INLINE mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
     {
-        UInt64 new_elems;
+        UInt64 new_elems = 0;
         if (limit_num_elems)
         {
             if (cur_elems.value.size() >= max_elems)
@@ -678,7 +684,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt64 elems;
+        UInt64 elems = 0;
         readVarUInt(elems, buf);
         checkArraySize(elems, max_elems);
 
@@ -691,12 +697,17 @@ public:
                 value[i] = Node::read(buf, arena);
         }
 
-        if constexpr (Trait::last)
+        if constexpr (Trait::last || Trait::sampler == Sampler::RNG)
+        {
             readBinaryLittleEndian(data(place).total_values, buf);
+            if (static_cast<UInt64>(data(place).value.size()) != std::min<UInt64>(max_elems, data(place).total_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed {} state: {} stored elements, but total_values = {} with max_elems = {}",
+                    getName(), data(place).value.size(), data(place).total_values, max_elems);
+        }
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(data(place).total_values, buf);
             std::string rng_string;
             readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
@@ -843,6 +854,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 }
 
 
+void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
@@ -873,7 +885,10 @@ groupArray(max_size)(x)
     {
         "Basic usage",
         R"(
-SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
+INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
+
+SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
         )",
         R"(
 ┌─id─┬─groupArray(10)(name)─┐
@@ -917,19 +932,19 @@ groupArraySample(max_size[, seed])(x)
     {
          "Usage example",
          R"(
-CREATE TABLE default.colors (
+CREATE TABLE colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES
+INSERT INTO colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
 (4, 'white'),
 (5, 'orange');
 
-SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(color) as newcolors FROM colors;
          )",
          R"(
 ┌─newcolors──────────────────┐
@@ -941,19 +956,19 @@ SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
          "Example using a seed",
          R"(
 -- Query with column name and different seed
-SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
         )",
         R"(
-┌─newcolors──────────────────┐
-│ ['red','orange','green']   │
-└────────────────────────────┘
+┌─newcolors────────────────┐
+│ ['red','orange','green'] │
+└──────────────────────────┘
         )"
     },
     {
          "Using an expression as an argument",
          R"(
 -- Query with expression as argument
-SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
         )",
         R"(
 ┌─newcolors───────────────────────────────────┐

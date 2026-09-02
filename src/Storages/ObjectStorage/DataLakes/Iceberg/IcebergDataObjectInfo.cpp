@@ -1,5 +1,8 @@
+#include <Core/ProtocolDefines.h>
 #include "config.h"
 
+#include <Core/Field.h>
+#include <Common/FieldVisitorToString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -31,10 +34,30 @@ namespace Setting
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 };
 
+namespace Iceberg
+{
+String computePartitionId(const Row & partition_key_value)
+{
+    if (partition_key_value.empty())
+        return {};
+    String result;
+    for (const auto & val : partition_key_value)
+    {
+        if (!result.empty())
+            result += '_';
+        result += applyVisitor(FieldVisitorToString{}, val);
+    }
+    return result;
+}
+}
+
 #if USE_AVRO
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(
-    Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, const String & resolved_storage_path_, Int32 schema_id_relevant_to_iterator_)
+    Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_,
+    const String & resolved_storage_path_,
+    Int32 schema_id_relevant_to_iterator_,
+    std::vector<std::pair<String, Field>> identity_partition_columns_)
     : ObjectInfo(RelativePathWithMetadata(resolved_storage_path_))
     , info{
           data_manifest_file_entry_->parsed_entry->file_path_key,
@@ -42,15 +65,25 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           schema_id_relevant_to_iterator_,
           data_manifest_file_entry_->sequence_number,
           data_manifest_file_entry_->parsed_entry->file_format,
+          /* manifest_file */ data_manifest_file_entry_->manifest_file_path,
+          /* partition_id */ Iceberg::computePartitionId(data_manifest_file_entry_->parsed_entry->partition_key_value),
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {},
           data_manifest_file_entry_->parsed_entry->record_count,
-          data_manifest_file_entry_->parsed_entry->file_size_in_bytes}
+          data_manifest_file_entry_->parsed_entry->file_size_in_bytes,
+          data_manifest_file_entry_->first_row_id,
+          std::move(identity_partition_columns_)}
 {
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)
     : ObjectInfo(path_)
+{
+}
+
+IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_, const Iceberg::IcebergObjectSerializableInfo & info_)
+    : ObjectInfo(path_)
+    , info(info_)
 {
 }
 
@@ -78,7 +111,8 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
             info.file_format);
     }
     info.position_deletes_objects.emplace_back(
-        resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt);
+        resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt,
+        position_delete_object->sequence_number);
 }
 
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path)
@@ -158,6 +192,27 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
         else
         {
             writeVarUInt(0, out);
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING)
+    {
+        if (first_row_id.has_value())
+        {
+            writeVarUInt(1, out);
+            writeVarInt(*first_row_id, out);
+        }
+        else
+        {
+            writeVarUInt(0, out);
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS)
+    {
+        writeVarUInt(identity_partition_columns.size(), out);
+        for (const auto & [name, value] : identity_partition_columns)
+        {
+            writeStringBinary(name, out);
+            writeFieldBinary(value, out);
         }
     }
 }
@@ -247,6 +302,34 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
             file_size_in_bytes = std::nullopt;
         }
     }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING)
+    {
+        size_t has_first_row_id = 0;
+        readVarUInt(has_first_row_id, in);
+        if (has_first_row_id)
+        {
+            Int64 value = 0;
+            readVarInt(value, in);
+            first_row_id = value;
+        }
+        else
+        {
+            first_row_id = std::nullopt;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS)
+    {
+        size_t identity_partition_columns_size = 0;
+        readVarUInt(identity_partition_columns_size, in);
+        identity_partition_columns.clear();
+        identity_partition_columns.reserve(identity_partition_columns_size);
+        for (size_t i = 0; i < identity_partition_columns_size; ++i)
+        {
+            String name;
+            readStringBinary(name, in);
+            identity_partition_columns.emplace_back(std::move(name), readFieldBinary(in));
+        }
+    }
 }
 
 void IcebergObjectSerializableInfo::checkVersion(size_t protocol_version) const
@@ -261,4 +344,3 @@ void IcebergObjectSerializableInfo::checkVersion(size_t protocol_version) const
     }
 }
 }
-

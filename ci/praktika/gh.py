@@ -1,11 +1,14 @@
 import dataclasses
+import html
 import json
 import os
 import re
+import shutil
 import shlex
 import tempfile
 import time
 import traceback
+from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Union
 
 from praktika._environment import _Environment
@@ -13,6 +16,18 @@ from praktika.info import Info
 from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import Shell
+
+# `out` and `err` are API- or user-controlled and unbounded, while the fields identifying the
+# failure (command, exit code, attempt count) are short. Cap the unbounded ones so a caller
+# that bounds the whole message, or a log reader, still sees the cause.
+_GH_DIAGNOSTIC_FIELD_LIMIT = 300
+
+
+def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
+    """`text` capped at `limit`, with an explicit marker so a reader can tell it was cut."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars elided)"
 
 
 class GH:
@@ -70,45 +85,411 @@ class GH:
             repo_name = info.repo_name
             sha = info.sha
         else:
-            repo_name = Shell.get_output(
-                rf"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\\2#'",
-                strict=True,
-            )
-            sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
+            repo_url = Shell.get_output("git config --get remote.origin.url", strict=True)
+            repo_name = cls._repo_name_from_git_remote_url(repo_url)
+            if not repo_name:
+                raise RuntimeError(
+                    f"Failed to extract repository name from remote URL [{repo_url}]"
+                )
+            sha = Shell.get_output("git rev-parse HEAD", strict=True)
 
         assert repo_name
         print(repo_name)
 
-        for attempt in range(3):
-            # store changed files
-            if info.pr_number > 0:
-                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh pr view {info.pr_number} --repo {repo_name} --json files --jq '.files[].path'",
-                )
-                assert exit_code == 0, "Failed to retrieve changed files list"
-            else:
-                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh api repos/{repo_name}/commits/{sha} | jq -r '.files[].filename'",
+        # Include both sides of renames: .filename is the destination path and
+        # .previous_filename (REST API only, absent for non-renames) is the
+        # source path. Without the source path a rename out of a watched
+        # directory is invisible to consumers such as job filtering and the
+        # read-only docs guard. Rename sources do not exist in the checkout at
+        # HEAD, same as deleted files, which were always included.
+        jq_both_sides = ".filename, (.previous_filename // empty)"
+
+        # In a merge-queue run PR_NUMBER is 0, but the queue entry is built for
+        # exactly one PR (parsed from the merge group head ref). Use that PR's
+        # paginated files list: the merge group SHA is a merge commit, and the
+        # commits API caps a commit's file list at 300 entries.
+        pr_number = info.pr_number
+        if pr_number <= 0 and info.is_merge_queue_event:
+            pr_number = info.linked_pr_number
+            if pr_number <= 0 and strict:
+                # The linked PR number could not be parsed from the merge group
+                # head ref. Falling back to `repos/{repo}/commits/{sha}` would
+                # reintroduce the 300-entry cap this branch exists to avoid, so a
+                # large PR could silently lose changed test files and turn the
+                # merge-queue flaky check into a false green. Fail closed instead:
+                # a merge-queue run always corresponds to exactly one PR, so a
+                # missing linked PR number is a real fault, not a skip condition.
+                raise RuntimeError(
+                    "Merge-queue run has no linked PR number (could not parse it "
+                    "from the merge group head ref); refusing to fall back to the "
+                    "capped commits API for changed-file detection."
                 )
 
+        if pr_number > 0:
+            command = (
+                f"gh api repos/{repo_name}/pulls/{pr_number}/files "
+                f"--paginate --jq '.[] | {jq_both_sides}'"
+            )
+        else:
+            command = (
+                f"gh api repos/{repo_name}/commits/{sha} "
+                f"--jq '.files[] | {jq_both_sides}'"
+            )
+
+        # The GitHub API call is an idempotent read that occasionally fails with
+        # a transient error (rate limiting, a 5xx, or a GraphQL "Something went
+        # wrong" hiccup). Retry a few times with a small backoff so a momentary
+        # blip does not take down the whole workflow. Every non-zero exit code
+        # is treated as retryable: this is a read, so a spurious retry is cheap
+        # and we cannot reliably tell transient from permanent errors apart by
+        # the exit code alone.
+        attempts = 5
+        last_exit_code = 0
+        last_err = ""
+        last_out = ""
+        for attempt in range(attempts):
+            exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(command)
             if exit_code == 0:
-                res = changed_files_str.split("\n") if changed_files_str else []
-                break
-            else:
-                print(
-                    f"Failed to get changed files, attempt [{attempt+1}], exit code [{exit_code}], error [{err}]"
+                res = (
+                    list(dict.fromkeys(changed_files_str.split("\n")))
+                    if changed_files_str
+                    else []
                 )
-                if exit_code > 1:
-                    # assume that exit code == 1 is retryable - Fix if not true
-                    # exit_code 1 for this type of errors:  WARNING: stderr: GraphQL: Something went wrong while executing your query on 2025-08-05T15:33:56Z. Please include `E746:1CAA99:44F9F67:8B9B520:68922464` when reporting this issue.
-                    print("error is not retryable - break")
-                    break
-                time.sleep(1)
+                break
 
-        if res is None and strict:
-            raise RuntimeError("Failed to get changed files")
+            last_exit_code, last_err, last_out = exit_code, err, changed_files_str
+            print(
+                f"Failed to get changed files, attempt [{attempt + 1}/{attempts}], "
+                f"exit code [{exit_code}], stderr [{err}]"
+            )
+            if attempt + 1 < attempts:
+                time.sleep(attempt + 1)
+
+        if res is None:
+            # Surface the actual command, exit code and stderr so the failure is
+            # diagnosable directly from the report, instead of resurfacing later
+            # as a confusing "NoneType is not iterable" in a downstream consumer
+            # that read the (never stored) changed files from the KV data.
+            message = (
+                f"Failed to retrieve the list of changed files after {attempts} attempts.\n"
+                f"  command:   {command}\n"
+                f"  exit code: {last_exit_code}\n"
+                f"  stderr:    {last_err}\n"
+                f"  stdout:    {last_out}"
+            )
+            print(message)
+            if strict:
+                raise RuntimeError(message)
 
         return res
+
+    @staticmethod
+    def _repo_name_from_git_remote_url(repo_url: str) -> str:
+        match = re.match(
+            r"^(?:https?://[^/]+/|git@[^:]+:|ssh://git@[^/]+/)([^/\s]+/[^/\s]+?)(?:\.git)?/?$",
+            repo_url,
+        )
+        return match.group(1) if match else ""
+
+    @staticmethod
+    def _normalize_gh_pages_destination(destination_dir: str) -> str:
+        destination_dir = (destination_dir or "").strip().strip("/")
+        if not destination_dir:
+            return ""
+
+        parts = PurePosixPath(destination_dir).parts
+        if any(part in ("", ".", "..") for part in parts):
+            raise ValueError(f"Invalid GitHub Pages destination [{destination_dir}]")
+
+        return PurePosixPath(*parts).as_posix()
+
+    @staticmethod
+    def _git_env_with_token(temp_root: Path, token: str) -> Dict[str, str]:
+        if not token:
+            raise RuntimeError("GitHub Pages publish requires a GitHub token")
+
+        token_file = temp_root / "github-token"
+        askpass_file = temp_root / "git-askpass.sh"
+        token_file.write_text(token, encoding="utf-8")
+        os.chmod(token_file, 0o600)
+        askpass_file.write_text(
+            "#!/bin/sh\n"
+            'case "$1" in\n'
+            "  *Username*) printf '%s\\n' 'x-access-token' ;;\n"
+            f"  *) cat {shlex.quote(str(token_file))} ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        os.chmod(askpass_file, 0o700)
+
+        env = os.environ.copy()
+        env["GIT_ASKPASS"] = str(askpass_file)
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        return env
+
+    @classmethod
+    def gh_pages_url(cls, repo="", destination_dir="") -> str:
+        repo = repo or _Environment.get().REPOSITORY
+        if not repo:
+            repo_url = Shell.get_output(
+                "git config --get remote.origin.url", strict=True
+            )
+            repo = cls._repo_name_from_git_remote_url(repo_url)
+        if not repo:
+            raise RuntimeError("Failed to resolve repository name for GitHub Pages")
+
+        owner, name = repo.split("/", 1)
+        destination_dir = cls._normalize_gh_pages_destination(destination_dir)
+        suffix = f"/{destination_dir}" if destination_dir else ""
+        return f"https://{owner.lower()}.github.io/{name}{suffix}/"
+
+    @classmethod
+    def _write_gh_pages_index(cls, worktree: Path):
+        entries = []
+        for item in sorted(worktree.iterdir(), key=lambda path: path.name.lower()):
+            if item.name in {".git", ".nojekyll", "index.html"}:
+                continue
+            if item.name.startswith("."):
+                continue
+            href = f"{item.name}/" if item.is_dir() else item.name
+            label = f"{item.name}/" if item.is_dir() else item.name
+            entries.append((href, label))
+
+        list_items = "\n".join(
+            f'  <li><a href="{html.escape(href, quote=True)}">'
+            f"{html.escape(label)}</a></li>"
+            for href, label in entries
+        )
+        worktree.joinpath("index.html").write_text(
+            "\n".join(
+                [
+                    "<!doctype html>",
+                    '<html lang="en">',
+                    "<head>",
+                    '<meta charset="utf-8">',
+                    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+                    "<title>Pages index</title>",
+                    "</head>",
+                    "<body>",
+                    "<h1>Pages index</h1>",
+                    "<ul>",
+                    list_items,
+                    "</ul>",
+                    "</body>",
+                    "</html>",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def publish_gh_pages(
+        cls,
+        source_dir: str,
+        destination_dir: str = "",
+        branch: str = "gh-pages",
+        commit_message: str = "",
+        repo: str = "",
+        no_jekyll: bool = True,
+        github_token: str = "",
+        git_user_name: str = "praktika[bot]",
+        git_user_email: str = "praktika[bot]@users.noreply.github.com",
+        verbose: bool = True,
+        clean_destination: bool = True,
+        update_root_index: bool = True,
+    ) -> str:
+        """Publish a local directory to a path on the repository's Pages branch.
+
+        Publishes through Praktika's GitHub App token. Praktika jobs that call
+        this should use ``Job.Config.enable_gh_auth=True`` so runner-side auth
+        setup and token-minting permissions are available.
+        """
+
+        source = Path(source_dir).resolve()
+        if not source.is_dir():
+            raise FileNotFoundError(f"GitHub Pages source dir not found [{source}]")
+
+        destination_dir = cls._normalize_gh_pages_destination(destination_dir)
+        repo = repo or _Environment.get().REPOSITORY
+        if not repo:
+            repo_url = Shell.get_output(
+                "git config --get remote.origin.url", strict=True
+            )
+            repo = cls._repo_name_from_git_remote_url(repo_url)
+        if not repo:
+            raise RuntimeError("Failed to resolve repository name for GitHub Pages")
+
+        temp_root = tempfile.mkdtemp(prefix="praktika-gh-pages-")
+        worktree = Path(temp_root) / "worktree"
+        remote_name = f"praktika-gh-pages-{os.getpid()}"
+        safe_branch = shlex.quote(branch)
+        safe_remote_name = shlex.quote(remote_name)
+        git_env = None
+        remote_added = False
+        try:
+            if not github_token:
+                from praktika.gh_auth import GHAuth
+
+                github_token = GHAuth.get_installation_token(
+                    required_permissions={"contents": "write"}
+                )
+            git_env = cls._git_env_with_token(Path(temp_root), github_token)
+            remote_url = f"https://github.com/{repo}.git"
+            Shell.check(
+                f"git remote add {safe_remote_name} {shlex.quote(remote_url)}",
+                strict=True,
+                verbose=verbose,
+            )
+            remote_added = True
+            branch_exists = (
+                Shell.run(
+                    f"git ls-remote --exit-code --heads {safe_remote_name} {safe_branch}",
+                    verbose=verbose,
+                    env=git_env,
+                )
+                == 0
+            )
+            if branch_exists:
+                remote_branch_ref = shlex.quote(f"{remote_name}/{branch}")
+                fetch_refspec = shlex.quote(
+                    f"+refs/heads/{branch}:refs/remotes/{remote_name}/{branch}"
+                )
+                Shell.check(
+                    f"git fetch --depth=1 {safe_remote_name} {fetch_refspec}",
+                    strict=True,
+                    verbose=verbose,
+                    env=git_env,
+                )
+                Shell.check(
+                    "git worktree add --detach "
+                    f"{shlex.quote(str(worktree))} {remote_branch_ref}",
+                    strict=True,
+                    verbose=verbose,
+                )
+            else:
+                Shell.check(
+                    f"git worktree add --detach {shlex.quote(str(worktree))}",
+                    strict=True,
+                    verbose=verbose,
+                )
+                Shell.check(
+                    f"git -C {shlex.quote(str(worktree))} checkout --orphan {safe_branch}",
+                    strict=True,
+                    verbose=verbose,
+                )
+                Shell.check(
+                    f"git -C {shlex.quote(str(worktree))} rm -rf --ignore-unmatch .",
+                    strict=True,
+                    verbose=verbose,
+                )
+
+            target = worktree / destination_dir if destination_dir else worktree
+            if target.exists() and clean_destination:
+                if target == worktree:
+                    # Publishing to the Pages root: clear the contents but keep
+                    # the worktree's own .git link, else it stops being a git
+                    # working tree and every later git command fails.
+                    for item in worktree.iterdir():
+                        if item.name == ".git":
+                            continue
+                        if item.is_dir():
+                            shutil.rmtree(item)
+                        else:
+                            item.unlink()
+                elif target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            elif target.exists() and not target.is_dir():
+                raise RuntimeError(
+                    f"GitHub Pages destination is not a directory [{target}]"
+                )
+            target.mkdir(parents=True, exist_ok=True)
+
+            for item in source.iterdir():
+                destination = target / item.name
+                if item.is_dir():
+                    shutil.copytree(
+                        item, destination, dirs_exist_ok=not clean_destination
+                    )
+                else:
+                    shutil.copy2(item, destination)
+            if not any(target.iterdir()):
+                raise RuntimeError(
+                    f"No GitHub Pages files copied from [{source}] to [{target}]"
+                )
+
+            if no_jekyll:
+                (worktree / ".nojekyll").touch()
+            if update_root_index and destination_dir:
+                cls._write_gh_pages_index(worktree)
+
+            Shell.check(
+                "git -C "
+                f"{shlex.quote(str(worktree))} config user.name "
+                f"{shlex.quote(git_user_name)}",
+                strict=True,
+                verbose=verbose,
+            )
+            Shell.check(
+                "git -C "
+                f"{shlex.quote(str(worktree))} config user.email "
+                f"{shlex.quote(git_user_email)}",
+                strict=True,
+                verbose=verbose,
+            )
+            Shell.check(
+                f"git -C {shlex.quote(str(worktree))} add -A",
+                strict=True,
+                verbose=verbose,
+            )
+            force_add_path = "." if target == worktree else str(target.relative_to(worktree))
+            Shell.check(
+                f"git -C {shlex.quote(str(worktree))} add -f -A -- {shlex.quote(force_add_path)}",
+                strict=True,
+                verbose=verbose,
+            )
+            if (
+                Shell.run(
+                    f"git -C {shlex.quote(str(worktree))} diff --cached --quiet",
+                    verbose=verbose,
+                )
+                == 0
+            ):
+                print("No GitHub Pages changes to publish")
+                return cls.gh_pages_url(repo=repo, destination_dir=destination_dir)
+
+            commit_message = (
+                commit_message or f"Publish GitHub Pages from {source.name}"
+            )
+            Shell.check(
+                f"git -C {shlex.quote(str(worktree))} commit -m {shlex.quote(commit_message)}",
+                strict=True,
+                verbose=verbose,
+            )
+            Shell.check(
+                f"git -C {shlex.quote(str(worktree))} push {safe_remote_name} HEAD:{safe_branch}",
+                strict=True,
+                verbose=verbose,
+                env=git_env,
+            )
+            url = cls.gh_pages_url(repo=repo, destination_dir=destination_dir)
+            print(f"Published GitHub Pages: {url}")
+            return url
+        finally:
+            if worktree.exists():
+                Shell.run(
+                    f"git worktree remove --force {shlex.quote(str(worktree))}",
+                    verbose=verbose,
+                )
+            if remote_added:
+                Shell.run(
+                    f"git remote remove {safe_remote_name}",
+                    verbose=verbose,
+                    env=git_env,
+                )
+            shutil.rmtree(temp_root, ignore_errors=True)
 
     @classmethod
     def do_command_with_retries(cls, command, verbose=False):
@@ -140,6 +521,315 @@ class GH:
         return res
 
     @classmethod
+    def get_output_with_retries(cls, command, verbose=False, strict=False):
+        """Run a read-style ``gh`` command and return its stdout.
+
+        Mirrors :meth:`do_command_with_retries` but returns the captured
+        stdout instead of a boolean. Use this for any GitHub API read
+        (``gh api ...``, ``gh pr view ...``, ``gh pr diff ...``) that
+        previously used :meth:`Shell.get_output` without retries — those
+        calls would silently return an empty string on a transient 5xx
+        and propagate as ``json.loads('')`` errors or empty-result bugs.
+
+        Returns the trimmed stdout on success; an empty string if the
+        command keeps failing after ``MAX_RETRIES_GH`` attempts.
+        ``strict=True`` raises instead, so a caller can report why the
+        read failed rather than be handed an empty string that is
+        indistinguishable from an empty result.
+        """
+        retry_count = 0
+        # Counted where the subprocess is invoked, so a non-retryable class that breaks out
+        # of the loop still reports the attempt it made. retry_count counts retries taken.
+        attempts = 0
+        out, err, ret_code = "", "", -1
+        while retry_count < Settings.MAX_RETRIES_GH:
+            attempts += 1
+            ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
+            if ret_code == 0:
+                return out
+            if "Validation Failed" in err:
+                print(f"ERROR: GH command validation error {[err]}")
+                break
+            if "Bad credentials" in err:
+                print("ERROR: GH credentials/auth failure")
+                break
+            if "Resource not accessible" in err:
+                print("ERROR: GH permissions failure")
+                break
+            retry_count += 1
+            delay = min(2 ** (retry_count + 1), 60)
+            time.sleep(delay)
+
+        # Field order matters: a caller may bound this message (it can reach a public report
+        # page), so the fields naming the cause come before the API-controlled output.
+        message = (
+            f"Failed to execute gh command [{command}] exit_code:[{ret_code}] "
+            f"after [{attempts}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
+        )
+        print(f"ERROR: {message}")
+        if strict:
+            raise RuntimeError(message)
+        return ""
+
+    @classmethod
+    def _gh_graphql_json(cls, query, variables, verbose=False):
+        """Run a GraphQL query via ``gh api graphql`` and return parsed JSON."""
+        parts = [f"gh api graphql -f query={shlex.quote(query)}"]
+        for k, v in variables.items():
+            if isinstance(v, bool):
+                parts.append(f"-F {k}={'true' if v else 'false'}")
+            elif isinstance(v, int):
+                parts.append(f"-F {k}={int(v)}")
+            else:
+                parts.append(f"-f {k}={shlex.quote(str(v))}")
+        cmd = " ".join(parts)
+        out = cls.get_output_with_retries(cmd, verbose=verbose)
+        if not out:
+            raise RuntimeError(f"gh api graphql failed (no output) for cmd [{cmd}]")
+        try:
+            data = json.loads(out)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"gh api graphql returned non-JSON output [{out[:200]}]: {e}"
+            )
+        if "errors" in data and data["errors"]:
+            raise RuntimeError(f"gh api graphql returned errors: {data['errors']}")
+        return data
+
+    @classmethod
+    def list_pr_review_threads(cls, pr=None, repo=None, verbose=False):
+        """Return all review threads on a PR via GraphQL.
+
+        Each thread carries its node ``id``, ``isResolved``, ``isOutdated``,
+        ``resolvedBy`` (``{login}`` or ``null``), ``path``, ``line``, and the
+        full list of comments under it. Both the thread list and each thread's
+        comments are paginated.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+        owner, name = repo.split("/", 1)
+
+        thread_query = (
+            "query($owner:String!,$name:String!,$pr:Int!,$after:String){"
+            "repository(owner:$owner,name:$name){"
+            "pullRequest(number:$pr){"
+            "reviewThreads(first:100,after:$after){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{id isResolved isOutdated resolvedBy{login} path line "
+            "comments(first:50){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{databaseId createdAt author{login} viewerDidAuthor body path line originalLine}"
+            "}}}}}}"
+        )
+        comments_query = (
+            "query($id:ID!,$after:String!){"
+            "node(id:$id){... on PullRequestReviewThread{"
+            "comments(first:50,after:$after){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{databaseId createdAt author{login} viewerDidAuthor body path line originalLine}"
+            "}}}}"
+        )
+
+        threads = []
+        thread_cursor = None
+        while True:
+            variables = {"owner": owner, "name": name, "pr": int(pr)}
+            if thread_cursor is not None:
+                variables["after"] = thread_cursor
+            data = cls._gh_graphql_json(thread_query, variables, verbose=verbose)
+            page = data["data"]["repository"]["pullRequest"]["reviewThreads"]
+            for thread in page["nodes"]:
+                comments = thread["comments"]
+                while comments["pageInfo"]["hasNextPage"]:
+                    sub = cls._gh_graphql_json(
+                        comments_query,
+                        {"id": thread["id"], "after": comments["pageInfo"]["endCursor"]},
+                        verbose=verbose,
+                    )
+                    next_page = sub["data"]["node"]["comments"]
+                    comments["nodes"].extend(next_page["nodes"])
+                    comments["pageInfo"] = next_page["pageInfo"]
+                threads.append(thread)
+            if not page["pageInfo"]["hasNextPage"]:
+                break
+            thread_cursor = page["pageInfo"]["endCursor"]
+        return threads
+
+    @classmethod
+    def post_pr_line_comment(
+        cls,
+        body_file,
+        commit_id=None,
+        path=None,
+        line=None,
+        side="RIGHT",
+        in_reply_to=None,
+        pr=None,
+        repo=None,
+    ):
+        """Post an inline review comment on a specific line of a PR diff,
+        or a reply on an existing inline thread.
+
+        When ``in_reply_to`` is set, the comment is posted as a reply on
+        the thread whose parent comment has that database id, and
+        ``commit_id``/``path``/``line``/``side`` are ignored. Otherwise a
+        new top-level inline comment is created at the given location and
+        all four are required.
+
+        The body is read from ``body_file`` and passed via ``-F body=@<file>``,
+        which avoids two classes of bugs we have hit before:
+          1) Newlines collapsing to literal `\\n` when the body is inlined.
+          2) The body being posted as the literal `@<file>` string when a
+             caller mistakenly uses `-f` (raw field) instead of `-F` (typed
+             field with `@file` expansion).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        if not os.path.exists(body_file):
+            raise FileNotFoundError(f"Body file [{body_file}] not found")
+        if os.path.getsize(body_file) == 0:
+            raise ValueError(f"Body file [{body_file}] is empty")
+
+        if in_reply_to is not None:
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/comments/{int(in_reply_to)}/replies" '
+                f"-F body=@{shlex.quote(body_file)}"
+            )
+        else:
+            if commit_id is None or path is None or line is None:
+                raise ValueError(
+                    "post_pr_line_comment requires commit_id, path, and line "
+                    "when in_reply_to is not set"
+                )
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/comments" '
+                f"-F body=@{shlex.quote(body_file)} "
+                f"-f commit_id={shlex.quote(commit_id)} "
+                f"-f path={shlex.quote(path)} "
+                f"-F line={int(line)} "
+                f"-f side={shlex.quote(side)}"
+            )
+        return cls.do_command_with_retries(cmd)
+
+    @classmethod
+    def post_pr_review(
+        cls,
+        commit_id,
+        comments,
+        body="",
+        pr=None,
+        repo=None,
+    ):
+        """Post all inline findings as a single ``COMMENT`` PR review (one
+        review event, one notification) instead of many standalone inline
+        comments.
+
+        Only the ``COMMENT`` event is supported; this helper never approves or
+        requests changes, so an empty review is always a no-op rather than a
+        meaningful action.
+
+        ``comments`` is a list of dicts, each describing one inline comment::
+
+            {"path": <file>, "line": <int>, "side": "RIGHT"|"LEFT",
+             "start_line": <int> (optional), "start_side": <str> (optional),
+             "body_file": <path>}
+
+        Each comment body is read from its ``body_file`` and the whole payload
+        is assembled with ``json.dumps``, so multi-line Markdown is escaped
+        correctly. This avoids the ``-f`` vs ``-F`` / literal ``@<file>`` and
+        literal ``\\n`` footguns that standalone ``gh api`` calls have hit.
+
+        GitHub rejects a ``COMMENT`` review with neither a body nor any
+        comments, so when ``comments`` is empty and ``body`` is empty the call
+        is skipped and True is returned.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        payload_comments = []
+        for c in comments:
+            body_file = c["body_file"]
+            if not os.path.exists(body_file):
+                raise FileNotFoundError(f"Body file [{body_file}] not found")
+            if os.path.getsize(body_file) == 0:
+                raise ValueError(f"Body file [{body_file}] is empty")
+            with open(body_file, "r", encoding="utf-8") as f:
+                comment = {"path": c["path"], "body": f.read()}
+            if c.get("start_line") is not None:
+                comment["start_line"] = int(c["start_line"])
+                comment["start_side"] = c.get("start_side", c.get("side", "RIGHT"))
+            comment["line"] = int(c["line"])
+            comment["side"] = c.get("side", "RIGHT")
+            payload_comments.append(comment)
+
+        if not payload_comments and not body:
+            print("No review body and no inline comments; skipping review post")
+            return True
+
+        payload = {"event": "COMMENT", "comments": payload_comments}
+        if commit_id:
+            payload["commit_id"] = commit_id
+        if body:
+            payload["body"] = body
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as f:
+            json.dump(payload, f)
+            payload_file = f.name
+        try:
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/reviews" '
+                f"--input {shlex.quote(payload_file)}"
+            )
+            return cls.do_command_with_retries(cmd)
+        finally:
+            os.unlink(payload_file)
+
+    @classmethod
+    def _set_review_thread_resolution(cls, thread_id, resolve, verbose=False):
+        mutation_name = "resolveReviewThread" if resolve else "unresolveReviewThread"
+        query = (
+            f"mutation($threadId:ID!){{"
+            f"{mutation_name}(input:{{threadId:$threadId}}){{thread{{isResolved}}}}"
+            f"}}"
+        )
+        cmd = (
+            f"gh api graphql "
+            f"-f query={shlex.quote(query)} "
+            f"-f threadId={shlex.quote(thread_id)}"
+        )
+        return cls.do_command_with_retries(cmd, verbose=verbose)
+
+    @classmethod
+    def resolve_pr_review_thread(cls, thread_id, verbose=False):
+        """Mark a PR review thread as resolved (GraphQL ``resolveReviewThread``).
+
+        ``thread_id`` is the GraphQL node id from
+        :meth:`list_pr_review_threads`, not the REST comment id.
+        """
+        return cls._set_review_thread_resolution(thread_id, resolve=True, verbose=verbose)
+
+    @classmethod
+    def unresolve_pr_review_thread(cls, thread_id, verbose=False):
+        """Re-open a previously resolved PR review thread
+        (GraphQL ``unresolveReviewThread``)."""
+        return cls._set_review_thread_resolution(thread_id, resolve=False, verbose=verbose)
+
+    @classmethod
     def post_pr_comment(
         cls, comment_body, or_update_comment_with_substring="", pr=None, repo=None
     ):
@@ -158,7 +848,7 @@ class GH:
                     f'"/repos/{repo}/issues/{pr}/comments" '
                     f"--jq '.[] | {{id: .id, body: .body}}' | grep -F {safe_substr}"
                 )
-                output = Shell.get_output(cmd_check_created)
+                output = cls.get_output_with_retries(cmd_check_created)
                 if output:
                     comment_ids = []
                     try:
@@ -191,7 +881,9 @@ class GH:
                 temp_file.write(comment_body)
                 temp_file_path = temp_file.name
 
-            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            # Pass --repo so gh does not probe git remotes (Docker-mounted
+            # checkouts can hit "detected dubious ownership") to autodetect it.
+            cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
             return cls.do_command_with_retries(cmd)
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
@@ -233,7 +925,10 @@ class GH:
             f'"/repos/{repo}/issues/{pr}/comments" '
             f"--jq '[.[] | {{id: .id, body: .body}}]' --paginate"
         )
-        output = Shell.get_output(cmd_list, verbose=verbose)
+        # Idempotent read on the maintenance path: retry transient GitHub
+        # failures so a flake does not skip the delete step and post a duplicate
+        # tagged comment.
+        output = cls.get_output_with_retries(cmd_list, verbose=verbose)
         if output:
             try:
                 for comment in json.loads(output):
@@ -259,7 +954,9 @@ class GH:
             ) as temp_file:
                 temp_file.write(full_body)
                 temp_file_path = temp_file.name
-            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            # Pass --repo so gh does not probe git remotes (Docker-mounted
+            # checkouts can hit "detected dubious ownership") to autodetect it.
+            cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
             return cls.do_command_with_retries(cmd)
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
@@ -282,14 +979,36 @@ class GH:
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
+        if not pr or not str(pr).isdigit() or int(pr) <= 0:
+            print(
+                f"WARNING: post_updateable_comment called without a valid PR number "
+                f"(got {pr!r}); skipping comment update"
+            )
+            return False
+
         TAG_COMMENT_START = "<!-- CI automatic comment start :{TAG}: -->"
         TAG_COMMENT_END = "<!-- CI automatic comment end :{TAG}: -->"
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
             --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
-        output = Shell.get_output(cmd_check_created, verbose=verbose)
+        # Idempotent read: retry transient GitHub failures so a flake does not
+        # give up and leave a stale review/status comment in place.
+        output = cls.get_output_with_retries(cmd_check_created, verbose=verbose)
 
-        comments = json.loads(output)
+        if not output or not output.strip():
+            print(
+                "WARNING: gh api returned no output when listing PR comments — "
+                "skipping comment update (likely unauthenticated or rate-limited)"
+            )
+            return False
+        try:
+            comments = json.loads(output)
+        except json.JSONDecodeError as e:
+            print(
+                f"WARNING: failed to parse gh api response as JSON ({e}); "
+                f"output starts with: {output[:200]!r}"
+            )
+            return False
 
         comment_to_update = None
         id_to_update = None
@@ -356,8 +1075,10 @@ class GH:
             res = cls.do_command_with_retries(cmd)
         else:
             if not only_update:
-                cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
-                print(f"Create new comment")
+                # Pass --repo so gh does not probe git remotes (Docker-mounted
+                # checkouts can hit "detected dubious ownership") to autodetect it.
+                cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
+                print("Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
                 print(
@@ -368,6 +1089,86 @@ class GH:
         os.unlink(temp_file_path)
 
         return res
+
+    @classmethod
+    def _submit_team_review_requests(cls, team_slugs, pr, repo):
+        assert team_slugs
+
+        payload = {"reviewers": [], "team_reviewers": team_slugs}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as temp_file:
+            json.dump(payload, temp_file)
+            temp_file_path = temp_file.name
+
+        try:
+            cmd = (
+                "gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+                f"--input {shlex.quote(temp_file_path)}"
+            )
+            if not cls.do_command_with_retries(cmd):
+                raise RuntimeError(
+                    f"Failed to request team reviews for pull request [{pr}]"
+                )
+        finally:
+            os.unlink(temp_file_path)
+
+    @classmethod
+    def _get_requested_team_reviews(cls, pr, repo):
+        cmd = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+            "--jq '[.teams[].slug]'"
+        )
+        output = cls.get_output_with_retries(cmd)
+        if not output:
+            raise RuntimeError(
+                f"Failed to retrieve team review requests for pull request [{pr}]"
+            )
+
+        try:
+            requested_teams = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Failed to parse team review requests for pull request [{pr}]: {e}"
+            ) from e
+        if not isinstance(requested_teams, list) or not all(
+            isinstance(team, str) for team in requested_teams
+        ):
+            raise RuntimeError(
+                f"Unexpected team review request response for pull request [{pr}]"
+            )
+
+        return set(requested_teams)
+
+    @classmethod
+    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
+        requested = set(team_slugs)
+        if not requested:
+            return True
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        teams_to_request = sorted(
+            requested - cls._get_requested_team_reviews(pr, repo)
+        )
+        if teams_to_request:
+            cls._submit_team_review_requests(teams_to_request, pr, repo)
+            missing_teams = set(teams_to_request) - cls._get_requested_team_reviews(
+                pr, repo
+            )
+            if missing_teams:
+                raise RuntimeError(
+                    "Failed to verify team review requests for pull request "
+                    f"[{pr}], missing teams [{', '.join(sorted(missing_teams))}]"
+                )
+
+        return True
 
     @classmethod
     def get_pr_contributors(cls, pr=None, repo=None):
@@ -416,7 +1217,7 @@ class GH:
             pr_data = json.loads(output)
             title = pr_data["title"]
             body = pr_data["body"]
-            labels = [l["name"] for l in pr_data["labels"]]
+            labels = [label["name"] for label in pr_data["labels"]]
         except Exception:
             print("ERROR: Failed to get PR data")
             traceback.print_exc()
@@ -504,6 +1305,43 @@ class GH:
         return cls.do_command_with_retries(command)
 
     @classmethod
+    def get_commit_statuses(
+        cls, sha="", repo=""
+    ) -> Optional[Dict[str, "GH.CommitStatus"]]:
+        """
+        Fetch commit statuses for the given commit SHA and return the latest
+        status for each context. Returns ``None`` if the status list cannot be
+        retrieved or parsed.
+        """
+        repo = repo or _Environment.get().REPOSITORY
+        sha = sha or _Environment.get().SHA
+
+        output = cls.get_output_with_retries(
+            f"gh api repos/{repo}/commits/{sha}/statuses --paginate"
+        )
+        if not output:
+            print("ERROR: Failed to fetch commit statuses")
+            return None
+        try:
+            statuses_list = json.loads(output)
+        except json.JSONDecodeError as ex:
+            print(f"ERROR: Failed to parse commit statuses: {ex}")
+            return None
+        status_map: Dict[str, GH.CommitStatus] = {}
+
+        for status in statuses_list:
+            context = status["context"]
+            if context not in status_map:
+                status_map[context] = GH.CommitStatus(
+                    state=status["state"],
+                    description=status.get("description", ""),
+                    url=status.get("target_url", ""),
+                    context=context,
+                )
+
+        return status_map
+
+    @classmethod
     def post_foreign_commit_status(
         cls, name, status, description, url, repo, commit_sha
     ):
@@ -535,19 +1373,37 @@ class GH:
         return cls.do_command_with_retries(command)
 
     @classmethod
-    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
+    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False, admin=False):
+        """Merge PR #`pr`. With `admin`, merge right away with administrator
+        privileges: required checks are not awaited and the merge queue on the
+        base branch is bypassed. Only for automation that has already decided
+        the change must land immediately, such as reverting a broken merge.
+
+        `admin` never asks `gh` to delete the branch, whatever `keep_branch`
+        says, because `gh` refuses the two together -- see the comment below."""
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
         extra_args = ""
-        if not keep_branch:
+        # `gh` rejects `--delete-branch` outright whenever the base branch has a
+        # merge queue enabled -- "Cannot use `-d` or `--delete-branch` when merge
+        # queue enabled" -- and it rejects it even next to `--admin`, which is the
+        # flag that bypasses that very queue: the check looks at the branch setting
+        # and not at what the merge is about to do. Asking for both fails the merge
+        # itself, so an `admin` merge does not ask. Nothing is lost by that: the
+        # merge is immediate rather than queued, and GitHub removes the head branch
+        # on its own wherever the repository has `delete_branch_on_merge` set, which
+        # is where this is used.
+        if not keep_branch and not admin:
             extra_args += " --delete-branch"
         if squash:
             extra_args += " --squash"
         else:
             extra_args += " --merge"
+        if admin:
+            extra_args += " --admin"
 
         cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
         return cls.do_command_with_retries(cmd)
@@ -622,22 +1478,96 @@ class GH:
         return None
 
     @classmethod
+    def get_pr_url_by_branch(cls, branch, repo=None):
+        """URL of the PR whose head is `branch`, or '' if there genuinely is none.
+
+        On the rerun-safety path (changelog / version-bump PR reuse), a transient
+        `gh pr list` failure must NOT be mistaken for "no PR exists" — that would
+        create a duplicate PR or let merge_prs run with an empty URL after the
+        release is already published. So the lookup is retried and raises on a
+        persistent failure. A successful `gh pr list --json` always prints at
+        least `[]`, so an empty result from the retried read means the command
+        itself failed; genuinely no PR is an empty JSON array.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        for state in ("open", "merged"):
+            cmd = (
+                f"gh pr list --repo {safe_repo} --head {safe_branch}"
+                f" --state {state} --json url"
+            )
+            raw = cls.get_output_with_retries(cmd)
+            if not raw:
+                raise RuntimeError(
+                    f"gh pr list failed for branch [{branch}] in repo [{repo}] "
+                    f"(state {state}) after retries; refusing to treat a failed "
+                    f"lookup as 'no PR'"
+                )
+            prs = json.loads(raw)
+            if prs:
+                return prs[0]["url"]
+            print(f"No {state} PR found for branch [{branch}]")
+        return ""
+
+    @classmethod
+    def get_pr_state_by_branch(cls, branch, repo=None):
+        """'MERGED' / 'OPEN' / '' for the PR whose head is `branch`.
+
+        Merged takes priority: an already-merged PR means the change is in master,
+        so the caller should stop even if a stray open PR also exists. (This is
+        the opposite order from `get_pr_url_by_branch`, which checks open first;
+        they agree unless one branch has both an open and a merged PR - which the
+        release flow's "never recreate once present" invariant prevents for the
+        `auto/<tag>` / `bump_version_<version>` branches this is used with.) Same
+        retry / fail-close semantics as `get_pr_url_by_branch` - a failed lookup
+        raises rather than being mistaken for 'no PR' (which would recreate a PR
+        or skip a needed merge after the release is already published).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        for state in ("merged", "open"):
+            cmd = (
+                f"gh pr list --repo {safe_repo} --head {safe_branch}"
+                f" --state {state} --json url"
+            )
+            raw = cls.get_output_with_retries(cmd)
+            if not raw:
+                raise RuntimeError(
+                    f"gh pr list failed for branch [{branch}] in repo [{repo}] "
+                    f"(state {state}) after retries; refusing to treat a failed "
+                    f"lookup as 'no PR'"
+                )
+            if json.loads(raw):
+                return state.upper()
+        return ""
+
+    _STATUS_TO_GH = {
+        Result.Status.OK: Result.GHStatus.SUCCESS,
+        Result.Status.FAIL: Result.GHStatus.FAILURE,
+        Result.Status.ERROR: Result.GHStatus.ERROR,
+        Result.Status.SKIPPED: Result.GHStatus.SUCCESS,
+        Result.Status.PENDING: Result.GHStatus.PENDING,
+        Result.Status.RUNNING: Result.GHStatus.PENDING,
+        Result.Status.DROPPED: Result.GHStatus.ERROR,
+        Result.Status.UNKNOWN: Result.GHStatus.FAILURE,
+        Result.Status.XFAIL: Result.GHStatus.SUCCESS,
+        Result.Status.XPASS: Result.GHStatus.FAILURE,
+    }
+
+    @classmethod
     def convert_to_gh_status(cls, status):
-        if status in (
-            Result.Status.PENDING,
-            Result.Status.SUCCESS,
-            Result.Status.FAILED,
-            Result.Status.ERROR,
-        ):
-            return status
-        if status in Result.Status.RUNNING:
-            return Result.Status.PENDING
-        elif status in Result.Status.DROPPED:
-            return Result.Status.ERROR
-        else:
-            assert (
-                False
-            ), f"Invalid status [{status}] to be set as GH commit status.state"
+        """Map Result.Status value to GitHub commit status API string."""
+        gh = cls._STATUS_TO_GH.get(status)
+        if gh is not None:
+            return gh
+        # Already a GH status string — pass through for idempotency
+        _GH_VALUES = set(cls._STATUS_TO_GH.values())
+        assert status in _GH_VALUES, f"Invalid status [{status}] for GH commit status"
+        return status
 
     @classmethod
     def print_log_in_group(cls, group_name: str, lines: Union[str, List[str]]):
@@ -651,6 +1581,12 @@ class GH:
 
     @classmethod
     def print_actions_debug_info(cls):
+        # Outside GitHub Actions GITHUB_EVENT_PATH is empty, which would turn
+        # `cat $GITHUB_EVENT_PATH` into a bare `cat` that hangs reading from
+        # the controlling TTY. Skip the whole dump in that case — it's GHA
+        # debug info and useless without the real env.
+        if not os.getenv("GITHUB_ACTIONS"):
+            return
         cls.print_log_in_group("GITHUB_ENVS", Shell.get_output("env | grep ^GITHUB_"))
         cls.print_log_in_group(
             "GITHUB_EVENT", Shell.get_output("cat $GITHUB_EVENT_PATH")
@@ -663,7 +1599,7 @@ class GH:
         sha: str = ""
         start_time: Optional[float] = None
         duration: Optional[float] = None
-        failed_results: List["ResultSummaryForGH"] = dataclasses.field(
+        failed_results: List["GH.ResultSummaryForGH"] = dataclasses.field(
             default_factory=list
         )
         info: str = ""
@@ -682,15 +1618,19 @@ class GH:
                     else:
                         yield from flatten_results(r.results)
 
-            def extract_hlabels_info(res: Result) -> str:
+            def extract_label_links_md(res: Result) -> str:
+                """Render labels with links as markdown ``[name](link)`` chips.
+                Reads the unified ``ext['labels']`` and falls back to legacy
+                ``ext['hlabels']`` for results stored before the unification.
+                """
                 try:
-                    hlabels = (
-                        res.ext.get("hlabels", [])
-                        if hasattr(res, "ext") and isinstance(res.ext, dict)
-                        else []
-                    )
+                    if not (hasattr(res, "ext") and isinstance(res.ext, dict)):
+                        return ""
                     links = []
-                    for item in hlabels:
+                    for item in res.ext.get("labels", []) or []:
+                        if isinstance(item, dict) and item.get("name") and item.get("link"):
+                            links.append(f"[{item['name']}]({item['link']})")
+                    for item in res.ext.get("hlabels", []) or []:
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             text, href = item[0], item[1]
                             if text and href:
@@ -699,6 +1639,16 @@ class GH:
                 except Exception:
                     return ""
 
+            def has_label_links(res: Result) -> bool:
+                if not (hasattr(res, "ext") and isinstance(res.ext, dict)):
+                    return False
+                if any(
+                    isinstance(it, dict) and it.get("link")
+                    for it in res.ext.get("labels", []) or []
+                ):
+                    return True
+                return bool(res.ext.get("hlabels"))
+
             summary = cls(
                 name=result.name,
                 status=result.status,
@@ -706,14 +1656,14 @@ class GH:
                 start_time=result.start_time,
                 duration=result.duration,
                 failed_results=[],
-                info=extract_hlabels_info(result),
+                info=extract_label_links_md(result),
                 comment=result.ext.get("comment", ""),
             )
 
             # Filter and sort failed/error subresults by priority
-            # Priority: FAILED (0) > ERROR (1) > others (2)
+            # Priority: FAIL (0) > ERROR (1) > others (2)
             def get_status_priority(r):
-                if r.status == Result.Status.FAILED:
+                if r.status == Result.Status.FAIL:
                     return 0
                 elif r.status == Result.Status.ERROR:
                     return 1
@@ -729,14 +1679,14 @@ class GH:
                 failed_result = cls(
                     name=sub_result.name,
                     status=sub_result.status,
-                    info=extract_hlabels_info(sub_result),
+                    info=extract_label_links_md(sub_result),
                     comment=sub_result.ext.get("comment", ""),
                 )
                 failed_result.failed_results = [
                     cls(
                         name=r.name,
                         status=r.status,
-                        info=extract_hlabels_info(r),
+                        info=extract_label_links_md(r),
                         comment=r.ext.get("comment", ""),
                     )
                     for r in flatten_results(sub_result.results)
@@ -756,36 +1706,75 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
-            # Collect links from jobs that have hlabels (e.g. keeper-stress Grafana links).
-            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
+            def _shared_job_label(names):
+                if len(names) == 1:
+                    return names[0]
+                common = os.path.commonprefix(names)
+                for sep in (" (", ", ", "("):
+                    idx = common.rfind(sep)
+                    if idx > 0:
+                        common = common[:idx]
+                        break
+                common = common.rstrip(" ,(-")
+                return common or f"{names[0]} (+{len(names) - 1} more)"
+
+            def _url_key(res):
+                urls = []
+                for item in (getattr(res, "ext", {}) or {}).get("labels", []) or []:
+                    if isinstance(item, dict) and item.get("link"):
+                        urls.append(item["link"])
+                for item in (getattr(res, "ext", {}) or {}).get("hlabels", []) or []:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2 and item[1]:
+                        urls.append(item[1])
+                return tuple(sorted(urls))
+
+            groups = {}
+            group_order = []
             for job_result in getattr(result, "results", []) or []:
-                if job_result.ext.get("hlabels"):
-                    links_md = extract_hlabels_info(job_result)
-                    if links_md:
-                        summary.extra_links.append((job_result.name, links_md))
+                if not has_label_links(job_result):
+                    continue
+                links_md = extract_label_links_md(job_result)
+                if not links_md:
+                    continue
+                key = _url_key(job_result)
+                if key not in groups:
+                    groups[key] = {"names": [], "links_md": links_md}
+                    group_order.append(key)
+                groups[key]["names"].append(job_result.name)
+            for key in group_order:
+                group = groups[key]
+                summary.extra_links.append(
+                    (_shared_job_label(group["names"]), group["links_md"])
+                )
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
             def escape_pipes(text):
-                """Escape pipe characters for markdown tables"""
-                return str(text).replace("|", "\\|")
+                """Escape special markdown characters for table cells"""
+                return str(text).replace("|", "\\|").replace("#", "\\#")
 
-            if self.status == Result.Status.SUCCESS:
+            if self.status == Result.Status.OK:
                 symbol = "✅"  # Green check mark
-            elif self.status == Result.Status.FAILED:
+            elif self.status == Result.Status.FAIL:
                 symbol = "❌"  # Red cross mark
             else:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-            if self.extra_links:
-                for job_name, links_md in self.extra_links:
-                    body += f"**{job_name}:** {links_md}\n"
+            # Render each extra_links group as a plain bullet under the Summary
+            # line. Keeping the (un-bolded) job-name prefix tells the reader
+            # which job(s) the labels came from without adding extra weight.
+            for job_name, links_md in self.extra_links:
+                body += f"- {job_name}: {links_md}\n"
             if self.failed_results:
+                # Blank line so the failure section isn't parsed as continuation
+                # of the Summary paragraph or the preceding bullet list.
+                body += "\n"
                 if len(self.failed_results) > 15:
-                    body += (
-                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
-                    )
+                    # Unindented + terminated with a blank line, otherwise the
+                    # 4-space indent turns this into an indented code block that
+                    # swallows the table that follows.
+                    body += f"*15 failures out of {len(self.failed_results)} shown*:\n\n"
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"
@@ -815,11 +1804,10 @@ class GH:
                         for sub_failed_result in failed_result.failed_results:
                             body += "|{}|{}|{}|{}|{}|\n".format(
                                 "",
-                                # Logical erros might have | that break comment formatting
                                 escape_pipes(sub_failed_result.name),
                                 sub_failed_result.status,
-                                sub_failed_result.info or "",
-                                sub_failed_result.comment or "",
+                                escape_pipes(sub_failed_result.info or ""),
+                                escape_pipes(sub_failed_result.comment or ""),
                             )
             return body
 
@@ -856,6 +1844,108 @@ if __name__ == "__main__":
         help="Only update an existing comment; do not create a new one",
     )
 
+    line_parser = subparsers.add_parser(
+        "post-pr-line-comment",
+        help="Post an inline review comment on a specific line of a PR diff",
+    )
+    line_parser.add_argument(
+        "--file",
+        required=True,
+        dest="body_file",
+        help="Path to file containing the comment body (read via -F body=@<file>)",
+    )
+    line_parser.add_argument(
+        "--commit",
+        default=None,
+        help="Commit SHA the comment refers to (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--path",
+        default=None,
+        help="Path of the file to comment on (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--line",
+        type=int,
+        default=None,
+        help="Line number in the PR diff (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--side", default="RIGHT", choices=["RIGHT", "LEFT"], help="Diff side"
+    )
+    line_parser.add_argument(
+        "--reply-to",
+        type=int,
+        default=None,
+        dest="reply_to",
+        help="databaseId of the parent comment to reply to. "
+        "When set, the comment is posted as a reply on the existing thread "
+        "and --commit/--path/--line are ignored.",
+    )
+    line_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    line_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    review_parser = subparsers.add_parser(
+        "post-pr-review",
+        help="Post all inline findings as a single batched PR review",
+    )
+    review_parser.add_argument(
+        "--comments-file",
+        required=True,
+        dest="comments_file",
+        help="Path to a JSON file with a list of "
+        '{"path", "line", "side", "start_line"?, "start_side"?, "body_file"} '
+        "objects; each body_file holds that comment's Markdown body",
+    )
+    review_parser.add_argument(
+        "--body-file",
+        default=None,
+        dest="body_file",
+        help="Optional file with the top-level review body",
+    )
+    review_parser.add_argument(
+        "--commit",
+        default=None,
+        help="Commit SHA the review refers to",
+    )
+    review_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    review_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    threads_parser = subparsers.add_parser(
+        "list-pr-review-threads",
+        help="List PR review threads via GraphQL (prints JSON to stdout)",
+    )
+    threads_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    threads_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    resolve_parser = subparsers.add_parser(
+        "resolve-pr-review-thread",
+        help="Resolve a PR review thread via GraphQL",
+    )
+    resolve_parser.add_argument(
+        "--thread-id",
+        required=True,
+        dest="thread_id",
+        help="GraphQL node id of the review thread (from list-pr-review-threads)",
+    )
+
+    unresolve_parser = subparsers.add_parser(
+        "unresolve-pr-review-thread",
+        help="Re-open (unresolve) a PR review thread via GraphQL",
+    )
+    unresolve_parser.add_argument(
+        "--thread-id",
+        required=True,
+        dest="thread_id",
+        help="GraphQL node id of the review thread (from list-pr-review-threads)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "post-or-update":
@@ -870,6 +1960,54 @@ if __name__ == "__main__":
         if args.repo is not None:
             kwargs["repo"] = args.repo
         ok = GH.post_updateable_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "post-pr-line-comment":
+        kwargs = dict(
+            body_file=args.body_file,
+            commit_id=args.commit,
+            path=args.path,
+            line=args.line,
+            side=args.side,
+            in_reply_to=args.reply_to,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_pr_line_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "post-pr-review":
+        with open(args.comments_file, "r", encoding="utf-8") as f:
+            comments = json.load(f)
+        body = ""
+        if args.body_file is not None:
+            with open(args.body_file, "r", encoding="utf-8") as f:
+                body = f.read()
+        kwargs = dict(
+            commit_id=args.commit,
+            comments=comments,
+            body=body,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_pr_review(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "list-pr-review-threads":
+        kwargs = {}
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        threads = GH.list_pr_review_threads(**kwargs)
+        print(json.dumps(threads, indent=2))
+        sys.exit(0)
+    elif args.command == "resolve-pr-review-thread":
+        ok = GH.resolve_pr_review_thread(args.thread_id)
+        sys.exit(0 if ok else 1)
+    elif args.command == "unresolve-pr-review-thread":
+        ok = GH.unresolve_pr_review_thread(args.thread_id)
         sys.exit(0 if ok else 1)
     else:
         parser.print_help()

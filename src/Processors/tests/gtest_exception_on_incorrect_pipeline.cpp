@@ -61,7 +61,7 @@ TEST(Processors, PortsNotConnected)
     catch (DB::Exception & e)
     {
         std::cout << e.displayText() << std::endl;
-        ASSERT_TRUE(e.displayText().find("pipeline") != std::string::npos) << "Expected 'pipeline', got: " << e.displayText();
+        ASSERT_TRUE(e.displayText().find("Port is not connected") != std::string::npos) << "Expected 'Port is not connected', got: " << e.displayText();
     }
 #endif
 }

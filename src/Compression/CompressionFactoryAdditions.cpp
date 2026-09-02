@@ -10,6 +10,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -19,6 +20,11 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
+
+#include <limits>
 
 
 namespace DB
@@ -26,15 +32,21 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int UNKNOWN_CODEC;
-    extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
+extern const int UNEXPECTED_AST_STRUCTURE;
+extern const int UNKNOWN_CODEC;
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+extern const SettingsBool allow_suspicious_codecs;
+extern const SettingsBool allow_experimental_codecs;
 }
 
 
 void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
+    const String & family_name, std::optional<int> level, const CodecValidationSettings & validation_settings) const
 {
     if (family_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec name cannot be empty");
@@ -42,15 +54,22 @@ void CompressionCodecFactory::validateCodec(
     if (level)
     {
         auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
-            {}, sanity_check, allow_experimental_codecs);
+        validateCodecAndGetPreprocessedAST(
+            makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, validation_settings);
     }
     else
     {
         auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
-            {}, sanity_check, allow_experimental_codecs);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, validation_settings);
     }
+}
+
+void CompressionCodecFactory::validateCodecString(
+    const String & compression_codec, const CodecValidationSettings & validation_settings) const
+{
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);
 }
 
 namespace
@@ -74,21 +93,62 @@ bool innerDataTypeIsFloat(const DataTypePtr & type)
     return false;
 }
 
+bool typeContainsMap(const DataTypePtr & type)
+{
+    if (typeid_cast<const DataTypeMap *>(type.get()))
+        return true;
+    if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return typeContainsMap(type_nullable->getNestedType());
+    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeContainsMap(type_array->getNestedType());
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & subtype : type_tuple->getElements())
+            if (typeContainsMap(subtype))
+                return true;
+        return false;
+    }
+    return false;
+}
+
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
+    const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const
+{
+    const bool sanity_check = validation_settings.settings && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
+    return validateCodecAndGetPreprocessedASTImpl(ast, column_type, validation_settings.settings, sanity_check);
+}
+
+ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
+    const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
         ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
+
+        /// A codec that depends on the data type resolves differently per substream, and every
+        /// substream is compressed with its own chain, so there is one chain per substream.
+        size_t num_substreams = 0;
+        if (column_type)
+        {
+            ISerialization::StreamCallback count_callback = [&](const auto & substream_path)
+            {
+                if (ISerialization::isSpecialCompressionAllowed(substream_path))
+                    ++num_substreams;
+            };
+            column_type->getDefaultSerialization()->enumerateStreams(count_callback, column_type);
+        }
+        /// A codec resolved without a data type is one chain, and so is a type whose substreams all
+        /// refuse a special codec.
+        VectorWithMemoryTracking<Codecs> codec_chains(num_substreams ? num_substreams : 1);
 
         bool with_compression_codec = false;
         bool with_none_codec = false;
         std::optional<size_t> first_generic_compression_codec_pos;
         std::optional<size_t> first_delta_codec_pos;
         std::optional<size_t> last_floating_point_time_series_codec_pos;
-        std::set<size_t> encryption_codecs_pos;
+        SetWithMemoryTracking<size_t> encryption_codecs_pos;
 
         bool can_substitute_codec_arguments = true;
         for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
@@ -126,13 +186,20 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
+                    size_t substream_index = 0;
                     ISerialization::StreamCallback callback = [&](const auto & substream_path)
                     {
-                        assert(!substream_path.empty());
+                        chassert(!substream_path.empty());
                         if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
                             const auto & last_type = substream_path.back().data.type;
                             result_codec = getImpl(codec_family_name, codec_arguments, last_type.get());
+
+                            /// Enumeration order is the same for every codec of the chain, so the
+                            /// index identifies the substream.
+                            if (substream_index < codec_chains.size())
+                                codec_chains[substream_index].push_back(result_codec);
+                            ++substream_index;
 
                             /// Case for column Tuple, which compressed with codec which depends on data type, like Delta.
                             /// We cannot substitute parameters for such codecs.
@@ -153,14 +220,72 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
 
-                if (!allow_experimental_codecs && result_codec->isExperimental())
+                if (settings)
+                {
+                    const String gate_setting_name = getGateSettingName(codec_family_name);
+                    if (const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name))
+                    {
+                        const bool umbrella_bypass
+                            = *tier == SettingsTierType::EXPERIMENTAL && (*settings)[Setting::allow_experimental_codecs];
+                        if (!settings->get(gate_setting_name).safeGet<bool>() && !umbrella_bypass)
+                        {
+                            std::string_view reason;
+                            switch (*tier)
+                            {
+                                case SettingsTierType::EXPERIMENTAL:
+                                    reason = "is experimental and not meant to be used in production";
+                                    break;
+                                case SettingsTierType::BETA:
+                                    reason = "is in beta and not yet recommended for production use";
+                                    break;
+                                case SettingsTierType::PRODUCTION:
+                                case SettingsTierType::PRIVATE_PREVIEW:
+                                case SettingsTierType::OBSOLETE:
+                                    reason = "is disabled";
+                                    break;
+                            }
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Codec {} {}. You can enable it with the '{}' setting",
+                                codec_family_name,
+                                reason,
+                                gate_setting_name);
+                        }
+                    }
+                }
+
+                /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
+                /// (a float key would be accepted by a float-only codec like SZ3), and lossily compressing
+                /// the keys would round them on disk and break lookups, grouping and ordering. SZ3 (the only
+                /// lossy codec) is documented for Float*/Array(Float*) columns only, so reject Map entirely.
+                if (result_codec->isLossyCompression() && column_type && typeContainsMap(column_type))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} is experimental and not meant to be used in production."
-                        " You can enable it with the 'allow_experimental_codecs' setting",
+                        "Codec {} is lossy and cannot be applied to a column of type {} because it contains a Map, "
+                        "whose keys would be corrupted by lossy compression",
+                        codec_family_name, column_type->getName());
+
+                /// Lossy codecs (e.g. SZ3) reinterpret the raw bytes as floating-point values, so they can only
+                /// be applied to a known floating-point column. The marks, primary key, default and TTL
+                /// recompression codec settings all validate with a null data type; reject a lossy codec here so
+                /// the misconfiguration is reported when the metadata is created, instead of being accepted and
+                /// then failing later in a background merge or part write.
+                /// This is a sanity check, so it is not enforced when `allow_suspicious_codecs` is set, nor on the
+                /// metadata-load path (`ATTACH`), where `sanity_check` is disabled so that a table stored on an
+                /// earlier version does not become unloadable after an upgrade.
+                if (sanity_check && result_codec->isLossyCompression() && !column_type)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/"
+                        "nullables of them); it cannot be used as a marks, primary key, default or TTL recompression "
+                        "codec, or in any other context where the column data type is unknown",
                         codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
+
+            /// A codec that was not resolved per substream is the same one for all of them.
+            for (auto & chain : codec_chains)
+                if (chain.size() == i)
+                    chain.push_back(result_codec);
 
             with_compression_codec |= result_codec->isCompression();
             with_none_codec |= result_codec->isNone();
@@ -182,6 +307,33 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 
         if (sanity_check)
         {
+            /// CompressionCodecMultiple stores the number of codecs in a single byte, so a longer chain
+            /// describes a part that cannot be read back. Being a sanity check, this is not enforced on
+            /// the metadata-load path, where an already stored table must stay loadable.
+            if (codecs_descriptions->children.size() > std::numeric_limits<UInt8>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Too many codecs in the codec chain: {}. The number of codecs is stored in one byte, "
+                    "so at most {} are supported.",
+                    codecs_descriptions->children.size(), static_cast<size_t>(std::numeric_limits<UInt8>::max()));
+
+            /// A codec never reserves less than its input, so a reserve below the input means the
+            /// UInt32 compounding wrapped. One byte is the weakest block there is: a chain that
+            /// wraps on it cannot compress a block of any size.
+            for (const auto & chain : codec_chains)
+            {
+                UInt32 reserve_size = 1;
+                for (size_t i = 0; i < chain.size(); ++i)
+                {
+                    const UInt32 next_reserve_size = chain[i]->getCompressedReserveSize(reserve_size);
+                    if (next_reserve_size < reserve_size)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Too many codecs in the codec chain: {}. The size they reserve for compressing a block "
+                            "overflows 4 GiB at codec {} ({}), so no block could be compressed. Use fewer codecs.",
+                            chain.size(), i + 1, chain[i]->getCodecDesc()->formatForErrorMessage());
+                    reserve_size = next_reserve_size;
+                }
+            }
+
             if (codecs_descriptions->children.size() > 1 && with_none_codec)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "It does not make sense to have codec NONE along with other compression codecs: {}. "

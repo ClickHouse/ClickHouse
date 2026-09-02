@@ -1,5 +1,5 @@
-
 #include <Storages/StorageMergeTreeIndex.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -16,8 +17,10 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -25,19 +28,25 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool use_streaming_marks_compression;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int ACCESS_DENIED;
 }
 
-class MergeTreeIndexSource : public ISource, WithContext
+class MergeTreeIndexSource final : public ISource, WithContext
 {
 public:
     MergeTreeIndexSource(
@@ -64,6 +73,8 @@ protected:
     {
         if (part_index >= data_parts.size())
             return {};
+
+        auto component_guard = Coordination::setCurrentComponent("MergeTreeIndexSource::generate");
 
         const auto & part = data_parts[part_index];
         const auto & index_granularity = part->index_granularity;
@@ -113,18 +124,18 @@ protected:
             }
             else if (minmax_header && minmax_header->has(column_name))
             {
-                size_t minmax_pos = minmax_header->getPositionByName(column_name);
-                if (minmax_pos >= part->minmax_idx->hyperrectangle.size())
-                    throw Exception(
-                        ErrorCodes::CORRUPTED_DATA,
-                        "Part {} has broken minmax_idx: size = {} but {} has pos = {}",
-                        part->name,
-                        part->minmax_idx->hyperrectangle.size(),
-                        column_name,
-                        minmax_pos);
+                FieldRef min_value(Null{});
+                FieldRef max_value(Null{});
 
-                auto column = column_type->createColumnConst(
-                    num_rows, Tuple{part->minmax_idx->hyperrectangle[minmax_pos].left, part->minmax_idx->hyperrectangle[minmax_pos].right});
+                size_t minmax_pos = minmax_header->getPositionByName(column_name);
+                const auto & hyperrectangle = part->getMinMaxIndex()->hyperrectangle;
+                if (minmax_pos < hyperrectangle.size())
+                {
+                    min_value = hyperrectangle[minmax_pos].left;
+                    max_value = hyperrectangle[minmax_pos].right;
+                }
+
+                auto column = column_type->createColumnConst(num_rows, Tuple{std::move(min_value), std::move(max_value)});
                 result_columns[pos] = column->convertToFullColumnIfConst();
             }
             else if (column_name == part_name_column.name)
@@ -182,7 +193,8 @@ private:
             /*save_marks_in_cache=*/ false,
             local_context->getReadSettings(),
             /*load_marks_threadpool=*/ nullptr,
-            num_columns);
+            num_columns,
+            local_context->getSettingsRef()[Setting::use_streaming_marks_compression]);
     }
 
     ColumnPtr fillMarks(
@@ -289,19 +301,16 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    key_sample_block = std::make_shared<const Block>(merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getPrimaryKey().sample_block);
+    auto primary_key_metadata = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    key_sample_block = std::make_shared<const Block>(primary_key_metadata->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {
         Block minmax_block;
         const auto metadata_snapshot = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        if (!partition_key.column_names.empty() && partition_key.expression)
-        {
-            for (const auto & column : partition_key.expression->getRequiredColumnsWithTypes())
-                minmax_block.insert(
-                    {nullptr, std::make_shared<DataTypeTuple>(DataTypes{column.type, column.type}), fmt::format("minmax_{}", column.name)});
-        }
+        for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
+            minmax_block.insert({nullptr, std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)}), fmt::format("minmax_{}", column.name)});
         minmax_sample_block = std::make_shared<const Block>(std::move(minmax_block));
     }
 
@@ -403,7 +412,18 @@ void StorageMergeTreeIndex::readImpl(
         }
     }
 
-    context->checkAccess(AccessType::SELECT, source_table->getStorageID(), columns_from_storage);
+    auto source_storage_id = source_table->getStorageID();
+    context->checkAccess(AccessType::SELECT, source_storage_id, columns_from_storage);
+
+    /// We cannot apply a row policy to granules, but the index leaks keys of the rows it hides
+    auto row_policy_filter = context->getRowPolicyFilter(
+        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeIndex` because a row policy is applied on table {}. "
+            "Reading the index could violate the row policy",
+            source_storage_id.getNameForLogs());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 

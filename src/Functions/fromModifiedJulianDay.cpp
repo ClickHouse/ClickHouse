@@ -23,7 +23,7 @@ namespace DB
     }
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class ExecutableFunctionFromModifiedJulianDay : public IExecutableFunction
+    class ExecutableFunctionFromModifiedJulianDay final : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -82,7 +82,7 @@ namespace DB
     };
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class FunctionBaseFromModifiedJulianDay : public IFunctionBase
+    class FunctionBaseFromModifiedJulianDay final : public IFunctionBase
     {
     public:
         explicit FunctionBaseFromModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -146,7 +146,7 @@ namespace DB
     };
 
     template <typename Name, bool nullOnErrors>
-    class FromModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
+    class FromModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
@@ -269,12 +269,12 @@ SELECT fromModifiedJulianDayOrNull(58849);
 SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
         )",
             R"(
-┌─fromModified⋯Null(58849)─┐
-│ 2020-01-01               │
-└──────────────────────────┘
-┌─fromModified⋯l(60000000)─┐
-│ ᴺᵁᴸᴸ                     │
-└──────────────────────────┘
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
+┌─fromModifiedJulianDayOrNull(60000000)─┐
+│ ᴺᵁᴸᴸ                                  │
+└───────────────────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDayOrNull = {21, 1};

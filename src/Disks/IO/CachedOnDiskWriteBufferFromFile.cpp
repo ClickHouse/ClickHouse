@@ -3,18 +3,23 @@
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
+#include <Common/NetException.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
 #include <IO/NullWriteBuffer.h>
+#include <base/scope_guard.h>
 
 
 namespace ProfileEvents
 {
     extern const Event CachedWriteBufferCacheWriteBytes;
     extern const Event CachedWriteBufferCacheWriteMicroseconds;
+    extern const Event CachedWriteBufferCacheWriteStopped;
+    extern const Event CachedWriteBufferCoveringSegmentShrunk;
+    extern const Event CachedWriteBufferCoveringSegmentShrinkFailed;
 }
 
 namespace DB
@@ -25,11 +30,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS;
     extern const int FAULT_INJECTED;
+    extern const int NETWORK_ERROR;
 }
 
 namespace FailPoints
 {
     extern const char write_through_cache_fail[];
+    extern const char file_segment_range_writer_partial_write_then_network_error[];
+    extern const char distributed_cache_simulate_writer_not_keeping_up[];
 }
 
 FileSegmentRangeWriter::FileSegmentRangeWriter(
@@ -55,10 +63,25 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
              key.toString(), source_path, is_distributed_cache);
 }
 
-bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
+bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind, std::string & failure_reason, size_t & bytes_written_to_cache)
 {
+    bytes_written_to_cache = 0;
+
+    if (is_distributed_cache && offset >= 2 * DBMS_DEFAULT_BUFFER_SIZE)
+    {
+        fiu_do_on(FailPoints::distributed_cache_simulate_writer_not_keeping_up,
+        {
+            throw Exception(
+                ErrorCodes::FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS,
+                "Failpoint: simulated writer-not-keeping-up");
+        });
+    }
+
     if (finalized)
+    {
+        failure_reason = "cache writer is already finalized";
         return false;
+    }
 
     if (expected_write_offset != offset)
     {
@@ -68,12 +91,25 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
             offset, expected_write_offset);
     }
 
-    FileSegment * file_segment;
+    FileSegment * file_segment = nullptr;
 
     if (!ignore_bytes
         && (!file_segments || file_segments->empty() || file_segments->front().isDownloaded()))
     {
-        file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
+        /// Only this allocateFileSegment (the one entered when file_segments is empty/finished)
+        /// can legitimately observe a partially downloaded segment under retry semantics:
+        /// it is the segment we land on after jumpToPosition, i.e. the single trailing partial
+        /// segment left over by the previous attempt's disconnect (within one connection the
+        /// writer fills segments sequentially, so earlier segments are either fully downloaded
+        /// or never touched). The other allocateFileSegment calls below step into segments that
+        /// the previous attempt never reached, so any data there can only have come from a
+        /// concurrent reader's background download — that case is rejected later in the write
+        /// loop with FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS.
+        /// allocateFileSegment returns nullptr when the covering segment is concurrently
+        /// being evicted/removed: skip write-through caching for this write (return false).
+        file_segment = allocateFileSegment(expected_write_offset, segment_kind, failure_reason);
+        if (!file_segment)
+            return false;
 
         if (is_distributed_cache && file_segment->getCurrentWriteOffset() > offset)
         {
@@ -82,7 +118,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
             /// where this method can be called twice for the same server,
             /// while path contains server uuid, e.g. the cache key will be the same,
             /// so file segment here can have downloaded_size > 0.
-            ignore_bytes = file_segment->range().right - offset + 1;
+            ignore_bytes = file_segment->getCurrentWriteOffset() - offset;
             LOG_TEST(log, "Will ignore {} bytes from file segment {}", ignore_bytes, file_segment->getInfoForLog());
         }
     }
@@ -98,14 +134,24 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
         {
             expected_write_offset += size;
             ignore_bytes -= size;
+
+            chassert(!file_segments->empty());
+            if (!ignore_bytes && expected_write_offset > file_segments->front().range().right)
+            {
+                chassert(expected_write_offset == file_segments->front().range().right + 1);
+                completeFileSegment();
+            }
             return true;
         }
         size -= ignore_bytes;
         data += ignore_bytes;
         offset += ignore_bytes;
         expected_write_offset += ignore_bytes;
+        ignore_bytes = 0;
 
-        file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
+        file_segment = allocateFileSegment(expected_write_offset, segment_kind, failure_reason);
+        if (!file_segment)
+            return false;
     }
 
     SCOPE_EXIT({
@@ -121,7 +167,9 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
         if (available_size == 0)
         {
             completeFileSegment();
-            file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
+            file_segment = allocateFileSegment(expected_write_offset, segment_kind, failure_reason);
+            if (!file_segment)
+                return false;
             continue;
         }
 
@@ -151,7 +199,6 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
         }
         size_t size_to_write = std::min(available_size, size);
 
-        std::string failure_reason;
         bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason);
         if (!reserved)
         {
@@ -166,6 +213,17 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
 
         file_segment->write(data, size_to_write, offset);
         file_segment->completePartAndResetDownloader();
+        bytes_written_to_cache += size_to_write;
+
+        if (is_distributed_cache)
+        {
+            fiu_do_on(FailPoints::file_segment_range_writer_partial_write_then_network_error,
+            {
+                throw NetException(
+                    ErrorCodes::NETWORK_ERROR,
+                    "Failpoint: simulated network failure after partial write to file segment");
+            });
+        }
 
         size -= size_to_write;
         expected_write_offset += size_to_write;
@@ -202,7 +260,7 @@ FileSegmentRangeWriter::~FileSegmentRangeWriter()
     }
 }
 
-FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSegmentKind segment_kind)
+FileSegment * FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSegmentKind segment_kind, std::string & failure_reason)
 {
     /**
     * Allocate a new file segment starting `offset`.
@@ -227,6 +285,22 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
             /* boundary_alignment_ */0);
 
         const auto & file_segment = file_segments->front();
+
+        /// getOrSet returns a DETACHED placeholder when the covering segment is concurrently
+        /// being evicted or removed (see FileCache::getImpl). This is a transient race and a
+        /// detached segment cannot be written to, so skip write-through caching for this write
+        /// (the data is still written to its destination by the caller).
+        if (file_segment.isDetached())
+        {
+            failure_reason = fmt::format(
+                "covering file segment is being evicted or removed ({})",
+                file_segment.getInfoForLog());
+
+            LOG_DEBUG(log, "Will stop write-through caching: {}", failure_reason);
+
+            return nullptr;
+        }
+
         if (file_segment.getDownloadedSize() != 0)
         {
             LOG_TRACE(
@@ -250,14 +324,45 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
         }
         else if (file_segment.getCurrentWriteOffset() != offset)
         {
-            /// Note: this exception can happen if you configure
-            /// max_file_segment_size < 2 * boundary_alignment, which is a misconfiguration,
-            /// but difficult to validate.
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Writing at offset {}, but covering file segment has write offset {} ({})",
-                offset, file_segment.getCurrentWriteOffset(),
-                file_segment.getInfoForLog());
+            /// The covering segment stayed behind `offset` because the ranges in between went to
+            /// another cache server (mid-segment failover, see `updateServerIfNotActive`), and
+            /// completing it shrinks it only to the downloaded size rounded up to
+            /// `boundary_alignment`. Shrink it for real, then start a new segment at `offset`.
+            LOG_DEBUG(
+                log, "Writing at offset {}, but covering file segment has write offset {}. "
+                "Will shrink it and start a new file segment ({})",
+                offset, file_segment.getCurrentWriteOffset(), file_segment.getInfoForLog());
+
+            file_segments->completeAndPopFront(
+                /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/true);
+
+            file_segments = cache->getOrSet(
+                key, offset, /* size */cache->getMaxFileSegmentSize(),
+                /* file_size */0, create_settings, /* file_segments_limit */1, origin,
+                /* boundary_alignment_ */0);
+
+            const auto & new_file_segment = file_segments->front();
+
+            /// `FileSegment::complete` only shrinks for the last holder, so the hole can still be
+            /// there. Do not retry: stop caching, the data still reaches its destination anyway.
+            if (new_file_segment.isDetached() || new_file_segment.getCurrentWriteOffset() < offset)
+            {
+                failure_reason = fmt::format(
+                    "covering file segment write offset is still behind {} ({})",
+                    offset, new_file_segment.getInfoForLog());
+
+                LOG_DEBUG(log, "Will stop write-through caching: {}", failure_reason);
+
+                ProfileEvents::increment(ProfileEvents::CachedWriteBufferCoveringSegmentShrinkFailed);
+
+                /// Holding it on would block eviction and make `finalize` log it to
+                /// `filesystem_cache_log` again, on top of the writer which downloaded it.
+                file_segments = nullptr;
+
+                return nullptr;
+            }
+
+            ProfileEvents::increment(ProfileEvents::CachedWriteBufferCoveringSegmentShrunk);
         }
     }
     else
@@ -266,7 +371,7 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     }
 
     chassert(file_segments->size() == 1);
-    return file_segments->front();
+    return &file_segments->front();
 }
 
 void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_segment)
@@ -284,21 +389,22 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
 
     size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize() - 1;
 
-    FilesystemCacheLogElement elem
+    cache_log->add([&](FilesystemCacheLogElement & element)
     {
-        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .query_id = query_id,
-        .source_file_path = source_path,
-        .file_segment_range = { file_segment_range.left, file_segment_right_bound },
-        .requested_range = {},
-        .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
-        .file_segment_key = {},
-        .file_segment_size = file_segment_range.size(),
-        .read_from_cache_attempted = false,
-        .read_buffer_id = {},
-    };
-
-    cache_log->add(std::move(elem));
+        element = FilesystemCacheLogElement
+        {
+            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .query_id = query_id,
+            .source_file_path = source_path,
+            .file_segment_range = { file_segment_range.left, file_segment_right_bound },
+            .requested_range = {},
+            .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
+            .file_segment_key = {},
+            .file_segment_size = file_segment_range.size(),
+            .read_from_cache_attempted = false,
+            .read_buffer_id = {},
+        };
+    });
 }
 
 void FileSegmentRangeWriter::setFileFinishedForDistributedCache()
@@ -319,6 +425,8 @@ void FileSegmentRangeWriter::completeFileSegment()
 
     LOG_TEST(log, "Completing file segment {}:{}", file_segment.key(), file_segment.offset());
 
+    appendFilesystemCacheLog(file_segment);
+
     /// We do not always force shrink file segment in case of distributed cache,
     /// because it is possible that we reconnected and
     /// used a different connection to continue writing to cache,
@@ -327,8 +435,6 @@ void FileSegmentRangeWriter::completeFileSegment()
     file_segments->completeAndPopFront(
         /*allow_background_download=*/false,
         /*force_shrink_to_downloaded_size=*/force_shrink_file_segment);
-
-    appendFilesystemCacheLog(file_segment);
 }
 
 void FileSegmentRangeWriter::jumpToPosition(size_t position)
@@ -349,6 +455,7 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
     }
 
     expected_write_offset = position;
+    ignore_bytes = 0;
 }
 
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
@@ -426,6 +533,12 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
 
     cache_in_error_state_or_disabled = true;
 
+    size_t bytes_written_to_cache = 0;
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteBytes, bytes_written_to_cache);
+        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteMicroseconds, watch.elapsedMicroseconds());
+    });
+
     try
     {
         fiu_do_on(FailPoints::write_through_cache_fail,
@@ -433,9 +546,11 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint: write through cache failed");
         });
 
-        if (!cache_writer->write(data, size, current_download_offset, file_segment_kind))
+        std::string failure_reason;
+        if (!cache_writer->write(data, size, current_download_offset, file_segment_kind, failure_reason, bytes_written_to_cache))
         {
-            LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
+            LOG_INFO(log, "Write-through cache is stopped: {}", failure_reason);
+            ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteStopped);
             return;
         }
     }
@@ -446,6 +561,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
             && (code == /* No space left on device */28 || code == /* Quota exceeded */122))
         {
             LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
+            ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteStopped);
             return;
         }
 
@@ -453,6 +569,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
             throw;
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteStopped);
         return;
     }
     catch (...)
@@ -461,11 +578,9 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
             throw;
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteStopped);
         return;
     }
-
-    ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteBytes, size);
-    ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteMicroseconds, watch.elapsedMicroseconds());
 
     cache_in_error_state_or_disabled = false;
 }

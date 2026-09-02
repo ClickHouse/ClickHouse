@@ -1,7 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 
-#include <cmath>
-#include <Common/thread_local_rng.h>
+#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Core/Protocol.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -18,6 +17,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsDialect dialect;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsUInt64 interactive_delay;
@@ -118,6 +118,17 @@ void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
     }
 }
 
+bool MultiplexedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
+{
+    for (const ReplicaState & state : replica_states)
+    {
+        if (state.connection && state.connection->getQueryPlanSerializationVersion() < version)
+            return false;
+    }
+
+    return true;
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -160,23 +171,9 @@ void MultiplexedConnections::sendQuery(
     modified_settings[Setting::dialect] = Dialect::clickhouse;
     modified_settings[Setting::dialect].changed = false;
 
-    /// Scale interactive_delay by sqrt(fanout) to reduce progress/profile event traffic
-    /// from distributed queries. Each remote server will send updates less frequently,
-    /// proportional to the square root of the total number of remote connections.
-    /// Also add per-connection jitter to avoid TCP incast and make the progress bar smooth.
-    {
-        size_t total_fanout = distributed_fanout * replica_states.size();
-        if (total_fanout > 1)
-        {
-            UInt64 delay = modified_settings[Setting::interactive_delay];
-            double scale = std::sqrt(static_cast<double>(total_fanout));
-            /// Add random jitter in range [1.0, 2.0) to desynchronize progress reports
-            /// across connections, avoiding TCP incast and making the progress bar smooth.
-            double jitter = 1.0 + (thread_local_rng() % 1000) / 1000.0;
-            delay = static_cast<UInt64>(std::ceil(static_cast<double>(delay) * scale * jitter));
-            modified_settings[Setting::interactive_delay] = delay;
-        }
-    }
+    modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
+        modified_settings[Setting::interactive_delay],
+        distributed_fanout * replica_states.size());
 
     for (auto & replica : replica_states)
     {
@@ -202,6 +199,13 @@ void MultiplexedConnections::sendQuery(
     /// In other words, the initiator always controls whether the analyzer enabled or not for
     /// all servers involved in the distributed query processing.
     modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+
+    /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
+    /// servers of a distributed query must agree on it even when it comes only from server/profile
+    /// defaults. Force it into the changed set, so it is always sent to the remote servers.
+    modified_settings.set(
+        "enable_packed_string_keys_in_aggregation",
+        static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
@@ -233,22 +237,6 @@ void MultiplexedConnections::sendQuery(
 }
 
 
-void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    std::lock_guard lock(cancel_mutex);
-
-    if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
-
-    for (ReplicaState & state : replica_states)
-    {
-        Connection * connection = state.connection;
-        if (connection != nullptr)
-            connection->sendIgnoredPartUUIDs(uuids);
-    }
-}
-
-
 void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
@@ -264,6 +252,15 @@ void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadRes
     if (cancelled)
         return;
     current_connection->sendMergeTreeReadTaskResponse(response);
+}
+
+
+void MultiplexedConnections::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
 
 
@@ -404,7 +401,18 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
+    {
+        /// A reader can get here after `RemoteQueryExecutor::finish` cancelled and drained these
+        /// connections from another pipeline thread: `onUpdatePorts` runs in parallel with `read`
+        /// once LIMIT closes the port. Nothing is left to read then, and that is not an error.
+        if (cancelled)
+        {
+            Packet res;
+            res.type = Protocol::Server::EndOfStream;
+            return res;
+        }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+    }
 
     ReplicaState & state = getReplicaForReading();
     current_connection = state.connection;
@@ -483,31 +491,25 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList except_list;
 
         auto timeout = settings[Setting::receive_timeout];
-        int n = 0;
 
-        /// EINTR loop
-        while (true)
+        read_list.clear();
+        for (const ReplicaState & state : replica_states)
         {
-            read_list.clear();
-            for (const ReplicaState & state : replica_states)
-            {
-                Connection * connection = state.connection;
-                if (connection != nullptr)
-                    read_list.push_back(*connection->socket);
-            }
-
-            /// poco returns 0 on EINTR, let's reset errno to ensure that EINTR came from select().
-            errno = 0;
-
-            n = Poco::Net::Socket::select(
-                read_list,
-                write_list,
-                except_list,
-                timeout);
-            if (n <= 0 && errno == EINTR)
-                continue;
-            break;
+            Connection * connection = state.connection;
+            if (connection != nullptr)
+                read_list.push_back(*connection->socket);
         }
+
+        /// No `EINTR` retry here: `Poco::Net::Socket::select` already retries against a single deadline
+        /// of its own, spending a `remainingTime` budget (`base/poco/Net/src/Socket.cpp`, in each of its
+        /// epoll, poll and select branches). Retrying on top of that restarted the deadline from the full
+        /// `receive_timeout` every time, because an exhausted budget returns 0 with `errno` still holding
+        /// the `EINTR` from Poco's own retry - so on a silent replica the timeout below never fired.
+        int n = Poco::Net::Socket::select(
+            read_list,
+            write_list,
+            except_list,
+            timeout);
 
         if (n == 0)
         {

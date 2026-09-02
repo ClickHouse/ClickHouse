@@ -6,11 +6,12 @@ from .cache import Cache
 from .runtime import RunConfig
 from .settings import Settings
 from .utils import Utils
+from .workflow import Workflow
 
 
 class CacheRunnerHooks:
     @classmethod
-    def configure(cls, workflow):
+    def configure(cls, workflow, skip_lookup=False):
         workflow_config = RunConfig.from_fs(workflow.name)
         docker_digests = workflow_config.digest_dockers
         cache = Cache()
@@ -18,7 +19,6 @@ class CacheRunnerHooks:
         assert (
             workflow.enable_cache
         ), f"Outdated yaml pipelines or BUG. Configuration must be run only for workflow with enabled cache, workflow [{workflow.name}]"
-        artifact_digest_map = {}
         job_digest_map = {}
         artifact_name_config_map = {}
         for a in workflow.artifacts:
@@ -31,20 +31,32 @@ class CacheRunnerHooks:
                 artifact_configs=artifact_name_config_map,
             )
             job_digest_map[job.name] = digest
-            if job.provides:
-                # assign the job digest also to the artifacts it provides
-                for artifact in job.provides:
-                    artifact_digest_map[artifact] = digest
+
+        # Build lookup: requires entry (artifact name or job name) -> providing job name
+        dep_job_lookup = {}
+        job_by_name = {}
         for job in workflow.jobs:
+            job_by_name[job.name] = job
+            dep_job_lookup[job.name] = job.name
+            for artifact in job.provides:
+                dep_job_lookup[artifact] = job.name
+
+        # Resolve final digests with transitive dependency digests included.
+        # Uses memoization so result is independent of job ordering.
+        final_digest_cache = {}
+
+        def _resolve_final_digest(job_name):
+            if job_name in final_digest_cache:
+                return final_digest_cache[job_name]
+            job = job_by_name[job_name]
             digests_combined_list = []
             if job.requires and job.digest_config:
-                # include digests of hard dependencies (artifacts and job names)
-                for req_name in job.requires:
-                    if req_name in artifact_digest_map:
-                        digests_combined_list.append(artifact_digest_map[req_name])
-                    elif req_name in job_digest_map:
-                        digests_combined_list.append(job_digest_map[req_name])
-            digests_combined_list.append(job_digest_map[job.name])
+                for req in job.requires:
+                    if req in dep_job_lookup:
+                        digests_combined_list.append(
+                            _resolve_final_digest(dep_job_lookup[req])
+                        )
+            digests_combined_list.append(job_digest_map[job_name])
             # Deduplicate tokens to shrink the key when multiple deps
             # share the same file digest (e.g. amd/arm release builds)
             seen = set()
@@ -53,11 +65,21 @@ class CacheRunnerHooks:
                 if token not in seen:
                     seen.add(token)
                     unique_tokens.append(token)
-            workflow_config.digest_jobs[job.name] = "-".join(unique_tokens)
+            final_digest = "-".join(unique_tokens)
+            final_digest_cache[job_name] = final_digest
+            return final_digest
+
+        for job in workflow.jobs:
+            workflow_config.digest_jobs[job.name] = _resolve_final_digest(job.name)
 
         assert (
             workflow_config.digest_jobs
         ), f"BUG, Workflow with enabled cache must have job digests after configuration, wf [{workflow.name}]"
+
+        if skip_lookup:
+            print("NOTE: Cache lookup skipped, digests computed only")
+            workflow_config.dump()
+            return workflow_config
 
         print("Check remote cache")
 
@@ -151,30 +173,29 @@ class CacheRunnerHooks:
                     if result:
                         fetched_records.append(result)
 
-        env = _Environment.get()
         # Step 2: Apply the fetched records sequentially
         for job_name, record in fetched_records:
             assert Utils.normalize_string(job_name) not in workflow_config.cache_success
-            if workflow.is_event_push() and record.branch != env.BRANCH:
-                # TODO: make this behaviour configurable?
+            # The trust boundary is pull_request vs. everything else. A
+            # pull_request run executes untrusted code, so trusted lanes (push,
+            # schedule, dispatch, merge_queue) must not reuse a record it
+            # produced - otherwise a PR's green result could satisfy e.g. the
+            # merge queue's lookup and skip a job the queue must run on the merge
+            # group state (the drift guard). A pull_request run itself may reuse
+            # any record. Correctness is unaffected either way: a digest match
+            # means identical inputs, so the producing event only encodes how
+            # much we trust the result.
+            if (
+                not workflow.is_event_pull_request()
+                and record.event == Workflow.Event.PULL_REQUEST
+            ):
                 print(
-                    f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=PUSH"
+                    f"NOTE: Result for [{job_name}] cached from event [{record.event}] - skip for workflow with event=[{workflow.event}]"
                 )
                 continue
             workflow_config.cache_success.append(job_name)
             workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
             workflow_config.cache_jobs[job_name] = record
-        # single threaded variant
-        # for job_name, job_digest in workflow_config.digest_jobs.items():
-        #     record = cache.fetch_success(job_name=job_name, job_digest=job_digest)
-        #     if record:
-        #         assert (
-        #             Utils.normalize_string(job_name)
-        #             not in workflow_config.cache_success
-        #         )
-        #         workflow_config.cache_success.append(job_name)
-        #         workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
-        #         workflow_config.cache_jobs[job_name] = record
 
         print("Check artifacts to reuse")
         for job in workflow.jobs:
@@ -217,7 +238,10 @@ class CacheRunnerHooks:
                 print(f"Reuse artifact [{artifact.name}] from [{record}]")
                 path_prefixes.append(
                     env.get_s3_prefix_static(
-                        record.pr_number, record.branch, record.sha
+                        record.pr_number,
+                        record.branch,
+                        record.sha,
+                        record.workflow,
                     )
                 )
             else:
@@ -236,7 +260,12 @@ class CacheRunnerHooks:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
             workflow_runtime = RunConfig.from_workflow_data()
             job_digest = workflow_runtime.digest_jobs[job.name]
-            # if_not_exist=workflow.is_event_pull_request() - to not overwrite record from "push" workflow, as it can reuse only from push, "pull_request" - from both
+            # Dual of the reuse rule above: a pull_request run produces an
+            # untrusted record, so it must not overwrite a record already in the
+            # shared (job, digest) slot - it only fills an empty one
+            # (if_not_exist=True). Every trusted event overwrites, keeping the
+            # slot's record reusable by all trusted lanes (and by pull_request,
+            # which reuses anything).
             Cache.push_success_record(
                 job.name,
                 job_digest,

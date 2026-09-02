@@ -23,15 +23,25 @@ public:
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
+    bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    /// `readImpl` forwards the requested column NAMES into the inner query, whose column types may
+    /// differ from the view's declared ones, so a rewritten `arr.size0` may not resolve there.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+
+    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
+
+    /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
+    /// Returns nullptr otherwise.
+    StoragePtr tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const;
 
     void readImpl(
         QueryPlan & query_plan,

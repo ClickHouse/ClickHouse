@@ -270,8 +270,6 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
-    updateMaxDynamicPathsLimitIfNeeded(column, settings);
-
     typename Parser::Element document;
     auto parser = parsers_pool.get([] { return new Parser; });
     if (!parser->parse(object, document))
@@ -321,14 +319,20 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
-    writeQuotedString(buf.str(), ostr);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(buf.str(), ostr);
+    else
+        writeQuotedString(buf.str(), ostr);
 }
 
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
-    readQuotedString(object, istr);
+    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
+    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
+    /// and a JSON column written by us via `Values` must be parseable back by the same path.
+    readQuotedStringWithSQLStyle(object, istr);
     deserializeObject(column, object, settings);
 }
 
@@ -372,7 +376,7 @@ template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object_buffer;
-    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
+    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer, settings.json.max_row_size_for_json_each_row);
     deserializeObject(column, object_view, settings);
 }
 

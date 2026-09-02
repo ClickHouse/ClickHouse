@@ -7,7 +7,7 @@ namespace DB
 /** Takes stream already sorted by `x` and finishes sorting it by (`x`, `y`).
  *  During sorting only chunks with rows that equal by `x` saved in RAM.
  * */
-class FinishSortingTransform : public SortingTransform
+class FinishSortingTransform final : public SortingTransform
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.

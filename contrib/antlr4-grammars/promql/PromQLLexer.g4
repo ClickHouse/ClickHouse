@@ -107,6 +107,9 @@ OFFSET: 'offset';
 
 BOOL: 'bool';
 
+START: 'start';
+END: 'end';
+
 AGGREGATION_OPERATOR:
     'sum'
     | 'min'
@@ -120,6 +123,7 @@ AGGREGATION_OPERATOR:
     | 'bottomk'
     | 'topk'
     | 'quantile'
+    | 'limitk'
 ;
 
 FUNCTION options {

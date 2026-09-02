@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Disks/DiskLocal.h>
@@ -28,6 +29,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ErrnoException.h>
@@ -37,6 +39,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 
 
 namespace fs = std::filesystem;
@@ -82,13 +85,26 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool set_attach_flag)
 {
-    ast_create_query.attach = true;
+    if (set_attach_flag)
+    {
+        ast_create_query.attach = true;
+        /// Every caller of this function attaches a definition read back from metadata stored on this
+        /// server (database loading, `ATTACH DATABASE`, recovery of a dropped table), never a fresh
+        /// user-supplied one, so mark it the same way a short `ATTACH TABLE t` query is marked when it
+        /// is rewritten from stored metadata. Storage creators use this to skip the re-validation of
+        /// the definition that only a freshly introduced one needs (e.g. the `Remote` engine analyzes
+        /// its table-function target under the creating user for the access-control side effect, which
+        /// both must not run under a loading context and may fail spuriously if the target has changed
+        /// since the definition was validated).
+        ast_create_query.attach_short_syntax = true;
+    }
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor(context).visit(*ast_create_query.select);
+        ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {
@@ -100,6 +116,12 @@ std::pair<String, StoragePtr> createTableFromAST(
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
+
+        /// Re-establish the named collection dependency (if any) that `CREATE TABLE ... AS f(...)`
+        /// registered, so that `DROP NAMED COLLECTION` stays blocked after a server restart.
+        if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
+            NamedCollectionFactory::instance().addDependency(collection_name, storage->getStorageID());
+
         return {ast_create_query.getTable(), storage};
     }
 
@@ -163,8 +185,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    assert(!create->isTemporary());
-    create->database.reset();
+    chassert(!create->isTemporary());
+    create->reset(create->database);
 
     if (create->uuid != UUIDHelpers::Nil)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -212,11 +234,12 @@ void DatabaseOnDisk::createTable(
     const ASTPtr & query)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
+    ensurePopulated();
     auto db_disk = getDisk();
     createDirectories();
 
     const auto & create = query->as<ASTCreateQuery &>();
-    assert(table_name == create.getTable());
+    chassert(table_name == create.getTable());
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -241,7 +264,7 @@ void DatabaseOnDisk::createTable(
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
-        assert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
+        chassert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
         attachTable(local_context, table_name, table, getTableDataPath(create));
         return;
@@ -454,6 +477,10 @@ void DatabaseOnDisk::renameTable(
     createDirectories();
     waitDatabaseStarted();
 
+    ensurePopulated();
+    if (auto * to_database_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
+        to_database_with_own_tables->ensurePopulated();
+
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
     String table_metadata_path;
@@ -597,7 +624,7 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     auto db_disk = getDisk();
     {
         std::lock_guard lock(mutex);
-        assert(tables.empty());
+        chassert(tables.empty());
     }
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
@@ -660,7 +687,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
-        assert(getUUID() == UUIDHelpers::Nil);
+        chassert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 
@@ -874,7 +901,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         getContext());
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadataPtr(getContext(), false)->comment));
+                            make_intrusive<ASTLiteral>(metadata_ptr->comment));
 
     return create_table_query;
 }

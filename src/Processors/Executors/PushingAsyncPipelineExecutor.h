@@ -1,4 +1,5 @@
 #pragma once
+#include <list>
 #include <memory>
 #include <vector>
 
@@ -15,7 +16,7 @@ using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 /// Pushing executor for Chain of processors using several background threads.
 /// Typical usage is:

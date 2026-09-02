@@ -1,6 +1,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <poll.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -19,6 +20,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
 #include <Common/StackTrace.h>
@@ -47,6 +49,12 @@
 #include <pthread.h>
 #endif
 
+/// `errno` from glibc expands as `#define errno (*__errno_location())` and
+/// triggers `-Wdisabled-macro-expansion`. The macro is referenced in many
+/// places below (signal handler, errno checks after libc calls), so we keep
+/// the suppression file-wide rather than wrapping every single use.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -100,6 +108,8 @@ constexpr size_t max_query_id_size = 128;
 char query_id_data[max_query_id_size];
 size_t query_id_size = 0;
 
+Int64 untracked_memory_data = 0;
+
 LazyPipeFDs notification_pipe;
 
 #ifdef OS_LINUX
@@ -152,12 +162,17 @@ void signalHandler(int, siginfo_t * info, void * context)
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
+    /// The ucontext StackTrace constructor recovers internally from a fault while unwinding the
+    /// target thread (e.g. off a frame-pointer-less libsystem frame or a fiber stack on macOS),
+    /// yielding an empty trace instead of crashing the server.
     stack_trace = StackTrace(signal_context);
 
     auto query_id = CurrentThread::getQueryId();
     query_id_size = std::min(query_id.size(), max_query_id_size);
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
+
+    untracked_memory_data = current_thread ? current_thread->untracked_memory.load() : 0;
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -175,19 +190,33 @@ void signalHandler(int, siginfo_t * info, void * context)
 /// Wait for data in pipe and read it.
 bool wait(int timeout_ms)
 {
+    /// Deduct the time actually spent rather than one millisecond per `EINTR`: the old counter gave up
+    /// long before the deadline under dense signals, needed thousands of interruptions to expire under
+    /// sparse ones, and - because it tested for equality with zero - could step past zero into
+    /// `poll(fd, 1, -1)`, waiting forever. Same accounting as `ReadBufferFromFileDescriptor::poll`.
+    const UInt64 timeout_microseconds = timeout_ms > 0 ? static_cast<UInt64>(timeout_ms) * 1000 : 0;
+    int remaining_ms = timeout_ms;
+    Stopwatch watch;
+
     while (true)
     {
         int fd = notification_pipe.fds_rw[0];
         pollfd poll_fd{fd, POLLIN, 0};
 
-        int poll_res = poll(&poll_fd, 1, timeout_ms);
+        int poll_res = poll(&poll_fd, 1, remaining_ms);
         if (poll_res < 0)
         {
             if (errno == EINTR)
             {
-                --timeout_ms;   /// Quite a hacky way to update timeout. Just to make sure we avoid infinite waiting.
-                if (timeout_ms == 0)
+                /// No positive deadline to exhaust (a non-blocking probe, or an indefinite wait):
+                /// retry the probe instead of letting a signal decide the outcome.
+                if (timeout_microseconds == 0)
+                    continue;
+
+                const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+                if (elapsed_microseconds >= timeout_microseconds)
                     return false;
+                remaining_ms = static_cast<int>((timeout_microseconds - elapsed_microseconds + 999) / 1000);
                 continue;
             }
 
@@ -302,7 +331,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
         line = line.substr(strlen("SigBlk:"));
         line = line.substr(0, line.rend() - std::find_if_not(line.rbegin(), line.rend(), ::isspace));
 
-        UInt64 sig_blk;
+        UInt64 sig_blk = 0;
         if (parseHexNumber(line, sig_blk))
             return sig_blk & (1ULL << (signal - 1));
     }
@@ -372,7 +401,7 @@ ThreadIdToName getFilteredThreadNames(
 /// We must wait for every thread one by one sequentially,
 ///  because there is a limit on number of queued signals in OS and otherwise signals may get lost.
 /// Also, non-RT signals are not delivered if previous signal is handled right now (by default; but we use RT signals).
-class StackTraceSource : public ISource
+class StackTraceSource final : public ISource
 {
 public:
     StackTraceSource(
@@ -400,7 +429,7 @@ public:
     {
         /// Create a mask of what columns are needed in the result.
         NameSet names_set(column_names.begin(), column_names.end());
-        send_signal = names_set.contains("trace") || names_set.contains("query_id");
+        send_signal = names_set.contains("trace") || names_set.contains("query_id") || names_set.contains("untracked_memory");
         read_thread_names = names_set.contains("thread_name");
 
 #ifdef OS_DARWIN
@@ -457,6 +486,7 @@ protected:
             {
                 res_columns[res_index++]->insert(thread_name);
                 res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
             }
@@ -562,6 +592,7 @@ protected:
                         res_columns[res_index++]->insert(tid);
                         res_columns[res_index++]->insertData(query_id_data, query_id_size);
                         res_columns[res_index++]->insert(arr);
+                        res_columns[res_index++]->insert(untracked_memory_data);
 
                         continue;
                     }
@@ -574,6 +605,7 @@ protected:
 
                 res_columns[res_index++]->insert(thread_name);
                 res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
             }
@@ -718,6 +750,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -737,6 +770,15 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
     if (sigaddset(&sa.sa_mask, STACK_TRACE_SERVICE_SIGNAL))
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
+
+    /// This handler captures through StackTrace(ucontext), sharing one thread-local async-unwind recovery
+    /// (asynchronous_stack_unwinding + sigjmp_buf in StackTrace) with the query profiler and the debug
+    /// SIGTSTP stack dumper. Block their signals (SIGUSR1/SIGUSR2 profilers, SIGTSTP) while it runs so
+    /// none can nest and clobber that buffer, which would make the next fault's siglongjmp jump to the
+    /// wrong frame (or, if SIGTSTP cleared the flag on return, turn a recoverable unwind fault into a
+    /// fatal crash).
+    if (sigaddset(&sa.sa_mask, SIGUSR1) || sigaddset(&sa.sa_mask, SIGUSR2) || sigaddset(&sa.sa_mask, SIGTSTP))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 #pragma clang diagnostic pop
 
@@ -772,5 +814,11 @@ void StorageSystemStackTrace::readImpl(
 }
 
 }
+
+#pragma clang diagnostic pop
+
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStackTrace) }
 
 #endif

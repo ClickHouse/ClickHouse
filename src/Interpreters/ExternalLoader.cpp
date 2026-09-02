@@ -15,6 +15,7 @@
 #include <Common/randomSeed.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 
 namespace DB
@@ -437,6 +438,10 @@ public:
         if (configs == new_configs)
             return;
 
+        /// The reader has not collected any configuration yet, so there is nothing to apply.
+        if (!new_configs)
+            return;
+
         /// The following check prevents a race when two threads are trying to update configuration
         /// at almost the same time:
         /// 1) first thread reads a configuration (for example as a part of periodic updates)
@@ -489,9 +494,9 @@ public:
             if (!infos.contains(name))
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
-                if (always_load_everything)
+                if (!isObjectLazy(*config))
                 {
-                    LOG_TRACE(log, "Will load '{}' because always_load_everything flag is set.", name);
+                    LOG_TRACE(log, "Will load '{}' because it is not loaded lazily.", name);
                     startLoading(info);
                 }
             }
@@ -526,9 +531,9 @@ public:
 
         if (enable)
         {
-            /// Start loading all the objects which were not loaded yet.
+            /// Start loading all the objects which were not loaded yet and are not configured to load lazily.
             for (auto & [name, info] : infos)
-                if (!info.triedToLoad())
+                if (!info.triedToLoad() && !isObjectLazy(*info.config))
                     startLoading(info);
         }
     }
@@ -628,6 +633,19 @@ public:
         return collectLoadResults<ReturnType>(filter);
     }
 
+    template <typename ReturnType>
+    ReturnType tryLoadAllExceptLazy(Duration timeout)
+    {
+        std::unique_lock lock{mutex};
+        auto should_load = [this](const String & name)
+        {
+            const Info * info = getInfo(name);
+            return info && (info->triedToLoad() || !isObjectLazy(*info->config));
+        };
+        loadImpl(should_load, timeout, false, lock);
+        return collectLoadResults<ReturnType>(FilterByNameFunction{});
+    }
+
     /// Tries to load or reload a specified object.
     template <typename ReturnType>
     ReturnType tryLoadOrReload(const String & name, Duration timeout)
@@ -651,6 +669,22 @@ public:
     {
         std::lock_guard lock{mutex};
         return infos.contains(name);
+    }
+
+    bool unload(const String & name)
+    {
+        std::lock_guard lock{mutex};
+        Info * info = getInfo(name);
+        return unload(info);
+    }
+
+    void unloadAll()
+    {
+        std::lock_guard lock{mutex};
+        for (auto & [_, info] : infos)
+        {
+            unload(&info);
+        }
     }
 
     /// Starts reloading all the object which update time is earlier than now.
@@ -729,6 +763,12 @@ public:
     }
 
 private:
+
+    bool isObjectLazy(const ObjectConfig & config) const
+    {
+        return external_loader.isObjectLazy(*config.config, config.key_in_config).value_or(!always_load_everything);
+    }
+
     struct Info
     {
         Info(const String & name_, const std::shared_ptr<const ObjectConfig> & config_) : name(name_), config(config_) {}
@@ -792,6 +832,38 @@ private:
         std::exception_ptr exception; /// Last error occurred.
         TimePoint next_update_time = TimePoint::max(); /// Time of the next update, `TimePoint::max()` means "never".
     };
+
+    void resetInfoToUnloaded(const String & name, Info & info)
+    {
+        /// Reset state so that the next access triggers lazy reload.
+        LOG_TRACE(log, "Unloading {} '{}'", type_name, name);
+        info.object = nullptr;
+        info.exception = nullptr;
+        info.state_id = 0;
+        info.loading_id = 0;
+    }
+
+    bool unload(Info * info)
+    {
+        if (!info)
+            return false;
+
+        if (info->isLoading())
+        {
+            LOG_TRACE(log, "{} '{}' is being loaded, skipping the operation", type_name, info->name);
+            return false;
+        }
+
+        if (!info->loaded())
+        {
+            LOG_TRACE(log, "{} '{}' is not loaded, nothing to unload", type_name, info->name);
+            return false;
+        }
+
+        resetInfoToUnloaded(info->name, *info);
+
+        return true;
+    }
 
     Info * getInfo(const String & name)
     {
@@ -1449,6 +1521,12 @@ ReturnType ExternalLoader::tryLoad(const FilterByNameFunction & filter, Duration
 }
 
 template <typename ReturnType, typename>
+ReturnType ExternalLoader::tryLoadAllExceptLazy(Duration timeout) const
+{
+    return loading_dispatcher->tryLoadAllExceptLazy<ReturnType>(timeout);
+}
+
+template <typename ReturnType, typename>
 ReturnType ExternalLoader::load(const String & name) const
 {
     auto result = tryLoad<LoadResult>(name);
@@ -1493,6 +1571,16 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
 bool ExternalLoader::has(const String & name) const
 {
     return loading_dispatcher->has(name);
+}
+
+bool ExternalLoader::unload(const String & name) const
+{
+    return loading_dispatcher->unload(name);
+}
+
+void ExternalLoader::unloadAll() const
+{
+    loading_dispatcher->unloadAll();
 }
 
 Strings ExternalLoader::getAllTriedToLoadNames() const
@@ -1583,7 +1671,7 @@ ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(
     if (previous_version)
         return previous_version->clone();
 
-    return createObject(name, *config.config, config.key_in_config, config.repository_name);
+    return createObject(name, *config.config, config.key_in_config, config.repository_name, config.path);
 }
 
 template ExternalLoader::LoadablePtr ExternalLoader::getLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
@@ -1595,6 +1683,8 @@ template ExternalLoader::LoadablePtr ExternalLoader::tryLoad<ExternalLoader::Loa
 template ExternalLoader::LoadResult ExternalLoader::tryLoad<ExternalLoader::LoadResult>(const String &, Duration) const;
 template ExternalLoader::Loadables ExternalLoader::tryLoad<ExternalLoader::Loadables>(const FilterByNameFunction &, Duration) const;
 template ExternalLoader::LoadResults ExternalLoader::tryLoad<ExternalLoader::LoadResults>(const FilterByNameFunction &, Duration) const;
+template ExternalLoader::Loadables ExternalLoader::tryLoadAllExceptLazy<ExternalLoader::Loadables>(Duration) const;
+template ExternalLoader::LoadResults ExternalLoader::tryLoadAllExceptLazy<ExternalLoader::LoadResults>(Duration) const;
 
 template ExternalLoader::LoadablePtr ExternalLoader::load<ExternalLoader::LoadablePtr>(const String &) const;
 template ExternalLoader::LoadResult ExternalLoader::load<ExternalLoader::LoadResult>(const String &) const;

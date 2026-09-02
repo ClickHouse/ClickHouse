@@ -1,0 +1,25 @@
+<clickhouse>
+    <!-- A `GraphiteMergeTree` rollup configuration section whose name does NOT start with
+         `graphite_rollup`. The section name is taken from the table definition
+         `GraphiteMergeTree('retention_5m')`, so it can be arbitrary and was valid before the
+         unknown-config-key check existed. The validator must recognize it by its rollup
+         structure (`<pattern>`/`<default>` carrying `<regexp>`/`<function>`/`<retention>`) and
+         accept it, while still rejecting unstructured typos. -->
+    <retention_5m>
+        <path_column_name>metric</path_column_name>
+        <time_column_name>timestamp</time_column_name>
+        <value_column_name>value</value_column_name>
+        <version_column_name>updated</version_column_name>
+        <default>
+            <function>max</function>
+            <retention>
+                <age>0</age>
+                <precision>60</precision>
+            </retention>
+            <retention>
+                <age>7776000</age>
+                <precision>300</precision>
+            </retention>
+        </default>
+    </retention_5m>
+</clickhouse>

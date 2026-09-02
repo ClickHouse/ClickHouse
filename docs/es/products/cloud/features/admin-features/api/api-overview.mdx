@@ -1,0 +1,117 @@
+---
+sidebarTitle: 'Descripción general'
+title: 'API de ClickHouse Cloud'
+slug: /cloud/manage/api/api-overview
+description: 'Información sobre la API de ClickHouse Cloud'
+doc_type: 'referencia'
+keywords: ['ClickHouse Cloud', 'descripción general de la API', 'API en la nube', 'API REST', 'acceso programático']
+---
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+La API de ClickHouse Cloud es una API REST diseñada para que los desarrolladores administren fácilmente
+organizaciones y servicios en ClickHouse Cloud. Con nuestra API de Cloud, puede
+crear y administrar servicios, aprovisionar claves API y agregar o eliminar miembros de su
+organización, entre otras cosas.
+
+[Aprenda a crear su primera clave API y comience a usar la API de ClickHouse Cloud.](/es/products/cloud/features/admin-features/api/openapi)
+
+<div id="swagger-openapi-endpoint-and-ui">
+  ## Endpoint y UI de Swagger (OpenAPI)
+</div>
+
+La API de ClickHouse Cloud se basa en la [especificación OpenAPI](https://www.openapis.org/) de código abierto
+para permitir un consumo predecible desde el cliente. Si necesita acceder mediante programación
+a la documentación de la API de ClickHouse Cloud, ofrecemos un endpoint de Swagger
+basado en JSON en https://api.clickhouse.cloud/v1. También puede encontrar la documentación de la API en
+la [Swagger UI](/es/products/cloud/api-reference/organization/get-list-of-available-organizations).
+
+<Note>
+  Si su organización ha sido migrada a uno de los [nuevos planes de precios](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false) y usa OpenAPI, deberá eliminar el campo `tier` de la solicitud `POST` de creación del servicio.
+
+  El campo `tier` se ha eliminado del objeto de servicio, ya que ya no existen tiers de servicio.
+  Esto afectará a los objetos devueltos por las solicitudes de servicio `POST`, `GET` y `PATCH`. Por lo tanto, es posible que cualquier código que consuma estas API deba ajustarse para adaptarse a estos cambios.
+</Note>
+
+<div id="rate-limits">
+  ## Límites de tasa
+</div>
+
+Los desarrolladores pueden tener hasta 100 claves de API por organización. Cada clave de API tiene un
+límite de 10 solicitudes por cada ventana de 10 segundos. Si deseas aumentar la
+cantidad de claves de API o de solicitudes por cada ventana de 10 segundos para tu organización,
+ponte en contacto con support@clickhouse.com
+
+<div id="terraform-provider">
+  ## Proveedor de Terraform
+</div>
+
+El proveedor oficial de Terraform de ClickHouse te permite usar [infraestructura como código](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)
+para crear configuraciones predecibles y controladas por versiones, lo que hace que las implementaciones sean
+mucho menos propensas a errores.
+
+Puedes consultar la documentación del proveedor de Terraform en el [registro de Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs).
+
+Si quieres contribuir al proveedor de Terraform de ClickHouse, puedes consultar
+el código fuente [en el repositorio de GitHub](https://github.com/ClickHouse/terraform-provider-clickhouse).
+
+<Note>
+  Si tu organización ha migrado a uno de los [nuevos planes de precios](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false), deberás usar la versión 2.0.0 o superior de nuestro [proveedor de Terraform de ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs). Esta actualización es necesaria para gestionar los cambios en el atributo `tier` del servicio, ya que, después de la migración de precios, el campo `tier` ya no se acepta y deben eliminarse las referencias a este.
+
+  Ahora también podrás especificar el campo `num_replicas` como una propiedad del recurso de servicio.
+</Note>
+
+<div id="terraform-provider-releases">
+  ## Lanzamientos de los proveedores de Terraform
+</div>
+
+ClickHouse mantiene dos proveedores oficiales de Terraform: el proveedor de ClickHouse Cloud para la infraestructura en la nube y el proveedor de DBops para objetos a nivel de base de datos. Ambos siguen el mismo modelo de lanzamiento.
+
+<div id="ga-vs-beta-resources">
+  ### Recursos GA frente a Beta
+</div>
+
+Cada lanzamiento es una única compilación que contiene todos los recursos. Los recursos de funcionalidades que aún no han alcanzado la disponibilidad general se distribuyen junto con los de GA, marcados como **beta**; no hay una compilación independiente ni es necesario fijar nada para usarlos.
+
+Un recurso beta se identifica en dos lugares:
+
+* **Durante el plan y la aplicación**, mediante una advertencia `Beta Resource`. Terraform nunca falla por advertencias, por lo que la ejecución continúa con normalidad.
+* **En su documentación**, con un aviso que indica &quot;Este recurso está en beta&quot;.
+
+Beta significa que el schema y el comportamiento pueden cambiar en una futura versión del provider. Todo lo que no tenga este marcador es GA y está cubierto por las garantías de compatibilidad habituales.
+
+<Note>
+  Antes de v3.25.2, el provider marcaba estos recursos como *alpha* en lugar de *beta*, y la advertencia durante el plan decía `Alpha Resource`. Solo cambió la redacción; no hay cambios de schema, comportamiento ni migración de estado, pero las herramientas que buscan `Alpha Resource` en la salida del plan dejarán de encontrarlo silenciosamente. Los lanzamientos anteriores también publicaban una compilación alpha independiente.
+</Note>
+
+<div id="versioning">
+  ### Versionado
+</div>
+
+Ambos proveedores usan versionado semántico (MAJOR.MINOR.PATCH). La versión principal se incrementa para cambios incompatibles, la versión secundaria para nuevas características o recursos, y la versión de parche para correcciones de errores. Los lanzamientos se publican según sea necesario, en lugar de seguir un calendario fijo.
+
+Las versiones con el sufijo `-alphaN` (p. ej., `3.15.0-alpha3`) son anteriores al modelo de compilación única. Siguen estando disponibles, pero ya no se generan.
+
+<div id="promotion">
+  ### Promoción de beta a GA
+</div>
+
+Cuando una funcionalidad alcanza la disponibilidad general, su recurso deja de incluir el marcador beta en el siguiente lanzamiento del proveedor: deja de mostrarse la advertencia durante el plan y se elimina la nota destacada de la documentación. No cambia nada más: no se modifica la configuración, no hay migración de estado ni cambios entre compilaciones.
+
+<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
+  ## Nuevo modelo de precios de Terraform y OpenAPI: explicación de la configuración de réplicas
+</div>
+
+La cantidad de réplicas con la que se creará cada servicio es, de forma predeterminada, de 3 para los niveles Scale y Enterprise, mientras que para el nivel Basic es de 1.
+En los niveles Scale y Enterprise, es posible ajustarla pasando un campo `numReplicas` en la solicitud de creación del servicio.
+El valor del campo `numReplicas` debe estar entre 2 y 20 para el primer servicio de un warehouse. Los servicios que se crean en un warehouse existente pueden tener un número de réplicas de tan solo 1.
+
+<div id="support">
+  ## Soporte
+</div>
+
+Le recomendamos visitar primero [nuestro canal de Slack](https://clickhouse.com/slack) para obtener ayuda rápidamente. Si
+desea ayuda adicional o más información sobre nuestra API y sus funcionalidades,
+póngase en contacto con el soporte de ClickHouse en https://console.clickhouse.cloud/support

@@ -22,7 +22,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -37,6 +36,7 @@ UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & fun
     hash.update(type_name_.size());
     hash.update(type_name_);
     hash.update(version_);
+    hash.update(static_cast<UInt8>(function_->getStateVariant()));
     return hash.get128();
 }
 
@@ -71,14 +71,14 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     try
     {
         function->deserialize(place, istr, version, &arena);
+        /// Inside the guard: `push_back` can throw, and until it succeeds nothing owns `place`.
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -93,13 +93,8 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     function->serializeBatch(vec, offset, end, ostr, version);
 }
 
-void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
-    if (rows_offset)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method deserializeBinaryBulk of SerializationAggregateFunction does not support cases where rows_offset {} is non-zero",
-                        rows_offset);
-
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container & vec = real_column.getData();
 
@@ -148,14 +143,14 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
                 function->getName(),
                 trailing_bytes);
         }
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn & column, const String & value_str, const FormatSettings & settings)
@@ -189,18 +184,19 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
             auto tmp_column = arg_types.createColumn();
             ReadBufferFromString buf(value_str);
             arg_types.getDefaultSerialization()->deserializeWholeText(*tmp_column, buf, settings);
-            std::vector<const IColumn *> columns_ptrs;
+            ColumnRawPtrs columns_ptrs;
             for (const auto & col : assert_cast<ColumnTuple*>(tmp_column.get())->getColumns())
                 columns_ptrs.push_back(col.get());
             function->add(place, columns_ptrs.data(), 0, &arena);
         }
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-    column_concrete.getData().push_back(place);
 }
 
 static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn & column, const String & array_str, const FormatSettings & settings)
@@ -249,14 +245,14 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
             tmp_column->popBack(1);
         }
         assertChar(']', buf);
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 SerializationPtr SerializationAggregateFunction::create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
@@ -310,9 +306,13 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
 }
 
 
-void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeQuotedString(serializeToString(function, column, row_num, version), ostr);
+    auto str = serializeToString(function, column, row_num, version);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(str, ostr);
+    else
+        writeQuotedString(str, ostr);
 }
 
 

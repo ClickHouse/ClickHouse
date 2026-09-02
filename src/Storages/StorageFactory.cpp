@@ -54,12 +54,12 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 }
 
 
-void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
+void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features, Documentation documentation)
 {
     if (features.supports_settings && !features.has_builtin_setting_fn)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
-    if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
+    if (!storages.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }
 
@@ -105,10 +105,6 @@ StoragePtr StorageFactory::get(
         {
             name = "MaterializedView";
         }
-        else if (query.is_window_view)
-        {
-            name = "WindowView";
-        }
         else
         {
             if (!query.storage)
@@ -142,14 +138,6 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            if (name == "WindowView")
-            {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE WindowView "
-                    "is not supported, use CREATE WINDOW VIEW statement");
-            }
-
             auto it = storages.find(name);
             if (it == storages.end())
             {
@@ -187,6 +175,11 @@ StoragePtr StorageFactory::get(
                     "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
                     [](StorageFeatures features) { return features.supports_sort_order; });
 
+            if (storage_def->unique_key)
+                check_feature(
+                    "UNIQUE KEY clause",
+                    [](StorageFeatures features) { return features.supports_unique_key; });
+
             if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
                 check_feature(
                     "TTL clause",
@@ -201,6 +194,11 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "projections",
                     [](StorageFeatures features) { return features.supports_projections; });
+
+            if (query.sql_security)
+                check_feature(
+                    "SQL SECURITY clause",
+                    [](StorageFeatures features) { return features.supports_sql_security; });
         }
     }
 
@@ -223,13 +221,13 @@ StoragePtr StorageFactory::get(
         .comment = comment,
         .is_restore_from_backup = is_restore_from_backup};
 
-    assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
+    chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
-        assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
+        chassert(storage_def && storage_def->engine && !storage_def->engine->arguments);
         storage_def->engine->arguments = make_intrusive<ASTExpressionList>();  /// NOLINT(clang-analyzer-core.NullDereference)
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;

@@ -33,12 +33,25 @@ private:
 
 using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 
+/// Sums the match totals reported by each probe stream as it drains.
+class RightRowsMatchCounter
+{
+public:
+    void add(size_t matched_right_rows_) { matched_right_rows.fetch_add(matched_right_rows_, std::memory_order_relaxed); }
+    size_t get() const { return matched_right_rows.load(std::memory_order_relaxed); }
+
+private:
+    std::atomic_size_t matched_right_rows{0};
+};
+
+using RightRowsMatchCounterPtr = std::shared_ptr<RightRowsMatchCounter>;
+
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
 /// First input is for data from left table.
 /// Second input has empty header and is connected with FillingRightJoinSide.
 /// We can process left table only when Join is filled. Second input is used to signal that FillingRightJoinSide is finished.
-class JoiningTransform : public IProcessor
+class JoiningTransform final : public IProcessor
 {
 public:
     JoiningTransform(
@@ -48,7 +61,9 @@ public:
         size_t max_block_size_,
         bool on_totals_ = false,
         bool default_totals_ = false,
-        FinishCounterPtr finish_counter_ = nullptr);
+        FinishCounterPtr finish_counter_ = nullptr,
+        RightRowsMatchCounterPtr match_counter_ = nullptr,
+        bool emit_non_joined_ = true);
 
     ~JoiningTransform() override;
 
@@ -71,9 +86,14 @@ private:
     bool has_virtual_row = false;
     bool stop_reading = false;
     bool process_non_joined = true;
+    bool is_drained = false;
+    bool is_last_drained = false;
 
     JoinPtr join;
     bool on_totals;
+    /// Whether this transform emits non-joined rows itself once all probe streams have drained.
+    /// False when separate `NonJoinedBlocksTransform` processors own the emission.
+    bool emit_non_joined;
     /// This flag means that we have manually added totals to our pipeline.
     /// It may happen in case if joined subquery has totals, but out string doesn't.
     /// We need to join default values with subquery totals if we have them, or return empty chunk is haven't.
@@ -86,13 +106,16 @@ private:
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
+    RightRowsMatchCounterPtr match_counter;
+    size_t matched_right_rows = 0;
+
     Block readExecute(Chunk & chunk);
 };
 
 /// Fills Join with block from right table.
 /// Has single input and single output port.
 /// Output port has empty header. It is closed when all data is inserted in join.
-class FillingRightJoinSideTransform : public IProcessor
+class FillingRightJoinSideTransform final : public IProcessor
 {
 public:
     FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
@@ -113,6 +136,7 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
+    bool post_build_phase = false;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
@@ -134,7 +158,7 @@ using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
 
 
 /// Reads delayed joined blocks from Join
-class DelayedJoinedBlocksTransform : public IProcessor
+class DelayedJoinedBlocksTransform final : public IProcessor
 {
 public:
     explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
@@ -151,7 +175,7 @@ private:
     bool finished = false;
 };
 
-class DelayedJoinedBlocksWorkerTransform : public IProcessor
+class DelayedJoinedBlocksWorkerTransform final : public IProcessor
 {
 public:
     using NonJoinedStreamBuilder = std::function<IBlocksStreamPtr()>;
@@ -176,7 +200,7 @@ private:
 };
 
 /// Generates non-joined rows from the right table for a specific bucket partition
-class NonJoinedBlocksTransform : public ISource
+class NonJoinedBlocksTransform final : public ISource
 {
 public:
     NonJoinedBlocksTransform(

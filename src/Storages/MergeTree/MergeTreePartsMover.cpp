@@ -1,12 +1,12 @@
+#include <set>
+#include <Disks/IVolume.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Disks/IVolume.h>
-
-#include <set>
 
 namespace DB
 {
@@ -281,7 +281,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
     }
 
-    MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings());
+    MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings(), PartDirIntent::OpenExisting);
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
@@ -297,7 +297,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
             cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
     }
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
-    cloned_part.part->loadVersionMetadata();
+    cloned_part.part->version->loadAndUpdateMetadata();
     cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
     return cloned_part;
 }

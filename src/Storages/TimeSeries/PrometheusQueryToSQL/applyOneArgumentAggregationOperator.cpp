@@ -23,7 +23,10 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for a one-argument aggregation operator.
-    void checkArgumentTypes(const PQT::AggregationOperator * operator_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::AggregationOperator * operator_node,
+        const std::vector<SQLQueryPiece> & arguments,
+        const ConverterContext & context)
     {
         const auto & operator_name = operator_node->operator_name;
 
@@ -143,7 +146,7 @@ bool isOneArgumentAggregationOperator(std::string_view operator_name)
 
 
 SQLQueryPiece applyOneArgumentAggregationOperator(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
     const auto * impl_info = getImplInfo(operator_name);
@@ -182,6 +185,12 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
 
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+
+        /// Drop empty-values rows.
+        /// If the input has no rows then countForEach([]) returns [], but the number of values
+        /// in array must always match the number of steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID),
+        /// so we just drop such rows.
+        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         aggregation_query = builder.getSelectQuery();
     }

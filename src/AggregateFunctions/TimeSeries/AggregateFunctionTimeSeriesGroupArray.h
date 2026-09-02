@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -9,6 +10,8 @@
 #include <Common/Arena.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <limits>
 
 
 namespace DB
@@ -19,18 +22,20 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 /// Aggregate function sorting pairs (timestamp, values) by timestamp.
-/// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value.
-template <typename TimestampType, typename ValueType, bool array_arguments>
+/// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value,
+/// where a NaN value loses to any other value (see `timeseriesMaxValueForDuplicateTimestamp`).
+/// Samples can be passed in three ways: as two scalar arguments (timestamp, value),
+/// as two arrays (Array(timestamp), Array(value)), or as a single array of pairs Array(Tuple(timestamp, value)).
+template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeSeriesGroupArray final :
-    public IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>
+    public IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType>>
 {
 public:
-    static constexpr bool DateTime64Supported = true;
-
-    using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>;
+    using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType>>;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
     using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
@@ -53,12 +58,21 @@ public:
         size_t size = 0;
         size_t allocated_size = 0;
 
+        /// Maximum number of elements: the size of the allocation in bytes must fit into `size_t`.
+        static constexpr size_t MAX_ELEMENTS = std::numeric_limits<size_t>::max() / sizeof(Element);
+
         void reserve(size_t new_size, Arena * arena)
         {
             if (new_size > allocated_size)
             {
+                if (new_size > MAX_ELEMENTS)
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too many elements ({}) in the state of aggregate function timeSeriesGroupArray, maximum {}",
+                        new_size, MAX_ELEMENTS);
+
                 auto old_size = allocated_size;
-                allocated_size = std::max(2 * allocated_size, new_size);
+                allocated_size = std::min(std::max(2 * allocated_size, new_size), MAX_ELEMENTS);
                 elements = reinterpret_cast<Element *>(arena->alignedRealloc(
                     reinterpret_cast<char *>(elements), old_size * sizeof(Element), allocated_size * sizeof(Element),
                     alignof(Element)));
@@ -96,11 +110,11 @@ public:
                 {
                     if (elements[i].timestamp == elements[i - 1].timestamp)
                     {
-                        /// If there are multiple values with the same timestamp, then we move the biggest value
+                        /// If there are multiple values with the same timestamp, then we move the kept value
                         /// to the first position in each group of values with the same timestamp.
                         /// We do that because std::unique() which is called below will remove all except the first element
                         /// in each group of values with the same timestamp.
-                        elements[i - 1].value = std::max(elements[i - 1].value, elements[i].value);
+                        elements[i - 1].value = timeseriesMaxValueForDuplicateTimestamp(elements[i - 1].value, elements[i].value);
                         need_deduplication = true;
                     }
                 }
@@ -117,13 +131,20 @@ public:
 
     explicit AggregateFunctionTimeSeriesGroupArray(const DataTypes & argument_types_)
         : Base(argument_types_, {}, createResultType(argument_types_))
+        , array_of_pairs_argument(argument_types_.size() == 1)
+        , array_arguments(!array_of_pairs_argument && (argument_types_[1]->getTypeId() == TypeIndex::Array))
     {
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType() : argument_types_[0];
-        const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types_[1].get())->getNestedType() : argument_types_[1];
+        /// With the single argument form the result type is the same as the type of that argument.
+        if (argument_types_.size() == 1)
+            return argument_types_[0];
+
+        const bool arrays_passed = (argument_types_[1]->getTypeId() == TypeIndex::Array);
+        const auto & timestamp_type = arrays_passed ? typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType() : argument_types_[0];
+        const auto & value_type = arrays_passed ? typeid_cast<const DataTypeArray *>(argument_types_[1].get())->getNestedType() : argument_types_[1];
         return std::make_shared<DataTypeArray>(make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}));
     }
 
@@ -178,7 +199,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (array_arguments)
+        if (array_of_pairs_argument || array_arguments)
         {
             addBatchSinglePlace(row_num, row_num + 1, place, columns, arena, -1);
         }
@@ -246,81 +267,75 @@ public:
         Arena * arena,
         const UInt8 * flags_data) const
     {
-        if (array_arguments)
+        if (!array_of_pairs_argument && !array_arguments)
         {
-            const auto & timestamp_column = typeid_cast<const ColumnArray &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColumnArray &>(*columns[1]);
-            const auto & timestamp_offsets = timestamp_column.getOffsets();
-            const auto & value_offsets = value_column.getOffsets();
-            const TimestampType * timestamp_data = typeid_cast<const ColVecType *>(timestamp_column.getDataPtr().get())->getData().data();
-            const ValueType * value_data = typeid_cast<const ColVecResultType *>(value_column.getDataPtr().get())->getData().data();
+            /// Each row holds a single sample.
+            const TimestampType * timestamp_data = typeid_cast<const ColVecType &>(*columns[0]).getData().data();
+            const ValueType * value_data = typeid_cast<const ColVecResultType &>(*columns[1]).getData().data();
 
-            if (flags_data)
-            {
-                size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-                size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
-                for (size_t i = row_begin; i < row_end; ++i)
-                {
-                    const auto timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
-                    const auto value_array_size = value_offsets[i] - previous_value_offset;
-
-                    if (flags_data[i] == flag_value_to_include)
-                    {
-                        /// Check that timestamp and value arrays have the same size for the selected rows
-                        if (timestamp_array_size != value_array_size)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
-                                i, timestamp_array_size, value_array_size);
-
-                        /// A flag is per row, and each row is a pair of arrays
-                        addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size, arena);
-                    }
-
-                    previous_timestamp_offset = timestamp_offsets[i];
-                    previous_value_offset = value_offsets[i];
-                }
-            }
+            if (!flags_data)
+                addMany(place, timestamp_data, value_data, row_begin, row_end, arena);
+            else if constexpr (flag_value_to_include)
+                addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
             else
-            {
-                {
-                    /// Check that timestamp and value arrays have the same size for each row
-                    size_t previous_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-                    for (size_t i = row_begin; i < row_end; ++i)
-                    {
-                        const auto timestamp_array_size = timestamp_offsets[i] - previous_offset;
-                        const auto value_array_size = value_offsets[i] - previous_offset;
+                addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
 
-                        if (timestamp_array_size != value_array_size)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
-                                i, timestamp_array_size, value_array_size);
+            return;
+        }
 
-                        previous_offset = timestamp_offsets[i];
-                    }
-                }
+        /// Each row holds a whole series.
+        const ColumnArray::Offset * timestamp_offsets = nullptr;
+        const ColumnArray::Offset * value_offsets = nullptr;
+        const TimestampType * timestamp_data = nullptr;
+        const ValueType * value_data = nullptr;
 
-                const size_t data_row_begin = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-                const size_t data_row_end = (row_end == 0 ? 0 : timestamp_offsets[row_end - 1]);
+        if (array_of_pairs_argument)
+        {
+            const auto & array_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
 
-                addMany(place, timestamp_data, value_data, data_row_begin, data_row_end, arena);
-            }
+            /// The timestamps and the values are stored in the same array, so they share the offsets.
+            timestamp_offsets = array_column.getOffsets().data();
+            value_offsets = timestamp_offsets;
+            timestamp_data = typeid_cast<const ColVecType &>(tuple_column.getColumn(0)).getData().data();
+            value_data = typeid_cast<const ColVecResultType &>(tuple_column.getColumn(1)).getData().data();
         }
         else
         {
-            const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
-            const TimestampType * timestamp_data = timestamp_column.getData().data();
-            const ValueType * value_data = value_column.getData().data();
+            const auto & timestamp_array_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const auto & value_array_column = typeid_cast<const ColumnArray &>(*columns[1]);
 
-            if (flags_data)
+            timestamp_offsets = timestamp_array_column.getOffsets().data();
+            value_offsets = value_array_column.getOffsets().data();
+            timestamp_data = typeid_cast<const ColVecType &>(timestamp_array_column.getData()).getData().data();
+            value_data = typeid_cast<const ColVecResultType &>(value_array_column.getData()).getData().data();
+        }
+
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
+
+        /// Reserve memory for all the samples at once if no rows are skipped.
+        if (!flags_data && row_end > row_begin)
+            reserveAdd(place, timestamp_offsets[row_end - 1] - previous_timestamp_offset, arena);
+
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            /// A flag is per row, and each row holds a whole series
+            if (!flags_data || flags_data[i] == flag_value_to_include)
             {
-                if constexpr (flag_value_to_include)
-                    addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
-                else
-                    addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
+                const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
+                const size_t value_array_size = value_offsets[i] - previous_value_offset;
+
+                /// Check that timestamp and value arrays have the same size for the selected rows
+                if (timestamp_array_size != value_array_size)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
+                        i, timestamp_array_size, value_array_size);
+
+                addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size, arena);
             }
-            else
-            {
-                addMany(place, timestamp_data, value_data, row_begin, row_end, arena);
-            }
+
+            previous_timestamp_offset = timestamp_offsets[i];
+            previous_value_offset = value_offsets[i];
         }
     }
 
@@ -358,7 +373,7 @@ public:
     {
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         data(place).merge(data(rhs), arena);
     }
@@ -379,7 +394,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt16 format_version;
+        UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
@@ -389,13 +404,21 @@ public:
                 FORMAT_VERSION, format_version);
 
         Data & data = this->data(place);
-        size_t size;
+        size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
-        data.reserve(size, arena);
+        /// The number of elements is read from the state and cannot be trusted, so only a bounded amount is
+        /// reserved upfront and the array grows while the timestamps are read. That way a corrupted size fails
+        /// with an end-of-buffer error instead of allocating memory for the claimed number of elements.
+        data.reserve(std::min(size, MAX_ELEMENTS_TO_RESERVE), arena);
 
         for (size_t i = 0; i < size; ++i)
-            readBinaryLittleEndian(data.elements[i].timestamp, buf);
+        {
+            TimestampType timestamp{};
+            readBinaryLittleEndian(timestamp, buf);
+            data.reserve(i + 1, arena);
+            data.elements[i].timestamp = timestamp;
+        }
 
         for (size_t i = 0; i < size; ++i)
             readBinaryLittleEndian(data.elements[i].value, buf);
@@ -434,7 +457,16 @@ public:
     }
 
 private:
+    /// Whether samples are passed as a single argument of type Array(Tuple(timestamp, value)).
+    const bool array_of_pairs_argument;
+
+    /// Whether timestamp/value arguments are arrays (one row holds a whole series) or scalars.
+    const bool array_arguments;
+
     static constexpr UInt16 FORMAT_VERSION = 1;
+
+    /// How many elements `deserialize` reserves before reading the data. Bigger states grow while they are read.
+    static constexpr size_t MAX_ELEMENTS_TO_RESERVE = 4096;
 };
 
 }

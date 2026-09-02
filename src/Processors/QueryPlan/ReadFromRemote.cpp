@@ -3,6 +3,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -46,6 +47,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <fmt/format.h>
 
@@ -229,7 +231,7 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
     DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
-ASTSelectQuery & getSelectQuery(ASTPtr ast)
+static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 {
     if (const auto * explain = ast->as<ASTExplainQuery>())
         ast = explain->getExplainedQuery();
@@ -280,23 +282,31 @@ ASTPtr tryBuildAdditionalFilterAST(
         /// Support for IN. The stored AST from the Set is taken.
         if (WhichDataType(node->result_type).isSet())
         {
-            auto maybe_set = node->column;
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
-                maybe_set = col_const->getDataColumnPtr();
-
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+            const auto & data_column = node->column->getDataColumnPtr();
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
                 node_to_ast[node] = col_set->getData()->getSourceAST();
 
             stack.pop();
             continue;
         }
 
-        if (node->column && isColumnConst(*node->column))
+        if (node->column)
         {
-            auto literal = make_intrusive<ASTLiteral>((*node->column)[0]);
+            ASTPtr literal;
+            if (typeMayContainDecimal(*node->result_type))
+                /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) exactly so
+                /// the shard does not re-parse them through Float64 or DateTime64 text heuristics.
+                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
+            else
+                /// Other types keep their raw Field literal. In particular a DateTime serialized as local
+                /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
+                /// share one text, and parsing picks one side), whereas the raw Unix-timestamp literal is exact.
+                literal = make_intrusive<ASTLiteral>(node->column->getField());
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
+            /// makeCastToTypeNameAST skips the wrap when the exact serialization already cast the value to
+            /// the result type (scalar Decimal/DateTime64/Time64), avoiding a redundant identity cast.
+            auto casted_literal = makeCastToTypeNameAST(std::move(literal), node->result_type->getName());
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
@@ -381,11 +391,8 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (external_tables && isNameOfGlobalInFunction(func_name))
         {
             const auto * second_arg = node->children.at(1);
-            auto maybe_set = second_arg->column;
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
-                maybe_set = col_const->getDataColumnPtr();
-
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+            const auto & data_column = second_arg->column->getDataColumnPtr();
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
             {
                 auto future_set = col_set->getData();
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
@@ -417,7 +424,16 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// and it should be built before sending the external tables.
 
                         auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
-                        NamesAndTypesList columns = header->getNamesAndTypesList();
+                        /// The subquery may produce columns with duplicate names
+                        /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
+                        /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
+                        /// the names here. This mirrors `buildQueryTreeForShard.cpp` which performs
+                        /// the same step. Column matching when the temporary table is populated and
+                        /// when it is later used by the remote shard's `IN` operator is by position,
+                        /// so renaming the columns is safe.
+                        Block header_with_unique_names = *header;
+                        makeUniqueColumnNamesInBlock(header_with_unique_names);
+                        NamesAndTypesList columns = header_with_unique_names.getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
                             context,
@@ -479,32 +495,60 @@ static void addFilters(
     if (!predicate)
         return;
 
-    auto table_expressions = extractTableExpressions(query_node->getJoinTree());
+    auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
     /// Case with JOIN is not supported so far.
     if (table_expressions.size() != 1)
         return;
 
-    const auto * table_node = table_expressions.front()->as<TableNode>();
-    if (!table_node)
+    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
+    /// Supported cases:
+    ///   - TableNode (a real table)
+    ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
+    ///   - QueryNode wrapping any of the above (one level of subquery)
+    StorageSnapshotPtr table_snapshot;
+    ASTPtr table_identifier_ast;
+    String table_alias;
+
+    auto extract_from_expression = [&](const QueryTreeNodePtr & expr) -> bool
+    {
+        if (const auto * tn = expr->as<TableNode>())
+        {
+            table_snapshot = tn->getStorageSnapshot();
+            table_identifier_ast = tn->toASTIdentifier();
+            table_alias = tn->getAlias();
+            return true;
+        }
+        if (const auto * tfn = expr->as<TableFunctionNode>())
+        {
+            table_snapshot = tfn->getStorageSnapshot();
+            /// Table functions don't have a stable database/table identifier - we only
+            /// need the alias on the receiving side so `setColumnShortName` can strip it.
+            table_identifier_ast = nullptr;
+            table_alias = tfn->getAlias();
+            return true;
+        }
+        return false;
+    };
+
+    if (!extract_from_expression(table_expressions.front()))
     {
         const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
         if (!inner_query_node)
             return;
 
-        table_expressions = extractTableExpressions(inner_query_node->getJoinTree());
+        table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
         /// Case with JOIN is not supported so far.
         if (table_expressions.size() != 1)
             return;
 
-        table_node = table_expressions.front()->as<TableNode>();
-        if (!table_node)
+        if (!extract_from_expression(table_expressions.front()))
             return;
     }
 
     TableWithColumnNamesAndTypes table_with_columns(
-        DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
-        table_node->getStorageSnapshot()->getColumns(GetColumnsOptions::Kind::Ordinary));
-    table_with_columns.table.alias = table_node->getAlias();
+        table_identifier_ast ? DatabaseAndTableWithAlias(table_identifier_ast) : DatabaseAndTableWithAlias{},
+        table_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
+    table_with_columns.table.alias = table_alias;
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
@@ -555,17 +599,24 @@ void ReadFromRemote::addLazyPipe(
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
-    const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
-    const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-    if (!storage)
+    /// The storage is only consumed by the stale-replica branch below, which applies solely to
+    /// replicated tables. Table functions have an empty main table and reach this path only when the
+    /// use_delayed_remote_source failpoint forces a lazy read, and that branch is skipped for them, so
+    /// resolving the empty StorageID would needlessly throw. This mirrors the guard in addPipe.
+    StoragePtr storage;
+    if (!table_func_ptr)
     {
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
+        const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
+        storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+        if (!storage)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
+            my_unavailable_shard_tracker = unavailable_shard_tracker,
             query = shard.query, header = shard.header,
-            my_context = context, my_throttler = throttler,
+            my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
             my_stage = stage, my_storage = storage,
@@ -614,7 +665,9 @@ void ReadFromRemote::addLazyPipe(
             use_delayed_remote_source = true;
         });
 
-        if (!use_delayed_remote_source)
+        // The stale-local-replica logic below applies only to real replicated tables. A table function
+        // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
+        if (!use_delayed_remote_source && !my_table_func_ptr)
         {
             const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
             if (!replicated_storage)
@@ -635,8 +688,16 @@ void ReadFromRemote::addLazyPipe(
 
             if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
             {
+                /// We are falling back from a remote replica to the local one. A shard limit drops
+                /// rows before they reach DelayedSource, but `rows_before_limit_at_least` must include
+                /// those rows. DelayedSource cannot place the counter before a plan that does not exist
+                /// yet, so build this fallback without a shard limit.
+                auto local_stage = my_stage;
+                if (local_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+                    local_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+
                 auto plan = createLocalPlan(
-                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
+                    query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }
@@ -668,7 +729,12 @@ void ReadFromRemote::addLazyPipe(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
+        remote_query_executor->setLogger(my_log);
+        remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
+        /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
+        /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
+        remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
@@ -689,7 +755,6 @@ void ReadFromRemote::addPipe(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
-    bool parallel_replicas_disabled = context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
     if (stage == QueryProcessingStage::Complete)
     {
         if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
@@ -760,6 +825,7 @@ void ReadFromRemote::addPipe(
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
+            remote_query_executor->setQueryPlanFallbackStage(stage);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
             remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
@@ -791,23 +857,26 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
-        if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
-        {
-            // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
-            // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
-            // The coordinator will return query result from the shard.
-            // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
-            // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
-            // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
-            //
-            // In case parallel replicas are disabled, there also should be a single connection to each shard to prevent result duplication
-            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
-        }
-        else
+        // Several connections to a shard are correct only when every replica reads its own part of the data,
+        // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
+        // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
+        //
+        // In every other case a replica executes the whole query, so there should be a single connection
+        // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
+        //   * with parallel reading from replicas (`ParallelReplicasMode::READ_TASKS`) the replica we
+        //     connect to instantiates the coordinator which manages the reading on the whole shard and
+        //     returns the result of the shard, so several connections mean several coordinators;
+        //   * with parallel replicas disabled, or not applicable for any other reason (e.g. by
+        //     `automatic_parallel_replicas_mode` or `parallel_replicas_only_with_analyzer`), a replica
+        //     just executes the query over all of its data.
+        if (context->canUseOffsetParallelReplicas())
             remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+        else
+            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
 
         if (!table_func_ptr)
             remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -860,12 +929,14 @@ static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
     return explain_query;
 }
 
-static ASTPtr makeExplainPipeline(bool header, bool distributed, ASTPtr query)
+static ASTPtr makeExplainPipeline(bool header, bool distributed, bool compact_repeated_processor_chains, ASTPtr query)
 {
     auto explain_settings = make_intrusive<ASTSetQuery>();
     explain_settings->is_standalone = false;
     explain_settings->changes.emplace_back("header", int(header));
     explain_settings->changes.emplace_back("distributed", int(distributed));
+    if (compact_repeated_processor_chains)
+        explain_settings->changes.emplace_back("compact_repeated_processor_chains", 1);
 
     auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPipeline);
     explain_query->setExplainedQuery(query);
@@ -934,7 +1005,11 @@ void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool
 
         auto & shard_copy = used_shards.emplace_back(shard);
         shard_copy.header = header;
-        shard_copy.query = makeExplainPipeline(settings.write_header, distributed, shard.query);
+        shard_copy.query = makeExplainPipeline(
+            settings.write_header,
+            distributed,
+            settings.compact_repeated_processor_chains,
+            shard.query);
     }
 
     formatExplain(settings, addPipes(used_shards, header));
@@ -1109,7 +1184,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     String query_string = formattedAST(ast, enable_analyzer);
 
-    assert(output_header);
+    chassert(output_header);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
@@ -1160,7 +1235,7 @@ void ReadFromParallelRemoteReplicasStep::describeDistributedPipeline(FormatSetti
     auto header = std::make_shared<const Block>(
         Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
 
-    auto explain_query = makeExplainPipeline(settings.write_header, distributed, query_ast);
+    auto explain_query = makeExplainPipeline(settings.write_header, distributed, settings.compact_repeated_processor_chains, query_ast);
     formatExplain(settings, addPipes(explain_query, header));
 }
 }

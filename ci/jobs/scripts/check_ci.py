@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import re
 import sys
 import time
@@ -13,10 +12,11 @@ sys.path.append(".")
 
 from ci.praktika.cidb import CIDB
 from ci.praktika.gh import GH
+from ci.praktika.git import Git
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell
+from ci.praktika.utils import Shell, Utils
 from ci.settings.settings import CI_DB_READ_URL, CI_DB_READ_USER, TEST_FAILURE_PATTERNS
 
 
@@ -203,7 +203,7 @@ Test output:
         title = result.name
         body = f"""\
 Test name: {result.name}
-{ci_report_line}Failing test history: [cidb]({result.get_hlabel_link("cidb")})
+{ci_report_line}Failing test history: [cidb]({result.get_label_link(Result.Label.CIDB)})
 
 Test output:
 ```
@@ -253,7 +253,7 @@ Test output:
 
     @classmethod
     def repr_result(cls, result):
-        res = f"\n - test output:\n"
+        res = "\n - test output:\n"
         # For ERROR status (typically job-level failures), meaningful output is usually at the end,
         # so we truncate from the top to preserve the error details.
         # For other statuses (test failures), the relevant information is often at the beginning,
@@ -263,8 +263,8 @@ Test output:
             max_info_lines_cnt=50,
             max_line_length=200,
         )
-        res += f"\n - flags: {', '.join(result.get_labels()) or 'not flaged'}"
-        res += f"\n - cidb: {result.get_hlabel_link('cidb') or 'not found'}"
+        res += f"\n - flags: {', '.join(result.get_labels()) or 'not flagged'}"
+        res += f"\n - cidb: {result.get_label_link(Result.Label.CIDB) or 'not found'}"
         return res
 
     @classmethod
@@ -393,11 +393,26 @@ class CommitStatusCheck:
 
     @staticmethod
     def get_ci_praktika_result(pr_number, commit_sha):
+        # Reports live under the normalized workflow name, both as a path prefix
+        # and in the result file name:
+        #   PRs/<pr>/<sha>/<workflow>/result_<workflow>.json
+        #   REFs/master/<sha>/<workflow>/result_<workflow>.json
         if pr_number != 0:
-            report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/PRs/{pr_number}/{commit_sha}/result_pr.json"
+            workflow = Utils.normalize_string("PR")
+            ref_prefix = f"PRs/{pr_number}"
         else:
-            report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{commit_sha}/result_masterci.json"
-        _ = Shell.check(f"curl {report_url} -o /tmp/result_pr.json > /dev/null 2>&1")
+            workflow = Utils.normalize_string("MasterCI")
+            ref_prefix = "REFs/master"
+        report_url = (
+            f"https://s3.amazonaws.com/clickhouse-test-reports/"
+            f"{ref_prefix}/{commit_sha}/{workflow}/result_{workflow}.json"
+        )
+        # -f so a missing report fails here instead of downloading the S3 error
+        # body and blowing up later in Result.from_file with an opaque parse error.
+        if not Shell.check(
+            f"curl -f {report_url} -o /tmp/result_pr.json > /dev/null 2>&1"
+        ):
+            raise RuntimeError(f"Failed to fetch CI report from {report_url}")
         return Result.from_file("/tmp/result_pr.json")
 
     @staticmethod
@@ -409,24 +424,24 @@ class CommitStatusCheck:
                 sys.exit(0)
             GH.post_commit_status(
                 CheckStatuses.CH_INC_SYNC,
-                Result.Status.SUCCESS,
+                Result.Status.OK,
                 "Manually overridden",
                 "",
                 sha=sha,
                 repo="ClickHouse/ClickHouse",
             )
             return
-        if commit_status_data.state in (Result.Status.SUCCESS,):
+        if commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
-        elif commit_status_data.state in (Result.Status.FAILED,):
-            if commit_status_data.description == "tests failed":
+        elif commit_status_data.state in (Result.GHStatus.FAILURE,):
+            if commit_status_data.description.startswith("tests failed"):
                 print(
                     f"\nCH Sync failed for commit, description: {commit_status_data.description}"
                 )
                 if UserPrompt.confirm("You sure it can be ignored?"):
                     GH.post_commit_status(
                         commit_status_data.context,
-                        Result.Status.SUCCESS,
+                        Result.Status.OK,
                         "Ignored",
                         commit_status_data.url,
                         sha=sha,
@@ -439,7 +454,7 @@ class CommitStatusCheck:
                     f"\nCH Sync commit status state: {commit_status_data.state} and description: {commit_status_data.description} - cannot proceed"
                 )
                 sys.exit(1)
-        elif commit_status_data.state in (Result.Status.PENDING,):
+        elif commit_status_data.state in (Result.GHStatus.PENDING,):
             if commit_status_data.description == "tests started":
                 print(
                     f"\n{commit_status_data.context} is pending with description {commit_status_data.description}"
@@ -447,7 +462,7 @@ class CommitStatusCheck:
                 if UserPrompt.confirm("You sure it can be ignored?"):
                     GH.post_commit_status(
                         commit_status_data.context,
-                        Result.Status.SUCCESS,
+                        Result.Status.OK,
                         "Ignored",
                         commit_status_data.url,
                         sha=sha,
@@ -466,11 +481,11 @@ class CommitStatusCheck:
         commit_status_data: Optional[GH.CommitStatus], sha: str
     ):
         override = False
-        if commit_status_data and commit_status_data.state in (Result.Status.SUCCESS,):
+        if commit_status_data and commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
         elif not commit_status_data:
             override = True
-        elif commit_status_data.state in (Result.Status.FAILED,):
+        elif commit_status_data.state in (Result.GHStatus.FAILURE,):
             if UserPrompt.confirm("Do you want to override mergeable check?"):
                 override = True
             else:
@@ -482,7 +497,7 @@ class CommitStatusCheck:
         if override:
             GH.post_commit_status(
                 CheckStatuses.MERGEABLE_CHECK,
-                Result.Status.SUCCESS,
+                Result.Status.OK,
                 "Manually overridden",
                 "",
                 sha=sha,
@@ -524,7 +539,7 @@ class CommitStatusCheck:
                     context=context,
                 )
 
-        print(f"\nCommit statuses:")
+        print("\nCommit statuses:")
         for check in required_checks:
             if check in status_map:
                 state = status_map[check].state
@@ -552,9 +567,10 @@ class CommitStatusCheck:
     @staticmethod
     def get_sync_pr_result(sync_pr_number, sync_sha):
         """Fetch the CI result for a sync PR via the S3 proxy."""
+        workflow = Utils.normalize_string("PR")
         report_url = (
             f"{S3_PROXY_BASE_URL}/{S3_PRIVATE_REPORT_BUCKET}"
-            f"/PRs/{sync_pr_number}/{sync_sha}/result_pr.json"
+            f"/PRs/{sync_pr_number}/{sync_sha}/{workflow}/result_{workflow}.json"
         )
         if not Shell.check(
             f"curl -f {report_url} -o /tmp/result_sync_pr.json > /dev/null 2>&1"
@@ -708,7 +724,7 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
             print(f"{failure_cnt}. [ {failure_result.status} ] {failure_result.name}")
             if job_name != failure_result.name:
                 print(f"  in {job_name}")
-                print(f"cidb: {failure_result.get_hlabel_link('cidb')}")
+                print(f"cidb: {failure_result.get_label_link(Result.Label.CIDB)}")
 
             # Create new issue if user confirms
             if UserPrompt.confirm("Create GitHub issue for this failure?"):
@@ -731,7 +747,7 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
                         issue_catalog.active_test_issues.append(ci_issue)
                         issue_catalog.dump()
                     failure_result.set_comment("ISSUE CREATED")
-                    failure_result.set_clickable_label("issue", ci_issue.url)
+                    failure_result.set_label(Result.Label.ISSUE, link=ci_issue.url)
                     known_failures.append((job_name, failure_result))
                     issues_created_count += 1
                 else:
@@ -872,13 +888,14 @@ def main():
         if (
             status_map[CheckStatuses.PR].state
             not in (
-                Result.Status.SUCCESS,
-                Result.Status.FAILED,
+                Result.GHStatus.SUCCESS,
+                Result.GHStatus.FAILURE,
             )
             and not FORCE_MERGE
         ):
+            pr_status = status_map[CheckStatuses.PR]
             raise Exception(
-                f"Status for {commit_status_data.context} is not completed: {commit_status_data.state} - cannot proceed"
+                f"Status for {pr_status.context} is not completed: {pr_status.state} - cannot proceed"
             )
     else:
         status_map = {}
@@ -915,7 +932,7 @@ def main():
     sync_unknown_failures = []
     if (
         sync_status
-        and sync_status.state == Result.Status.FAILED
+        and sync_status.state == Result.GHStatus.FAILURE
         and sync_status.description == "tests failed"
     ):
         print("\n=== Processing Sync PR (CH Inc sync) failures ===")
@@ -1013,7 +1030,7 @@ def main():
                 only_update=True,
                 verbose=False,
             ):
-                print(f"ERROR: failed to post CI summary")
+                print("ERROR: failed to post CI summary")
         except Exception as e:
             print(f"ERROR: failed to post CI summary, ex: {e}")
             traceback.print_exc()
@@ -1026,7 +1043,7 @@ def main():
     if Shell.check(
         f"gh pr view {pr_number} --json isDraft --jq '.isDraft' --repo ClickHouse/ClickHouse | grep -q true"
     ):
-        if UserPrompt.confirm(f"It's a draft PR. Do you want to undraft it?"):
+        if UserPrompt.confirm("It's a draft PR. Do you want to undraft it?"):
             Shell.check(
                 f"gh pr ready {pr_number} --repo ClickHouse/ClickHouse",
                 strict=True,
@@ -1040,41 +1057,8 @@ def main():
         mergeable_check_status, sha=head_sha
     )
 
-    if Shell.check(f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse"):
-        # Give GitHub a moment to process auto-merge and update merge state
-        time.sleep(5)
-        merge_status = Shell.get_output(
-            f"gh pr view {pr_number} --json mergeStateStatus --jq '.mergeStateStatus' --repo ClickHouse/ClickHouse"
-        )
-        if merge_status == "CLEAN":
-            # PR checks already passed but GitHub didn't enqueue it — the
-            # state transition was missed. Disable and re-enable auto-merge
-            # to force GitHub to re-evaluate.
-            print(
-                f"WARNING: PR #{pr_number} has mergeStateStatus=CLEAN (checks passed but not queued). "
-                f"Retoggling auto-merge to fix..."
-            )
-            Shell.check(
-                f"gh pr merge {pr_number} --disable-auto --repo ClickHouse/ClickHouse",
-                verbose=True,
-            )
-            time.sleep(2)
-            if Shell.check(
-                f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse",
-                verbose=True,
-            ):
-                print(f"OK: Auto-merge retoggled for PR #{pr_number}")
-            else:
-                print(
-                    f"ERROR: Failed to re-enable auto-merge for PR #{pr_number}. "
-                    f"Please manually click 'Merge when ready' on GitHub."
-                )
-        elif merge_status == "QUEUED":
-            print(f"OK: PR #{pr_number} added to the merge queue")
-        else:
-            print(
-                f"OK: PR #{pr_number} auto-merge enabled (mergeStateStatus={merge_status})"
-            )
+    if not Git.enqueue_pull_request(pr_number, "ClickHouse/ClickHouse"):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

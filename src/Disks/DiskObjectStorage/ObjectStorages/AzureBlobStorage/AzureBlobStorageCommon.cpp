@@ -14,6 +14,8 @@
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -54,7 +56,7 @@ namespace Setting
     extern const SettingsUInt64 azure_min_upload_part_size;
     extern const SettingsUInt64 azure_max_upload_part_size;
     extern const SettingsUInt64 azure_max_single_part_copy_size;
-    extern const SettingsUInt64 azure_max_blocks_in_multipart_upload;
+    extern const SettingsNonZeroUInt64 azure_max_blocks_in_multipart_upload;
     extern const SettingsUInt64 azure_max_unexpected_write_error_retries;
     extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 azure_strict_upload_part_size;
@@ -90,6 +92,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace AzureBlobStorage
@@ -196,12 +199,32 @@ String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
     return blob_prefix + blob_name;
 }
 
+/// The Azure SDK throws std::logic_error subtypes (std::invalid_argument from
+/// std::stoi for malformed ports, std::out_of_range for port overflow) when a
+/// connection string or blob URL has malformed components. These are user-input
+/// errors but must be translated to DB::Exception, otherwise they propagate to
+/// getCurrentExceptionMessageAndPattern, which catches std::logic_error and calls
+/// abortOnFailedAssertion in debug/sanitizer builds — turning a user typo into a
+/// "Logical error" abort.
+[[noreturn]] static void translateAzureSdkParseError(const std::logic_error & e)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Failed to parse Azure connection string or blob URL: {}", e.what());
+}
+
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
     {
-        auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
-        return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        try
+        {
+            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
+            return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
     }
 
     return endpoint.storage_account_url;
@@ -209,36 +232,50 @@ String ConnectionParams::getConnectionURL() const
 
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
-    return std::visit([this]<typename T>(const T & auth)
+    try
     {
-        if constexpr (std::is_same_v<T, ConnectionString>)
-            return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
-        else
-            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
-    }, auth_method);
+        return std::visit([this]<typename T>(const T & auth)
+        {
+            if constexpr (std::is_same_v<T, ConnectionString>)
+                return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
+            else
+                return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
+        }, auth_method);
+    }
+    catch (const std::logic_error & e)
+    {
+        translateAzureSdkParseError(e);
+    }
 }
 
 std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
-    if (!endpoint.sas_auth.empty())
+    try
     {
-        RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
-        return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-    }
+        if (!endpoint.sas_auth.empty())
+        {
+            RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
+            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+        }
 
-    return std::visit([this]<typename T>(const T & auth)
+        return std::visit([this]<typename T>(const T & auth)
+        {
+            if constexpr (std::is_same_v<T, ConnectionString>)
+            {
+                auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
+                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            }
+            else
+            {
+                RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
+                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            }
+        }, auth_method);
+    }
+    catch (const std::logic_error & e)
     {
-        if constexpr (std::is_same_v<T, ConnectionString>)
-        {
-            auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-        else
-        {
-            RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-    }, auth_method);
+        translateAzureSdkParseError(e);
+    }
 }
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)
@@ -284,10 +321,7 @@ static bool containerExists(const ContainerClient & client)
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
 
-        /// Our HTTP client wraps transport-level failures (DNS, connection refused, etc.)
-        /// as InternalServerError. A transient network error should not prevent the server
-        /// from starting — assume the container exists and let actual I/O operations fail
-        /// with a clear error later if it doesn't.
+        /// A generic/unexpected server error shouldn't block startup — assume the container exists; real I/O fails later with a clear error.
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::InternalServerError)
         {
             LOG_WARNING(getLogger("AzureBlobStorageCommon"),
@@ -297,6 +331,13 @@ static bool containerExists(const ContainerClient & client)
         }
 
         throw;
+    }
+    catch (const Azure::Core::Http::TransportException & e)
+    {
+        /// Transport failure (DNS/connection/timeout) is retryable and shouldn't block startup — assume the container exists, like the 500 case above.
+        LOG_WARNING(getLogger("AzureBlobStorageCommon"),
+            "Transport error while checking container existence: {}. Assuming the container exists.", e.Message);
+        return true;
     }
 }
 
@@ -367,6 +408,8 @@ BlobClientOptions getClientOptions(
     retry_options.MaxRetries = static_cast<Int32>(request_settings.sdk_max_retries);
     retry_options.RetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_initial_backoff_ms);
     retry_options.MaxRetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_max_backoff_ms);
+    /// Add 403 to the SDK retry set — RBAC propagation returns a transient 403 the SDK won't otherwise retry.
+    retry_options.StatusCodes.insert(Azure::Core::Http::HttpStatusCode::Forbidden);
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
@@ -568,6 +611,60 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     return {storage_url, account_name, account_key, container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
 }
 
+void RequestSettings::validateUploadSettings() const
+{
+    if (max_blocks_in_multipart_upload == 0)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_max_blocks_in_multipart_upload cannot be zero");
+
+    /// When strict_upload_part_size is set, a fixed-size allocation policy is used and the
+    /// exponential-growth settings below are irrelevant. The maximum part size, however, is a
+    /// contract of its own and must hold for the fixed size too.
+    if (strict_upload_part_size > max_upload_part_size)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_strict_upload_part_size ({}) can't be greater than setting azure_max_upload_part_size ({})",
+            ReadableSize(strict_upload_part_size), ReadableSize(max_upload_part_size));
+
+    if (min_upload_part_size == 0)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_min_upload_part_size ({}) cannot be zero",
+            ReadableSize(min_upload_part_size));
+    }
+
+    if (max_upload_part_size < min_upload_part_size)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_max_upload_part_size ({}) can't be less than setting azure_min_upload_part_size ({})",
+            ReadableSize(max_upload_part_size), ReadableSize(min_upload_part_size));
+    }
+
+    if (strict_upload_part_size == 0)
+    {
+        if (upload_part_size_multiply_factor == 0)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_factor cannot be zero");
+
+        if (upload_part_size_multiply_parts_count_threshold == 0)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_parts_count_threshold cannot be zero");
+
+        size_t maybe_overflow = 0;
+        if (common::mulOverflow(max_upload_part_size, upload_part_size_multiply_factor, maybe_overflow))
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_factor is too big ({}). "
+                "Multiplication to azure_max_upload_part_size ({}) will cause integer overflow",
+                upload_part_size_multiply_factor, ReadableSize(max_upload_part_size));
+    }
+}
+
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
     auto settings = std::make_unique<RequestSettings>();
@@ -597,10 +694,14 @@ std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context,
 {
     auto settings = getRequestSettings(context->getSettingsRef());
 
+    settings->use_native_copy = use_native_copy;
+
+    /// A configured endpoint takes priority over the backup setting, ...
     auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
     if (endpoint_settings)
         settings->use_native_copy = endpoint_settings->use_native_copy;
 
+    /// ... except that the backup setting can always veto native copy.
     if (!use_native_copy)
         settings->use_native_copy = false;
 
@@ -657,15 +758,17 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
     for (const String & key : config_keys)
     {
+        /// Accept both the modern `<object_storage_type>azure</object_storage_type>` and the legacy
+        /// `<type>azure_blob_storage</type>` declaration forms. Without the latter, an endpoint
+        /// declared the legacy way is never loaded into the map, so its settings are silently lost.
+        String disk_type;
         if (config.has(config_prefix + "." + key + ".object_storage_type"))
-        {
-            const auto &object_storage_type = config.getString(config_prefix + "." + key + ".object_storage_type");
-            if (object_storage_type != "azure" && object_storage_type != "azure_blob_storage")
-            {
-                /// Then its not an azure config
-                continue;
-            }
+            disk_type = config.getString(config_prefix + "." + key + ".object_storage_type");
+        else if (config.has(config_prefix + "." + key + ".type"))
+            disk_type = config.getString(config_prefix + "." + key + ".type");
 
+        if (disk_type == "azure" || disk_type == "azure_blob_storage")
+        {
             const auto key_path = config_prefix + "." + key;
             String endpoint_path = key_path + ".connection_string";
 
@@ -680,7 +783,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
                     if (!config.has(endpoint_path))
                     {
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not provided for azure blob storage disk {}",
-                                        object_storage_type);
+                                        disk_type);
                     }
                 }
             }

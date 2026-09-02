@@ -1,22 +1,15 @@
 import copy
-import fnmatch
-import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Iterable, List, Optional
+from pathlib import PurePosixPath
+from typing import Any, List, Optional
 
 from . import Artifact
 from .utils import Shell, Utils
 
 
 class Job:
-    @dataclass
-    class Requirements:
-        python: bool = False
-        python_requirements_txt: str = ""
-
     @dataclass
     class CacheDigestConfig:
         include_paths: List[str] = field(default_factory=list)
@@ -31,6 +24,7 @@ class Job:
         provides: Optional[List[str]] = None
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
+        command: Optional[str] = None
 
     @dataclass
     class Config:
@@ -57,8 +51,6 @@ class Job:
         #   May be only `Artifact.Config.name`
         provides: List[str] = field(default_factory=list)
 
-        job_requirements: Optional["Job.Requirements"] = None
-
         timeout: int = 5 * 3600
 
         timeout_shell_cleanup: Optional[str] = None
@@ -67,13 +59,36 @@ class Job:
 
         run_in_docker: str = ""
 
-        run_unless_cancelled: bool = False
+        always_run: bool = False
 
-        allow_merge_on_failure: bool = False
+        # If True, the job failure does not block PR merge, but the job
+        # is still shown as failed in the CI report.
+        allow_failure: bool = False
 
+        # If True, the job failure is hidden entirely: the CI report shows
+        # green status and the job does not block PR merge. Use for
+        # experimental jobs that are not yet stable enough to be enforced.
+        force_success: bool = False
+
+        # GitHub Actions engine only: post this job as a commit status.
+        # Ignored (no-op) on the Praktika engine, which always publishes
+        # workflow/job status via the GitHub Checks API.
         enable_commit_status: bool = False
 
         enable_gh_auth: bool = False
+
+        # If False, `actions/checkout` is generated with
+        # `persist-credentials: false`, so the workflow token is not written
+        # into the local git config (`http.<server>/.extraheader`). Set it for
+        # a job that runs untrusted code in the checkout and must not leave a
+        # GitHub credential within its reach; its plain `git fetch` runs
+        # unauthenticated, and anything privileged has to mint its own token
+        # with an explicit `GHAuth.auth(...)` call after the untrusted code
+        # has run. `enable_gh_auth` is refused together with this flag: it
+        # authenticates `gh` in the runner before the job command starts and
+        # would hand the untrusted code the very credential this flag keeps
+        # out of its reach.
+        checkout_persist_credentials: bool = True
 
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
@@ -92,6 +107,19 @@ class Job:
         # List of commands to call after job completes
         post_hooks: List[str] = field(default_factory=list)
 
+        def __post_init__(self):
+            # `enable_gh_auth` pre-authenticates `gh` before the job command
+            # starts, which recreates exactly the credential exposure that
+            # `checkout_persist_credentials=False` exists to prevent.
+            assert self.checkout_persist_credentials or not self.enable_gh_auth, (
+                f"Job [{self.name}]: checkout_persist_credentials=False keeps "
+                f"GitHub credentials away from the untrusted code the job runs, "
+                f"and enable_gh_auth=True would hand them right back by "
+                f"pre-authenticating gh before the job starts; mint a token "
+                f"with an explicit GHAuth.auth(...) call after the untrusted "
+                f"phase instead"
+            )
+
         def parametrize(self, *param_sets: "Job.ParamSet"):
             res = []
             for param_set in param_sets:
@@ -99,9 +127,12 @@ class Job:
                 assert (
                     not obj.provides
                 ), "Job.Config.provides must be empty for parametrized jobs"
+                if param_set.command:
+                    obj.command = param_set.command
                 if param_set.parameter:
                     obj.parameter = param_set.parameter
-                    obj.command = obj.command.format(PARAMETER=param_set.parameter)
+                    if not param_set.command:
+                        obj.command = obj.command.format(PARAMETER=param_set.parameter)
                 if param_set.runs_on:
                     obj.runs_on = param_set.runs_on
                 if param_set.timeout:
@@ -229,10 +260,13 @@ class Job:
             res.provides = provides_res
             return res
 
-        def set_allow_merge_on_failure(self, value=True):
+        def set_allow_failure(self, value=True):
             res = copy.deepcopy(self)
-            res.allow_merge_on_failure = value
+            res.allow_failure = value
             return res
+
+        def set_allow_merge_on_failure(self, value=True):
+            return self.set_allow_failure(value)
 
         def set_post_hooks(self, post_hooks):
             res = copy.deepcopy(self)
@@ -274,9 +308,9 @@ class Job:
                     # Check if included
                     for include in self.digest_config.include_paths:
                         include_norm = os.path.normpath(include)
-                        if fnmatch.fnmatch(file, include_norm) or file.startswith(
-                            include_norm + os.sep
-                        ):
+                        if PurePosixPath("/" + file).match(
+                            "/" + include_norm
+                        ) or file.startswith(include_norm + os.sep):
                             return True
 
             # Optionally check for submodule changes
@@ -296,15 +330,3 @@ class Job:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
-
-        def __post_init__(self):
-            if self.timeout_shell_cleanup:
-                return
-            if self.run_in_docker:
-                container_name = (
-                    "praktika_"
-                    + hashlib.sha1(
-                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
-                    ).hexdigest()[:12]
-                )
-                self.timeout_shell_cleanup = f"docker rm -f {container_name}"

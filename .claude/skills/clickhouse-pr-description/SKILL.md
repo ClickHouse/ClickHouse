@@ -14,8 +14,11 @@ Generate a good PR description and apply it, with optional confirmation based on
 
 Plain description of what changed. No prefix conventions like `fix():` or `feat():`.
 
+**Exception — `.claude/` changes:** when the PR only touches files under `.claude/` (settings, tools, skills, instructions, etc.), prefix the title with `claude: `. Example: `claude: add fetch_ci_report.js to allowed commands`.
+
 - Good: `Change default stderr_reaction to log_last for executable UDFs`
 - Good: `Fix exception when inserting NULL into non-nullable column via CAST`
+- Good: `claude: allow fetch_ci_report.js and grep in Claude Code settings`
 - Bad: `fix(udf): Change default stderr_reaction` — conventional commits, ClickHouse doesn't use them
 - Bad: `Fuzzer fixes` — too vague, tells the reviewer nothing
 - Bad: `Improve error handling and enrich exit code exceptions with stderr context` — too vague, doesn't say what was actually changed
@@ -39,9 +42,7 @@ Use plain paragraphs. Headers like `## Motivation`, `## Changes`, `## Results` a
 
 **2. Template section (mandatory)**
 
-Fill in the changelog category (delete the rest of the list), write the changelog entry, and keep the documentation checkbox.
-
-**Exception — CI Fix or Improvement:** omit the Changelog entry and Documentation entry sections entirely (they are not required). Keep the entire PR body under 100 words.
+Fill in the changelog category (delete the rest of the list) and write the changelog entry when the selected category requires one.
 
 ### Example of a well-written body
 
@@ -63,9 +64,6 @@ is used only if the new setting
 otherwise. To preserve the old behaviour as much as possible, the defaults were set
 to `do_not_merge_across_partitions_select_final=0` and
 `enable_automatic_decision_for_merging_across_partitions_for_final=1`.
-
-### Documentation entry for user-facing changes
-- [ ] Documentation is written (mandatory for new features)
 
 ---
 
@@ -125,3 +123,7 @@ These patterns make PRs harder to read or signal low effort:
 It's fine to mention AI assistance openly. `Co-Authored-By:` in commits or acknowledgements in the PR description are acceptable — ClickHouse is open about AI-assisted development.
 
 Before creating or updating the PR, check user memory for a confirmation preference. If no preference is stored and the session is interactive, ask once: "Should I always show you the description for approval before applying it, or just go ahead every time?" Save the answer to memory and apply it from then on. If the session is non-interactive, proceed directly without asking.
+
+## Fork vs upstream
+
+If the current repository is a fork (i.e. `git remote get-url origin` does not contain `ClickHouse/ClickHouse`), always target the upstream repository. Pass `--repo ClickHouse/ClickHouse` to `gh pr create` and set `--head <fork-owner>:<branch>` so the PR is opened against the canonical repo, not the fork.

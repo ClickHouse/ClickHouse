@@ -25,7 +25,7 @@ namespace
 {
 
 /// Return String with type name for each row in Dynamic column.
-class FunctionDynamicType : public IFunction
+class FunctionDynamicType final : public IFunction
 {
 public:
     static constexpr auto name = "dynamicType";
@@ -86,7 +86,7 @@ public:
     }
 };
 
-class FunctionIsDynamicElementInSharedData : public IFunction
+class FunctionIsDynamicElementInSharedData final : public IFunction
 {
 public:
     static constexpr auto name = "isDynamicElementInSharedData";
@@ -205,7 +205,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
 ┌─d─────────────┬─isDynamicElementInSharedData(d)─┐
 │ ᴺᵁᴸᴸ          │ false                           │
 │ 42            │ false                           │
-│ Hello, World! │ true                            │
+│ Hello, World! │ false                           │
 │ [1,2,3]       │ true                            │
 └───────────────┴─────────────────────────────────┘
         )"
