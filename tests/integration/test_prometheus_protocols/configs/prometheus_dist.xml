@@ -37,6 +37,13 @@
                     <table>default.prom_rep</table>
                 </handler>
             </rep_write>
+            <keyless_write>
+                <url>/keyless/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_dist_keyless</table>
+                </handler>
+            </keyless_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>

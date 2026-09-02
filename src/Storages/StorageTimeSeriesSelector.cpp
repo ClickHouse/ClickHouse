@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -11,7 +12,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -48,7 +48,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
 
 namespace
 {
@@ -814,7 +813,7 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    /// Same gate order as getConfiguration; this entry is reachable on its own.
+    /// Re-checked: getConfiguration already gates the only construction path, the table function.
     context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     auto time_series_settings = time_series_storage->getStorageSettings();

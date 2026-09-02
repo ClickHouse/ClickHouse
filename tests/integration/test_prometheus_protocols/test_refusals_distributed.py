@@ -1,13 +1,5 @@
-"""Prometheus surfaces that are TimeSeries-only must fail closed over a Distributed target.
-
-/api/v1/series, /api/v1/labels and /api/v1/metadata read the Tags and Metrics target tables of a
-TimeSeries table directly, and remote read groups by a node-local counter each shard would restart
-on its own. None of them can be merged across shards, so each refuses a Distributed target with
-its own error instead of answering it wrongly.
-
-Every refusal below is paired with the identical request against one local TimeSeries table
-holding the same data: what changes between the two is only the engine of the target.
-"""
+"""Surfaces that cannot merge shards - the inner-table readers /api/v1/series, /labels, /metadata
+and remote read with its node-local counter - each refuse a Distributed target."""
 
 import json
 

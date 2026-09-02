@@ -2,6 +2,7 @@
 
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
@@ -15,7 +16,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
-#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

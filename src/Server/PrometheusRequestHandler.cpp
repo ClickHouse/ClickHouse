@@ -16,6 +16,7 @@
 #include <Common/setThreadName.h>
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -25,7 +26,6 @@
 #include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
-#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>

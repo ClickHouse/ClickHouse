@@ -1,5 +1,6 @@
 #include <Storages/StoragePrometheusQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
@@ -8,7 +9,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>

@@ -5,29 +5,38 @@
 #include <Columns/ColumnBLOB.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
-#include <chrono>
-#include <mutex>
-#include <set>
-#include <unordered_map>
-#include <fmt/ranges.h>
-#include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
+#include <fmt/ranges.h>
+
+#include <chrono>
+#include <mutex>
+#include <set>
+#include <unordered_map>
+
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool insert_distributed_one_random_shard;
+    extern const SettingsUInt64 insert_shard_id;
+}
 
 namespace DistributedSetting
 {
@@ -38,6 +47,7 @@ namespace DistributedSetting
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int BAD_ARGUMENTS;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_TABLE_ENGINE;
 }
@@ -113,20 +123,17 @@ namespace
 
     /// Asks every replica itself, not one per shard as cluster() would: load balancing, failover or the
     /// sink may reach any of them later. An unreachable replica is skipped or refused as the caller says.
-    void checkShardTargets(const IStorage & storage, const ContextPtr & context, bool refuse_unreachable)
+    void checkShardTargets(
+        const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, bool refuse_unreachable)
     {
-        auto target = resolvePrometheusQueryTarget(storage);
-        if (!target)
-            return;
-
-        const auto & remote_id = target->remote_time_series_storage_id;
+        const auto & remote_id = target.remote_time_series_storage_id;
         const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
         const auto metadata = storage.getInMemoryMetadataPtr(context, false);
         const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
         /// Raw fields: the remote database is legitimately empty when shards use their own defaults.
         WriteBufferFromOwnString key_buf;
-        writeStringBinary(target->cluster_name, key_buf);
+        writeStringBinary(target.cluster_name, key_buf);
         writeStringBinary(remote_id.database_name, key_buf);
         writeStringBinary(remote_id.table_name, key_buf);
         writeStringBinary(time_series_type, key_buf);
@@ -234,16 +241,30 @@ namespace
 
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context)
 {
-    /// The rewrite replaces the wrapper with a generated cluster() call before the planner sees
-    /// it, so the wrapper's own SELECT grant is enforced here or not at all.
+    /// The planner never sees the wrapper (the rewrite hands it a cluster() call), so its SELECT grant
+    /// is checked explicitly: again here, before a probe that runs on the server's own context.
     context->checkAccess(AccessType::SELECT, storage.getStorageID());
     /// Whether an unreachable replica fails the read is the read's own decision, as for any cluster() call.
-    checkShardTargets(storage, context, /* refuse_unreachable = */ false);
+    if (const auto target = resolvePrometheusQueryTarget(storage))
+        checkShardTargets(storage, *target, context, /* refuse_unreachable = */ false);
 }
 
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context)
 {
-    checkShardTargets(storage, context, /* refuse_unreachable = */ true);
+    const auto target = resolvePrometheusQueryTarget(storage);
+    if (!target)
+        return;
+
+    /// The sink honours both as for any INSERT (the second only without a key); here a batch goes where the key sends it or nowhere.
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::insert_shard_id] || settings[Setting::insert_distributed_one_random_shard])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Remote write over table {} does not accept insert_shard_id or insert_distributed_one_random_shard: "
+            "samples are routed by the table's sharding key alone",
+            storage.getStorageID().getNameForLogs());
+
+    checkShardTargets(storage, *target, context, /* refuse_unreachable = */ true);
 }
 
 std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage)

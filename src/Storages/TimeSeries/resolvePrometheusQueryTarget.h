@@ -29,8 +29,8 @@ bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 /// shard-local target: a TimeSeries table declaring the wrapper's `time_series` type, or the read is refused.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
-/// The same targets for a write, refused while any replica is unreachable: samples the sink queued for it would
-/// be delivered by the background sender without a check. A read leaves such a replica to its own skip settings.
+/// The same targets for a write, refused while any replica is unreachable (samples queued for it would be delivered
+/// unchecked) and refused under insert_shard_id / insert_distributed_one_random_shard: the key alone routes a batch.
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
 
 /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
