@@ -193,6 +193,34 @@ def _select_patch_dry_run_ref(max_candidates: int) -> str:
     return ""
 
 
+def _select_recovery_dry_run_ref() -> str:
+    """An already-published release tag to rehearse a recovery (re-publish) against, or "" if none."""
+    for branch in reversed(_release_branches()):
+        tag = _latest_release_tag(branch)
+        if tag and not tag.endswith("new"):
+            print(f"[{branch}] recovery dry-run tag [{tag}]")
+            return tag
+    return ""
+
+
+def _select_out_of_order_dry_run_ref() -> str:
+    """A non-tag commit behind a branch's latest release (bump landed) so a patch dry run is out of order, or "" if none."""
+    for branch in reversed(_release_branches()):
+        out = Shell.get_output(f"git tag -l {shlex.quote(f'v{branch}.*')} --sort=v:refname")
+        tags = [t for t in out.splitlines() if t.strip() and not t.endswith("new")]
+        if len(tags) < 2:
+            continue
+        prev, latest = tags[-2], tags[-1]
+        # rev-list prev..latest is newest-first and includes latest at index 0; a commit below it is between two releases and not itself a tag.
+        between = Shell.get_output(
+            f"git rev-list --first-parent {shlex.quote(prev)}..{shlex.quote(latest)}"
+        ).splitlines()[1:]
+        if between:
+            print(f"[{branch}] out-of-order dry-run commit [{between[0]}]")
+            return between[0]
+    return ""
+
+
 def main():
     stopwatch = Utils.Stopwatch()
     args = parse_args()
@@ -300,18 +328,24 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Resolve `--ref auto` (the patch dry-run PR check) now that the fetch above
-    # made every release branch and tag local. No candidate is a pass, not a
-    # failure — there is simply no unreleased commit to rehearse against.
-    if ok and args.ref == "auto":
+    # Resolve the patch dry-run sentinel refs (the PR checks) now that the fetch
+    # above made every release branch and tag local. No candidate is a pass, not
+    # a failure — there is simply no commit in that state to rehearse against.
+    _dry_run_ref_selectors = {
+        "auto": lambda: _select_patch_dry_run_ref(args.max_candidates),
+        "recovery-auto": _select_recovery_dry_run_ref,
+        "out-of-order-auto": _select_out_of_order_dry_run_ref,
+    }
+    if ok and args.ref in _dry_run_ref_selectors:
         assert (
             args.dry_run and args.release_type == "patch"
-        ), "--ref auto is only valid for a patch dry run"
-        args.ref = _select_patch_dry_run_ref(args.max_candidates)
-        if not args.ref:
-            print("No release-branch commit to patch dry-run; skipping")
+        ), f"--ref {args.ref} is only valid for a patch dry run"
+        selected = _dry_run_ref_selectors[args.ref]()
+        if not selected:
+            print(f"No commit to {args.ref} patch dry-run; skipping")
             Result.create_from(results=results, stopwatch=stopwatch).complete_job()
             return
+        args.ref = selected
 
     # Authenticate to Docker Hub in the setup phase, before any release
     # mutation (tag push, GitHub release, repo export). Pushing docker images
