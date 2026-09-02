@@ -155,6 +155,13 @@ GDB_BACKTRACE_TIMEOUT_SECONDS = 300
 # never pays it.
 SLOW_BUILD_STOP_WAIT_SECONDS = 180
 
+# The slow-build probe reads system.build_options, so it needs a live server. It normally
+# runs at cluster start while the server is known healthy; the fallback in stop_clickhouse()
+# may instead run against the wedged server it is about to stop, before SIGTERM is even sent.
+# Bound it well under SLOW_BUILD_STOP_WAIT_SECONDS so a hung probe cannot outlast the window
+# it exists to grant - on timeout we simply keep the caller's normal stop window.
+SLOW_BUILD_PROBE_TIMEOUT_SECONDS = 20
+
 # A sanitizer report still being symbolized would be truncated by a force kill, so the kill
 # waits for `llvm-symbolizer` to finish. Bounded, because waiting forever to diagnose a hang
 # just moves the hang.
@@ -4383,6 +4390,10 @@ class ClickHouseCluster:
                     instance.ip_address, command=self.client_bin_path
                 )
 
+                # While the server is known healthy, so `stop_clickhouse()` does not have to
+                # query a possibly wedged one before it can send SIGTERM.
+                instance.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS)
+
             self.is_up = True
             self.save_logs()
 
@@ -5180,10 +5191,13 @@ class ClickHouseInstance:
         # the process is gone, so these keep how it went away available to callers.
         self.clickhouse_last_exit_code = None
         self.clickhouse_forced_stop = False
+        # Filled by `probe_slow_build()`; `None` until the server has been asked successfully.
+        self._is_slow_build = None
 
-    def is_built_with_sanitizer(self, sanitizer_name=""):
+    def is_built_with_sanitizer(self, sanitizer_name="", timeout=None):
         build_opts = self.query(
-            "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
+            "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'",
+            timeout=timeout,
         )
         if not sanitizer_name:
             # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). -fsanitize=
@@ -5197,11 +5211,29 @@ class ClickHouseInstance:
         )
         return "NDEBUG" not in build_opts
 
-    def is_built_with_llvm_coverage(self):
+    def is_built_with_llvm_coverage(self, timeout=None):
         with_coverage = self.query(
-            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
+            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'",
+            timeout=timeout,
         )
         return "ON" in with_coverage.upper()
+
+    def probe_slow_build(self, timeout=None):
+        """Cache whether this is an LLVM-coverage or sanitizer build, which `stop_clickhouse()`
+        gives a longer graceful-stop window. Returns `None` when the server could not be asked.
+
+        A failed probe is deliberately not cached: this runs at cluster start, where the server
+        is healthy, but a test that replaces the binary or restarts into a different build still
+        gets another chance later.
+        """
+        if self._is_slow_build is None:
+            try:
+                self._is_slow_build = self.is_built_with_llvm_coverage(
+                    timeout=timeout
+                ) or self.is_built_with_sanitizer(timeout=timeout)
+            except Exception as e:
+                logging.warning(f"Could not detect a slow build on {self.name}: {e}")
+        return self._is_slow_build
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -5611,17 +5643,12 @@ class ClickHouseInstance:
             # destroys every MergeTree part with each read instrumented, so a server holding
             # a lot of parts can still be making steady progress when a short window runs
             # out, and gets force killed as though it had deadlocked.
+            # Normally already answered at cluster start, while the server was healthy. The
+            # fallback probe here would be querying the server we are about to stop, which may
+            # be the wedged one, so it is bounded and simply leaves the caller's window in
+            # place if it cannot get an answer.
             if not kill and stop_wait_sec < SLOW_BUILD_STOP_WAIT_SECONDS:
-                if getattr(self, "_is_slow_build", None) is None:
-                    try:
-                        self._is_slow_build = (
-                            self.is_built_with_llvm_coverage()
-                            or self.is_built_with_sanitizer()
-                        )
-                    except Exception as e:
-                        logging.warning(f"Could not detect a slow build: {e}")
-                        self._is_slow_build = False
-                if self._is_slow_build:
+                if self.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS):
                     stop_wait_sec = SLOW_BUILD_STOP_WAIT_SECONDS
 
             self.exec_in_container(

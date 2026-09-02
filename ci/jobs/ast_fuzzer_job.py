@@ -677,33 +677,28 @@ def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
     logging.info("[targeted-fuzzer] Total unique tests: %d", len(tests))
 
     stateless_tests_dir = Path(cwd) / "tests/queries/0_stateless"
-    available_queries: dict[str, list[str]] = {}
-
-    for query_file in stateless_tests_dir.rglob("*.sql"):
-        base_name = query_file.stem
-        available_queries.setdefault(base_name, []).append(
-            f"/repo/{query_file.relative_to(cwd)}"
-        )
-
-    logging.debug(
-        "Indexed %d unique SQL query base names from %s",
-        len(available_queries),
-        stateless_tests_dir,
-    )
 
     targeted_queries: list[str] = []
     seen_queries = set()
     for test in tests:
-        base_name = Path(test).stem.rstrip(".")
-        matches = available_queries.get(base_name, [])
-        if matches:
-            logging.debug("  %s -> %s", test, matches)
-        else:
-            logging.debug("  %s -> no .sql file found (stem: %r)", test, base_name)
-        for query_path in matches:
-            if query_path not in seen_queries:
-                seen_queries.add(query_path)
-                targeted_queries.append(query_path)
+        # Resolves the rendered names CI reports for templates (`<name>.gen` from failures,
+        # `<name>.gen.sql` from coverage) back to the `.sql.j2` source. Shell/Python/expect
+        # tests resolve too, but carry no SQL corpus to fuzz.
+        source_file = Targeting.functional_test_source_file(test)
+        if source_file is None or not source_file.endswith((".sql", ".sql.j2")):
+            logging.debug("  %s -> no SQL source (resolved: %r)", test, source_file)
+            continue
+
+        # `run-fuzzer.sh` renders every template to `<name>.gen.sql` before the fuzzer starts,
+        # so target the rendered file - a `.sql.j2` is Jinja, not SQL.
+        query_file = stateless_tests_dir / re.sub(
+            r"\.sql\.j2$", ".gen.sql", source_file
+        )
+        query_path = f"/repo/{query_file.relative_to(cwd)}"
+        logging.debug("  %s -> %s", test, query_path)
+        if query_path not in seen_queries:
+            seen_queries.add(query_path)
+            targeted_queries.append(query_path)
 
     if targeted_queries:
         targeted_queries_file = WORKSPACE_PATH / "ci-targeted-queries.txt"
