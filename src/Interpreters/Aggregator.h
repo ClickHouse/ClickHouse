@@ -884,9 +884,11 @@ private:
     /// can parallelize its merge and there is a thread pool to run it on.
     bool worthDeferringLargeMerges() const { return has_function_with_parallelizable_merge && params.max_threads > 1; }
 
-    /// Merge (and destroy the sources of) the pairs deferred by `mergeDataImpl`, using the thread pool.
-    /// If `is_cancelled` is set, only destroys the deferred source states.
-    void mergeDeferredLargeStates(DeferredMerges & deferred, Arena * arena, std::atomic<bool> & is_cancelled) const;
+    /// Merge the pairs deferred by `mergeDataImpl` / `mergeSingleLevelPartitionImpl` / `mergeStreamsImplCase`,
+    /// using the thread pool. With `destroy_sources` the source states are destroyed afterwards (they were
+    /// detached from the source hash tables); without it they stay owned by the caller (aggregate columns
+    /// of a block of partial states). If `is_cancelled` is set, nothing is merged and only the destruction happens.
+    void mergeDeferredLargeStates(DeferredMerges & deferred, Arena * arena, std::atomic<bool> & is_cancelled, bool destroy_sources) const;
 
     /// Destroy the deferred source states without merging (used on the exception path: the source
     /// hash tables have already been detached from these states, so nothing else will destroy them).
