@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
+#include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/FullyQualifiedObjectPath.h>
@@ -92,10 +93,15 @@ bool IcebergPathResolver::isInForeignNamespace(const String & raw_path) const
     if (!blob_storage.allow_foreign_namespaces || blob_storage.namespace_name.empty())
         return false;
 
-    auto path_namespace = parseNamespace(raw_path);
-    if (path_namespace.empty())
+    auto qualified = trySplitFullyQualifiedObjectPath(raw_path);
+    if (!qualified)
         return false;
 
+    auto path_storage_type = DataLake::tryParseStorageTypeFromString(String(qualified->scheme));
+    if (!path_storage_type || path_storage_type != DataLake::tryParseStorageTypeFromString(blob_storage.type_name))
+        return false;
+
+    const String path_namespace(qualified->object_namespace);
     return path_namespace != blob_storage.namespace_name && path_namespace != table_location_namespace;
 }
 

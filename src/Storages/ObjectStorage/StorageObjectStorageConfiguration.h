@@ -129,8 +129,6 @@ public:
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
-    /// `getDataSourceDescription` for an object that lives in another namespace of the same
-    /// connection, which `supportsFullyQualifiedPaths` allows a data lake to reference.
     virtual String getDataSourceDescriptionForNamespace(const String &) const { return getDataSourceDescription(); }
 
     virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;

@@ -51,11 +51,6 @@ std::string joinPathUnderPrefix(const std::string & prefix, const std::string & 
 /// path, which would lose the value rather than leave it.
 std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path);
 
-/// The single formatter for an object's path as the storage exposes it: as the `_path` virtual
-/// column (`include_connection_info = false`), and as the schema/count cache key
-/// (`include_connection_info = true`, which keeps the value scoped to the connection).
-/// Every place that produces a `_path` value or filters on one must go through this, or a
-/// predicate can drop a file whose row would have reported exactly the path it was written against.
 std::string formatObjectPath(
     const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info);
 

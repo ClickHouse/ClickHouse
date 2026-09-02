@@ -168,9 +168,6 @@ def _write_parquet(schema, tmp_path, first_id, count):
 def test_path_filter_matches_cross_bucket_data_files(
     started_cluster_iceberg_no_spark, tmp_path
 ):
-    # `_path` predicates are evaluated by the file iterator before a file is read, and the surviving
-    # rows report `_path` themselves. Both sides must spell a cross-bucket file the same way, or the
-    # iterator drops a file whose rows would have carried exactly the path that was filtered for.
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
 
@@ -191,7 +188,6 @@ def test_path_filter_matches_cross_bucket_data_files(
 
     minio = started_cluster_iceberg_no_spark.minio_client
 
-    # One data file next to the metadata, one in a bucket of its own.
     own_bucket_key = f"{prefix}/data/own.parquet"
     minio.fput_object(
         METADATA_BUCKET, own_bucket_key, _write_parquet(schema, tmp_path, 0, 100)
@@ -255,8 +251,6 @@ def test_path_filter_matches_cross_bucket_data_files(
 def test_data_files_in_another_bucket_over_disk(
     started_cluster_iceberg_no_spark, tmp_path
 ):
-    # The `SETTINGS disk = ...` surface reuses the disk's own object storage instead of creating one
-    # from the table's configuration, so it is a separate path to the same cross-bucket support.
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
 

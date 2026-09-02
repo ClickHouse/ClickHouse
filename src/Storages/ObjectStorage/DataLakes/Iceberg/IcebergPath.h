@@ -56,15 +56,10 @@ private:
     String raw_path;
 };
 
-/// The object storage a table's files live on, as far as path resolution is concerned.
 struct BlobStorageDescription
 {
-    /// `s3`, `azure`, ... - the scheme catalog-compatible paths are spelled with.
     String type_name;
-    /// The bucket/container the table is configured with.
     String namespace_name;
-    /// Whether a metadata path naming another namespace of this storage is passed through to the
-    /// object storage as written instead of being resolved relative to the table root.
     bool allow_foreign_namespaces;
 
     static BlobStorageDescription fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration);
