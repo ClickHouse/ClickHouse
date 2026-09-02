@@ -49,8 +49,7 @@ Ative o suporte a WebAssembly na configuração do ClickHouse:
 
 Implementações de engine disponíveis:
 
-* `wasmtime` (padrão, recomendado) — usa [WasmTime](https://github.com/bytecodealliance/wasmtime)
-* `wasmedge` — usa [WasmEdge](https://github.com/WasmEdge/WasmEdge)
+* `wasmtime` (padrão e, atualmente, a única) — usa [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
 <div id="quick-start">
   ## Início rápido
@@ -211,7 +210,7 @@ DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
 Se alguma UDF existente fizer referência a um dos módulos encontrados, a exclusão falhará; portanto, primeiro você deve excluir essas UDFs.
 
 <div id="create-a-webassembly-udf">
-  ## Criar uma UDF em WebAssembly
+  ## Criar uma WebAssembly UDF
 </div>
 
 **Sintaxe**:
@@ -233,7 +232,7 @@ RETURNS return_type
 * `function_name`: Nome da função no ClickHouse. Pode ser diferente do nome da função exportada no módulo.
 * `FROM 'module_name' :: 'source_function_name'`: Nome do módulo WASM carregado e nome da função no módulo WASM a ser usada (o padrão é function&#95;name)
 * `ARGUMENTS`: Lista de nomes e tipos de argumentos (os nomes são opcionais e usados em formatos de serialização compatíveis com campos nomeados)
-* `ABI`: Versão da Interface Binária de Aplicação
+* `ABI`: Versão da Application Binary Interface
   * `ROW_DIRECT`: Mapeamento direto de tipos, processamento linha por linha
   * `BUFFERED_V1`: Processamento baseado em blocos com serialização
   * `ASSEMBLYSCRIPT`: Processamento linha por linha para módulos produzidos pelo compilador [AssemblyScript](https://www.assemblyscript.org). Tipos numéricos são mapeados para tipos primitivos do AssemblyScript; `String` do ClickHouse é mapeado para `string` do AssemblyScript.
@@ -241,7 +240,7 @@ RETURNS return_type
 * `SHA256_HASH`: Hash esperado do módulo para verificação (preenchido automaticamente se omitido); pode ser usado para garantir que o módulo WASM correto seja carregado em diferentes réplicas.
 * `SETTINGS`: Configurações por função
   * `serialization_format` String — Formato usado para serializar blocos de argumentos passados ao módulo e analisar o resultado retornado. Usado apenas por `ABI BUFFERED_V1`. Valores compatíveis: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary` e `Buffers`. Padrão: `MsgPack`. Formatos baseados em blocos, como `Buffers`, devem retornar uma única coluna cujo tipo corresponda à assinatura da função declarada.
-  * `webassembly_udf_enable_fuel` Bool — Habilita um orçamento finito de fuel para a função. Padrão: `true`. Quando `false`, a configuração no nível da consulta `webassembly_udf_max_fuel` é ignorada para esta função. Desabilitar os limites de fuel pode melhorar o desempenho ao usar o engine `wasmtime`. No entanto, para código guest não confiável ou com bugs, isso pode aumentar o risco de execução descontrolada.
+  * `webassembly_udf_enable_fuel` Bool — Habilita um orçamento finito de fuel para a função. Padrão: `true`. Quando `false`, a configuração no nível da consulta `webassembly_udf_max_fuel` é ignorada para esta função. Desabilitar os limites de fuel pode melhorar o desempenho. No entanto, para código guest não confiável ou com bugs, isso pode aumentar o risco de execução descontrolada.
 
 <div id="abis-versions">
   ## Versões de ABI
@@ -337,7 +336,7 @@ Um exemplo completo em C freestanding: `str_reverse` inverte os bytes de cada st
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickhouseBuffer;
+} ClickHouseBuffer;
 
 #define HEAP_SIZE (1 << 24)
 static _Alignas(16) uint8_t heap[HEAP_SIZE];
@@ -345,13 +344,13 @@ static uint32_t heap_pos = 0;
 static uint32_t live_buffers = 0;
 
 __attribute__((export_name("clickhouse_create_buffer")))
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
+ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
 {
-    uint32_t total = (sizeof(ClickhouseBuffer) + size + 15u) & ~15u;
+    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
     if (heap_pos + total > HEAP_SIZE)
         return 0; /* a zero handle makes the host fail the query with an error */
-    ClickhouseBuffer * buf = (ClickhouseBuffer *) &heap[heap_pos];
-    buf->data = &heap[heap_pos + sizeof(ClickhouseBuffer)];
+    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
     buf->size = size;
     heap_pos += total;
     ++live_buffers;
@@ -359,7 +358,7 @@ ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
 }
 
 __attribute__((export_name("clickhouse_destroy_buffer")))
-void clickhouse_destroy_buffer(ClickhouseBuffer * buf)
+void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
 {
     if (--live_buffers == 0)
         heap_pos = 0;
@@ -390,9 +389,9 @@ static void write_varint(uint8_t ** pp, uint64_t value)
 
 /* Reverses the bytes of each input string */
 __attribute__((export_name("str_reverse")))
-ClickhouseBuffer * str_reverse(ClickhouseBuffer * input, uint32_t num_rows)
+ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
 {
-    ClickhouseBuffer * out = clickhouse_create_buffer(input->size);
+    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
     if (!out)
         return 0;
     const uint8_t * in = input->data;

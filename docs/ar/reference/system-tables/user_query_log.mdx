@@ -60,19 +60,19 @@ doc_type: 'reference'
 * `exception_code` ([Int32](/ar/reference/data-types/int-uint)) — رمز الاستثناء.
 * `exception` ([String](/ar/reference/data-types/string)) — رسالة الاستثناء.
 * `stack_trace` ([String](/ar/reference/data-types/string)) — تتبع المكدس. تكون سلسلة فارغة إذا اكتمل الاستعلام بنجاح.
-* `is_initial_query` ([UInt8](/ar/reference/data-types/int-uint)) — نوع الاستعلام. القيم الممكنة: 1 — بدأ العميل الاستعلام، 0 — بدأ استعلام آخر هذا الاستعلام كجزء من تنفيذ استعلام موزع.
+* `is_initial_query` ([UInt8](/ar/reference/data-types/int-uint)) — ما إذا كان الاستعلام أوليًا. القيم الممكنة: 1 — استعلام أولي (من المستوى الأعلى)، 0 — استعلام تابع بدأه استعلام آخر، بما في ذلك استعلامات التنفيذ الموزع والاستعلامات الفرعية الداخلية.
 * `connection_address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP للعميل الذي أُجري الاتصال منه. عند الاتصال عبر وكيل، يكون هذا عنوان الوكيل.
 * `connection_port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي أُجري الاتصال منه. عند الاتصال عبر وكيل، يكون هذا منفذ الوكيل.
 * `user` ([String](/ar/reference/data-types/string)) — اسم المستخدم الذي بدأ الاستعلام الحالي.
 * `query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام.
 * `address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP المستخدم لإجراء الاستعلام. عند الاتصال عبر وكيل وتعيين `auth_use_forwarded_address`، يكون هذا عنوان العميل بدلاً من عنوان الوكيل.
 * `port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل المستخدم لإجراء الاستعلام. عند الاتصال عبر وكيل وتعيين `auth_use_forwarded_address`، يكون هذا منفذ العميل بدلاً من منفذ الوكيل.
-* `initial_user` ([String](/ar/reference/data-types/string)) — اسم المستخدم الذي شغّل الاستعلام الأولي (لتنفيذ استعلام موزع).
-* `initial_query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام الأولي (لتنفيذ استعلام موزع).
-* `initial_address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP الذي أُطلق منه الاستعلام الأب.
-* `initial_port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل المستخدم لإجراء الاستعلام الأب.
-* `initial_query_start_time` ([DateTime](/ar/reference/data-types/datetime)) — وقت بدء الاستعلام الأولي (لتنفيذ استعلام موزع).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت بدء الاستعلام الأولي بدقة الميكروثانية (لتنفيذ استعلام موزع).
+* `initial_user` ([String](/ar/reference/data-types/string)) — اسم المستخدم الذي شغّل الاستعلام الأولي في سلسلة الاستعلام نفسها.
+* `initial_query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام الأولي في سلسلة الاستعلام نفسها.
+* `initial_address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP الذي أُطلق منه الاستعلام الأولي في سلسلة الاستعلام نفسها.
+* `initial_port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي أُطلق منه الاستعلام الأولي في سلسلة الاستعلام نفسها.
+* `initial_query_start_time` ([DateTime](/ar/reference/data-types/datetime)) — وقت بدء الاستعلام الأولي في سلسلة الاستعلام نفسها.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت بدء الاستعلام الأولي في سلسلة الاستعلام نفسها، بدقة الميكروثانية.
 * `authenticated_user` ([String](/ar/reference/data-types/string)) — اسم المستخدم الذي تمت مصادقته في الجلسة.
 * `interface` ([UInt8](/ar/reference/data-types/int-uint)) — الواجهة التي بدأ منها الاستعلام. القيم الممكنة: 1 — TCP، 2 — HTTP.
 * `is_secure` ([UInt8](/ar/reference/data-types/int-uint)) — علامة تشير إلى ما إذا كان الاستعلام قد نُفِّذ عبر واجهة آمنة

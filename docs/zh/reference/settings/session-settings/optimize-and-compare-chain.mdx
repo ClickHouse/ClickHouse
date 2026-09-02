@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "新设置"}]}]} />
 
-在 AND 链中推导并补全与常量的比较条件，以增强过滤能力。支持 `<`、`<=`、`>`、`>=`、`=` 运算符及其混合使用。例如，`(a < b) AND (b < c) AND (c < 5)` 会变为 `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`。
+在 AND 链中推导并补全与常量的比较条件，以增强过滤能力。支持 `<`、`<=`、`>`、`>=`、`=` 运算符及其混合使用。例如，`(a < b) AND (b < c) AND (c < 5)` 会变为 `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)`。推导出的比较条件会包装在 `indexHint` 中：它们参与索引分析 (主键、分区键、跳过索引) 并裁剪读取集合，但每行不产生开销，也不影响 PREWHERE。通过不同表的表达式推导出的比较条件仍可执行 (`(t1.a < t2.b) AND (t2.b < 5)` 会推导出普通条件 `t1.a < 5`) ：这是唯一能够下推到 JOIN 之下的条件，可在原始链无法触及的位置过滤 JOIN 输入。与现有条件矛盾的推导比较条件也会作为普通条件添加，因此 `AND` 会折叠为 `false`。
 
 <div id="optimize_and_compare_chain_max_hash_work">
   ## optimize_and_compare_chain_max_hash_work

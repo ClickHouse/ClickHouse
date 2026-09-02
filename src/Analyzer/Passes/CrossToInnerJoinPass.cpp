@@ -55,6 +55,40 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
     }
 }
 
+/// A condition may become a join key only if its value is stable within one query: in the key position it
+/// is evaluated per row of each joined side instead of once per row of the cross product. Hence
+/// `isDeterministicInScopeOfQuery` rather than `isDeterministic`, which would reject a sound `now`.
+bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
+{
+    QueryTreeNodes nodes_to_visit = {node};
+    while (!nodes_to_visit.empty())
+    {
+        auto current = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        auto current_type = current->getNodeType();
+        if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (const auto * function_node = current->as<FunctionNode>())
+        {
+            if (function_node->isWindowFunction() || !function_node->isOrdinaryFunction())
+                return false;
+
+            auto function_base = function_node->getFunction();
+            if (!function_base || function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery()
+                || function_base->isServerConstant())
+                return false;
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child);
+    }
+
+    return true;
+}
+
 const QueryTreeNodePtr & getEquiArgument(const QueryTreeNodePtr & cond, size_t index)
 {
     const auto * func = cond->as<FunctionNode>();
@@ -136,6 +170,12 @@ public:
 
         for (auto & condition : equi_conditions)
         {
+            if (!canMoveToJoinExpression(condition))
+            {
+                other_conditions.push_back(std::move(condition));
+                continue;
+            }
+
             const auto & lhs_equi_argument = getEquiArgument(condition, 0);
             const auto & rhs_equi_argument = getEquiArgument(condition, 1);
 

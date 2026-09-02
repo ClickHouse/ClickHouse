@@ -6,20 +6,20 @@ title: '命名集合'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge />
-
 命名集合提供了一种存储键值对集合的方式，
 可用于配置与外部源的集成。您可以将命名集合用于
 字典、表、表函数和对象存储。
+
+<Note>
+  可以在部分 ClickHouse Cloud 服务上启用通过 DDL 创建的命名集合。请联系 Support 确认可用性。由于用户无法修改 ClickHouse Cloud 中的服务器配置文件，因此无法使用在配置文件中定义的命名集合。
+</Note>
 
 命名集合可以通过 DDL 或在配置文件中进行配置，并在
 ClickHouse 启动时生效。它们可以简化对象的创建，并向
 没有管理权限的用户隐藏凭据。
 
 命名集合中的键必须与相应
-函数、表引擎、database 等的参数名称匹配。下面的示例中，
+函数、表引擎、数据库等的参数名称匹配。下面的示例中，
 每种类型都链接到了对应的参数列表。
 
 在命名集合中设置的参数可以在 SQL 中被覆盖，下面的示例
