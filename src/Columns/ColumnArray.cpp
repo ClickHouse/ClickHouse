@@ -229,6 +229,12 @@ UInt64 ColumnArray::getNumberOfDefaultRows() const
     return result;
 }
 
+bool ColumnArray::hasOnlyTypeDefaults() const
+{
+    const auto & offsets_data = getOffsets();
+    return offsets_data.empty() || offsets_data.back() == 0;
+}
+
 void ColumnArray::insertData(const char * pos, size_t length)
 {
     /// Similarly - only for arrays of fixed length values.
