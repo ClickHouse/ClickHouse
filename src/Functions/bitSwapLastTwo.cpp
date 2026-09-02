@@ -34,7 +34,9 @@ struct BitSwapLastTwoImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-static constexpr bool compilable = true;
+/// JIT-compiled code cannot throw, so only the argument type `apply` accepts may be compiled.
+/// Every other type falls through to `apply` and raises there.
+static constexpr bool compilable = std::is_same_v<A, ResultType>;
 
 static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
 {
