@@ -38,6 +38,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <base/EnumReflection.h>
 #include <unordered_set>
 
@@ -859,9 +860,10 @@ namespace
         {
             case ViewTarget::Samples:
             case ViewTarget::RecentSamples:
+            case ViewTarget::Histograms:
             {
-                /// The recent samples table gets the same generated engine as the samples table; it becomes
-                /// partitioned and TTL'd later (see applyInnerEnginePartitionBy and applyRecentSamplesTTL).
+                /// The recent samples and histograms tables get the same generated engine as the samples
+                /// table; recent samples become partitioned and TTL'd later (see applyRecentSamplesTTL).
                 auto engine = makeASTFunction(fmt::format("{}MergeTree", getInnerEngineFamilyPrefix(target_kind, context)));
                 engine->setNoEmptyArgs(false);
                 storage->set(storage->engine, engine);
@@ -913,16 +915,6 @@ namespace
 
             default:
                 break;
-        }
-        else if (target_kind == ViewTarget::Histograms)
-        {
-            auto engine = makeASTFunction("MergeTree");
-            engine->setNoEmptyArgs(false);
-            storage->set(storage->engine, engine);
-            storage->set(storage->order_by,
-                makeASTOperator("tuple",
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
         }
 
         UNREACHABLE();
