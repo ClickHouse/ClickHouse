@@ -312,7 +312,11 @@ ColumnWithTypeAndName realignStructFieldsToRequested(ColumnWithTypeAndName from,
             new_names.push_back(to_names[i]);
         }
 
-        from.column = ColumnTuple::create(std::move(new_columns));
+        /// An empty `Tuple()` has no element columns to carry the row count.
+        if (new_columns.empty())
+            from.column = ColumnTuple::create(from_tuple_column.size());
+        else
+            from.column = ColumnTuple::create(std::move(new_columns));
         from.type = std::make_shared<DataTypeTuple>(std::move(new_elems), std::move(new_names));
         return from;
     }
