@@ -980,6 +980,12 @@ void TableSnapshot::initOrUpdateSnapshot() const
             inflight_load = load;
         }
 
+        /// Registered as a waiter while still holding the mutex, so that a query evaluating
+        /// `given_up` above cannot observe this load as waited-for by nobody during the
+        /// unlock-to-wait handoff below.
+        load->waiters.fetch_add(1, std::memory_order_relaxed);
+        SCOPE_EXIT({ load->waiters.fetch_sub(1, std::memory_order_relaxed); });
+
         /// Wait for the build OUTSIDE the mutex, so that every waiter sits in its own polling
         /// loop with its own cancellation checks. With the wait under the mutex, sibling
         /// queries slept inside a plain lock and could not be killed while a load was stuck.
@@ -1151,9 +1157,6 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKern
         process_list_element = context->getProcessListElementSafe();
         timeout_ms = context->getSettingsRef()[DB::Setting::delta_lake_snapshot_load_timeout_ms].totalMilliseconds();
     }
-
-    load.waiters.fetch_add(1, std::memory_order_relaxed);
-    SCOPE_EXIT({ load.waiters.fetch_sub(1, std::memory_order_relaxed); });
 
     Stopwatch watch;
     while (load.future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)

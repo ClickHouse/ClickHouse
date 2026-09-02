@@ -126,8 +126,9 @@ private:
 
         std::shared_future<std::shared_ptr<KernelSnapshotState>> future;
         std::atomic<State> state{State::Running};
-        /// Queries currently waiting for this load. A load some waiter gave up on is still
-        /// healthy work for the others; only a load nobody waits for is considered dead.
+        /// Queries currently waiting for this load, registered under `TableSnapshot::mutex` at
+        /// adoption time. A load some waiter gave up on is still healthy work for the others;
+        /// only a load nobody waits for is considered dead.
         std::atomic<Int64> waiters{0};
         /// Client options the build runs with; a query with different options does not share it.
         KernelClientOptions client_options;
