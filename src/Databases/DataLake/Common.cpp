@@ -177,9 +177,8 @@ String constructTableLocation(
     if (location_scheme == "s3")
     {
         if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
-            /// A virtual-hosted endpoint cannot be split into bucket and service unambiguously
-            /// (`s3.us-east-1.amazonaws.com`, an IP host, and a dotted bucket name all look alike), so deriving
-            /// the bucket from the host would silently misplace data. Require an explicit `default_base_location`.
+            /// A virtual-hosted host cannot be split into bucket and service unambiguously
+            /// (`s3.us-east-1.amazonaws.com`, an IP host and a dotted bucket name all look alike).
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
                 "CREATE TABLE with `storage_uri_style = 'virtual_hosted'` cannot derive the bucket from "

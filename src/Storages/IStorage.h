@@ -509,10 +509,9 @@ public:
       */
     virtual void drop() {}
 
-    /** Called by `DROP TABLE` with the query context, while the query is still running and before the
-      * table is detached. `drop` itself can be executed much later in a background thread, where only
-      * the global context is available, so a storage that needs query- or session-level settings while
-      * dropping (for example `data_lake_delete_data_on_drop`) has to capture them here.
+    /** Called by `DROP TABLE` while the query is still running. `drop` itself can run much later in a
+      * background thread, where only the global context is available, so a storage that needs
+      * query-level settings while dropping (for example `data_lake_delete_data_on_drop`) captures them here.
       */
     virtual void prepareForDrop(ContextPtr /* query_context */) {}
 

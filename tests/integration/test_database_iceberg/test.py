@@ -1349,7 +1349,7 @@ def test_on_cluster_ddl_rejected_for_datalake_catalog(started_cluster):
             tables = {ident[-1] for ident in catalog.list_tables(namespace)}
             assert table_name not in tables, f"table must not have been created in the shared catalog: {tables}"
     finally:
-        # Restore the catalog database on node2 for subsequent tests, even if an assertion above failed.
+        # Restore the catalog database on node2 for the tests that follow.
         create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
 
 
@@ -1542,7 +1542,7 @@ def test_create_table_as(started_cluster):
             f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.{table}` SETTINGS allow_database_iceberg=1"
         )
 
-    # Intentional: CTAS must work from a source with a functional partition key.
+    # CTAS must work from a source with a functional partition key.
     node.query(
         f"""
         CREATE TABLE default.{src_table}
@@ -1564,7 +1564,6 @@ def test_create_table_as(started_cluster):
     """
     )
 
-    # CTAS with explicit PARTITION BY / ORDER BY overriding the source table.
     node.query(
         f"""
         CREATE TABLE {CATALOG_NAME}.`{namespace}.override`
@@ -1743,7 +1742,7 @@ def test_create_table_nested_namespace(started_cluster):
 
     write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
 
-    # INSERT exercises RestCatalog::updateMetadata for the nested namespace.
+    # INSERT exercises `RestCatalog::updateMetadata` for the nested namespace.
     node.query(
         f"INSERT INTO {CATALOG_NAME}.`{namespace}.nested` VALUES (1);",
         settings=write_settings,
@@ -1753,7 +1752,7 @@ def test_create_table_nested_namespace(started_cluster):
         settings={"allow_database_iceberg": 1},
     ).strip() == "1"
 
-    # ALTER exercises RestCatalog::updateSchema for the nested namespace.
+    # ALTER exercises `RestCatalog::updateSchema` for the nested namespace.
     node.query(
         f"ALTER TABLE {CATALOG_NAME}.`{namespace}.nested` ADD COLUMN z Nullable(String);",
         settings=write_settings,
@@ -1871,10 +1870,9 @@ def test_create_table_with_engine_unsupported_clauses(started_cluster):
         f"'{minio_access_key}', '{minio_secret_key}')"
     )
 
-    # The explicit-ENGINE path persists only column names/types, PARTITION BY, and ORDER BY into the
-    # initial Iceberg metadata, so unsupported storage clauses must be rejected there too, not silently
-    # dropped. Unlike the engine-less path, engine SETTINGS stay allowed: they are real data-lake
-    # storage settings (e.g. `iceberg_format_version`) used during creation.
+    # The explicit-ENGINE path persists only column names/types, `PARTITION BY` and `ORDER BY` into the
+    # initial metadata, so unsupported storage clauses must be rejected there too. Engine `SETTINGS` stay
+    # allowed, unlike on the engine-less path: they are real data-lake settings used during creation.
     for clause in [
         "PRIMARY KEY id",
         "ORDER BY id SAMPLE BY id",
@@ -1979,9 +1977,9 @@ def test_create_table_invalid_partition_transforms(started_cluster):
     )
     assert "good" in [t[1] for t in catalog.list_tables(namespace)]
 
-    # Invalid transform parameters must be rejected before any catalog metadata is written.
-    # Otherwise CREATE TABLE could register an unreadable Iceberg table whose partition spec
-    # serializes as bucket[0], bucket[-1], or truncate[0].
+    # Invalid transform parameters must be rejected before any catalog metadata is written, or `CREATE TABLE`
+    # would register an unreadable table whose partition spec serializes as `bucket[0]`, `bucket[-1]`
+    # or `truncate[0]`.
     for i, transform in enumerate(
         ["icebergBucket(0, id)", "icebergBucket(-1, id)", "icebergTruncate(0, id)"]
     ):
@@ -2027,9 +2025,8 @@ def test_create_table_namespace_location(started_cluster):
     table_location = catalog.load_table(f"{namespace}.first").location().rstrip("/")
     ns_location = catalog.load_namespace_properties(namespace).get("location")
 
-    # The namespace default location must point at the namespace base, not at the first table's
-    # directory. Otherwise another client creating a table in the same namespace without an explicit
-    # location could be placed under the first table's path.
+    # The namespace default location must point at the namespace base, not at the first table's directory,
+    # or later tables created without an explicit location would land under that first table.
     assert ns_location is not None, "namespace is missing its location property"
     ns_location = ns_location.rstrip("/")
     assert ns_location != table_location, (
@@ -2066,9 +2063,8 @@ def test_create_table_with_engine_namespace_location(started_cluster):
     assert table_location.endswith(table_dir), table_location
 
     # The engine path here is `<bucket>/<table_dir>/`, which does not follow `<base>/<namespace>/<table>`,
-    # so there is no namespace base to derive. The table's own directory must not be registered as the
-    # namespace default location: another client creating a table in the same namespace without an
-    # explicit location would then be placed under this table's directory.
+    # so there is no namespace base to derive. The table's own directory must not become the namespace
+    # default location, or later tables in this namespace would land inside it.
     ns_location = catalog.load_namespace_properties(namespace).get("location")
     if ns_location is not None:
         ns_location = ns_location.rstrip("/")
@@ -2080,9 +2076,8 @@ def test_create_table_with_engine_namespace_location(started_cluster):
         settings={"allow_database_iceberg": 1},
     )
 
-    # When the engine path does follow `<base>/<namespace>/<table>`, the namespace base is unambiguous
-    # and is registered as the namespace default location, so tables created later by other clients
-    # land next to this one instead of inside it.
+    # When the engine path does follow `<base>/<namespace>/<table>`, the namespace base is unambiguous and
+    # is registered as the namespace default location, so later tables land next to this one, not inside it.
     base_dir = f"engine_ns_base_{uuid.uuid4().hex[:8]}"
     nested_namespace = f"test_ns_engine_derived_{uuid.uuid4().hex[:8]}"
     node.query(

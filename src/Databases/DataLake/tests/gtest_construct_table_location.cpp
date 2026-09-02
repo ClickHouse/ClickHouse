@@ -13,8 +13,6 @@ class ConstructTableLocationTest : public ::testing::Test
 {
 };
 
-/// S3: bucket is the first path segment of the HTTPS-style storage_endpoint;
-/// a sub-prefix after the bucket must be preserved.
 TEST_F(ConstructTableLocationTest, S3HttpsEndpoint)
 {
     EXPECT_EQ(
@@ -32,9 +30,8 @@ TEST_F(ConstructTableLocationTest, S3RejectsEndpointWithoutBucket)
         DB::Exception);
 }
 
-/// Virtual-hosted style cannot derive a bucket from the endpoint unambiguously (a service host, an IP host,
-/// and a dotted bucket name are indistinguishable), so CREATE TABLE rejects it regardless of endpoint shape;
-/// users must set `default_base_location`.
+/// A virtual-hosted host cannot be split into bucket and service unambiguously, so `CREATE TABLE` rejects it
+/// whatever the endpoint looks like; `default_base_location` has to be set instead.
 TEST_F(ConstructTableLocationTest, S3VirtualHostedIsRejected)
 {
     for (const auto * endpoint : {
@@ -48,9 +45,8 @@ TEST_F(ConstructTableLocationTest, S3VirtualHostedIsRejected)
             DB::Exception);
 }
 
-/// Azure: HTTPS-form storage_endpoint must round-trip through `setLocation`,
-/// which means the constructed URI must include the `<container>@<host>` authority.
-/// A sub-path after the container must be preserved, a trailing slash ignored.
+/// The constructed Azure URI must round-trip through `setLocation`, which means it has to carry the
+/// `<container>@<host>` authority.
 TEST_F(ConstructTableLocationTest, AzureHttpsEndpoint)
 {
     const String location = constructTableLocation(
@@ -60,7 +56,6 @@ TEST_F(ConstructTableLocationTest, AzureHttpsEndpoint)
         "tbl");
     EXPECT_EQ(location, "abfss://mycontainer@account.dfs.core.windows.net/ns/tbl");
 
-    /// Verify the produced URI parses back into the expected components.
     TableMetadata metadata;
     metadata.withLocation();
     metadata.setLocation(location);
@@ -83,8 +78,6 @@ TEST_F(ConstructTableLocationTest, AzureHttpsEndpoint)
         "abfss://mycontainer@account.dfs.core.windows.net/ns/tbl");
 }
 
-/// Azure: ABFSS-form storage_endpoint (container in the authority's user-info)
-/// is also accepted, with and without a sub-path.
 TEST_F(ConstructTableLocationTest, AzureAbfssEndpoint)
 {
     EXPECT_EQ(
@@ -113,8 +106,6 @@ TEST_F(ConstructTableLocationTest, AzureRejectsEndpointWithoutContainer)
         DB::Exception);
 }
 
-/// HDFS: the authority (host:port) must be preserved in the location URI,
-/// with or without a warehouse path after it.
 TEST_F(ConstructTableLocationTest, HdfsPreservesAuthority)
 {
     EXPECT_EQ(
@@ -125,7 +116,6 @@ TEST_F(ConstructTableLocationTest, HdfsPreservesAuthority)
         "hdfs://namenode:9000/ns/tbl");
 }
 
-/// `file://` URIs have an empty authority and just a local filesystem path.
 TEST_F(ConstructTableLocationTest, FileWithoutAuthority)
 {
     EXPECT_EQ(

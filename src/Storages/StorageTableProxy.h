@@ -92,9 +92,8 @@ public:
     void prepareForDrop(ContextPtr query_context) override
     {
         std::lock_guard lock{nested_mutex};
-        /// A table that has not been loaded yet is materialized by `drop` below, and forcing the load
-        /// here would move a load failure from the background drop onto the user's query. Such a table
-        /// is dropped with the server-level settings, as it was before this hook existed.
+        /// Forwarded only to an already-resolved nested storage. A storage that receives no capture must
+        /// not infer a destructive action from a server-level default (see `StorageObjectStorage::drop`).
         if (nested)
             nested->prepareForDrop(query_context);
     }

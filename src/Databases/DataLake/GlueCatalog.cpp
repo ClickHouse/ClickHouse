@@ -636,8 +636,8 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
 
 void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
 {
-    /// Check existence first: `CreateDatabase` may be denied to a principal that is still allowed to
-    /// create tables in a pre-provisioned namespace, so it must not be called when there is nothing to create.
+    /// `CreateDatabase` may be denied to a principal that is still allowed to create tables in a
+    /// pre-provisioned namespace, so it must not be called when there is nothing to create.
     Aws::Glue::Model::GetDatabaseRequest get_request;
     get_request.SetName(namespace_name);
 
@@ -681,16 +681,22 @@ bool GlueCatalog::createTable(
     DB::ObjectStoragePtr written_metadata_storage;
     String written_metadata_file;
 
-    /// The initial metadata file staged below must not outlive a registration that did not happen: the
-    /// write is guarded by `If-None-Match: *`, so a leftover permanently blocks every retry, and when the
-    /// winner of an `IF NOT EXISTS` name race registered the table at another location (an explicit
-    /// Iceberg engine path, or a different `default_base_location`), the file is left behind in an orphan
-    /// directory the catalog does not point at. Only this call can have created that object - a writer
-    /// that lost the `If-None-Match` race returns before staging anything - so removing it is safe.
+    /// The initial metadata file staged below must not outlive a registration that did not happen: it is
+    /// written with `If-None-Match: *`, so a leftover permanently blocks every retry. Removing it is safe
+    /// because only this call can have created it - a writer that lost the `If-None-Match` race returns
+    /// before staging anything.
     bool registered = false;
     SCOPE_EXIT_SAFE({
         if (!registered && written_metadata_storage)
+        {
+            LOG_INFO(
+                log,
+                "Table {}.{} was not registered in the Glue catalog, removing the staged initial metadata file {}",
+                namespace_name,
+                table_name,
+                written_metadata_file);
             written_metadata_storage->removeObjectIfExists(DB::StoredObject(written_metadata_file));
+        }
     });
 
     if (effective_metadata_path.empty() && metadata_content && metadata_content->has("location"))
@@ -765,8 +771,7 @@ bool GlueCatalog::createTable(
 
     if (!response.IsSuccess())
     {
-        /// `AlreadyExistsException` means someone else registered the table first. The staged metadata
-        /// file is removed by the scope guard, so `IF NOT EXISTS` leaves nothing behind.
+        /// The staged metadata file is removed by the scope guard, so `IF NOT EXISTS` leaves nothing behind.
         if (if_not_exists && response.GetError().GetErrorType() == Aws::Glue::GlueErrors::ALREADY_EXISTS)
             return false;
         throw DB::Exception(
@@ -826,11 +831,9 @@ bool GlueCatalog::updateSchema(
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const
 {
-    /// We drop only via Glue's `DeleteTable`, which removes the catalog entry but leaves the data files in
-    /// object storage; deleting them (the client-side purge that e.g. Iceberg's own GlueCatalog performs) is
-    /// not implemented here. Reject a requested purge rather than silently ignore it and orphan the data.
-    /// TODO: implement the client-side purge (delete the table's data/manifest/metadata files, then
-    /// `DeleteTable`) in a follow-up PR so `data_lake_delete_data_on_drop` can be honored for Glue.
+    /// Glue's `DeleteTable` removes only the catalog entry; the client-side purge of the data files is not
+    /// implemented, so reject a requested purge rather than silently ignore it and orphan the data.
+    /// TODO: implement the client-side purge so `data_lake_delete_data_on_drop` can be honored for Glue.
     if (purge)
     {
         if (if_exists && !existsTable(namespace_name, table_name))

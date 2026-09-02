@@ -141,7 +141,6 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
-    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace FailPoints
@@ -192,11 +191,9 @@ String getLocationSchemeForTableCreation(const std::shared_ptr<DataLake::ICatalo
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected catalog type in CREATE TABLE location scheme resolution");
 }
 
-/// The storage backend a catalog is pinned to when creating a table: what the catalog reports, or,
-/// for the catalogs whose backing storage is fixed by the service itself, the backend that
-/// `getLocationSchemeForTableCreation` falls back to. `CREATE TABLE` must validate the engine and
-/// `default_base_location` against this, not only against what the catalog reports: a `OneLake`
-/// catalog that does not expose `default-base-location` is still Azure-only.
+/// The storage backend a catalog is pinned to when creating a table: what the catalog reports, or the
+/// backend `getLocationSchemeForTableCreation` falls back to for services whose storage is fixed.
+/// A `OneLake` catalog that does not expose `default-base-location` is still Azure-only.
 std::optional<DatabaseDataLakeStorageType> getFixedStorageTypeForTableCreation(const std::shared_ptr<DataLake::ICatalog> & catalog)
 {
     if (auto storage_type = catalog->getStorageType(); storage_type.has_value())
@@ -1059,10 +1056,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
 void DatabaseDataLake::validateCreateTableEngine(const String & engine_name) const
 {
-    /// `Iceberg` selects its backend from the optional `disk` setting. The setting is resolved by the
-    /// storage factory, after this database-level validation, so it cannot be safely checked here.
-    /// A fixed-backend catalog must not accept it: it could create a table that the catalog reopens
-    /// with a different backend.
+    /// `Iceberg` picks its backend from the optional `disk` setting, which the storage factory resolves
+    /// only after this database-level validation, so a fixed-backend catalog cannot accept it here.
     if (engine_name == "Iceberg" && getFixedStorageTypeForTableCreation(getCatalog()).has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The generic 'Iceberg' engine is not supported for a DataLakeCatalog with a fixed storage backend. "
@@ -1100,9 +1095,8 @@ void DatabaseDataLake::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    /// Engine-clause path: the storage's own initialization (IcebergMetadata::createInitial)
-    /// already wrote metadata and registered the table in the catalog; a path there that
-    /// registers nothing throws `TABLE_ALREADY_EXISTS` instead of returning.
+    /// Engine-clause path: `IcebergMetadata::createInitial` has already written the metadata and
+    /// registered the table; a path there that registers nothing throws instead of returning.
     if (table)
         return;
 
@@ -1207,20 +1201,16 @@ void DatabaseDataLake::createTable(
         order_by,
         context_);
 
-    /// Catalogs that write the initial metadata file themselves (they get an empty `metadata_path`) must
-    /// honour `iceberg_metadata_compression_method` too, otherwise the native CREATE TABLE path would
-    /// diverge from the explicit Iceberg engine path, which applies it in `IcebergMetadata::createInitial`.
+    /// Catalogs that write the initial metadata file themselves (empty `metadata_path`) must honour
+    /// `iceberg_metadata_compression_method`, as `IcebergMetadata::createInitial` does.
     const auto compression_method_str = context_->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     const auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
     /// Register the namespace before `createTable`, which requires it to exist and, for catalogs that
     /// write the initial metadata file themselves, must not be preceded by any file written to storage
-    /// (see `ICatalog::createTable`). Do it after all local validation, so a rejected CREATE leaves no
-    /// trace in the catalog.
-    /// `location` is the table location (base/namespace/table). The namespace's default location must
-    /// point at the namespace base (base/namespace), not at this first table's directory; otherwise
-    /// later tables created in the same namespace without an explicit location could be placed under
-    /// the first table's directory. Strip the trailing table-name segment to get the namespace base.
+    /// (see `ICatalog::createTable`). Do it after all local validation, so a rejected `CREATE` leaves no
+    /// trace in the catalog. The namespace's default location must be the namespace base, not this first
+    /// table's directory, or later tables created without an explicit location would land under it.
     String namespace_location = location;
     if (const String table_suffix = "/" + table_name; namespace_location.ends_with(table_suffix))
         namespace_location.resize(namespace_location.size() - table_suffix.size());
@@ -1230,12 +1220,9 @@ void DatabaseDataLake::createTable(
         namespace_name, table_name, /* metadata_path */ "", metadata_content, compression_method, create.if_not_exists);
     if (!created)
     {
-        /// `IF NOT EXISTS`, and the catalog answered that the table is already there: it is shared, so
-        /// another client can create the same name between the existence check in `doCreateTable` and
-        /// this call. Nothing was created here, and the caller must be able to tell - report it exactly
-        /// like the local existence check does, so that `CREATE TABLE IF NOT EXISTS ... AS SELECT` does
-        /// not insert the selected rows into the table the other client created.
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+        /// `IF NOT EXISTS`, and another client registered this name between the existence check in
+        /// `doCreateTable` and this call. Nothing was created here, and the caller must be able to tell.
+        throw DataLake::TableAlreadyExistsInCatalogException(
             "Table {}.{} already exists in the catalog", namespace_name, table_name);
     }
 
@@ -1254,8 +1241,6 @@ void DatabaseDataLake::dropTable( /// NOLINT
     bool purge = context_->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
     catalog->dropTable(namespace_name, table_name, purge, if_exists);
 
-    /// A catalog-side drop removes remote metadata and, when purge is set, can request deletion of the
-    /// underlying data. Log it at an operational level so accidental drops/purges leave an audit trail.
     LOG_INFO(log, "Dropped table {}.{} from DataLakeCatalog (purge={})", namespace_name, table_name, purge);
 }
 

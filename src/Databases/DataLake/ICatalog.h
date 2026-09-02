@@ -253,15 +253,11 @@ public:
     /// Creates new table in catalog. Callers must ensure the namespace exists before
     /// writing any table files to storage: a catalog that shares its storage view with
     /// the data refuses to create a namespace over a plain directory those files create.
-    /// `metadata_compression_method` is the codec requested by `iceberg_metadata_compression_method`. It is
-    /// only meaningful for catalogs that write the initial metadata file themselves (i.e. when
-    /// `new_metadata_path` is empty): they must name the file `v1.<ext>.metadata.json` and compress its
-    /// contents accordingly, exactly like `DB::Iceberg::IcebergMetadata::createInitial` does.
-    /// Returns `true` when this call created the table. Returns `false` only when `if_not_exists` is set
-    /// and the catalog answered that the table is already there - the catalog is shared, so another client
-    /// can win the name race after the caller checked that the table does not exist. Callers must not
-    /// report that as a creation: `CREATE TABLE IF NOT EXISTS ... AS SELECT` must not fill a table the
-    /// winner of the race created.
+    /// `metadata_compression_method` applies only to catalogs that write the initial metadata file
+    /// themselves (`new_metadata_path` is empty): they must name it `v1.<ext>.metadata.json` and compress
+    /// it accordingly, like `DB::IcebergMetadata::createInitial` does.
+    /// Returns `true` if this call created the table, `false` if `if_not_exists` is set and the shared
+    /// catalog reported that another client had already created it.
     virtual bool createTable(
         const String & namespace_name,
         const String & table_name,
@@ -293,7 +289,7 @@ public:
         Int32 previous_schema_id) const;
 
     /// Drop table from catalog.
-    /// If purge, the catalog is requested to also delete underlying data files.
+    /// If `purge`, the catalog is also asked to delete the underlying data files.
     virtual void dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const;
 
     /// Does the catalog support transactions or anything like that?

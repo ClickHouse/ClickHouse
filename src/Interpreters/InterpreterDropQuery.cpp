@@ -359,8 +359,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
-            /// The actual data removal can happen in a background thread long after this query has
-            /// finished, so let the storage capture whatever it needs from the query context now.
+            /// `drop` can run in a background thread long after this query, so let the storage capture
+            /// what it needs from the query context now.
             table->prepareForDrop(context_);
 
             table->flushAndShutdown(true);

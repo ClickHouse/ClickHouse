@@ -263,10 +263,8 @@ protected:
     BackgroundJobsAssignee background_operations_assignee;
 
     /// `data_lake_delete_data_on_drop` as it was set for the `DROP TABLE` query, captured by
-    /// `prepareForDrop` because `drop` runs without a query context. Stays empty when the drop does
-    /// not come from a `DROP TABLE` query (the rollback of a failed `CREATE`, or a lazily loaded
-    /// table that is only materialized inside `drop`); `drop` then falls back to the server-level
-    /// value, which is what this code read before the query-level capture existed.
+    /// `prepareForDrop` because `drop` runs without a query context. Stays empty when the drop does not
+    /// come from a `DROP TABLE` query, and `drop` then keeps the data rather than guessing.
     std::atomic<std::optional<bool>> delete_data_on_drop;
 };
 

@@ -1846,7 +1846,8 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("namespace", namespaceToJSONArray(namespace_name));
 
-    if (!location.empty()) // the caller has no namespace base to offer
+    /// The caller leaves `location` empty when it has no namespace base to offer.
+    if (!location.empty())
     {
         Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
         properties->set("location", location);
@@ -1865,8 +1866,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     }
 }
 
-/// `metadata_compression_method` is unused here: the REST server writes and names the initial metadata
-/// file itself, we only send it the metadata content.
+/// `metadata_compression_method` is unused: the REST server writes and names the initial metadata file itself.
 bool RestCatalog::createTable(
     const String & namespace_name,
     const String & table_name,
@@ -1921,7 +1921,7 @@ bool RestCatalog::createTable(
     }
     catch (const DB::HTTPException & ex)
     {
-        /// The catalog answers `409` when someone else created the table first.
+        /// `409` means the catalog already has a table with this name.
         if (if_not_exists && ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
             return false;
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
@@ -2072,7 +2072,7 @@ bool RestCatalog::updateSchema(
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const
 {
     const auto state_snapshot = state.get();
-    /// Same URL shape as createTable / updateMetadata / getTableMetadataImpl.
+    /// Same URL shape as `createTable`, `updateMetadata` and `getTableMetadataImpl`.
     const std::string base_endpoint =
         (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
     const std::string endpoint = fmt::format("{}?purgeRequested={}", base_endpoint, purge ? "true" : "false");
@@ -2084,7 +2084,7 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     }
     catch (const DB::HTTPException & ex)
     {
-        /// The catalog answers `404` when the table is already gone - someone else dropped it first.
+        /// `404` means the table is already gone.
         if (if_exists && ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
             return;
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to drop table {}", ex.displayText());

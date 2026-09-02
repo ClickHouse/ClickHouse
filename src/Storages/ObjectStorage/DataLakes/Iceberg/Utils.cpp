@@ -423,15 +423,17 @@ bool writeMetadataFileAndVersionHint(
         }
         else
         {
-            /// Remove the metadata file written above, otherwise the resolver could later
-            /// pick this uncommitted file as the latest version.
-            ///
-            /// We deliberately do NOT swallow exceptions here. Returning `false` tells the caller
-            /// the write did not commit and is safe to retry; but if the removal throws, the
-            /// just-written `vN-<uuid>.metadata.json` may still be present, and a subsequent
-            /// version-hint resolution could pick it as the latest version - exactly the race this
-            /// code guards against. Fail closed by letting the exception propagate so the operation
-            /// is reported as failed instead of silently leaving uncommitted metadata behind.
+            /// Remove the metadata file written above, otherwise version-hint resolution could later
+            /// pick this uncommitted file as the latest version. Deliberately not wrapped in a
+            /// try/catch: a failed removal must fail the whole operation instead of returning a
+            /// retriable `false` while the uncommitted `vN-<uuid>.metadata.json` is still there.
+            LOG_INFO(
+                getLogger("IcebergMetadataFileWriter"),
+                "Removing the uncommitted Iceberg metadata file {}: the version hint is already at version {}, "
+                "at or past version {} this commit tried to write, so the write did not commit",
+                storage_metadata_path,
+                old_version,
+                metadata_file_info.version);
             object_storage->removeObjectIfExists(StoredObject(storage_metadata_path));
             return false;
         }
@@ -845,9 +847,7 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
-        /// The Iceberg spec requires the truncate width to be a positive integer; otherwise we would
-        /// serialize an invalid `truncate[N]` transform that some catalogs (e.g. Glue) happily register,
-        /// leaving an unreadable table.
+        /// The Iceberg spec requires the truncate width to be a positive integer.
         if (*param <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires a positive width, got {}", *param);
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
@@ -857,9 +857,7 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
-        /// The Iceberg spec requires the number of buckets to be a positive integer; otherwise we would
-        /// serialize an invalid `bucket[N]` transform that some catalogs (e.g. Glue) happily register,
-        /// leaving an unreadable table.
+        /// The Iceberg spec requires the number of buckets to be a positive integer.
         if (*param <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires a positive number of buckets, got {}", *param);
         result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));

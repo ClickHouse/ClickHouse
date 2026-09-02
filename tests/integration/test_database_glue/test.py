@@ -897,12 +897,9 @@ def test_create_gzip_metadata(started_cluster):
 
 
 def test_native_create_gzip_metadata(started_cluster):
-    # The native `DataLakeCatalog` CREATE TABLE path (no engine clause) does not go through
-    # `IcebergMetadata::createInitial`: `DatabaseDataLake::createTable` hands an empty metadata path to
-    # the catalog, and `GlueCatalog::createTable` writes and registers the first metadata file itself.
-    # That branch must honour `iceberg_metadata_compression_method` just like the explicit Iceberg
-    # engine path does (see `test_create_gzip_metadata`), otherwise the same CREATE TABLE query would
-    # produce differently compressed metadata depending on which create path served it.
+    # The engine-less `CREATE TABLE` path does not go through `IcebergMetadata::createInitial`:
+    # `GlueCatalog::createTable` writes and registers the first metadata file itself, and must honour
+    # `iceberg_metadata_compression_method` just like the explicit engine path (`test_create_gzip_metadata`).
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_native_create_gzip_{uuid.uuid4()}"
@@ -936,7 +933,6 @@ def test_native_create_gzip_metadata(started_cluster):
     metadata_bytes = started_cluster.minio_client.get_object(bucket, key).read()
     assert metadata_bytes[:2] == b"\x1f\x8b", metadata_bytes[:16]
 
-    # Reopen through the catalog (fresh database) and confirm the table is readable and writable.
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
     node.query(

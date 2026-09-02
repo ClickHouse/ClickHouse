@@ -20,10 +20,9 @@ def _files_left(instance, table_name):
 def test_drop_honours_query_level_delete_data_on_drop(
     started_cluster_iceberg_no_spark, storage_type, delete_data_on_drop
 ):
-    # `StorageObjectStorage::drop` runs in a background thread, where the query context is already
-    # gone. A query-level `data_lake_delete_data_on_drop` still has to reach it, because it is
-    # captured by `IStorage::prepareForDrop` while the `DROP TABLE` query is running. Without that
-    # capture the setting would only ever work when set server-wide in the default profile.
+    # `StorageObjectStorage::drop` runs in a background thread, where the query context is already gone.
+    # A query-level `data_lake_delete_data_on_drop` reaches it only because `IStorage::prepareForDrop`
+    # captures it while the `DROP TABLE` query is still running.
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = f"test_delete_data_on_drop_{delete_data_on_drop}_{get_uuid_str()}"
 

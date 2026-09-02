@@ -84,6 +84,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/hasNullable.h>
 
+#include <Databases/DataLake/Common.h>
 #include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -1944,16 +1945,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
-    /// Snapshot whether the user wrote an explicit ENGINE before `setEngine` fills in a default below.
-    /// Used to detect an engine-less `CREATE TABLE` on a `DataLakeCatalog` database.
+    /// Snapshot whether the user wrote an explicit `ENGINE` before `setEngine` fills in a default below.
     const bool engine_user_specified = create.storage && create.storage->engine;
 
     /// Capture explicit unsupported storage clauses before `setEngine` merges the source's clauses for
-    /// `CREATE TABLE ... AS` and makes explicit and inherited indistinguishable; rejected in the check below.
-    /// The clauses are unsupported on both DataLakeCatalog create paths (engine-less and explicit
-    /// `ENGINE = Iceberg*`). Engine SETTINGS are meaningful only with an explicit engine (they are real
-    /// data-lake storage settings, e.g. `iceberg_format_version`), so they are rejected only on the
-    /// engine-less path where they would be silently dropped.
+    /// `CREATE TABLE ... AS` and makes explicit and inherited indistinguishable; rejected below.
+    /// Engine `SETTINGS` are real data-lake storage settings (e.g. `iceberg_format_version`), so they are
+    /// unsupported only on the engine-less path, where they would be silently dropped.
     const char * datalake_unsupported_storage_clause = nullptr;
     if (create.storage)
     {
@@ -2118,12 +2116,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "(got {})", datalake_unsupported_storage_clause);
         }
 
-        /// Both create paths persist only column names/types (plus PARTITION BY / ORDER BY) into the
-        /// initial Iceberg metadata, and the table is re-instantiated from the catalog on every access,
-        /// so any other column property or secondary structure would be silently lost. Reject them here,
-        /// before any catalog or storage work; `properties` also covers columns inherited via
-        /// `CREATE TABLE ... AS`. `DatabaseDataLake::createTable` re-validates the engine-less path
-        /// at the AST level.
+        /// Only column names and types (plus `PARTITION BY` / `ORDER BY`) reach the initial Iceberg
+        /// metadata, and the table is re-instantiated from the catalog on every access, so any other
+        /// column property would be silently lost. `properties` also covers columns inherited via
+        /// `CREATE TABLE ... AS`; `DatabaseDataLake::createTable` re-validates the engine-less path.
         for (const auto & column : properties.columns)
         {
             if (column.default_desc.expression || column.default_desc.kind != ColumnDefaultKind::Default)
@@ -2277,14 +2273,21 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
     catch (const Exception & e)
     {
-        /// A `DataLakeCatalog` is shared with other clients and nodes, so the existence check inside
-        /// `doCreateTable` can be stale by the time the create reaches the catalog. Both create paths
-        /// (engine-less and explicit `ENGINE = Iceberg*`) report that lost race as `TABLE_ALREADY_EXISTS`
-        /// and leave nothing behind, so `IF NOT EXISTS` means here what it means for the local check: the
-        /// query created nothing, and `CREATE TABLE IF NOT EXISTS ... AS SELECT` must not fill the table
-        /// the winner of the race created.
-        if (!create.if_not_exists || e.code() != ErrorCodes::TABLE_ALREADY_EXISTS || !database || !database->isDatalakeCatalog())
+        /// A `DataLakeCatalog` is shared, so the existence check inside `doCreateTable` can be stale by
+        /// the time the create reaches the catalog. Both create paths report that lost race with
+        /// `TableAlreadyExistsInCatalogException` and leave nothing behind, so `IF NOT EXISTS` means what
+        /// it means for the local check: the query created nothing, and `AS SELECT` must not fill the
+        /// table the winner of the race created.
+        if (!create.if_not_exists || !dynamic_cast<const DataLake::TableAlreadyExistsInCatalogException *>(&e)
+            || !database || !database->isDatalakeCatalog())
             throw;
+        /// The query succeeds and no table appears, so record in the log why.
+        LOG_INFO(
+            getLogger("InterpreterCreateQuery"),
+            "CREATE TABLE IF NOT EXISTS {}.{} created nothing: {}",
+            backQuoteIfNeed(create.getDatabase()),
+            backQuoteIfNeed(create.getTable()),
+            e.message());
         created = false;
     }
 
@@ -2500,17 +2503,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     auto & create_query = query_ptr->as<ASTCreateQuery &>();
     if (database->isDatalakeCatalog() && !engine_user_specified)
     {
-        /// Extract partition/order from the source table if CREATE TABLE ... AS was used.
         if (!as_table_saved.empty())
         {
             String as_database_name = getContext()->resolveDatabase(as_database_saved);
             StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
             auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
 
-            /// `setEngine` merged the source's engine, SETTINGS and clauses into `create_query.storage`; none
-            /// apply to a `DataLakeCatalog` table, so rebuild it keeping only the partition and sorting keys
-            /// (explicit ones take precedence, the source's are the fallback). Unsupported explicit clauses
-            /// were already rejected in `createTable`.
+            /// `setEngine` merged the source's engine, `SETTINGS` and clauses into `create_query.storage`;
+            /// none apply to a `DataLakeCatalog` table, so rebuild it keeping only the partition and
+            /// sorting keys - explicit ones take precedence, the source's are the fallback.
             ASTPtr partition_by;
             ASTPtr order_by;
             if (create_query.storage)
@@ -2534,9 +2535,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 create_query.storage->set(create_query.storage->order_by, order_by);
         }
 
-        /// Ensure columns are in the query AST (mainly for `CREATE TABLE ... AS source`). `formatColumns` keeps
-        /// every column modifier (COMMENT, CODEC, TTL, SETTINGS, STATISTICS, defaults) so `DatabaseDataLake`
-        /// rejects the unsupported ones rather than silently dropping them.
+        /// Ensure the columns are in the query AST (mainly for `CREATE TABLE ... AS source`). `formatColumns`
+        /// keeps every column modifier, so `DatabaseDataLake` can reject the unsupported ones.
         if (!create_query.columns_list
             || !create_query.columns_list->columns
             || create_query.columns_list->columns->children.empty())

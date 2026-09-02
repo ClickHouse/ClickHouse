@@ -850,13 +850,22 @@ void IcebergMetadata::createInitial(
         }
         if (!metadata_files.empty())
         {
-            /// Without a catalog `IF NOT EXISTS` attaches to the metadata that is already there. With a
-            /// catalog nothing gets registered here, so success would report an invisible table;
-            /// `InterpreterCreateQuery` turns `TABLE_ALREADY_EXISTS` into an `IF NOT EXISTS` no-op.
-            if (if_not_exists && !catalog)
-                return;
-            throw Exception(
-                ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+            /// Without a catalog `IF NOT EXISTS` attaches to the metadata already there. With a catalog
+            /// nothing gets registered, so success would report an invisible table; the thrown
+            /// `TableAlreadyExistsInCatalogException` becomes the `IF NOT EXISTS` no-op instead.
+            if (!catalog)
+            {
+                if (if_not_exists)
+                    return;
+                throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+            }
+            throw DataLake::TableAlreadyExistsInCatalogException(
+                "The catalog has no table {}.{} registered, but Iceberg metadata files are already present at {}, "
+                "so creating the table there would clash with them. This is usually left behind by a previous "
+                "`DROP TABLE` without `data_lake_delete_data_on_drop`, which keeps the data and metadata in "
+                "place: remove the leftover files, or create the table at a different location",
+                namespace_name, table_name, configuration_ptr->getPathForRead().path);
         }
     }
 
@@ -885,9 +894,8 @@ void IcebergMetadata::createInitial(
 
     if (catalog)
     {
-        /// The namespace default location must be the namespace base, not this table's directory:
-        /// a client creating another table in the same namespace without an explicit location would
-        /// otherwise be placed under this table's directory.
+        /// The namespace default location must be the namespace base, not this table's directory, or
+        /// later tables created in the same namespace without an explicit location would land under it.
         String namespace_location = location_path;
         while (namespace_location.ends_with('/'))
             namespace_location.pop_back();
@@ -914,9 +922,8 @@ void IcebergMetadata::createInitial(
         }
         catch (const Exception & e)
         {
-            /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
-            /// already exists (e.g. leftover data after `DROP TABLE` with `data_lake_delete_data_on_drop` off,
-            /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
+            /// The write uses `If-None-Match: *`, so S3 answers `PreconditionFailed` when the metadata
+            /// file is already there: leftovers from an earlier drop, or a concurrent creation.
             const bool precondition_failed
                 = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
                 || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
@@ -925,8 +932,12 @@ void IcebergMetadata::createInitial(
                 /// As in the `metadata_files` probe above: with a catalog nothing was registered.
                 if (!catalog)
                     return;
-                throw Exception(
-                    ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+                throw DataLake::TableAlreadyExistsInCatalogException(
+                    "The catalog has no table {}.{} registered, but Iceberg metadata files are already present at {}, "
+                    "so creating the table there would clash with them. This is usually left behind by a previous "
+                    "`DROP TABLE` without `data_lake_delete_data_on_drop`, which keeps the data and metadata in "
+                    "place: remove the leftover files, or create the table at a different location",
+                    namespace_name, table_name, configuration_ptr->getPathForRead().path);
             }
             throw;
         }
@@ -942,27 +953,13 @@ void IcebergMetadata::createInitial(
             writeMessageToFile("1", version_hint_path, object_storage, local_context, "*", "");
             filename_version_hint = version_hint_path;
         }
-
-        if (catalog)
-        {
-            auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
-                + configuration_ptr->getRawPath().path + "metadata/" + metadata_file_name;
-            if (!catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, if_not_exists))
-            {
-                /// `IF NOT EXISTS`, and another client registered this table first. `TABLE_ALREADY_EXISTS`
-                /// lets `InterpreterCreateQuery` tell that nothing was created, so `CREATE TABLE IF NOT
-                /// EXISTS ... AS SELECT` does not fill the other client's table.
-                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                    "Table {}.{} already exists in the catalog", namespace_name, table_name);
-            }
-        }
     }
     catch (...)
     {
-        /// A leftover `.metadata.json` makes the next `CREATE` report an existing table although nothing
-        /// was registered in the catalog, so the rollback fails closed: a failed removal propagates in
-        /// place of the original exception, which is logged here. When the catalog manages the location
-        /// we wrote nothing ourselves, so there is nothing to roll back.
+        /// Nothing is registered in the catalog yet, so removing the files we just wrote loses nothing,
+        /// and a leftover `.metadata.json` would make the next `CREATE` report an existing table. The
+        /// rollback fails closed: a failed removal propagates in place of the original exception, which
+        /// is logged here. With a catalog-managed location we wrote nothing, so there is nothing to undo.
         if (!catalog_manages_location)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__, "Removing the files of the Iceberg table that failed to be created");
@@ -971,6 +968,38 @@ void IcebergMetadata::createInitial(
                 object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
         }
         throw;
+    }
+
+    if (catalog)
+    {
+        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
+            + configuration_ptr->getRawPath().path + "metadata/" + metadata_file_name;
+
+        /// The registration sits outside any rollback: a failed `createTable` is ambiguous, because the
+        /// HTTP layer retries connection failures and the request may have succeeded with only its response
+        /// lost. Removing the metadata file would then leave the catalog pointing at an object that is gone,
+        /// with no earlier version to fall back to; an orphaned file is recoverable, so it stays.
+        if (!catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, if_not_exists))
+        {
+            /// Unlike an exception, this answer is definitive: the catalog did not create the table, so the
+            /// files we wrote are ours to remove - a transactional catalog's file name carries our own table
+            /// UUID, and otherwise the `If-None-Match: *` write already proved that we created them.
+            if (!catalog_manages_location)
+            {
+                LOG_INFO(
+                    getLogger("IcebergMetadata"),
+                    "Table {}.{} was registered in the catalog by another client, removing the initial metadata file {} "
+                    "written by this `CREATE`",
+                    namespace_name,
+                    table_name,
+                    filename);
+                object_storage->removeObjectIfExists(StoredObject(filename));
+                if (!filename_version_hint.empty())
+                    object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
+            }
+            throw DataLake::TableAlreadyExistsInCatalogException(
+                "Table {}.{} already exists in the catalog", namespace_name, table_name);
+        }
     }
 }
 

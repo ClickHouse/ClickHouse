@@ -32,7 +32,6 @@ public:
     UUID getUUID() const override { return db_uuid; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
-    bool isRemoteDatabase() const override { return true; }
     bool isDatalakeCatalog() const override { return true; }
 
     bool empty() const override;

@@ -886,19 +886,29 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::prepareForDrop(ContextPtr query_context)
 {
-    /// `drop` is executed in the background, when the query context is already gone, so the setting
-    /// has to be read while the `DROP TABLE` query is still running. A per-query or per-session
-    /// `data_lake_delete_data_on_drop` would be lost otherwise.
+    /// `drop` runs in the background, when the query context is gone, so a per-query or per-session
+    /// `data_lake_delete_data_on_drop` has to be read while the `DROP TABLE` query is still running.
     delete_data_on_drop = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
 }
 
 void StorageObjectStorage::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background. `prepareForDrop`
-    /// captured it for us if this drop came from a `DROP TABLE` query; otherwise the server-level
-    /// value applies.
-    const bool delete_data = delete_data_on_drop.load().value_or(
-        Context::getGlobalContextInstance()->getSettingsRef()[Setting::data_lake_delete_data_on_drop]);
+    /// No query context here, because `drop` runs in the background. `prepareForDrop` captured the value
+    /// if this drop came from a `DROP TABLE` query; without a capture we keep the data, because deleting
+    /// it is irreversible while an orphaned data directory can still be removed later.
+    const std::optional<bool> captured_delete_data = delete_data_on_drop.load();
+    const bool delete_data = captured_delete_data.value_or(false);
+
+    if (!captured_delete_data
+        && Context::getGlobalContextInstance()->getSettingsRef()[Setting::data_lake_delete_data_on_drop])
+    {
+        LOG_WARNING(
+            log,
+            "Keeping the data of table {} although `data_lake_delete_data_on_drop` is enabled server-wide: the value for this drop "
+            "could not be captured, which happens when the table was never loaded, and data is never deleted on a fallback path. "
+            "Access the table before dropping it, so that the settings of the `DROP TABLE` query reach the table.",
+            storage_id.getNameForLogs());
+    }
 
     if (catalog)
     {

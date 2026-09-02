@@ -54,7 +54,7 @@ extern const int LOGICAL_ERROR;
 
 void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, ContextPtr context)
 {
-    /// RENAME / EXCHANGE TABLE is `ASTRenameQuery` and does not derive from `ASTQueryWithTableAndOutput`;
+    /// `RENAME` / `EXCHANGE TABLE` is `ASTRenameQuery`, which does not derive from `ASTQueryWithTableAndOutput`;
     /// queries with no target table (`CREATE DATABASE`, `SYSTEM`, ...) contribute none.
     std::vector<String> target_databases;
     const auto add_target_database = [&](String name)

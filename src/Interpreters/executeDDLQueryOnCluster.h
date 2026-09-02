@@ -24,10 +24,10 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 /// Returns true if provided ALTER type can be executed ON CLUSTER
 bool isSupportedAlterTypeForOnClusterDDLQuery(int type);
 
-/// Throws if DDL on the database's tables cannot be mutated with ON CLUSTER
+/// Throws if DDL against this database's tables does not support `ON CLUSTER`.
 void checkDatabaseSupportsOnClusterDDL(const DatabasePtr & database);
 
-/// Throws if a target database of the query is a shared `DataLakeCatalog`, which does not support `ON CLUSTER` DDL.
+/// Same, for every database the query targets.
 void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, ContextPtr context);
 
 struct DDLQueryOnClusterParams
