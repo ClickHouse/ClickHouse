@@ -1397,6 +1397,18 @@ run_continue_pr()
             --proc /proc
             --die-with-parent
             --dev /dev
+            # `--ro-bind / /` also makes the host `/tmp` read-only, while the
+            # mounts below only re-open the clone and the private home for
+            # writing. Anything that falls back to the default temporary
+            # directory (`mktemp`, compiler and linker helpers, Python
+            # tooling, some Git plumbing) would then fail with `EROFS` and
+            # turn a routine inspection step into a triage failure instead of
+            # a handoff to the coding model. Give the namespace its own
+            # writable, private temporary directory. It is mounted before the
+            # clone and home binds, so those still win when the worktree base
+            # itself lives under `/tmp`.
+            --tmpfs /tmp
+            --setenv TMPDIR /tmp
             --bind "$triage_wt" "$triage_wt"
             --ro-bind "$triage_sandbox_config" "$triage_wt/.git/config"
             --tmpfs "$triage_home"

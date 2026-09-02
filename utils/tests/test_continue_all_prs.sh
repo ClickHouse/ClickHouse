@@ -160,6 +160,28 @@ triage_sandbox_flags=$(sed -n '/^            bwrap$/,/^        )$/p' "$repo/util
 grep -q -- '--unshare-pid' <<< "$triage_sandbox_flags"
 grep -q -- '--proc /proc' <<< "$triage_sandbox_flags"
 
+# `--ro-bind / /` mounts the whole host filesystem read-only, so the triage
+# namespace needs its own writable temporary directory: without it every
+# command that falls back to the default temp dir fails with `EROFS` and turns
+# an inspection step into a triage failure instead of a handoff.
+grep -q -- '--tmpfs /tmp' <<< "$triage_sandbox_flags"
+grep -q -- '--setenv TMPDIR /tmp' <<< "$triage_sandbox_flags"
+
+if command -v bwrap >/dev/null 2>&1 && bwrap --ro-bind / / --dev /dev true 2>/dev/null; then
+    # Sanity check: with the host filesystem read-only and no temp mount,
+    # `mktemp` fails, so the assertion below is not vacuous.
+    if bwrap --ro-bind / / --dev /dev --setenv TMPDIR /tmp \
+        sh -c 'mktemp >/dev/null 2>&1'; then
+        echo 'Expected a read-only sandbox without a temp mount to break mktemp' >&2
+        exit 1
+    fi
+    if ! bwrap --ro-bind / / --dev /dev --tmpfs /tmp --setenv TMPDIR /tmp \
+        sh -c 'mktemp >/dev/null'; then
+        echo 'Expected the triage sandbox to provide a writable temporary directory' >&2
+        exit 1
+    fi
+fi
+
 # `gh` resolves `GH_CONFIG_DIR`, then `$XDG_CONFIG_HOME/gh`, and only then
 # `$HOME/.config/gh`. Scrubbing `GH_CONFIG_DIR` alone therefore leaves the host
 # token readable on any machine that uses an XDG configuration layout, so the
