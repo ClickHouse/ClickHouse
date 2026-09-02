@@ -823,7 +823,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     }
 
     if (auto * typed_join_step = typeid_cast<JoinStep *>(join_step))
-        typed_join_step->setShardJoins(std::vector<JoinPtr>(joins.begin(), joins.end()));
+        typed_join_step->setShardJoins(std::move(joins));
 
     assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Probe);
 
