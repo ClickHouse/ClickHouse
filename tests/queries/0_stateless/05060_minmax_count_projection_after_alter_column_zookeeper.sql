@@ -3,6 +3,8 @@
 DROP TABLE IF EXISTS t_minmax_count_alter_r1;
 DROP TABLE IF EXISTS t_minmax_count_alter_r2;
 
+SET optimize_use_projections = 1;
+
 CREATE TABLE t_minmax_count_alter_r1 (carrier UInt64, value UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/minmax_count_alter', 'r1') ORDER BY tuple();
 CREATE TABLE t_minmax_count_alter_r2 (carrier UInt64, value UInt64)

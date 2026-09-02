@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS t_minmax_count_alter;
 
+SET optimize_use_projections = 1;
+
 CREATE TABLE t_minmax_count_alter (carrier UInt64, value UInt64)
 ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_minmax_count_alter VALUES (1, 10), (2, 20);
