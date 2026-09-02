@@ -142,3 +142,21 @@ GTEST_TEST(DataTypesCache, GetSerializationFromDeepType)
 
     EXPECT_NE(getDataTypesCache().getSerialization(type->getName(), type), nullptr);
 }
+
+GTEST_TEST(DataTypesCache, SerializeDeepDynamicValue)
+{
+    Field field = UInt64(1);
+    for (size_t i = 0; i < 301; ++i)
+        field = Array{std::move(field)};
+
+    for (size_t max_dynamic_types : {0, 1})
+    {
+        auto type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
+        auto column = type->createColumn();
+        column->insert(field);
+
+        WriteBufferFromOwnString ostr;
+        EXPECT_NO_THROW(type->getDefaultSerialization()->serializeBinary(*column, 0, ostr, {}));
+        EXPECT_NO_THROW(type->getDefaultSerialization()->serializeForHashCalculation(*column, 0, ostr));
+    }
+}
