@@ -517,7 +517,6 @@ def test_generate_anthropic_refusal_throw(started_cluster):
     refusal itself as the answer."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_refusal'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
     assert "refusal" in error
@@ -1330,7 +1329,6 @@ def test_embed_batching(started_cluster, batch, expected_calls):
     instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            **AI_SETTINGS,
             "ai_function_embedding_max_batch_size": batch,
             "max_block_size": 4096,
         },
@@ -2437,7 +2435,6 @@ def test_request_timeout_issues_one_attempt(started_cluster):
         error = instance.query_and_get_error(
             "SELECT aiGenerate('hello', map('credentials', 'ai_mock'))",
             settings={
-                **AI_SETTINGS,
                 "ai_function_request_timeout_sec": 1,
                 "ai_function_max_retries": 0,
             },
@@ -2456,7 +2453,6 @@ def test_request_timeout_retries_each_attempt(started_cluster):
         error = instance.query_and_get_error(
             "SELECT aiGenerate('hello', map('credentials', 'ai_mock'))",
             settings={
-                **AI_SETTINGS,
                 "ai_function_request_timeout_sec": 1,
                 "ai_function_max_retries": 2,
                 "ai_function_retry_initial_delay_ms": 50,
