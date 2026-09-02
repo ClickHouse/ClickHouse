@@ -424,7 +424,6 @@ struct FeatureFlagsCommand : public IFourLetterCommand
     ~FeatureFlagsCommand() override = default;
 };
 
-/// Yield leadership and become follower.
 /// Ask the leader to wait for replicas that cannot keep up: while on, it does
 /// not advance the commit index past any replica it can reach, so a replica
 /// that fell behind can close the gap instead of drifting until it needs a
@@ -454,6 +453,7 @@ struct SlowMemberBackpressureOffCommand : public IFourLetterCommand
     ~SlowMemberBackpressureOffCommand() override = default;
 };
 
+/// Yield leadership and become follower.
 struct YieldLeadershipCommand : public IFourLetterCommand
 {
     explicit YieldLeadershipCommand(KeeperDispatcher & keeper_dispatcher_)
