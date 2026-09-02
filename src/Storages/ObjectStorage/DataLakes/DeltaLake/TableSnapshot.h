@@ -15,6 +15,10 @@
 #include <boost/noncopyable.hpp>
 #include "delta_kernel_ffi.hpp"
 
+#include <atomic>
+#include <future>
+#include <mutex>
+
 namespace DeltaLake
 {
 
@@ -90,6 +94,23 @@ private:
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
     mutable DB::UInt128 kernel_state_credentials_fingerprint{};
 
+    /// One in-flight kernel snapshot build, shared between the worker thread that runs the
+    /// kernel call and every query waiting for its result. Waiters poll the future outside
+    /// `mutex`, each with its own cancellation checks.
+    struct InflightSnapshotLoad : private boost::noncopyable
+    {
+        enum class State
+        {
+            Running,
+            Finished,   /// Set by the worker when the kernel call returned.
+            Abandoned,  /// Set by the first waiter that gave up (KILL QUERY or a timeout).
+        };
+
+        std::shared_future<std::shared_ptr<KernelSnapshotState>> future;
+        std::atomic<State> state{State::Running};
+    };
+    mutable std::shared_ptr<InflightSnapshotLoad> inflight_load TSA_GUARDED_BY(mutex);
+
     struct SchemaInfo
     {
         /// Table logical schema
@@ -119,10 +140,13 @@ private:
 
     size_t getVersionUnlocked() const TSA_REQUIRES(mutex);
 
-    void initOrUpdateSnapshot() const TSA_REQUIRES(mutex);
+    /// Ensures `kernel_snapshot_state` is built and current. Temporarily releases `lock` while
+    /// waiting for an in-flight build, so every public entry point calls it first, before
+    /// anything guarded by `mutex` is read.
+    void initOrUpdateSnapshot(std::unique_lock<std::mutex> & lock) const TSA_NO_THREAD_SAFETY_ANALYSIS;
     void initOrUpdateSchemaIfChanged() const TSA_REQUIRES(mutex);
 
-    SnapshotStats getSnapshotStats() const TSA_REQUIRES(mutex);
+    SnapshotStats getSnapshotStats(std::unique_lock<std::mutex> & lock) const TSA_NO_THREAD_SAFETY_ANALYSIS;
     SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);
 
     /// One-shot recovery from `DELTA_KERNEL_ERROR` with `ExpiredToken`/`InvalidToken`:
@@ -137,12 +161,17 @@ private:
 
     std::shared_ptr<KernelSnapshotState> getKernelSnapshotState() const TSA_REQUIRES(mutex);
 
-    /// Builds `KernelSnapshotState` on a separate thread and waits for it, re-checking the query
-    /// status while waiting. The kernel FFI is synchronous and has no cancellation hook, so this
-    /// is the only place where `KILL QUERY`, `max_execution_time` and
-    /// `delta_lake_snapshot_load_timeout_ms` can interrupt a snapshot load that is stuck inside
-    /// the kernel (for example, waiting for an object store which never answers).
-    std::shared_ptr<KernelSnapshotState> buildKernelSnapshotState(std::optional<size_t> version_to_build) const;
+    /// Starts a snapshot build on a worker thread, reserving one of the bounded worker permits
+    /// before the launch, and returns the shared in-flight state for waiters. Never blocks on
+    /// the kernel.
+    std::shared_ptr<InflightSnapshotLoad> startKernelSnapshotLoad(std::optional<size_t> version_to_build) const;
+
+    /// Waits for an in-flight build, re-checking the query status on every poll: `KILL QUERY`,
+    /// `max_execution_time` and `delta_lake_snapshot_load_timeout_ms` abort the wait for this
+    /// waiter only, while the build keeps running for the others. The kernel FFI is synchronous
+    /// and has no cancellation hook, so this polling wait is the only cancellation point of a
+    /// snapshot load (for example, one stuck on an object store which never answers).
+    void waitForSnapshotLoad(InflightSnapshotLoad & load) const;
 };
 
 using TableSnapshotPtr = std::shared_ptr<TableSnapshot>;

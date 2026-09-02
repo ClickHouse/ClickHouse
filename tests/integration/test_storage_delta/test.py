@@ -6251,3 +6251,74 @@ def test_snapshot_load_timeout(started_cluster, settings, expected_error):
         release_paused_snapshot_load(instance)
 
     assert int(instance.query(f"SELECT count() FROM deltaLake({engine_args})")) == 10
+
+
+def test_kill_waiter_on_shared_snapshot_load(started_cluster):
+    """Queries waiting for the SAME in-flight snapshot load must be independently killable:
+    killing one waiter leaves the build running, and the other waiter succeeds once the
+    kernel call returns."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_kill_waiter_on_shared_snapshot_load")
+    delta_path = f"/{TABLE_NAME}"
+
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    engine_args = f"s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{started_cluster.minio_bucket}/'"
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})")
+
+    # Advance the table to version 1, then pause every following snapshot load.
+    write_delta_from_df(
+        spark, spark.range(10, 30).selectExpr("id as a"), delta_path, mode="append"
+    )
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+
+    # Both queries need the version-1 snapshot, which is loaded once and shared.
+    select = f"SELECT count() FROM {TABLE_NAME} SETTINGS delta_lake_snapshot_version = 1"
+    surviving_id = f"{TABLE_NAME}_surviving"
+    killed_id = f"{TABLE_NAME}_killed"
+    executor = ThreadPoolExecutor(max_workers=3)
+    try:
+        wait_future = executor.submit(
+            lambda: instance.query(
+                f"SYSTEM WAIT FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT} PAUSE", timeout=60
+            )
+        )
+        surviving_future = executor.submit(
+            lambda: instance.query(select, query_id=surviving_id, timeout=120)
+        )
+        wait_future.result(timeout=60)
+        killed_future = executor.submit(
+            lambda: instance.query_and_get_error(select, query_id=killed_id, timeout=120)
+        )
+        for _ in range(300):
+            if (
+                instance.query(
+                    f"SELECT count() FROM system.processes WHERE query_id IN ('{surviving_id}', '{killed_id}')"
+                ).strip()
+                == "2"
+            ):
+                break
+            time.sleep(0.1)
+
+        # The killed query is a plain waiter (the load was started by the first query);
+        # it must be cancellable although the kernel call has not returned yet.
+        instance.query(f"KILL QUERY WHERE query_id = '{killed_id}' ASYNC")
+        error = killed_future.result(timeout=60)
+        assert "QUERY_WAS_CANCELLED" in error, error
+        # The build keeps running and the first waiter is still waiting for it.
+        assert (
+            instance.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{surviving_id}'"
+            ).strip()
+            == "1"
+        )
+    finally:
+        release_paused_snapshot_load(instance)
+        executor.shutdown(wait=False)
+
+    assert surviving_future.result(timeout=60).strip() == "30"
+    instance.query(f"DROP TABLE {TABLE_NAME}")

@@ -154,43 +154,52 @@ getSnapshotVersion(const Settings & settings)
 DeltaLake::TableSnapshotPtr
 DeltaLakeMetadataDeltaKernel::getTableSnapshot(std::optional<SnapshotVersion> version) const
 {
-    std::lock_guard lock(snapshots_mutex);
-
-    /// Fallback to latest_snapshot_version.
-    /// In case we needed a newer version - update() must
-    /// have been called to reload latest_snapshot_version.
-    std::optional<SnapshotVersion> result_snapshot_version = version.has_value()
-        ? version
-        : latest_snapshot_version;
-
-    auto snapshot_creator = [&]()
-    {
-        /// Constructor itself is lightweight.
-        return std::make_shared<DeltaLake::TableSnapshot>(
-            result_snapshot_version,
-            kernel_helper,
-            object_storage,
-            log);
-    };
-
     DeltaLake::TableSnapshotPtr snapshot;
     bool created = true;
-    if (result_snapshot_version.has_value())
+    std::optional<SnapshotVersion> result_snapshot_version;
     {
-        std::tie(snapshot, created) = snapshots.getOrSet(
-            result_snapshot_version.value(), std::move(snapshot_creator));
-    }
-    else
-    {
-        snapshot = snapshot_creator();
-        latest_snapshot_version = snapshot->getVersion();
-        snapshots.set(latest_snapshot_version.value(), snapshot);
+        std::lock_guard lock(snapshots_mutex);
+
+        /// Fallback to latest_snapshot_version.
+        /// In case we needed a newer version - update() must
+        /// have been called to reload latest_snapshot_version.
+        result_snapshot_version = version.has_value() ? version : latest_snapshot_version;
+
+        auto snapshot_creator = [&]()
+        {
+            /// Constructor itself is lightweight.
+            return std::make_shared<DeltaLake::TableSnapshot>(
+                result_snapshot_version,
+                kernel_helper,
+                object_storage,
+                log);
+        };
+
+        if (result_snapshot_version.has_value())
+            std::tie(snapshot, created) = snapshots.getOrSet(
+                result_snapshot_version.value(), std::move(snapshot_creator));
+        else
+            snapshot = snapshot_creator();
     }
 
-    LOG_TEST(
-        log, "Using snapshot version: {}, latest loaded snapshot version: {}, reused cached snapshot: {}",
-        result_snapshot_version.has_value() ? result_snapshot_version.value() : snapshot->getVersion(),
-        latestSnapshotVersionToStr(), !created);
+    if (!result_snapshot_version.has_value())
+    {
+        /// Resolving the latest version builds the kernel snapshot, which may block on object
+        /// storage. Never do that under `snapshots_mutex`: every other query on this table
+        /// would sleep inside the mutex, unreachable by `KILL QUERY` (#117431).
+        result_snapshot_version = snapshot->getVersion();
+
+        std::lock_guard lock(snapshots_mutex);
+        latest_snapshot_version = result_snapshot_version;
+        snapshots.set(result_snapshot_version.value(), snapshot);
+    }
+
+    {
+        std::lock_guard lock(snapshots_mutex);
+        LOG_TEST(
+            log, "Using snapshot version: {}, latest loaded snapshot version: {}, reused cached snapshot: {}",
+            result_snapshot_version.value(), latestSnapshotVersionToStr(), !created);
+    }
 
     return snapshot;
 }
@@ -252,14 +261,17 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     if (!snapshot_version.has_value())
     {
-        std::lock_guard lock(snapshots_mutex);
         auto latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
                 /* version */std::nullopt,
                 kernel_helper,
                 object_storage,
                 log);
 
+        /// Resolving the latest version builds the kernel snapshot, which may block on object
+        /// storage; keep it outside `snapshots_mutex` (see getTableSnapshot).
         size_t version = latest_snapshot->getVersion();
+
+        std::lock_guard lock(snapshots_mutex);
         snapshots.getOrSet(version, [&]() { return latest_snapshot; });
 
         LOG_TEST(

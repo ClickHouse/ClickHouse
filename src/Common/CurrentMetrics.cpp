@@ -136,7 +136,7 @@
     M(ObjectStorageQueueMetadataCacheSizeBytes, "Size in bytes of ObjectStorageQueue metadata cache.") \
     M(ObjectStorageQueueMetadataCacheSizeElements, "Size in elements of ObjectStorageQueue metadata cache.") \
     M(DeltaLakeSnapshotCacheSizeElements, "Size in elements of DeltaLake snapshot cache.") \
-    M(DeltaLakeSnapshotLoadsStuck, "Number of delta-kernel snapshot load worker threads that were abandoned by their query (KILL QUERY or a timeout) and are still waiting for the kernel call to return.") \
+    M(DeltaLakeSnapshotLoadsStuck, "Number of delta-kernel snapshot loads that some query gave up waiting for (KILL QUERY or a timeout) and whose kernel call has not returned yet.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
     M(BackupsIOThreadsActive, "Number of threads in the BackupsIO thread pool running a task.") \
     M(BackupsIOThreadsScheduled, "Number of queued or active jobs in the BackupsIO thread pool.") \
