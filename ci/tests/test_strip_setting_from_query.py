@@ -353,6 +353,44 @@ def test_table_function_arguments_are_skipped_after_as():
     assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
 
 
+def test_top_level_select_without_as_never_cuts_the_select_list():
+    # `CREATE TABLE ... SETTINGS ... SELECT ...` without `AS` is not valid
+    # ClickHouse grammar (`ParserCreateQuery.cpp` only starts the select
+    # query after `AS`; the server answers `SYNTAX_ERROR`). The scanner is
+    # not a parser and cannot reject it, but it must not make it worse: the
+    # name scan used to run past the bare `SELECT` and cut the statement at
+    # the first select-list comma (`SELECT a, b` became `SELECT a`). A
+    # top-level `SELECT` now terminates the scans, so the query is returned
+    # unchanged and `perf.py` fails fast on the original error.
+    query = f"CREATE TABLE dst ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 SELECT a, b FROM src SETTINGS {SETTING} = 0"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == query
+
+
+def test_as_engine_select_is_not_a_grammar_and_never_cuts_the_select_list():
+    # `CREATE TABLE dst AS ENGINE = MergeTree ... SELECT ...` is rejected by
+    # the server as well (`AS` is followed by `[db.]table`, a table function
+    # or a select query, never by a storage clause), despite an old comment
+    # in `ParserCreateQuery.h` that used to list it. The scanner treats the
+    # word `ENGINE` after `AS` as a source-table carrier and keeps scanning;
+    # the `SELECT` guard rail then stops the name scan before the select
+    # list, so the statement is left byte-for-byte unchanged.
+    query = f"CREATE TABLE dst AS ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 SELECT a, b FROM src SETTINGS {SETTING} = 0"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == query
+
+
+def test_top_level_select_terminates_the_value_scan():
+    # When the pinned setting sits right before a bare top-level `SELECT`,
+    # the value scan stops at the keyword (the value compares as `0`, not
+    # `0 SELECT a`), the assignment is dropped and the select list is kept
+    # intact. The statement stays ill-formed either way, so the baseline
+    # server still fails fast on it, just with the original syntax error.
+    query = f"CREATE TABLE dst AS ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0 SELECT a, b FROM src"
+    expected = "CREATE TABLE dst AS ENGINE = MergeTree ORDER BY tuple() SELECT a, b FROM src"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+    enabled = f"CREATE TABLE dst ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 1 SELECT a, b FROM src"
+    assert strip_setting_from_query(enabled, SETTING, {"0", "false"}) == enabled
+
+
 def test_engine_detection_ignores_a_qualified_source_name():
     # The same qualified-name boundary applies to the engine scan: the
     # `engine` of `db.engine` is part of the source name, not the keyword.

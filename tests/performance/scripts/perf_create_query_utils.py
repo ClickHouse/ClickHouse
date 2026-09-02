@@ -313,8 +313,15 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
 
     # Keywords that can follow the SETTINGS clause at the top level of a
     # CREATE TABLE (`AS SELECT ...`, `COMMENT '...'`, `EMPTY AS SELECT ...`,
-    # `... CLONE AS src`) and therefore terminate it.
-    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY", "CLONE")
+    # `... CLONE AS src`) and therefore terminate it. `SELECT` / `WITH` are
+    # included as a guard rail: a setting name or value can never be one of
+    # them at bracket depth zero, so a bare top-level `SELECT` after the
+    # table's `SETTINGS` (an ill-formed statement -- the grammar only starts
+    # the select query with `AS`) stops the scans instead of letting them
+    # run into the select list and cut it at a column separator. The query
+    # is then returned unchanged and `perf.py` fails fast on the original
+    # error, rather than silently truncating the DDL.
+    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY", "CLONE", "SELECT", "WITH")
 
     def find_table_settings_keyword(text):
         """Return the index of the table's own top-level `SETTINGS` keyword,
