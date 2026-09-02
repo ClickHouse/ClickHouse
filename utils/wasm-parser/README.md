@@ -74,7 +74,11 @@ and for one that does not (`SELECT 1 +`):
   A query can parse and still have no faithful JSON form - access management, `INSERT` with
   inline data - and then `ast` is `null` and `ast_error` says why. A `--no-formatting` build
   omits the field entirely, because the strings such a build stores in the tree (`CAST` types,
-  for one) are the user's spelling rather than the canonical one.
+  for one) are the user's spelling rather than the canonical one. The two halves hold to the same
+  limits, so an `ast` that this module reports is always one it can read back: a tree past the
+  element or depth budget of `ch_format_json`, or one whose JSON is larger than the 1 MiB the
+  module accepts as input, is reported as a `null` `ast` with the reason rather than as JSON that
+  cannot be read back.
 * `highlights` is what the SQL function `highlightQuery` computes server-side: byte ranges
   (0-based, end-exclusive) with a type out of `keyword`, `identifier`, `function`, `alias`,
   `substitution`, `number`, `string`, `string_escape`, `string_metacharacter`. It is present on

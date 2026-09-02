@@ -58,10 +58,17 @@
 
 #include <wasm_sjlj.h>
 
+#include <Common/Exception.h>
+
 #include <cstdint>
 #include <string>
 #include <new>
 #include <utility>
+
+namespace DB::ErrorCodes
+{
+    extern const int TOO_BIG_AST;
+}
 
 namespace
 {
@@ -198,6 +205,12 @@ extern "C" int formatJSONBody(void * argument)
     /// boundary turns that into the error message.
     DB::ASTPtr ast = DB::IAST::createFromJSON(std::string(request.query, request.size), MAX_PARSER_DEPTH, MAX_AST_ELEMENTS);
 
+    /// `createFromJSON` counts what it builds as it goes, but a `readJSON` override can materialize
+    /// nodes after that pass, so the assembled tree is measured once more - the same second pass
+    /// `formatQueryFromJSON` makes on the server - before anything walks it.
+    ast->checkDepth(MAX_PARSER_DEPTH);
+    ast->checkSize(MAX_AST_ELEMENTS);
+
     result() = request.one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
     return 1;
 }
@@ -234,7 +247,19 @@ struct SerializeRequest
 extern "C" int serializeBody(void * argument)
 {
     const auto & request = *static_cast<const SerializeRequest *>(argument);
+
+    /// Only an AST that `ch_format_json` will read back is worth reporting, so the producer holds
+    /// itself to the limits of the consumer: the element and depth budgets of `createFromJSON`, and
+    /// the bound on the raw document. A tree that parsed but does not fit them answers a null "ast"
+    /// with the reason, the same way one with no JSON representation at all does.
+    request.ast->checkDepth(MAX_PARSER_DEPTH);
+    request.ast->checkSize(MAX_AST_ELEMENTS);
+
     *request.json = DB::serializeASTToJSON(*request.ast);
+
+    if (request.json->size() > MAX_QUERY_SIZE)
+        throw DB::Exception(DB::ErrorCodes::TOO_BIG_AST, "AST JSON is too big to be read back. Maximum: {}", MAX_QUERY_SIZE);
+
     return 1;
 }
 

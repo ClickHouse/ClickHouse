@@ -267,6 +267,17 @@ ASTPtr tryParseQuery(
     bool skip_insignificant,
     ParserDiagnostics * diagnostics)
 {
+    /// The caller owns `diagnostics` and may reuse it across queries, so start from a clean slate:
+    /// everything the parse fills in is an output, and only the knobs the caller set - highlighting
+    /// and the literal token map - are kept.
+    if (diagnostics)
+    {
+        diagnostics->expected.variants.clear();
+        diagnostics->expected.max_parsed_pos = nullptr;
+        diagnostics->expected.highlights.clear();
+        diagnostics->error_token = Token{};
+    }
+
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
@@ -342,6 +353,19 @@ ASTPtr tryParseQuery(
                 _out_query_end = token_iterator.max().end;
                 if (diagnostics)
                     diagnostics->error_token = *lookahead;
+
+                /// A caller that asked for highlighting expects them for the prefix that is fine even
+                /// when the query as a whole is not - an editor keeps coloring while the user types -
+                /// and only a parse produces them, so the shortcut cannot skip it. The result of that
+                /// parse is thrown away: the lexical error below is the better message, and it is the
+                /// one this position has always reported.
+                if (diagnostics && diagnostics->expected.enable_highlighting)
+                {
+                    ASTPtr discarded;
+                    IParser::Pos highlighting_iterator(token_iterator);
+                    parser.parse(highlighting_iterator, discarded, expected);
+                }
+
                 out_error_message = getLexicalErrorMessage(
                     query_begin, current_statement_end(lookahead->end), *lookahead, hilite, query_description);
                 return nullptr;

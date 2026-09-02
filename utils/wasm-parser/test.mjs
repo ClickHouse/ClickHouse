@@ -132,6 +132,19 @@ function parsed(sql) {
 }
 
 {
+    /// A lexical error, the shape of an editor's half-typed query: the parsed prefix must still be
+    /// highlighted, so the coloring does not blink off while the user types the closing quote.
+    const r = parsed("SELECT 1, 'abc");
+    check('ch_parse fails for an unclosed string', !r.ok && r.doc !== null);
+    check('the message names the lexical error', /not closed/.test(r.doc?.error?.message ?? ''));
+    check('the error points at the unclosed literal', r.doc?.error?.begin === 10 && r.doc?.error?.end === 14);
+    check('highlights cover the prefix of a lexical error', !!r.doc?.highlights?.some(
+        h => h.begin === 0 && h.end === 6 && h.type === 'keyword'));
+    check('...including the part after the keyword', !!r.doc?.highlights?.some(
+        h => h.begin === 7 && h.end === 8 && h.type === 'number'));
+}
+
+{
     /// Reported by throwing: no error token, but the message and the highlights must be there.
     const r = parsed('SELECT sum(x) OVER (ROWS BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW) FROM t');
     check('ch_parse reports a thrown error', !r.ok && /UNBOUNDED/.test(r.doc?.error?.message ?? ''));
@@ -169,6 +182,29 @@ if (hasAstJson) {
     const sql = cases[1];
     const viaJson = call(JSON.stringify(parsed(sql).doc.ast), (ptr, len) => ch_format_json(ptr, len, 0));
     check('ch_format_json multi-line matches ch_format', viaJson.ok && viaJson.out === format(sql, 0).out);
+
+    /// The producer and the consumer of the AST JSON hold to the same limits: whatever `ch_parse`
+    /// reports as an "ast", `ch_format_json` reads back.
+    const wide = `SELECT ${Array(1000).fill('1').join(', ')}`;
+    const wideParsed = parsed(wide);
+    check('a wide query parses with an ast', wideParsed.ok && !!wideParsed.doc?.ast);
+    const wideBack = call(JSON.stringify(wideParsed.doc.ast), (ptr, len) => ch_format_json(ptr, len, 1));
+    check('ch_format_json reads a wide ast back', wideBack.ok);
+
+    /// Past those limits the "ast" is null with a reason - never JSON this module cannot read back.
+    /// The first query is over the element budget; the second one fits in the input limit while its
+    /// JSON does not, because every quote in the literal is escaped.
+    for (const [name, query] of [
+        ['an ast over the element limit', `SELECT ${Array(60000).fill('1').join(', ')}`],
+        ['an ast whose JSON is over the input limit', `SELECT '${'"'.repeat(900000)}'`],
+    ]) {
+        const r = parsed(query);
+        const back = r.ok && r.doc?.ast
+            ? call(JSON.stringify(r.doc.ast), (ptr, len) => ch_format_json(ptr, len, 1)).ok
+            : null;
+        check(`${name}: null with a reason, or readable back`,
+            !r.ok || (r.doc?.ast === null ? /too big/i.test(r.doc?.ast_error ?? '') : back === true));
+    }
 }
 
 const notes = [canFormat ? null : 'no formatting', hasDcl ? null : 'no DCL', hasAstJson ? null : 'no AST JSON'].filter(Boolean);
