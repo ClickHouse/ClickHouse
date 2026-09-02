@@ -23,18 +23,22 @@ def check():
     print("Clean up build cache")
     # A `docker-container` builder keeps its cache in a named `buildx_buildkit_<node>_state`
     # volume, out of reach of the prunes below, and `buildx ls` has no --all-builders
-    # equivalent. Unindented rows are the builders.
-    builders = [
-        line.strip()
-        for line in Shell.get_output(
-            "docker buildx ls "
-            " | awk 'NR>1 && $0 !~ /^[[:space:]]/ && NF { sub(/[*]$/, \"\", $1); print $1 }'"
-        ).splitlines()
-        if line.strip()
-    ]
+    # equivalent. Unindented rows are the builders, indented `\\_ <node>` ones their nodes.
+    returncode, buildx_ls, _ = Shell.get_res_stdout_stderr("docker buildx ls")
+    builders = []
+    nodes = []
+    for line in buildx_ls.splitlines()[1:]:  # the first row is the header
+        if not line.strip():
+            continue
+        if line[0].isspace():
+            fields = line.split()
+            if len(fields) > 1 and fields[0] == "\\_":
+                nodes.append(fields[1])
+        else:
+            builders.append(line.split()[0].rstrip("*"))
     for builder in builders:
         # The runner removes every container between jobs, so by the time the next job runs
-        # the builder has no buildkit container and the prune fails with
+        # the builder is `inactive` and the prune fails with
         # `No such container: buildx_buildkit_<node>`, leaving a cache that grows with every
         # docker image build the host runs - the reason a style-checker host ends up with no
         # free disk. `--bootstrap` starts the container back up, which makes the cache
@@ -46,26 +50,31 @@ def check():
     # `docker` driver builder - never that of a `docker-container` one, which is why it
     # reports `0B` on a host where a multi-platform build has just written gigabytes.
     Shell.check("docker builder prune -a -f", verbose=True)
-    print("Remove the state volumes of buildx builders that no longer exist")
+    print("Remove the state volumes of buildx nodes that no longer exist")
     # A builder removed without its volume leaves a `buildx_buildkit_<node>_state` volume with
     # nothing able to reach it: no prune above touches a volume, and `docker system prune`
-    # skips volumes without `--volumes`. The node of builder `<name>` is `<name><index>`, so a
-    # volume whose node does not belong to a registered builder belongs to no builder at all.
-    # `docker volume rm` also refuses a volume attached to a running container, so a cache
-    # that is still in use cannot be thrown away here.
-    volumes = [
-        line.strip()
-        for line in Shell.get_output(
-            "docker volume ls --quiet --filter name=buildx_buildkit"
-        ).splitlines()
-        if line.strip().startswith("buildx_buildkit_")
-        and line.strip().endswith("_state")
-    ]
-    for volume in volumes:
-        node = volume[len("buildx_buildkit_") : -len("_state")]
-        if any(node.startswith(builder) for builder in builders):
-            continue
-        Shell.check(f"docker volume rm {volume}", verbose=True)
+    # skips volumes without `--volumes`. Remove a volume only when its exact node is not one
+    # of the nodes listed above - a node name is not a prefix match on a builder name, or
+    # `buildx_buildkit_default-builder0_state` would look reachable through the unrelated
+    # `default` builder. `docker volume rm` also refuses a volume attached to a running
+    # container, so a cache that is still in use cannot be thrown away here.
+    if returncode != 0 or not nodes:
+        # Fail closed: an empty list of nodes would make every volume look orphaned.
+        print(f"WARNING: cannot list the buildx nodes (exit code {returncode}), skip")
+    else:
+        volumes = [
+            line.strip()
+            for line in Shell.get_output(
+                "docker volume ls --quiet --filter name=buildx_buildkit"
+            ).splitlines()
+            if line.strip().startswith("buildx_buildkit_")
+            and line.strip().endswith("_state")
+        ]
+        for volume in volumes:
+            node = volume[len("buildx_buildkit_") : -len("_state")]
+            if node in nodes:
+                continue
+            Shell.check(f"docker volume rm {volume}", verbose=True)
     print("Clean up stopped containers")
     Shell.check("docker container prune -f", verbose=True)
     # Without `-f` it only asks for a confirmation on a terminal that is not there, and
