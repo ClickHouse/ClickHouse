@@ -20,7 +20,7 @@ doc_type: 'reference'
 
 إذا كانت الكائنات شديدة الديناميكية، من دون بنية متوقعة وتحتوي على كائنات متداخلة عشوائية، فينبغي استخدام النوع `String`. ويمكن استخراج القيم في وقت الاستعلام باستخدام دوال JSON كما نوضح أدناه.
 
-غالبًا ما لا يكون التعامل مع البيانات باستخدام النهج المنظَّم الموضَّح أعلاه عمليًا للمستخدمين الذين يتعاملون مع JSON ديناميكي، سواء كان عرضة للتغيير أو كانت بنيته غير مفهومة جيدًا. وللحصول على أقصى قدر من المرونة، يمكنك ببساطة تخزين JSON على هيئة `String` قبل استخدام الدوال لاستخراج الحقول حسب الحاجة. ويمثل هذا الطرف المقابل تمامًا للتعامل مع JSON ككائن منظَّم. لكن هذه المرونة لها تكلفة وتنطوي على عيوب كبيرة، أبرزها زيادة تعقيد صياغة الاستعلام وتراجع الأداء.
+غالبًا ما لا يكون التعامل مع البيانات باستخدام النهج المهيكل الموضَّح أعلاه عمليًا للمستخدمين الذين يتعاملون مع JSON ديناميكي، سواء كان عرضة للتغيير أو كانت بنيته غير مفهومة جيدًا. وللحصول على أقصى قدر من المرونة، يمكنك ببساطة تخزين JSON على هيئة `String` قبل استخدام الدوال لاستخراج الحقول حسب الحاجة. ويمثل هذا الطرف المقابل تمامًا للتعامل مع JSON ككائن مهيكل. لكن هذه المرونة لها تكلفة وتنطوي على عيوب كبيرة، أبرزها زيادة تعقيد بناء جملة الاستعلام وتراجع الأداء.
 
 كما أشرنا سابقًا، بالنسبة إلى [كائن الشخص الأصلي](/ar/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json)، لا يمكننا ضمان بنية العمود `tags`. نُدرج الصف الأصلي (بما في ذلك `company.labels`، الذي نتجاهله في الوقت الحالي)، مع تعريف العمود `Tags` على أنه `String`:
 
@@ -94,7 +94,7 @@ ENGINE = MergeTree ORDER BY ()
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN, 'JSONAsString')
 ```
 
 ```response
@@ -582,7 +582,7 @@ SELECT clientip, status, size, `request.method` FROM http WHERE has(request.meth
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONEachRow')
 LIMIT 1
 FORMAT PrettyJSONEachRow
 
@@ -610,7 +610,7 @@ FORMAT PrettyJSONEachRow
 ```sql
 INSERT INTO http
 SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
-size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN,
 'JSONEachRow');
 ```
 
@@ -639,7 +639,7 @@ ORDER BY c DESC LIMIT 5;
 
 ### استخدام المصفوفات الثنائية
 
-توفر المصفوفات الثنائية توازناً بين مرونة تمثيل JSON على هيئة Strings وأداء نهج أكثر تنظيماً. ويظل المخطط مرناً، إذ يمكن نظرياً إضافة أي حقول جديدة إلى الجذر. لكن هذا يتطلب صياغة query أكثر تعقيداً بدرجة كبيرة، كما أنه غير متوافق مع البُنى المتداخلة.
+توفر المصفوفات الثنائية توازناً بين مرونة تمثيل JSON على هيئة Strings وأداء نهج أكثر مهيكلًا. ويظل المخطط مرناً، إذ يمكن نظرياً إضافة أي حقول جديدة إلى الجذر. لكن هذا يتطلب بناء جملة الاستعلام أكثر تعقيداً بدرجة كبيرة، كما أنه غير متوافق مع البُنى المتداخلة.
 
 على سبيل المثال، تأمل الجدول التالي:
 
@@ -657,7 +657,7 @@ ENGINE = MergeTree  ORDER BY tuple();
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
 LIMIT 1
 FORMAT Vertical
 ```
@@ -678,7 +678,7 @@ INSERT INTO http_with_arrays
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
 ```
 
 ```response
