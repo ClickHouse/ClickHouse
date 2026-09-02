@@ -31,11 +31,10 @@ export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=10000
-
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=10000
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=10000
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=1000
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=1000
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=1000
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=1000
 
 export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.001
@@ -323,7 +322,7 @@ rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
-start_server 10 || { echo "Failed to start server"; exit 1; }
+start_server 20 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 

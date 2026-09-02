@@ -164,19 +164,25 @@ std::string getStats();
 ///
 /// Allocations made by the calling thread inside the scope (including those that go through
 /// global `operator new`/`malloc`, e.g. from third-party libraries or unrelated container code)
-/// land in `arena_idx`. Frees automatically return memory to whichever arena originally owned the
-/// pointer (jemalloc looks this up from per-extent metadata), so only allocation paths need scoping.
+/// land in `arena_idx`. Frees return memory to whichever arena originally owned the pointer
+/// (jemalloc looks this up from per-extent metadata), so frees need no scoping to land home.
+///
+/// The isolation is one-way though: a free outside any scope parks the chunk in the freeing
+/// thread's cache first, and a later same-size allocation on that thread can reuse it, serving
+/// `arena_idx` memory to unrelated code.
 ///
 /// On construction, the thread's previous preferred arena is captured and restored on destruction.
 /// Use this around tightly-bounded blocks of allocations whose lifetime differs from typical
 /// query-processing work; do not hold across calls that allocate ClickHouse data structures
 /// unrelated to the target subsystem.
 ///
+/// The thread cache is disabled for the scope by default, otherwise allocation may use old arena.
+///
 /// No-op when `arena_idx == 0` or when jemalloc is not compiled in.
 class ScopedJemallocThreadArena
 {
 public:
-    explicit ScopedJemallocThreadArena(unsigned arena_idx);
+    explicit ScopedJemallocThreadArena(unsigned arena_idx, bool disable_tcache = true);
     ~ScopedJemallocThreadArena();
 
     ScopedJemallocThreadArena(const ScopedJemallocThreadArena &) = delete;
@@ -185,6 +191,7 @@ public:
 private:
     unsigned previous_arena = 0;
     bool active = false;
+    bool tcache_switched = false;
 };
 
 }
@@ -198,7 +205,7 @@ namespace DB
 class ScopedJemallocThreadArena
 {
 public:
-    explicit ScopedJemallocThreadArena(unsigned /*arena_idx*/) {}
+    explicit ScopedJemallocThreadArena(unsigned /*arena_idx*/, bool /*disable_tcache*/ = true) {}
 };
 
 }
