@@ -42,6 +42,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
+    extern const char normal_projection_skip_output_header_conversions[];
 }
 
 }
@@ -826,24 +827,34 @@ std::optional<String> optimizeUseNormalProjections(
     const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
     const auto * proj_stream = &next_node->step->getOutputHeader();
 
-    if (auto narrowing = makeNarrowingDAG(**proj_stream, *main_stream))
-    {
-        auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*narrowing));
-        proj_stream = &converting->getOutputHeader();
-        auto & expr_node = nodes.emplace_back();
-        expr_node.step = std::move(converting);
-        expr_node.children.push_back(next_node);
-        next_node = &expr_node;
-    }
+    /// Test hook: pretend both header conversions are unavailable, so a rewrite that needs one of them
+    /// reaches the structure check below with a mismatch. This is the only way to reach the fail-close
+    /// path from SQL: the conversions themselves refuse only on headers the analyzer never builds for a
+    /// `MergeTree` read (duplicate column names), so the branch has no natural carrier.
+    bool skip_header_conversions = false;
+    fiu_do_on(FailPoints::normal_projection_skip_output_header_conversions, { skip_header_conversions = true; });
 
-    if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
+    if (!skip_header_conversions)
     {
-        auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
-        proj_stream = &converting->getOutputHeader();
-        auto & expr_node = nodes.emplace_back();
-        expr_node.step = std::move(converting);
-        expr_node.children.push_back(next_node);
-        next_node = &expr_node;
+        if (auto narrowing = makeNarrowingDAG(**proj_stream, *main_stream))
+        {
+            auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*narrowing));
+            proj_stream = &converting->getOutputHeader();
+            auto & expr_node = nodes.emplace_back();
+            expr_node.step = std::move(converting);
+            expr_node.children.push_back(next_node);
+            next_node = &expr_node;
+        }
+
+        if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
+        {
+            auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
+            proj_stream = &converting->getOutputHeader();
+            auto & expr_node = nodes.emplace_back();
+            expr_node.step = std::move(converting);
+            expr_node.children.push_back(next_node);
+            next_node = &expr_node;
+        }
     }
 
     /// Nothing below this point has run yet, so a skip leaves the regular read with every part and
