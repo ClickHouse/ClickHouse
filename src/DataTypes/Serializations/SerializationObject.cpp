@@ -8,6 +8,7 @@
 
 
 #include <Columns/ColumnObject.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadBufferFromString.h>
@@ -26,6 +27,27 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+namespace
+{
+
+/// `shared_data_buckets` in a V3 `Object` prefix is a raw count from a possibly-untrusted stream,
+/// later used to size per-bucket state vectors and `Columns` directly. Unlike the path / type
+/// counts, this one has a tight writer-side invariant: the number of buckets is chosen from the
+/// small MergeTree settings `object_shared_data_buckets_for_{compact,wide}_part`, which are non-zero
+/// and capped at `MAX_OBJECT_SHARED_DATA_BUCKETS`. So the only legitimate on-wire range is
+/// `1 .. MAX_OBJECT_SHARED_DATA_BUCKETS`; any value outside it can only be corruption and must be
+/// rejected before it is used to size the per-bucket state.
+void throwIfInvalidNumberOfBuckets(size_t num_buckets)
+{
+    if (num_buckets == 0 || num_buckets > MAX_OBJECT_SHARED_DATA_BUCKETS)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "JSON/Object column has an invalid number of shared data buckets: {} (must be in the range [1, {}])",
+            num_buckets, MAX_OBJECT_SHARED_DATA_BUCKETS);
+}
+
 }
 
 SerializationObject::SerializationObject(
@@ -715,6 +737,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
                 {
                     readVarUInt(structure_state->shared_data_buckets, *structure_stream);
+                    throwIfInvalidNumberOfBuckets(structure_state->shared_data_buckets);
                 }
             }
 
