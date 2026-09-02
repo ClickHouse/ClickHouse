@@ -234,8 +234,13 @@ bool hasToHideLambdaArgument(
         /** An argument of a lambda that stays visible - the one owning the alias, or one above it. Hiding the
           * inner argument would bind the aliased expression to this one, and the planner cannot tell the two
           * apart, because both are named after `name`. Keep the inner argument visible instead.
+          *
+          * An argument that an enclosing alias resolution already hid is not visible either: the resolution
+          * walk skips it, so it cannot be what the aliased expression refers to.
           */
-        if (current_scope->expression_argument_name_to_node.contains(name) && !lambda_scopes_to_hide.contains(current_scope))
+        if (current_scope->expression_argument_name_to_node.contains(name)
+            && !lambda_scopes_to_hide.contains(current_scope)
+            && !current_scope->hidden_expression_arguments.contains(name))
             return false;
 
         if (canBindNameInScope(name, *current_scope, allow_to_check_aliases))
