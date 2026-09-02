@@ -13,6 +13,27 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+bool hasNonAdditiveByteSizeAt(const IColumn & column)
+{
+    if (column.getDataType() == TypeIndex::LowCardinality
+        || column.getDataType() == TypeIndex::AggregateFunction
+        || column.isReplicated()
+        || column.hasDynamicStructure())
+        return true;
+
+    bool result = false;
+    column.forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        result = result || hasNonAdditiveByteSizeAt(*subcolumn);
+    });
+    return result;
+}
+
+}
+
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
@@ -223,6 +244,62 @@ bool MergedData::hasEnoughRows() const
 
     size_t average = sum_blocks_granularity / merged_rows;
     return merged_rows >= average;
+}
+
+size_t MergedData::rowsToInsertBeforeFlush(
+    const ColumnRawPtrs & raw_columns,
+    size_t start_index,
+    size_t max_rows,
+    size_t block_size) const
+{
+    chassert(max_rows > 0);
+
+    size_t rows_to_insert = max_rows;
+
+    if (use_average_block_size)
+    {
+        for (size_t length = 1; length <= rows_to_insert; ++length)
+        {
+            const size_t merged_rows_after_insert = merged_rows + length;
+            const size_t average_block_size
+                = (sum_blocks_granularity + block_size * length) / merged_rows_after_insert;
+
+            if (merged_rows_after_insert >= average_block_size)
+            {
+                rows_to_insert = length;
+                break;
+            }
+        }
+    }
+
+    if (!max_block_size_bytes)
+        return rows_to_insert;
+
+    chassert(columns.size() == raw_columns.size());
+
+    /// `byteSizeAt` is not additive for dictionary/index-backed columns, so let
+    /// `hasEnoughRows` measure the actual size after inserting one row.
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (hasNonAdditiveByteSizeAt(*columns[i]) || hasNonAdditiveByteSizeAt(*raw_columns[i]))
+            return 1;
+    }
+
+    size_t merged_bytes = 0;
+    for (const auto & column : columns)
+        merged_bytes += column->byteSize();
+
+    for (size_t length = 1; length <= rows_to_insert; ++length)
+    {
+        const size_t row = start_index + length - 1;
+        for (const auto * column : raw_columns)
+            merged_bytes += column->byteSizeAt(row);
+
+        if (merged_bytes >= max_block_size_bytes)
+            return length;
+    }
+
+    return rows_to_insert;
 }
 
 }

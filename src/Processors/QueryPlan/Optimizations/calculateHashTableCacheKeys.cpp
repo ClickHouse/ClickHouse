@@ -11,6 +11,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/SipHashingWriteBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -95,7 +96,11 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
         && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
         return 0;
 
-    WriteBufferFromOwnString wbuf;
+    /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
+    /// hashed as it is produced rather than accumulated. A step can carry a whole constant-folded
+    /// literal here, which `serializeConstant` writes out in full.
+    SipHash hash;
+    SipHashingWriteBuffer wbuf(hash);
     SerializedSetsRegistry registry;
     registry.for_cache_key = true;
     /// The bytes are hashed in-process by the same binary that wrote them and never reach another
@@ -110,8 +115,7 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     if (transform.isSerializable())
         transform.serialize(ctx);
 
-    SipHash hash;
-    hash.update(wbuf.str());
+    wbuf.finalize();
     return hash.get64();
 }
 
@@ -374,7 +378,17 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
         {
             auto * node = stack.back();
             stack.pop_back();
-            if (typeid_cast<AggregatingStep *>(node->step.get()))
+            /// Without GROUP BY keys the method is `without_key`, whose `init` discards the size
+            /// hint, so such a key can never be consumed.
+            /// A step whose `stats_collecting_params` were left default-constructed (zero
+            /// `max_entries_for_hash_table_stats`) keeps no entries, so a key cannot be consumed
+            /// there either — stamping one would only make the query collect statistics that are
+            /// thrown away (`HashTablesStatistics::getHashTableStatsCache` refuses to keep them).
+            /// Skipping such a step also makes a server-level
+            /// `max_entries_for_hash_table_stats = 0` a clean disable for aggregation.
+            if (const auto * aggregating = typeid_cast<const AggregatingStep *>(node->step.get());
+                aggregating && !aggregating->getParams().keys.empty()
+                && aggregating->getParams().stats_collecting_params.max_entries_for_hash_table_stats != 0)
                 aggregating_nodes.push_back(node);
             for (auto * child : node->children)
                 stack.push_back(child);

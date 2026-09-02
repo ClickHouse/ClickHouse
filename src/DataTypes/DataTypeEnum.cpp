@@ -643,7 +643,7 @@ Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just 
 
 ## ADD ENUM VALUES {#add-enum-values}
 
-There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](/sql-reference/statements/alter/column#modify-column-add-enum-values)
+There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](/reference/statements/alter/column#modify-column-add-enum-values)
 
 ```sql
 CREATE TABLE enum

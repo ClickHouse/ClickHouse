@@ -2,12 +2,12 @@
 #include <Common/Exception.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionVariantAdaptor.h>
+#include <Functions/TypeMismatchStrictness.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
@@ -17,11 +17,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-extern const SettingsBool variant_throw_on_type_mismatch;
-}
 
 namespace ErrorCodes
 {
@@ -56,12 +51,8 @@ ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
     size_t variant_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , variant_argument_index(variant_argument_index_)
+    , throw_on_type_mismatch(shouldThrowOnVariantTypeMismatch())
 {
-    if (CurrentThread::isInitialized())
-    {
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
-    }
 }
 
 /// Strip LowCardinality wrapper from nested function result if present.
@@ -829,14 +820,7 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     /// returns NULL rows (consistent with the per-row mismatch behaviour).
     if (result_types.empty())
     {
-        bool throw_on_mismatch = true;
-        if (CurrentThread::isInitialized())
-        {
-            if (auto query_context = CurrentThread::tryGetQueryContext())
-                throw_on_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
-        }
-
-        if (!throw_on_mismatch)
+        if (!shouldThrowOnVariantTypeMismatch())
         {
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
             return;

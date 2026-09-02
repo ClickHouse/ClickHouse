@@ -15,6 +15,7 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
+#include <algorithm>
 #include <cstring> // memcpy
 
 
@@ -48,9 +49,17 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
 
-    if (!offsets_concrete->empty() && data && !data->empty())
+    /// The nested column and the offsets are expected to be fully populated before the array is created,
+    /// so the consistency of the offsets is checked for an empty nested column as well:
+    /// otherwise a column with, say, offsets = [1] and no elements at all passes unnoticed,
+    /// and then sizeAt returns a size that is not there and the consumers read the nested column out of bounds.
+    /// Empty offsets mean zero rows, i.e. an implicit last offset of 0, so the nested column must be empty too:
+    /// otherwise the column reports zero rows while carrying hidden elements.
+    const auto & offsets_data = offsets_concrete->getData();
+
+    if (data)
     {
-        Offset last_offset = offsets_concrete->getData().back();
+        Offset last_offset = offsets_data.empty() ? 0 : offsets_data.back();
 
         /// This will also prevent possible overflow in offset.
         if (data->size() != last_offset)
@@ -58,6 +67,18 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
                 "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
                 data->size(), last_offset);
     }
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Matching the last offset with the size of the nested column is not enough: a decreasing offset
+    /// in the middle makes `sizeAt` underflow to a huge value, and the consumers read the nested column
+    /// out of bounds even though the last offset is correct. The offsets have to be non-decreasing.
+    /// The scan is linear - a heavy assertion, hence debug and sanitizer builds only.
+    const auto * non_monotonic = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater<>());
+    if (non_monotonic != offsets_data.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "offsets_column is not monotonically increasing: the offset {} at position {} is greater than the next offset {}",
+            *non_monotonic, non_monotonic - offsets_data.begin(), *(non_monotonic + 1));
+#endif
 
     /** NOTE
       * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
@@ -206,6 +227,12 @@ UInt64 ColumnArray::getNumberOfDefaultRows() const
     for (size_t i = 0; i < num_rows; ++i)
         result += static_cast<UInt64>(offsets_data[i] == offsets_data[static_cast<ssize_t>(i) - 1]);
     return result;
+}
+
+bool ColumnArray::hasOnlyTypeDefaults() const
+{
+    const auto & offsets_data = getOffsets();
+    return offsets_data.empty() || offsets_data.back() == 0;
 }
 
 void ColumnArray::insertData(const char * pos, size_t length)
@@ -418,12 +445,11 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::insertManyDefaults(size_t length)
 {
-    /// Not IColumn::insertManyDefaults: its reserve(size() + length) would size the nested column for elements
-    /// that default arrays never hold, and ColumnArray::reserve passes that count down unchanged. Appending the
-    /// offsets grows them geometrically instead, so repeated calls stay amortized without reserving nested data.
-    auto last_offset = getOffsets().back();
-    for (size_t i = 0; i < length; ++i)
-        getOffsets().push_back(last_offset);
+    /// Not `IColumn::insertManyDefaults`: its `reserve(size() + length)` would also size the nested column, which a
+    /// default array never fills. Only the offsets grow, so only they are pre-sized.
+    auto & offsets_data = getOffsets();
+    const auto last_offset = offsets_data.back(); /// By value: `resize_fill` may reallocate.
+    offsets_data.resize_fill(offsets_data.size() + length, last_offset);
 }
 
 

@@ -334,7 +334,12 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
 
         if (to_table_engine)
+        {
             manual_create_query->set(manual_create_query->storage, to_table_engine);
+            /// We need to set this flag for consistency with the parser.
+            if (to_table_engine->engine && (to_table_engine->engine->name == "TimeSeries"))
+                manual_create_query->is_time_series_table = true;
+        }
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
@@ -755,6 +760,8 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     /// set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table entries.
     refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
     refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+    /// Nothing waits for this table afterwards, so keep the drop below asynchronous.
+    refresh_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
 
     auto query_scope = QueryScope::create(refresh_context);
 
@@ -768,7 +775,9 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     Stopwatch stopwatch;
     try
     {
-        InterpreterDropQuery(drop_query, refresh_context).execute();
+        InterpreterDropQuery drop_interpreter(drop_query, refresh_context);
+        drop_interpreter.setInternal(true);
+        drop_interpreter.execute();
     }
     catch (...)
     {

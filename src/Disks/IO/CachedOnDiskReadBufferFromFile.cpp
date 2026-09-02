@@ -33,6 +33,7 @@ extern const Event CachedReadBufferPredownloadedFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
 extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
+extern const Event CachedReadBufferCacheWriteStopped;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
 
 extern const Event CachedReadBufferReadFromCacheHits;
@@ -153,6 +154,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
 
 std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
 {
+    std::lock_guard lock(file_size_mutex);
     if (file_size.has_value())
         return file_size;
 
@@ -1191,6 +1193,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
                 LOG_TEST(log, "Bypassing cache for {}", file_segment.getInfoForLog());
 
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteStopped);
                 state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
                 LOG_DEBUG(
@@ -1519,7 +1522,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     bool skip_cache_on_disk_failure,
     LoggerPtr log)
 {
-    LOG_TEST(log, "Reading file segment: {}", getInfoForLog(&state, info, offset));
+    if (info.cache_settings.verbose_logging)
+        LOG_TEST(log, "Reading file segment: {}", getInfoForLog(&state, info, offset));
 
     const auto & current_read_range = file_segment.range();
     chassert(current_read_range.contains(offset));
@@ -1664,6 +1668,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 
             if (!success)
             {
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteStopped);
                 state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
@@ -1679,8 +1684,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         {
             size_t remaining_size_to_read = std::min(current_read_range.right, info.read_until_position - 1) - offset + 1;
 
-            LOG_TEST(log, "Remaining size to read: {}, read: {}. Resizing buffer to {}",
-                     remaining_size_to_read, size, state.buf->offset() + std::min(size, remaining_size_to_read));
+            if (info.cache_settings.verbose_logging)
+                LOG_TEST(log, "Remaining size to read: {}, read: {}. Resizing buffer to {}",
+                         remaining_size_to_read, size, state.buf->offset() + std::min(size, remaining_size_to_read));
 
             if (size > remaining_size_to_read)
             {
@@ -1809,9 +1815,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             file_segment.getInfoForLog());
     }
 
-    // No necessary because of the SCOPE_EXIT above, but useful for logging below.
-    LOG_TEST(log, "Read {} bytes (buffer size: {}). Read info: {}",
-             size, state.buf->internalBuffer().size(), getInfoForLog(&state, info, offset + size));
+    if (info.cache_settings.verbose_logging)
+        LOG_TEST(log, "Read {} bytes (buffer size: {}). Read info: {}",
+                 size, state.buf->internalBuffer().size(), getInfoForLog(&state, info, offset + size));
 
     return size;
 }
@@ -1822,6 +1828,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     size_t range_begin,
     const std::function<bool(size_t)> & progress_callback) const
 {
+    /// Use the mutex-protected getter, not the lazily initialized file_size member:
+    /// readBigAt may run concurrently with the sequential read path.
+    const size_t object_size = const_cast<CachedOnDiskReadBufferFromFile &>(*this).getFileSize();
+
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
@@ -1854,7 +1864,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             info.cache_key,
             /* offset */range_begin,
             /* size */n,
-            file_size.value(),
+            object_size,
             create_settings,
             /* batch_size */0,
             origin);
@@ -1872,7 +1882,6 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     bool cancelled = false;
     bool implementation_buffer_can_be_reused = false;
     ReadFromFileSegmentStatePtr current_state;
-    auto object_size = const_cast<CachedOnDiskReadBufferFromFile &>(*this).getFileSize();
 
     /// See the note in `nextImplStep`: distinguish an exception thrown by this scope from an outer
     /// exception being unwound through it (e.g. a cached read issued from a destructor during
@@ -1979,9 +1988,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             skip_cache_on_disk_failure,
             log);
 
-        LOG_TEST(
-            log, "ReadBigAt() read {} bytes at offset: {}. Total: {}/{}",
-            size, offset, read_bytes + size, n);
+        if (current_info.cache_settings.verbose_logging)
+            LOG_TEST(
+                log, "ReadBigAt() read {} bytes at offset: {}. Total: {}/{}",
+                size, offset, read_bytes + size, n);
 
         offset += size;
         read_bytes += size;
