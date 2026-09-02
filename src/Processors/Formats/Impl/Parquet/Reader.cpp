@@ -2937,16 +2937,32 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     }
     else
     {
+        const UInt8 * rep = page.rep.data();
+        size_t remaining_rows = end_row_idx - page.next_row_idx;
+
+        /// Take a 64-byte block of repetition levels wholesale only while all of its row starts fit
+        /// in the remaining budget, so the row we have to stop at can't be inside a taken block.
+        while (new_value_idx + 64 <= page.num_values)
+        {
+            size_t row_starts = static_cast<size_t>(std::popcount(~bytes64MaskToBits64Mask(rep + new_value_idx)));
+            if (row_starts > remaining_rows)
+                break;
+            remaining_rows -= row_starts;
+            new_value_idx += 64;
+        }
+
         while (new_value_idx < page.num_values)
         {
-            if (page.rep[new_value_idx] == 0)
+            if (rep[new_value_idx] == 0)
             {
-                if (page.next_row_idx == end_row_idx)
+                if (remaining_rows == 0)
                     break;
-                page.next_row_idx += 1;
+                remaining_rows -= 1;
             }
             new_value_idx += 1;
         }
+
+        page.next_row_idx = end_row_idx - remaining_rows;
     }
     page.value_idx = new_value_idx;
 }
