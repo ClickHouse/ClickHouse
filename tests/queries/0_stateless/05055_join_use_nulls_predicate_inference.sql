@@ -1,3 +1,4 @@
+-- Random settings limits: max_threads=(1, 3)
 -- Predicate inference into the opposite table of an outer join converted to inner, with join_use_nulls = 1.
 -- A predicate written on one side is inferred on the other through the equi-join condition, which lets the
 -- other table use its primary key. With join_use_nulls the converted join keeps the nullability it added to
