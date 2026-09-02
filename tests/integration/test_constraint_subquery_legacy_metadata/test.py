@@ -67,6 +67,12 @@ def test_legacy_unqualified_constraint_subquery(started_cluster):
         == "['db1']\t['source']\n"
     )
     assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error("DROP TABLE db1.source")
+    # The referential graph, which `check_referential_table_dependencies` guards, is built out of
+    # the same repaired definition, so it too points at `db1.source` and not at `default.source`.
+    assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error(
+        "DROP TABLE db1.source SETTINGS check_table_dependencies = 0,"
+        " check_referential_table_dependencies = 1"
+    )
 
     node.query("DROP TABLE db1.dependent")
     node.query("DROP TABLE db1.source")
@@ -89,6 +95,10 @@ def test_legacy_unqualified_view_select(started_cluster):
     # reading query. It has been qualified with `db2`, which owns the view, when the metadata was
     # loaded, so reading the view from the `default` database works.
     assert node.query("SELECT * FROM db2.v") == "42\n"
+    assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error(
+        "DROP TABLE db2.source SETTINGS check_table_dependencies = 0,"
+        " check_referential_table_dependencies = 1"
+    )
 
     node.query("DROP TABLE db2.v")
     node.query("DROP TABLE db2.source")
@@ -132,3 +142,81 @@ def test_legacy_unqualified_dictget_default(started_cluster):
     node.query("DROP DICTIONARY db3.dict")
     node.query("DROP TABLE db3.dict_source")
     node.query("DROP DATABASE db3")
+
+
+def test_legacy_unqualified_dictget_is_the_only_carrier(started_cluster):
+    node.query("CREATE DATABASE db4")
+    node.query(
+        "CREATE TABLE db4.dict_source (key UInt64, value String)"
+        " ENGINE = MergeTree ORDER BY key"
+    )
+    node.query("INSERT INTO db4.dict_source VALUES (1, 'one')")
+    node.query(
+        "CREATE DICTIONARY db4.dict (key UInt64, value String) PRIMARY KEY key"
+        " SOURCE(CLICKHOUSE(DB 'db4' TABLE 'dict_source')) LIFETIME(0) LAYOUT(FLAT())"
+    )
+    # Unlike `test_legacy_unqualified_dictget_default`, the dictionary is referenced exactly
+    # once, so after the qualifier is stripped nothing else keeps the loading dependency on it:
+    # it can only be recovered from the repaired name.
+    node.query(
+        "CREATE TABLE db4.t (x UInt64,"
+        " d String DEFAULT dictGetString('db4.dict', 'value', x))"
+        " ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+    restart_with_edited_metadata(
+        get_metadata_path("db4", "t"), "'db4.dict'", "'dict'"
+    )
+
+    # The dependency graphs are built out of the repaired definition, so the sole bare `dict`
+    # is registered as `db4.dict` and not as a `default.dict` that does not exist.
+    assert (
+        node.query(
+            "SELECT loading_dependencies_database, loading_dependencies_table"
+            " FROM system.tables WHERE database = 'db4' AND name = 't'"
+        )
+        == "['db4']\t['dict']\n"
+    )
+    assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error(
+        "DROP DICTIONARY db4.dict"
+    )
+    node.query("INSERT INTO db4.t (x) VALUES (1)", database="default")
+    assert node.query("SELECT d FROM db4.t") == "one\n"
+
+    node.query("DROP TABLE db4.t")
+    node.query("DROP DICTIONARY db4.dict")
+    node.query("DROP TABLE db4.dict_source")
+    node.query("DROP DATABASE db4")
+
+
+def test_legacy_unqualified_in_table_in_constraint(started_cluster):
+    node.query("CREATE DATABASE db5")
+    node.query(
+        "CREATE TABLE db5.allowed (id UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node.query("INSERT INTO db5.allowed VALUES (1)")
+    # The right-hand side of `IN` is a table name rather than a scalar subquery, and it is the
+    # only reference to `db5.allowed` in the definition.
+    node.query(
+        "CREATE TABLE db5.t (x UInt64, CONSTRAINT c CHECK x IN db5.allowed)"
+        " ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+    restart_with_edited_metadata(
+        get_metadata_path("db5", "t"), "db5.allowed", "allowed"
+    )
+
+    assert (
+        node.query(
+            "SELECT loading_dependencies_database, loading_dependencies_table"
+            " FROM system.tables WHERE database = 'db5' AND name = 't'"
+        )
+        == "['db5']\t['allowed']\n"
+    )
+    assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error(
+        "DROP TABLE db5.allowed"
+    )
+
+    node.query("DROP TABLE db5.t")
+    node.query("DROP TABLE db5.allowed")
+    node.query("DROP DATABASE db5")

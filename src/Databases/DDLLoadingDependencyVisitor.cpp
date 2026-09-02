@@ -281,8 +281,15 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
     if (qualified_name.database.empty())
     {
-        /// It can be table/dictionary from default database or XML dictionary, but we cannot distinguish it here.
-        qualified_name.database = data.default_database;
+        /// It can be table/dictionary from the database against which the unqualified names of this
+        /// CREATE query resolve, or an XML dictionary, but we cannot distinguish it here. When the
+        /// definition is read back from metadata written before the names were qualified at CREATE
+        /// time, that database is the one owning the table, which is what
+        /// `qualifyNamesFromLegacyMetadata` resolves the very same name to when the definition is
+        /// attached — the graph must not disagree with the attached storage. Note that this is not
+        /// the default database of the server: that one is only for a nested query executed with
+        /// the global context rather than with the context of the CREATE query.
+        qualified_name.database = data.current_database;
     }
     data.dependencies.emplace(std::move(qualified_name));
 }
