@@ -221,7 +221,7 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     if (const auto * serialization_replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
         return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
 
-    /// We can have Detached serialization over Tuple (for parallel blocks marshalling).
+    /// A peer that marshalls blocks may select Detached serialization for a Tuple column.
     /// Create the inner column; SerializationDetached::deserializeBinaryBulkWithMultipleStreams
     /// will wrap it in ColumnBLOB during deserialization.
     if (const auto * serialization_detached = typeid_cast<const SerializationDetached *>(current_serialization))

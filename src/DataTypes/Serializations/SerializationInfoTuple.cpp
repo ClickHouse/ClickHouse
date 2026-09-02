@@ -161,11 +161,14 @@ void SerializationInfoTuple::serialializeKindStackBinary(WriteBuffer & out) cons
         elem->serialializeKindStackBinary(out);
 }
 
-void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
+void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
-    SerializationInfo::deserializeFromKindsBinary(in);
+    SerializationInfo::deserializeFromKindsBinary(in, allowed_kinds);
+
+    /// A detached blob always covers a whole column, never a single tuple element.
+    auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED);
     for (const auto & elem : elems)
-        elem->deserializeFromKindsBinary(in);
+        elem->deserializeFromKindsBinary(in, elements_allowed_kinds);
 }
 
 void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name) const
