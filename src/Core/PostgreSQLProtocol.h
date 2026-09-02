@@ -11,9 +11,11 @@
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
+#include <Poco/String.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
 #include <Poco/RandomStream.h>
@@ -794,6 +796,10 @@ public:
     String function_name;
     String sql_query;
     Int16 num_params{};
+    /// The type OID declared for each parameter, `0` where the client leaves the type unspecified.
+    /// They decide how a `Bind` parameter value is turned into an SQL literal, so they are kept with
+    /// the prepared statement rather than discarded.
+    VectorWithMemoryTracking<Int32> parameter_types;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -803,7 +809,10 @@ public:
         readBinaryBigEndian(num_params, in);
         Int32 oid_param = 0;
         for (int i = 0; i < num_params; ++i)
+        {
             readBinaryBigEndian(oid_param, in);
+            parameter_types.push_back(oid_param);
+        }
         boundary.check();
     }
 
@@ -840,14 +849,18 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
+    /// The raw wire value of each parameter in its text encoding. It is not SQL text: it becomes an
+    /// SQL literal only in `PreparedStatemetsManager::attachBindQuery`, by the parameter's type OID.
     VectorWithMemoryTracking<String> parameters;
+    /// `1` where the corresponding parameter is SQL `NULL` (wire length `-1`). A separate flag rather
+    /// than a sentinel value: the four-character string `NULL` is a perfectly ordinary parameter.
+    VectorWithMemoryTracking<UInt8> parameter_is_null;
     Int16 num_params{};
-    /// Non-default format codes are noted here rather than rejected in `deserialize`: the message is
-    /// received outside the recoverable extended-query path (a malformed frame must close the
-    /// connection), while an unsupported format in a well-formed frame is an ordinary recoverable
+    /// A non-default parameter format code is noted here rather than rejected in `deserialize`: the
+    /// message is received outside the recoverable extended-query path (a malformed frame must close
+    /// the connection), while an unsupported format in a well-formed frame is an ordinary recoverable
     /// error, reported from `PreparedStatemetsManager::attachBindQuery`.
     bool has_binary_parameter_format = false;
-    bool has_binary_result_format = false;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -876,23 +889,24 @@ public:
                                 "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
             if (sz_param == -1)
             {
-                parameters.emplace_back("NULL");
+                parameters.emplace_back();
+                parameter_is_null.push_back(1);
                 continue;
             }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
+            parameter_is_null.push_back(0);
         }
 
+        /// The requested result format codes are read and ignored. The server always writes text
+        /// `DataRow` values and says so in `RowDescription`, whose per-field format code is what a
+        /// client uses to decode a row (this is how Npgsql, the JDBC driver and libpq read results).
         Int16 num_format_params_result = 0;
         readBinaryBigEndian(num_format_params_result, in);
         Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
-        {
             readBinaryBigEndian(format_param_result, in);
-            if (format_param_result != 0)
-                has_binary_result_format = true;
-        }
 
         boundary.check();
     }
@@ -2126,6 +2140,14 @@ public:
 
     void addStatement(ASTPreparedStatement * statement)
     {
+        addStatement(statement, {});
+    }
+
+    /// `parameter_types` are the type OIDs an extended-protocol `Parse` declares for the statement's
+    /// parameters; a simple-query `PREPARE` supplies none, and its `EXECUTE` arguments are SQL text
+    /// already, so they need no literalization.
+    void addStatement(ASTPreparedStatement * statement, const VectorWithMemoryTracking<Int32> & parameter_types)
+    {
         /// The unnamed prepared statement is replaceable, but PostgreSQL
         /// requires clients to close a named statement before parsing another
         /// statement under the same name.
@@ -2136,6 +2158,7 @@ public:
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Statements limit exceeded");
 
         statements[statement->function_name] = statement->function_body;
+        statement_parameter_types[statement->function_name] = parameter_types;
     }
 
     String getStatement(ASTExecute * execute)
@@ -2150,6 +2173,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
+        statement_parameter_types.erase(function_name);
     }
 
     /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
@@ -2160,6 +2184,7 @@ public:
     void tryDeleteStatement(const String & function_name)
     {
         statements.erase(function_name);
+        statement_parameter_types.erase(function_name);
     }
 
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
@@ -2173,22 +2198,17 @@ public:
                 "Named portals are not supported in the PostgreSQL wire protocol, "
                 "got portal name '{}'", query->portal_name);
 
-        /// Parameter values are substituted into the statement in their text encoding; a binary
-        /// parameter encoding would require decoding by the type OIDs of the `Parse` message.
+        /// A parameter is decoded from its text encoding; a binary encoding would additionally require
+        /// decoding the wire representation of every type declared by the `Parse` message.
         if (query->has_binary_parameter_format && query->num_params > 0)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary parameter formats are not supported in the PostgreSQL wire protocol");
-
-        /// `DataRow` values are always written in the text format; honoring a binary result format
-        /// is not implemented, and silently answering in text would desynchronize the client.
-        if (query->has_binary_result_format)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary result formats are not supported in the PostgreSQL wire protocol");
 
         /// For the unnamed portal, a new `Bind` replaces the previous one
         /// per the PostgreSQL extended-query protocol — clients such as Npgsql
         /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
         /// A portal captures its statement at `Bind` time. Replacing or closing
         /// the prepared statement later must not alter an already-bound portal.
-        bound_statement = getStatement(query->function_name, query->parameters);
+        bound_statement = getStatement(query->function_name, literalizeBindParameters(*query));
         bind_query = std::move(query);
     }
 
@@ -2213,9 +2233,114 @@ public:
 
 private:
     UnorderedMapWithMemoryTracking<String, String> statements;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<Int32>> statement_parameter_types;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
     std::optional<String> bound_statement;
+
+    /// Turns the wire values of a `Bind` message into SQL literals, using the parameter type OIDs the
+    /// matching `Parse` declared. The values arrive in their text encoding, which is not SQL text:
+    /// pasting them into the statement verbatim would only work where the bytes happen to be valid
+    /// SQL, so `SELECT length($1)` bound to `abc` would become `SELECT length(abc)`.
+    ///
+    /// A numeric or boolean type is written as a bare constant (and validated as one, so a value can
+    /// never inject SQL); everything else - including a parameter whose type the client left
+    /// unspecified - becomes a quoted string literal. This mirrors PostgreSQL, where a parameter of
+    /// the `unknown` type is exactly a string literal and gets its type from the context.
+    VectorWithMemoryTracking<String> literalizeBindParameters(const PostgreSQLProtocol::Messaging::BindQuery & query) const
+    {
+        const auto types_it = statement_parameter_types.find(query.function_name);
+        VectorWithMemoryTracking<String> literals;
+        literals.reserve(query.parameters.size());
+
+        for (size_t i = 0; i < query.parameters.size(); ++i)
+        {
+            if (i < query.parameter_is_null.size() && query.parameter_is_null[i])
+            {
+                literals.emplace_back("NULL");
+                continue;
+            }
+
+            Int32 type_oid = 0;
+            if (types_it != statement_parameter_types.end() && i < types_it->second.size())
+                type_oid = types_it->second[i];
+
+            literals.push_back(literalizeBindParameter(type_oid, query.parameters[i], i));
+        }
+
+        return literals;
+    }
+
+    static String literalizeBindParameter(Int32 type_oid, const String & value, size_t index)
+    {
+        switch (type_oid)
+        {
+            /// `bool`.
+            case 16:
+            {
+                const String folded = Poco::toLower(value);
+                if (folded == "t" || folded == "true" || folded == "1" || folded == "y" || folded == "yes" || folded == "on")
+                    return "true";
+                if (folded == "f" || folded == "false" || folded == "0" || folded == "n" || folded == "no" || folded == "off")
+                    return "false";
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Invalid input syntax for type boolean in parameter ${}: {}", index + 1, quoteString(value));
+            }
+            /// `int8`, `int2`, `int4`, `oid`, `float4`, `float8`, `numeric`.
+            case 20:
+            case 21:
+            case 23:
+            case 26:
+            case 700:
+            case 701:
+            case 1700:
+            {
+                if (!isNumericConstant(value))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid input syntax for a numeric type in parameter ${}: {}", index + 1, quoteString(value));
+                return value;
+            }
+            default:
+                return quoteString(value);
+        }
+    }
+
+    /// Whether the text is a plain decimal constant: an optional sign, digits with at most one
+    /// decimal point, and an optional exponent. Deliberately strict - anything else is quoted
+    /// instead of being pasted into the statement as SQL.
+    static bool isNumericConstant(const String & value)
+    {
+        size_t i = 0;
+        const size_t size = value.size();
+        if (i < size && (value[i] == '+' || value[i] == '-'))
+            ++i;
+
+        size_t digits = 0;
+        size_t points = 0;
+        for (; i < size && (isNumericASCII(value[i]) || value[i] == '.'); ++i)
+        {
+            if (value[i] == '.')
+                ++points;
+            else
+                ++digits;
+        }
+        if (digits == 0 || points > 1)
+            return false;
+
+        if (i == size)
+            return true;
+        if (value[i] != 'e' && value[i] != 'E')
+            return false;
+        ++i;
+        if (i < size && (value[i] == '+' || value[i] == '-'))
+            ++i;
+
+        size_t exponent_digits = 0;
+        for (; i < size && isNumericASCII(value[i]); ++i)
+            ++exponent_digits;
+        return exponent_digits > 0 && i == size;
+    }
 
     String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
     {

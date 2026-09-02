@@ -598,6 +598,22 @@ def test_prepared_statement(started_cluster):
     with pytest.raises(Exception):
         cur.execute("EXECUTE select_test(1);")
 
+    # A `Bind` parameter arrives in its text encoding, which is not SQL text: a string value has to
+    # become a quoted SQL literal. Pasting the payload bytes verbatim would make this
+    # `SELECT length(abc)`, i.e. an unknown identifier.
+    cur.execute("SELECT length(%s);", ("abc",), prepare=True)
+    assert cur.fetchall() == [(3,)]
+
+    # A quote inside the value is escaped rather than ending the literal early.
+    cur.execute("SELECT %s = 'a''b';", ("a'b",), prepare=True)
+    assert cur.fetchall() == [(1,)]
+
+    # A NULL parameter is the SQL `NULL`, not the four-character string `NULL`.
+    cur.execute("SELECT %s IS NULL, %s IS NULL;", (None, "NULL"), prepare=True)
+    assert cur.fetchall() == [(1, 0)]
+
+    ch.close()
+
 
 def test_copy_command(started_cluster):
     node = cluster.instances["node"]
@@ -1386,10 +1402,12 @@ def test_extended_query_cycle_does_not_send_ready_before_sync(started_cluster):
         sock.close()
 
 
-def test_bind_rejects_binary_result_format(started_cluster):
-    """The server always writes text `DataRow` values, so a binary result format requested in
-    `Bind` must fail rather than producing a wire-format mismatch. The complete Bind message is a
-    recoverable extended-query error and `Sync` restores the connection."""
+def test_bind_binary_result_format_is_answered_in_text(started_cluster):
+    """The server always writes text `DataRow` values and says so in `RowDescription`, whose
+    per-field format code is what a client decodes a row by. A `Bind` asking for a binary result
+    format is therefore answered in text rather than rejected - rejecting it breaks drivers that
+    request binary unconditionally and then honor the format code of the row description (Npgsql
+    does exactly this)."""
     node = cluster.instances["node"]
     sock = _pg_connect_raw(node, "default", "123", "default")
 
@@ -1397,17 +1415,53 @@ def test_bind_rejects_binary_result_format(started_cluster):
         sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
 
     try:
-        send(b"P", b"binary_result_probe\x00SELECT 1\x00\x00\x00")
-        # No parameter formats or parameter values; one result-format code, `1` (binary).
-        send(b"B", b"\x00binary_result_probe\x00\x00\x00\x00\x00\x01\x00\x01")
+        send(b"P", b"binary_result_probe\x00SELECT 20260902\x00\x00\x00")
+        # Unnamed portal, no parameter formats, no parameter values, and one result-format code,
+        # `1` (binary). The Int16 fields are spelled out one by one: a Bind message that is a byte
+        # short is read as the start of the next frame and the session simply stalls.
+        send(
+            b"B",
+            b"\x00"  # portal name: the unnamed portal
+            + b"binary_result_probe\x00"
+            + struct.pack("!h", 0)  # parameter format codes
+            + struct.pack("!h", 0)  # parameter values
+            + struct.pack("!h", 1)  # result format codes
+            + struct.pack("!h", 1),  # binary
+        )
+        send(b"E", b"\x00\x00\x00\x00\x00")
         send(b"S", b"")
         seen = _pg_read_until(sock, b"Z")
-        assert b"E" in seen, seen
-        assert b"Binary result formats are not supported" in seen[b"E"], seen[b"E"]
+        assert b"E" not in seen, seen
+        # The trailing Int16 of every `RowDescription` field is its format code, `0` for text.
+        assert seen[b"T"].endswith(b"\x00\x00"), seen[b"T"]
+        assert b"20260902" in seen[b"D"], seen
+    finally:
+        sock.close()
 
-        send(b"Q", b"SELECT 20260816\x00")
-        seen = _pg_read_until(sock, b"Z")
-        assert b"20260816" in seen[b"D"], seen
+
+def test_multi_statement_error_at_statement_boundary_keeps_connection(started_cluster):
+    """A statement of a multi-statement simple-query message that fails before writing anything is
+    at a clean statement boundary: the server answers with `ErrorResponse` + `ReadyForQuery` and the
+    session stays usable, even though an earlier statement of the same message already produced
+    output. The recovery checkpoint is therefore per statement, not per message."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    def send(message_type, body):
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
+
+    try:
+        for text in (
+            b"BEGIN; EXECUTE missing_stmt(1)",
+            b"SELECT 1; DEALLOCATE missing_stmt",
+        ):
+            send(b"Q", text + b"\x00")
+            seen = _pg_read_until(sock, b"Z")
+            assert b"E" in seen, (text, seen)
+
+            send(b"Q", b"SELECT 20260903\x00")
+            seen = _pg_read_until(sock, b"Z")
+            assert b"20260903" in seen[b"D"], (text, seen)
     finally:
         sock.close()
 

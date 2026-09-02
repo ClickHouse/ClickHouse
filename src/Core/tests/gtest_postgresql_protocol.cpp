@@ -178,7 +178,10 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
         Messaging::BindQuery msg;
         EXPECT_NO_THROW(msg.deserialize(in));
         ASSERT_EQ(msg.parameters.size(), 1u);
-        EXPECT_EQ(msg.parameters[0], "NULL");
+        /// A NULL is flagged, not spelled out: the four-character string `NULL` is an ordinary value.
+        ASSERT_EQ(msg.parameter_is_null.size(), 1u);
+        EXPECT_EQ(msg.parameter_is_null[0], 1);
+        EXPECT_EQ(msg.parameters[0], "");
     }
 
     /// A non-negative length reads exactly that many bytes.
@@ -188,6 +191,8 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
         Messaging::BindQuery msg;
         EXPECT_NO_THROW(msg.deserialize(in));
         ASSERT_EQ(msg.parameters.size(), 1u);
+        ASSERT_EQ(msg.parameter_is_null.size(), 1u);
+        EXPECT_EQ(msg.parameter_is_null[0], 0);
         EXPECT_EQ(msg.parameters[0], "hi");
     }
 }

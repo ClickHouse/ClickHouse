@@ -1855,6 +1855,12 @@ void PostgreSQLHandler::processQuery()
 
         for (auto & sql_query : queries)
         {
+            /// The recovery checkpoint is per statement, not per message: a statement that fails at a
+            /// clean statement boundary is recoverable even when an earlier statement of the same
+            /// message has already written its result. Every dispatch path below (the driver no-ops,
+            /// `PREPARE`, `DEALLOCATE`, `COPY` setup, `EXECUTE`) can throw before writing anything.
+            out_bytes_before_statement = out->count();
+
             /// PostgreSQL simple-query messages may contain several statements. Apply the same
             /// PostgreSQL-specific dispatch to each fragment as to a one-statement message.
             if (isTransactionControlQuery(sql_query))
@@ -1904,7 +1910,6 @@ void PostgreSQLHandler::processQuery()
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
 
-            out_bytes_before_statement = out->count();
             UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
             message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
@@ -2088,7 +2093,7 @@ void PostgreSQLHandler::processParseQuery()
         auto statement = make_intrusive<ASTPreparedStatement>();
         statement->function_name = query->function_name;
         statement->function_body = removePgCatalogQualifier(query->sql_query);
-        prepared_statements_manager.addStatement(statement.get());
+        prepared_statements_manager.addStatement(statement.get(), query->parameter_types);
         message_transport->send(PostgreSQLProtocol::Messaging::ParseQueryComplete(), true);
     }
     catch (const Exception & e)

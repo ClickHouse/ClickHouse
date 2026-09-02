@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Poco/String.h>
 
@@ -155,6 +156,14 @@ private:
     std::string_view text;
     const FormatSettings & settings;
     size_t pos = 0;
+    /// The number of elements seen at each nesting depth. PostgreSQL multidimensional arrays are
+    /// rectangular: every array at a given depth has the same number of elements as the first one
+    /// completed at that depth. The write side enforces the same invariant, so a ragged literal
+    /// accepted here would produce a row that this interface can no longer read back. Arrays
+    /// complete innermost-first, so a depth may be filled in before its parent: the entries are
+    /// optional rather than appended in order.
+    std::vector<std::optional<size_t>> dimensions;
+    size_t depth = 0;
 
     [[noreturn]] void throwError(const String & what) const
     {
@@ -180,6 +189,9 @@ private:
         const auto & nested_type = array_type->getNestedType();
         IColumn & nested_column = array_column.getData();
         const size_t initial_size = nested_column.size();
+        const size_t current_depth = depth;
+        ++depth;
+        SCOPE_EXIT({ depth = current_depth; });
 
         if (pos >= text.size() || text[pos] != '{')
             throwError("expected '{'");
@@ -218,6 +230,24 @@ private:
                 nested_column.popBack(nested_column.size() - initial_size);
                 throw;
             }
+        }
+
+        /// `nested_column` gains exactly one entry per element at this depth - one value for a scalar
+        /// element type, one offset for a nested array - so this is the element count of this array.
+        const size_t element_count = nested_column.size() - initial_size;
+        if (dimensions.size() <= current_depth)
+            dimensions.resize(current_depth + 1);
+        if (!dimensions[current_depth].has_value())
+            dimensions[current_depth] = element_count;
+        else if (*dimensions[current_depth] != element_count)
+        {
+            /// Reject before the offsets are committed, and leave the nested column as it was.
+            const size_t expected = *dimensions[current_depth];
+            nested_column.popBack(element_count);
+            throwError(fmt::format(
+                "multidimensional PostgreSQL arrays must be rectangular, but an array of {} element(s) follows "
+                "an array of {} element(s) at the same nesting depth",
+                element_count, expected));
         }
 
         array_column.getOffsets().push_back(nested_column.size());

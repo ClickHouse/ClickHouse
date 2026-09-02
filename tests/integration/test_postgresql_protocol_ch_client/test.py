@@ -1073,6 +1073,24 @@ def test_copy_array_column_round_trips(started_cluster):
         assert ragged_cur.fetchone()[0] == 42
     finally:
         ragged_conn.close()
+
+    # The same invariant holds on input: a ragged literal is rejected by `COPY ... FROM STDIN`
+    # instead of being stored as a row that this interface can no longer read back.
+    ragged_in_conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        ragged_in_cur = ragged_in_conn.cursor()
+        with pytest.raises(py_psql.Error, match="rectangular"):
+            ragged_in_cur.copy_expert(
+                "COPY copy_ragged FROM STDIN", io.StringIO("{{1,2},{3}}\n")
+            )
+        ragged_in_conn.rollback()
+        ragged_in_cur.execute("SELECT 43")
+        assert ragged_in_cur.fetchone()[0] == 43
+    finally:
+        ragged_in_conn.close()
+    assert node.query("SELECT count() FROM copy_ragged") == "1\n"
     node.query("DROP TABLE copy_ragged SYNC")
 
 
@@ -1705,24 +1723,9 @@ def test_pg_class_oid_is_unique_per_row(started_cluster):
         node.query("DROP TABLE IF EXISTS oid_unique_probe SYNC")
 
 
-def assert_statement_rejected(statement):
-    # A statement that reaches normal query processing and fails there is answered with an
-    # `ErrorResponse` and then tears the connection down: the handler rethrows after replying and the
-    # run loop ends. So each rejection is checked on a connection of its own - reusing the caller's
-    # connection would leave every later assertion running into a socket this rejection already closed.
-    conn = py_psql.connect(
-        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
-    )
-    try:
-        with pytest.raises(Exception):
-            conn.cursor().execute(statement)
-    finally:
-        conn.close()
-
-
 def test_jdbc_set_noop_requires_exact_statement(started_cluster):
     # The JDBC handshake's `SET extra_float_digits` / `SET application_name` are acknowledged as no-ops
-    # only when the packet is exactly such a single statement. A query merely containing that text as a
+    # only when the statement is exactly such a `SET`. A query merely containing that text as a
     # literal must be executed, not swallowed with a fake `CommandComplete`.
     conn = py_psql.connect(
         host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
@@ -1759,8 +1762,10 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
         assert cur.statusmessage == "SET", cur.statusmessage
         cur.execute("SET application_name = '%s'" % ("long;value " * 50))
         assert cur.statusmessage == "SET", cur.statusmessage
-        # A trailing statement is still rejected even when it is pushed far out by a long value.
-        assert_statement_rejected("SET application_name TO '%s'; SELECT 1" % ("x" * 500))
+        # A trailing statement is still seen even when it is pushed far out by a long value: the
+        # classifier scans the whole statement, so the `SET` stays a no-op and `SELECT 1` runs.
+        cur.execute("SET application_name TO '%s'; SELECT 1" % ("x" * 500))
+        assert cur.fetchall() == [(1,)]
 
         # A non-ASCII value is not a reason to reject the handshake either: the classifier only folds
         # ASCII, so bytes above 0x7F pass through instead of being handed to the locale-dependent ctype
@@ -1776,13 +1781,14 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
         cur.execute("SELECT 'SET application_name TO ''x''; SELECT 1'")
         assert cur.fetchall() == [("SET application_name TO 'x'; SELECT 1",)]
 
+        # A multi-statement packet is not acknowledged by the fast path as a whole: it is split into
+        # statements first, so the no-op `SET` is answered as such and the trailing statement is
+        # executed rather than silently dropped. This is what PostgreSQL does with a simple-query
+        # message holding several statements.
+        cur.execute("SET application_name TO 'x'; SELECT 1")
+        assert cur.fetchall() == [(1,)]
     finally:
         conn.close()
-
-    # A multi-statement packet is not acknowledged by the fast path: it falls through to normal
-    # processing, where the unsupported `SET` fails loudly instead of silently dropping the trailing
-    # statement.
-    assert_statement_rejected("SET application_name TO 'x'; SELECT 1")
 
 
 def test_copy_to_stdout_zero_rows(started_cluster):
