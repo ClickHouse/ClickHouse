@@ -30,9 +30,11 @@ guide):
    its output. The working tree is restored afterwards; the failure message
    names the exact command to run.
 
-3. Localized homepage quickstart links. Every localized `QuickstartPill` must
-   contain its locale in a static path so server-side rendering, middle-click,
-   copied links, and no-JavaScript clients do not fall back to English.
+3. Localized homepage links. The localized link helper must use the page's
+   locale during server-side rendering, every `QuickstartPill` must contain a
+   static locale path, and both Cloud links in the main `HeroCard` must route
+   through that helper. This keeps middle-click, copied links, and no-JavaScript
+   clients from falling back to English.
 
 4. Cloud setup signup attribution. The English and localized Cloud setup
    guides must all use the same attributed signup URL.
@@ -244,31 +246,59 @@ def check_localized_cloud_setup_fallback(docs_root: Path) -> list:
     return errors
 
 
-def check_localized_homepage_quickstart_href(docs_root: Path) -> list:
-    """Ensure localized homepage Cloud links are correct before hydration."""
+def check_localized_homepage_links(docs_root: Path) -> list:
+    """Ensure localized homepage links are correct before hydration."""
     component = re.compile(
         r"export const QuickstartPill = \(\{ children \}\) => \{"
         r".*?const path = ['\"](?P<path>[^'\"]+)['\"];"
         r".*?href=\{path\}",
         re.DOTALL,
     )
+    helper = re.compile(
+        r"export const localizeHref = \(href\) => \{"
+        r".*?const locale = match \? match\[1\] : "
+        r"['\"](?P<locale>[^'\"]+)['\"];"
+        r".*?return `/\$\{locale\}\$\{href\}`;",
+        re.DOTALL,
+    )
+    hero_card = re.compile(
+        r'<HeroCard\s+.*?galaxyEvent="docs\.home\.get-started".*?\n\s*/>',
+        re.DOTALL,
+    )
+    cloud_link = 'localizeHref("/get-started/setup/cloud")'
     errors = []
     for locale in LOCALES:
         page = docs_root / locale / "index.mdx"
-        match = component.search(page.read_text(encoding="utf-8"))
-        if not match:
+        source = page.read_text(encoding="utf-8")
+
+        helper_match = helper.search(source)
+        if not helper_match or helper_match.group("locale") != locale:
+            errors.append(
+                f"{page.relative_to(docs_root)}: localizeHref must use "
+                f"{locale!r} as its server-rendering fallback"
+            )
+
+        expected = f"/{locale}/get-started/setup/cloud"
+        component_match = component.search(source)
+        if not component_match:
             errors.append(
                 f"{page.relative_to(docs_root)}: could not find a static "
                 "QuickstartPill path and href"
             )
-            continue
-
-        expected = f"/{locale}/get-started/setup/cloud"
-        if match.group("path") != expected:
+        elif component_match.group("path") != expected:
             errors.append(
                 f"{page.relative_to(docs_root)}: QuickstartPill path is "
-                f"{match.group('path')!r}; expected {expected!r} so the "
+                f"{component_match.group('path')!r}; expected {expected!r} "
+                "so the "
                 "server-rendered link preserves the locale"
+            )
+
+        hero_match = hero_card.search(source)
+        if not hero_match or hero_match.group(0).count(cloud_link) != 2:
+            errors.append(
+                f"{page.relative_to(docs_root)}: the main get-started "
+                "HeroCard must route both Cloud setup links through "
+                "localizeHref"
             )
     return errors
 
@@ -354,7 +384,7 @@ def main() -> int:
     errors = check_searchable(docs_root)
     errors += check_frontmatter(docs_root)
     errors += check_localized_cloud_setup_fallback(docs_root)
-    errors += check_localized_homepage_quickstart_href(docs_root)
+    errors += check_localized_homepage_links(docs_root)
     errors += check_cloud_setup_signup_attribution(docs_root)
     # Only bother running the generator when the tags are valid — invalid tags
     # would just produce garbage slugs in the regenerated data.

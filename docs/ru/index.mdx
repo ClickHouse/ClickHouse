@@ -8,9 +8,9 @@ sidebarTitle: "Главная"
 
 export const localizeHref = (href) => {
     if (/^\/(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/.test(href)) return href;
-    if (typeof window === 'undefined') return href;
-    const match = window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/);
-    return match ? `/${match[1]}${href}` : href;
+    const match = typeof window !== 'undefined' ? window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/) : null;
+    const locale = match ? match[1] : 'ru';
+    return `/${locale}${href}`;
 };
 
 export const FullWidthDivider = ({ style }) => {
