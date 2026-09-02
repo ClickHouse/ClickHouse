@@ -566,6 +566,30 @@ def do_clickhouse_only_query_test(
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
+def do_clickhouse_only_range_query_test(
+    query,
+    start_time,
+    end_time,
+    step,
+    result,
+    chresult,
+    eps=0,
+):
+    actual_chresult = execute_range_query_in_clickhouse_sql(
+        query, start_time, end_time, step
+    )
+    assert tsv_close_to(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_range_query_in_clickhouse_http_api(
+        query, start_time, end_time, step
+    )
+    assert http_api_response_close_to(
+        actual_result_from_http_api, result, eps=eps
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
 def test_up():
     do_query_test(
         "up",
@@ -4613,6 +4637,304 @@ def test_histogram_quantile():
         "expected type scalar",
         "expects first argument of type",
     )
+
+
+def test_histogram_fraction():
+    # The Prometheus reference currently returns NaN for classic histograms, while
+    # ClickHouse supports the classic-bucket form of `histogram_fraction`.
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0, 0.5, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.5"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.5"]],
+    )
+
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0.1, 0.5, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.3333333333333333"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.3333333333333333"]],
+        eps=1e-12,
+    )
+
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0, 1, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.8333333333333334"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.8333333333333334"]],
+        eps=1e-12,
+    )
+
+    do_clickhouse_only_query_test(
+        "histogram_fraction(-Inf, +Inf, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "1"]],
+    )
+
+    # The usual PromQL shape applies histogram_fraction to a rate expression, not to
+    # the raw bucket counters. This also exercises the vector-grid path.
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0.1, 0.5, rate(rate_bucket[60s]))",
+        360,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [360, "0.3333333333333333"]}]}',
+        [["[]", "1970-01-01 00:06:00.000", "0.3333333333333333"]],
+        eps=1e-9,
+    )
+
+    # Distinct histogram metric names must remain separate while `le` and `__name__`
+    # are removed from the output labels.
+    do_clickhouse_only_range_query_test(
+        'histogram_fraction(0.1, 1.0, {__name__=~"two_hist_a_bucket|two_hist_b_bucket"})',
+        300,
+        300,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"env": "prod", "kind": "a"}, "values": [[300, "0.6666666666666666"]]}, {"metric": {"env": "prod", "kind": "b"}, "values": [[300, "0.3"]]}]}',
+        [
+            ["[('env','prod'),('kind','a')]", "[('1970-01-01 00:05:00.000',0.6666666666666666)]"],
+            ["[('env','prod'),('kind','b')]", "[('1970-01-01 00:05:00.000',0.3)]"],
+        ],
+        eps=1e-12,
+    )
+
+    # Negative bucket boundaries use the same linear interpolation rules as Prometheus.
+    do_clickhouse_only_query_test(
+        "histogram_fraction(-0.5, 0.5, negative_le_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0.16666666666666666"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0.16666666666666666"]],
+        eps=1e-12,
+    )
+
+    # Multiple histogram groups in a range query. The `le` label is removed from each
+    # group, while the remaining `job` label stays on the result.
+    do_clickhouse_only_range_query_test(
+        "histogram_fraction(1, 4, cache_lookup_duration_seconds_bucket)",
+        300,
+        320,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "reader"}, "values": [[300, "0.6"], [310, "0.6"], [320, "0.6"]]}, {"metric": {"job": "writer"}, "values": [[300, "0.4"], [310, "0.4"], [320, "0.4"]]}]}',
+        [
+            [
+                "[('job','reader')]",
+                "[('1970-01-01 00:05:00.000',0.6),('1970-01-01 00:05:10.000',0.6),('1970-01-01 00:05:20.000',0.6)]",
+            ],
+            [
+                "[('job','writer')]",
+                "[('1970-01-01 00:05:00.000',0.4),('1970-01-01 00:05:10.000',0.4),('1970-01-01 00:05:20.000',0.4)]",
+            ],
+        ],
+        eps=1e-12,
+    )
+
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0, 0.5, only_inf_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0"]],
+    )
+
+    do_clickhouse_only_query_test(
+        "histogram_fraction(1, 0.5, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0"]],
+    )
+
+    # Equal bounds and finite bounds outside the observed range are valid and return
+    # the corresponding empty or complete fraction.
+    for query, expected in (
+        ("histogram_fraction(0.5, 0.5, http_request_duration_seconds_bucket)", "0"),
+        ("histogram_fraction(-1, 2, http_request_duration_seconds_bucket)", "0.8333333333333334"),
+        ("histogram_fraction(2, 3, http_request_duration_seconds_bucket)", "0"),
+    ):
+        do_clickhouse_only_query_test(
+            query,
+            300,
+            f'{{"resultType": "vector", "result": [{{"metric": {{"job": "api"}}, "value": [300, "{expected}"]}}]}}',
+            [["[('job','api')]", "1970-01-01 00:05:00.000", expected]],
+        )
+
+    # One-sided infinite bounds select the lower or upper tail of the histogram.
+    for query, expected in (
+        ("histogram_fraction(-Inf, 0.5, http_request_duration_seconds_bucket)", "0.5"),
+        ("histogram_fraction(0.5, +Inf, http_request_duration_seconds_bucket)", "0.5"),
+    ):
+        do_clickhouse_only_query_test(
+            query,
+            300,
+            f'{{"resultType": "vector", "result": [{{"metric": {{"job": "api"}}, "value": [300, "{expected}"]}}]}}',
+            [["[('job','api')]", "1970-01-01 00:05:00.000", expected]],
+        )
+
+    # NaN bounds follow Prometheus and produce NaN for a non-empty histogram.
+    for query in (
+        "histogram_fraction(NaN, 0.5, http_request_duration_seconds_bucket)",
+        "histogram_fraction(0, NaN, http_request_duration_seconds_bucket)",
+    ):
+        do_clickhouse_only_query_test(
+            query,
+            300,
+            '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "NaN"]}]}',
+            [["[('job','api')]", "1970-01-01 00:05:00.000", "nan"]],
+        )
+
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0, 0.5, no_inf_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    # A malformed `le` bucket is ignored while valid buckets in the same histogram
+    # continue to contribute to the result.
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0, 0.1, bad_le_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0.16666666666666666"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0.16666666666666666"]],
+        eps=1e-12,
+    )
+
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0, 0.5, zero_count_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    do_clickhouse_only_query_test(
+        "histogram_fraction(0, 0.5, foo)",
+        300,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Aggregating classic buckets by `le` before applying histogram_fraction is the
+    # common way to combine multiple input series into one histogram.
+    do_clickhouse_only_query_test(
+        "histogram_fraction(1, 4, sum by (le) (cache_lookup_duration_seconds_bucket))",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0.5"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0.5"]],
+    )
+
+    # Argument type validation: both bounds must be scalars and the input must be an
+    # instant vector.
+    do_query_test_expect_error(
+        "histogram_fraction(http_request_duration_seconds_bucket, 0.5, http_request_duration_seconds_bucket)",
+        300,
+        "expected type scalar",
+        "expects argument 1 of type",
+    )
+
+    do_query_test_expect_error(
+        "histogram_fraction(0, http_request_duration_seconds_bucket, http_request_duration_seconds_bucket)",
+        300,
+        "expected type scalar",
+        "expects argument 2 of type",
+    )
+
+    do_query_test_expect_error(
+        "histogram_fraction(0, 0.5, 1)",
+        300,
+        "expected type instant vector",
+        "expects third argument of type",
+    )
+
+    # Prometheus accepts scalar expressions for the bounds. ClickHouse currently supports
+    # only constant bounds, so check this documented limitation on both ClickHouse paths.
+    for query in (
+        "histogram_fraction(time(), 0.5, http_request_duration_seconds_bucket)",
+        "histogram_fraction(0, time(), http_request_duration_seconds_bucket)",
+    ):
+        expected_error = "requires constant lower and upper parameters"
+        assert expected_error in execute_query_in_clickhouse_sql(query, 300, expect_error=True)
+        assert expected_error in execute_query_in_clickhouse_http_api(query, 300, expect_error=True)
+
+    node.query(
+        "CREATE TABLE prometheus_f32 "
+        "(time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+    try:
+        for le, value in [("0.1", 10), ("0.100001", 20), ("+Inf", 30)]:
+            node.query(
+                "INSERT INTO prometheus_f32 (metric_name, tags, time_series) VALUES "
+                f"('http_request_duration_seconds_bucket', {{'job': 'api', 'le': '{le}'}}, "
+                f"[(toDateTime64(300, 3), {value})])"
+            )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery("
+                "prometheus_f32, "
+                "'histogram_fraction(0.099999999, 0.1000005, http_request_duration_seconds_bucket)', "
+                "300)"
+            ),
+            [["[('job','api')]", "1970-01-01 00:05:00.000", "0.1666666716337204"]],
+            eps=1e-12,
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32 SYNC")
+
+    # UInt64 cumulative counts must be subtracted before converting to Float64. Otherwise
+    # the difference between 2^53 and 2^53 + 1 is rounded away and this fraction becomes 0.
+    node.query(
+        "CREATE TABLE prometheus_u64 "
+        "(time_series Array(Tuple(DateTime64(3), UInt64))) ENGINE=TimeSeries"
+    )
+    try:
+        for le, value in [
+            ("1", 9007199254740992),
+            ("2", 9007199254740993),
+            ("+Inf", 9007199254740993),
+        ]:
+            node.query(
+                "INSERT INTO prometheus_u64 (metric_name, tags, time_series) VALUES "
+                f"('large_count_bucket', {{'le': '{le}'}}, "
+                f"[(toDateTime64(300, 3), {value})])"
+            )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery("
+                "prometheus_u64, "
+                "'histogram_fraction(1, 2, large_count_bucket)', "
+                "300)"
+            ),
+            [["[]", "1970-01-01 00:05:00.000", "1.1102230246251564e-16"]],
+            eps=1e-30,
+        )
+    finally:
+        node.query("DROP TABLE prometheus_u64 SYNC")
+
+    # Prometheus clamps the complete interpolated rank even when cumulative bucket
+    # counts are not monotonic.
+    node.query(
+        "CREATE TABLE prometheus_non_monotonic "
+        "(time_series Array(Tuple(DateTime64(3), UInt64))) ENGINE=TimeSeries"
+    )
+    try:
+        for le, value in [("1", 200), ("2", 50), ("+Inf", 100)]:
+            node.query(
+                "INSERT INTO prometheus_non_monotonic (metric_name, tags, time_series) VALUES "
+                f"('non_monotonic_bucket', {{'le': '{le}'}}, "
+                f"[(toDateTime64(300, 3), {value})])"
+            )
+
+        for query, expected in (
+            ("histogram_fraction(0, 0.75, non_monotonic_bucket)", "1"),
+            ("histogram_fraction(0.5, 0.75, non_monotonic_bucket)", "0"),
+        ):
+            assert tsv_close_to(
+                node.query(
+                    "SELECT * FROM prometheusQuery("
+                    f"prometheus_non_monotonic, '{query}', 300)"
+                ),
+                [["[]", "1970-01-01 00:05:00.000", expected]],
+            )
+    finally:
+        node.query("DROP TABLE prometheus_non_monotonic SYNC")
 
 
 def test_label_manipulation_functions():

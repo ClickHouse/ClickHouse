@@ -2,10 +2,20 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Field.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
+#include <Common/assert_cast.h>
+
+#include <Columns/ColumnVector.h>
+
+#include <DataTypes/DataTypesNumber.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <numeric>
+#include <type_traits>
 
 
 namespace DB
@@ -86,7 +96,125 @@ struct QuantilePrometheusHistogram
         getManyInterpolatedImpl(levels, indices, num_levels, result);
     }
 
+    Float64 getFraction(Float64 lower, Float64 upper) const
+    {
+        struct FractionRank
+        {
+            CumulativeHistogramValue cumulative{};
+            Float64 fractional = 0;
+        };
+
+        size_t size = map.size();
+        if (size == 0)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        std::unique_ptr<Pair[]> array_holder(new Pair[size]);
+        Pair * array = array_holder.get();
+
+        size_t i = 0;
+        for (const auto & pair : map)
+            array[i++] = pair.getValue();
+
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+
+        const Pair & max_bucket = array[size - 1];
+        if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        CumulativeHistogramValue count = max_bucket.second;
+        if (count == 0 || isNaN(lower) || isNaN(upper))
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        if (lower >= upper)
+            return 0;
+
+        CumulativeHistogramValue rank = 0;
+        FractionRank lower_rank;
+        FractionRank upper_rank;
+        bool lower_set = false;
+        bool upper_set = false;
+        Float64 lower_bound = static_cast<Float64>(array[0].first) > 0
+            ? 0
+            : -std::numeric_limits<Float64>::infinity();
+
+        for (size_t index = 0; index < size; ++index)
+        {
+            const Pair & bucket = array[index];
+            Float64 upper_bound = static_cast<Float64>(bucket.first);
+
+            auto interpolate = [&](Float64 value) -> FractionRank
+            {
+                if (lower_bound == -std::numeric_limits<Float64>::infinity())
+                    return {bucket.second, 0};
+
+                /// Keep the cumulative counts exact until the bucket delta is computed.
+                /// This preserves one-count resolution for UInt64 counts above 2^53.
+                Float64 bucket_count_delta = subtractCounts(bucket.second, rank);
+                return {rank, bucket_count_delta * (value - lower_bound) / (upper_bound - lower_bound)};
+            };
+
+            if (!lower_set && lower_bound >= lower)
+            {
+                lower_rank = {rank, 0};
+                lower_set = true;
+            }
+            if (!upper_set && lower_bound >= upper)
+            {
+                upper_rank = {rank, 0};
+                upper_set = true;
+            }
+            if (lower_set && upper_set)
+                break;
+
+            if (!lower_set && lower_bound < lower && upper_bound > lower)
+            {
+                lower_rank = interpolate(lower);
+                lower_set = true;
+            }
+            if (!upper_set && lower_bound < upper && upper_bound > upper)
+            {
+                upper_rank = interpolate(upper);
+                upper_set = true;
+            }
+            if (lower_set && upper_set)
+                break;
+
+            rank = bucket.second;
+            lower_bound = upper_bound;
+        }
+
+        auto clamp_rank = [&](FractionRank & rank_value, bool rank_set)
+        {
+            if (!rank_set
+                || subtractCounts(rank_value.cumulative, count) + rank_value.fractional > 0)
+                rank_value = {count, 0};
+        };
+
+        clamp_rank(lower_rank, lower_set);
+        clamp_rank(upper_rank, upper_set);
+
+        /// Subtract cumulative counts before converting them to Float64. Converting the
+        /// individual UInt64 counts first loses one-count differences above 2^53.
+        Float64 rank_difference = subtractCounts(upper_rank.cumulative, lower_rank.cumulative);
+        rank_difference += upper_rank.fractional - lower_rank.fractional;
+        return rank_difference / static_cast<Float64>(count);
+    }
+
 private:
+    static Float64 subtractCounts(CumulativeHistogramValue lhs, CumulativeHistogramValue rhs)
+    {
+        if constexpr (std::is_same_v<CumulativeHistogramValue, UInt64>)
+        {
+            if (lhs >= rhs)
+                return static_cast<Float64>(lhs - rhs);
+            return -static_cast<Float64>(rhs - lhs);
+        }
+        else
+        {
+            return lhs - rhs;
+        }
+    }
+
     Value getInterpolatedImpl(Float64 level) const
     {
         size_t size = map.size();
@@ -212,6 +340,65 @@ using FuncQuantilesPrometheusHistogram = AggregateFunctionQuantile<
     true,
     false>;
 
+struct NameFractionPrometheusHistogram { static constexpr auto name = "fractionPrometheusHistogram"; };
+
+template <typename Value, typename CumulativeHistogramValue>
+class AggregateFunctionFractionPrometheusHistogram final
+    : public IAggregateFunctionDataHelper<
+        QuantilePrometheusHistogram<Value, CumulativeHistogramValue>,
+        AggregateFunctionFractionPrometheusHistogram<Value, CumulativeHistogramValue>>
+{
+    using Data = QuantilePrometheusHistogram<Value, CumulativeHistogramValue>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionFractionPrometheusHistogram<Value, CumulativeHistogramValue>>;
+
+    Float64 lower;
+    Float64 upper;
+
+public:
+    AggregateFunctionFractionPrometheusHistogram(const DataTypes & argument_types_, const Array & params)
+        : Base(argument_types_, params, std::make_shared<DataTypeFloat64>())
+    {
+        if (params.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two parameters", getName());
+
+        lower = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+        upper = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[1]);
+    }
+
+    String getName() const override { return NameFractionPrometheusHistogram::name; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        auto value = static_cast<const ColumnVectorOrDecimal<Value> &>(*columns[0]).getData()[row_num];
+        if constexpr (std::is_same_v<CumulativeHistogramValue, UInt64>)
+            this->data(place).add(value, columns[1]->getUInt(row_num));
+        else
+            this->data(place).add(value, columns[1]->getFloat64(row_num));
+    }
+
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        this->data(place).merge(this->data(rhs));
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        this->data(place).serialize(buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        this->data(place).deserialize(buf);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(this->data(place).getFraction(lower, upper));
+    }
+};
+
 template <template <typename, typename> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
@@ -332,6 +519,10 @@ FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6)
     FunctionDocumentation documentation_quantilesPrometheusHistogram = {description_quantilesPrometheusHistogram, syntax_quantilesPrometheusHistogram, arguments_quantilesPrometheusHistogram, parameters_quantilesPrometheusHistogram, returned_value_quantilesPrometheusHistogram, examples_quantilesPrometheusHistogram, introduced_in_quantilesPrometheusHistogram, category_quantilesPrometheusHistogram};
 
     factory.registerFunction(NameQuantilesPrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilesPrometheusHistogram>, documentation_quantilesPrometheusHistogram, properties});
+
+    factory.registerFunction(NameFractionPrometheusHistogram::name, {
+        createAggregateFunctionQuantile<AggregateFunctionFractionPrometheusHistogram>,
+        FunctionDocumentation::INTERNAL_FUNCTION_DOCS});
 }
 
 }
