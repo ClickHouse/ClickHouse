@@ -162,9 +162,15 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 <br />
 
-① **تقليم الأقسام**: تُستخدَم [فهارس MinMax](/ar/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) لتجاهل أقسام كاملة (مجموعات من الأجزاء) لا يمكن منطقيًا أن تطابق عامل التصفية في الاستعلام على الأعمدة المستخدمة في مفتاح تقسيم الجدول.
+<Steps>
+  <Step title="تقليم الأقسام">
+    تُستخدَم [فهارس MinMax](/ar/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) لتجاهل أقسام كاملة (مجموعات من الأجزاء) لا يمكن منطقيًا أن تطابق عامل التصفية في الاستعلام على الأعمدة المستخدمة في مفتاح تقسيم الجدول.
+  </Step>
 
-② **تقليم الحبيبات**: بالنسبة إلى أجزاء البيانات المتبقية بعد الخطوة ①، يُستخدَم [الفهرس الأساسي](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) لتجاهل جميع [الحبيبات](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (كتل من الصفوف) التي لا يمكن منطقيًا أن تطابق عامل التصفية في الاستعلام على الأعمدة المستخدمة في المفتاح الأساسي للجدول.
+  <Step title="تقليم الحبيبات">
+    بالنسبة إلى أجزاء البيانات المتبقية بعد خطوة تقليم الأقسام، يُستخدَم [الفهرس الأساسي](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) لتجاهل جميع [الحبيبات](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (كتل من الصفوف) التي لا يمكن منطقيًا أن تطابق عامل التصفية في الاستعلام على الأعمدة المستخدمة في المفتاح الأساسي للجدول.
+  </Step>
+</Steps>
 
 يمكننا ملاحظة خطوات تقليم البيانات هذه من خلال [فحص](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) خطة تنفيذ الاستعلام الفعلية لاستعلام المثال المذكور أعلاه باستخدام عبارة [EXPLAIN](/ar/reference/statements/explain):
 
@@ -208,14 +214,20 @@ WHERE date >= '2020-12-01'
 
 يوضح الناتج أعلاه ما يلي:
 
-① تقليم الأقسام: تُظهر الأسطر من 7 إلى 18 من ناتج EXPLAIN أعلاه أن ClickHouse يستخدم أولًا [MinMax index](/ar/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) الخاص بالحقل `date` لتحديد 11 من أصل 3257 [حبيبة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (كتل من الصفوف) مخزَّنة في جزء بيانات نشط واحد من أصل 436 جزء بيانات نشط موجود، وتحتوي على صفوف تطابق عامل التصفية `date` الخاص بالاستعلام.
+<Steps>
+  <Step title="تقليم الأقسام">
+    تُظهر الأسطر من 7 إلى 18 من ناتج `EXPLAIN` أعلاه أن ClickHouse يستخدم أولًا [MinMax index](/ar/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) الخاص بالحقل `date` لتحديد 11 من أصل 3257 [حبيبة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (كتل من الصفوف) مخزَّنة في جزء بيانات نشط واحد من أصل 436 جزء بيانات نشط موجود، وتحتوي على صفوف تطابق عامل التصفية `date` الخاص بالاستعلام.
+  </Step>
 
-② تقليم الحبيبة: تشير الأسطر من 19 إلى 24 من ناتج EXPLAIN أعلاه إلى أن ClickHouse يستخدم بعد ذلك [الفهرس الأساسي](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) (الذي أُنشئ على الحقل `town`) لجزء البيانات الذي جرى تحديده في الخطوة ①، لتقليل عدد الحبيبات أكثر (التي تحتوي على صفوف قد تطابق أيضًا عامل التصفية `town` الخاص بالاستعلام) من 11 إلى 1. وينعكس ذلك أيضًا في ناتج ClickHouse-client الذي طبعناه أعلاه للاستعلام المُنفَّذ:
+  <Step title="تقليم الحبيبة">
+    تشير الأسطر من 19 إلى 24 من ناتج `EXPLAIN` أعلاه إلى أن ClickHouse يستخدم بعد ذلك [الفهرس الأساسي](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) (الذي أُنشئ على الحقل `town`) لجزء البيانات الذي جرى تحديده في خطوة تقليم الأقسام، لتقليل عدد الحبيبات أكثر (التي تحتوي على صفوف قد تطابق أيضًا عامل التصفية `town` الخاص بالاستعلام) من 11 إلى 1. وينعكس ذلك أيضًا في ناتج عميل ClickHouse الذي طبعناه أعلاه للاستعلام المُنفَّذ:
 
-```response
-... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
-Peak memory usage: 2.73 MiB.
-```
+    ```response
+    ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+    Peak memory usage: 2.73 MiB.
+    ```
+  </Step>
+</Steps>
 
 ما يعني أن ClickHouse فحص وعالج granule واحدة (كتلة من [8192](/ar/reference/settings/merge-tree-settings/index-granularity#index_granularity) صفًا) في غضون 6 مللي ثانية لحساب نتيجة الاستعلام.
 

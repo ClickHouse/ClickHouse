@@ -4,7 +4,7 @@
       "pages": [
         "ar/index"
       ],
-      "tab": "الصفحة الرئيسية"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -21,7 +21,7 @@
           "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "قاعدة البيانات"
+      "tab": "Database"
     },
     {
       "menu": [
@@ -44,7 +44,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "مفتوح المصدر"
+          "item": "Open source"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -59,12 +59,12 @@
           "$ref": "./products/kubernetes-operator/navigation.json"
         }
       ],
-      "tab": "الحلول"
+      "tab": "Solutions"
     },
     {
       "menu": [
         {
-          "item": "النظام المتكامل",
+          "item": "Ecosystem",
           "pages": [
             "ar/integrations/home",
             "ar/integrations/data-catalogs"
@@ -80,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "عمليات التكامل"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -97,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "الموارد"
+      "tab": "Resources"
     }
   ]
 }
