@@ -10,6 +10,15 @@ Code: 27. Cannot parse input: expected 'eof' before: ' elephants': while setting
 --- SET max_threads = 'abc'
 Code: 27. Cannot parse input: expected 'eof' before: 'abc': while setting 'max_threads' to value 'abc'. (CANNOT_PARSE_INPUT_ASSERTION_FAILED)
 
+=== a malformed URI is rejected the same way: it names the setting, and a password in the value is masked
+--- SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://['
+Code: 36. Cannot parse URI: Bad URI syntax: unterminated IPv6 address: while setting 'format_avro_schema_registry_url' to value 'http://['. (BAD_ARGUMENTS)
+--- SET format_avro_schema_registry_url = 'http://['
+Code: 36. Cannot parse URI: Bad URI syntax: unterminated IPv6 address: while setting 'format_avro_schema_registry_url' to value 'http://['. (BAD_ARGUMENTS)
+--- SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:s3cret@['
+Code: 36. Cannot parse URI: Bad URI syntax: unterminated IPv6 address: while setting 'format_avro_schema_registry_url' to value 'http://user:[HIDDEN]@['. (BAD_ARGUMENTS)
+password echoed: 0
+
 === an unknown setting keeps the message it had, with no context appended
 code: UNKNOWN_SETTING
 hint: Maybe you meant ['max_threads']

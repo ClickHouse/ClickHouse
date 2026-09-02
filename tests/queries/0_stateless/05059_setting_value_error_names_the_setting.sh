@@ -26,6 +26,15 @@ run "SELECT 1 SETTINGS max_memory_usage = '10 elephants'"
 run "SET max_threads = 'abc'"
 
 echo
+echo '=== a malformed URI is rejected the same way: it names the setting, and a password in the value is masked'
+# `Poco::URI` reports a malformed string with its own exception type, which used to escape without the
+# name of the setting. The setting may carry basic-auth credentials, which must not be echoed back.
+run "SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://['"
+run "SET format_avro_schema_registry_url = 'http://['"
+run "SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:s3cret@['"
+echo "password echoed: $(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:s3cret@['" 2>&1 | grep -c 's3cret')"
+
+echo
 echo '=== an unknown setting keeps the message it had, with no context appended'
 # The text of that message depends on whether custom-setting prefixes are configured, so assert the two
 # things that matter: the hint survives, and no ": while setting ..." is appended to it.

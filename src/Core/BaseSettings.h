@@ -42,6 +42,11 @@ struct BaseSettingsHelpers
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 
+    /// The value as it is echoed in the "while setting '<name>' to value <value>" context of a rejected value.
+    /// A URI-typed setting may carry basic-auth credentials, so a password of the form `scheme://user:password@`
+    /// is masked the same way it is masked in queries.
+    static String formatValueForErrorMessage(const Field & value);
+
     /// Serialization helpers
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
@@ -427,7 +432,7 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
     }
     catch (Exception & e)
     {
-        e.addMessage("while setting '{}' to value {}", name, applyVisitor(FieldVisitorToString(), value));
+        e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
         throw;
     }
 }
@@ -665,7 +670,7 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
     }
     catch (Exception & e)
     {
-        e.addMessage("while setting '{}' to value {}", name, applyVisitor(FieldVisitorToString(), value));
+        e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
         throw;
     }
 }
