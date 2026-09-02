@@ -761,8 +761,7 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
 
 TEST_F(ConnectionPoolTest, ProxyConnectionReportsProxyInResolvedAddress)
 {
-    /// A proxied connection dials the proxy, so getResolvedAddress() (S3 error logging) must
-    /// report the proxy host:port, not the target URL host:port.
+    /// A proxied connection must report the proxy endpoint through `getResolvedAddress`.
     auto uri = Poco::URI("http://proxy-only-target.invalid:9999");
 
     DB::ProxyConfiguration proxy_config;
@@ -780,8 +779,7 @@ TEST_F(ConnectionPoolTest, ProxyConnectionReportsProxyInResolvedAddress)
 
 TEST_F(ConnectionPoolTest, BypassedProxyReportsTargetInResolvedAddress)
 {
-    /// no_proxy matches the target, so the pool dials it directly: getResolvedAddress() must
-    /// report the target, not target_ip:proxy_port.
+    /// A bypassed proxy must report the target endpoint through `getResolvedAddress`.
     auto uri = Poco::URI(getServerUrl());
 
     DB::ProxyConfiguration proxy_config;
@@ -1163,7 +1161,7 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
 #if USE_SSL
 TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
 {
-    /// The proxy is named 127.0.0.1 but connect() is handed 127.0.0.99: the tunnel must dial
+    /// The proxy is named 127.0.0.1 but `connect` is handed 127.0.0.99: the tunnel must use
     /// the given record instead of resolving the name again.
     Poco::Net::ServerSocket port_probe(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
     const auto dead_port = port_probe.address().port();

@@ -469,11 +469,12 @@ void HTTPClientSession::reconnect(uint64_t * connect_time)
     try
     {
         connect_watch.restart();
-        SocketAddress addr = (_proxyConfig.host.empty() || bypassProxy())
+        _connect_address.clear();
+        const auto address = (_proxyConfig.host.empty() || bypassProxy())
             ? SocketAddress(_resolved_host.empty() ? _host : _resolved_host, _port)
             : SocketAddress(_proxyConfig.host, _proxyConfig.port);
-        _dialled_address = addr.toString();
-        connect(addr);
+        _connect_address = address.toString();
+        connect(address);
         if (connect_time)
             *connect_time = connect_watch.elapsed();
     }
@@ -596,7 +597,7 @@ void HTTPClientSession::assign(Poco::Net::HTTPClientSession & session)
     poco_assert(!connected());
 
     setResolvedHost(session.getResolvedHost());
-    _dialled_address = session._dialled_address;
+    _connect_address = session._connect_address;
     setProxyConfig(session.getProxyConfig());
 
     setTimeout(session.getConnectionTimeout(), session.getSendTimeout(), session.getReceiveTimeout());

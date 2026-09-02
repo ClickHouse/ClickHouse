@@ -252,7 +252,7 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                 }
 
                 if (auto err = socket->impl()->socketError())
-                    socket->impl()->error(err, it->toString()); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
+                    Poco::Net::SocketImpl::error(err, it->toString());
 
                 socket->setBlocking(true);
             }
