@@ -9,6 +9,8 @@ namespace DB
 class DataPartStorageOnDiskFull final : public DataPartStorageOnDiskBase
 {
 public:
+    using DataPartStorageOnDiskBase::writeFile;
+
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_);
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Full; }
 
@@ -32,7 +34,7 @@ public:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings,
-        std::function<void()> cancellation_hook = {}) override;
+        std::function<void()> cancellation_hook) override;
 
     void createFile(const String & name) override;
     void moveFile(const String & from_name, const String & to_name) override;

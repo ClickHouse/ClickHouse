@@ -335,7 +335,16 @@ public:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings,
-        std::function<void()> cancellation_hook = {}) = 0;
+        std::function<void()> cancellation_hook) = 0;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & name,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings)
+    {
+        return writeFile(name, buf_size, mode, settings, {});
+    }
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
