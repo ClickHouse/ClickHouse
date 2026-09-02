@@ -161,8 +161,15 @@ ColumnPtr convertColumnToTypeOrNull(
     ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
 
-    /// Same as `convertFieldToType`, which returns the value untouched when `from` equals `to`.
-    if (from->equals(*to))
+    /// Same as `convertFieldToType`, which returns the value untouched when `from` equals `to` - but
+    /// only for genuinely identical types. `IDataType::equals` ignores custom names, so it also holds
+    /// for `Bool` and its storage type `UInt8` (and for wrapper pairs such as `Nullable(Bool)` and
+    /// `Nullable(UInt8)`), which are not byte-for-byte aliases: a `Bool` column may hold a raw byte
+    /// such as 2 (e.g. from `reinterpret`) that the `Field` path normalizes to `true` through
+    /// `retagBoolInField`, and that `strict` rejects for a `Bool` target. Like the identity check of
+    /// `CAST`, require the custom names to match too; comparing the full names does so at every
+    /// nesting level.
+    if (from->equals(*to) && from->getName() == to->getName())
         return full;
 
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, strict, convert_inexact_floats))
