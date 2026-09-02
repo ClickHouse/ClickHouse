@@ -80,13 +80,22 @@ struct WorkloadResources
             // startConsumption, which must be called from that thread).
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
-            // Publish as the current CPU lease only when parking is enabled (captured at lease
-            // construction from `cpu_slot_parking`); otherwise the park guards find no current
-            // lease and are a no-op, so a server with parking disabled pays zero overhead.
+            // Publish this thread's lease as the current CPU lease so the park guards deep in
+            // work() can find it. If parking is disabled but an enclosing pipeline executor on
+            // this thread already published a lease (nested executors), shadow it with nullptr
+            // for our region and restore it on destruction -- otherwise the guards here would
+            // park the outer executor's lease, breaking the "cpu_slot_parking=false makes every
+            // guard site a no-op" contract. If parking is disabled and nothing is published,
+            // leave the thread-local untouched so a server with the feature off pays no overhead.
+            prev_cpu_lease = getCurrentCPULease();
             if (lease->isParkingEnabled())
             {
-                prev_cpu_lease = getCurrentCPULease();
                 setCurrentCPULease(lease);
+                publishes_lease = true;
+            }
+            else if (prev_cpu_lease)
+            {
+                setCurrentCPULease(nullptr);
                 publishes_lease = true;
             }
         }
