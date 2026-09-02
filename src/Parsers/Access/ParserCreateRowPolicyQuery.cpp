@@ -446,7 +446,7 @@ row_is_visible = (one or more of the permissive policies that apply to the user 
                  (all of the restrictive policies that apply to the user have non-zero conditions)
 ```
 
-By default, if no permissive policy applies to the user, the first condition is not applied and only the restrictive policies decide, so a user to whom no policy applies at all sees every row.
+With the default server configuration, if no permissive policy applies to the user, the first condition is not applied and only the restrictive policies decide, so a user to whom no policy applies at all sees every row.
 
 For example, the following policies:
 
