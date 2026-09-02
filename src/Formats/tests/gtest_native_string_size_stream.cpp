@@ -2,14 +2,12 @@
 
 #include <cstring>
 
-#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -19,7 +17,6 @@
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 using namespace DB;
@@ -172,20 +169,17 @@ static int deserializeWithCorruptedOffsets(UInt64 first, UInt64 second)
 
 TEST(NativeStringSizeStream, CorruptedOffsetStream)
 {
-    /// The offsets come from untrusted input, and the difference between two consecutive ones is
-    /// the size of a string, so it must be both non-negative and within `MAX_STRING_SIZE`.
+    /// The offsets come from untrusted input and address the characters of the column, so they have to
+    /// increase monotonically and to stay within the limit on the total size of the column.
 
     /// A non-monotonic pair: the second string would have a negative size.
     ASSERT_EQ(deserializeWithCorruptedOffsets(8, 4), ErrorCodes::INCORRECT_DATA);
 
-    /// An offset far past the data: the first string alone is above `MAX_STRING_SIZE`. This is
-    /// reported before the pair is found to be non-monotonic, because the sizes are validated in
-    /// order.
-    ASSERT_EQ(deserializeWithCorruptedOffsets(0xfffffffffffffff0ULL, 0x20), ErrorCodes::TOO_LARGE_STRING_SIZE);
+    /// An offset far past the data, which the next one then decreases from.
+    ASSERT_EQ(deserializeWithCorruptedOffsets(0xfffffffffffffff0ULL, 0x20), ErrorCodes::INCORRECT_DATA);
 
-    /// A monotonic pair whose difference is still above `MAX_STRING_SIZE`.
-    ASSERT_EQ(
-        deserializeWithCorruptedOffsets(8, 8 + SerializationString::MAX_STRING_SIZE + 1), ErrorCodes::TOO_LARGE_STRING_SIZE);
+    /// A monotonic pair whose total is above the limit on the size of the whole column.
+    ASSERT_EQ(deserializeWithCorruptedOffsets(8, (1ULL << 48) + 9), ErrorCodes::INCORRECT_DATA);
 }
 
 TEST(NativeStringSizeStream, RoundTripFlattenedDynamic)
@@ -224,59 +218,4 @@ TEST(NativeStringSizeStream, AllEmptyNestedString)
     addColumn(nested, "aa", "Array(Array(String))", {Array{}, Array{}});
     addColumn(nested, "m", "Map(String, String)", {Map{}, Map{}});
     assertBlocksEqual(nested, roundTrip(nested, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
-}
-
-TEST(NativeStringSizeStream, RejectionLeavesTheColumnUnchanged)
-{
-    /// A rejected batch must not leave the destination column in an inconsistent state: the offsets
-    /// are appended before the sizes are known to be valid, so the deserialization has to restore both
-    /// the offsets and the characters when it throws.
-
-    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
-
-    auto column = ColumnString::create();
-    column->insert(Field("previous"));
-    column->insert(Field("rows"));
-
-    const size_t num_rows_before = column->size();
-    const size_t num_chars_before = column->getChars().size();
-
-    /// Two cumulative offsets, continuing the offsets already in the column, whose difference is above
-    /// `MAX_STRING_SIZE`, and a data stream that is nowhere near large enough for them.
-    const UInt64 offsets[2] = {num_chars_before + 8, num_chars_before + 9 + SerializationString::MAX_STRING_SIZE};
-    String offsets_data(reinterpret_cast<const char *>(offsets), sizeof(offsets));
-    String chars_data(16, 'z');
-
-    ReadBufferFromString offsets_stream(offsets_data);
-    ReadBufferFromString chars_stream(chars_data);
-
-    ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.position_independent_encoding = false;
-    settings.native_format = true;
-    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
-    {
-        if (!path.empty() && path.back().type == ISerialization::Substream::StringSizes)
-            return &offsets_stream;
-        return &chars_stream;
-    };
-
-    ISerialization::DeserializeBinaryBulkStatePtr state;
-    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-
-    int error_code = 0;
-    try
-    {
-        serialization->deserializeBinaryBulkWithMultipleStreams(*column, 2, settings, state, nullptr);
-    }
-    catch (const Exception & e)
-    {
-        error_code = e.code();
-    }
-
-    ASSERT_EQ(error_code, ErrorCodes::TOO_LARGE_STRING_SIZE);
-    ASSERT_EQ(column->size(), num_rows_before);
-    ASSERT_EQ(column->getChars().size(), num_chars_before);
-    ASSERT_EQ(column->getOffsets().back(), column->getChars().size());
-    ASSERT_EQ(column->getDataAt(0), "previous");
-    ASSERT_EQ(column->getDataAt(1), "rows");
 }

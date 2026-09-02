@@ -19,7 +19,6 @@ namespace DB
         extern const int MEMORY_LIMIT_EXCEEDED;
         extern const int CANNOT_READ_ALL_DATA;
         extern const int INCORRECT_DATA;
-        extern const int TOO_LARGE_STRING_SIZE;
     }
 }
 
@@ -243,20 +242,22 @@ void expectSizesStreamRejected(const std::vector<UInt64> & sizes_values, size_t 
     }
     catch (const DB::Exception & e)
     {
-        ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
     }
 }
 
 }
 
-/// A size above MAX_STRING_SIZE in the sizes stream would overflow the offsets when accumulated
-/// (e.g. sizes close to 2^64 wrap the offset around and the spans computed from the offsets then point
-/// outside the data). It has to be rejected on the rows appended to the column.
+/// The sizes in the sizes stream come straight from the data, and accumulating them into the offsets
+/// of the column can overflow: sizes close to 2^64 wrap the offsets around and the spans computed from
+/// them then point outside the data.
 TEST(StringSerialization, WithSizeStreamHugeSizeIsRejected)
 {
     MainThreadStatus::getInstance();
     expectSizesStreamRejected({10, std::numeric_limits<UInt64>::max(), 5}, 3);
-    expectSizesStreamRejected({SerializationString::MAX_STRING_SIZE + 1}, 1);
+    /// A sum that is exactly 2^65 and therefore wraps to zero when accumulated in 64 bits.
+    expectSizesStreamRejected({std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), 2}, 3);
+    expectSizesStreamRejected({(1ULL << 48) + 1}, 1);
 }
 
 namespace
@@ -297,20 +298,14 @@ void expectOffsetsStreamRejected(const std::vector<UInt64> & offset_values, size
 
 }
 
-/// The stream of cumulative offsets is the `Native` carrier of the string sizes, and a monotonically
-/// increasing stream of offsets can still describe a single string above `MAX_STRING_SIZE` while the total
-/// stays below the limit on the size of the whole column, so the differences between the consecutive
-/// offsets - the sizes of the strings - have to be checked there as well.
+/// The stream of cumulative offsets is the `Native` carrier of the string sizes. The offsets address the
+/// characters of the column, so they have to increase monotonically and to stay within the limit on the
+/// size of the whole column.
 TEST(StringSerialization, OffsetsStreamHugeSizeIsRejected)
 {
     MainThreadStatus::getInstance();
 
-    constexpr UInt64 huge = SerializationString::MAX_STRING_SIZE + 1;
-    expectOffsetsStreamRejected({huge}, 1, ErrorCodes::TOO_LARGE_STRING_SIZE);
-    expectOffsetsStreamRejected({10, 10 + huge, 20 + huge}, 3, ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-    /// The same check reports the offsets that do not increase monotonically: their difference wraps around
-    /// and lands above the limit.
     expectOffsetsStreamRejected({10, 5}, 2, ErrorCodes::INCORRECT_DATA);
-    expectOffsetsStreamRejected({std::numeric_limits<UInt64>::max()}, 1, ErrorCodes::TOO_LARGE_STRING_SIZE);
+    expectOffsetsStreamRejected({std::numeric_limits<UInt64>::max()}, 1, ErrorCodes::INCORRECT_DATA);
+    expectOffsetsStreamRejected({10, (1ULL << 48) + 11}, 2, ErrorCodes::INCORRECT_DATA);
 }

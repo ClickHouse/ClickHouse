@@ -16,7 +16,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <base/arithmeticOverflow.h>
 #include <base/unit.h>
 #include <Common/assert_cast.h>
 
@@ -664,101 +663,28 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
     }
 }
 
-/// The sizes come from a separate stream, so they are not implicitly bounded by the amount
-/// of data that follows them, and their sum can overflow the accumulated offset.
-void accumulateCheckedStringSize(UInt64 & accumulated, UInt64 size)
-{
-    if (unlikely(size > SerializationString::MAX_STRING_SIZE))
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}.",
-            size,
-            SerializationString::MAX_STRING_SIZE);
-
-    if (unlikely(common::addOverflow(accumulated, size, accumulated)))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserialization of string sizes leads to an overflow of offsets");
-}
-
-/// The sizes and the offsets come from untrusted input, so their validation can throw after some of
-/// them have already been appended to the destination column. Restore the column to its previous state
-/// in that case, so that a caller which catches the exception does not observe a column with more
-/// offsets than characters.
-class ColumnStringRollbackGuard
-{
-public:
-    explicit ColumnStringRollbackGuard(ColumnString & column_)
-        : column(column_), num_offsets(column_.getOffsets().size()), num_chars(column_.getChars().size())
-    {
-    }
-
-    ~ColumnStringRollbackGuard()
-    {
-        if (committed)
-            return;
-
-        column.getOffsets().resize_assume_reserved(num_offsets);
-        column.getChars().resize_assume_reserved(num_chars);
-    }
-
-    void commit() { committed = true; }
-
-private:
-    ColumnString & column;
-    const size_t num_offsets;
-    const size_t num_chars;
-    bool committed = false;
-};
-
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
-    const size_t old_offsets_size = offsets.size();
-    const IColumn::Offset initial_offset = offsets.empty() ? 0 : offsets.back();
-    IColumn::Offset prev_offset = initial_offset;
 
     offsets.reserve(offsets.size() + rows);
 
-    /// The sizes come from a separate stream, so they are not implicitly bounded by the amount of data
-    /// that follows them, and their sum can overflow the offsets. Checking every size individually was
-    /// measured to slow reading of short strings down by tens of percent, so the accumulation loop instead
-    /// OR-folds the sizes into one value that bounds each of them from above (the OR contains every bit of
-    /// every size, so it is not less than any of them). One chunk of at most `2^63 / MAX_STRING_SIZE` sizes
-    /// that pass that bound cannot wrap `UInt64` when it is added to an offset below `2^63`, so checking
-    /// once per chunk is enough to keep the offsets exact.
-    constexpr size_t chunk_rows = (1ULL << 63) / SerializationString::MAX_STRING_SIZE;
-    static_assert(chunk_rows * SerializationString::MAX_STRING_SIZE == (1ULL << 63));
-
-    bool suspicious = prev_offset >= (1ULL << 63);
-    for (size_t chunk_begin = 0; !suspicious && chunk_begin < rows; chunk_begin += chunk_rows)
+    /// The sizes come from a separate stream, so nothing bounds them by the data that follows them and
+    /// their sum can overflow the offsets. A 128-bit accumulator cannot overflow, so one check of the
+    /// total is enough: below it every offset is exact.
+    unsigned __int128 offset = offsets.empty() ? 0 : offsets.back();
+    for (size_t i = 0; i < rows; ++i)
     {
-        const size_t chunk_end = std::min(rows, chunk_begin + chunk_rows);
-
-        UInt64 or_of_sizes = 0;
-        for (size_t i = chunk_begin; i < chunk_end; ++i)
-        {
-            const UInt64 size = sizes[start + i];
-            or_of_sizes |= size;
-            prev_offset += size;
-            offsets.push_back(prev_offset);
-        }
-
-        /// The OR is above `MAX_STRING_SIZE` if any size is above it, but it can also combine the bits of
-        /// legitimate sizes into a value above the limit, so it does not report an error by itself and only
-        /// routes to the exact validation below.
-        suspicious = or_of_sizes > SerializationString::MAX_STRING_SIZE || prev_offset >= (1ULL << 63);
+        offset += sizes[start + i];
+        offsets.push_back(static_cast<IColumn::Offset>(offset));
     }
 
-    if (unlikely(suspicious))
-    {
-        /// Roll the unchecked accumulation back and redo it with the exact per-size validation.
-        offsets.resize(old_offsets_size);
-        prev_offset = initial_offset;
-        for (size_t i = 0; i < rows; ++i)
-        {
-            accumulateCheckedStringSize(prev_offset, sizes[start + i]);
-            offsets.push_back(prev_offset);
-        }
-    }
+    if (unlikely(offset > MAX_TOTAL_STRING_SIZE))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Total size of String column is too large: the sizes stream declares more than {} bytes, "
+            "most likely the data is corrupted",
+            MAX_TOTAL_STRING_SIZE);
 }
 
 }
@@ -884,45 +810,18 @@ size_t SerializationString::deserializeStringOffsetsAndGetDataSize(
         const size_t prev_num_rows = offsets.size();
         SerializationNumber<ColumnString::Offset>::deserializeBinaryBulk(offsets, *offsets_stream, limit);
 
-        /// The offsets come from untrusted input: they have to increase monotonically, and the difference
-        /// between two consecutive ones is the size of a string, so it is bounded by `MAX_STRING_SIZE` as
-        /// well. The difference of a non-monotonic pair wraps around and lands far above that limit, so a
-        /// single comparison covers both conditions. The differences are OR-folded to keep the loop free of
-        /// branches (the OR contains every bit of every difference, so it is not less than any of them) and
-        /// the exact check only runs when the fold is above the limit.
-        UInt64 or_of_sizes = 0;
-        UInt64 prev = prev_last_offset;
-        for (size_t i = prev_num_rows, end = offsets.size(); i < end; ++i)
-        {
-            const UInt64 current = offsets[i];
-            or_of_sizes |= current - prev;
-            prev = current;
-        }
-
-        if (unlikely(or_of_sizes > MAX_STRING_SIZE))
-        {
-            prev = prev_last_offset;
-            for (size_t i = prev_num_rows, end = offsets.size(); i < end; ++i)
-            {
-                const UInt64 current = offsets[i];
-
-                if (current < prev)
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "String offsets stream is not monotonically increasing (at index {}, value {})",
-                        i,
-                        current);
-
-                if (current - prev > MAX_STRING_SIZE)
-                    throw Exception(
-                        ErrorCodes::TOO_LARGE_STRING_SIZE,
-                        "Too large string size: {}. The maximum is: {}.",
-                        current - prev,
-                        MAX_STRING_SIZE);
-
-                prev = current;
-            }
-        }
+        /// The offsets come from untrusted input and address the characters of the column, so they have to
+        /// increase monotonically; their total is checked by the caller. Everything below `prev_num_rows`
+        /// was verified by the previous call, and starting one element earlier covers the pair across the
+        /// boundary.
+        auto * const scan_begin = offsets.begin() + (prev_num_rows ? prev_num_rows - 1 : 0);
+        auto * const it = std::adjacent_find(scan_begin, offsets.end(), std::greater<>());
+        if (it != offsets.end())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "String offsets are not monotonically increasing (starting at {}, value {})",
+                std::distance(offsets.begin(), it),
+                *it);
 
         return offsets.back() - prev_last_offset;
     }
@@ -972,9 +871,6 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     auto & string_column = assert_cast<ColumnString &>(column);
     const size_t prev_num_rows = string_column.size();
 
-    /// Everything below appends to the column incrementally and can throw in the middle on malformed input.
-    ColumnStringRollbackGuard rollback_guard(string_column);
-
     settings.path.back() = Substream::StringSizes;
     const size_t bytes_to_read = deserializeStringOffsetsAndGetDataSize(string_column, limit, settings, cache);
 
@@ -984,7 +880,6 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     /// either, so leave the column empty.
     if (!stream)
     {
-        rollback_guard.commit();
         settings.path.pop_back();
         return;
     }
@@ -996,8 +891,6 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     const size_t initial_size = data.size();
     data.resize(initial_size + bytes_to_read);
     stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
-
-    rollback_guard.commit();
 
     /// Nothing is shared across reads, so the rows read equal the growth of the offsets column.
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), string_column.size() - prev_num_rows);
