@@ -6,6 +6,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemEngineSettings.h>
+#include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
+#include <Interpreters/Context.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 
@@ -43,13 +46,18 @@ development and the expectations one might have when using them:
     };
 }
 
-void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr /*context*/, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & storages = StorageFactory::instance().getAllStorages();
+    const size_t num_columns = res_columns.size();
+
+    const auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
+    const auto & constraints = constraints_and_current_profiles->constraints;
 
     for (const auto & [engine_name, creator] : storages)
     {
-        if (!creator.features.fill_engine_settings_fn)
+        const auto fill_fn = creator.features.fill_engine_settings_fn;
+        if (!fill_fn)
             continue;
 
         /// An engine that does not accept a `SETTINGS` clause at `CREATE` must not advertise
@@ -59,22 +67,20 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
         if (!creator.features.supports_settings)
             continue;
 
-        /// Fill settings for this engine into temporary columns (without engine_name)
-        auto num_columns = res_columns.size();
+        /// Every column except `engine_name`, which is per engine rather than per setting.
         MutableColumns setting_columns;
         setting_columns.reserve(num_columns - 1);
-        for (size_t i = 1; i < num_columns; ++i)
-            setting_columns.push_back(res_columns[i]->cloneEmpty());
+        for (size_t col = 1; col < num_columns; ++col)
+            setting_columns.push_back(res_columns[col]->cloneEmpty());
 
-        creator.features.fill_engine_settings_fn(setting_columns);
+        MutableColumnsAndConstraints params(setting_columns, constraints);
+        fill_fn(params, context);
 
-        size_t num_rows = setting_columns[0]->size();
+        const size_t num_rows = setting_columns[0]->size();
         for (size_t row = 0; row < num_rows; ++row)
-        {
             res_columns[0]->insert(engine_name);
-            for (size_t col = 1; col < num_columns; ++col)
-                res_columns[col]->insertFrom(*setting_columns[col - 1], row);
-        }
+        for (size_t col = 1; col < num_columns; ++col)
+            res_columns[col]->insertRangeFrom(*setting_columns[col - 1], 0, num_rows);
     }
 }
 

@@ -93,9 +93,9 @@ bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
     return MaterializedPostgreSQLSettingsImpl::hasBuiltin(name);
 }
 
-void MaterializedPostgreSQLSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void MaterializedPostgreSQLSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<MaterializedPostgreSQLSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<MaterializedPostgreSQLSettingsImpl>(params);
 }
 }
 

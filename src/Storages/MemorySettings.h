@@ -3,10 +3,12 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 #include <Columns/IColumn_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
+struct MutableColumnsAndConstraints;
 class ASTStorage;
 struct MemorySettingsImpl;
 
@@ -39,7 +41,7 @@ struct MemorySettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
 
 private:
     std::unique_ptr<MemorySettingsImpl> impl;

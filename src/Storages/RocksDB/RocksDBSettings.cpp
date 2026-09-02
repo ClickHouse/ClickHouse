@@ -70,8 +70,8 @@ void RocksDBSettings::checkCanSet(std::string_view name, const Field & value)
     RocksDBSettingsImpl::checkCanSet(name, value);
 }
 
-void RocksDBSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void RocksDBSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<RocksDBSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<RocksDBSettingsImpl>(params);
 }
 }

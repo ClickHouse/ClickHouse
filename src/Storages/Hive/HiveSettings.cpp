@@ -96,9 +96,9 @@ bool HiveSettings::hasBuiltin(std::string_view name)
     return HiveSettingsImpl::hasBuiltin(name);
 }
 
-void HiveSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void HiveSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<HiveSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<HiveSettingsImpl>(params);
 }
 }
 #endif

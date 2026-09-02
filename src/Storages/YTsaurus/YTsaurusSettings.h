@@ -3,6 +3,7 @@
 #if USE_YTSAURUS
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Columns/IColumn_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -12,6 +13,7 @@ namespace Poco::Util
 }
 namespace DB
 {
+struct MutableColumnsAndConstraints;
 class ASTStorage;
 class ASTSetQuery;
 class Context;
@@ -43,7 +45,7 @@ struct YTsaurusSettings
     static YTsaurusSettings createFromQuery(ASTStorage & storage_def);
     static YTsaurusSettings createFromQuery(const ASTSetQuery & settings_def);
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
 
 private:
     std::unique_ptr<YTsaurusSettingsImpl> impl;

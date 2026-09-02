@@ -3215,8 +3215,23 @@ bool MergeTreeSettings::isPartFormatSetting(const String & name)
     return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
 
-void MergeTreeSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void MergeTreeSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context)
 {
-    fillEngineSettingsColumnsFromImpl<MergeTreeSettingsImpl>(columns);
+    /// What the engine actually uses on this server, not the compiled defaults: the `merge_tree`
+    /// config section and the `compatibility` setting are already applied to these, and this is the
+    /// same instance `registerStorageMergeTree` starts a new table from.
+    ///
+    /// `dumpToSystemMergeTreeSettingsColumns` writes exactly the columns of
+    /// `system.merge_tree_settings`, which are the columns of `system.engine_settings` after
+    /// `engine_name`, and consults the user's constraints for `min`, `max`, `disallowed_values`
+    /// and `readonly`.
+    context->getMergeTreeSettings().dumpToSystemMergeTreeSettingsColumns(params);
+}
+
+void MergeTreeSettings::fillReplicatedEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context)
+{
+    /// The replicated family reads an additional `replicated_merge_tree` config section, so its
+    /// settings differ from the rest of the family and are registered with their own fill function.
+    context->getReplicatedMergeTreeSettings().dumpToSystemMergeTreeSettingsColumns(params);
 }
 }

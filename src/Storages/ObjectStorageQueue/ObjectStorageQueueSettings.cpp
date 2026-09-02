@@ -244,8 +244,8 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
 
-void ObjectStorageQueueSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void ObjectStorageQueueSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<ObjectStorageQueueSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<ObjectStorageQueueSettingsImpl>(params);
 }
 }

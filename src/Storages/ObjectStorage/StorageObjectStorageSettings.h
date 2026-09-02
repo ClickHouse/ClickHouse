@@ -4,6 +4,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Columns/IColumn_fwd.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -64,7 +65,7 @@ struct StorageObjectStorageSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
 
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;

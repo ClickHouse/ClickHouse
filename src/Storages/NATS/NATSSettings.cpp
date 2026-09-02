@@ -125,8 +125,8 @@ bool NATSSettings::hasBuiltin(std::string_view name)
     return NATSSettingsImpl::hasBuiltin(name);
 }
 
-void NATSSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void NATSSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<NATSSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<NATSSettingsImpl>(params);
 }
 }

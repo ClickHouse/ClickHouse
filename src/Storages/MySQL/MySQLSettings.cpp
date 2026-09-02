@@ -138,8 +138,8 @@ bool MySQLSettings::hasBuiltin(std::string_view name)
     return MySQLSettingsImpl::hasBuiltin(name);
 }
 
-void MySQLSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void MySQLSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<MySQLSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<MySQLSettingsImpl>(params);
 }
 }

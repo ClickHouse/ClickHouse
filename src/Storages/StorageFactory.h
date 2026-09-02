@@ -8,6 +8,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
+#include <Interpreters/Context_fwd.h>
 #include <unordered_map>
 
 
@@ -19,6 +20,7 @@ class ASTCreateQuery;
 class ASTStorage;
 struct StorageID;
 struct ConstraintsDescription;
+struct MutableColumnsAndConstraints;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.
@@ -34,8 +36,10 @@ public:
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
 
-    /// Function that fills system.engine_settings columns for a given engine
-    using FillEngineSettingsFn = void(*)(MutableColumns &);
+    /// Fills the per-setting columns of `system.engine_settings` for one engine.
+    /// Engines that share a settings struct but draw on different server-level instances register
+    /// different functions - see the replicated `MergeTree` variants.
+    using FillEngineSettingsFn = void(*)(MutableColumnsAndConstraints & params, ContextPtr context);
 
     struct Arguments
     {

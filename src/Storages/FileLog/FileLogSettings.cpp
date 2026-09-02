@@ -83,8 +83,8 @@ bool FileLogSettings::hasBuiltin(std::string_view name)
     return FileLogSettingsImpl::hasBuiltin(name);
 }
 
-void FileLogSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void FileLogSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<FileLogSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<FileLogSettingsImpl>(params);
 }
 }

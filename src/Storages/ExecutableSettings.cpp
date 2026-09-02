@@ -83,8 +83,8 @@ bool ExecutableSettings::hasBuiltin(std::string_view name)
     return ExecutableSettingsImpl::hasBuiltin(name);
 }
 
-void ExecutableSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void ExecutableSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<ExecutableSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<ExecutableSettingsImpl>(params);
 }
 }

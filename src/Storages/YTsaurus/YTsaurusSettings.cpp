@@ -107,9 +107,9 @@ bool YTsaurusSettings::hasBuiltin(std::string_view name)
     return YTsaurusSettingsImpl::hasBuiltin(name);
 }
 
-void YTsaurusSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void YTsaurusSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<YTsaurusSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<YTsaurusSettingsImpl>(params);
 }
 
 

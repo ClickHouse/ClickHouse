@@ -97,9 +97,9 @@ bool MemorySettings::hasBuiltin(std::string_view name)
     return MemorySettingsImpl::hasBuiltin(name);
 }
 
-void MemorySettings::fillEngineSettingsColumns(MutableColumns & columns)
+void MemorySettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<MemorySettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<MemorySettingsImpl>(params);
 }
 }
 

@@ -126,8 +126,8 @@ bool RabbitMQSettings::hasBuiltin(std::string_view name)
     return RabbitMQSettingsImpl::hasBuiltin(name);
 }
 
-void RabbitMQSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void RabbitMQSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<RabbitMQSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<RabbitMQSettingsImpl>(params);
 }
 }

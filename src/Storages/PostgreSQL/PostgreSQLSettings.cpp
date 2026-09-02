@@ -111,9 +111,9 @@ bool PostgreSQLSettings::hasBuiltin(std::string_view name)
     return PostgreSQLSettingsImpl::hasBuiltin(name);
 }
 
-void PostgreSQLSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void PostgreSQLSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<PostgreSQLSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<PostgreSQLSettingsImpl>(params);
 }
 
 }

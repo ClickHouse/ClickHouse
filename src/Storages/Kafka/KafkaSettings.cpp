@@ -178,8 +178,8 @@ bool KafkaSettings::hasBuiltin(std::string_view name)
     return KafkaSettingsImpl::hasBuiltin(name);
 }
 
-void KafkaSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void KafkaSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<KafkaSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<KafkaSettingsImpl>(params);
 }
 }

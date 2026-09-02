@@ -11,6 +11,7 @@
 
 namespace DB
 {
+struct MutableColumnsAndConstraints;
 class ASTStorage;
 struct KafkaSettingsImpl;
 
@@ -76,7 +77,7 @@ struct KafkaSettings
     void sanityCheck(ContextPtr global_context) const;
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
 
 private:
     std::unique_ptr<KafkaSettingsImpl> impl;

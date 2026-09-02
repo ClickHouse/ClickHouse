@@ -74,9 +74,9 @@ DataLakeStorageSettings DataLakeStorageSettings::deserialize(ReadBuffer & in)
     return result;
 }
 
-void DataLakeStorageSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void DataLakeStorageSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<DataLakeStorageSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<DataLakeStorageSettingsImpl>(params);
 }
 
 }

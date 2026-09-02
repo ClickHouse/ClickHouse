@@ -70,8 +70,8 @@ bool SetSettings::hasBuiltin(std::string_view name)
     return SetSettingsImpl::hasBuiltin(name);
 }
 
-void SetSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void SetSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<SetSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<SetSettingsImpl>(params);
 }
 }

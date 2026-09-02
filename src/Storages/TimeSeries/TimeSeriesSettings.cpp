@@ -104,9 +104,9 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
     return TimeSeriesSettingsImpl::hasBuiltin(name);
 }
 
-void TimeSeriesSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void TimeSeriesSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<TimeSeriesSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<TimeSeriesSettingsImpl>(params);
 }
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)

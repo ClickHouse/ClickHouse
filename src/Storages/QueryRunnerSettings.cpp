@@ -57,9 +57,9 @@ bool QueryRunnerSettings::hasBuiltin(std::string_view name)
     return QueryRunnerSettingsImpl::hasBuiltin(name);
 }
 
-void QueryRunnerSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void QueryRunnerSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<QueryRunnerSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<QueryRunnerSettingsImpl>(params);
 }
 
 }

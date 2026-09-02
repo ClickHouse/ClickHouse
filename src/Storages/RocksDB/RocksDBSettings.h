@@ -3,9 +3,11 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 #include <Columns/IColumn_fwd.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+struct MutableColumnsAndConstraints;
 class ASTStorage;
 struct RocksDBSettingsImpl;
 class SettingsChanges;
@@ -30,7 +32,7 @@ struct RocksDBSettings
     void loadFromQuery(const ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumns & columns);
+    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
     static void checkCanSet(std::string_view name, const Field & value);
 
 private:

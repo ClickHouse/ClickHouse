@@ -56,9 +56,9 @@ void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges
     }
 }
 
-void StorageObjectStorageSettings::fillEngineSettingsColumns(MutableColumns & columns)
+void StorageObjectStorageSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<StorageObjectStorageSettingsImpl>(columns);
+    fillEngineSettingsColumnsFromImpl<StorageObjectStorageSettingsImpl>(params);
 }
 
 }
