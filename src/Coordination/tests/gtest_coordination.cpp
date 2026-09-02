@@ -1942,23 +1942,29 @@ TEST(KeeperDispatcher, ReadWaitForWriteOnlyCountsWaitsForWrites)
         dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 21));
 
     /// Parked while the write is still in flight: this is a wait for a write.
+    /// (`add` moves the request out, so keep our own pointer to it.)
     auto waiting_read = makeReadRequest(/*session_id=*/ 5, "/waiting");
+    auto waiting_request = waiting_read.request;
     ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, waiting_read));
-    EXPECT_TRUE(waiting_read.request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
+    EXPECT_TRUE(waiting_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
 
     /// Parked after the batch committed, in the window where onCommit re-opens the container between
     /// `takeAndFinishIfEmpty` iterations.
     RequestDispatcherAccessor::markWritesCommitted(dispatcher, batch_idx);
     auto ordered_read = makeReadRequest(/*session_id=*/ 5, "/ordered");
+    auto ordered_request = ordered_read.request;
     ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, ordered_read));
-    EXPECT_FALSE(ordered_read.request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
+    EXPECT_FALSE(ordered_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
         << "a read parked after the batch committed was counted as waiting for a write";
 
     /// A started span is the one that gets observed, which is what makes the distinction above matter.
     UInt64 before = histogramSampleCount("keeper_read_wait_for_write_time_milliseconds");
-    waiting_read.request->spans.maybeFinalize(
-        DB::KeeperSpan::ReadWaitForWrite, [] { return std::vector<OpenTelemetry::SpanAttribute>{}; });
+    waiting_request->spans.maybeFinalize(
+        DB::KeeperSpan::ReadWaitForWrite, [] { return std::vector<DB::OpenTelemetry::SpanAttribute>{}; });
     EXPECT_EQ(histogramSampleCount("keeper_read_wait_for_write_time_milliseconds"), before + 1);
+
+    /// Leaves the batch in flight; drop it so the fixture tears down the way production does.
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
 }
 
 /// A read dropped because the append stream broke never saw its write commit, so its wait must not
@@ -1972,8 +1978,9 @@ TEST(KeeperDispatcher, ReadWaitForWriteNotObservedForDroppedReads)
         dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 23));
 
     auto read = makeReadRequest(/*session_id=*/ 7, "/dropped");
+    auto read_request = read.request;
     ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read));
-    ASSERT_TRUE(read.request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
+    ASSERT_TRUE(read_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
 
     UInt64 before = histogramSampleCount("keeper_read_wait_for_write_time_milliseconds");
     RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
