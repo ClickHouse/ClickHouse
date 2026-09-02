@@ -29,8 +29,9 @@ MAIN_BRANCH = "master"
 # not-ready rather than reaching arbitrarily deep into history.
 MAX_COMMITS_TO_CONSIDER = 8
 
-# Ship the newest artifacts-ready commit even on red CI once a branch's last release is older than this.
-STALE_RELEASE_AGE_S = 7 * 24 * 3600
+# The one CI job that gates a release candidate: its check-run must be green.
+# Name must match JobNames.FAST_TEST (ci/defs/defs.py) — the check-run name.
+FAST_TEST_CHECK = "Fast test"
 
 # The dispatched release workflow, referenced by its generated YAML file name
 # (what `gh workflow run` / `gh run list --workflow` expect — the workflow *name*
@@ -103,53 +104,28 @@ def _latest_release_tag(branch: str) -> Optional[str]:
     return tags[-1] if tags else None
 
 
-def _release_age_seconds(tag: str) -> int:
-    """Seconds since `tag` was created (annotated-tag date, else tagged-commit date)."""
-    out = Shell.get_output_or_raise(
-        f"git for-each-ref --format='%(creatordate:unix)'"
-        f" {shlex.quote('refs/tags/' + tag)}"
-    )
-    return int(time.time()) - int(out.strip())
+def _fast_test_passed(sha: str) -> bool:
+    """True when the commit's newest `Fast test` check-run concluded success.
 
-
-def _wf_completed(sha: str) -> bool:
-    """True when every check run on the commit has completed.
-
-    Empty check-runs means CI has not started reporting yet — treat as not
-    completed (the commit is not a release candidate) rather than as done."""
+    False when it failed, is still running, or was never reported — GitHub keeps
+    a separate row per re-run, so the latest by `started_at` is authoritative."""
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/check-runs"
-        f" --jq '.check_runs[].status'"
+        f" --jq '.check_runs[] | select(.name==\"{FAST_TEST_CHECK}\")"
+        f" | [.started_at, .status, .conclusion] | @tsv'"
     )
-    statuses = [s for s in out.splitlines() if s.strip()]
-    if not statuses:
-        print(f"   No check runs reported yet for [{sha}]")
+    runs = [line.split("\t") for line in out.splitlines() if line.strip()]
+    if not runs:
+        print(f"   No {FAST_TEST_CHECK} check-run reported yet for [{sha}]")
         return False
-    incomplete = [s for s in statuses if s != "completed"]
-    if incomplete:
-        print(f"   {len(incomplete)} check run(s) still in progress for [{sha}]")
+    _, status, conclusion = max(runs, key=lambda r: r[0])
+    if status != "completed":
+        print(f"   {FAST_TEST_CHECK} still {status} for [{sha}]")
+        return False
+    if conclusion != "success":
+        print(f"   {FAST_TEST_CHECK} concluded {conclusion} for [{sha}]")
         return False
     return True
-
-
-def _failed_statuses(sha: str) -> List[str]:
-    """Commit-status contexts whose latest state is not success.
-
-    Keeps only the newest status per context (GitHub records one row per
-    update) before deciding pass/fail, matching the legacy logic."""
-    out = GH.get_output_with_retries(
-        f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/statuses"
-        f" --jq '.[] | [.context, .state, .updated_at] | @tsv'",
-        strict=True,
-    )
-    latest: Dict[str, Tuple[str, str]] = {}
-    for line in out.splitlines():
-        if not line.strip():
-            continue
-        context, state, updated_at = line.split("\t")
-        if context not in latest or latest[context][1] < updated_at:
-            latest[context] = (state, updated_at)
-    return [ctx for ctx, (state, _) in latest.items() if state != "success"]
 
 
 def _release_version_for_commit(commit_sha: str) -> str:
@@ -201,13 +177,11 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
 def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
     """Return (commit_sha, reason, status) for `branch`.
 
-    commit_sha is the newest fully-green commit within MAX_COMMITS_TO_CONSIDER
-    of the branch head, excluding the version-bump commit; empty when none
-    qualifies, with `reason` explaining why. When no green commit qualifies but
-    the branch's last release is older than STALE_RELEASE_AGE_S, the newest
-    artifacts-ready commit is returned even on red CI. `status` is what the
-    sub-result reports: SKIPPED when not ready yet, ERROR when the branch is
-    broken."""
+    commit_sha is the newest commit within MAX_COMMITS_TO_CONSIDER of the branch
+    head, excluding the version-bump commit, whose `Fast test` check-run is green
+    and whose release build artifacts are present; empty when none qualifies,
+    with `reason` explaining why. `status` is what the sub-result reports:
+    SKIPPED when not ready yet, ERROR when the branch is broken."""
     tag = _latest_release_tag(branch)
     if not tag:
         return "", "no release tag found", Result.Status.ERROR
@@ -231,46 +205,30 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
     # the newest MAX_COMMITS_TO_CONSIDER of what remains.
     commits_to_check = commits[:-1][:MAX_COMMITS_TO_CONSIDER]
     last_failure = ""
-    # Newest completed, artifacts-ready commit whose CI is red - the fallback
-    # released only when the branch's last release has gone stale (below).
-    red_candidate = ""
     for idx, commit in enumerate(commits_to_check):
         print(f"[{branch}~{idx + 1}] check commit [{commit}] as release candidate")
-        if not _wf_completed(commit):
-            print("   CI in progress - check previous commit")
+        if not _fast_test_passed(commit):
+            last_failure = last_failure or f"{FAST_TEST_CHECK} not green"
             continue
-        failed = _failed_statuses(commit)
-        # The artifacts gate applies to green and red commits alike: "no failed
-        # statuses" also passes when the release build was deduplicated by the CI
-        # cache (reported `skipped`, not `failed`) so no packages were uploaded
-        # under this commit's SHA, and CreateRelease's package download then 404s.
+        # A green Fast test does not mean the release build ran: it can be
+        # deduplicated by the CI cache (reported `skipped`, not `failed`) so no
+        # packages were uploaded under this commit's SHA, and CreateRelease's
+        # package download then 404s. Require the exact artifacts to be present.
         if not _release_build_artifacts_ready(branch, commit):
             print(
-                f"   release build artifacts missing for [{commit}]"
-                f" - check previous commit"
+                f"   {FAST_TEST_CHECK} green but release build artifacts missing"
+                f" for [{commit}] - check previous commit"
             )
             last_failure = (
                 last_failure
                 or "release build artifacts missing (build skipped/cached)"
             )
             continue
-        if not failed:
-            return commit, "", Result.Status.OK
-        print(f"   CI failed: {failed} - check previous commit")
-        last_failure = last_failure or f"failed jobs: {failed}"
-        red_candidate = red_candidate or commit
-
-    if red_candidate and _release_age_seconds(tag) > STALE_RELEASE_AGE_S:
-        print(
-            f"[{branch}]: last release {tag} older than"
-            f" {STALE_RELEASE_AGE_S // 86400}d with no green candidate"
-            f" - releasing [{red_candidate}] despite red CI"
-        )
-        return red_candidate, "", Result.Status.OK
+        return commit, "", Result.Status.OK
 
     return (
         "",
-        last_failure or "no completed green commit in range",
+        last_failure or f"no commit with green {FAST_TEST_CHECK} in range",
         Result.Status.SKIPPED,
     )
 
