@@ -2,6 +2,7 @@
 
 #include <Interpreters/StorageIDMaybeEmpty.h>
 
+#include <algorithm>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -83,40 +84,67 @@ public:
 
     InsertStartGatePtr get(const StorageIDMaybeEmpty & table_id)
     {
-        std::lock_guard lock(mutex);
-        auto & gate = gates[table_id];
-        if (!gate)
+        if (participants.empty())
         {
-            for (const auto & participant : participants)
-            {
-                if ((gate = participant->tryGet(table_id)))
-                    break;
-            }
+            std::lock_guard lock(mutex);
+            auto & gate = gates[table_id];
             if (!gate)
                 gate = std::make_shared<InsertStartGate>();
-            for (const auto & participant : participants)
-                participant->adopt(table_id, gate);
+            return gate;
         }
+
+        /// A group write hands out one and the same gate object to this registry and to every
+        /// participant, so looking the gate up, creating it and sharing it has to be one atomic step.
+        /// Otherwise two group writes over the same participants - the flushes of the several shards of
+        /// one `Buffer`, which run in parallel in `flush_pool` - or a group write racing a direct write
+        /// of a participating query could each find no gate for the table and hand out different gates
+        /// to the sinks of one query, which is exactly what the gates are there to prevent.
+        ///
+        /// All the registries involved are locked at once, in the order of their addresses. That order
+        /// is global, so a registry taking part in several group writes cannot deadlock against them.
+        std::vector<InsertStartGates *> registries;
+        registries.reserve(participants.size() + 1);
+        registries.push_back(this);
+        for (const auto & participant : participants)
+            registries.push_back(participant.get());
+
+        std::vector<InsertStartGates *> lock_order = registries;
+        std::sort(lock_order.begin(), lock_order.end());
+        lock_order.erase(std::unique(lock_order.begin(), lock_order.end()), lock_order.end());
+
+        std::vector<std::unique_lock<std::mutex>> locks;
+        locks.reserve(lock_order.size());
+        for (auto * registry : lock_order)
+            locks.emplace_back(registry->mutex);
+
+        /// A participant that already holds a gate for the table lends it to the group: that query has
+        /// already made (or is making) its pre-write decision for the table, and this write must
+        /// observe that decision instead of re-entering the check.
+        InsertStartGatePtr gate;
+        for (auto * registry : registries)
+        {
+            auto it = registry->gates.find(table_id);
+            if (it != registry->gates.end() && it->second)
+            {
+                gate = it->second;
+                break;
+            }
+        }
+
+        if (!gate)
+            gate = std::make_shared<InsertStartGate>();
+
+        for (auto * registry : registries)
+        {
+            auto & existing = registry->gates[table_id];
+            if (!existing)
+                existing = gate;
+        }
+
         return gate;
     }
 
 private:
-    InsertStartGatePtr tryGet(const StorageIDMaybeEmpty & table_id)
-    {
-        std::lock_guard lock(mutex);
-        auto it = gates.find(table_id);
-        return it == gates.end() ? nullptr : it->second;
-    }
-
-    /// Keeps an already present gate: the query made its own pre-write decision for the table.
-    void adopt(const StorageIDMaybeEmpty & table_id, const InsertStartGatePtr & gate)
-    {
-        std::lock_guard lock(mutex);
-        auto & existing = gates[table_id];
-        if (!existing)
-            existing = gate;
-    }
-
     std::mutex mutex;
     std::unordered_map<StorageIDMaybeEmpty, InsertStartGatePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>
         gates;
