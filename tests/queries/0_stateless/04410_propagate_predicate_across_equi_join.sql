@@ -231,6 +231,23 @@ SELECT 'both sides propagate correctness',
             ON a.orderkey = b.orderkey AND a.custkey = b.custkey
         SETTINGS query_plan_propagate_predicate_across_join = 0);
 
+-- `ANY` keeps at most one match per key, and a key predicate takes whole key groups
+SELECT 'any inner',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+    ANY INNER JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
+);
+
+SELECT 'any inner correctness',
+       (SELECT count() FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+        ANY INNER JOIN prop_lineitem AS l ON o.orderkey = l.orderkey)
+     - (SELECT count() FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+        ANY INNER JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
+        SETTINGS query_plan_propagate_predicate_across_join = 0);
+
 -- Index analysis cannot reach past `DISTINCT`, so the predicate stays on the source side
 SELECT 'distinct target',
        countIf(explain LIKE '%ilter column:%orderkey = 4242%')

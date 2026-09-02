@@ -18,6 +18,8 @@ filtered computed target key	1
 inner eq rhs	2
 both sides propagate	2	2
 both sides propagate correctness	0
+any inner	2
+any inner correctness	0
 distinct target	1
 sorted target	2
 key vs key	1

@@ -280,7 +280,9 @@ size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryP
         return 0;
 
     const auto & op = join->getJoinOperator();
-    if (op.strictness != JoinStrictness::All)
+    /// `Any` is safe too: the copied atom is a function of the key alone, so it removes a whole key
+    /// group or none of it, and cannot change which row `Any` picks
+    if (op.strictness != JoinStrictness::All && op.strictness != JoinStrictness::Any)
         return 0;
     if (op.kind == JoinKind::Full || op.kind == JoinKind::Paste)
         return 0;
