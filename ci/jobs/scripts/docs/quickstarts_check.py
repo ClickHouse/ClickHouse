@@ -205,14 +205,8 @@ def generated_paths(docs_root: Path) -> list:
 GENERATOR_COMMAND = "python3 _site/scripts/update_quickstarts.py"
 
 
-def check_localized_cloud_setup_fallback(docs_root: Path) -> list:
-    """Ensure removed locale quickstarts retain translated Cloud card copy.
-
-    An empty quickstart list models the state after the translation pipeline
-    removes the obsolete create-your-first-service-on-cloud page. The generator
-    must then source the card title and description from the locale's Cloud
-    setup guide, not from the canonical English fallback.
-    """
+def check_cloud_setup_cards(docs_root: Path) -> list:
+    """Ensure legacy pages stay deleted while their explorer cards remain."""
     generator_path = docs_root / "_site" / "scripts" / "update_quickstarts.py"
     spec = importlib.util.spec_from_file_location(
         "update_quickstarts_for_check", generator_path
@@ -224,31 +218,66 @@ def check_localized_cloud_setup_fallback(docs_root: Path) -> list:
     spec.loader.exec_module(generator)
 
     errors = []
-    for locale in LOCALES:
-        setup_page = docs_root / locale / "get-started" / "setup" / "cloud.mdx"
-        expected = generator.parse_frontmatter(
-            setup_page.read_text(encoding="utf-8")
+    translations = generator.CLOUD_SETUP_CARD_TRANSLATIONS
+    if set(translations) != set(LOCALES):
+        errors.append(
+            "Cloud setup card translations must cover exactly: "
+            + ", ".join(LOCALES)
         )
+
+    for locale in [None, *LOCALES]:
+        prefix = f"{locale}/" if locale else ""
+        legacy_page = (
+            docs_root
+            / prefix
+            / "get-started"
+            / "quickstarts"
+            / "create-your-first-service-on-cloud.mdx"
+        )
+        if legacy_page.exists():
+            errors.append(
+                f"{legacy_page.relative_to(docs_root)}: delete this legacy "
+                "page; the explorer card is generated separately"
+            )
+
+        expected = {
+            **generator.CLOUD_SETUP_CARD,
+            **translations.get(locale, {}),
+        }
         generated = []
         try:
-            generator.add_cloud_setup_card(generated, docs_root, locale)
+            generator.add_cloud_setup_card(generated, locale)
         except Exception as ex:
-            errors.append(f"{locale}: Cloud setup fallback failed: {ex}")
+            errors.append(f"{locale or 'English'}: Cloud setup card failed: {ex}")
             continue
 
         card = generated[0]
-        for field in ("title", "description"):
+        for field in ("id", "title", "description", "useCases", "products"):
             if card.get(field) != expected.get(field):
                 errors.append(
-                    f"{locale}: generated Cloud card {field} does not match "
-                    f"{setup_page.relative_to(docs_root)} frontmatter"
+                    f"{locale or 'English'}: generated Cloud card {field} "
+                    "does not match its configured explorer metadata"
                 )
-        expected_href = f"/{locale}/get-started/setup/cloud"
+        locale_prefix = f"/{locale}" if locale else ""
+        expected_href = f"{locale_prefix}/get-started/setup/cloud"
         if card.get("href") != expected_href:
             errors.append(
-                f"{locale}: generated Cloud card href is {card.get('href')!r}; "
-                f"expected {expected_href!r}"
+                f"{locale or 'English'}: generated Cloud card href is "
+                f"{card.get('href')!r}; expected {expected_href!r}"
             )
+
+        if locale:
+            setup_page = (
+                docs_root / locale / "get-started" / "setup" / "cloud.mdx"
+            )
+            frontmatter = generator.parse_frontmatter(
+                setup_page.read_text(encoding="utf-8")
+            )
+            if frontmatter.get("sidebarTitle") in (None, "Cloud"):
+                errors.append(
+                    f"{setup_page.relative_to(docs_root)}: sidebarTitle must "
+                    "be the localized equivalent of `Cloud quickstart`"
+                )
     return errors
 
 
@@ -480,7 +509,7 @@ def main() -> int:
 
     errors = check_searchable(docs_root)
     errors += check_frontmatter(docs_root)
-    errors += check_localized_cloud_setup_fallback(docs_root)
+    errors += check_cloud_setup_cards(docs_root)
     errors += check_localized_homepage_links(docs_root)
     errors += check_install_cloud_banners(docs_root)
     errors += check_cloud_setup_signup_attribution(docs_root)

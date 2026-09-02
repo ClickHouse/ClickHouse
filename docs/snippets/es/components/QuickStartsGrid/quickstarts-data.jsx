@@ -53,8 +53,8 @@ export const quickStartsData = [
   },
   {
     "id": "create-your-first-service-on-cloud",
-    "title": "Inicio rápido de ClickHouse Cloud",
-    "description": "Guía de inicio rápido para ClickHouse Cloud",
+    "title": "Crea tu primer servicio de ClickHouse Cloud y carga datos de ejemplo",
+    "description": "Crea un servicio de ClickHouse Cloud, explora la consola SQL y carga un conjunto de datos de ejemplo para empezar a consultar datos reales en minutos.",
     "useCases": [
       "all"
     ],
