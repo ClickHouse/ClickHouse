@@ -46,7 +46,7 @@ TTLs aren't applied immediately but rather on a schedule, as noted above. The Me
 
 To modify TTL you can either:
 
-1. **Modify the table schemas (recommended)**. This requires connecting to the ClickHouse instance e.g. using the [clickhouse-client](/concepts/features/interfaces/cli) or [Cloud SQL Console](/products/cloud/features/sql-console-features/sql-console). For example, we can modify the TTL for the `otel_logs` table using the following DDL:
+1. **Modify the table schemas (recommended)**. This requires connecting to the ClickHouse instance e.g. using the [clickhouse-client](/concepts/features/interfaces/client) or [Cloud SQL Console](/products/cloud/features/sql-console-features/sql-console). For example, we can modify the TTL for the `otel_logs` table using the following DDL:
 
 ```sql
 ALTER TABLE default.otel_logs

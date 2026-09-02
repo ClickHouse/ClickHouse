@@ -159,6 +159,9 @@ def test_push_role_to_other_nodes(ldap_cluster):
     instance2.query("CREATE USER remote_user IDENTIFIED WITH plaintext_password BY 'qwerty'", user="common_user", password="qwerty")
 
     instance1.query("DROP TABLE IF EXISTS distributed_table SYNC", user="common_user", password="qwerty")
+    instance1.query("DROP TABLE IF EXISTS distributed_table_view SYNC", user="common_user", password="qwerty")
+    instance1.query("DROP VIEW IF EXISTS local_table_view SYNC", user="common_user", password="qwerty")
+    instance2.query("DROP VIEW IF EXISTS local_table_view SYNC", user="common_user", password="qwerty")
     instance1.query("DROP TABLE IF EXISTS local_table SYNC", user="common_user", password="qwerty")
     instance2.query("DROP TABLE IF EXISTS local_table SYNC", user="common_user", password="qwerty")
 
@@ -201,7 +204,26 @@ def test_push_role_to_other_nodes(ldap_cluster):
     )
     assert result.strip() == "6"
 
+    # A view without DEFINER or SQL SECURITY carries no security context of its own, so the pushed
+    # role must authorize a read through it too. Every shard of the cluster needs the view.
+    instance1.query(
+        "CREATE VIEW IF NOT EXISTS local_table_view AS SELECT * FROM local_table", user="common_user", password="qwerty"
+    )
+    instance2.query(
+        "CREATE VIEW IF NOT EXISTS local_table_view AS SELECT * FROM local_table", user="common_user", password="qwerty"
+    )
+    instance1.query(
+        "CREATE TABLE IF NOT EXISTS distributed_table_view AS local_table ENGINE = Distributed(test_ldap_cluster, default, local_table_view)", user="common_user", password="qwerty"
+    )
+    result = instance1.query(
+        "SELECT sum(id) FROM distributed_table_view", user="johndoe", password="qwertz"
+    )
+    assert result.strip() == "6"
+
     instance1.query("DROP TABLE IF EXISTS distributed_table SYNC", user="common_user", password="qwerty")
+    instance1.query("DROP TABLE IF EXISTS distributed_table_view SYNC", user="common_user", password="qwerty")
+    instance1.query("DROP VIEW IF EXISTS local_table_view SYNC", user="common_user", password="qwerty")
+    instance2.query("DROP VIEW IF EXISTS local_table_view SYNC", user="common_user", password="qwerty")
     instance1.query("DROP TABLE IF EXISTS local_table SYNC", user="common_user", password="qwerty")
     instance2.query("DROP TABLE IF EXISTS local_table SYNC", user="common_user", password="qwerty")
     instance1.query("DROP ROLE IF EXISTS role_read", user="common_user", password="qwerty")

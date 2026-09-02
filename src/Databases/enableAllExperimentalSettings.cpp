@@ -1,6 +1,7 @@
+#include <Compression/CompressionFactory.h>
+#include <Core/Field.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/Context.h>
-#include <Core/Field.h>
 
 namespace DB
 {
@@ -14,7 +15,8 @@ namespace DB
 void enableAllExperimentalSettings(ContextMutablePtr context)
 {
     context->setSetting("allow_experimental_codecs", 1);
-    context->setSetting("allow_experimental_window_view", 1);
+    for (const auto & name : CompressionCodecFactory::instance().getGateSettingNames())
+        context->setSetting(name, 1);
     context->setSetting("allow_experimental_funnel_functions", 1);
     context->setSetting("allow_experimental_nlp_functions", 1);
     context->setSetting("allow_fuzz_query_functions", 1);
@@ -75,8 +77,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);
     context->setSetting("allow_experimental_url_wildcard_from_index_pages", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
-
-    context->setSetting("allow_experimental_ai_functions", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
