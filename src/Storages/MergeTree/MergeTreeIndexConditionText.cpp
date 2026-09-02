@@ -1003,9 +1003,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
+    const auto * index_column_dag_node = index_column_node.getDAGNode();
+    const DataTypePtr index_column_type = index_column_dag_node ? index_column_dag_node->result_type : nullptr;
     /// A UInt8 virtual column cannot carry the NULL a predicate returns for a NULL value, which NOT flips to true.
-    const bool affix_patterns_allowed
-        = !(header.has(index_column_name) && isNullableOrLowCardinalityNullable(header.getByName(index_column_name).type));
+    const bool affix_patterns_allowed = index_column_type && !isNullableOrLowCardinalityNullable(index_column_type);
 
     /// like/ilike optimization is only supported for splitByNonAlpha and array tokenizers.
     static const std::unordered_set<ITokenizer::Type> like_optimization_supported_tokenizers = {

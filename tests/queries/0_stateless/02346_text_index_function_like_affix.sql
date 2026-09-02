@@ -275,6 +275,10 @@ SELECT groupArray(id) FROM tab WHERE NOT endsWith(tag, 'Cloud');
 SELECT groupArray(id) FROM tab WHERE NOT endsWith(tag, 'Cloud') SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE 'clickhouse%';
 SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE 'clickhouse%' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE tag NOT LIKE '%ClickHouse%';
+SELECT groupArray(id) FROM tab WHERE tag NOT LIKE '%ClickHouse%' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE '%clickhouse%' SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 
@@ -305,5 +309,30 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
   AND type = 'QueryFinish' AND log_comment IN ('affix_hint_selective', 'affix_hint_nonselective')
 GROUP BY log_comment
 ORDER BY log_comment;
+
+DROP TABLE tab;
+
+SELECT 'A nullable value reached through mapValues is left to the original condition';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    m Map(String, Nullable(String)),
+    INDEX idx mapValues(m) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab SELECT number, map('k', if(number = 0, 'foobar value', 'zulu yankee')) FROM numbers(500);
+INSERT INTO tab VALUES (1000, map('k', NULL));
+
+SELECT count() FROM tab WHERE NOT startsWith(m['k'], 'foobar');
+SELECT count() FROM tab WHERE NOT startsWith(m['k'], 'foobar') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE NOT m['k'] LIKE 'foobar%';
+SELECT count() FROM tab WHERE NOT m['k'] LIKE 'foobar%' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE NOT endsWith(m['k'], 'value');
+SELECT count() FROM tab WHERE NOT endsWith(m['k'], 'value') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE startsWith(m['k'], 'foobar');
+SELECT count() FROM tab WHERE startsWith(m['k'], 'foobar') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;

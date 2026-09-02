@@ -103,8 +103,21 @@ A nullable value is left to the original condition
 [1,2]
 []
 []
+[2]
+[2]
+[]
+[]
 An affix hint that prunes nothing is discarded, granule pruning is kept
 1000
 0
 affix_hint_nonselective	0	1	1
 affix_hint_selective	1	0	1
+A nullable value reached through mapValues is left to the original condition
+499
+499
+499
+499
+499
+499
+1
+1
