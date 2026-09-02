@@ -418,10 +418,14 @@ struct ReplaceRegexpImpl
 
         /// While the cache is off, one haystack per distinct-ratio window is kept as a sample and the
         /// rows equal to it are counted, so that a block whose remainder turns repetitive after a
-        /// mostly-distinct window is not stuck on the plain path for the rest of the block. A distinct
-        /// row pays one compare that exits at the length check or the first differing byte, and an
-        /// all-distinct block never re-enables the cache at all. A value that recurs only after more
-        /// than a window of rows escapes the sample just as it escapes the distinct ratio.
+        /// mostly-distinct window is not stuck on the plain path for the rest of the block. Only one
+        /// row per ratio window is compared against the sample: a compare of distinct values runs to
+        /// the first differing byte, which for equal-length values sharing a long prefix (URLs that
+        /// differ only in the tail) is about the cost of the copy every row pays anyway, so comparing
+        /// every row would slow the mostly-distinct blocks the guard exists to protect. The probes are
+        /// phase-aligned with the sample, so a cycle of a few values is caught within a few probes,
+        /// while an all-distinct block never re-enables the cache at all. A value that recurs only
+        /// after more than a window of rows escapes the sample just as it escapes the distinct ratio.
         std::string_view sample_haystack;
         size_t sample_hits = 0;
 
@@ -445,9 +449,9 @@ struct ReplaceRegexpImpl
 
             const std::string_view haystack = get_haystack(i);
 
-            /// Compared against the previous window's sample, ahead of the checkpoint that may replace
-            /// it, so that the sampled row never counts as a repeat of itself.
-            if (!map_enabled && haystack == sample_haystack)
+            /// Probed on the checkpoint rows against the previous window's sample, ahead of the
+            /// checkpoint that may replace it, so that the sampled row never counts as a repeat of itself.
+            if (!map_enabled && rows_in_window == ratio_check_window && haystack == sample_haystack)
                 ++sample_hits;
 
             /// The checkpoint runs ahead of every fast path below, so every row advances it and no
@@ -494,46 +498,24 @@ struct ReplaceRegexpImpl
             }
             ++rows_in_window;
 
-            /// Ahead of the pre-check: an adjacent duplicate is served by a compare against a value that
-            /// is still cache-hot, which costs about as much as the copy both paths pay, while re-running
-            /// the reject on every repeat of the same value is arbitrarily expensive for patterns that
-            /// cannot short-circuit. A distinct row loses only a compare that exits at the first
-            /// differing byte (or at the length check).
-            if (has_prev_haystack && haystack == prev_haystack)
-            {
-                copy_cached(prev_result, haystack.size());
-                matched_in_window += prev_result.matched;
-                res_offsets[i] = res_offset;
-                continue;
-            }
-
-            /// A rejected row plus the copy is exactly the plain loop's cost. It is non-matching by
-            /// definition, so leaving `matched_in_window` untouched counts it correctly. The row still
-            /// becomes the previous value, so repeats of it are served by the compare above instead of
-            /// re-running the reject. While the cache is enabled the reject runs inside the cache-miss
-            /// branch below instead, so that non-adjacent repeats of a rejecting value are served by the
-            /// cache rather than re-running a reject that may have to scan the whole haystack.
-            if (!map_enabled && precheck_non_matching
-                && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
-            {
-                const UInt64 rejected_start = res_offset;
-                res_data.resize(res_data.size() + haystack.size());
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
-                res_offset += haystack.size();
-                budget.charge();
-                budget.charge(haystack.size());
-                prev_haystack = haystack;
-                has_prev_haystack = true;
-                prev_result = {rejected_start, haystack.size(), false};
-                res_offsets[i] = res_offset;
-                continue;
-            }
-
             const UInt64 result_start = res_offset;
             bool row_matched = false;
 
             if (map_enabled)
             {
+                /// Ahead of the lookup: an adjacent duplicate is served by a compare against a value that
+                /// is still cache-hot, which costs about as much as the copy both paths pay, while hashing
+                /// the haystack reads all of it again. A distinct row loses only a compare that exits at
+                /// the first differing byte (or at the length check), and while the cache is enabled the
+                /// window is repetitive enough for the hits to pay for those misses.
+                if (has_prev_haystack && haystack == prev_haystack)
+                {
+                    copy_cached(prev_result, haystack.size());
+                    matched_in_window += prev_result.matched;
+                    res_offsets[i] = res_offset;
+                    continue;
+                }
+
                 typename HashMap<std::string_view, CachedResult>::LookupResult it;
                 bool inserted = false;
                 results_cache.emplace(haystack, it, inserted);
@@ -548,6 +530,9 @@ struct ReplaceRegexpImpl
                     budget.chargeUnits(haystack.size() / CancellationBudget::bytes_per_unit);
                     /// A rejected row is cached exactly like a processed one: it produces the same
                     /// output either way, and caching it is what spares its later repeats the reject.
+                    /// The reject runs here rather than ahead of the lookup so that non-adjacent repeats
+                    /// of a rejecting value are served by the cache instead of re-running a reject that
+                    /// may have to scan the whole haystack.
                     if (precheck_non_matching
                         && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
                     {
@@ -564,7 +549,25 @@ struct ReplaceRegexpImpl
                 }
             }
             else
-                row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+            {
+                /// No per-row compare against the previous value here: the cache is off because the
+                /// window was mostly distinct, so an adjacent duplicate is rare while every distinct row
+                /// would pay the compare, and the sample probe above brings the cache (and with it the
+                /// adjacent-duplicate compare) back once the rows turn repetitive. A rejected row plus
+                /// the copy is exactly the plain loop's cost. It is non-matching by definition, so
+                /// leaving `matched_in_window` untouched counts it correctly.
+                if (precheck_non_matching
+                    && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
+                {
+                    res_data.resize(res_data.size() + haystack.size());
+                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
+                    res_offset += haystack.size();
+                    budget.charge();
+                    budget.charge(haystack.size());
+                }
+                else
+                    row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+            }
 
             matched_in_window += row_matched;
             prev_haystack = haystack;

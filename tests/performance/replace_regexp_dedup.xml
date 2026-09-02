@@ -45,6 +45,15 @@
          reject for every occurrence. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '[0-9]{{50}}', 'X'))</query>
 
+    <!-- Mostly-distinct haystacks of equal length that share a long prefix, against a reject that
+         short-circuits at the first byte: once the distinct-ratio guard has dropped the cache, no per-row
+         compare may run ahead of the reject, or every row would scan the shared prefix for nothing. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example.com/', repeat('longpathcomponent/', 100), leftPad(toString(number), 7, '0')), '^missing', 'X'))</query>
+
+    <!-- The same haystacks against a match that also settles at the first bytes: with the pre-check off,
+         the plain path must not pay a per-row compare either. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example.com/', repeat('longpathcomponent/', 100), leftPad(toString(number), 7, '0')), '^https', 'X'))</query>
+
     <!-- Mostly-distinct haystacks: the distinct-ratio guard must disable deduplication. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
 
