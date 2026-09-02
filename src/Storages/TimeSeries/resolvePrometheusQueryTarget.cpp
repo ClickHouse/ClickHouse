@@ -6,6 +6,7 @@
 #include <Client/ConnectionPool.h>
 #include <Columns/ColumnBLOB.h>
 #include <Common/Exception.h>
+#include <Common/NetException.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -202,24 +203,32 @@ namespace
             {
                 RemoteQueryExecutor probe(pool, probe_query, probe_header, probe_context);
                 bool answered = false;
-                for (Block block = probe.readBlock(); !block.empty(); block = probe.readBlock())
+                try
                 {
-                    if (!block.rows())
-                        continue;
-                    block = convertBLOBColumns(block);
-                    answered = true;
-                    const Field engine = (*block.getByPosition(0).column)[0];
-                    const Field ts_type = (*block.getByPosition(1).column)[0];
-                    if (engine.isNull())
-                        unavailable_replicas.push_back(
-                            fmt::format("{} (no table {})", pool->getAddress(), backQuoteIfNeed(remote_id.table_name)));
-                    else if (engine.safeGet<String>() != "TimeSeries")
-                        ++wrong_engine_replicas;
-                    else if (!ts_type.isNull() && ts_type.safeGet<String>() != time_series_type)
+                    for (Block block = probe.readBlock(); !block.empty(); block = probe.readBlock())
                     {
-                        ++wrong_type_replicas;
-                        wrong_types.insert(ts_type.safeGet<String>());
+                        if (!block.rows())
+                            continue;
+                        block = convertBLOBColumns(block);
+                        answered = true;
+                        const Field engine = (*block.getByPosition(0).column)[0];
+                        const Field ts_type = (*block.getByPosition(1).column)[0];
+                        if (engine.isNull())
+                            unavailable_replicas.push_back(
+                                fmt::format("{} (no table {})", pool->getAddress(), backQuoteIfNeed(remote_id.table_name)));
+                        else if (engine.safeGet<String>() != "TimeSeries")
+                            ++wrong_engine_replicas;
+                        else if (!ts_type.isNull() && ts_type.safeGet<String>() != time_series_type)
+                        {
+                            ++wrong_type_replicas;
+                            wrong_types.insert(ts_type.safeGet<String>());
+                        }
                     }
+                }
+                catch (const NetException &)
+                {
+                    /// A pooled connection to a replica that went away unnoticed fails on first use, not when handed out.
+                    answered = false;
                 }
                 if (!answered)
                     unavailable_replicas.push_back(fmt::format("{} (unreachable)", pool->getAddress()));
