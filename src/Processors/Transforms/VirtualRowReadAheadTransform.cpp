@@ -342,9 +342,12 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare(const UpdatedInputPorts
     while (progress)
     {
         progress = false;
-        /// Index-based: `grantCredit` may append lanes while we iterate.
-        for (size_t i = 0; i < touched_lanes.size(); ++i) /// NOLINT(modernize-loop-convert)
-            progress |= processLane(touched_lanes[i]);
+        /// `grantCredit` touches more lanes during the pass; they get their turn in the next
+        /// one, so a pass walks only the prefix that existed when it started.
+        const size_t pass_end = touched_lanes.size();
+        for (size_t pos = 0; pos < pass_end; ++pos)
+            progress |= processLane(touched_lanes[pos]);
+        progress |= touched_lanes.size() > pass_end;
     }
 
     return tryFinish();
