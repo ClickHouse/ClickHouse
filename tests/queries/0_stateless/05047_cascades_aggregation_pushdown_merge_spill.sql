@@ -48,25 +48,15 @@ SET group_by_two_level_threshold_bytes = 0;
 SET max_bytes_before_external_group_by = 10000;
 SET max_bytes_ratio_before_external_group_by = 0;
 
--- Confirm variant A fired: the sandwich - merge-only `Aggregating` above the first `JoinLogical`,
--- the partial `Aggregating` below it.
+-- Confirm variant A fired, pinned as the full legacy EXPLAIN: the sandwich - the merge-only
+-- `Aggregating` above the `JoinLogical`, the partial `Aggregating` below it. The runtime-filter
+-- and prewhere settings decide the `BuildRuntimeFilter`/`Filter` lines of the INNER shape and are
+-- randomized by the harness, so they are pinned in the EXPLAIN's SETTINGS clause only - a
+-- session-level `SET` would leak into the executed spill probe below.
 SELECT '-- canary: variant A fires for the spill query';
-SELECT
-    countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
-    countIf(trimLeft(explain) LIKE 'Aggregating%') >= 2 AS has_merge_and_partial,
-    minIf(rn, trimLeft(explain) LIKE 'Aggregating%')
-        < minIf(rn, explain LIKE '%JoinLogical%') AS merge_above_join,
-    minIf(rn, explain LIKE '%JoinLogical%')
-        < maxIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS partial_below_join
-FROM
-(
-    SELECT explain, rowNumberInAllBlocks() AS rn
-    FROM
-    (
-        EXPLAIN SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
-        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy'
-    )
-) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+EXPLAIN SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
+    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
 FORMAT Null

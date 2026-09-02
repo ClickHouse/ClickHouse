@@ -40,29 +40,13 @@ SET max_threads = 32;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_join_table_stat_hints = '{"t_ml_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_ml_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 
--- Local-merge evidence: the variant-A sandwich (two `Aggregating` lines, merge above the first
--- `JoinLogical`, partial below it) with at least one `GatherExchange` and NO `ShuffleExchange` -
--- the Shuffle merge strategy would repartition instead of gathering (see
+-- Local-merge evidence, pinned as the full legacy EXPLAIN: the variant-A sandwich (the merge-only
+-- `Aggregating` above the `JoinLogical`, the partial below it) with a `GatherExchange` and no
+-- `ShuffleExchange` - the Shuffle merge strategy would repartition instead of gathering (see
 -- 05046_cascades_aggregation_pushdown_merge_shuffle for that shape).
 SELECT '-- canary: variant A with a Local merge (gather, no shuffle)';
-SELECT
-    countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
-    countIf(trimLeft(explain) LIKE 'Aggregating%') >= 2 AS has_merge_and_partial,
-    minIf(rn, trimLeft(explain) LIKE 'Aggregating%')
-        < minIf(rn, explain LIKE '%JoinLogical%') AS merge_above_join,
-    minIf(rn, explain LIKE '%JoinLogical%')
-        < maxIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS partial_below_join,
-    countIf(trimLeft(explain) LIKE 'GatherExchange%') >= 1 AS has_gather,
-    countIf(trimLeft(explain) LIKE 'ShuffleExchange%') = 0 AS no_shuffle
-FROM
-(
-    SELECT explain, rowNumberInAllBlocks() AS rn
-    FROM
-    (
-        EXPLAIN SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ml_facts AS t1 LEFT JOIN t_ml_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
-        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy'
-    )
-) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+EXPLAIN SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ml_facts AS t1 LEFT JOIN t_ml_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy';
 
 SELECT '-- execution through the Local merge';
 SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ml_facts AS t1 LEFT JOIN t_ml_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;

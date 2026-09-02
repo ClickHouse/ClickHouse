@@ -51,42 +51,21 @@ SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_join_table_stat_hints = '{"t_corr_left": {"cardinality": 100000000, "avg_row_bytes": 20, "distinct_keys": {"k": 100, "v": 1000, "p": 2, "big": 2}}, "t_corr_empty": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"k": 100}}, "t_corr_right_multi": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000}}, "t_corr_right_uniq": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000}}, "t_corr_empty_right": {"cardinality": 1000, "avg_row_bytes": 12, "distinct_keys": {"k": 1000}}}';
 
 -- Canaries: prove the stat hints actually steer the optimizer to the pushed shapes; otherwise
--- every on/off pair below would compare classic-vs-classic while staying green. The conjuncts
--- pin `Aggregating` line count and order in the top-down legacy EXPLAIN: two lines sandwiching
--- the join = variant A, a single line below the join = variant B (classic keeps one above it).
+-- every on/off pair below would compare classic-vs-classic while staying green. The full legacy
+-- EXPLAIN output is pinned: variant A = the merge-only `Aggregating` above the join and the
+-- partial `Aggregating` below it, variant B = the whole aggregation below the join (nothing
+-- but its own distribution split above it). The runtime-filter and prewhere settings, randomized
+-- by the harness, decide the `BuildRuntimeFilter`/`Filter` lines of the INNER shape, so they
+-- are pinned in the EXPLAIN's SETTINGS clause only - a session-level `SET` would leak into the
+-- executed scenarios below.
 SELECT '-- canary: variant A (partial pushdown) fires for case 1''s query';
-SELECT
-    countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
-    countIf(trimLeft(explain) LIKE 'Aggregating%') >= 2 AS has_merge_and_partial,
-    minIf(rn, explain LIKE '%JoinLogical%')
-        < maxIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS partial_below_join,
-    minIf(rn, trimLeft(explain) LIKE 'Aggregating%')
-        < minIf(rn, explain LIKE '%JoinLogical%') AS merge_above_join
-FROM
-(
-    SELECT explain, rowNumberInAllBlocks() AS rn
-    FROM
-    (
-        EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
-        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy'
-    )
-) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
+    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 SELECT '-- canary: variant B (full pushdown) fires for case 13''s query (single Aggregating, below the join)';
-SELECT
-    countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
-    countIf(trimLeft(explain) LIKE 'Aggregating%') = 1 AS single_aggregation,
-    minIf(rn, explain LIKE '%JoinLogical%')
-        < minIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS join_above_aggregation
-FROM
-(
-    SELECT explain, rowNumberInAllBlocks() AS rn
-    FROM
-    (
-        EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
-        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy'
-    )
-) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy';
 
 SELECT '-- 11. empty left table';
 SELECT t1.k AS k, count() AS c FROM t_corr_empty AS t1 INNER JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;

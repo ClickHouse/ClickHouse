@@ -1,5 +1,17 @@
 -- canary: variant A with a Shuffle merge (shuffle below the merge, gather above it)
-1	1	1	1	1	1
+Expression (Project names)
+  GatherExchange
+    Expression ((Before ORDER BY + Projection))
+      Sorting
+        Aggregating
+          JoinLogical (Shuffle HashJoin )
+            ShuffleExchange
+              Aggregating
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (ParallelRead default.t_ms_facts)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_ms_dims)
 -- execution through the Shuffle merge
 0	100	49500
 1	100	49600

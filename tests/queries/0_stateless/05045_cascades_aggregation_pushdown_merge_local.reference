@@ -1,5 +1,15 @@
 -- canary: variant A with a Local merge (gather, no shuffle)
-1	1	1	1	1	1
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      Aggregating
+        GatherExchange
+          JoinLogical (Broadcast HashJoin )
+            Aggregating
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.t_ml_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_ml_dims)
 -- execution through the Local merge
 0	100	49500
 1	100	49600

@@ -179,16 +179,16 @@ SELECT '-- 25. negative: ASOF JOIN never pushes';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 ASOF JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value >= t2.threshold GROUP BY t1.key;
 
 SELECT '-- 26. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit';
--- shape-insensitive (the join order is randomized); asserts only that the cascades planner
--- produced a distributed plan without a budget exception
-SELECT countIf(explain LIKE '%Exchange%') >= 1, countIf(trimLeft(explain) LIKE 'Aggregating%') >= 1 FROM (
-  EXPLAIN SELECT count() FROM t_push_facts AS t1
-    LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key
-    LEFT JOIN t_push_dims_multi AS t3 ON t1.key = t3.key
-    LEFT JOIN t_push_dims AS t4 ON t1.key = t4.key
-  GROUP BY t1.key
-  SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1
-) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+-- asserts that the cascades planner produces a distributed plan without a budget exception; the
+-- shape is deterministic (the preamble pins the join-order, join-swap and runtime-filter
+-- settings session-wide). The classic shape wins here: `t_push_dims_multi` has no stat-hint
+-- entry at this point, so the pushed join subtree lacks the estimates the cardinality gate
+-- needs and no pushdown alternative is built.
+EXPLAIN SELECT count() FROM t_push_facts AS t1
+  LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key
+  LEFT JOIN t_push_dims_multi AS t3 ON t1.key = t3.key
+  LEFT JOIN t_push_dims AS t4 ON t1.key = t4.key
+GROUP BY t1.key;
 
 -- Nested aggregation, pinned as a stable no-cascade shape (not exercising the new cascade
 -- capability): the outer `Aggregating` sits above the inner query's variant-B pushdown group

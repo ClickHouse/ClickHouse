@@ -36,33 +36,14 @@ SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_cascades_cost_config = '{"exchange_fixed_overhead":0}';
 SET param__internal_join_table_stat_hints = '{"t_ms_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_ms_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 
--- Shuffle-merge evidence: the variant-A sandwich (two `Aggregating` lines, merge above the first
--- `JoinLogical`, partial below it), a `ShuffleExchange` BELOW the merge (the merge consumes
--- repartitioned data instead of a gathered stream) and the lone `GatherExchange` ABOVE the merge
--- (only the merged result is gathered). The Local merge fails the last two conjuncts.
+-- Shuffle-merge evidence, pinned as the full legacy EXPLAIN: the variant-A sandwich (the
+-- merge-only `Aggregating` above the `JoinLogical`, the partial below it), a `ShuffleExchange`
+-- BELOW the merge (the merge consumes repartitioned data instead of a gathered stream) and the
+-- lone `GatherExchange` ABOVE the merge (only the merged result is gathered). The Local merge
+-- would show the gather below the merge and no shuffle.
 SELECT '-- canary: variant A with a Shuffle merge (shuffle below the merge, gather above it)';
-SELECT
-    countIf(explain LIKE '%JoinLogical%') > 0 AS has_join,
-    countIf(trimLeft(explain) LIKE 'Aggregating%') >= 2 AS has_merge_and_partial,
-    minIf(rn, trimLeft(explain) LIKE 'Aggregating%')
-        < minIf(rn, explain LIKE '%JoinLogical%') AS merge_above_join,
-    minIf(rn, explain LIKE '%JoinLogical%')
-        < maxIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS partial_below_join,
-    countIf(trimLeft(explain) LIKE 'ShuffleExchange%') >= 1
-        AND minIf(rn, trimLeft(explain) LIKE 'Aggregating%')
-            < minIf(rn, trimLeft(explain) LIKE 'ShuffleExchange%') AS shuffle_below_merge,
-    countIf(trimLeft(explain) LIKE 'GatherExchange%') >= 1
-        AND minIf(rn, trimLeft(explain) LIKE 'GatherExchange%')
-            < minIf(rn, trimLeft(explain) LIKE 'Aggregating%') AS gather_above_merge
-FROM
-(
-    SELECT explain, rowNumberInAllBlocks() AS rn
-    FROM
-    (
-        EXPLAIN SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ms_facts AS t1 LEFT JOIN t_ms_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
-        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy'
-    )
-) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+EXPLAIN SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ms_facts AS t1 LEFT JOIN t_ms_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy';
 
 SELECT '-- execution through the Shuffle merge';
 SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ms_facts AS t1 LEFT JOIN t_ms_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
