@@ -31,10 +31,28 @@ SET query_plan_join_swap_table = false;
 -- The aggregation reads in order, which is what picks the coordination mode.
 SET optimize_read_in_order = 0;
 SET optimize_aggregation_in_order = 1;
+-- Pin what decides whether the filter is folded into the read, so the plan below is stable.
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 -- Without this the remote replicas may get no marks at all, and then they never send a read request
 -- for the coordinator to check the mode of.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+
+-- The runtime filter has to be inside the local fragment, below the aggregation that reads in order:
+-- that is the plan the initiator announces a coordination mode for.
+SELECT replaceAll(replaceRegexpOne(explain, '^[^A-Za-z]*', ''), currentDatabase(), 'default') AS step
+FROM (
+    EXPLAIN actions = 1
+    SELECT sum(x.c)
+    FROM (SELECT a, count() AS c FROM t_rf_read_mode GROUP BY a) AS x
+    JOIN b_rf_read_mode AS bb ON x.a = bb.a
+)
+WHERE explain LIKE '%Aggregating%'
+   OR explain LIKE '%ReadFromMergeTree%'
+   OR explain LIKE '%Read type%'
+   OR explain LIKE '%Runtime filters:%'
+   OR explain LIKE '%Filter column:%';
 
 SELECT sum(x.c)
 FROM (SELECT a, count() AS c FROM t_rf_read_mode GROUP BY a) AS x
