@@ -115,6 +115,11 @@ def count_fuzzers(path: Path) -> int:
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
+    parser.add_argument(
+        "--minimize-only",
+        action="store_true",
+        help="Only minimize the corpora and upload the result, do not fuzz.",
+    )
     return parser.parse_args()
 
 
@@ -126,7 +131,7 @@ def download_corpus(path):
 
     try:
         S3.copy_file_from_s3(
-            s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus",
+            s3_path=f"{Settings.S3_ARTIFACT_BUCKET}/fuzzer/corpus",
             local_path=str(corpus_path),
             include_pattern="*.zip",
             recursive=True,
@@ -171,7 +176,7 @@ def upload_corpus(path):
             with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 zipdir(fuzzer_dir, zipf)
             S3.copy_file_to_s3(
-                s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus/{fuzzer_dir.name}.zip",
+                s3_path=f"{Settings.S3_ARTIFACT_BUCKET}/fuzzer/corpus/{fuzzer_dir.name}.zip",
                 local_path=str(zip_file_path),
             )
 
@@ -303,6 +308,7 @@ def process_results(result_path: Path):
                 if file_path_stdout_mini.exists():
                     log_files.append(str(file_path_stdout_mini))
             else:
+                oks += 1
                 if file_path_out_mini.exists():
                     err = process_error(file_path_out_mini, fuzzer_result_dir)
                     if len(err):
@@ -333,6 +339,10 @@ def process_results(result_path: Path):
         file_path_status = fuzzer_result_dir / "status.txt"
         file_path_out = fuzzer_result_dir / "out.txt"
         file_path_stdout = fuzzer_result_dir / "stdout.txt"
+
+        if not file_path_status.exists():
+            # A corpus minimization run: there is no fuzzing result to report.
+            continue
 
         status = read_status(file_path_status)
         result = Result(fuzzer, status[0], duration=float(status[2]))
@@ -436,7 +446,11 @@ def main():
     # budget that doubles the length of the job instead of queueing for minutes.
     additional_envs.append(f"RUNNERS={count_fuzzers(fuzzers_path)}")
 
-    if not is_master:
+    if args.minimize_only:
+        additional_envs.append("MINIMIZE_ONLY=1")
+    else:
+        # Corpus minimization is a separate scheduled job, so that a fuzzing run
+        # always gets its whole budget for fuzzing.
         additional_envs.append("SKIP_MERGE=1")
 
     run_command = get_run_command(
