@@ -12,7 +12,7 @@ Matches all groups of a string using the provided regular expression and returns
     FunctionDocumentation::Syntax syntax = "extractAllGroupsHorizontal(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string to extract from.", {"String", "FixedString"}},
-        {"regexp", "Regular expression to match by.", {"const String", "const FixedString"}}
+        {"regexp", "Regular expression to match by. Must contain between 1 and 127 capturing groups.", {"const String", "const FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of arrays, where each inner array contains all captures from one capturing group across all matches. The first inner array contains all captures from group 1, the second from group 2, etc. If no matches are found, returns an empty array.", {"Array(Array(String))"}};
     FunctionDocumentation::Examples examples = {

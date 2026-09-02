@@ -55,8 +55,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        static constexpr size_t MAX_GROUPS_COUNT = 128;
-
         const ColumnPtr column_haystack = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
 
@@ -66,22 +64,11 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} length of 'needle' argument must be greater than 0.", getName());
 
         const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(needle);
+        const size_t groups_count = Regexps::getCapturingGroupsCount(regexp, needle);
         const auto & re2 = regexp.getRE2();
 
-        if (!re2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
-        const size_t groups_count = re2->NumberOfCapturingGroups();
-
-        if (!groups_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
-        if (groups_count > MAX_GROUPS_COUNT - 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups in regexp: {}, max: {}",
-                            groups_count, MAX_GROUPS_COUNT - 1);
-
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<std::string_view, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);
+        Regexps::MatchedGroups matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnString::MutablePtr data_col = ColumnString::create();
