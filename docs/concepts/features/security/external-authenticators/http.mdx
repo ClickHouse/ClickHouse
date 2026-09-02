@@ -232,15 +232,18 @@ request is refused with `USER_SESSION_LIMIT_EXCEEDED` — no session is left beh
 that `session_id`: a later request with the same `session_id` creates a fresh session from
 its own authentication.
 
-### Views with `SQL SECURITY DEFINER` {#http-external-user-directory-definer}
+### `SQL SECURITY DEFINER` is not supported {#http-external-user-directory-definer}
 
-When a user of this directory creates a view with `SQL SECURITY DEFINER`, ClickHouse stores
-a persistent shadow user named `<username>:definer` as the view's definer, as it does for
-any ephemeral user, because the ephemeral user itself does not survive a restart. The shadow
-user cannot log in and is granted the roles that were returned by the authentication server
-for the session that created the view, so the view keeps the access rights its creator had
-at creation time. Later changes to the roles returned for that user do not affect the shadow
-user.
+For an ephemeral user, ClickHouse persists a single shadow user named `<username>:definer`
+as the definer of `SQL SECURITY DEFINER` objects, replacing it on every such creation.
+Roles returned by the authentication server belong to one authentication, and two
+simultaneous sessions of the same username may carry different role sets, so no single
+shadow can represent them: a later view created by the same username would silently change
+the authorization of earlier ones. Creating a `SQL SECURITY DEFINER` object as a user of
+this directory whose authentication returned roles therefore fails with `NOT_IMPLEMENTED`.
+Use `SQL SECURITY INVOKER` for views. Materialized views default to `SQL SECURITY DEFINER`
+(see `default_materialized_view_sql_security`) and must be created with an explicit
+`SQL SECURITY NONE` by such users, which requires the `ALLOW_SQL_SECURITY_NONE` privilege.
 
 ### Established-session refresh and revocation {#http-external-user-directory-revocation}
 

@@ -14,7 +14,6 @@ instance = cluster.add_instance(
     "node",
     main_configs=["configs/config_main.xml", "configs/remote_servers.xml"],
     user_configs=["configs/users.xml"],
-    stay_alive=True,  # test_definer_view_keeps_helper_roles restarts the server
 )
 instance2 = cluster.add_instance(
     "node2",
@@ -1225,50 +1224,41 @@ def test_named_session_refused_by_session_limit_not_reusable(started_cluster):
     )
 
 
-def test_definer_view_keeps_helper_roles(started_cluster):
-    # A SQL SECURITY DEFINER view created by an http-directory user is persisted with a
-    # shadow definer `<user>:definer`. Helper-returned roles are session-scoped and absent
-    # from the stored ephemeral user, so the shadow must receive them explicitly: otherwise
-    # the view has no access to its underlying table. Placed last: it restarts the server.
-    admin("GRANT SELECT ON default.protected TO external_definer")
+def test_definer_view_rejected_for_user_with_helper_roles(started_cluster):
+    # A SQL SECURITY DEFINER object created by an ephemeral user is bound to a single
+    # persistent shadow `<user>:definer`, replaced on every such creation. Helper-returned
+    # roles are per-authentication and may differ between simultaneous sessions of the same
+    # username, so no single shadow can represent them: the creation fails closed instead
+    # of persisting a definer that later creations by the same username would redefine.
     admin("GRANT CREATE VIEW ON default.* TO external_definer")
-    instance.query(
-        "CREATE VIEW default.definer_view SQL SECURITY DEFINER AS SELECT count() AS c FROM default.protected",
+    admin("GRANT SELECT ON default.protected TO external_definer")
+    error = instance.query_and_get_error(
+        "CREATE VIEW default.definer_view SQL SECURITY DEFINER AS SELECT count() FROM default.protected",
         user="definer_user",
         password=GOOD_PASSWORD,
     )
-    admin("CREATE USER IF NOT EXISTS definer_caller IDENTIFIED BY 'caller_password'")
-    admin("GRANT SELECT ON default.definer_view TO definer_caller")
-    grants = admin("SHOW GRANTS FOR 'definer_user:definer'")
-    assert "external_definer" in grants, grants
-    # The caller has no access to default.protected itself; the view works only through
-    # the shadow definer's role.
-    error = instance.query_and_get_error(
-        "SELECT count() FROM default.protected",
-        user="definer_caller",
-        password="caller_password",
-    )
-    assert "ACCESS_DENIED" in error or "Not enough privileges" in error, error
+    assert "SQL SECURITY DEFINER is not supported" in error, error
+    assert "NOT_IMPLEMENTED" in error, error
+    # Nothing was persisted: neither the view nor a shadow definer.
     assert (
-        instance.query(
-            "SELECT c FROM default.definer_view",
-            user="definer_caller",
-            password="caller_password",
+        admin(
+            "SELECT count() FROM system.users WHERE name = 'definer_user:definer'"
         ).strip()
-        == "3"
-    )
-    # The shadow is why the view survives the ephemeral user: after a restart the
-    # materialized http user is gone, the persisted shadow with its role remains.
-    instance.restart_clickhouse()
-    assert (
-        admin("SELECT count() FROM system.users WHERE name = 'definer_user'").strip()
         == "0"
     )
+    assert admin("EXISTS TABLE default.definer_view").strip() == "0"
+    # INVOKER views remain available to the same user.
+    instance.query(
+        "CREATE VIEW default.invoker_view SQL SECURITY INVOKER AS SELECT count() AS c FROM default.protected",
+        user="definer_user",
+        password=GOOD_PASSWORD,
+    )
+    admin("GRANT SELECT ON default.invoker_view TO external_definer")
     assert (
         instance.query(
-            "SELECT c FROM default.definer_view",
-            user="definer_caller",
-            password="caller_password",
+            "SELECT c FROM default.invoker_view",
+            user="definer_user",
+            password=GOOD_PASSWORD,
         ).strip()
         == "3"
     )
