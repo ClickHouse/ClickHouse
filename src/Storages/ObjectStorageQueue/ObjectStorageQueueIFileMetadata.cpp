@@ -69,12 +69,14 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
+    terminal_state_generation.fetch_add(1);
     state = FileStatus::State::Processed;
     chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
+    terminal_state_generation.fetch_add(1);
     state = FileStatus::State::Failed;
     if (!processing_end_time)
         setProcessingEndTime();
@@ -98,6 +100,8 @@ void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
     {
         processing_by_another_processor_since = 0;
     }
+    if (state_ == FileStatus::State::Processed || state_ == FileStatus::State::Failed)
+        terminal_state_generation.fetch_add(1);
     state = state_;
 }
 
@@ -217,8 +221,15 @@ size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::count() cons
     return observations.size();
 }
 
-void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor(ForeignProcessingObservers & observers)
+bool ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor(
+    ForeignProcessingObservers & observers, UInt64 expected_terminal_generation)
 {
+    /// The cached record was committed into a terminal state after the keeper read which
+    /// discovered the foreign `processing` node: that record describes a later fact than
+    /// this observation, so it must not be downgraded back to `Processing`.
+    if (terminal_state_generation.load() != expected_terminal_generation)
+        return false;
+
     /// Publish the foreign marker before `Processing`: contenders which observe the
     /// state without acquiring `processing_lock` must not mistake it for our attempt.
     const auto processing_since = now();
@@ -237,11 +248,13 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor
     }
     /// Keep `retries`, as for a local processing attempt.
     state = FileStatus::State::Processing;
+    return true;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_)
 {
     chassert(state_ == State::Processed || state_ == State::Failed);
+    terminal_state_generation.fetch_add(1);
     /// The data of an abandoned local attempt does not describe the terminal state.
     processing_by_another_processor_since = 0;
     processing_start_time = {};
@@ -495,6 +508,8 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
+    snapshotTerminalStateGeneration();
+
     std::optional<FileTerminalState> terminal_state;
     auto [success, file_state] = setProcessingImpl(terminal_state);
     afterSetProcessing(success, file_state, std::move(terminal_state));
@@ -539,6 +554,9 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
+
+    snapshotTerminalStateGeneration();
+
     return prepareProcessingRequestsImpl(requests, processing_id);
 }
 
@@ -576,8 +594,13 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(
                 {
                     LOG_TEST(log, "File {} is already being processed by a concurrent local processor", path);
                 }
-                else
-                    file_status->onProcessingByAnotherProcessor(*foreign_processing_observers);
+                else if (!file_status->onProcessingByAnotherProcessor(
+                             *foreign_processing_observers, terminal_state_generation_before_set_processing))
+                {
+                    /// Another processor committed the file while this attempt was reading keeper,
+                    /// and the cached record already describes that terminal state.
+                    LOG_TEST(log, "File {} was committed by another processor while setting it as processing", path);
+                }
             }
             else
             {

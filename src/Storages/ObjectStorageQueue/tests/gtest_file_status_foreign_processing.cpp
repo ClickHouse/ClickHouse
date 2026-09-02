@@ -54,6 +54,17 @@ std::shared_ptr<Metadata> makeFileMetadata(
     }
 }
 
+/// Mirrors what `trySetProcessing` / `prepareSetProcessingRequests` do before probing
+/// keeper: remember which terminal state the shared record had, so that the foreign
+/// `processing` observation can be recognised as older than a terminal state committed
+/// by another processor in the meantime.
+template <typename Metadata>
+void snapshotTerminalStateGeneration(Metadata & metadata)
+{
+    if constexpr (requires { metadata.snapshotTerminalStateGeneration(); })
+        metadata.snapshotTerminalStateGeneration();
+}
+
 }
 
 /// Observing the `processing` node of another processor after a local failure must not keep
@@ -73,6 +84,7 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingResetsDataOfPreviousLocalAtt
     ASSERT_EQ(file_status->state.load(), FileStatus::State::Failed);
     ASSERT_NE(file_status->processing_end_time.load(), 0);
 
+    snapshotTerminalStateGeneration(*metadata);
     metadata->afterSetProcessing(/* success */ false, FileStatus::State::Processing);
 
     ASSERT_EQ(file_status->state.load(), FileStatus::State::Processing);
@@ -98,6 +110,7 @@ TEST(ObjectStorageQueueFileStatus, LocalProcessingStateIsPreservedOnSameServerCo
 
     /// A stale contender sharing the same `FileStatus` loses on the owner's node.
     auto contender = makeFileMetadata(file_status, metadata_ref_count);
+    snapshotTerminalStateGeneration(*contender);
     contender->afterSetProcessing(/* success */ false, FileStatus::State::Processing);
 
     ASSERT_EQ(file_status->state.load(), FileStatus::State::Processing);
@@ -119,6 +132,7 @@ void expectForeignProcessingHintIsClearedByLocalProcessing()
         std::atomic<size_t> metadata_ref_count{0};
         auto metadata = makeFileMetadata<Metadata>(file_status, metadata_ref_count);
 
+        snapshotTerminalStateGeneration(*metadata);
         metadata->afterSetProcessing(/* success */ false, FS::State::Processing);
         ASSERT_EQ(file_status->state.load(), FS::State::Processing);
 
@@ -128,6 +142,7 @@ void expectForeignProcessingHintIsClearedByLocalProcessing()
         ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
 
         auto contender = makeFileMetadata<Metadata>(file_status, metadata_ref_count);
+        snapshotTerminalStateGeneration(*contender);
         contender->afterSetProcessing(/* success */ false, FS::State::Processing);
 
         ASSERT_EQ(file_status->state.load(), FS::State::Processing);
@@ -158,7 +173,7 @@ void expectForeignProcessingCacheDeadlineIsPerTable()
         Observers first_observers(1);
         Observers second_observers(1);
 
-        file_status->onProcessingByAnotherProcessor(first_observers);
+        file_status->onProcessingByAnotherProcessor(first_observers, file_status->terminalStateGeneration());
 
         ASSERT_FALSE(file_status->shouldRetryProcessing(first_observers, 3600));
         ASSERT_TRUE(file_status->shouldRetryProcessing(second_observers, 3600));
@@ -191,7 +206,7 @@ void expectStaleObservationIsNotReusedForALaterForeignHold()
         Observers second_table_observers(10);
 
         /// The first table observes a foreign hold of the file.
-        file_status->onProcessingByAnotherProcessor(first_table_observers);
+        file_status->onProcessingByAnotherProcessor(first_table_observers, file_status->terminalStateGeneration());
         ASSERT_FALSE(file_status->shouldRetryProcessing(first_table_observers, 3600));
 
         /// The hold is over: the file was released and reset.
@@ -199,7 +214,7 @@ void expectStaleObservationIsNotReusedForALaterForeignHold()
         ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
 
         /// The second table is the first to observe a new foreign hold of the same path.
-        file_status->onProcessingByAnotherProcessor(second_table_observers);
+        file_status->onProcessingByAnotherProcessor(second_table_observers, file_status->terminalStateGeneration());
 
         ASSERT_EQ(file_status->processingByAnotherProcessorSince(first_table_observers), 0);
         ASSERT_TRUE(file_status->shouldRetryProcessing(first_table_observers, 3600));
@@ -405,7 +420,7 @@ void expectOnlyForeignProcessingIsRetryable()
         file_status->onProcessing();
         ASSERT_FALSE(file_status->shouldRetryProcessing(observing_observers, time_t{}));
 
-        file_status->onProcessingByAnotherProcessor(observing_observers);
+        file_status->onProcessingByAnotherProcessor(observing_observers, file_status->terminalStateGeneration());
         ASSERT_TRUE(file_status->shouldRetryProcessing(other_observers, 3600));
     }
     else
@@ -482,9 +497,11 @@ void expectSetProcessingTerminalDiscoveryRefreshesWholeRecord()
             file_status->onProcessing();
             file_status->processed_rows = 10;
             file_status->onFailed("Cannot read the file");
+            snapshotTerminalStateGeneration(*metadata);
             metadata->afterSetProcessing(/* success */ false, FS::State::Processing);
             ASSERT_TRUE(file_status->isProcessingByAnotherProcessor());
 
+            snapshotTerminalStateGeneration(*metadata);
             metadata->afterSetProcessing(
                 /* success */ false,
                 FS::State::Failed,
@@ -509,6 +526,7 @@ void expectSetProcessingTerminalDiscoveryRefreshesWholeRecord()
             file_status->setProcessingEndTime();
             file_status->onProcessed();
 
+            snapshotTerminalStateGeneration(*metadata);
             metadata->afterSetProcessing(
                 /* success */ false,
                 FS::State::Processed,
@@ -526,6 +544,7 @@ void expectSetProcessingTerminalDiscoveryRefreshesWholeRecord()
             file_status->onProcessing();
             file_status->processed_rows = 5;
 
+            snapshotTerminalStateGeneration(*metadata);
             metadata->afterSetProcessing(
                 /* success */ false,
                 FS::State::Processed,
@@ -561,6 +580,7 @@ void expectTerminalFailureReplacesCachedRetriableLocalFailure()
             file_status->retries = 1;
             file_status->onFailed("Retriable local failure");
 
+            snapshotTerminalStateGeneration(*metadata);
             metadata->afterSetProcessing(
                 /* success */ false,
                 FS::State::Failed,
@@ -583,6 +603,7 @@ void expectTerminalFailureReplacesCachedRetriableLocalFailure()
             const auto end_time = file_status->processing_end_time.load();
             ASSERT_NE(end_time, 0);
 
+            snapshotTerminalStateGeneration(*metadata);
             metadata->afterSetProcessing(
                 /* success */ false,
                 FS::State::Failed,
@@ -612,4 +633,63 @@ TEST(ObjectStorageQueueFileStatus, SetProcessingTerminalDiscoveryRefreshesWholeR
 TEST(ObjectStorageQueueFileStatus, TerminalFailureReplacesCachedRetriableLocalFailure)
 {
     expectTerminalFailureReplacesCachedRetriableLocalFailure<ObjectStorageQueueUnorderedFileMetadata>();
+}
+
+namespace
+{
+
+/// Two tables sharing one `keeper_path` share one `FileStatus`. One of them loses the race
+/// for the `processing` node, while the other discovers, in the meantime, that the file has
+/// already been committed. The loser must not downgrade the cached terminal record back to
+/// `Processing`: that would make `system.s3queue_metadata_cache` stale again and, in
+/// `ordered` mode, keep the ordering domain blocked until the observation expires.
+template <typename Metadata>
+void expectTerminalStateIsNotClobberedByALoserOfSetProcessing()
+{
+    if constexpr (requires { typename Metadata::FileTerminalState; })
+    {
+        /// The dependent aliases keep this branch uninstantiated at the merge base.
+        using FS = typename Metadata::FileStatus;
+        using TerminalState = typename Metadata::FileTerminalState;
+        std::atomic<size_t> metadata_ref_count{0};
+
+        auto file_status = std::make_shared<FS>("data/file.csv");
+        auto loser = makeFileMetadata(file_status, metadata_ref_count);
+        auto observer = makeFileMetadata(file_status, metadata_ref_count);
+
+        /// The loser reads keeper and finds the `processing` node of another processor...
+        snapshotTerminalStateGeneration(*loser);
+
+        /// ... but before it writes that observation back, the other table of this server
+        /// discovers the `processed` node committed by that processor and refreshes the
+        /// shared record.
+        snapshotTerminalStateGeneration(*observer);
+        observer->afterSetProcessing(
+            /* success */ false,
+            FS::State::Processed,
+            TerminalState{FS::State::Processed});
+        ASSERT_EQ(file_status->state.load(), FS::State::Processed);
+
+        loser->afterSetProcessing(/* success */ false, FS::State::Processing);
+
+        ASSERT_EQ(file_status->state.load(), FS::State::Processed);
+        ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
+
+        /// A foreign hold observed after that terminal state is a later fact, and is recorded.
+        auto contender = makeFileMetadata(file_status, metadata_ref_count);
+        snapshotTerminalStateGeneration(*contender);
+        contender->afterSetProcessing(/* success */ false, FS::State::Processing);
+
+        ASSERT_EQ(file_status->state.load(), FS::State::Processing);
+        ASSERT_TRUE(file_status->isProcessingByAnotherProcessor());
+    }
+    else
+        FAIL() << "A loser of the set-processing race can clobber a terminal cached state";
+}
+
+}
+
+TEST(ObjectStorageQueueFileStatus, TerminalStateIsNotClobberedByALoserOfSetProcessing)
+{
+    expectTerminalStateIsNotClobberedByALoserOfSetProcessing<ObjectStorageQueueUnorderedFileMetadata>();
 }

@@ -94,10 +94,18 @@ public:
         void updateState(State state_);
         /// The `processing` node in keeper is held by another processor
         /// (another server, or another table on this server).
-        void onProcessingByAnotherProcessor(ForeignProcessingObservers & observers);
+        /// `expected_terminal_generation` is the value of `terminalStateGeneration` taken
+        /// before the keeper read which discovered that node: if the cached record received
+        /// a terminal state in the meantime, that record is newer than this observation and
+        /// is kept, and the method returns false without changing anything.
+        bool onProcessingByAnotherProcessor(ForeignProcessingObservers & observers, UInt64 expected_terminal_generation);
         /// The file was committed by another processor: replace the data of a previous
         /// local attempt with the terminal state discovered in keeper.
         void onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_);
+        /// Incremented on every transition of the cached record into a terminal state,
+        /// so that a concurrent observation of a foreign `processing` node can tell whether
+        /// it is older than the terminal state which is cached now.
+        UInt64 terminalStateGeneration() const { return terminal_state_generation.load(); }
         /// Whether the `Processing` state is only a cached observation of a foreign node.
         bool isProcessingByAnotherProcessor() const { return processing_by_another_processor_since.load() != 0; }
         /// When the foreign `processing` node was observed; zero if the state is not foreign.
@@ -124,6 +132,8 @@ public:
         std::atomic<time_t> processing_by_another_processor_since = 0;
         /// Incremented on every transition into the foreign `Processing` state.
         std::atomic<UInt64> foreign_processing_generation = 0;
+        /// Incremented on every transition into a terminal state (see `terminalStateGeneration`).
+        std::atomic<UInt64> terminal_state_generation = 0;
         mutable std::mutex last_exception_mutex;
         std::string last_exception;
     };
@@ -281,6 +291,12 @@ public:
         std::optional<FileStatus::State> file_state,
         std::optional<FileTerminalState> terminal_state = std::nullopt);
 
+    /// Remember which terminal state the cached record had before this attempt reads keeper,
+    /// so that `afterSetProcessing` can tell whether a terminal state committed by another
+    /// processor in the meantime is newer than what this attempt found (see
+    /// `FileStatus::onProcessingByAnotherProcessor`).
+    void snapshotTerminalStateGeneration() { terminal_state_generation_before_set_processing = file_status->terminalStateGeneration(); }
+
     void setUncertainCommit() { uncertain_commit = true; }
 
     /// A struct, representing information stored in keeper for a single file.
@@ -333,6 +349,9 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
+    /// The terminal state generation of the cached record before this attempt read keeper
+    /// (see `snapshotTerminalStateGeneration`).
+    UInt64 terminal_state_generation_before_set_processing = 0;
     /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):
     /// the multi-op may have succeeded in ZK but the connection was lost before we received
     /// the response. In this case the destructor must check ownership before removing the

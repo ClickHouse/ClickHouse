@@ -602,6 +602,11 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
         if (!status)
             continue;
 
+        /// `trySetProcessing` updates the same shared record under `processing_lock`, so the
+        /// read-check-write below is serialized with it: otherwise a concurrent loser of the
+        /// race for the `processing` node could interleave with this write-back.
+        std::lock_guard processing_lock(status->processing_lock);
+
         const auto cached_state = status->state.load();
 
         /// The cached record already has this terminal state: it describes a local attempt
