@@ -39,6 +39,7 @@ namespace FailPoints
 {
     extern const char adding_defaults_transform_before_expression_pause[];
     extern const char adding_defaults_transform_pause[];
+    extern const char adding_defaults_transform_before_execute_pause[];
 }
 
 namespace ErrorCodes
@@ -302,22 +303,32 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes), true);
 
+            /// Publish the actions before anything can observe the cancellation, so that a
+            /// concurrent `onCancel` can always forward `cancelExecution` into a function that is
+            /// about to run or already running. Publishing after the check below would leave a
+            /// window where `onCancel` sees no actions and the evaluation still starts one action.
+            {
+                std::lock_guard lock(current_actions_mutex);
+                current_actions = actions;
+            }
+
             FailPointInjection::pauseFailPoint(FailPoints::adding_defaults_transform_before_expression_pause);
 
             /// The task can be dispatched before the query is cancelled and start running after it:
             /// skip the whole default evaluation instead of running one action of it.
             if (isCancelled())
             {
+                {
+                    std::lock_guard lock(current_actions_mutex);
+                    current_actions.reset();
+                }
                 chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
                 return;
             }
 
-            /// Publish the actions so that a concurrent `onCancel` can forward `cancelExecution`
-            /// into a function that is already running.
-            {
-                std::lock_guard lock(current_actions_mutex);
-                current_actions = actions;
-            }
+            /// The cancellation can also land between the check above and the evaluation. The
+            /// actions are already published, so `onCancel` reaches the running function.
+            FailPointInjection::pauseFailPoint(FailPoints::adding_defaults_transform_before_execute_pause);
 
             actions->execute(evaluate_block, false, false, &getCancellationFlag());
 
