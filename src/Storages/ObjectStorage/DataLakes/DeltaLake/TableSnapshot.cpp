@@ -959,10 +959,11 @@ void TableSnapshot::initOrUpdateSnapshot() const
         if (inflight_load == load)
             inflight_load = nullptr;
 
+        std::shared_ptr<KernelSnapshotState> built;
         try
         {
             /// Rethrows the build error to every waiter if the build failed.
-            kernel_snapshot_state = load->future.get();
+            built = load->future.get();
         }
         catch (const DB::Exception & e)
         {
@@ -971,6 +972,20 @@ void TableSnapshot::initOrUpdateSnapshot() const
             current_credentials_fingerprint = helper->getCredentialsFingerprint();
             continue;
         }
+
+        /// A TableSnapshot never changes its version once one is installed. Two latest-version
+        /// loads on the same object (a fresh one started after the first was given up) may
+        /// resolve different versions; whichever completes second is stale and is ignored,
+        /// otherwise the cached object would flip between versions. Rebuilds after a
+        /// credentials refresh are pinned to the installed version, so they always pass.
+        if (kernel_snapshot_state && built->snapshot_version != kernel_snapshot_state->snapshot_version)
+        {
+            LOG_TRACE(
+                log, "Ignoring a stale snapshot load which resolved version {} after version {} was installed",
+                built->snapshot_version, kernel_snapshot_state->snapshot_version);
+            break;
+        }
+        kernel_snapshot_state = built;
         kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
         kernel_state_needs_rebuild = false;
         break;
@@ -989,15 +1004,16 @@ namespace
     /// loads pass the check together) and released by the worker itself when the kernel call
     /// returns, so stuck workers can never exceed this cap.
     /// Each stuck worker occupies one `GlobalThreadPool` thread, so the cap is derived from the
-    /// pool's actual size (`max_thread_pool_size`, configurable): a small share of it, at most
-    /// 128 (reached with the default pool of 10000), and always leaving at least two workers
-    /// free for unrelated tasks and for shutdown. On a pool too small for that the cap is 0:
-    /// snapshot loads then fail fast with a clear error instead of occupying the last worker.
-    /// Builds are shared per table snapshot, so this stays far above realistic concurrency.
+    /// pool's actual size (`max_thread_pool_size`, configurable): a share of it, at least one
+    /// worker and at most 128 (reached with the default pool of 10000), while always leaving
+    /// two workers free for unrelated tasks and for shutdown. Only a pool too small even for
+    /// that (`max_thread_pool_size <= 2`) gets a cap of 0, so that snapshot loads fail fast
+    /// with a clear error instead of occupying the last worker. Builds are shared per table
+    /// snapshot, so this stays far above realistic concurrency.
     Int64 maxSnapshotLoadWorkers()
     {
         const auto pool_size = static_cast<Int64>(GlobalThreadPool::instance().getMaxThreads());
-        return std::clamp<Int64>(std::min<Int64>(pool_size / 8, pool_size - 2), 0, 128);
+        return std::clamp<Int64>(std::min<Int64>(std::max<Int64>(pool_size / 8, 1), pool_size - 2), 0, 128);
     }
     std::atomic<Int64> snapshot_load_worker_permits{0};
 }
@@ -1033,6 +1049,13 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
             kernel_helper->getTableLocation(), max_workers,
             CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck));
     }
+    /// Everything below may throw (allocations, thread creation): release the permit unless it
+    /// was handed over to the worker, which releases it when the kernel call returns.
+    bool permit_transferred = false;
+    SCOPE_EXIT({
+        if (!permit_transferred)
+            snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
+    });
 
     auto load = std::make_shared<InflightSnapshotLoad>();
     auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
@@ -1056,27 +1079,20 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
     else
         thread_group = DB::CurrentThread::getGroup();
 
-    try
-    {
-        ThreadFromGlobalPool thread(
-            [task, load, thread_group]
-            {
-                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
-                (*task)();
-                /// If every waiter already gave up, undoing the stuck-load accounting is ours to do.
-                if (load->state.exchange(InflightSnapshotLoad::State::Finished) == InflightSnapshotLoad::State::Abandoned)
-                    CurrentMetrics::sub(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
-                snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
-            });
-        /// Nobody joins the worker: waiters wait on the shared future with their own cancellation
-        /// checks, and the captured shared state keeps everything the worker needs alive.
-        thread.detach();
-    }
-    catch (...)
-    {
-        snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
-        throw;
-    }
+    ThreadFromGlobalPool thread(
+        [task, load, thread_group]
+        {
+            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
+            (*task)();
+            /// If every waiter already gave up, undoing the stuck-load accounting is ours to do.
+            if (load->state.exchange(InflightSnapshotLoad::State::Finished) == InflightSnapshotLoad::State::Abandoned)
+                CurrentMetrics::sub(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
+            snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
+        });
+    /// Nobody joins the worker: waiters wait on the shared future with their own cancellation
+    /// checks, and the captured shared state keeps everything the worker needs alive.
+    thread.detach();
+    permit_transferred = true;
     return load;
 }
 
