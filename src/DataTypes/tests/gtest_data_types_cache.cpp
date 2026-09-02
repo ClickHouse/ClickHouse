@@ -114,7 +114,7 @@ TEST(DataTypesCache, InvalidatesNonPoolableSerializationsAcrossQueries)
     ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
-    ISerialization * first_serialization_ptr = nullptr;
+    const ISerialization * first_serialization_ptr = nullptr;
     {
         auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_1", "UTC");
         auto query_scope = QueryScope::create(query_context);
