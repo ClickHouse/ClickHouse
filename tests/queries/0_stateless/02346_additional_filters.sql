@@ -102,3 +102,5 @@ select x + 1 from table_1 settings additional_result_filter='`plus(x, 1)` != 2';
 
 select * from (select x + 1 as a, y from table_1 union all select x as a, y from table_1) order by a, y settings additional_result_filter='a = 3';
 select * from (select x + 1 as a, y from table_1 union all select x as a, y from table_1) order by a, y settings additional_result_filter='a != 3';
+
+select * from table_1 order by x settings additional_result_filter='x in (select number from numbers(3))';
