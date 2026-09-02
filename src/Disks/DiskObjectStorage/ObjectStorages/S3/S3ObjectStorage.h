@@ -40,8 +40,7 @@ private:
         const String & disk_name_,
         bool for_disk_s3_ = true,
         const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
-        bool client_restricts_server_credentials_ = true,
-        bool allow_fully_qualified_paths_ = false)
+        bool client_restricts_server_credentials_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
@@ -52,7 +51,6 @@ private:
         , log(getLogger(logger_name))
         , for_disk_s3(for_disk_s3_)
         , credentials_refresh_callback(credentials_refresh_callback_)
-        , allow_fully_qualified_paths(allow_fully_qualified_paths_)
     {
     }
 
@@ -187,7 +185,6 @@ private:
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
-    const bool allow_fully_qualified_paths = false;
 };
 
 }

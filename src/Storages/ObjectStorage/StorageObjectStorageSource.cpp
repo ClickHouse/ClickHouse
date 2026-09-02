@@ -361,19 +361,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    const auto path = object_info.getPath();
-
-    const auto qualified = configuration.supportsFullyQualifiedPaths()
-        ? trySplitFullyQualifiedObjectPath(path)
-        : std::nullopt;
-
-    std::string result;
-    if (qualified)
-        result = joinPathUnderPrefix(String(qualified->object_namespace), String(qualified->key));
-    else
-        result = joinPathUnderPrefix(
-            include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
-            path);
+    std::string result = formatObjectPath(configuration, object_info.getPath(), include_connection_info);
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -560,7 +548,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 *filter_actions_dag,
                 virtual_columns,
                 hive_columns,
-                configuration->getNamespace(),
+                configuration,
                 local_context,
                 file_progress_callback);
         }
@@ -585,7 +573,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), key));
+                paths.push_back(formatObjectPath(*configuration, key, /*include_connection_info=*/false));
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));

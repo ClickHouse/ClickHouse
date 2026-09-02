@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/FullyQualifiedObjectPath.h>
 
@@ -20,6 +21,15 @@ std::string_view trimTrailingSlashes(std::string_view str)
         str.remove_suffix(1);
     return str;
 }
+}
+
+BlobStorageDescription BlobStorageDescription::fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration)
+{
+    return {
+        .type_name = configuration.getTypeName(),
+        .namespace_name = configuration.getNamespace(),
+        .allow_foreign_namespaces = configuration.supportsFullyQualifiedPaths(),
+    };
 }
 
 IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
@@ -79,14 +89,14 @@ String IcebergPathResolver::parseNamespace(std::string_view path)
 
 bool IcebergPathResolver::isInForeignNamespace(const String & raw_path) const
 {
-    if (!allow_foreign_namespaces || blob_storage_namespace_name.empty())
+    if (!blob_storage.allow_foreign_namespaces || blob_storage.namespace_name.empty())
         return false;
 
     auto path_namespace = parseNamespace(raw_path);
     if (path_namespace.empty())
         return false;
 
-    return path_namespace != blob_storage_namespace_name && path_namespace != table_location_namespace;
+    return path_namespace != blob_storage.namespace_name && path_namespace != table_location_namespace;
 }
 
 // This function is used to get the file path inside the directory which corresponds to Iceberg table from the full blob path which is written in manifest and metadata files.

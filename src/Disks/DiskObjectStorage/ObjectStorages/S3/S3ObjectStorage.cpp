@@ -227,11 +227,13 @@ private:
 
 std::pair<std::string, std::string> S3ObjectStorage::splitBucketAndKey(const std::string & remote_path) const
 {
-    if (allow_fully_qualified_paths)
+    if (auto qualified = trySplitFullyQualifiedObjectPath(remote_path))
     {
-        if (auto qualified = trySplitFullyQualifiedObjectPath(remote_path))
+        const auto scheme = qualified->scheme;
+        if (scheme == "s3" || scheme == "s3a" || scheme == "s3n")
             return {std::string(qualified->object_namespace), std::string(qualified->key)};
     }
+
     return {uri.bucket, remote_path};
 }
 

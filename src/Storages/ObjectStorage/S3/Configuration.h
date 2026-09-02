@@ -129,6 +129,7 @@ public:
 
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
+    String getDataSourceDescriptionForNamespace(const String & object_namespace) const override;
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     bool isArchive() const override { return url.archive_pattern.has_value(); }

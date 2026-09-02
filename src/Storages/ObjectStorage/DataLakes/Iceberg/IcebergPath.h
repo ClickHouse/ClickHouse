@@ -8,6 +8,7 @@
 namespace DB
 {
 class FileNamesGenerator;
+class StorageObjectStorageConfiguration;
 }
 
 namespace DB::Iceberg
@@ -55,6 +56,20 @@ private:
     String raw_path;
 };
 
+/// The object storage a table's files live on, as far as path resolution is concerned.
+struct BlobStorageDescription
+{
+    /// `s3`, `azure`, ... - the scheme catalog-compatible paths are spelled with.
+    String type_name;
+    /// The bucket/container the table is configured with.
+    String namespace_name;
+    /// Whether a metadata path naming another namespace of this storage is passed through to the
+    /// object storage as written instead of being resolved relative to the table root.
+    bool allow_foreign_namespaces;
+
+    static BlobStorageDescription fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration);
+};
+
 /// Converts Iceberg metadata paths to actual object storage paths.
 ///
 /// This is the ONLY way to go from a metadata path to a storage path.
@@ -84,17 +99,10 @@ public:
     static TableRootDerivation
     deriveTableRoot(const String & table_location, const String & queried_path, const String & metadata_file_key);
 
-    IcebergPathResolver(
-        String table_location_,
-        String table_root_,
-        String blob_storage_type_name_ = {},
-        String blob_storage_namespace_name_ = {},
-        bool allow_foreign_namespaces_ = false)
+    IcebergPathResolver(String table_location_, String table_root_, BlobStorageDescription blob_storage_)
         : table_location(std::move(table_location_))
         , table_root(std::move(table_root_))
-        , blob_storage_type_name(std::move(blob_storage_type_name_))
-        , blob_storage_namespace_name(std::move(blob_storage_namespace_name_))
-        , allow_foreign_namespaces(allow_foreign_namespaces_)
+        , blob_storage(std::move(blob_storage_))
     {
         auto trim_backward_slashes = [](String & str)
         {
@@ -129,8 +137,8 @@ public:
     String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
     {
         String catalog_filename = metadata_path.serialize();
-        if (!catalog_filename.starts_with(blob_storage_type_name))
-            catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + catalog_filename;
+        if (!catalog_filename.starts_with(blob_storage.type_name))
+            catalog_filename = blob_storage.type_name + "://" + blob_storage.namespace_name + "/" + catalog_filename;
         return catalog_filename;
     }
 
@@ -142,10 +150,8 @@ private:
 
     String table_location;
     String table_root;
-    String blob_storage_type_name;
-    String blob_storage_namespace_name;
+    BlobStorageDescription blob_storage;
     String table_location_namespace;
-    bool allow_foreign_namespaces = false;
 };
 
 }

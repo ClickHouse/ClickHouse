@@ -153,3 +153,152 @@ def test_insert_writes_data_and_metadata_to_their_own_buckets(
         ).strip()
         == "a\nb\nc"
     )
+
+
+def _write_parquet(schema, tmp_path, first_id, count):
+    df = pa.Table.from_pylist(
+        [{"id": i, "name": f"row{i}"} for i in range(first_id, first_id + count)],
+        schema=schema.as_arrow(),
+    )
+    local_file = os.path.join(tmp_path, f"data_{first_id}.parquet")
+    pq.write_table(df, local_file)
+    return local_file
+
+
+def test_path_filter_matches_cross_bucket_data_files(
+    started_cluster_iceberg_no_spark, tmp_path
+):
+    # `_path` predicates are evaluated by the file iterator before a file is read, and the surviving
+    # rows report `_path` themselves. Both sides must spell a cross-bucket file the same way, or the
+    # iterator drops a file whose rows would have carried exactly the path that was filtered for.
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+    )
+
+    prefix = f"path_filter/{root_namespace}"
+    table = catalog.create_table(
+        identifier=f"{root_namespace}.test_path_filter",
+        schema=schema,
+        location=f"s3://{METADATA_BUCKET}/{prefix}",
+    )
+
+    minio = started_cluster_iceberg_no_spark.minio_client
+
+    # One data file next to the metadata, one in a bucket of its own.
+    own_bucket_key = f"{prefix}/data/own.parquet"
+    minio.fput_object(
+        METADATA_BUCKET, own_bucket_key, _write_parquet(schema, tmp_path, 0, 100)
+    )
+    other_bucket_key = f"{prefix}/data/other.parquet"
+    minio.fput_object(
+        DATA_BUCKET, other_bucket_key, _write_parquet(schema, tmp_path, 100, 50)
+    )
+
+    table.add_files(
+        [
+            f"s3://{METADATA_BUCKET}/{own_bucket_key}",
+            f"s3://{DATA_BUCKET}/{other_bucket_key}",
+        ]
+    )
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{root_namespace}.test_path_filter`"
+
+    own_path = f"{METADATA_BUCKET}/{own_bucket_key}"
+    other_path = f"{DATA_BUCKET}/{other_bucket_key}"
+
+    assert sorted(
+        instance.query(f"SELECT DISTINCT _path FROM {table_expression}")
+        .strip()
+        .split("\n")
+    ) == sorted([own_path, other_path])
+
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expression} WHERE _path = '{other_path}'"
+        ).strip()
+        == "50"
+    )
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expression} WHERE _path = '{own_path}'"
+        ).strip()
+        == "100"
+    )
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expression} WHERE _path LIKE '{DATA_BUCKET}/%'"
+        ).strip()
+        == "50"
+    )
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expression} WHERE _path = 's3://{other_path}'"
+        ).strip()
+        == "0"
+    )
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expression} WHERE _file = 'other.parquet'"
+        ).strip()
+        == "50"
+    )
+
+
+def test_data_files_in_another_bucket_over_disk(
+    started_cluster_iceberg_no_spark, tmp_path
+):
+    # The `SETTINGS disk = ...` surface reuses the disk's own object storage instead of creating one
+    # from the table's configuration, so it is a separate path to the same cross-bucket support.
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+    )
+
+    prefix = f"cross_bucket_disk/{root_namespace}"
+    table = catalog.create_table(
+        identifier=f"{root_namespace}.test_cross_bucket_disk",
+        schema=schema,
+        location=f"s3://{METADATA_BUCKET}/{prefix}",
+    )
+
+    data_key = f"{prefix}/data/data.parquet"
+    started_cluster_iceberg_no_spark.minio_client.fput_object(
+        DATA_BUCKET, data_key, _write_parquet(schema, tmp_path, 0, 100)
+    )
+    table.add_files([f"s3://{DATA_BUCKET}/{data_key}"])
+
+    table_name = f"test_cross_bucket_disk_{uuid.uuid4().hex}"
+    instance.query(
+        f"CREATE TABLE {table_name} ENGINE = Iceberg('{prefix}', 'Parquet') SETTINGS disk = 'disk_s3_warehouse'"
+    )
+
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "100"
+    assert instance.query(f"SELECT sum(id) FROM {table_name}").strip() == str(
+        sum(range(100))
+    )
+    assert (
+        instance.query(f"SELECT DISTINCT _path FROM {table_name}").strip()
+        == f"{DATA_BUCKET}/{data_key}"
+    )
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_name} WHERE _path = '{DATA_BUCKET}/{data_key}'"
+        ).strip()
+        == "100"
+    )
+
+    instance.query(f"DROP TABLE {table_name}")
