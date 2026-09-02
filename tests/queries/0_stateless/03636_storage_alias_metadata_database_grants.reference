@@ -1,0 +1,18 @@
+Test system.tables with an Alias database-level grant
+1	1	1	1
+Test other metadata tables with an Alias database-level grant
+0	0	0	0	0
+Test an Alias in a lazily loaded database is not deferred
+Alias
+Test DESCRIBE of a lazily loaded Alias without target permission
+ACCESS_DENIED
+Test SHOW CREATE of a lazily loaded Alias without target permission
+ACCESS_DENIED
+Test metadata tables for a lazily loaded Alias without target permission
+1	0	0	0	0	0
+Test DESCRIBE of a lazily loaded Alias without target permission after a first access
+ACCESS_DENIED
+Test SHOW CREATE of a lazily loaded Alias without target permission after a first access
+ACCESS_DENIED
+Test metadata tables for a lazily loaded Alias without target permission after a first access
+1	0	0	0	0	0
