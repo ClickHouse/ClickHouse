@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -175,6 +176,11 @@ try
         cleanup();
         return 0;
     }
+
+    /// The embedded client only ever runs the interactive SSH session, so the batch-only schema
+    /// dump would be silently ignored; refuse it instead.
+    if (options.contains("dump-schema") || options.contains("dump-schema-exclude") || options.contains("dump-schema-dir"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--dump-schema is not supported by the embedded client");
 
     addOptionsToTheClientConfiguration(options);
 

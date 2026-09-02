@@ -1,0 +1,270 @@
+--- the legacy samples alias is a user table once the modern helper exists ---
+legacy-named user table present: 1
+engine-owned helpers in dump: 0
+--- a dump containing gated object types replays into a default session ---
+dump enables the TimeSeries setting: 1
+OK: replayed into a default session
+replayed TimeSeries table present: 1
+--- a dump whose view needs an analyzer-side relaxation replays too ---
+OK: replayed into a default session
+replayed Dynamic GROUP BY view present: 1
+--- dependency ordering ---
+OK: every dependent is dumped after what it depends on
+OK: multi-source MV (JOIN and UNION ALL) dumped after every source, including an untracked one that sorts after it by name
+metrics view present: 1
+metrics_daily view present: 1
+audit_orders view present: 1
+audit_users view present: 1
+tmp.inner-named literal user table present: 1
+OK: genuine view-on-view/view-on-table dependency chain still dumped in dependency order
+OK: dictGet/dictionary()/joinGet/IN function-argument references dumped after what they depend on
+OK: explicit TO target named like a generated inner table is dumped before its materialized view
+OK: merge()/loop() source dumped before the materialized view that reads it
+colliding real table present: 1
+generated inner tables in dump: 0
+literal .inner.-named user table present: 1
+dictionary statements: 2
+materialized view statements: 12
+plain view statements: 9
+--- round-trip ---
+context switch emitted: 1
+1	hello
+hello
+1	hello
+1	hello
+1	hello
+1	hello
+1	hello	world
+1	hello
+1
+hello
+hello
+world
+1
+--- unknown database ---
+OK: non-zero exit code
+UNKNOWN_DATABASE
+--- predefined database is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- a selector that names nothing is rejected, not broadened ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- an exclude naming an unknown database is rejected, not ignored ---
+OK: non-zero exit code
+UNKNOWN_DATABASE
+--- a database-less reference that two dumped databases can satisfy is refused ---
+ambiguous reference refused: 1
+--- a database-less merge() satisfiable by two dumped databases is refused ---
+ambiguous merge refused: 1
+--- a database-less merge() bound outside the dump set is refused ---
+outside binding refused: 1
+--- a database-less reference satisfiable by an omitted database is refused, not rebound ---
+omitted-database reference refused: 1
+--- a database-less merge() satisfiable by an omitted database is refused, not rebound ---
+omitted-database merge refused: 1
+--- the prelude omits dump-specific gates this schema cannot need ---
+ungated gate emitted: 0
+explicit-uuid gate emitted: 0
+replicated-args gate emitted: 0
+dead gates emitted: 0
+--- all databases ---
+target database present: 3
+system database present: 0
+information_schema database present: 0
+default database tolerant: 1
+--- combined with --query is rejected (clickhouse-local) ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- combined with --query is rejected (clickhouse-client) ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- clickhouse-client happy path ---
+OK: zero exit code
+database present: 1
+source table present: 1
+materialized view present: 1
+OK: dependency order preserved over the client connection
+--- a database name containing a comma needs backquoting ---
+OK: unquoted name rejected
+OK: backquoted name accepted
+comma database present: 1
+databases in the comma dump: 1
+--- a malformed backquoted database name in the list is rejected ---
+OK: non-zero exit code
+Unterminated backquoted database name in list
+OK: non-zero exit code
+Unexpected text after a backquoted database name in list
+--- explicit database list ---
+first database present: 1
+second database present: 1
+unlisted database absent: 0
+--- exclude list ---
+first database present: 1
+excluded database present: 0
+other database still present: 1
+--- explicit list combined with exclude list is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- a dependency outside the dumped databases is reported, not silently dropped ---
+dictionary still dumped: 1
+omitted dependency named: 1
+omitted dependency explained: 1
+same omission via exclude reported: 1
+no warning when the dependency is in the dump: 0
+--- dump to directory ---
+confirmation lines: 2
+files created: 2
+OK: first database file exists
+OK: second database file exists
+first database file has its table: 1
+second database file has its table: 1
+per-database file replays its materialized view: 1
+--- dump-schema-dir without --dump-schema is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- cross-database dependency orders the confirmation lines and is noted ---
+OK: dependency database is dumped/confirmed before the dependent database
+cross-database note present: 1
+--- database names colliding only by case are rejected for --dump-schema-dir ---
+OK: non-zero exit code
+would all be written to the same file
+--- circular cross-database table dependencies are rejected for --dump-schema-dir ---
+OK: non-zero exit code
+circular cross-database table dependencies
+OK: plain dump without --dump-schema-dir still succeeds (no table-level cycle)
+--- combined with --file/--structure is rejected ---
+OK: non-zero exit code
+BAD_ARGUMENTS
+--- merge()/loop() with a computed (non-literal) argument fails clearly instead of silently dropping the dependency ---
+OK: non-zero exit code
+NOT_IMPLEMENTED
+--- a qualified cross-database dictionary() reference keeps its real dependency ---
+OK: dump succeeded
+OK: qualified dictionary() dependency ordered before its reader
+--- a database-less dictionary() reference in a view is refused, not rebound ---
+OK: non-zero exit code
+resolves against the session database
+rebound dump emitted: 0
+--- a database-less joinGet() reference in a materialized view is refused, not rebound ---
+OK: non-zero exit code
+resolves against the session database
+rebound dump emitted: 0
+--- an IN <table> reference keeps the database it was created under ---
+OK: dump succeeded
+OK: IN table reference keeps its create-time database dependency
+--- a database-less one-argument loop(table) reference is refused, not rebound ---
+OK: non-zero exit code
+resolves against the session database
+rebound dump emitted: 0
+--- a database-less reference is satisfied from the object database inside the dump set ---
+OK: zero exit code
+OK: unqualified dictionary ordered before its reader
+--- a computed joinGet/dictionary argument fails clearly instead of being treated as dependency-free ---
+OK: non-zero exit code
+NOT_IMPLEMENTED
+--- merge() naming a database outside the dump set warns instead of silently dropping the edge ---
+OK: dump succeeded
+outside the dumped database(s)
+--- a large as_select (over the old query-size default) still gets its dependencies tracked ---
+OK: large as_select dumped successfully
+OK: dependency correctly tracked for a large as_select
+--- a large CREATE with an explicit TO target named like inner storage is still classified correctly ---
+OK: large explicit-TO target named like generated inner storage is dumped before its materialized view
+--- a table function inside remote() is not a local dependency ---
+OK: remote() table function did not invent a local cycle
+both views dumped: 2
+--- a table function under a cluster with no local replicas is not a local dependency ---
+OK: remote-only cluster() table function did not invent a local cycle
+both views dumped: 2
+--- a cluster the dumping instance does not define fails clearly instead of guessing ---
+unresolvable cluster refused: 1
+--- a cluster with local replicas names a real local dependency ---
+OK: local cluster() source dumped before its reader
+OK: identifier-spelled local cluster() source dumped before its reader
+OK: computed cluster name classified as local and ordered
+OK: computed db/table arguments name the local source
+OK: computed qualified argument names the local source
+OK: merge() wrapped in a local cluster() names the local source
+OK: session context inside the wrapped merge() is folded into the stored view
+OK: folded wrapped merge() source dumped before its reader
+OK: empty-database merge() resolves against the owning database
+--- a cluster() argument reading the session database is refused, not rebound ---
+session-database cluster() argument refused: 1
+--- a cluster() argument reading the session user is refused too ---
+session-user cluster() argument refused: 1
+--- a cluster() argument reading the database setting is refused too ---
+database-setting cluster() argument refused: 1
+--- a cluster() argument reading any other setting is refused too ---
+other-setting cluster() argument refused: 1
+--- a cluster() argument reading a server constant is refused too ---
+server-constant cluster() argument refused: 1
+--- a cluster() name written as a macro resolves ---
+macro cluster name resolved: 1
+--- a cluster() name written as a nested macro resolves ---
+nested macro cluster name resolved: 1
+--- a TimeSeries table is dumped after its explicitly named external target ---
+engine-owned inner tables in TimeSeries dump: 0
+OK: TimeSeries external target dumped before the TimeSeries table
+--- a database-less TimeSeries target keeps the session database it was created under ---
+target named in the creator's database: 1
+target rebound to the object's own database: 0
+OK: cross-database TimeSeries target still ordered first
+--- merge(REGEXP(...)) reaching an omitted database is reported ---
+omitted regexp-matched dependency named: 1
+no warning when the regexp stays inside the dump: 0
+--- IN right-hand sides: literals and aliases are not dependencies, qualified tables are ---
+OK: zero exit code
+stderr lines: 0
+OK: qualified IN table precedes its reader
+--- a view reading a name-based helper table replays through the owning object ---
+OK: helper-table reader ordered after the owning materialized view
+replayed view resolves the helper: 0
+helper emitted as a standalone table: 0
+--- a view reading a UUID-named helper table is refused ---
+OK: nonzero exit code
+refusal names the owning object: 1
+--- a user table named like a nil-UUID tmp helper is kept ---
+nil-uuid-named user table present: 1
+--- a lookalike table of an explicitly targeted kind is kept ---
+lookalike of the explicit kind present: 1
+engine-owned helpers of the implicit kinds in dump: 0
+--- a merge() reader over a helper table is ordered after its owner ---
+OK: merge() helper reader ordered after the owning materialized view
+--- a database-less reference outside the dump warns instead of dropping silently ---
+dump still emits the view: 1
+without a database; no dumped database contains it
+--- an object whose credentials came back masked is reported, not silently emitted ---
+OK: zero exit code
+masked table still dumped: 1
+masked credential reported: 1
+secret in the dump: 0
+--- a materialized view accepted under a relaxed check replays through the prelude ---
+bad-select view replayed: 1
+--- the prelude is scoped to what the dumped statements can reach ---
+no-mv schema, mv gate emitted: 0
+no-mv schema, ungated gate emitted: 0
+no-mv schema, analyzer gate emitted: 1
+empty dump, any SET emitted: 0
+projection schema, analyzer gate emitted: 1
+projection schema, dead gates emitted: 0
+--- the prelude carries all shared experimental settings unconditionally ---
+unique-key gate present: 1
+suspicious-primary-key gate present: 1
+fuzz-functions gate present: 1
+deprecated-mt-syntax gate present: 1
+--- a dump with a UniqueMergeTree table replays through the prelude ---
+OK: replayed into a default session
+replayed UniqueMergeTree table present: 1
+--- a dump with a MATERIALIZED expression replays through the prelude ---
+OK: replayed into a default session
+replayed MATERIALIZED table present: 1
+--- the replay prelude only names settings the source server has ---
+prelude emitted settings: yes
+unknown to the server: 0
+replicated engine arguments gate at 3: 0
+explicit uuid gate at 3: 0
+explicit uuid gate at 3 when dumped with uuids: 1
+replicated engine arguments gate at 3 when the dump keeps the arguments: 1
