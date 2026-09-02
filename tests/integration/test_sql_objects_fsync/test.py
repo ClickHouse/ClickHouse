@@ -152,6 +152,11 @@ def test_corrupt_named_collection_does_not_brick_startup():
     assert "nc_torn" not in collections
     assert "nc_garbage" not in collections
 
+    # Skipping silently would leave no way to find out a collection is gone, so the skip is
+    # logged and that is part of the contract.
+    assert node.contains_in_log("Skipping named collection 'nc_garbage'")
+    assert node.contains_in_log("Skipping named collection 'nc_torn'")
+
     # Cleanup so the module teardown / reruns start clean.
     node.exec_in_container(
         ["bash", "-c", f"rm -f {NAMED_COLLECTIONS_DIR}/nc_torn.sql {NAMED_COLLECTIONS_DIR}/nc_garbage.sql"]
@@ -159,24 +164,35 @@ def test_corrupt_named_collection_does_not_brick_startup():
     node.query("DROP NAMED COLLECTION nc_good")
 
 
-# (create, drop, store directory) per on-disk SQL-object store. A shared directory-sync
+# (create, drop, committed file) per on-disk SQL-object store. A shared directory-sync
 # helper can stop syncing one store without the others noticing, so each is checked
 # separately. A resource stands in for the workload store: it is kept there too, and unlike
 # a workload it needs no parent, so this does not depend on what other tests leave behind.
+# The file is the exact committed path, not a prefix: matching loosely would also accept the
+# `.sql.tmp` file that a create leaves behind when it fails before its rename.
 FAILING_SYNC_CASES = [
-    ("CREATE FUNCTION {n} AS (x) -> x + 1", "DROP FUNCTION {n}", USER_DEFINED_DIR),
-    ("CREATE RESOURCE {n} (WRITE DISK {n}_disk)", "DROP RESOURCE {n}", WORKLOAD_DIR),
-    ("CREATE NAMED COLLECTION {n} AS a = 1", "DROP NAMED COLLECTION {n}", NAMED_COLLECTIONS_DIR),
+    (
+        "CREATE FUNCTION {n} AS (x) -> x + 1",
+        "DROP FUNCTION {n}",
+        f"{USER_DEFINED_DIR}/function_{{n}}.sql",
+    ),
+    (
+        "CREATE RESOURCE {n} (WRITE DISK {n}_disk)",
+        "DROP RESOURCE {n}",
+        f"{WORKLOAD_DIR}/resource_{{n}}.sql",
+    ),
+    (
+        "CREATE NAMED COLLECTION {n} AS a = 1",
+        "DROP NAMED COLLECTION {n}",
+        f"{NAMED_COLLECTIONS_DIR}/{{n}}.sql",
+    ),
 ]
 
 
-def _files_matching(directory, name):
-    """Number of files in `directory` whose name contains `name`."""
-    return int(
-        node.exec_in_container(
-            ["bash", "-c", f"ls {directory} 2>/dev/null | grep -c {name} || true"]
-        ).strip()
-    )
+def _exists(path):
+    return node.exec_in_container(
+        ["bash", "-c", f"test -e {path} && echo yes || echo no"]
+    ).strip() == "yes"
 
 
 def test_failed_directory_sync_fails_the_ddl():
@@ -197,7 +213,7 @@ def test_failed_directory_sync_fails_the_ddl():
     the mutation would raise just the same, so the exception alone does not show this.
     """
     try:
-        for i, (create, drop, store_dir) in enumerate(FAILING_SYNC_CASES):
+        for i, (create, drop, committed_file) in enumerate(FAILING_SYNC_CASES):
             control = f"ds_control_{i}"
             node.query(create.format(n=control), settings={"fsync_metadata": 1})
 
@@ -206,13 +222,13 @@ def test_failed_directory_sync_fails_the_ddl():
             failing = f"ds_failing_{i}"
             with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
                 node.query(create.format(n=failing), settings={"fsync_metadata": 1})
-            assert _files_matching(store_dir, failing) == 1, (
+            assert _exists(committed_file.format(n=failing)), (
                 f"{failing}: the rename must already have committed when the sync failed"
             )
 
             with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
                 node.query(drop.format(n=control), settings={"fsync_metadata": 1})
-            assert _files_matching(store_dir, control) == 0, (
+            assert not _exists(committed_file.format(n=control)), (
                 f"{control}: the unlink must already have committed when the sync failed"
             )
 
@@ -256,8 +272,11 @@ def test_failed_store_directory_creation_is_rolled_back():
     finally:
         node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
 
-    # The retry starts over, so it creates the directories again and persists them.
-    node.query("CREATE RESOURCE dc_probe (WRITE DISK dc_probe_disk)", settings={"fsync_metadata": 1})
+    # The retry starts over, so it creates the directories again and persists every one of
+    # them: three directory syncs for the three components, and a fourth for the commit
+    # rename. Counting them is what shows each nested parent was synced, not just the last.
+    _, dir_sync = _run("CREATE RESOURCE dc_probe (WRITE DISK dc_probe_disk)", 1)
+    assert dir_sync >= 4, f"only {dir_sync} directory syncs, so a nested parent was skipped"
     assert node.query("SELECT count() FROM system.resources WHERE name = 'dc_probe'").strip() == "1"
 
     node.query("DROP RESOURCE dc_probe")
