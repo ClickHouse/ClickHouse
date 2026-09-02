@@ -1,8 +1,11 @@
 -- `max_rows_to_read` with `read_overflow_mode = 'throw'` is checked against the row estimate
--- the reading step announces, not against the rows actually read. When read-in-order is
--- propagated through a join, the LIMIT bounds that estimate only for `LEFT ALL`/`LEFT ANY`
--- joins (they emit at least one output row per left row). Other kinds can drop left rows,
--- so the full-table estimate remains and still throws. See `joinKeepsLeftSideLimit`.
+-- the reading step announces, not only against the rows actually read. When read-in-order is
+-- propagated through a `LEFT ALL`/`LEFT ANY` join, the LIMIT must bound that estimate
+-- (such a join emits at least one output row per left row), otherwise these queries fail
+-- although they read only a few rows. See `joinKeepsLeftSideLimit`.
+-- The opposite (other join kinds announce the full table and throw) is not asserted here:
+-- whether the early estimate check fires depends on how the read is split into sources,
+-- which differs between storage types.
 
 -- Pin everything that could disable the plain-hash-join through-join read order.
 SET max_bytes_ratio_before_external_join = 0;
@@ -37,11 +40,6 @@ SETTINGS max_rows_to_read = 100, read_overflow_mode = 'throw';
 SELECT f.id FROM t_left_in_order AS f ANY LEFT JOIN t_right_dim AS d ON f.id = d.id
 ORDER BY f.id LIMIT 3
 SETTINGS max_rows_to_read = 100, read_overflow_mode = 'throw';
-
--- INNER can drop left rows: the limit is ignored and the full-table estimate throws.
-SELECT f.id FROM t_left_in_order AS f INNER JOIN t_right_dim AS d ON f.id = d.id
-ORDER BY f.id LIMIT 1
-SETTINGS max_rows_to_read = 100, read_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE t_left_in_order;
 DROP TABLE t_right_dim;
