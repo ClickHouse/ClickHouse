@@ -2,14 +2,18 @@
 position: 7
 slug: /clickhouse-operator/guides/network-policies
 title: 네트워크 정책
-keywords: ['kubernetes', '네트워크 정책', '보안', '메트릭', '웹훅']
-description: '연산자가 메트릭 및 웹훅 엔드포인트에 대해 Kubernetes NetworkPolicies를 사용해 controller manager 파드로 유입되는 트래픽을 어떻게 제한하는지, 이를 활성화하는 방법, 그리고 레이블을 지정해야 하는 클라이언트 네임스페이스를 설명합니다.'
+keywords: ['kubernetes', '네트워크 정책', '보안', '메트릭', '웹훅', '인그레스']
+description: '연산자가 ClickHouse 및 Keeper 클러스터의 Kubernetes NetworkPolicies를 관리하는 방법, 클라이언트 및 모니터링 트래픽을 허용하는 방법, 그리고 controller manager 파드로의 인그레스를 제한하는 방법을 설명합니다.'
 doc_type: 'guide'
 ---
 
-연산자는 선택적으로 Kubernetes `NetworkPolicy` 리소스를 제공하며, 이를 통해 어떤 트래픽이 **controller manager 파드**에 도달할 수 있는지 제한합니다. 여기서 말하는 대상은 ClickHouse 서버나 Keeper 파드가 아니라 연산자 프로세스 자체입니다. 이 기능은 기본적으로 비활성화되어 있으므로, 연산자의 인그레스를 격리하려는 경우에만 활성화하면 됩니다.
+연산자는 기본적으로 비활성화된 두 가지 수준의 Kubernetes `NetworkPolicy` 리소스를 관리합니다.
 
-이 정책은 연산자가 다른 클라이언트에 노출하는 두 개의 포트, 즉 메트릭 엔드포인트와 admission webhook을 대상으로 합니다.
+* **클러스터 정책** — `ClickHouseCluster` 및 `KeeperCluster` 리소스의 내부 트래픽을
+  대상으로 하는 클러스터별 정책으로, 각 사용자 지정 리소스의 `spec.networkPolicy`를 통해
+  활성화합니다.
+* **연산자 파드 정책** — 메트릭 및 웹훅 엔드포인트에 대해 controller manager 파드
+  자체로의 인그레스를 제한하는 차트 제공 정책입니다.
 
 <Note>
   `NetworkPolicy`는 클러스터의 CNI plugin이 이를 구현하는 경우에만 적용됩니다
@@ -17,6 +21,110 @@ doc_type: 'guide'
   리소스가 생성되더라도 아무런 효과가 없으며, Kubernetes는 오류를 반환하지
   않습니다. 따라서 이를 사용하기 전에 사용 중인 CNI가 정책을 실제로 적용하는지 확인하십시오.
 </Note>
+
+<div id="cluster-network-policies">
+  ## 클러스터 NetworkPolicies
+</div>
+
+클러스터별 관리형 정책을 활성화합니다:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+```
+
+관리형 정책은 **클러스터 내부 트래픽에만** 적용됩니다. 파드를 선택하면
+인그레스가 기본 거부로 전환되며, 연산자는 클러스터 운영에 필요한 트래픽만 정확히 허용합니다:
+
+| 클러스터       | 허용되는 소스                                                | 허용되는 포트                                   |
+| ---------- | ------------------------------------------------------ | ----------------------------------------- |
+| ClickHouse | 클러스터 자체의 파드                                            | `9009` (interserver), `9001` (management) |
+| ClickHouse | 연산자 파드(레이블 `clickhouse.com/role: operator`, 모든 네임스페이스) | `9001`, `9002` (management)               |
+| Keeper     | 클러스터 자체의 파드                                            | `9234` (Raft)                             |
+| Keeper     | 연산자 파드 및 이 Keeper를 참조하는 모든 `ClickHouseCluster`         | `2181`, `2281` (클라이언트), `9123` (HTTP 제어)  |
+
+Keeper는 `keeperClusterRef`를 기준으로 ClickHouse 클러스터의 연결을 허용합니다. 참조를
+추가하거나 제거하면 다른 네임스페이스의 참조를 포함해 Keeper의 정책이 자동으로 업데이트됩니다.
+
+<div id="allowing-clients">
+  ### 클라이언트 및 모니터링 허용
+</div>
+
+클라이언트 연결과 메트릭 스크래핑은 **포함되지 않습니다**. 관리형
+정책을 활성화하면 별도로 허용하기 전까지 클라이언트 포트(`9000`/`8123` 또는 TLS
+변형)나 메트릭 포트에 연결할 수 없습니다. NetworkPolicy는 추가 방식으로 적용되므로,
+관리형 정책과 함께 자체 정책을 추가하여 액세스를 허용하십시오:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients
+  namespace: <cluster-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: <name>-clickhouse
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          role: my-app
+    ports:
+    - protocol: TCP
+      port: 9000
+```
+
+Prometheus 스크레이프(ClickHouse의 포트 `9363`,
+Keeper의 포트 `9090`)에도 동일하게 적용됩니다. 모니터링 네임스페이스를 명시적으로 허용하십시오.
+
+`networkPolicy.policy: Disabled`(기본값)로 설정하면 관리형
+정책이 제거됩니다. 사용자가 정의한 정책은 클러스터의 `app` 레이블이 있는 경우가 아니면 연산자가 절대 수정하지 않습니다.
+
+<div id="np-cluster-wide-disable">
+  ### 클러스터 전체 옵트아웃
+</div>
+
+연산자의 `ENABLE_NETWORK_POLICY` 환경 변수를 통해 클러스터 전체의
+NetworkPolicy 관리를 비활성화할 수도 있습니다. `ENABLE_NETWORK_POLICY=false`로 설정하면
+연산자는 `spec.networkPolicy.policy` 설정과 관계없이 **모든**
+ClickHouseCluster 및 KeeperCluster의 NetworkPolicy 조정 단계를 건너뛰고,
+`NetworkPolicy` 리소스를 **전혀 감시하지 않습니다**. 따라서 연산자의
+ServiceAccount에는 `networkpolicies.networking.k8s.io`에 대한 RBAC 권한이
+필요하지 않으므로, 이러한 권한을 의도적으로 제외한 제한된 ServiceAccount에서
+연산자를 실행할 때 유용합니다.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: ENABLE_NETWORK_POLICY
+  value: "false"
+```
+
+Helm에서는 동일한 설정을 차트 값으로 지정합니다:
+
+```yaml
+# values.yaml
+controller:
+  networkPolicyManagement:
+    enabled: false
+```
+
+<div id="operator-pod-policies">
+  ## 연산자 파드 정책
+</div>
+
+차트는 어떤 트래픽이 연산자 프로세스 자체인 **controller manager 파드**에 도달할 수 있는지 제한하는 선택적 정책도 제공합니다. 이 정책은 연산자가 다른 클라이언트에 노출하는 두 개의 포트, 즉 메트릭 엔드포인트와 admission 웹훅을 대상으로 합니다.
 
 <div id="what-the-helm-chart-creates">
   ## Helm 차트가 생성하는 항목
