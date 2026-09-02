@@ -8,7 +8,7 @@ namespace
 
 enum class Category : size_t
 {
-    Join = 0,  /// inner / cross / comma 
+    Join = 0,  /// inner / cross / comma
     LeftOuter, /// left/right outer join
     FullOuter, /// full outer join
     Semi,      /// left/right semi join
@@ -61,7 +61,7 @@ NormOp normalize(const ConflictOpMask & op)
 }
 
 /// The property matrices of the paper (Tables 1-3), transcribed directly. Rows and columns are
-/// indexed by `Category` in the order {Join, LeftOuter, FullOuter, Semi, Anti}. 
+/// indexed by `Category` in the order {Join, LeftOuter, FullOuter, Semi, Anti}.
 using PropRow = UInt8[NUM_CATEGORIES];
 
 /// Table 1: comm(op). Commutative operators (inner/cross and full outer).
