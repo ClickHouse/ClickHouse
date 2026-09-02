@@ -239,9 +239,15 @@ def test_membership_change_between_authentications(started_cluster):
 
 
 def test_two_simultaneous_sessions_keep_own_roles(started_cluster):
-    # ADR additional test 1: two SIMULTANEOUS sessions of the same username with
-    # different role sets stay independent. Two distinct named sessions interleaved:
-    # touching session B must not change session A's effective roles.
+    # ADR additional test 1. Reattachment to a named `session_id` now rebinds roles per
+    # request (see "Replace authentication-scoped external roles on named-session
+    # reattachment"), so this is a rebind smoke test, not proof of concurrent-session
+    # isolation: each request's roles follow its own authentication, and touching session
+    # B does not alter what session A's NEXT authenticated request sees. It does not show
+    # the two sessions holding independent state concurrently while both are in use — that
+    # shape (two connections open and doing work at once, each keeping its own lifetime) is
+    # covered by `test_two_established_sessions_expire_independently`'s native-connection
+    # form, for expiry rather than roles.
     def http_roles(password, session):
         return instance.http_query(
             "SELECT arrayJoin(currentRoles())",
@@ -1130,8 +1136,10 @@ def test_metrics(started_cluster):
     assert after["failures"] == before["failures"] + 1
 
     # 4. A username the mock server does not know: 404 (UserNotFound) fallthrough, then
-    # "Authentication failed" overall since `http` is the last (and only) storage on
-    # `node`. Not a failure: HTTPUserDirectoryAuthFailures must stay unchanged.
+    # "Authentication failed" overall since `users.xml` (the implicit `users_config`
+    # storage) precedes `http`, which is the last storage on `node`, so
+    # `throw_if_user_not_exists` is true for it. Not a failure:
+    # HTTPUserDirectoryAuthFailures must stay unchanged.
     before = snapshot()
     assert "Authentication failed" in instance.query_and_get_error(
         "SELECT 1", user="metrics_ghost_user", password=GOOD_PASSWORD

@@ -120,8 +120,8 @@ TEST(HTTPUserDirectoryResponseParser, MalformedMetadataThrows)
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": -5})"), Exception);
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": 123.5})"), Exception);
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": "123"})"), Exception);
-    /// Poco::Dynamic::Var::isInteger() reports true for a boolean value, so `isInteger` alone is not
-    /// enough to reject `valid_until: true` - must also check `isBoolean()`.
+    /// Poco::Dynamic::Var::isInteger reports true for a boolean value, so `isInteger` alone is not
+    /// enough to reject `valid_until: true` - must also check `isBoolean`.
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": true})"), Exception);
 }
 

@@ -47,7 +47,7 @@ public:
     /// restart. Overriding only this no-argument form is SUFFICIENT and no per-id override
     /// is needed: `MultipleAccessStorage::isEphemeral(id)` resolves the owning storage and
     /// calls its `isEphemeral(id)`, and the base `IAccessStorage::isEphemeral(const UUID &)`
-    /// forwards to `isEphemeral()`. (Verified on `origin/master`.)
+    /// forwards to `isEphemeral`. (Verified on `origin/master`.)
     bool isEphemeral() const override { return true; }
     bool exists(const UUID & id) const override;
 
@@ -128,7 +128,7 @@ private: // IAccessStorage implementations.
     mutable MemoryAccessStorage memory_storage;
 
     /// Count of users materialized so far, maintained instead of querying
-    /// `memory_storage.findAll<User>().size()` on every first-time authentication:
+    /// `memory_storage.findAll<User>().size` on every first-time authentication:
     /// `MemoryAccessStorage::findAllImpl` walks every cached entry and builds a vector, so
     /// with a large cache that query would do O(cache size) work on the hot path merely to
     /// learn a count. Incremented once, right after a successful `memory_storage.insert` in
@@ -136,7 +136,7 @@ private: // IAccessStorage implementations.
     /// the increment and the load in `getOrCreateUser`: this is a capacity statistic feeding
     /// a soft, approximate bound, not the synchronization mechanism for the cached entity
     /// itself — the mutex above already provides that. Also used by the destructor instead
-    /// of `findAll<User>().size()` (Task 11).
+    /// of `findAll<User>().size` (Task 11).
     mutable std::atomic<size_t> cached_user_count{0};
 };
 

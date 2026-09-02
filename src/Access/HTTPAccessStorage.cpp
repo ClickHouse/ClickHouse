@@ -56,7 +56,7 @@ HTTPAccessStorage::HTTPAccessStorage(
 
 HTTPAccessStorage::~HTTPAccessStorage()
 {
-    /// `cached_user_count` (relaxed load) instead of `memory_storage.findAll<User>().size()`:
+    /// `cached_user_count` (relaxed load) instead of `memory_storage.findAll<User>().size`:
     /// walking every cached entry just to shut down is unnecessary work.
     CurrentMetrics::sub(CurrentMetrics::HTTPUserDirectoryCachedUsers, cached_user_count.load(std::memory_order_relaxed));
 }
@@ -250,7 +250,7 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
     /// the generic dependency cascade cannot write to it) — so an observation of "full"
     /// can never have become false by the time the decision is made.
     ///
-    /// `cached_user_count` (relaxed load) replaces `memory_storage.findAll<User>().size()`
+    /// `cached_user_count` (relaxed load) replaces `memory_storage.findAll<User>().size`
     /// here: `MemoryAccessStorage::findAllImpl` walks every entry under its own mutex to
     /// build a vector, so with a large cache that call would do O(cache size) work on every
     /// first-time authentication merely to learn a count. The counter is maintained
@@ -390,7 +390,7 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
     bool /* allow_plaintext_password */) const
 {
     /// Classify applicability by credential TYPE first, before calling
-    /// credentials.getUserName() (which throws LOGICAL_ERROR on a not-ready object — never
+    /// credentials.getUserName (which throws LOGICAL_ERROR on a not-ready object — never
     /// true for AlwaysAllowCredentials or BasicCredentials, both always-ready by
     /// construction, but the general Credentials contract allows a not-ready object, e.g.
     /// mid-handshake) and before running this directory's `networks` policy. A credential
