@@ -3104,43 +3104,51 @@ static void processDefLevelsForInnermostColumn(
 }
 
 /// Produces array offsets at a given level of nested arrays.
-/// TODO [parquet]: Try simdifying.
+/// `num_new_instances` is how many array instances start in this span, which the caller knows
+/// exactly, so the output grows once. Returns how many elements this level produced, which is how
+/// many array instances the next deeper level starts.
+/// TODO [parquet]: Try simdifying. The loop below is branch-free, but its store address depends on a
+/// running sum of predicates, which auto-vectorization can't express.
 ///
 /// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
 /// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
 /// But I expect it would be slower because (a) simd would be less effective (especially after we
 /// simdify this implementation), (b) usually there's only one level of arrays.
-static void processRepDefLevelsForArray(
+static UInt64 processRepDefLevelsForArray(
     size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+    UInt8 parent_array_def, size_t num_new_instances, PaddedPODArray<UInt64> & out_offsets)
 {
-    UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    size_t prev_size = out_offsets.size();
+    out_offsets.resize(prev_size + num_new_instances);
+
+    /// May point at the -1-st element, PaddedPODArray allows that. Normally that element is only
+    /// ever set to 0; if invalid rep levels make us set it to nonzero, the caller notices and throws.
+    UInt64 * out = out_offsets.data() + prev_size - 1;
+    UInt64 first_offset = *out;
+    UInt64 offset = first_offset;
+
+    /// A value with def[i] < parent_array_def has a null or empty ancestor array and starts no new
+    /// array instance. In particular:
+    ///  * `def[i] == array_def - 1` means this array is empty,
+    ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
+    ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
+    ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
+    /// `def` equals the level's index in `levels`, so array levels have strictly increasing def and
+    /// `def[i] >= array_def` implies `def[i] >= parent_array_def`; the element count below therefore
+    /// needs no separate check against parent_array_def.
     for (size_t i = 0; i < num_values; ++i)
     {
-        if (def[i] < parent_array_def)
-            /// Some ancestor is null or empty array.
-            /// In particular:
-            ///  * `def[i] == array_def - 1` means this array is empty,
-            ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
-            ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-            ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
-            continue;
-
-        if (rep[i] < array_rep)
-        {
-            /// Previous array instance ended and a new array instance started.
-
-            /// May assign -1-st element, but normally only sets it to 0; if we set it to nonzero
-            /// because of invalid rep levels, the caller will notice and throw.
-            out_offsets.back() = offset;
-            out_offsets.resize(out_offsets.size() + 1);
-        }
-
+        /// Finalizes the previous array instance if a new one starts here, is overwritten otherwise.
+        *out = offset;
+        out += rep[i] < array_rep && def[i] >= parent_array_def;
         offset += rep[i] <= array_rep && def[i] >= array_def;
     }
     /// Note that the array may continue in the next page. In that case the next call to this
     /// function will read this offset back, add to it, and assign it again.
-    out_offsets.back() = offset;
+    *out = offset;
+
+    chassert(out == out_offsets.data() + prev_size - 1 + num_new_instances);
+    return offset - first_offset;
 }
 
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
@@ -3168,6 +3176,10 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     if (!page.rep.empty())
     {
         UInt8 parent_array_def = 0;
+        /// The outermost array level has array_rep == 1, so it starts an instance exactly at each
+        /// row start, and advanceValueIdxUntilRow counted those. Each deeper level starts an instance
+        /// per element of the level above, which is what processRepDefLevelsForArray returns.
+        size_t num_new_instances = page.next_row_idx - first_row_idx;
         for (size_t level_idx = 1; level_idx < column_info.levels.size(); ++level_idx)
         {
             const LevelInfo & level = column_info.levels[level_idx];
@@ -3175,9 +3187,10 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
                 continue;
 
             auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(level.rep - 1)).getData();
-            processRepDefLevelsForArray(
+            num_new_instances = processRepDefLevelsForArray(
                 page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
-                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets);
+                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def,
+                num_new_instances, offsets);
 
             parent_array_def = level.def;
         }
