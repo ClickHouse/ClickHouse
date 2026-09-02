@@ -46,9 +46,12 @@ def test_overload(started_cluster):
             node1.query("select 1 settings min_os_cpu_wait_time_ratio_to_throw=1, max_os_cpu_wait_time_ratio_to_throw=1.5")
         except QueryRuntimeException as ex:
             assert "(SERVER_OVERLOADED)" in str(ex), "Only server overloaded error is expected"
-            assert "probability used to decide whether to discard the query 1." in str(ex), "Expected the throw probability to be saturated at 1, not a lucky Bernoulli draw"
-            wait_for_queries() # Needed for flaky check to make sure CPU is not loaded with queries from previous runs
-            return
+            # While the wait/busy ratio is still ramping up between the min and max thresholds,
+            # a throw is a probabilistic Bernoulli draw. Keep waiting until the ratio exceeds
+            # the max threshold and the throw probability saturates at 1.
+            if "probability used to decide whether to discard the query 1." in str(ex):
+                wait_for_queries() # Needed for flaky check to make sure CPU is not loaded with queries from previous runs
+                return
         time.sleep(0.3)
 
     assert False, "Expected to get the server overloaded error at least once"
