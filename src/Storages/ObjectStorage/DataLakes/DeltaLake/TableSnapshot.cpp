@@ -706,8 +706,8 @@ TableSnapshot::TableSnapshot(
 
 size_t TableSnapshot::getVersion() const
 {
-    std::unique_lock lock(mutex);
-    initOrUpdateSnapshot(lock);
+    initOrUpdateSnapshot();
+    std::lock_guard lock(mutex);
     return getVersionUnlocked();
 }
 
@@ -716,7 +716,7 @@ size_t TableSnapshot::getVersionUnlocked() const
     return getKernelSnapshotState()->snapshot_version;
 }
 
-TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats(std::unique_lock<std::mutex> & lock) const
+TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
 {
     if (snapshot_stats.has_value())
         return snapshot_stats.value();
@@ -730,10 +730,12 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats(std::unique_lock<st
     {
         if (!tryRefreshAfterStaleTokenError(e, pre_fingerprint, "stats scan"))
             throw;
-        /// Invalidate the cached engine so `initOrUpdateSnapshot` rebuilds with the
-        /// freshened credentials, then re-run the stats scan against the new engine.
-        kernel_snapshot_state.reset();
-        initOrUpdateSnapshot(lock);
+        /// Rebuild with the freshened credentials, then re-run the stats scan against the
+        /// new engine. This rare re-auth path builds synchronously while holding the mutex;
+        /// the assignment is direct so `kernel_snapshot_state` is never left null unlocked.
+        auto load = startKernelSnapshotLoad(kernel_snapshot_state->snapshot_version);
+        kernel_snapshot_state = load->future.get();
+        kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
         snapshot_stats = getSnapshotStatsImpl();
     }
     LOG_TEST(
@@ -864,16 +866,16 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
 std::optional<size_t> TableSnapshot::getTotalRows() const
 {
-    std::unique_lock lock(mutex);
-    initOrUpdateSnapshot(lock);
-    return getSnapshotStats(lock).total_rows;
+    initOrUpdateSnapshot();
+    std::lock_guard lock(mutex);
+    return getSnapshotStats().total_rows;
 }
 
 std::optional<size_t> TableSnapshot::getTotalBytes() const
 {
-    std::unique_lock lock(mutex);
-    initOrUpdateSnapshot(lock);
-    return getSnapshotStats(lock).total_bytes;
+    initOrUpdateSnapshot();
+    std::lock_guard lock(mutex);
+    return getSnapshotStats().total_bytes;
 }
 
 bool TableSnapshot::tryRefreshAfterStaleTokenError(
@@ -905,8 +907,10 @@ bool TableSnapshot::tryRefreshAfterStaleTokenError(
     return true;
 }
 
-void TableSnapshot::initOrUpdateSnapshot(std::unique_lock<std::mutex> & lock) const
+void TableSnapshot::initOrUpdateSnapshot() const
 {
+    std::unique_lock lock(mutex);
+
     /// Rebuild when credentials rotate so the engine never outlives its embedded STS token.
     auto current_credentials_fingerprint = helper->getCredentialsFingerprint();
     if (kernel_snapshot_state && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
@@ -939,17 +943,10 @@ void TableSnapshot::initOrUpdateSnapshot(std::unique_lock<std::mutex> & lock) co
         /// loop with its own cancellation checks. With the wait under the mutex, sibling
         /// queries slept inside a plain lock and could not be killed while a load was stuck.
         lock.unlock();
-        try
-        {
-            waitForSnapshotLoad(*load);
-        }
-        catch (...)
-        {
-            /// This waiter was cancelled or timed out; the build keeps running and stays
-            /// installed in `inflight_load` for the other waiters and for later queries.
-            lock.lock();
-            throw;
-        }
+        /// This waiter may be cancelled or time out; if so it throws and the build keeps
+        /// running, staying installed in `inflight_load` for the other waiters and for later
+        /// queries. `lock` does not own the mutex here, so unwinding it does not unlock twice.
+        waitForSnapshotLoad(*load);
         lock.lock();
 
         /// The build finished (successfully or not): it is no longer in flight.
@@ -1150,8 +1147,8 @@ DB::ObjectIterator TableSnapshot::iterate(
     DB::ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    std::unique_lock lock(mutex);
-    initOrUpdateSnapshot(lock);
+    initOrUpdateSnapshot();
+    std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     auto state = getKernelSnapshotState();
     auto update_stats_func = [self = shared_from_this(), version = state->snapshot_version, this]
@@ -1225,32 +1222,32 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
 
 const DB::NamesAndTypesList & TableSnapshot::getTableSchema() const
 {
-    std::unique_lock lock(mutex);
-    initOrUpdateSnapshot(lock);
+    initOrUpdateSnapshot();
+    std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->table_schema;
 }
 
 const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
 {
-    std::unique_lock lock(mutex);
-    initOrUpdateSnapshot(lock);
+    initOrUpdateSnapshot();
+    std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->read_schema;
 }
 
 const DB::Names & TableSnapshot::getPartitionColumns() const
 {
-    std::unique_lock lock(mutex);
-    initOrUpdateSnapshot(lock);
+    initOrUpdateSnapshot();
+    std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->partition_columns;
 }
 
 const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
 {
-    std::unique_lock lock(mutex);
-    initOrUpdateSnapshot(lock);
+    initOrUpdateSnapshot();
+    std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->physical_names_map;
 }

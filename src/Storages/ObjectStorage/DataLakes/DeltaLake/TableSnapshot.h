@@ -140,13 +140,13 @@ private:
 
     size_t getVersionUnlocked() const TSA_REQUIRES(mutex);
 
-    /// Ensures `kernel_snapshot_state` is built and current. Temporarily releases `lock` while
-    /// waiting for an in-flight build, so every public entry point calls it first, before
-    /// anything guarded by `mutex` is read.
-    void initOrUpdateSnapshot(std::unique_lock<std::mutex> & lock) const TSA_NO_THREAD_SAFETY_ANALYSIS;
+    /// Ensures `kernel_snapshot_state` is built and current. Acquires `mutex` itself and
+    /// releases it while waiting for the in-flight build, so it must be called WITHOUT the
+    /// lock held: every public entry point calls it first, then re-locks for its guarded reads.
+    void initOrUpdateSnapshot() const TSA_NO_THREAD_SAFETY_ANALYSIS;
     void initOrUpdateSchemaIfChanged() const TSA_REQUIRES(mutex);
 
-    SnapshotStats getSnapshotStats(std::unique_lock<std::mutex> & lock) const TSA_NO_THREAD_SAFETY_ANALYSIS;
+    SnapshotStats getSnapshotStats() const TSA_REQUIRES(mutex);
     SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);
 
     /// One-shot recovery from `DELTA_KERNEL_ERROR` with `ExpiredToken`/`InvalidToken`:
