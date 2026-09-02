@@ -301,6 +301,13 @@ public:
         return server->requestSlowMemberBackpressure(enable);
     }
 
+    /// Whether this node is waiting for replicas that cannot keep up. Only the
+    /// leader holds the setting, so a follower always reports `false`.
+    bool isSlowMemberBackpressure() const
+    {
+        return server->isSlowMemberBackpressure();
+    }
+
     void recalculateStorageStats()
     {
         server->recalculateStorageStats();

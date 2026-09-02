@@ -671,12 +671,22 @@ String SlowMemberBackpressureOnCommand::run()
     if (!keeper_dispatcher.requestSlowMemberBackpressure(true))
         return "Failed to send slow member backpressure ON request to leader.";
 
+    /// Only the leader holds the setting, so reading it back says which of the
+    /// two things just happened: this node applied it itself, or it sent the
+    /// request on to the node it believes leads. A sent request is not a
+    /// switched setting - the leader refuses one that arrives after it has
+    /// stopped leading - so there is nothing to promise about writes yet.
+    if (!keeper_dispatcher.isSlowMemberBackpressure())
+        return "Sent slow member backpressure ON request to leader. Check "
+               "`slow_member_backpressure` in `mntr` on the leader, which "
+               "`server_state` identifies, to see whether it took effect.";
+
     /// Both caveats matter to whoever just typed this and neither is visible
     /// from `mntr`: writes now go at the speed of the slowest replica, and the
     /// setting does not survive a leader change.
-    return "Sent slow member backpressure ON request to leader. Writes now "
-           "commit at the speed of the slowest reachable replica. A new leader "
-           "switches it off, so send this again after a leader change.";
+    return "Slow member backpressure is ON. Writes now commit at the speed of "
+           "the slowest reachable replica. A new leader switches it off, so "
+           "send this again after a leader change.";
 }
 
 String SlowMemberBackpressureOffCommand::run()

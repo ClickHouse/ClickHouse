@@ -116,6 +116,28 @@ def test_switch_reaches_the_leader(started_cluster):
         switch_backpressure(leader, False)
 
 
+def test_reply_says_only_what_the_node_can_know(started_cluster):
+    # Only the leader holds the setting, so only the leader can answer that it
+    # is on. A follower has done no more than send the request: the leader
+    # refuses one that arrives after it has stopped leading, so a reply from a
+    # follower promising that writes are throttled would be a claim the node is
+    # in no position to make.
+    keeper_utils.wait_nodes(cluster, NODES)
+    leader = keeper_utils.get_leader(cluster, NODES)
+    follower = next(node for node in NODES if node != leader)
+
+    try:
+        reply = keeper_utils.send_4lw_cmd(cluster, follower, cmd="bpon")
+        assert "Sent slow member backpressure ON request to leader" in reply
+        assert "Writes now commit" not in reply
+
+        reply = keeper_utils.send_4lw_cmd(cluster, leader, cmd="bpon")
+        assert "Slow member backpressure is ON" in reply
+        assert "Writes now commit at the speed of the slowest" in reply
+    finally:
+        switch_backpressure(leader, False)
+
+
 def test_unreachable_replica_does_not_block_writes(started_cluster):
     # The leader waits only for a replica it can reach. A stopped replica can
     # never catch up, so waiting for it would freeze the commit index and take
