@@ -26,6 +26,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <optional>
 
@@ -343,32 +344,112 @@ std::optional<JoinAboveFragment> findJoinAboveFragment(
         .build_side = join_node->children[1]};
 }
 
-/// The number of rows the previous run's index analysis says a read scans, or nothing when the branch
-/// does not end in a single MergeTree read.
-std::optional<size_t> selectedRowsOf(const QueryPlan::Node & branch)
+/// The name a join key has in the table it comes from: plan-level names carry the analyzer's `__tableN.`
+/// qualifier, the storage's columns do not.
+String unqualifiedColumnName(const String & name)
 {
-    ReadFromMergeTree * reading_step = findReadingStep(branch);
-    if (!reading_step)
+    const auto dot = name.find_last_of('.');
+    return dot == String::npos ? name : name.substr(dot + 1);
+}
+
+/// What a read spends per row, split between the given columns and all of them. Prefers the compressed
+/// sizes the storage tracks and falls back to the columns' own width where it has measured nothing yet - a
+/// table whose parts were just written reports zeroes, and a missing measurement must not read as "free".
+/// The fallback mixes in-memory width with compressed bytes, which over-states the column and so only ever
+/// makes this decline shipping.
+struct ReadBytesPerRow
+{
+    double of_columns = 0;
+    double of_all = 0;
+};
+
+ReadBytesPerRow bytesPerRow(const ReadFromMergeTree & read, const NameSet & columns)
+{
+    const auto & data = read.getMergeTreeData();
+    const auto sizes = data.getColumnSizes();
+    const auto table_rows = data.getTotalActiveSizeInRows();
+    const auto & columns_description = read.getStorageMetadata()->getColumns();
+
+    ReadBytesPerRow result;
+    for (const auto & name : read.getAllColumnNames())
+    {
+        double per_row = 0;
+        if (table_rows)
+            if (const auto it = sizes.find(name); it != sizes.end() && it->second.data_compressed)
+                per_row = static_cast<double>(it->second.data_compressed) / static_cast<double>(table_rows);
+
+        if (per_row == 0 && columns_description.hasPhysical(name))
+        {
+            const auto type = columns_description.getPhysical(name).type;
+            /// A variable-width column has no size to ask for; 16 bytes is a placeholder that keeps such a
+            /// column from counting as nothing.
+            per_row = type->haveMaximumSizeOfValue() ? static_cast<double>(type->getMaximumSizeOfValueInMemory()) : 16.0;
+        }
+
+        result.of_all += per_row;
+        if (columns.contains(name))
+            result.of_columns += per_row;
+    }
+    return result;
+}
+
+/// The share of a read's bytes that these columns account for. This is what separates a key-range
+/// restriction from a PREWHERE: the predicate's own column is read for every row either way, everything
+/// else only for the rows that survive it.
+double columnShareOfRead(const ReadFromMergeTree & read, const NameSet & columns)
+{
+    const auto per_row = bytesPerRow(read, columns);
+    return per_row.of_all > 0 ? per_row.of_columns / per_row.of_all : 0.0;
+}
+
+/// What shipping costs the initiator: one pass over the build side's key columns to fill the set. The join
+/// reads the build side regardless, so only this extra pass is chargeable to the decision.
+std::optional<size_t> buildSideKeyScanBytes(const QueryPlan::Node & build_side, const NameSet & key_columns)
+{
+    ReadFromMergeTree * read = findReadingStep(build_side);
+    if (!read)
         return {};
 
-    const auto analysis = reading_step->getAnalyzedResult() ? reading_step->getAnalyzedResult() : reading_step->selectRangesToRead();
+    const auto analysis = read->getAnalyzedResult() ? read->getAnalyzedResult() : read->selectRangesToRead();
     if (!analysis)
         return {};
 
-    return analysis->selected_rows;
+    const auto per_row = bytesPerRow(*read, key_columns);
+    if (per_row.of_columns <= 0)
+        return {};
+
+    return static_cast<size_t>(per_row.of_columns * static_cast<double>(analysis->selected_rows));
 }
 
-/// Whether shipping the join's semi-join predicate into the replicas' fragment pays for itself.
+/// What shipping the join's semi-join predicate would do to the replicas' cost, in the same bytes the rest
+/// of the cost model is expressed in.
+struct ShippedPredicateEstimate
+{
+    /// The fraction of the fragment's rows the predicate keeps, end to end.
+    double match_rate = 1.0;
+    /// The fraction of them the join's runtime filter already kept when the statistics were measured.
+    double filter_pass_rate = 1.0;
+    /// The fraction of the fragment's input bytes a read keeps under a rate: `shipped` under the whole
+    /// predicate, `measured` under the part of it the runtime filter had already applied.
+    double read_share_shipped = 1.0;
+    double read_share_measured = 1.0;
+    /// What the initiator pays once, to build the set.
+    size_t build_scan_bytes = 0;
+    /// Whether the predicate acts on the read's leading key column, so it can skip granules outright.
+    bool restricts_key_range = false;
+};
+
+/// Prices shipping without building anything. It has to: building the plan that ships the predicate
+/// materializes the set, and a "no" afterwards does not refund that scan.
 ///
-/// Shipping trades one scan of the join's build side, done on the initiator to build the set, for the rows
-/// each replica then does not have to read and aggregate. Both sides are counted in rows: the build side's
-/// size in bytes is not measured anywhere, and rows are what the previous run measured on the other side.
-///
-/// The match rate is the join's, so it is a rate over the fragment's *output* rows - the groups an
-/// aggregating fragment produces - while the predicate filters the fragment's *input* rows. The two agree
-/// only when a key's group size does not depend on whether it matches; treat this as the estimate it is.
-bool shouldShipJoinPredicate(
-    const JoinAboveFragment & join, size_t rows_to_read, size_t num_replicas, bool can_restrict_ranges)
+/// The rate the predicate keeps is split between two places, because a join runtime filter applies the very
+/// same predicate earlier. The filter applies below the aggregation, so whatever it removed the join never
+/// sees and the join reports almost nothing but matches; without a filter nothing is removed early and the
+/// join's rate is the whole story. Their product is the fraction either way, and it is a product rather than
+/// a choice because the filter is approximate above `join_runtime_filter_exact_values_limit` - it passes
+/// false positives that the join then rejects.
+std::optional<ShippedPredicateEstimate> estimateShippedPredicate(
+    const JoinAboveFragment & join, const ReadFromMergeTree & fragment_read)
 {
     /// Keyed by the join's own node hash, not by the fragment's: the same aggregated subquery can appear
     /// under different joins, and those queries share the fragment's entry.
@@ -376,54 +457,88 @@ bool shouldShipJoinPredicate(
     if (!join_stats || !join_stats->join_probe_rows)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "No join match rate was measured, not shipping the join predicate");
-        return false;
+        return {};
     }
 
-    const auto build_side_rows = selectedRowsOf(*join.build_side);
-    if (!build_side_rows)
+    NameSet probe_key_columns;
+    NameSet build_key_columns;
+    for (const auto & clause : join.step->getJoin()->getTableJoin().getClauses())
+    {
+        for (const auto & name : clause.key_names_left)
+            probe_key_columns.insert(unqualifiedColumnName(name));
+        for (const auto & name : clause.key_names_right)
+            build_key_columns.insert(unqualifiedColumnName(name));
+    }
+    if (probe_key_columns.empty() || build_key_columns.empty())
+        return {};
+
+    const auto build_scan_bytes = buildSideKeyScanBytes(*join.build_side, build_key_columns);
+    if (!build_scan_bytes)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot size the join's build side, not shipping the join predicate");
-        return false;
+        return {};
     }
 
-    /// The predicate is priced by the fraction of the fragment's rows that survive it, and that fraction can
-    /// be split between two places, because a join runtime filter applies the very same predicate earlier.
-    /// The filter applies below the aggregation, so whatever it removed the join never sees and the join
-    /// reports almost nothing but matches; without a filter nothing is removed early and the join's rate is
-    /// the whole story. Their product is the fraction either way, and it is a product rather than a choice
-    /// because the filter is approximate above `join_runtime_filter_exact_values_limit` - it passes false
-    /// positives that the join then rejects.
     const double filter_pass_rate = join_stats->filter_checked_rows
         ? std::min(1.0, static_cast<double>(join_stats->filter_passed_rows) / static_cast<double>(join_stats->filter_checked_rows))
         : 1.0;
     const double join_match_rate
         = static_cast<double>(join_stats->join_matched_probe_rows) / static_cast<double>(join_stats->join_probe_rows);
-    const double match_rate = filter_pass_rate * join_match_rate;
 
-    /// What a filtered row is worth depends on where the predicate can act. When it can restrict the read's
-    /// key range, a row it removes is a row the replica never reads. When it cannot, the replicas read their
-    /// whole share either way - PREWHERE cannot rescue that either, since it skips a column per granule and
-    /// a key that is not in the sorting key leaves survivors in every granule - and all that is saved is the
-    /// groups the fragment no longer produces and sends back. Both are counted in rows, against the rows the
-    /// initiator scans to build the set.
-    const auto rows_saved_per_replica = static_cast<size_t>(
-        (1.0 - match_rate) * static_cast<double>(can_restrict_ranges ? rows_to_read : join_stats->join_probe_rows))
-        / num_replicas;
+    ShippedPredicateEstimate estimate;
+    estimate.match_rate = filter_pass_rate * join_match_rate;
+    estimate.filter_pass_rate = filter_pass_rate;
+    estimate.build_scan_bytes = *build_scan_bytes;
+
+    /// Only on the *leading* key column does a predicate skip granules outright; deeper in the key it can
+    /// only narrow ranges it shares with the columns before it, which the data rarely honors - measured on
+    /// TPC-H, an `l_orderkey` set against a key of `(l_shipdate, l_orderkey, ...)` pruned nothing at all.
+    /// Anything else is priced as what it certainly is, a PREWHERE: the key column is still read for every
+    /// row, the payload only for the rows that survive.
+    const auto primary_key = fragment_read.getStorageMetadata()->getPrimaryKeyColumns();
+    estimate.restricts_key_range = !primary_key.empty() && probe_key_columns.contains(primary_key.front());
+    if (estimate.restricts_key_range)
+    {
+        estimate.read_share_shipped = estimate.match_rate;
+        estimate.read_share_measured = filter_pass_rate;
+    }
+    else
+    {
+        /// PREWHERE skips the payload columns per granule, not per row, so it saves nothing unless whole
+        /// granules lose every row. Treating the surviving rows as spread evenly, a granule survives with
+        /// probability `1 - (1 - match_rate) ^ rows_per_granule`, which for anything but a very small rate
+        /// is 1: the key column is read for every row and the payload with it. Where the survivors are
+        /// clustered instead - a date range mapping onto a key range - this under-states the saving, which
+        /// is the safe direction: it costs a shipped predicate that would have paid off, not a query.
+        const double key_share = columnShareOfRead(fragment_read, probe_key_columns);
+        const auto analysis = fragment_read.getAnalyzedResult();
+        const double rows_per_granule
+            = analysis && analysis->selected_marks ? static_cast<double>(analysis->selected_rows) / static_cast<double>(analysis->selected_marks) : 8192.0;
+        const auto share_under = [&](double rate)
+        {
+            const double granule_survival = 1.0 - std::pow(1.0 - rate, rows_per_granule);
+            return key_share + (1.0 - key_share) * std::min(1.0, granule_survival);
+        };
+        estimate.read_share_shipped = share_under(estimate.match_rate);
+        estimate.read_share_measured = share_under(filter_pass_rate);
+    }
 
     LOG_DEBUG(
         getLogger("optimizeTree"),
-        "Shipping the join predicate would save {} {} per replica against a {} row scan to build the set "
-        "(match rate {}: {} of {} rows past the join's runtime filters, {}/{} matched by the join)",
-        rows_saved_per_replica,
-        can_restrict_ranges ? "rows read" : "groups produced (the predicate cannot restrict the read's key range)",
-        *build_side_rows,
-        match_rate,
+        "Shipping the join predicate leaves a read {} of its bytes where the measured plan already kept {} "
+        "({} the key range), against a {} byte scan to build the set (match rate {}: {} of {} rows past the "
+        "join's runtime filters, {}/{} matched by the join)",
+        estimate.read_share_shipped,
+        estimate.read_share_measured,
+        estimate.restricts_key_range ? "restricting" : "not restricting",
+        estimate.build_scan_bytes,
+        estimate.match_rate,
         join_stats->filter_passed_rows,
         join_stats->filter_checked_rows,
         join_stats->join_matched_probe_rows,
         join_stats->join_probe_rows);
 
-    return rows_saved_per_replica > *build_side_rows;
+    return estimate;
 }
 
 /// Whether re-running index analysis with the shipped predicate could actually restrict what the replicas
@@ -614,25 +729,95 @@ void considerEnablingParallelReplicas(
             const auto max_threads = optimization_settings.max_threads;
             // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
             // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
-            const auto effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
-                ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
-                : SIZE_MAX;
+            const auto reading_threads = [&](size_t bytes, size_t thread_budget)
+            {
+                const auto effective = optimization_settings.min_bytes_per_task_for_reading
+                    ? bytes / optimization_settings.min_bytes_per_task_for_reading + 1
+                    : SIZE_MAX;
+                return std::min<size_t>(thread_budget, effective);
+            };
             const auto num_replicas = optimization_settings.max_parallel_replicas;
-            const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
-            const auto replicas_plan_cost_estimation
-                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / num_replicas;
+            const auto local_plan_cost_estimation = stats->input_bytes / reading_threads(stats->input_bytes, max_threads);
+            auto replicas_plan_cost_estimation
+                = (stats->input_bytes / reading_threads(stats->input_bytes, max_threads * num_replicas)) + stats->output_bytes / num_replicas;
             LOG_DEBUG(
                 getLogger("optimizeTree"),
                 "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
                 stats->input_bytes,
-                std::min<size_t>(max_threads, effective_max_reading_threads),
+                reading_threads(stats->input_bytes, max_threads),
                 stats->input_bytes,
-                std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads),
+                reading_threads(stats->input_bytes, max_threads * num_replicas),
                 stats->output_bytes,
                 num_replicas,
                 local_plan_cost_estimation,
                 replicas_plan_cost_estimation);
-            if (local_plan_cost_estimation > replicas_plan_cost_estimation)
+
+            /// The same comparison for the plan that ships the join predicate, made here rather than after
+            /// the parallel-replicas decision. Shipping shrinks the very term that makes replicas look
+            /// unattractive - the groups the fragment sends back - so deciding replicas first and shipping
+            /// second rejects exactly the queries shipping is for. Measured on TPC-H sf=100: a `lineitem`
+            /// aggregate joined to one month of `orders` was declined at this point (145958180 ? 185013300)
+            /// while the shipped plan ran it in 635ms against the 1425ms the unshipped decision settled for.
+            ///
+            /// The initiator's scan for the set is part of the shipped plan's cost, so a predicate that saves
+            /// less than it costs to build simply loses the comparison; there is no separate threshold.
+            std::optional<ShippedPredicateEstimate> ship;
+            auto shipped_replicas_plan_cost_estimation = std::numeric_limits<size_t>::max();
+            if (!manual_ship_join_predicate)
+            {
+                if (const auto join_above_fragment
+                    = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes))
+                {
+                    ship = estimateShippedPredicate(*join_above_fragment, *source_reading_step);
+                    if (ship)
+                    {
+                        /// The statistics were measured on the single-node plan, and there the join's runtime
+                        /// filter had already applied this very predicate below the aggregation. They describe
+                        /// a plan that filters, which is the plan that ships the predicate - not the one that
+                        /// does not. Replicas without the predicate read what the filter skipped and aggregate
+                        /// the groups it removed, so their cost is the measured cost scaled back up. Where no
+                        /// filter ran the rates are 1 and only the shipped side moves, as before.
+                        const auto scaled = [](size_t bytes, double from, double to)
+                        {
+                            /// A rate of zero would scale to infinity; it also means the measurement saw
+                            /// nothing pass, where any estimate is guesswork.
+                            return static_cast<size_t>(static_cast<double>(bytes) * to / std::max(from, 1e-6));
+                        };
+                        const auto unshipped_input_bytes = scaled(stats->input_bytes, ship->read_share_measured, 1.0);
+                        const auto unshipped_output_bytes = scaled(stats->output_bytes, ship->filter_pass_rate, 1.0);
+                        const auto shipped_input_bytes
+                            = scaled(stats->input_bytes, ship->read_share_measured, ship->read_share_shipped);
+                        const auto shipped_output_bytes = scaled(stats->output_bytes, ship->filter_pass_rate, ship->match_rate);
+
+                        replicas_plan_cost_estimation
+                            = unshipped_input_bytes / reading_threads(unshipped_input_bytes, max_threads * num_replicas)
+                            + unshipped_output_bytes / num_replicas;
+                        shipped_replicas_plan_cost_estimation
+                            = shipped_input_bytes / reading_threads(shipped_input_bytes, max_threads * num_replicas)
+                            + shipped_output_bytes / num_replicas
+                            + ship->build_scan_bytes;
+                        LOG_DEBUG(
+                            getLogger("optimizeTree"),
+                            "Priced against a fragment the replicas cannot filter: without the predicate {} / {} + {} / {} ≡ {}, "
+                            "with it shipped {} / {} + {} / {} + {} ≡ {}",
+                            unshipped_input_bytes,
+                            reading_threads(unshipped_input_bytes, max_threads * num_replicas),
+                            unshipped_output_bytes,
+                            num_replicas,
+                            replicas_plan_cost_estimation,
+                            shipped_input_bytes,
+                            reading_threads(shipped_input_bytes, max_threads * num_replicas),
+                            shipped_output_bytes,
+                            num_replicas,
+                            ship->build_scan_bytes,
+                            shipped_replicas_plan_cost_estimation);
+                    }
+                }
+            }
+
+            const auto best_replicas_plan_cost_estimation
+                = std::min(replicas_plan_cost_estimation, shipped_replicas_plan_cost_estimation);
+            if (local_plan_cost_estimation > best_replicas_plan_cost_estimation)
             {
                 if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
                     && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
@@ -653,54 +838,51 @@ void considerEnablingParallelReplicas(
                 /// above were measured against.
                 bool shipped_join_predicate = false;
                 bool shipped_predicate_restricts_ranges = false;
-                if (!manual_ship_join_predicate)
+                /// Shipping is not free beyond the scan already priced above: a subquery to plan, a set to
+                /// materialize, a temporary table to send. None of that is in the estimate, so a predicate
+                /// that only just wins on paper loses in practice - measured at 1.1x to 1.7x slower on the
+                /// shapes where the two costs came out within a percent of each other. Ask for a margin
+                /// wide enough that the fixed cost cannot swallow the gain.
+                if (shipped_replicas_plan_cost_estimation * 11 / 10 < replicas_plan_cost_estimation)
                 {
-                    const auto join_above_fragment
-                        = findJoinAboveFragment(root, *corresponding_node_in_single_replica_plan, single_replica_plan_hashes);
+                    /// Plain `in`, not `globalIn`. The set is materialized once on the initiator either
+                    /// way - `buildQueryTreeForShard` ships the set of an injected `IN` as a temporary
+                    /// table, so no replica repeats the scan of the build side - but `globalIn` would cost
+                    /// the replicas their PREWHERE, which `MergeTreeWhereOptimizer::cannotBeMoved` refuses
+                    /// to move, and they would read every column for every row instead of the key first.
+                    auto plan_with_shipped_predicate = optimization_settings.query_plan_with_parallel_replicas_builder(1);
+                    const auto * shipped_final_node
+                        = plan_with_shipped_predicate ? findTopNodeOfReplicasPlan(plan_with_shipped_predicate->getRootNode()) : nullptr;
 
-                    /// Whether the predicate can restrict the key range is a property of the plan that ships it,
-                    /// so it is not known yet. Ask optimistically first - that answer is an upper bound on the
-                    /// benefit, so a "no" here is a "no" either way - and ask again below, once there is a plan
-                    /// to look at, if it turns out the predicate cannot prune after all.
-                    if (join_above_fragment
-                        && shouldShipJoinPredicate(*join_above_fragment, rows_to_read, num_replicas, /*can_restrict_ranges=*/true))
+                    if (shipped_final_node)
                     {
-                        /// Plain `in`, not `globalIn`. The set is materialized once on the initiator either
-                        /// way - `buildQueryTreeForShard` ships the set of an injected `IN` as a temporary
-                        /// table, so no replica repeats the scan of the build side - but `globalIn` would cost
-                        /// the replicas their PREWHERE, which `MergeTreeWhereOptimizer::cannotBeMoved` refuses
-                        /// to move, and they would read every column for every row instead of the key first.
-                        auto plan_with_shipped_predicate = optimization_settings.query_plan_with_parallel_replicas_builder(1);
-                        const auto * shipped_final_node
-                            = plan_with_shipped_predicate ? findTopNodeOfReplicasPlan(plan_with_shipped_predicate->getRootNode()) : nullptr;
-                        ReadFromMergeTree * shipped_reading_step = shipped_final_node ? findReadingStep(*shipped_final_node) : nullptr;
-
-                        const bool can_restrict_ranges
+                        ReadFromMergeTree * shipped_reading_step = findReadingStep(*shipped_final_node);
+                        plan_with_parallel_replicas = std::move(plan_with_shipped_predicate);
+                        final_node_in_replica_plan = shipped_final_node;
+                        shipped_join_predicate = true;
+                        /// Priced as a key-range restriction above only when the predicate is on the leading
+                        /// key column; the plan that now exists is what decides whether the analysis below
+                        /// may be reused, so ask it rather than the estimate.
+                        shipped_predicate_restricts_ranges
                             = shipped_reading_step && shippedPredicateCanRestrictRanges(*shipped_reading_step);
-
-                        if (!shipped_final_node)
-                        {
-                            LOG_DEBUG(
-                                getLogger("optimizeTree"),
-                                "The plan with the join predicate shipped has no parallel replicas fragment, keeping the plain one");
-                        }
-                        else if (can_restrict_ranges
-                                 || shouldShipJoinPredicate(
-                                     *join_above_fragment, rows_to_read, num_replicas, /*can_restrict_ranges=*/false))
-                        {
-                            plan_with_parallel_replicas = std::move(plan_with_shipped_predicate);
-                            final_node_in_replica_plan = shipped_final_node;
-                            shipped_join_predicate = true;
-                            shipped_predicate_restricts_ranges = can_restrict_ranges;
-                            LOG_DEBUG(getLogger("optimizeTree"), "Shipping the join predicate into the replicas' fragment");
-                        }
-                        else
-                        {
-                            LOG_DEBUG(
-                                getLogger("optimizeTree"),
-                                "Not shipping the join predicate after all: it cannot restrict the read's key range, and what "
-                                "it saves the replicas from aggregating does not pay for the scan that builds the set");
-                        }
+                        LOG_DEBUG(getLogger("optimizeTree"), "Shipping the join predicate into the replicas' fragment");
+                    }
+                    else if (local_plan_cost_estimation <= replicas_plan_cost_estimation)
+                    {
+                        /// Replicas were only worth it with the predicate shipped, and there is no plan that
+                        /// ships it. Running them without it is a plan this function already priced as worse
+                        /// than staying on one node.
+                        LOG_DEBUG(
+                            getLogger("optimizeTree"),
+                            "The plan with the join predicate shipped has no parallel replicas fragment, and without it "
+                            "parallel replicas do not pay off");
+                        return;
+                    }
+                    else
+                    {
+                        LOG_DEBUG(
+                            getLogger("optimizeTree"),
+                            "The plan with the join predicate shipped has no parallel replicas fragment, keeping the plain one");
                     }
                 }
 
