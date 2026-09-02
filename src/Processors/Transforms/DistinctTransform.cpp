@@ -10,11 +10,6 @@ namespace ProfileEvents
     extern const Event DistinctTransformsAbandonedDeduplication;
 }
 
-namespace ProfileEvents
-{
-    extern const Event DistinctTransformsAbandonedDeduplication;
-}
-
 namespace DB
 {
 
@@ -49,20 +44,6 @@ DistinctTransform::DistinctTransform(
 {
     if (allow_abandoning_)
         abandon_controller.emplace();
-}
-
-void DistinctTransform::maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows)
-{
-    if (!abandon_controller)
-        return;
-
-    abandon_controller->update(num_rows, num_unique_rows, data->getTotalByteCount());
-    if (abandon_controller->isAbandoned())
-    {
-        data.reset();
-        lc_dict_states.clear();
-        ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
-    }
 }
 
 void DistinctTransform::transform(Chunk & chunk)
