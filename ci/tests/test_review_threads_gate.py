@@ -530,7 +530,15 @@ def test_force_all_resolution_is_strict_at_every_site():
     assert "else bool(force_all_kv)" not in native_jobs
 
 
-def _retry_marker_state(statuses, started_at, completed_at):
+RUN_SHA = "50646b036ad5233f4b23f5aa61b4d1a85a1b0817"
+REPORT_URL = (
+    "https://s3.amazonaws.com/clickhouse-test-reports/praktika.html"
+    f"?PR=114729&sha={RUN_SHA}&name_0=PR"
+)
+PR_URL = "https://github.com/ClickHouse/ClickHouse/pull/114729"
+
+
+def _retry_marker_state(statuses, started_at, completed_at, run_sha=RUN_SHA):
     """Run the retry-suppression predicate of `retry_infra_failures.yml`."""
     workflow = (
         Path(__file__).resolve().parents[2]
@@ -540,7 +548,20 @@ def _retry_marker_state(statuses, started_at, completed_at):
     assert anchor in workflow, "the retry suppression predicate moved - update this test"
     jq_filter = workflow[workflow.index(anchor) :].split("'")[1]
     result = subprocess.run(
-        ["jq", "-r", "--arg", "from", started_at, "--arg", "to", completed_at, jq_filter],
+        [
+            "jq",
+            "-r",
+            "--arg",
+            "from",
+            started_at,
+            "--arg",
+            "to",
+            completed_at,
+            "--arg",
+            "sha",
+            run_sha,
+            jq_filter,
+        ],
         input=json.dumps(statuses),
         capture_output=True,
         text=True,
@@ -556,21 +577,34 @@ def test_retry_suppression_only_matches_the_failed_attempt():
         "context": "Review Threads",
         "state": "failure",
         "created_at": "2026-08-20T10:00:30Z",
+        "target_url": REPORT_URL,
     }
     later = {
         "context": "Review Threads",
         "state": "failure",
         "created_at": "2026-08-20T11:30:00Z",
+        "target_url": REPORT_URL,
     }
     earlier = {
         "context": "Review Threads",
         "state": "failure",
         "created_at": "2026-08-20T09:00:00Z",
+        "target_url": REPORT_URL,
     }
     other = {
         "context": "Mergeable Check",
         "state": "failure",
         "created_at": "2026-08-20T10:00:30Z",
+        "target_url": REPORT_URL,
+    }
+    # `rerun_on_review_threads.yml` handling an `ignore-unresolved-threads`
+    # label event while `Finish Workflow` is still running: same context,
+    # same commit, inside the window, but it points at the PR page.
+    refresh = {
+        "context": "Review Threads",
+        "state": "failure",
+        "created_at": "2026-08-20T10:00:45Z",
+        "target_url": PR_URL,
     }
     started, completed = "2026-08-20T10:00:00Z", "2026-08-20T10:01:00Z"
 
@@ -581,6 +615,97 @@ def test_retry_suppression_only_matches_the_failed_attempt():
     assert _retry_marker_state([earlier], started, completed) == ""
     assert _retry_marker_state([other], started, completed) == ""
     assert _retry_marker_state([earlier, own, later], started, completed) == "failure"
+    # The refresh-only status must not stand in for the failed attempt's own
+    # marker: a genuine infrastructure failure must still be retried.
+    assert _retry_marker_state([refresh], started, completed) == ""
+    assert _retry_marker_state([refresh, own], started, completed) == "failure"
+    # A status without a target URL, or one pointing at another commit's
+    # report, is not this run's marker either.
+    assert _retry_marker_state([{**own, "target_url": None}], started, completed) == ""
+    assert _retry_marker_state([own], started, completed, run_sha="0" * 40) == ""
+    assert (
+        _retry_marker_state(
+            [{**own, "target_url": REPORT_URL.replace(RUN_SHA, RUN_SHA + "aa")}],
+            started,
+            completed,
+        )
+        == ""
+    )
+
+
+def test_gate_statuses_point_at_the_praktika_report():
+    """The retry suppression keys on the report URL of the gate's own status,
+    so both writers of the `Review Threads` status must use it, and the
+    refresher must not."""
+    repository_root = Path(__file__).resolve().parents[2]
+    for script in (
+        "ci/jobs/scripts/workflow_hooks/review_threads.py",
+        "ci/jobs/scripts/workflow_hooks/can_be_merged.py",
+    ):
+        source = (repository_root / script).read_text()
+        assert "url=info.get_report_url()," in source, script
+    rerun_workflow = (
+        repository_root / ".github/workflows/rerun_on_review_threads.yml"
+    ).read_text()
+    assert '-f target_url="https://github.com/$GH_REPO/pull/$pr"' in rerun_workflow
+    # The refresh-only path must not post while a PR run is in progress.
+    active_check = rerun_workflow.index('if [ "$active" -gt 0 ]; then')
+    refresh_path = rerun_workflow.index('if [ "$pipeline_limited" != "true" ]; then')
+    assert active_check < refresh_path
+
+
+def test_limited_pipeline_build_jobs_are_schedulable_behind_skipped_lanes():
+    """Every build lane kept by the gate must actually be able to start when
+    the test lanes it is ordered after (`set_run_after`, i.e. GitHub `needs`)
+    are skipped by the gate. Two things make that true, and both are pinned:
+
+    - no kept build `requires` an artifact produced by a job the gate skips
+      (praktika would then fail the build at runtime for lack of its input);
+    - the generated `if:` of every kept build uses the `!cancelled()` status
+      check, which is what lets GitHub schedule a job whose `needs` were
+      skipped (a job without a status-check function is implicitly
+      `success()` and is skipped along with its dependencies). Evidence: in
+      https://github.com/ClickHouse/ClickHouse/actions/runs/17382619684
+      (a `ci-build` PR) `Unit tests (tsan)` and `Stateless tests (amd_debug,
+      parallel)` were skipped while `Build (riscv64)`, `Build (s390x)`,
+      `Build (amd_darwin)` and `Build (loongarch64)` ran and passed.
+    """
+    import base64
+
+    from ci.workflows.pull_request import workflow as pr_workflow
+
+    kept = set(filter_job.REVIEW_THREADS_BUILD_JOBS) | set(
+        filter_job.PRELIMINARY_JOBS
+    ) | {JobNames.CODE_REVIEW}
+    providers = {}
+    for job in pr_workflow.jobs:
+        providers[job.name] = job.name
+        for artifact in job.provides:
+            providers[artifact] = job.name
+    kept_builds = [
+        job for job in pr_workflow.jobs if job.name in filter_job.REVIEW_THREADS_BUILD_JOBS
+    ]
+    assert kept_builds
+    for job in kept_builds:
+        for requirement in job.requires:
+            provider = providers.get(requirement, requirement)
+            assert provider in kept, (
+                f"{job.name} requires {requirement} from {provider}, "
+                "which the review-threads gate skips"
+            )
+
+    workflow_yaml = (
+        Path(__file__).resolve().parents[2] / ".github/workflows/pull_request.yml"
+    ).read_text()
+    for job in kept_builds:
+        encoded = base64.b64encode(job.name.encode()).decode()
+        jobs_with_this_guard = [
+            line for line in workflow_yaml.splitlines() if f"'{encoded}'" in line
+        ]
+        assert len(jobs_with_this_guard) == 1, job.name
+        assert jobs_with_this_guard[0].lstrip().startswith("if: ${{ !cancelled() &&"), (
+            f"{job.name} is not schedulable when a job it needs is skipped"
+        )
 
 
 def test_toolchain_builds_stay_opt_in_under_the_review_threads_gate(fake_info):

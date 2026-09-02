@@ -190,7 +190,13 @@ jobs:
               # it. A status created later (e.g. by a label event handled by
               # rerun_on_review_threads.yml) says nothing about why this run
               # failed, and must not suppress the retry of a genuine
-              # infrastructure failure.
+              # infrastructure failure. The time window alone is not enough:
+              # a label event can be handled while "Finish Workflow" is still
+              # running, and its refresh-only status lands inside the window.
+              # The gate's own status points at the Praktika report of this
+              # commit (ci/jobs/scripts/workflow_hooks/can_be_merged.py), while
+              # the refresher points at the pull request page, so the marker
+              # must also carry this run's report URL.
               finish_window=$(echo "$jobs_raw" | jq -r '
                 [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
                 first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
@@ -202,9 +208,11 @@ jobs:
                 statuses=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
                   | jq -s 'add // []') || statuses="[]"
                 marker_state=$(echo "$statuses" | jq -r \
-                  --arg from "$finish_started_at" --arg to "$finish_completed_at" '
+                  --arg from "$finish_started_at" --arg to "$finish_completed_at" \
+                  --arg sha "$run_sha" '
                   [.[] | select(.context == "Review Threads") |
-                   select(.created_at >= $from and .created_at <= $to)] |
+                   select(.created_at >= $from and .created_at <= $to) |
+                   select((.target_url // "") | test("praktika\\.html\\?.*[?&]sha=" + $sha + "(&|$)"))] |
                   first // {} | .state // empty
                 ')
               fi

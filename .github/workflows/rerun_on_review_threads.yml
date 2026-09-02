@@ -178,6 +178,20 @@ jobs:
             exit 0
           fi
 
+          # --- Do nothing while a PR workflow run is in progress ---
+          # Checked before the refresh-only path as well: a status posted
+          # from here while "Finish Workflow" runs would land in the same
+          # time window as the gate's own verdict and could be mistaken for
+          # it by retry_infra_failures.yml.
+          runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == "PR")]')
+          active=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
+          if [ "$active" -gt 0 ]; then
+            echo "A PR workflow run is still in progress - its finish step records the" \
+                 "fresh state, and its completion re-triggers this reconciliation."
+            exit 0
+          fi
+
           if [ "$pipeline_limited" != "true" ]; then
             # A full pipeline already ran. Refresh only its gate status;
             # rerunning would be wasteful (and `ci-force-all` skips cache
@@ -219,14 +233,6 @@ jobs:
           fi
 
           # --- Re-run the last completed PR workflow run for this head ---
-          runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
-            --jq '[.workflow_runs[] | select(.name == "PR")]')
-          active=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
-          if [ "$active" -gt 0 ]; then
-            echo "A PR workflow run is still in progress - its finish step records the" \
-                 "fresh state, and its completion re-triggers this reconciliation."
-            exit 0
-          fi
           run_id=$(echo "$runs" | jq -r 'sort_by(.created_at) | last | .id // empty')
           run_attempt=$(echo "$runs" | jq -r 'sort_by(.created_at) | last | .run_attempt // 0')
           if [ -z "$run_id" ]; then
