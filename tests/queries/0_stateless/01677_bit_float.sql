@@ -1,0 +1,9 @@
+SELECT bitAnd(0, inf); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitXor(0, inf); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitOr(0, inf); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTest(inf, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitTest(0, inf); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitRotateLeft(inf, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitRotateRight(inf, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitShiftLeft(inf, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT bitShiftRight(inf, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

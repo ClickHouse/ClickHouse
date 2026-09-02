@@ -1,0 +1,18 @@
+======Before Truncate======
+1
+1
+1
+1
+1
+2000-01-01	1
+2000-01-01	1
+======After Truncate And Empty======
+0
+======After Truncate And Insert Data======
+1
+1
+1
+1
+1
+2000-01-01	1
+2000-01-01	1

@@ -1,0 +1,7 @@
+<test>
+    <query>select count() from (select sipHash64(zero) from zeros_mt(100000000) union all select sipHash64(zero) from zeros_mt(100000000))</query>
+    <query>select count(sipHash64(zero)) from remote('127.0.0.{{1,1}}', zeros_mt(100000000))</query>
+    <query>select count(sipHash64(zero)) from remote('127.0.0.{{1,2}}', zeros_mt(100000000))</query>
+    <query>select count(sipHash64(zero)) from remote('127.0.0.{{2,3}}', zeros_mt(100000000))</query>
+    <query>select * from (select key, sum(sipHash64(toString(number))) as val from remote('127.0.0.{{1,2}}', numbers(1e7)) group by bitAnd(number, 15) as key) where bitAnd(key, 1) = 0 settings max_threads=1</query>
+</test>

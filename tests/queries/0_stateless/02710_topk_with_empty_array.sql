@@ -1,0 +1,1 @@
+SELECT topK(emptyArrayInt16());

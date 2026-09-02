@@ -1,0 +1,123 @@
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <DataTypes/FieldToDataType.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/Context.h>
+#include <Core/Field.h>
+#include <Core/ServerSettings.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+
+class FunctionGetServerSetting final : public IFunction
+{
+public:
+    static constexpr auto name = "getServerSetting";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetServerSetting>(); }
+
+    String getName() const override { return name; }
+
+    bool isDeterministic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 1 ; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto value = getValue(arguments);
+        return applyVisitor(FieldToDataType{}, value);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        auto value = getValue(arguments);
+        return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
+    }
+
+private:
+    Field getValue(const ColumnsWithTypeAndName & arguments) const
+    {
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Number of arguments for function {} can't be {}, should be 1",
+                getName(),
+                arguments.size());
+
+        if (!isString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The argument of function {} should be a constant string with the name of a setting",
+                            String{name});
+        const auto * column = arguments[0].column.get();
+        if (!column || !checkAndGetColumnConstStringOrFixedString(column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "The argument of function {} should be a constant string with the name of a setting",
+                            String{name});
+
+        std::string_view setting_name{column->getDataAt(0)};
+
+        auto global_context = Context::getGlobalContextInstance();
+
+        /// Take a consistent snapshot of the server settings under the shared context lock. A few settings
+        /// (e.g. `s3queue_disable_streaming`) are mutated at runtime on config reload, so copying the struct
+        /// without synchronization would race with those writers.
+        ServerSettings server_settings = global_context->getServerSettingsCopy();
+
+        /// Some server settings can be changed at runtime (e.g. memory limits, cache sizes, thread pool sizes).
+        /// In that case the live value held by the component diverges from the value stored in `ServerSettings`,
+        /// which only reflects what was last loaded from the config. `system.server_settings` already returns
+        /// the live value for such settings - mirror that behaviour here.
+        if (auto live = server_settings.tryGetLiveValueAsString(global_context, setting_name))
+            server_settings.set(setting_name, *live);
+
+        return server_settings.get(setting_name);
+    }
+};
+
+}
+
+REGISTER_FUNCTION(GetServerSetting)
+{
+    FunctionDocumentation::Description description = R"(
+Returns the currently set value, given a server setting name.
+    )";
+    FunctionDocumentation::Syntax syntax = "getServerSetting(setting_name')";
+    FunctionDocumentation::Arguments arguments = {
+        {"setting_name", "The server setting name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the server setting's current value.",{"Any"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT getServerSetting('allow_use_jemalloc_memory');
+        )",
+        R"(
+┌─getServerSetting('allow_use_jemalloc_memory')─┐
+│ true                                          │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGetServerSetting>(documentation, FunctionFactory::Case::Sensitive);
+}
+
+}

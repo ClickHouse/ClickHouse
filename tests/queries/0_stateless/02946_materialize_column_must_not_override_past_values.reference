@@ -1,0 +1,45 @@
+DEFAULT expressions
+-- Compact parts
+Before materialize
+1	1
+2	54321
+After materialize
+1	1
+2	54321
+-- Wide parts
+Before materialize
+1	1
+2	54321
+After materialize
+1	1
+2	54321
+-- Nullable column != physically absent
+Before materialize
+1	1
+2	\N
+3	54321
+After materialize
+1	1
+2	\N
+3	54321
+-- Parts with renamed column
+Before materialize
+1	1
+2	54321
+After rename
+1	1
+2	54321
+After materialize
+1	1
+2	54321
+MATERIALIZED expressions
+-- Compact parts
+Before materialize
+1	54321
+After materialize
+1	65432
+-- Compact parts
+Before materialize
+1	54321
+After materialize
+1	65432

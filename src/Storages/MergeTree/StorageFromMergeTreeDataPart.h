@@ -1,0 +1,100 @@
+#pragma once
+
+#include <Core/Defines.h>
+#include <Core/UUID.h>
+#include <Storages/IStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
+
+namespace DB
+{
+
+class QueryPlan;
+
+/// A Storage that allows reading from a single MergeTree data part.
+class StorageFromMergeTreeDataPart final : public IStorage
+{
+public:
+    /// Used in part mutation.
+    StorageFromMergeTreeDataPart(
+        const MergeTreeData::DataPartPtr & part_,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot_)
+        : IStorage(getIDFromPart(part_))
+        , parts(RangesInDataParts({part_}))
+        , mutations_snapshot(mutations_snapshot_)
+        , storage(part_->storage)
+        , partition_id(part_->info.getPartitionId())
+    {
+        auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+        setInMemoryMetadata(*storage_metadata_snapshot);
+    }
+
+    /// Used in queries with projection.
+    StorageFromMergeTreeDataPart(
+        const MergeTreeData & storage_,
+        ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
+        : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
+    {
+        auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+        setInMemoryMetadata(*storage_metadata_snapshot);
+    }
+
+    String getName() const override { return "FromMergeTreeDataPart"; }
+
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t max_block_size,
+        size_t num_streams) override;
+
+    bool supportsPrewhere() const override { return true; }
+
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
+
+    bool supportsSubcolumns() const override { return true; }
+
+    String getPartitionId() const
+    {
+        return partition_id;
+    }
+
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const
+    {
+        return storage.getPartitionIDFromQuery(ast, context);
+    }
+
+    bool materializeTTLRecalculateOnly() const;
+
+    bool hasLightweightDeletedMask() const
+    {
+        return !parts.empty() && parts.front().data_part->hasLightweightDelete();
+    }
+
+    bool supportsLightweightDelete() const override
+    {
+        return !parts.empty() && parts.front().data_part->supportLightweightDeleteMutate();
+    }
+
+private:
+    const RangesInDataParts parts;
+    const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+    const MergeTreeData & storage;
+    const String partition_id;
+    const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;
+
+    static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
+    {
+        auto table_id = part_->storage.getStorageID();
+        table_id.uuid = UUIDHelpers::generateV4();
+        return table_id;
+    }
+};
+
+}

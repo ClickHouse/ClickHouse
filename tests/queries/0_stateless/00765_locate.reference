@@ -1,0 +1,7 @@
+-- negative tests
+-- test mysql compatibility setting
+0
+0
+3
+-- the function name needs to be case-insensitive for historical reasons
+0

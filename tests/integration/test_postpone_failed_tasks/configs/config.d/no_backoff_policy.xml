@@ -1,0 +1,8 @@
+<clickhouse>
+    <merge_tree>
+        <max_postpone_time_for_failed_mutations_ms>0</max_postpone_time_for_failed_mutations_ms>
+        <max_postpone_time_for_failed_replicated_fetches_ms>0</max_postpone_time_for_failed_replicated_fetches_ms>
+        <max_postpone_time_for_failed_replicated_merges_ms>0</max_postpone_time_for_failed_replicated_merges_ms>
+        <max_postpone_time_for_failed_replicated_tasks_ms>0</max_postpone_time_for_failed_replicated_tasks_ms>
+    </merge_tree>
+</clickhouse>

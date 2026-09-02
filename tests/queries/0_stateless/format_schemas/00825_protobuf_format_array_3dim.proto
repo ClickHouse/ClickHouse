@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+message ABC
+{
+    message nested
+    {
+        message nested
+        {
+            repeated int32 c = 1;
+        }
+        repeated nested b = 1;
+    }
+    repeated nested a = 1;
+}

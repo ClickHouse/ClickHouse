@@ -1,0 +1,6 @@
+Testing sync from non-existent replica...
+Error correctly detected for non-existent replica
+Replication did not hang: synced all replicas of test_table_
+Consistency: 1
+Test completed
+Data consistency check passed

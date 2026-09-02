@@ -1,0 +1,21 @@
+Initial
+4	4
+4	8
+REPLACE simple
+2	2
+4	6
+REPLACE empty
+2	4
+REPLACE recursive
+4	8
+1
+ATTACH FROM
+6	8
+10	12
+OPTIMIZE
+10	12	9
+10	12	5
+After restart
+10	12
+DETACH+ATTACH PARTITION
+7	7

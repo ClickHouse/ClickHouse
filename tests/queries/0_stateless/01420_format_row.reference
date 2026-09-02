@@ -1,0 +1,117 @@
+CSV
+formatRow
+0,"good"\n
+1,"good"\n
+2,"good"\n
+formatRowNoNewline
+0,"good"
+1,"good"
+2,"good"
+TSV
+formatRow
+0\tgood\n
+1\tgood\n
+2\tgood\n
+formatRowNoNewline
+0\tgood
+1\tgood
+2\tgood
+JSONEachRow
+formatRow
+{"number":0,"good":"good"}\n
+{"number":1,"good":"good"}\n
+{"number":2,"good":"good"}\n
+formatRowNoNewline
+{"number":0,"good":"good"}
+{"number":1,"good":"good"}
+{"number":2,"good":"good"}
+JSONCompactEachRow
+formatRow
+[0, "good"]\n
+[1, "good"]\n
+[2, "good"]\n
+formatRowNoNewline
+[0, "good"]
+[1, "good"]
+[2, "good"]
+TSKV
+formatRow
+number=0\tgood=good\n
+number=1\tgood=good\n
+number=2\tgood=good\n
+formatRowNoNewline
+number=0\tgood=good
+number=1\tgood=good
+number=2\tgood=good
+XML
+formatRow
+<?xml version=\'1.0\' encoding=\'UTF-8\' ?>\n<result>\n\t<meta>\n\t\t<columns>\n\t\t\t<column>\n\t\t\t\t<name>number</name>\n\t\t\t\t<type>UInt64</type>\n\t\t\t</column>\n\t\t\t<column>\n\t\t\t\t<name>good</name>\n\t\t\t\t<type>String</type>\n\t\t\t</column>\n\t\t</columns>\n\t</meta>\n\t<data>\n\t\t<row>\n\t\t\t<number>0</number>\n\t\t\t<good>good</good>\n\t\t</row>\n\t</data>\n\t<rows>1</rows>\n</result>\n
+<?xml version=\'1.0\' encoding=\'UTF-8\' ?>\n<result>\n\t<meta>\n\t\t<columns>\n\t\t\t<column>\n\t\t\t\t<name>number</name>\n\t\t\t\t<type>UInt64</type>\n\t\t\t</column>\n\t\t\t<column>\n\t\t\t\t<name>good</name>\n\t\t\t\t<type>String</type>\n\t\t\t</column>\n\t\t</columns>\n\t</meta>\n\t<data>\n\t\t<row>\n\t\t\t<number>1</number>\n\t\t\t<good>good</good>\n\t\t</row>\n\t</data>\n\t<rows>1</rows>\n</result>\n
+<?xml version=\'1.0\' encoding=\'UTF-8\' ?>\n<result>\n\t<meta>\n\t\t<columns>\n\t\t\t<column>\n\t\t\t\t<name>number</name>\n\t\t\t\t<type>UInt64</type>\n\t\t\t</column>\n\t\t\t<column>\n\t\t\t\t<name>good</name>\n\t\t\t\t<type>String</type>\n\t\t\t</column>\n\t\t</columns>\n\t</meta>\n\t<data>\n\t\t<row>\n\t\t\t<number>2</number>\n\t\t\t<good>good</good>\n\t\t</row>\n\t</data>\n\t<rows>1</rows>\n</result>\n
+formatRowNoNewline
+<?xml version=\'1.0\' encoding=\'UTF-8\' ?>\n<result>\n\t<meta>\n\t\t<columns>\n\t\t\t<column>\n\t\t\t\t<name>number</name>\n\t\t\t\t<type>UInt64</type>\n\t\t\t</column>\n\t\t\t<column>\n\t\t\t\t<name>good</name>\n\t\t\t\t<type>String</type>\n\t\t\t</column>\n\t\t</columns>\n\t</meta>\n\t<data>\n\t\t<row>\n\t\t\t<number>0</number>\n\t\t\t<good>good</good>\n\t\t</row>\n\t</data>\n\t<rows>1</rows>\n</result>
+<?xml version=\'1.0\' encoding=\'UTF-8\' ?>\n<result>\n\t<meta>\n\t\t<columns>\n\t\t\t<column>\n\t\t\t\t<name>number</name>\n\t\t\t\t<type>UInt64</type>\n\t\t\t</column>\n\t\t\t<column>\n\t\t\t\t<name>good</name>\n\t\t\t\t<type>String</type>\n\t\t\t</column>\n\t\t</columns>\n\t</meta>\n\t<data>\n\t\t<row>\n\t\t\t<number>1</number>\n\t\t\t<good>good</good>\n\t\t</row>\n\t</data>\n\t<rows>1</rows>\n</result>
+<?xml version=\'1.0\' encoding=\'UTF-8\' ?>\n<result>\n\t<meta>\n\t\t<columns>\n\t\t\t<column>\n\t\t\t\t<name>number</name>\n\t\t\t\t<type>UInt64</type>\n\t\t\t</column>\n\t\t\t<column>\n\t\t\t\t<name>good</name>\n\t\t\t\t<type>String</type>\n\t\t\t</column>\n\t\t</columns>\n\t</meta>\n\t<data>\n\t\t<row>\n\t\t\t<number>2</number>\n\t\t\t<good>good</good>\n\t\t</row>\n\t</data>\n\t<rows>1</rows>\n</result>
+Markdown
+formatRow
+| number | good |\n|-:|:-|\n| 0 | good |\n
+| number | good |\n|-:|:-|\n| 1 | good |\n
+| number | good |\n|-:|:-|\n| 2 | good |\n
+formatRowNoNewline
+| number | good |\n|-:|:-|\n| 0 | good |
+| number | good |\n|-:|:-|\n| 1 | good |
+| number | good |\n|-:|:-|\n| 2 | good |
+CustomSeparated
+formatRow
+0\tgood\n
+1\tgood\n
+2\tgood\n
+formatRowNoNewline
+0\tgood
+1\tgood
+2\tgood
+SQLInsert
+formatRow
+INSERT INTO table (`number`, `good`) VALUES (0, \'good\');\n
+INSERT INTO table (`number`, `good`) VALUES (1, \'good\');\n
+INSERT INTO table (`number`, `good`) VALUES (2, \'good\');\n
+formatRowNoNewline
+INSERT INTO table (`number`, `good`) VALUES (0, \'good\');
+INSERT INTO table (`number`, `good`) VALUES (1, \'good\');
+INSERT INTO table (`number`, `good`) VALUES (2, \'good\');
+Vertical
+formatRow
+Row 1:\n──────\nnumber: 0\ngood:   good\n
+Row 1:\n──────\nnumber: 1\ngood:   good\n
+Row 1:\n──────\nnumber: 2\ngood:   good\n
+formatRowNoNewline
+Row 1:\n──────\nnumber: 0\ngood:   good
+Row 1:\n──────\nnumber: 1\ngood:   good
+Row 1:\n──────\nnumber: 2\ngood:   good
+JSON
+formatRow
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t{\n\t\t\t"number": 0,\n\t\t\t"good": "good"\n\t\t}\n\t],\n\n\t"rows": 1\n}\n
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t{\n\t\t\t"number": 1,\n\t\t\t"good": "good"\n\t\t}\n\t],\n\n\t"rows": 1\n}\n
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t{\n\t\t\t"number": 2,\n\t\t\t"good": "good"\n\t\t}\n\t],\n\n\t"rows": 1\n}\n
+formatRowNoNewline
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t{\n\t\t\t"number": 0,\n\t\t\t"good": "good"\n\t\t}\n\t],\n\n\t"rows": 1\n}
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t{\n\t\t\t"number": 1,\n\t\t\t"good": "good"\n\t\t}\n\t],\n\n\t"rows": 1\n}
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t{\n\t\t\t"number": 2,\n\t\t\t"good": "good"\n\t\t}\n\t],\n\n\t"rows": 1\n}
+JSONCompact
+formatRow
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t[0, "good"]\n\t],\n\n\t"rows": 1\n}\n
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t[1, "good"]\n\t],\n\n\t"rows": 1\n}\n
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t[2, "good"]\n\t],\n\n\t"rows": 1\n}\n
+formatRowNoNewline
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t[0, "good"]\n\t],\n\n\t"rows": 1\n}
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t[1, "good"]\n\t],\n\n\t"rows": 1\n}
+{\n\t"meta":\n\t[\n\t\t{\n\t\t\t"name": "number",\n\t\t\t"type": "UInt64"\n\t\t},\n\t\t{\n\t\t\t"name": "good",\n\t\t\t"type": "String"\n\t\t}\n\t],\n\n\t"data":\n\t[\n\t\t[2, "good"]\n\t],\n\n\t"rows": 1\n}
+Values
+formatRow
+(0,\'good\')
+(1,\'good\')
+(2,\'good\')
+formatRowNoNewline
+(0,\'good\')
+(1,\'good\')
+(2,\'good\')

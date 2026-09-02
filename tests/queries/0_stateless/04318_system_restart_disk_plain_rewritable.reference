@@ -1,0 +1,4 @@
+before restart:
+0
+after restart:
+1

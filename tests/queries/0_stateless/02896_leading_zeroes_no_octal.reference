@@ -1,0 +1,154 @@
+Leading zeroes into Int64 (1XXX without input_format_values_interpret_expressions and 1XXXX with)
+1	1000	0	0	0	Single zero
+1	1001	00	0	0	Double zero
+1	1002	000000000000000	0	0	Mutliple redundant zeroes
+1	1003	01	1	1	Octal like, interpret as decimal
+1	1004	08	8	8	Octal like, interpret as decimal
+1	1005	0100	100	100	Octal like, interpret as decimal
+1	1006	0000000000100	100	100	Octal like, interpret as decimal, multiple leading zeroes
+1	1010	-0	0	0	Single zero negative
+1	1011	-00	0	0	Double zero negative
+1	1012	-000000000000000	0	0	Mutliple redundant zeroes negative
+1	1013	-01	-1	-1	Octal like, interpret as decimal negative
+1	1014	-08	-8	-8	Octal like, interpret as decimal negative
+1	1015	-0100	-100	-100	Octal like, interpret as decimal negative
+1	1016	-0000000000100	-100	-100	Octal like, interpret as decimal, multiple leading zeroes negative
+1	1020	+0	0	0	Single zero positive
+1	1021	+00	0	0	Double zero negpositiveative
+1	1022	+000000000000000	0	0	Mutliple redundant zeroes positive
+1	1023	+01	1	1	Octal like, interpret as decimal positive
+1	1024	+08	8	8	Octal like, interpret as decimal positive
+1	1025	+0100	100	100	Octal like, interpret as decimal positive
+1	1026	+0000000000100	100	100	Octal like, interpret as decimal, multiple leading zeroes positive
+1	1030	0000.008	0	0	Floating point should work...
+1	1031	-0000.008	0	0	Floating point should work...
+1	1032	+0000.008	0	0	Floating point should work...
+1	1033	0000.008e3	8	8	Floating point should work...
+1	1034	-0000.008e3	-8	-8	Floating point should work...
+1	1035	+0000.008e3	8	8	Floating point should work...
+1	1036	08000.008e-3	8	8	Floating point should work...
+1	1037	-08000.008e-3	-8	-8	Floating point should work...
+1	1038	+08000.008e-3	8	8	Floating point should work...
+1	1060	0x0abcd	43981	43981	Hex should be parsed
+1	1061	-0x0abcd	-43981	-43981	Hex should be parsed
+1	1062	+0x0abcd	43981	43981	Hex should be parsed
+1	1063	0x0abcdP1	87962	87962	Hex should be parsed
+1	1064	0x0abcdP+1	87962	87962	Hex should be parsed
+1	1065	0x0abcdP-1	21990	21990	Hex should be parsed
+1	1066	0x0abcdP01	87962	87962	Hex should be parsed
+1	1067	0x0abcdP+01	87962	87962	Hex should be parsed
+1	1068	0x0abcdP-01	21990	21990	Hex should be parsed
+1	11000	0	0	0	Single zero
+1	11001	00	0	0	Double zero
+1	11002	000000000000000	0	0	Mutliple redundant zeroes
+1	11003	01	1	1	Octal like, interpret as decimal
+1	11004	08	8	8	Octal like, interpret as decimal
+1	11005	0100	100	100	Octal like, interpret as decimal
+1	11006	0000000000100	100	100	Octal like, interpret as decimal, multiple leading zeroes
+1	11010	-0	0	0	Single zero negative
+1	11011	-00	0	0	Double zero negative
+1	11012	-000000000000000	0	0	Mutliple redundant zeroes negative
+1	11013	-01	-1	-1	Octal like, interpret as decimal negative
+1	11014	-08	-8	-8	Octal like, interpret as decimal negative
+1	11015	-0100	-100	-100	Octal like, interpret as decimal negative
+1	11016	-0000000000100	-100	-100	Octal like, interpret as decimal, multiple leading zeroes negative
+1	11020	+0	0	0	Single zero positive
+1	11021	+00	0	0	Double zero negpositiveative
+1	11022	+000000000000000	0	0	Mutliple redundant zeroes positive
+1	11023	+01	1	1	Octal like, interpret as decimal positive
+1	11024	+08	8	8	Octal like, interpret as decimal positive
+1	11025	+0100	100	100	Octal like, interpret as decimal positive
+1	11026	+0000000000100	100	100	Octal like, interpret as decimal, multiple leading zeroes positive
+1	11030	0000.008	0	0	Floating point should work...
+1	11031	-0000.008	0	0	Floating point should work...
+1	11032	+0000.008	0	0	Floating point should work...
+1	11033	0000.008e3	8	8	Floating point should work...
+1	11034	-0000.008e3	-8	-8	Floating point should work...
+1	11035	+0000.008e3	8	8	Floating point should work...
+1	11036	08000.008e-3	8	8	Floating point should work...
+1	11037	-08000.008e-3	-8	-8	Floating point should work...
+1	11038	+08000.008e-3	8	8	Floating point should work...
+1	11050	0b10000	16	16	Binary should be parsed
+1	11051	-0b10000	-16	-16	Binary should be parsed
+1	11052	+0b10000	16	16	Binary should be parsed
+1	11060	0x0abcd	43981	43981	Hex should be parsed
+1	11061	-0x0abcd	-43981	-43981	Hex should be parsed
+1	11062	+0x0abcd	43981	43981	Hex should be parsed
+1	11063	0x0abcdP1	87962	87962	Hex should be parsed
+1	11064	0x0abcdP+1	87962	87962	Hex should be parsed
+1	11065	0x0abcdP-1	21990	21990	Hex should be parsed
+1	11066	0x0abcdP01	87962	87962	Hex should be parsed
+1	11067	0x0abcdP+01	87962	87962	Hex should be parsed
+1	11068	0x0abcdP-01	21990	21990	Hex should be parsed
+Leading zeroes into Float64 (2XXX without input_format_values_interpret_expressions and 2XXXX with)
+1	2000	0	0	0	Single zero
+1	2001	00	0	0	Double zero
+1	2002	000000000000000	0	0	Mutliple redundant zeroes
+1	2003	01	1	1	Octal like, interpret as decimal
+1	2004	08	8	8	Octal like, interpret as decimal
+1	2005	0100	100	100	Octal like, interpret as decimal
+1	2006	0000000000100	100	100	Octal like, interpret as decimal, multiple leading zeroes
+1	2013	-01	-1	-1	Octal like, interpret as decimal negative
+1	2014	-08	-8	-8	Octal like, interpret as decimal negative
+1	2015	-0100	-100	-100	Octal like, interpret as decimal negative
+1	2016	-0000000000100	-100	-100	Octal like, interpret as decimal, multiple leading zeroes negative
+1	2020	+0	0	0	Single zero positive
+1	2021	+00	0	0	Double zero negpositiveative
+1	2022	+000000000000000	0	0	Mutliple redundant zeroes positive
+1	2023	+01	1	1	Octal like, interpret as decimal positive
+1	2024	+08	8	8	Octal like, interpret as decimal positive
+1	2025	+0100	100	100	Octal like, interpret as decimal positive
+1	2026	+0000000000100	100	100	Octal like, interpret as decimal, multiple leading zeroes positive
+1	2030	0000.008	0.008	0.008	Floating point should work...
+1	2031	-0000.008	-0.008	-0.008	Floating point should work...
+1	2032	+0000.008	0.008	0.008	Floating point should work...
+1	2033	0000.008e3	8	8	Floating point should work...
+1	2034	-0000.008e3	-8	-8	Floating point should work...
+1	2035	+0000.008e3	8	8	Floating point should work...
+1	2036	08.5e-3	0.0085	0.0085	Floating point should work...
+1	2037	-08.5e-3	-0.0085	-0.0085	Floating point should work...
+1	2038	+08.5e-3	0.0085	0.0085	Floating point should work...
+1	2063	0x0abcdP1	87962	87962	Hex should be parsed
+1	2064	0x0abcdP+1	87962	87962	Hex should be parsed
+1	2065	0x0abcdP-1	21990.5	21990.5	Hex should be parsed
+1	2066	0x0abcdP01	87962	87962	Hex should be parsed
+1	2067	0x0abcdP+01	87962	87962	Hex should be parsed
+1	2068	0x0abcdP-01	21990.5	21990.5	Hex should be parsed
+1	2069	0x01P-01	0.5	0.5	Hex should be parsed
+1	12000	0	0	0	Single zero
+1	12001	00	0	0	Double zero
+1	12002	000000000000000	0	0	Mutliple redundant zeroes
+1	12003	01	1	1	Octal like, interpret as decimal
+1	12004	08	8	8	Octal like, interpret as decimal
+1	12005	0100	100	100	Octal like, interpret as decimal
+1	12006	0000000000100	100	100	Octal like, interpret as decimal, multiple leading zeroes
+1	12013	-01	-1	-1	Octal like, interpret as decimal negative
+1	12014	-08	-8	-8	Octal like, interpret as decimal negative
+1	12015	-0100	-100	-100	Octal like, interpret as decimal negative
+1	12016	-0000000000100	-100	-100	Octal like, interpret as decimal, multiple leading zeroes negative
+1	12020	+0	0	0	Single zero positive
+1	12021	+00	0	0	Double zero negpositiveative
+1	12022	+000000000000000	0	0	Mutliple redundant zeroes positive
+1	12023	+01	1	1	Octal like, interpret as decimal positive
+1	12024	+08	8	8	Octal like, interpret as decimal positive
+1	12025	+0100	100	100	Octal like, interpret as decimal positive
+1	12026	+0000000000100	100	100	Octal like, interpret as decimal, multiple leading zeroes positive
+1	12030	0000.008	0.008	0.008	Floating point should work...
+1	12031	-0000.008	-0.008	-0.008	Floating point should work...
+1	12032	+0000.008	0.008	0.008	Floating point should work...
+1	12033	0000.008e3	8	8	Floating point should work...
+1	12034	-0000.008e3	-8	-8	Floating point should work...
+1	12035	+0000.008e3	8	8	Floating point should work...
+1	12036	08.5e-3	0.0085	0.0085	Floating point should work...
+1	12037	-08.5e-3	-0.0085	-0.0085	Floating point should work...
+1	12038	+08.5e-3	0.0085	0.0085	Floating point should work...
+1	12050	0b10000	16	16	Binary should be parsed
+1	12051	-0b10000	-16	-16	Binary should be parsed
+1	12052	+0b10000	16	16	Binary should be parsed
+1	12063	0x0abcdP1	87962	87962	Hex should be parsed
+1	12064	0x0abcdP+1	87962	87962	Hex should be parsed
+1	12065	0x0abcdP-1	21990.5	21990.5	Hex should be parsed
+1	12066	0x0abcdP01	87962	87962	Hex should be parsed
+1	12067	0x0abcdP+01	87962	87962	Hex should be parsed
+1	12068	0x0abcdP-01	21990.5	21990.5	Hex should be parsed
+1	12069	0x01P-01	0.5	0.5	Hex should be parsed

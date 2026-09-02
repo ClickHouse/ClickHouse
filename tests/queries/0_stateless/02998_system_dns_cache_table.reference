@@ -1,0 +1,2 @@
+hostname	ip_address	ip_family	cached_at
+String	String	Enum8(\'IPv4\' = 0, \'IPv6\' = 1, \'UNIX_LOCAL\' = 2)	DateTime

@@ -1,0 +1,65 @@
+#!/usr/bin/expect -f
+
+# This is a test for system.warnings. Testing in interactive mode is necessary,
+# as we want to see certain warnings from client
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+set Debug_type 0
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+# Check debug type
+send -- "SELECT lower(value) FROM system.build_options WHERE name='BUILD_TYPE'\r"
+expect {
+    "debug"  {
+        set Debug_type 1
+        expect ":) "
+    }
+    "relwithdebinfo"
+}
+
+send -- "q\r"
+expect eof
+
+if {$Debug_type > 0} {
+    spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --history_file=$history_file"
+    expect "Warnings:"
+    expect " * Server was built in debug mode. It will work slowly."
+    expect ":) "
+
+    # Check debug message in system.warnings
+    send -- "SELECT message FROM system.warnings WHERE message = 'Server was built in debug mode.' || ' It will work slowly.'\r"
+    expect "Server was built in debug mode. It will work slowly."
+    expect ":) "
+
+    send -- "q\r"
+    expect eof
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --max_memory_usage_for_all_queries=123 --history_file=$history_file"
+expect "Warnings:"
+expect " * Obsolete setting"
+expect ":) "
+send -- "q\r"
+expect eof

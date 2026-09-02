@@ -1,0 +1,35 @@
+<clickhouse>
+    <zookeeper>
+        <!--<zookeeper_load_balancing> random / in_order / nearest_hostname / first_or_random / round_robin </zookeeper_load_balancing>-->
+        <zookeeper_load_balancing>random</zookeeper_load_balancing>
+
+        <prefer_local_availability_zone>1</prefer_local_availability_zone>
+
+        <fallback_session_lifetime>
+            <min>0</min>
+            <max>1</max>
+        </fallback_session_lifetime>
+
+        <node index="1">
+            <host>zoo1</host>
+            <port>2181</port>
+            <availability_zone>az1</availability_zone>
+        </node>
+        <node index="2">
+            <host>zoo2</host>
+            <port>2181</port>
+            <availability_zone>az2</availability_zone>
+        </node>
+        <node index="3">
+            <host>zoo3</host>
+            <port>2181</port>
+            <availability_zone>az3</availability_zone>
+        </node>
+        <session_timeout_ms>3000</session_timeout_ms>
+    </zookeeper>
+
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone>az2</availability_zone>
+    </placement>
+</clickhouse>

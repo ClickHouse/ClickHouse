@@ -1,0 +1,11 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <function_sleep_max_microseconds_per_block>0</function_sleep_max_microseconds_per_block>
+        </default>
+    </profiles>
+    <users>
+        <default>
+        </default>
+    </users>
+</clickhouse>

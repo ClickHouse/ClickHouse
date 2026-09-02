@@ -1,0 +1,4 @@
+=== ataptive granularity: table one -; table two + ===
+=== ataptive granularity: table one -; table two - ===
+=== ataptive granularity: table one +; table two + ===
+=== ataptive granularity: table one +; table two - ===

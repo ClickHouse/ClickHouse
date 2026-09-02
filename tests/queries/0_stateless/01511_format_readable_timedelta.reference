@@ -1,0 +1,30 @@
+1	5 seconds
+60	5 minutes and 30 seconds
+3600	5 hours and 30 minutes
+86400	5 days and 12 hours
+2592000	5 months, 12 days and 12 hours
+31536000	5 years, 5 months and 30 days
+minutes	1	5 seconds
+minutes	60	5 minutes and 30 seconds
+minutes	3600	330 minutes
+minutes	86400	7920 minutes
+minutes	2592000	237600 minutes
+minutes	31536000	2890800 minutes
+hours	1	5 seconds
+hours	60	5 minutes and 30 seconds
+hours	3600	5 hours and 30 minutes
+hours	86400	132 hours
+hours	2592000	3960 hours
+hours	31536000	48180 hours
+days	1	5 seconds
+days	60	5 minutes and 30 seconds
+days	3600	5 hours and 30 minutes
+days	86400	5 days and 12 hours
+days	2592000	165 days
+days	31536000	2007 days and 12 hours
+months	1	5 seconds
+months	60	5 minutes and 30 seconds
+months	3600	5 hours and 30 minutes
+months	86400	5 days and 12 hours
+months	2592000	5 months, 12 days and 12 hours
+months	31536000	65 months and 25 days

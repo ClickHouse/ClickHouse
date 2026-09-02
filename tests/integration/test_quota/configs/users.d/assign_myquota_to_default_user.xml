@@ -1,0 +1,7 @@
+<clickhouse>
+    <users>
+        <default>
+            <quota>myQuota</quota>
+        </default>
+    </users>
+</clickhouse>

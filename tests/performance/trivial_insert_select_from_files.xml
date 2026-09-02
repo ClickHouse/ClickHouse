@@ -1,0 +1,29 @@
+<test>
+
+<substitutions>
+    <substitution>
+        <name>format</name>
+        <values>
+            <value>TabSeparated</value>
+            <value>TabSeparatedWithNames</value>
+            <value>TabSeparatedWithNamesAndTypes</value>
+            <value>CSV</value>
+            <value>CSVWithNames</value>
+            <value>JSONEachRow</value>
+            <value>JSONCompactEachRow</value>
+            <value>JSONCompactEachRowWithNamesAndTypes</value>
+            <value>TSKV</value>
+        </values>
+    </substitution>
+</substitutions>
+    
+<create_query>CREATE TABLE IF NOT EXISTS table_src_{format} ENGINE = File({format}) AS test.hits</create_query>
+<create_query>CREATE TABLE IF NOT EXISTS table_dst_{format} AS test.hits</create_query>
+<fill_query>INSERT INTO table_src_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
+
+<query>INSERT INTO table_dst_{format} SELECT * FROM table_src_{format}</query>
+
+<drop_query>DROP TABLE IF EXISTS table_src_{format}</drop_query>
+<drop_query>DROP TABLE IF EXISTS table_dst_{format}</drop_query>
+
+</test>

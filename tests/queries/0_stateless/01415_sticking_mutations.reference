@@ -1,0 +1,14 @@
+1
+CREATE TABLE default.sticking_mutations\n(\n    `date` Date,\n    `key` UInt64,\n    `value1` UInt64,\n    `value2` UInt8\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+1
+CREATE TABLE default.sticking_mutations\n(\n    `date` Date,\n    `key` UInt64,\n    `value1` UInt64,\n    `value2` UInt8\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+1
+CREATE TABLE default.sticking_mutations\n(\n    `date` Date,\n    `key` UInt64,\n    `value1` String,\n    `value2` UInt8\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+1
+CREATE TABLE default.sticking_mutations\n(\n    `date` Date,\n    `key` UInt64,\n    `value1` String,\n    `value2` UInt8\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+1
+CREATE TABLE default.sticking_mutations\n(\n    `date` Date,\n    `key` UInt64,\n    `value2` UInt8\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+1
+CREATE TABLE default.sticking_mutations\n(\n    `date` Date,\n    `key` UInt64,\n    `renamed_value1` String,\n    `value2` UInt8\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+1
+CREATE TABLE default.sticking_mutations\n(\n    `date` Date,\n    `key` UInt64,\n    `value1` UInt64,\n    `value2` UInt8\n)\nENGINE = MergeTree\nORDER BY key\nTTL date + toIntervalDay(1)\nSETTINGS index_granularity = 8192

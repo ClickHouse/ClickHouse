@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+message Envelope {
+  message StrPerson {
+    message MeasureUnits
+    {
+      repeated string unit = 1;
+      repeated string coef = 2;
+    };
+    message NestinessA
+    {
+      message SubBC {
+        string d = 1;
+        repeated string e = 2;
+      };
+      SubBC b_c = 1;
+    };
+    string uuid = 1;
+    string name = 2;
+    string surname = 3;
+    string gender = 4;
+    string birthDate = 5;
+    string phoneNumber = 7;
+    string isOnline = 8;
+    string visitTime = 9;
+    string age = 10;
+    string zodiacSign = 11;
+    repeated string songs = 12;
+    repeated string color = 13;
+    string hometown = 14;
+    repeated string location = 15;
+    string pi = 16;
+    string lotteryWin = 17;
+    string someRatio = 18;
+    string temperature = 19;
+    string randomBigNumber = 20;
+    MeasureUnits measureUnits = 21;
+    NestinessA nestiness_a = 22;
+  };
+};
+
+// same as wrapped in Envelope, used for verification
+message StrPerson {
+  message MeasureUnits
+  {
+    repeated string unit = 1;
+    repeated string coef = 2;
+  };
+  message NestinessA
+  {
+    message SubBC {
+      string d = 1;
+      repeated string e = 2;
+    };
+    SubBC b_c = 1;
+  };
+  string uuid = 1;
+  string name = 2;
+  string surname = 3;
+  string gender = 4;
+  string birthDate = 5;
+  string phoneNumber = 7;
+  string isOnline = 8;
+  string visitTime = 9;
+  string age = 10;
+  string zodiacSign = 11;
+  repeated string songs = 12;
+  repeated string color = 13;
+  string hometown = 14;
+  repeated string location = 15;
+  string pi = 16;
+  string lotteryWin = 17;
+  string someRatio = 18;
+  string temperature = 19;
+  string randomBigNumber = 20;
+  MeasureUnits measureUnits = 21;
+  NestinessA nestiness_a = 22;
+};

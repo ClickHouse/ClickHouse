@@ -1,0 +1,120 @@
+#include <iostream>
+#include <iomanip>
+#include <vector>
+#include <pcg_random.hpp>
+
+#include <base/types.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteIntText.h>
+#include <IO/WriteBufferFromVector.h>
+
+#include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+
+static UInt64 rdtsc()
+{
+#if defined(__x86_64__)
+    UInt64 val;
+    __asm__ __volatile__("rdtsc" : "=A" (val) :);
+    return val;
+#else
+    // TODO: make for arm
+    return 0;
+#endif
+}
+
+
+int mainEntryExampleParseIntPerf(int argc, char ** argv)
+{
+    pcg64 rng;
+
+    try
+    {
+        if (argc < 2)
+        {
+            std::cerr << "Usage: program n\n";
+            return 1;
+        }
+
+        using T = UInt8;
+
+        size_t n = std::stol(argv[1]);
+        chassert(n > 0);
+
+        DB::VectorWithMemoryTracking<T> data(n);
+        DB::VectorWithMemoryTracking<T> data2(n);
+
+        {
+            Stopwatch watch;
+
+            for (size_t i = 0; i < n; ++i)
+                data[i] = static_cast<T>(rng());
+
+            watch.stop();
+            std::cerr << std::fixed << std::setprecision(2) << "Generated " << n << " numbers ("
+                      << static_cast<double>(data.size()) * sizeof(data[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                      << static_cast<double>(data.size()) * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s." << std::endl;
+        }
+
+        DB::VectorWithMemoryTracking<char> formatted;
+        formatted.reserve(n * 21);
+
+        {
+            auto wb = DB::WriteBufferFromVector<DB::VectorWithMemoryTracking<char>>(formatted);
+            Stopwatch watch;
+
+            UInt64 tsc = rdtsc();
+
+            for (size_t i = 0; i < n; ++i)
+            {
+                //writeIntTextTable(data[i], wb);
+                DB::writeIntText(data[i], wb);
+                //DB::writeIntText(data[i], wb);
+                DB::writeChar('\t', wb);
+            }
+
+            tsc = rdtsc() - tsc;
+
+            watch.stop();
+            std::cerr << std::fixed << std::setprecision(2)
+                << "Written " << n << " numbers (" << static_cast<double>(wb.count()) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << static_cast<double>(n) / watch.elapsedSeconds() << " num/s., "
+                << static_cast<double>(wb.count()) / watch.elapsedSeconds() / 1000000 << " MB/s., "
+                << watch.elapsed() / n << " ns/num., "  // NOLINT
+                << tsc / n << " ticks/num., "  // NOLINT
+                << watch.elapsed() / wb.count() << " ns/byte., "
+                << tsc / wb.count() << " ticks/byte."
+                << std::endl;
+        }
+
+        {
+            DB::ReadBuffer rb(formatted.data(), formatted.size(), 0);
+            Stopwatch watch;
+
+            for (size_t i = 0; i < n; ++i)
+            {
+                DB::readIntText(data2[i], rb);
+                DB::assertChar('\t', rb);
+            }
+
+            watch.stop();
+            std::cerr << std::fixed << std::setprecision(2)
+                << "Read " << n << " numbers (" << static_cast<double>(rb.count()) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << static_cast<double>(rb.count()) / watch.elapsedSeconds() / 1000000 << " MB/s."
+                << std::endl;
+        }
+
+        std::cerr << (0 == memcmp(data.data(), data2.data(), data.size()) ? "Ok." : "Fail.") << std::endl;
+    }
+    catch (const DB::Exception & e)
+    {
+        std::cerr << e.what() << ", " << e.displayText() << std::endl;
+        return 1;
+    }
+
+    return 0;
+}

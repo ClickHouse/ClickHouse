@@ -1,0 +1,24 @@
+{
+	"meta":
+	[
+		{
+			"name": "s1",
+			"type": "String"
+		},
+		{
+			"name": "s2",
+			"type": "String"
+		},
+		{
+			"name": "s3",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		["Hello, � World", "Hello, �", "� World"]
+	],
+
+	"rows": 1
+}

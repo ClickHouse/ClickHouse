@@ -1,0 +1,1 @@
+CREATE TABLE default.t\n(\n    `c0` DateTime,\n    `c1` DateTime,\n    `a` DateTime ALIAS c1\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192

@@ -1,0 +1,6 @@
+<test>
+    <query>SELECT normalizeUTF8NFC(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT normalizeUTF8NFD(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT normalizeUTF8NFKC(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT normalizeUTF8NFKD(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+</test>

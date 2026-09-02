@@ -1,0 +1,13 @@
+async_socket=0 async_sending=0 query_succeeded
+async_socket=0 async_sending=0 reads_after_cancel 200000	19999900000
+async_socket=0 async_sending=1 query_succeeded
+async_socket=0 async_sending=1 reads_after_cancel 200000	19999900000
+async_socket=1 async_sending=0 query_succeeded
+async_socket=1 async_sending=0 did_not_wait 	1
+async_socket=1 async_sending=0 reads_after_cancel 200000	19999900000
+async_socket=1 async_sending=1 query_succeeded
+async_socket=1 async_sending=1 did_not_wait 	1
+async_socket=1 async_sending=1 reads_after_cancel 200000	19999900000
+partial_result_on_first_cancel query_succeeded
+partial_result_on_first_cancel did_not_wait 	1
+no_follower_announced 	1	no_broken_pipe 	1

@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <cast_keep_nullable>1</cast_keep_nullable>
+        </default>
+    </profiles>
+</clickhouse>

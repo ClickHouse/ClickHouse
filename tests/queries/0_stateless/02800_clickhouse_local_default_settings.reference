@@ -1,0 +1,4 @@
+allow_introspection_functions	1
+serialize_query_plan	0
+storage_file_read_method	mmap
+implicit_select	1

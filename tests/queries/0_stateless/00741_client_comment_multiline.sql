@@ -1,0 +1,4 @@
+-- Tags: no-fasttest
+
+CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier}; -- foo
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

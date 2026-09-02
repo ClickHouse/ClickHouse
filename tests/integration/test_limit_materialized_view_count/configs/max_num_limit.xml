@@ -1,0 +1,3 @@
+<clickhouse>
+    <max_materialized_views_count_for_table>1</max_materialized_views_count_for_table>
+</clickhouse>

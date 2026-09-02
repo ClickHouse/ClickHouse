@@ -1,0 +1,21 @@
+<clickhouse>
+    <profiles>
+        <!-- Profile that allows only read queries. -->
+        <readonly>
+            <readonly>1</readonly>
+        </readonly>
+    </profiles>
+
+    <users>
+        <readonly>
+            <password></password>
+
+            <networks>
+                <ip>::1</ip>
+                <ip>127.0.0.1</ip>
+            </networks>
+            <profile>readonly</profile>
+            <quota>default</quota>
+        </readonly>
+    </users>
+</clickhouse>

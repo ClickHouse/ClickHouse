@@ -1,0 +1,13 @@
+t1	TableProxy
+v1	View
+1	hello
+2	world
+t1	MergeTree
+v1	View
+t2	TableProxy
+0
+mv	MaterializedView
+src	TableProxy
+dict
+t3_renamed	MergeTree
+value	String

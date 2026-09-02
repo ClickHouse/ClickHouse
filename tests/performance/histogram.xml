@@ -1,0 +1,24 @@
+<test>
+  <substitutions>
+    <substitution>
+      <name>N</name>
+      <values>
+        <value>3000000</value>
+      </values>
+    </substitution>
+    <substitution>
+      <name>bins</name>
+      <values>
+        <value>32</value>
+        <value>64</value>
+        <value>128</value>
+        <value>250</value>
+      </values>
+    </substitution>
+  </substitutions>
+
+  <!-- Monotonic increasing inputs (exercise sorted_prefix fast path) -->
+  <query>SELECT histogram({bins})(randCanonical()) FROM numbers({N}) FORMAT Null</query>
+</test>
+
+

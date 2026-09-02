@@ -1,0 +1,53 @@
+{% for join_type in ['hash', 'full_sorting_merge', 'partial_merge'] -%}
+=== {{ join_type }} ===
+= full using =
+1	1
+2	2
+-1	1
+1	\N
+1	257
+1	-1
+= left using =
+1	1
+2	2
+= right using =
+1	1
+-1	1
+1	\N
+1	257
+1	-1
+= inner using =
+1	1
+= full on =
+1	1	1	1
+2	2	0	\N
+0	0	-1	1
+0	0	1	\N
+0	0	1	257
+0	0	1	-1
+= left on =
+1	1	1	1
+2	2	0	\N
+= right on =
+1	1	1	1
+0	0	-1	1
+0	0	1	\N
+0	0	1	257
+0	0	1	-1
+= inner on =
+1	1	1	1
+= agg =
+5	260
+3	3
+3	258
+1	1
+5	260
+3	3
+3	258
+1	1
+= types =
+1
+1
+1
+1
+{% endfor -%}

@@ -1,0 +1,12 @@
+ <clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+
+     <users>
+         <postgresql>
+             <password>123</password>
+         </postgresql>
+     </users>
+ </clickhouse>

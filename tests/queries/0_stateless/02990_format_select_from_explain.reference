@@ -1,0 +1,9 @@
+SELECT explain
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN AST', '', (
+        SELECT *
+        FROM system.numbers
+    ))
+)

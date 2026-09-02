@@ -1,0 +1,3 @@
+{"a": 1, "b": {"b1_str": "b1_str", "b2_null_str": null, "b3_null_str_double": {"string": "b3_str"}, "b4_null_sub1": null}}
+{"a": 1, "b": {"b1_str": "b1_str", "b2_null_str": {"string": "b2_str"}, "b3_null_str_double": null, "b4_null_sub1": {"sub1": {"b1_str": "level2_b1_str", "b2_null_str": {"string": "level2_b2_str"}, "b3_null_str_double": null, "b4_null_sub1": null}}}}
+{"a": 1, "b": {"b1_str": "b1_str", "b2_null_str": {"string": "b2_str"}, "b3_null_str_double": {"double": 3.1}, "b4_null_sub1": null}}

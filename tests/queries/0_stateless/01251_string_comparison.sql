@@ -1,0 +1,1 @@
+SELECT isConstant('a' = 'b');

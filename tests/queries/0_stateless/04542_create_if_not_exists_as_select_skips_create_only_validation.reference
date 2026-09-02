@@ -1,0 +1,6 @@
+if_not_exists_noop
+1	1	42
+has_default_in_definition	0
+without_if_not_exists
+cyclic_create_still_rejected
+no_orphan	0

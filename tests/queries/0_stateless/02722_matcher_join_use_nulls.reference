@@ -1,0 +1,430 @@
+-- { echoOn }
+
+SELECT '============ LEFT JOIN ============' FORMAT Null;
+SELECT a, toTypeName(a)
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+1	Int32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+1	Int32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+1	\N	Int32	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+1	Int32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+\N	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM t1
+    LEFT JOIN t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+\N	\N	Nullable(UInt32)	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+1	Int64
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+1	Int64
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+1	Int64
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+\N	Nullable(Int64)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM t1
+    LEFT JOIN t2
+    USING (a)
+) ORDER BY 1;
+1	\N	Int64	Nullable(UInt32)
+SELECT a, toTypeName(a)
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+1	Int32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+1	Int32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+1	\N	Int32	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+1	Int32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    LEFT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+\N	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM t1
+    LEFT JOIN t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+\N	\N	Nullable(UInt32)	Nullable(UInt32)
+SELECT '============ RIGHT JOIN ============' FORMAT Null;
+SELECT a, toTypeName(a)
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+\N	2	Nullable(Int32)	UInt32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+2	UInt32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM t1
+    RIGHT JOIN t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+2	2	UInt32	UInt32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+2	Int64
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+2	Int64
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+\N	Nullable(Int64)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+2	Int64
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM t1
+    RIGHT JOIN t2
+    USING (a)
+) ORDER BY 1;
+2	2	Int64	UInt32
+SELECT a, toTypeName(a)
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+\N	2	Nullable(Int32)	UInt32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    RIGHT JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+2	UInt32
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM t1
+    RIGHT JOIN t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+2	2	UInt32	UInt32
+SELECT '============ FULL JOIN ============' FORMAT Null;
+SELECT a, toTypeName(a)
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+1	Nullable(Int32)
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+1	Nullable(Int32)
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+1	\N	Nullable(Int32)	Nullable(UInt32)
+\N	2	Nullable(Int32)	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+1	Nullable(Int32)
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+2	Nullable(UInt32)
+\N	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM t1
+    FULL JOIN t2
+    ON t1.a = t2.a
+) ORDER BY 1;
+2	2	Nullable(UInt32)	Nullable(UInt32)
+\N	\N	Nullable(UInt32)	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+1	Nullable(Int64)
+2	Nullable(Int64)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+1	Nullable(Int64)
+2	Nullable(Int64)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+1	Nullable(Int64)
+\N	Nullable(Int64)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as a) t2
+    USING (a)
+) ORDER BY 1;
+2	Nullable(Int64)
+\N	Nullable(Int64)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM t1
+    FULL JOIN t2
+    USING (a)
+) ORDER BY 1;
+1	\N	Nullable(Int64)	Nullable(UInt32)
+2	2	Nullable(Int64)	Nullable(UInt32)
+SELECT a, toTypeName(a)
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+1	Nullable(Int32)
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT a
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+1	Nullable(Int32)
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT *
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+1	\N	Nullable(Int32)	Nullable(UInt32)
+\N	2	Nullable(Int32)	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t1.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+1	Nullable(Int32)
+\N	Nullable(Int32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM (SELECT 1 :: Int32 as a) t1
+    FULL JOIN (SELECT 2 :: UInt32 as key) t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+2	Nullable(UInt32)
+\N	Nullable(UInt32)
+SELECT *, * APPLY toTypeName
+FROM (
+    SELECT t2.*
+    FROM t1
+    FULL JOIN t2
+    ON t1.a = t2.key
+) ORDER BY 1;
+2	2	Nullable(UInt32)	Nullable(UInt32)
+\N	\N	Nullable(UInt32)	Nullable(UInt32)

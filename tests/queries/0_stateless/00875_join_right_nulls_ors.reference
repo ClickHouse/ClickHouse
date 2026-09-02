@@ -1,0 +1,27 @@
+on with or
+n rj n	1	1
+n rj n	id	id
+n rj n	\N	\N
+n a rj n	1	1
+n a rj n	id	id
+n a rj n	\N	\N
+n fj n	1	1
+n fj n	id	id
+n fj n	\N	\N
+n fj n	\N	\N
+t rj n	1	1
+t rj n	id	id
+t rj n	\N	\N
+t fj n	1	1
+t fj n	id	id
+t fj n	\N	\N
+n rj t	1	1
+n rj t	id	id
+n a rj t	1	1
+n a rj t	id	id
+n fj t	1	1
+n fj t	id	id
+n fj t	\N	\N
+n fj t	1	1
+n fj t	id	id
+n fj t	\N	\N

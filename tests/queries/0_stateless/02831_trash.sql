@@ -1,0 +1,2 @@
+SELECT CRC32IEEE(sipHash128());
+SELECT CRC32(murmurHash3_128());
