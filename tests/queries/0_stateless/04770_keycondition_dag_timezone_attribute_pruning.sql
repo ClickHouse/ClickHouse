@@ -181,7 +181,7 @@ SELECT 'control_nullable_element_carries_key_timezone', count() FROM (SELECT ts 
 SELECT 'control_nullable_transform_null_in_off', count() FROM (SELECT ts FROM k_nullable WHERE ts IN (SELECT CAST(toDateTime(1675195200) AS Nullable(DateTime)))) SETTINGS transform_null_in = 0;
 SET transform_null_in = 0;
 
--- Carriers 23-28: the wrapper sits on the KEY COLUMN alone. Every row above pairs a wrapped key with an
+-- Carriers 15-20: the wrapper sits on the KEY COLUMN alone. Every row above pairs a wrapped key with an
 -- equally wrapped element, so the two types are `equals` and the timezone is adopted. A bare comparison
 -- constant never carries the wrapper, so the pair is unequal, and the constant reached the transform in
 -- its own timezone. `toYYYYMM` above is monotonic and takes a different path, which casts the constant to
@@ -232,7 +232,7 @@ SELECT 'control_nullable_key_pruning_used',
        countIf(explain LIKE '%Granules:%') > 0 AND countIf(explain LIKE '%Granules: 16/16%') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_nul_prune WHERE ts = toDateTime(1675195200 + 5 * 3600));
 
--- Carriers 15-22: the same defect at arbitrary wrapper depth. `Array`, `Map`, `Tuple` and
+-- Carriers 21-28: the same defect at arbitrary wrapper depth. `Array`, `Map`, `Tuple` and
 -- `LowCardinality` all delegate `equals` to their children, so a nested timezone is exactly as
 -- invisible as a bare one, while a higher-order function takes its lambda argument type from the
 -- runtime wrapper type. `transform_null_in` is NOT needed here (measured: the rows below read the
@@ -362,11 +362,11 @@ SELECT 'control_array_lowcardinality_in_path', count() FROM (SELECT a FROM k_arr
 SELECT 'control_array_element_carries_key_timezone', count() FROM (SELECT a FROM k_arr WHERE a IN (SELECT [toDateTime(1675195200, 'UTC')]));
 SET allow_suspicious_low_cardinality_types = 0;
 
--- Carriers 23-24: a `DateTime` leaf under a CUSTOM NAME. `SimpleAggregateFunction` is a custom name
+-- Carriers 29-30: a `DateTime` leaf under a CUSTOM NAME. `SimpleAggregateFunction` is a custom name
 -- whose storage type is the argument type verbatim, so the timezone is invisible to `equals` here
 -- too, and the name must NOT stop the relabel: the leaf is still a `DateTime`, and the value map of
 -- a `DateTime` is not what the custom name changes. This is why the leaf test is checked BEFORE the
--- custom-name refusal; the reverse order silently reintroduces the bug for these two rows.
+-- custom-name refusal; the reverse order declines the transform for these two rows and loses pruning.
 CREATE TABLE oracle_saf (ts DateTime('UTC')) ENGINE = Memory;
 INSERT INTO oracle_saf SELECT toDateTime(1675195200, 'UTC');
 CREATE TABLE k_saf (ts SimpleAggregateFunction(max, DateTime('UTC'))) ENGINE = AggregatingMergeTree
@@ -459,8 +459,8 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryF
   AND current_database = currentDatabase() AND log_comment = '04770_pruning_oracle';
 
 -- The same pruning-USE assertion one wrapper down. The block above is a BARE `DateTime` key, so it
--- pins no recursive branch: every wrapper carrier asserts only `count()`, and a declined transform
--- yields a full scan whose `count()` is still right. This row is what distinguishes "the wrapper was
+-- pins no recursive branch: every wrapper carrier asserts only `count`, and a declined transform
+-- yields a full scan whose `count` is still right. This row is what distinguishes "the wrapper was
 -- relabelled" from "the wrapper was declined". Same two load-bearing fixture properties as above: two
 -- parts, and the element inside the `a` range of both, so min-max keeps 2/2 and cannot stand in.
 CREATE TABLE k_hour_arr (a Array(DateTime('UTC'))) ENGINE = MergeTree
