@@ -289,3 +289,10 @@ authentication server.
   `users.xml`/`local_directory` in `user_directories`, a username that also exists locally
   gets materialized here first as a grant-less ephemeral HTTP user on remote nodes, shadowing
   its real, locally defined grants. Configure `<http>` AFTER the local storages to avoid this.
+- The same ordering matters for `CREATE USER`: an access entity is inserted into the first
+  storage that is writable or already holds an entity of that name. If `<http>` is configured
+  BEFORE the local storages and has already materialized `alice`, `CREATE USER alice` fails
+  with `ACCESS_STORAGE_READONLY`, and `CREATE USER alice IN local_directory` fails because a
+  user of that name already exists in the `http` storage. This is the same behavior as for
+  users materialized by an `<ldap>` directory. Configuring `<http>` AFTER the local storages
+  avoids it; a user defined locally afterwards is then found by the local storage first.
