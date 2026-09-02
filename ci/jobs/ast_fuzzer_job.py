@@ -559,6 +559,13 @@ def run_fuzz_job(check_name: str):
         # generate fatal log
         Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
         result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
+
+    # Attach logs whenever the fuzzer did not finish cleanly. A clean finish is
+    # exit code 0; any non-zero exit (real failure, SIGTERM / SIGKILL from the
+    # FUZZ_TIME_LIMIT timeout wrapper) is informative enough that we want the
+    # artifacts uploaded — otherwise timeouts look like silent passes with no
+    # logs to diagnose them from.
+    if is_failed or fuzzer_exit_code != 0:
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
