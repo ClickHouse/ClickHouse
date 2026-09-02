@@ -1,9 +1,13 @@
--- The plan simplicity check for automatic parallel replicas walks the plans that build the `IN` sets
--- as well as the plan itself. Those set source plans are never instrumented for dataflow statistics,
--- so a step there that cannot collect them - `ReadFromSystemNumbers` for a set over `numbers`, a
--- prepared source for a dictionary or a system table - must not disqualify the query. Only a step
--- holding plans of its own may, because a set underneath one of those reaches neither the probe plan
--- nor the accepted one.
+-- The plan simplicity check for automatic parallel replicas looks only at the query's own plan. The
+-- plan that builds an `IN` set is not part of it, so a step in there that cannot collect dataflow
+-- statistics - `ReadFromSystemNumbers` for a set over `numbers`, a prepared source for a dictionary
+-- or a system table - must not disqualify the query. Widening the check to walk set source plans
+-- would do exactly that, which is why it does not.
+--
+-- Such a walk would also find nothing to reject: by the time the check runs, the set no longer holds
+-- its source plan. That was measured across both values of `use_index_for_in_with_subqueries`, with
+-- the `IN` on an indexed and on a plain column, and over a `Merge` table - the source is gone in
+-- every one.
 --
 -- `RuntimeDataflowStatisticsInputBytes` is non-zero only for a query the check let through and the
 -- optimization then instrumented, so it is what says this query is still a candidate.

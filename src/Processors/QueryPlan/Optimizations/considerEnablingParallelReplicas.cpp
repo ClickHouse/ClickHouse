@@ -215,66 +215,6 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
     return nullptr;
 }
 
-/// Collect the steps that keep a plan out of the automatic parallel replicas optimization.
-///
-/// Technically, it isn't required for all steps to support dataflow statistics collection, but only for
-/// those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls in
-/// `considerEnablingParallelReplicas`). However, currently only relatively simple plans are supported
-/// (no UNIONs, etc.), and since such steps obviously don't support statistics collection,
-/// `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
-/// `BuildRuntimeFilterStep` and `*CreatingSetsStep` don't collect statistics themselves but always
-/// appear below the instrumented top node, so they are allowed to pass through the check.
-///
-/// The walk also follows the plans that build the `IN` sets, which `traverseQueryPlan` does not reach
-/// because a set's source is a plan of its own rather than a child node. An unsupported step hidden
-/// there would leave the outer plan looking eligible while the sets nested below that source can be
-/// shared with neither the probe plan (`collectBuiltSets`) nor the accepted one
-/// (`moveSetsFromLocalPlanToReplicasPlan`), so their subqueries run twice.
-///
-/// That recursion does not fire today: by this point every `FutureSetFromSubquery` has been through
-/// `build`, which moves the source plan out, so `getQueryPlan` returns null (checked with the `IN` over
-/// a `Merge` table and over a plain table, with `use_index_for_in_with_subqueries` 0 and 1). It is here
-/// to keep the check honest if a set ever reaches this point with its source still attached.
-///
-/// Inside a set's source plan the statistics predicate does not apply - those plans are never
-/// instrumented, so a step that cannot collect statistics is harmless there. What is not harmless is a
-/// step holding plans of its own: a set below one of those is reachable through neither
-/// `collectBuiltSets` nor `moveSetsFromLocalPlanToReplicasPlan`, both of which stop at `getChildPlans`
-/// because calling it on a `ReadFromMerge` builds the child plans rather than handing them out. So only
-/// such a step is reported from a set source plan, and `ownsChildPlans` answers that without the build.
-void collectStepsUnsupportedForStatistics(QueryPlan::Node & root, String & unsupported_steps, bool inside_set_source)
-{
-    Stack stack;
-    traverseQueryPlan(
-        stack,
-        root,
-        [&](auto & frame_node)
-        {
-            const bool step_blocks_optimization = inside_set_source
-                ? frame_node.step->ownsChildPlans()
-                : !(frame_node.step->supportsDataflowStatisticsCollection()
-                    || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
-                    || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
-                    || typeid_cast<const CreatingSetsStep *>(frame_node.step.get()));
-            if (step_blocks_optimization)
-                unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
-
-            const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get());
-            if (!delayed)
-                return;
-
-            for (const auto & future_set : delayed->getSets())
-            {
-                if (!future_set)
-                    continue;
-
-                auto * source = future_set->getQueryPlan();
-                if (source && source->getRootNode())
-                    collectStepsUnsupportedForStatistics(*source->getRootNode(), unsupported_steps, /*inside_set_source=*/true);
-            }
-        });
-}
-
 /// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas.
 ///
 /// Both walks use `forEachSubquerySet` rather than a plain `traverseQueryPlan`, which follows only
@@ -323,9 +263,29 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
+    Stack stack;
+    // Technically, it isn't required for all steps to support dataflow statistics collection,
+    // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
+    // However, currently only relatively simple plans are supported (no UNIONs, etc.),
+    // since such steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    // `BuildRuntimeFilterStep` and `*CreatingSetsStep` don't collect statistics themselves but always appear below the instrumented top node,
+    // so they are allowed to pass through the check.
+    bool plan_is_simple_enough = true;
     String unsupported_steps;
-    collectStepsUnsupportedForStatistics(root, unsupported_steps, /*inside_set_source=*/false);
-    if (!unsupported_steps.empty())
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](auto & frame_node)
+        {
+            const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
+                || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
+                || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
+                || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
+            if (!step_is_supported)
+                unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
+            plan_is_simple_enough &= step_is_supported;
+        });
+    if (!plan_is_simple_enough)
     {
         LOG_DEBUG(
             getLogger("optimizeTree"),
