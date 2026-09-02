@@ -2284,6 +2284,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             case Coordination::OpNum::GetACL:
             case Coordination::OpNum::SimpleList:
             case Coordination::OpNum::List:
+            case Coordination::OpNum::ListWithOptions:
             case Coordination::OpNum::Check:
             case Coordination::OpNum::MultiRead:
             case Coordination::OpNum::FilteredList:
