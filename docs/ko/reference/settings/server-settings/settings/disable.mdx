@@ -18,7 +18,9 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-insert/alter/delete 쿼리를 비활성화합니다. 삽입 및 mutation으로 인해 읽기 성능이 영향을 받지 않도록 읽기 전용 노드가 필요할 때 이 설정을 활성화할 수 있습니다. 이 설정이 적용되어도 외부 엔진(S3, DataLake, MySQL, PostrgeSQL, Kafka 등)으로의 삽입은 허용됩니다.
+읽기 전용 레플리카에서 읽기 성능에 영향을 주는 데이터 파트, 뮤테이션 또는 머지 작업이 생성되지 않도록 `INSERT`, `ALTER`, `DELETE` 쿼리를 비활성화합니다.
+
+`S3`, `DataLake`, `MySQL`, `PostgreSQL`, `Kafka` 등의 엔진을 통한 외부 스토리지 쓰기는 계속 허용됩니다. 이 레플리카에서 `MergeTree` 파트와 머지 작업이 생성되므로 `Kafka`, `RabbitMQ`, `NATS`, `S3Queue` 테이블에서 attached 상태인 materialized view로 백그라운드 스트리밍하는 기능은 비활성화됩니다.
 
 <div id="disable_internal_dns_cache">
   ## disable_internal_dns_cache
