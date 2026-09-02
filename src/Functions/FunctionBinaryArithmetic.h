@@ -3185,6 +3185,21 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
 
+        /// A constant's value is independent of its size, but the null map carrying the
+        /// division-by-zero outcome has one entry per row, so a zero-row call keeps the value and
+        /// loses the NULL. Constant arguments give the same answer for every row.
+        if constexpr (is_division_or_null)
+        {
+            if (input_rows_count == 0 && result_type->isNullable() && !right_nullmap && !result_nullmap
+                && isColumnConst(*left_argument.column) && isColumnConst(*right_argument.column))
+            {
+                ColumnsWithTypeAndName one_row = arguments;
+                for (auto & argument : one_row)
+                    argument.column = argument.column->cloneResized(1);
+                return executeImpl2(one_row, result_type, 1)->cloneResized(0);
+            }
+        }
+
         /// Process special case when operation is divide, intDiv or modulo and denominator
         /// is Nullable(Something) to prevent division by zero error.
         ///
