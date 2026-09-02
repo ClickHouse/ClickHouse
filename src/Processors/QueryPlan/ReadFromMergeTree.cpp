@@ -4912,6 +4912,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
 
+    if (reader_settings.use_query_condition_cache && top_k_filter_info)
+    {
+        reader_settings.query_condition_cache_top_k_salt = top_k_filter_info->condition_hash;
+    }
+
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
     /// (which may skip index analysis).

@@ -134,9 +134,8 @@ SYSTEM DROP QUERY CONDITION CACHE;
 --     `SortingStep` stops being `Full`, and `tryOptimizeTopK` bails (see
 --     `04051_top_k_dynamic_filter_read_in_order`).
 --   * `use_top_k_dynamic_filtering = 0` - the skip-index shape, as in
---     `04658_query_condition_cache_topk_normal_projection`. With dynamic filtering on, the
---     `__topKFilter` node reaches the projection's PREWHERE, where `MergeTreeSelectProcessor`'s
---     determinism check rejects the write and nothing is cached at all.
+--     `04658_query_condition_cache_topk_normal_projection`. The dynamic-filtering shape is a
+--     separate case and is covered by the section right below this one.
 --   * `force_optimize_projection` - `pn` costs the same as the base table here, and equal-cost
 --     projections are declined without it.
 SELECT pk FROM t_qcc_proj WHERE b = 19999 ORDER BY a LIMIT 5 FORMAT Null
@@ -151,6 +150,31 @@ SETTINGS max_threads = 1, max_block_size = 8192, optimize_move_to_prewhere = 0,
     query_plan_max_limit_for_top_k_optimization = 1000,
     force_optimize_projection = 1, force_optimize_projection_name = 'pn',
     log_comment = '05045_assert_topk_idx_reuse';
+
+
+SELECT '--- the same TopK read with dynamic filtering primes and reuses the cache too';
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- The same pair as above with `use_top_k_dynamic_filtering = 1`, the other TopK shape.
+-- `use_skip_indexes_for_top_k = 0` pins it: `a` carries no minmax index, so dynamic filtering is the
+-- only TopK mechanism left and the section cannot pass through the skip-index path covered above.
+-- `use_query_condition_cache_for_top_k = 1` is explicit because that setting legitimately suppresses
+-- TopK writes, and settings randomization must not turn this section into a vacuous pass.
+SELECT pk FROM t_qcc_proj WHERE b = 19999 ORDER BY a LIMIT 5 FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_move_to_prewhere = 0,
+    use_top_k_dynamic_filtering = 1, use_skip_indexes_for_top_k = 0,
+    query_plan_max_limit_for_top_k_optimization = 1000,
+    use_query_condition_cache_for_top_k = 1,
+    force_optimize_projection = 1, force_optimize_projection_name = 'pn',
+    log_comment = '05045_assert_topk_dyn_prime';
+SELECT pk FROM t_qcc_proj WHERE b = 19999 ORDER BY a LIMIT 5 FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_move_to_prewhere = 0,
+    use_top_k_dynamic_filtering = 1, use_skip_indexes_for_top_k = 0,
+    query_plan_max_limit_for_top_k_optimization = 1000,
+    use_query_condition_cache_for_top_k = 1,
+    force_optimize_projection = 1, force_optimize_projection_name = 'pn',
+    log_comment = '05045_assert_topk_dyn_reuse';
 
 
 SELECT '--- correctness: a plain read must not lose rows to entries a TopK read left behind';
@@ -180,6 +204,30 @@ SETTINGS max_threads = 1, force_optimize_projection = 1, force_optimize_projecti
 SELECT count() FROM (SELECT pk FROM t_qcc_proj WHERE b < 1000 LIMIT 1000000)
 SETTINGS max_threads = 1, optimize_use_projections = 0,
     log_comment = '05045_assert_poison_check_base';
+
+
+SELECT '--- correctness: the same, for the dynamic-filtering shape';
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- The dynamic-filtering counterpart of the section above, on its own cache so the TopK read below is
+-- the only writer. Entries it leaves behind are keyed on a condition that includes the TopK
+-- threshold predicate, so the two plain reads after it must not reuse them and must still see all
+-- 500 rows.
+SELECT pk FROM t_qcc_proj WHERE b < 1000 ORDER BY a LIMIT 5 FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_move_to_prewhere = 0,
+    use_top_k_dynamic_filtering = 1, use_skip_indexes_for_top_k = 0,
+    query_plan_max_limit_for_top_k_optimization = 1000,
+    use_query_condition_cache_for_top_k = 1,
+    force_optimize_projection = 1, force_optimize_projection_name = 'pn',
+    log_comment = '05045_assert_poison_topk_dyn';
+
+SELECT count() FROM (SELECT pk FROM t_qcc_proj WHERE b < 1000 LIMIT 1000000)
+SETTINGS max_threads = 1, force_optimize_projection = 1, force_optimize_projection_name = 'pn',
+    log_comment = '05045_assert_poison_dyn_check_projection';
+SELECT count() FROM (SELECT pk FROM t_qcc_proj WHERE b < 1000 LIMIT 1000000)
+SETTINGS max_threads = 1, optimize_use_projections = 0,
+    log_comment = '05045_assert_poison_dyn_check_base';
 
 SELECT '--- an aliased condition shares its cache entry with the unaliased spelling';
 

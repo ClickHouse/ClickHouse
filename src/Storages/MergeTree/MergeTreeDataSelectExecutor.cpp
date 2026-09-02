@@ -1597,7 +1597,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
     /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
     /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
-    /// skip-index poisoning of issue #108519. TopK WHERE reads (which only get here when
+    /// skip-index poisoning of issue #108519. TopK WHERE and PREWHERE reads (which only get here when
     /// `use_query_condition_cache_for_top_k` is on, see the gate above) also consult the
     /// `topk_reuse_predicate_only_hash` so plain `SELECT ... WHERE` entries can be reused;
     /// TopK-salted entries are not read otherwise.
@@ -1609,7 +1609,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         String condition;
     };
 
-    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
+    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
     {
         /// Resolve alias nodes to look up the actual condition.
         const auto & condition_node = ActionsDAG::resolveAliases(*dag);
@@ -1619,7 +1619,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t condition_hash = condition_node.getHash(true /* skip_aliases */);
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
-        if (apply_top_k_salt && top_k_filter_info && top_k_filter_info->where_clause)
+        if (top_k_filter_info && top_k_filter_info->where_clause)
         {
             /// Only reuse when stripping actually recovered a predicate-only hash. Otherwise the hash
             /// would still carry `__topKFilter` (matching neither a plain `WHERE` entry nor the salted
@@ -1631,13 +1631,11 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             }
         }
 
-        /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path: when the
-        /// read goes through a TopK filter, the cached granule decisions are valid only for the same
-        /// TopK plan, so the WHERE cache key must be partitioned by the TopK parameters. The PREWHERE
-        /// write path in `MergeTreeSelectProcessor::read` does not (yet) apply this salt, so we must
-        /// not apply it on the PREWHERE read path either — otherwise the keys diverge and the lookup
-        /// always misses.
-        if (apply_top_k_salt && top_k_filter_info)
+        /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path and by
+        /// `MergeTreeSelectProcessor::read` on the PREWHERE write path: when the read goes through a
+        /// TopK filter, the cached granule decisions are valid only for the same TopK plan, so the
+        /// WHERE/PREWHERE cache key must be partitioned by the TopK parameters.
+        if (top_k_filter_info)
             boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
         /// The skip-index-analysis exclusions written by ReadFromMergeTree are stored under a key
@@ -1778,7 +1776,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         {
             if (outputs->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(outputs, /*apply_top_k_salt=*/ false);
+                auto stats = drop_mark_ranges(outputs);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
                         stats.granules_dropped,
@@ -1792,10 +1790,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        /// Reaching this point with a TopK read implies `use_query_condition_cache_for_top_k` is on
-        /// (the gate returns early above otherwise), so the WHERE consult key is always partitioned
-        /// by the TopK plan (with the predicate-only reuse path) for TopK reads.
-        const auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
+        const auto stats = drop_mark_ranges(output);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,

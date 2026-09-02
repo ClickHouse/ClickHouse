@@ -28,6 +28,8 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace
 {
 
@@ -426,7 +428,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     {
                         if (output->result_name == prewhere_info->prewhere_column_name)
                         {
-                            if (!VirtualColumnUtils::isDeterministic(output))
+                            if (!VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
                                 continue;
 
                             /// If output is an alias, resolve the original condition to cache it instead of the alias.
@@ -437,12 +439,16 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             const auto & data_part_info = task->getInfo().data_part_info;
 
+                            size_t condition_hash = condition_node.getHash(true /* skip_aliases */);
+                            if (reader_settings.query_condition_cache_top_k_salt)
+                                boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
+
                             const auto part_name = QueryConditionCache::makePartNameFromDataPartInfoForReader(*data_part_info);
                             query_condition_cache->write(
                                 /// QueryConditionCache is a coordinator feature; concrete part present here.
                                 data_part_info->getDataPart()->storage.getStorageID().uuid,
                                 part_name,
-                                condition_node.getHash(true /* skip_aliases */),
+                                condition_hash,
                                 condition_node.result_name,
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part_info->getIndexGranularity().getMarksCount(),

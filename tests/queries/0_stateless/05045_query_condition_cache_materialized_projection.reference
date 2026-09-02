@@ -11,7 +11,11 @@
 --- the normal projection still returns the planted row with the cache warm
 9999
 --- a TopK read served by the projection primes and reuses the cache
+--- the same TopK read with dynamic filtering primes and reuses the cache too
 --- correctness: a plain read must not lose rows to entries a TopK read left behind
+500
+500
+--- correctness: the same, for the dynamic-filtering shape
 500
 500
 --- an aliased condition shares its cache entry with the unaliased spelling
@@ -34,9 +38,14 @@
 05045_assert_norm_reuse	1	1	1
 05045_assert_topk_idx_prime	0	0	1
 05045_assert_topk_idx_reuse	1	1	1
+05045_assert_topk_dyn_prime	0	0	1
+05045_assert_topk_dyn_reuse	1	1	1
 05045_assert_poison_topk	0	0	1
 05045_assert_poison_check_projection	0	0	1
 05045_assert_poison_check_base	0	0	0
+05045_assert_poison_topk_dyn	0	0	1
+05045_assert_poison_dyn_check_projection	0	0	1
+05045_assert_poison_dyn_check_base	0	0	0
 05045_assert_alias_plain_prime	0	0	0
 05045_assert_alias_aliased_reuse	1	1	0
 05045_assert_alias_aliased_prime	0	0	0
