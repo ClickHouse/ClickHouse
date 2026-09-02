@@ -181,7 +181,7 @@ private:
     TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
 
     /// Appends the pre-remap row ids of the cursor's current segment to its token_row_ids if the token has positions.
-    void captureRowIdsForPositions(PostingsMergeCursor & cursor);
+    void captureRowIdsForPositions(PostingsMergeCursor & cursor) const;
     /// Reads the positions of an exhausted source, pairing them with the row ids captured by its
     /// cursor, remaps their row ids and appends them to output_positions.
     void readAndAppendPositions(const PostingsMergeCursor & cursor);

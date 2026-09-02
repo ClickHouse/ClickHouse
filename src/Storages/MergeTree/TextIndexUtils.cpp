@@ -494,7 +494,7 @@ bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
     return true;
 }
 
-void MergeTextIndexesTask::captureRowIdsForPositions(PostingsMergeCursor & cursor)
+void MergeTextIndexesTask::captureRowIdsForPositions(PostingsMergeCursor & cursor) const
 {
     /// Positions are addressed by posting rank, so decoding them needs the token's row ids of this
     /// source in pre-remap order. The row ids are remapped in place right after, so capture them first.
