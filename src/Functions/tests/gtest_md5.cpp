@@ -468,7 +468,7 @@ std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
         size_t len = 64;
         if (spread)
         {
-            /// 0 / 1..40 / 200..500 / 4000..4200 bytes is 1 / 1..2 / 4..9 / 63..66 blocks, so rows on
+            /// 0 / 1..40 / 200..500 / 4000..4200 bytes is 1 / 1 / 4..8 / 63..66 blocks, so rows on
             /// both sides of the 64-block histogram cap are present.
             switch (rng() % 10)
             {

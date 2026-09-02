@@ -412,7 +412,7 @@ DECLARE_MD5_TARGET_CODE(
 
 
     /// A batch runs in lockstep until its longest row retires, so it costs the batch maximum of
-    /// numMD5Blocks per lane. Ordering a window of rows by block count makes a batch's lanes retire
+    /// `numMD5Blocks` per lane. Ordering a window of rows by block count makes a batch's lanes retire
     /// together; the window is bounded so its per-row index arrays fit on the stack.
     constexpr size_t MD5_GROUP_WINDOW = 1024;
     /// Rows of at least this many blocks share one histogram bucket, so above it the candidate order is
@@ -420,8 +420,8 @@ DECLARE_MD5_TARGET_CODE(
     /// cannot cause a loss.
     constexpr size_t MD5_GROUP_MAX_KEY = 64;
     /// Reordering costs a fixed amount of integer work per row, so the predicate below requires an
-    /// absolute saving, not a relative one. A batch costs as much as its longest row, so halving the
-    /// lanes doubles the saving a column models; dividing by the batch width keeps it comparable.
+    /// absolute saving as well as a relative margin. A batch costs as much as its longest row, so
+    /// halving the lanes doubles the saving a column models, and dividing by the width rescales it.
     constexpr size_t md5GroupMinSavedItersPer1kRows(size_t n2)
     {
         return 2048 / n2;
@@ -514,7 +514,7 @@ DECLARE_MD5_TARGET_CODE(
         return false;
     }
 
-    /// Batch process `rows` rows of ColumnString data starting at `first_row`, in column order.
+    /// Batch process `rows` rows of `ColumnString` data starting at `first_row`, in column order.
     template <typename Ops>
     static void md5BatchColumnStringInOrder(
         const ColumnString::Chars & data,
@@ -526,7 +526,7 @@ DECLARE_MD5_TARGET_CODE(
         constexpr size_t N2 = 2 * Ops::lanes;
         const size_t end_row = first_row + rows;
 
-        /// PaddedPODArray zero-initialises its -1th element, so first_row == 0 needs no special case.
+        /// `PaddedPODArray` zero-initialises its -1th element, so first_row == 0 needs no special case.
         ColumnString::Offset current_offset = offsets[static_cast<ssize_t>(first_row) - 1];
         for (size_t base = first_row; base < end_row; base += N2)
         {
@@ -551,7 +551,7 @@ DECLARE_MD5_TARGET_CODE(
         }
     }
 
-    /// Batch process ColumnString data, grouping each window's rows by MD5 block count.
+    /// Batch process `ColumnString` data, grouping each window's rows by MD5 block count.
     template <typename Ops>
     static void md5BatchColumnStringGrouped(
         const ColumnString::Chars & data,
@@ -561,7 +561,7 @@ DECLARE_MD5_TARGET_CODE(
     {
         constexpr size_t N2 = 2 * Ops::lanes;
         /// Windows must hold whole batches, or a window's batch boundaries would differ from the
-        /// boundaries the in-order path uses and work_in_order below would not model its cost.
+        /// boundaries the in-order path uses and `work_in_order` below would not model its cost.
         static_assert(MD5_GROUP_WINDOW % N2 == 0);
 
         const uint8_t * window_inputs[MD5_GROUP_WINDOW];
@@ -685,7 +685,7 @@ DECLARE_MD5_TARGET_CODE(
         }
     }
 
-    /// Batch process ColumnString data using multi-buffer MD5.
+    /// Batch process `ColumnString` data using multi-buffer MD5.
     template <typename Ops>
     static void md5BatchColumnString(
         const ColumnString::Chars & data,

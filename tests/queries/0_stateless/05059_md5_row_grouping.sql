@@ -19,11 +19,12 @@ SELECT sum(cityHash64(s, MD5(s))) FROM
     SELECT rightPad(toString(number), len, 'x') AS s FROM numbers(65536)
 ) SETTINGS max_block_size = 64;
 
--- A row count that leaves the last window short of a full one, and its last batch short of a full set
--- of lanes, so the trailing partial batch and the scatter that follows it are covered too.
+-- 65001 = 63 * 1024 + 489 and 489 is odd, so the last window is short of a full one and its last batch
+-- is short of a full set of lanes at every batch width, covering the trailing partial batch and the
+-- scatter that follows it.
 SELECT sum(cityHash64(s, MD5(s))) FROM
 (
     WITH number % 10 AS bucket,
          multiIf(bucket = 0, 0, bucket <= 6, 1 + number % 40, bucket <= 8, 200 + number % 301, 4000 + number % 201) AS len
-    SELECT rightPad(toString(number), len, 'x') AS s FROM numbers(65000)
+    SELECT rightPad(toString(number), len, 'x') AS s FROM numbers(65001)
 ) SETTINGS max_block_size = 65536;
