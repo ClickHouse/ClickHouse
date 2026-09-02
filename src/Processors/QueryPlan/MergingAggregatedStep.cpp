@@ -110,6 +110,9 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     if (memory_efficient_merge_threads == 0)
         memory_efficient_merge_threads = max_threads;
 
+    /// Forget about current totals and extremes. They will be calculated again after the merge if needed.
+    pipeline.dropTotalsAndExtremes();
+
     if (memoryBoundMergingWillBeUsed())
     {
         if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
@@ -174,6 +177,11 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings);
 
+    /// The memory-efficient mode merges bucket by bucket via `GroupingAggregatedTransform`
+    /// instead of collecting everything into one hash table; make the planned mode visible.
+    if (memory_efficient_aggregation)
+        settings.out << settings.detail_prefix << "Mode: memory-efficient\n";
+
     if (!group_by_sort_description.empty())
     {
         const String & prefix = settings.detail_prefix;
@@ -186,6 +194,8 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
+    if (memory_efficient_aggregation)
+        map.add("Mode", "memory-efficient");
     if (!group_by_sort_description.empty())
         map.add("Order", dumpSortDescription(group_by_sort_description));
 }
@@ -194,6 +204,23 @@ void MergingAggregatedStep::updateOutputHeader()
 {
     const auto & in_header = input_headers.front();
     output_header = std::make_shared<const Block>(MergingAggregatedTransform::appendGroupingIfNeeded(*in_header, params.getHeader(*in_header, final)));
+}
+
+QueryPlanStepPtr MergingAggregatedStep::clone() const
+{
+    auto cloned = std::make_unique<MergingAggregatedStep>(
+        input_headers.front(),
+        params,
+        grouping_sets_params,
+        final,
+        memory_efficient_aggregation,
+        memory_efficient_merge_threads,
+        should_produce_results_in_order_of_bucket_number,
+        max_block_size,
+        memory_bound_merging_max_block_bytes,
+        memory_bound_merging_of_aggregation_results_enabled);
+    cloned->group_by_sort_description = group_by_sort_description;
+    return cloned;
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const

@@ -56,8 +56,9 @@ namespace DB
     DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, "Allow aggregation to produce buckets out of order.", 0) \
     DECLARE(Bool, enable_parallel_single_level_merge, false, "Parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently.", 0) \
     DECLARE(Bool, enable_packed_string_keys_in_aggregation, true, "Use the PackedStringRef-based hash table for single-String-key aggregation.", 0) \
-    DECLARE(Bool, enable_adaptive_aggregator, false, "Enable the adaptive GROUP BY algorithm: each thread's local hash table freezes once it reaches adaptive_aggregator_freeze_threshold keys, and new keys are aggregated exactly once, inside the bucket-parallel merge.", 0) \
+    DECLARE(Bool, enable_adaptive_aggregator, false, "Enable the adaptive GROUP BY algorithm: each thread's local hash table freezes once it reaches adaptive_aggregator_freeze_threshold keys or adaptive_aggregator_freeze_threshold_bytes of memory, and new keys are aggregated exactly once, inside the bucket-parallel merge.", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 0, "The number of keys at which the adaptive aggregator freezes a thread's local hash table.", 0) \
+    DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 0, "The memory size at which the adaptive aggregator freezes a thread's local hash table, whichever of this and the key-count threshold is reached first; 0 disables the byte bound.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \
@@ -118,6 +119,8 @@ namespace DB
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
+    DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
 
 
 // clang-format on

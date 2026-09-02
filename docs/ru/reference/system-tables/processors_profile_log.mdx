@@ -33,7 +33,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `plan_step_name` ([String](/ru/reference/data-types/string)) — Имя шага плана запроса, создавшего этот процессор. Значение пусто, если процессор не был добавлен ни одним шагом.
 * `plan_step_description` ([String](/ru/reference/data-types/string)) — Описание шага плана запроса, создавшего этот процессор. Значение пусто, если процессор не был добавлен ни одним шагом.
 * `plan_group` ([UInt64](/ru/reference/data-types/int-uint)) — Группа процессора, если он был создан шагом плана запроса. Группа — это логическое разделение процессоров, добавленных одним и тем же шагом плана запроса. Группа используется только для более наглядного отображения результата EXPLAIN PIPELINE.
-* `initial_query_id` ([String](/ru/reference/data-types/string)) — ID исходного запроса (для выполнения распределённого запроса).
+* `initial_query_id` ([String](/ru/reference/data-types/string)) — ID исходного запроса в той же цепочке запросов.
 * `query_id` ([String](/ru/reference/data-types/string)) — ID запроса.
 * `name` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя процессора.
 * `elapsed_us` ([UInt64](/ru/reference/data-types/int-uint)) — Количество микросекунд, в течение которых выполнялся этот процессор.
