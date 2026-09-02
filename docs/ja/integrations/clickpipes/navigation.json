@@ -4,7 +4,7 @@
   "pages": [
     "ja/integrations/clickpipes/home",
     {
-      "group": "ストリーミング向け ClickPipes",
+      "group": "ClickPipes for Streaming",
       "pages": [
         {
           "group": "Kafka",
@@ -37,7 +37,7 @@
       ]
     },
     {
-      "group": "オブジェクトストレージ向け ClickPipes",
+      "group": "ClickPipes for Object Storage",
       "pages": [
         {
           "group": "Amazon S3",
@@ -49,7 +49,7 @@
           ]
         },
         {
-          "group": "Google Cloud ストレージ",
+          "group": "Google Cloud Storage",
           "icon": "/images/integrations/logos/gcs.svg",
           "pages": [
             "ja/integrations/clickpipes/object-storage/google-cloud-storage/overview",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "group": "CDC 向け ClickPipes",
+      "group": "ClickPipes for CDC",
       "pages": [
         {
           "group": "Postgres",
@@ -87,7 +87,7 @@
             "ja/integrations/clickpipes/postgres/lifecycle",
             "ja/integrations/clickpipes/postgres/auth",
             {
-              "group": "操作",
+              "group": "Operations",
               "pages": [
                 "ja/integrations/clickpipes/postgres/add-table",
                 "ja/integrations/clickpipes/postgres/pause-and-resume",
@@ -99,7 +99,7 @@
               ]
             },
             {
-              "group": "ログソース",
+              "group": "Source",
               "pages": [
                 "ja/integrations/clickpipes/postgres/source/alloydb",
                 "ja/integrations/clickpipes/postgres/source/rds",
@@ -127,7 +127,7 @@
             "ja/integrations/clickpipes/mysql/schema-changes",
             "ja/integrations/clickpipes/mysql/lifecycle",
             {
-              "group": "操作",
+              "group": "Operations",
               "pages": [
                 "ja/integrations/clickpipes/mysql/add-table",
                 "ja/integrations/clickpipes/mysql/pause-and-resume",
@@ -139,7 +139,7 @@
               ]
             },
             {
-              "group": "ログソース",
+              "group": "Source",
               "pages": [
                 "ja/integrations/clickpipes/mysql/source/rds",
                 "ja/integrations/clickpipes/mysql/source/aurora",
@@ -162,7 +162,7 @@
             "ja/integrations/clickpipes/mongodb/lifecycle",
             "ja/integrations/clickpipes/mongodb/faq",
             {
-              "group": "操作",
+              "group": "Operations",
               "pages": [
                 "ja/integrations/clickpipes/mongodb/add-table",
                 "ja/integrations/clickpipes/mongodb/remove-table",
@@ -174,7 +174,7 @@
               ]
             },
             {
-              "group": "ログソース",
+              "group": "Source",
               "pages": [
                 "ja/integrations/clickpipes/mongodb/source/atlas",
                 "ja/integrations/clickpipes/mongodb/source/generic",
@@ -194,7 +194,7 @@
       ]
     },
     {
-      "group": "プログラムによるアクセス",
+      "group": "Programmatic access",
       "icon": "code",
       "pages": [
         "ja/integrations/clickpipes/programmatic-access/openapi",
@@ -202,7 +202,7 @@
       ]
     },
     {
-      "group": "ネットワーキング",
+      "group": "Networking",
       "icon": "network-wired",
       "pages": [
         "ja/integrations/clickpipes/networking/index",
