@@ -123,17 +123,18 @@ SELECT count() FROM prometheusQuery(ts_dead_skip, 'm', 140) SETTINGS skip_unavai
 DROP TABLE ts_dead_skip;
 DROP TABLE ts_dead;
 
-SELECT '--- row policies and additional_table_filters: distributed answers as the local table does ---';
--- PromQL reads through the selector, which applies neither a row policy nor additional_table_filters
--- on a single node either; the distributed path inherits it, so both answers are the unfiltered ones.
+SELECT '--- row policies and additional_table_filters: refused over the wrapper, unchanged on a single table ---';
+-- A plain SELECT through the wrapper applies both; the rewrite to the shard-local tables would apply neither,
+-- so the read is refused. On a single node PromQL reads through the selector, which applies none, as before.
 CREATE ROW POLICY p_05055_dist ON ts_dist USING metric_name = 'nothing_matches' TO ALL;
 CREATE ROW POLICY p_05055_all ON ts_all USING metric_name = 'nothing_matches' TO ALL;
-SELECT (SELECT count() FROM prometheusQuery(ts_dist, 'm', 140)) = (SELECT count() FROM prometheusQuery(ts_all, 'm', 140));
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140); -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM prometheusQuery(ts_all, 'm', 140);
 DROP ROW POLICY p_05055_dist ON ts_dist;
 DROP ROW POLICY p_05055_all ON ts_all;
--- Four series of `m`, whichever name the filter is keyed by, restrictive or trivially true.
-SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': 'metric_name != \'m\''};
-SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''};
+-- Keyed to the wrapper or to the shard-local table: refused; a literal true restricts nothing, so it is not.
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': '1'};
 SELECT count() FROM prometheusQuery(ts_all, 'm', 140) SETTINGS additional_table_filters = {'ts_all': 'metric_name != \'m\''};
 

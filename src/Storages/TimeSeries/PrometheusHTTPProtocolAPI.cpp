@@ -32,8 +32,6 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/Common/RowPolicyDefs.h>
-#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -63,7 +61,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
     extern const SettingsBool enable_materialized_cte;
 }
 
@@ -142,30 +139,8 @@ void checkMetadataEndpointTarget(const IStorage & storage, std::string_view endp
             "and merging the results of this endpoint across the shards is not implemented",
             endpoint, storage_id.getNameForLogs());
 
-    auto row_policy_filter
-        = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "The Prometheus {} endpoint is not supported on table {} while a row policy applies to it: "
-            "the endpoint reads the inner tables directly and the policy would not be applied",
-            endpoint, storage_id.getNameForLogs());
-
-    /// Matched the way the planner matches filter keys: the short name only from the same current
-    /// database, the full unquoted name from anywhere.
-    for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
-    {
-        const auto & name_and_filter = filter_entry.safeGet<Tuple>();
-        const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
-        bool matches = (filtered_table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
-            || filtered_table == storage_id.getFullNameNotQuoted();
-        if (matches && !name_and_filter.at(1).safeGet<String>().empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "The Prometheus {} endpoint is not supported on table {} with an additional_table_filters entry for it: "
-                "the endpoint reads the inner tables directly and the filter would not be applied",
-                endpoint, storage_id.getNameForLogs());
-    }
+    checkNoBypassedReadRestriction(
+        storage_id, context, fmt::format("The Prometheus {} endpoint", endpoint), "the endpoint reads the inner tables directly");
 }
 
 /// Decodes a label name from the /api/v1/label/<name>/values URL path. Prometheus escapes label names
