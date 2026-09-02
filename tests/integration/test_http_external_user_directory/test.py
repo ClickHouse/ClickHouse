@@ -1069,3 +1069,29 @@ def test_failed_named_session_init_not_reusable(started_cluster):
         params={"session_id": session},
     ).strip()
     assert value == "555"
+
+
+def test_metrics(started_cluster):
+    instance.query("SELECT 1", user="http_user", password=GOOD_PASSWORD)
+    requests = int(
+        admin(
+            "SELECT value FROM system.events WHERE event = 'HTTPUserDirectoryAuthRequests'"
+        ).strip()
+        or 0
+    )
+    assert requests > 0
+    cached = int(
+        admin(
+            "SELECT value FROM system.metrics WHERE metric = 'HTTPUserDirectoryCachedUsers'"
+        ).strip()
+        or 0
+    )
+    assert cached > 0
+    instance.query_and_get_error("SELECT 1", user="http_user", password="wrong")
+    failures = int(
+        admin(
+            "SELECT value FROM system.events WHERE event = 'HTTPUserDirectoryAuthFailures'"
+        ).strip()
+        or 0
+    )
+    assert failures > 0

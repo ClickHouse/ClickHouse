@@ -581,6 +581,8 @@
     M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
+    \
+    M(HTTPUserDirectoryCachedUsers, "Current number of ephemeral users materialized by http user directories.") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS

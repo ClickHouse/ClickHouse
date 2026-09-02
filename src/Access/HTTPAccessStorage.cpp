@@ -6,12 +6,31 @@
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <base/scope_guard.h>
+
+namespace ProfileEvents
+{
+    extern const Event HTTPUserDirectoryAuthRequests;
+    extern const Event HTTPUserDirectoryAuthFailures;
+    extern const Event HTTPUserDirectoryAuthMicroseconds;
+    extern const Event HTTPUserDirectoryUsersCreated;
+    extern const Event HTTPUserDirectoryCacheLimitExceeded;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric HTTPUserDirectoryCachedUsers;
+}
 
 namespace DB
 {
@@ -33,6 +52,13 @@ HTTPAccessStorage::HTTPAccessStorage(
     , memory_storage(storage_name_, access_control_.getChangesNotifier(), /* allow_backup_= */ false)
 {
     setConfiguration(config, prefix);
+}
+
+HTTPAccessStorage::~HTTPAccessStorage()
+{
+    /// `cached_user_count` (relaxed load) instead of `memory_storage.findAll<User>().size()`:
+    /// walking every cached entry just to shut down is unnecessary work.
+    CurrentMetrics::sub(CurrentMetrics::HTTPUserDirectoryCachedUsers, cached_user_count.load(std::memory_order_relaxed));
 }
 
 void HTTPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -299,9 +325,12 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
     /// NOT re-observed under the mutex: that would serialize capacity and make the bound
     /// strict, which the ADR explicitly does not want.
     if (observed_cache_full)
+    {
+        ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryCacheLimitExceeded);
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "User directory {} reached the configured max_cached_users bound ({})",
             getStorageName(), max_cached_users);
+    }
 
     auto user = std::make_shared<User>();
     user->setName(user_name);
@@ -321,6 +350,8 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
     /// Relaxed: a capacity statistic feeding the soft bound above, not synchronization for
     /// the cached entity (the mutex held across this whole function already provides that).
     cached_user_count.fetch_add(1, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryUsersCreated);
+    CurrentMetrics::add(CurrentMetrics::HTTPUserDirectoryCachedUsers);
     return id;
 }
 
@@ -422,57 +453,97 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
     /// basic_credentials is guaranteed non-null here: the applicability check above only
     /// let AlwaysAllowCredentials (handled above) or BasicCredentials through.
 
-    /// Remote HTTP authentication. Performed without holding any storage-wide lock,
-    /// so different usernames (and concurrent attempts for the same username)
-    /// authenticate concurrently. Infrastructure failures propagate (fail-closed).
-    auto response = external_authenticators.checkHTTPUserDirectoryCredentials(http_auth_server_name, *basic_credentials, client_info);
-
-    if (response.status == HTTPUserDirectoryResponseParser::Result::Status::UserNotFound)
+    /// The try below covers exactly the external-auth + validation + materialization stage
+    /// of this applicable Basic attempt (Task 11): HTTPUserDirectoryAuthFailures counts
+    /// what fails closed inside it, and nothing else — not the applicability
+    /// classification, not the networks check, not the AlwaysAllowCredentials path above,
+    /// all of which stay outside.
+    ///
+    /// A 404 (UserNotFound) is a fallthrough, not a failure, so it must never reach the
+    /// catch as an exception: the flag below lets that branch finish the try normally (no
+    /// throw, no return) and defers throwNotFound to after the try, where it is no longer
+    /// subject to the catch and therefore never counted.
+    bool user_not_found = false;
+    try
     {
-        if (throw_if_user_not_exists)
-            throwNotFound(AccessEntityType::USER, user_name, getStorageName());
-        return {};
+        ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryAuthRequests);
+
+        /// Remote HTTP authentication. Performed without holding any storage-wide lock,
+        /// so different usernames (and concurrent attempts for the same username)
+        /// authenticate concurrently. Infrastructure failures propagate (fail-closed).
+        HTTPUserDirectoryResponseParser::Result response;
+        {
+            /// Narrow scope: HTTPUserDirectoryAuthMicroseconds measures only the external
+            /// call itself, not the validation/materialization below. Retries inside
+            /// HTTPAuthClient are counted (they happen inside the call); a throw from the
+            /// call itself is counted via SCOPE_EXIT before propagating to the catch below.
+            Stopwatch watch;
+            SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryAuthMicroseconds, watch.elapsedMicroseconds()); });
+            response = external_authenticators.checkHTTPUserDirectoryCredentials(http_auth_server_name, *basic_credentials, client_info);
+        }
+
+        if (response.status == HTTPUserDirectoryResponseParser::Result::Status::UserNotFound)
+        {
+            /// 404 fallthrough — NOT a failure. throwNotFound (if any) happens after the
+            /// try, uncounted.
+            user_not_found = true;
+        }
+        else
+        {
+            /// Validate all security metadata before touching any state.
+            std::vector<UUID> external_role_ids;
+            external_role_ids.reserve(response.role_names.size());
+            for (const auto & role_name : response.role_names)
+            {
+                if (role_name.empty())
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                        "The HTTP authentication server returned an empty role name");
+                checkRoleIsAllowed(role_name);
+                auto role_id = access_control.find<Role>(role_name);
+                if (!role_id)
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                        "Role {} returned by the HTTP authentication server does not exist", backQuote(role_name));
+                external_role_ids.push_back(*role_id);
+            }
+
+            if (response.valid_until)
+            {
+                const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                if (response.valid_until <= now)
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                        "The HTTP authentication server returned an already expired valid_until");
+            }
+
+            AuthResult result;
+            result.user_id = getOrCreateUser(user_name);
+            result.user_name = user_name;
+            result.settings = std::move(response.settings);
+            result.external_roles = std::move(external_role_ids);
+
+            AuthenticationData auth_data(AuthenticationType::HTTP);
+            auth_data.setHTTPAuthenticationServerName(http_auth_server_name);
+            auth_data.setHTTPAuthenticationScheme(HTTPAuthenticationScheme::BASIC);
+            /// Rides the existing per-authentication expiry machinery
+            /// (Session::checkIfUserIsStillValid enforces it per query).
+            auth_data.setValidUntil(response.valid_until);
+            result.authentication_data = std::move(auth_data);
+
+            return result;
+        }
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryAuthFailures);
+        throw;
     }
 
-    /// Validate all security metadata before touching any state.
-    std::vector<UUID> external_role_ids;
-    external_role_ids.reserve(response.role_names.size());
-    for (const auto & role_name : response.role_names)
-    {
-        if (role_name.empty())
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "The HTTP authentication server returned an empty role name");
-        checkRoleIsAllowed(role_name);
-        auto role_id = access_control.find<Role>(role_name);
-        if (!role_id)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "Role {} returned by the HTTP authentication server does not exist", backQuote(role_name));
-        external_role_ids.push_back(*role_id);
-    }
-
-    if (response.valid_until)
-    {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        if (response.valid_until <= now)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "The HTTP authentication server returned an already expired valid_until");
-    }
-
-    AuthResult result;
-    result.user_id = getOrCreateUser(user_name);
-    result.user_name = user_name;
-    result.settings = std::move(response.settings);
-    result.external_roles = std::move(external_role_ids);
-
-    AuthenticationData auth_data(AuthenticationType::HTTP);
-    auth_data.setHTTPAuthenticationServerName(http_auth_server_name);
-    auth_data.setHTTPAuthenticationScheme(HTTPAuthenticationScheme::BASIC);
-    /// Rides the existing per-authentication expiry machinery
-    /// (Session::checkIfUserIsStillValid enforces it per query).
-    auth_data.setValidUntil(response.valid_until);
-    result.authentication_data = std::move(auth_data);
-
-    return result;
+    /// Reached only for the UserNotFound fallthrough, decided above but thrown here —
+    /// outside the try — so it is never caught by the catch above and never counted as an
+    /// HTTPUserDirectoryAuthFailures.
+    chassert(user_not_found);
+    if (throw_if_user_not_exists)
+        throwNotFound(AccessEntityType::USER, user_name, getStorageName());
+    return {};
 }
 
 }

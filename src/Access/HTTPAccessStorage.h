@@ -32,6 +32,8 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const String & prefix);
 
+    ~HTTPAccessStorage() override;
+
     const char * getStorageType() const override { return STORAGE_TYPE; }
     bool isReadOnly() const override { return true; }
     /// Users materialized by this directory are ephemeral: in-memory only, never backed
