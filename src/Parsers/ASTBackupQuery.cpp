@@ -298,6 +298,7 @@ ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
             element.database_name,
             /*partitions*/ {},
             element.except_tables,
+            /*except_data_tables*/ {},
             element.except_databases});
     if (query.snapshot_destination)
         res->set(res->backup_name, query.snapshot_destination->clone());
