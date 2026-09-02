@@ -1,0 +1,50 @@
+---
+description: 'وثائق برنامج تشغيل ClickHouse ADBC'
+sidebarTitle: 'برنامج تشغيل ADBC'
+slug: /interfaces/adbc
+title: 'برنامج تشغيل ADBC'
+doc_type: 'reference'
+---
+
+يوفر برنامج تشغيل ClickHouse ADBC واجهة [Arrow Database Connectivity (ADBC)](https://arrow.apache.org/adbc/)
+متوافقة مع المعايير لربط التطبيقات المتوافقة مع ADBC بـ ClickHouse.
+
+يتواصل برنامج التشغيل مع خادم ClickHouse باستخدام [بروتوكول HTTP](/ar/concepts/features/interfaces/http)، وهو البروتوكول
+الرئيسي المدعوم في جميع عمليات نشر ClickHouse. ويتيح ذلك لبرنامج التشغيل العمل باستمرار في بيئات
+متنوعة، بما في ذلك التثبيتات المحلية والخدمات السحابية المُدارة والبيئات التي لا يتوفر فيها سوى الوصول عبر HTTP.
+
+تتوفر شيفرة مصدر برنامج التشغيل في
+[مستودع GitHub الخاص بـ adbc&#95;clickhouse](https://github.com/clickhouse/adbc_clickhouse).
+
+<Note>
+  برنامج التشغيل هذا قيد التطوير النشط. قد لا تكون بعض ميزات ADBC مطبقة بالكامل بعد. يركز الإصدار الحالي
+  على توفير الاتصال الأساسي ووظائف ADBC الجوهرية، مع التخطيط لإضافة ميزات إضافية في
+  الإصدارات المستقبلية.
+
+  ملاحظاتك قيّمة للغاية وتساعد في تحديد أولويات الميزات والتحسينات الجديدة. إذا واجهت
+  قيودًا أو وظائف مفقودة أو سلوكًا غير متوقع، فيرجى مشاركة ملاحظاتك أو طلبات الميزات عبر
+  متعقب المشكلات على
+  [github.com/ClickHouse/adbc&#95;clickhouse/issues](https://github.com/ClickHouse/adbc_clickhouse/issues)
+</Note>
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+يمكنك تثبيت أحدث إصدار من برنامج التشغيل باستخدام [dbc](https://docs.columnar.tech/dbc/):
+
+```bash
+dbc install clickhouse
+```
+
+بدلًا من ذلك، يمكنك تنزيله يدويًا من [github.com/adbc-drivers/clickhouse/releases](https://github.com/adbc-drivers/clickhouse/releases).
+
+<div id="database-options">
+  ## خيارات قاعدة البيانات
+</div>
+
+تُستخدم خيارات قاعدة البيانات التالية لإنشاء اتصال ببرنامج تشغيل ClickHouse ADBC.
+
+* `uri`: يحدد عنوان endpoint الكامل لخادم ClickHouse عبر HTTP(S). ويشمل البروتوكول والمضيف والمنفذ.
+* `username`: اسم المستخدم المُستخدم للمصادقة مع خادم ClickHouse.
+* `password`: كلمة المرور المرتبطة باسم المستخدم المحدد.

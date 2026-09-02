@@ -1453,6 +1453,13 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
 }
 
 template <typename T>
+bool ColumnVector<T>::hasOnlyTypeDefaults() const
+{
+    /// A conservative bit check intentionally keeps -0.0 columns physical.
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
+template <typename T>
 void ColumnVector<T>::serializeAsComparable(size_t n, String & out) const
 {
     if constexpr (std::is_integral_v<T>)
