@@ -28,6 +28,15 @@ SELECT sum(v) FROM t_resize_join
 SETTINGS max_threads = 2, max_streams_to_max_threads_ratio = 1000000,
          max_threads_min_free_memory_per_thread = 0;
 
+-- Carrier: IStorage::read, the shape that reddened `Stress test (azure, amd_tsan)` on master.
+-- `GenerateRandom` lowers its own source count to what the trivial `LIMIT` needs, so the count
+-- that reaches its guard against an absurd request is already small; the post-read resize then
+-- widens the output back to the whole ratio-expanded request.
+SELECT count() FROM (SELECT n FROM generateRandom('n UInt8') LIMIT 1)
+SETTINGS optimize_trivial_count_query = 0, max_block_size = 1, preferred_block_size_bytes = 0,
+         max_threads = 4, max_streams_to_max_threads_ratio = 1000000,
+         max_threads_min_free_memory_per_thread = 0;
+
 -- A bare SELECT * leaves the storage read as the only resize producer, and the width must
 -- still reach max_threads even though the Join source ignores num_streams.
 SELECT match(arrayStringConcat(groupArray(explain), ''), '.*Resize 1 → 2 *Join 0 → 1 *$')
