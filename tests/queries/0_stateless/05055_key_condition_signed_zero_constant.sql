@@ -128,6 +128,16 @@ INSERT INTO t_signed_zero_dynamic_nested VALUES (tuple(-0.0::Float64));
 SELECT 'dynamically typed domain nested in a container', count() FROM t_signed_zero_dynamic_nested WHERE d = tuple(0);
 SELECT 'dynamically typed domain nested in a container, ground truth', countIf(d = tuple(0)) FROM t_signed_zero_dynamic_nested;
 
+-- `Variant` is a second such domain, and a constant there can sit on the integer alternative, so it
+-- carries no floating-point value at all while still standing for a stored `-0.`.
+DROP TABLE IF EXISTS t_signed_zero_variant;
+CREATE TABLE t_signed_zero_variant (v Variant(Float64, UInt64)) ENGINE = MergeTree ORDER BY toString(v)
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_variant VALUES (toFloat64('-0')::Variant(Float64, UInt64));
+
+SELECT 'variant domain', count() FROM t_signed_zero_variant WHERE v = toUInt64(0)::Variant(Float64, UInt64);
+SELECT 'variant domain, ground truth', countIf(v = toUInt64(0)::Variant(Float64, UInt64)) FROM t_signed_zero_variant;
+
 DROP TABLE t_signed_zero;
 DROP TABLE t_signed_zero_tuple;
 DROP TABLE t_signed_zero_tuple_control;
@@ -140,3 +150,4 @@ DROP TABLE t_signed_zero_minmax;
 DROP TABLE t_signed_zero_minmax_control;
 DROP TABLE t_signed_zero_dynamic;
 DROP TABLE t_signed_zero_dynamic_nested;
+DROP TABLE t_signed_zero_variant;
