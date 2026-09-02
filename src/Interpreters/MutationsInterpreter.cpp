@@ -498,8 +498,10 @@ IsStorageTouched isStorageTouchedByMutations(
         return no_rows;
 
     /// An empty part trivially has no rows to touch; this is not an index-analysis exclusion,
-    /// so it must not count towards MutationUntouchedPartsByIndexAnalysis.
-    if (source_part->isEmpty())
+    /// so it must not count towards MutationUntouchedPartsByIndexAnalysis. The check query
+    /// still rejects a predicate that does not use a forced index even for an empty part,
+    /// so the shortcut is gated the same way as `canExcludePartByIndexAnalysis`.
+    if (source_part->isEmpty() && !context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
         return {.any_rows_affected = false, .all_rows_affected = true};
 
     if (canExcludePartByIndexAnalysis(source_part, storage_from_part, metadata_snapshot, std::move(predicates_for_part), context))
