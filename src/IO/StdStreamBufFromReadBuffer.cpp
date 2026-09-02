@@ -113,7 +113,12 @@ std::streampos StdStreamBufFromReadBuffer::seekpos(std::streampos pos, std::ios_
     offset -= egptr() - gptr();
     setg(nullptr, nullptr, nullptr);
 
-    if ((read_buffer->buffer().begin() <= read_buffer->position() + offset) && (read_buffer->position() + offset <= read_buffer->buffer().end()))
+    /// Compare distances rather than pointers: forming `position() + offset` for a target outside
+    /// the buffer would already be undefined behavior, even though the seek is about to be rejected.
+    const std::streamoff behind_position = read_buffer->position() - read_buffer->buffer().begin();
+    const std::streamoff ahead_of_position = read_buffer->buffer().end() - read_buffer->position();
+
+    if ((offset >= -behind_position) && (offset <= ahead_of_position))
     {
         read_buffer->position() += offset;
         return pos;

@@ -543,11 +543,25 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
 static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size)
 {
-    do
+    try
     {
-        response.clear();
-        readHTTPResponseHeader(session, response);
-    } while (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE);
+        do
+        {
+            response.clear();
+            readHTTPResponseHeader(session, response);
+        } while (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE);
+    }
+    catch (const Poco::Exception &)
+    {
+        /// Same cleanup as the `Poco::Net::HTTPClientSession::receiveResponse` this replaces: a
+        /// half-parsed response header leaves the socket at an unknown offset, so the session must
+        /// not be kept alive for a retry. Callers that reuse one session, such as `HTTPAuthClient`,
+        /// would otherwise write the next request on top of the leftover bytes.
+        session.close();
+        if (const auto * network_exception = session.networkException())
+            network_exception->rethrow();
+        throw;
+    }
 
     const auto body_info = session.onResponseHeadersReceived(response);
 
