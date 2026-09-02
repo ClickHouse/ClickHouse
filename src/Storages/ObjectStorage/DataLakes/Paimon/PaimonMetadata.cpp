@@ -26,7 +26,6 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <base/scope_guard.h>
 #include <base/defines.h>
 #include <base/MemorySanitizer.h>
 #include <Common/Exception.h>
@@ -46,6 +45,7 @@ using namespace Paimon;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int INVALID_STATE;
 extern const int LOGICAL_ERROR;
 extern const int NO_ZOOKEEPER;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
@@ -61,6 +61,7 @@ extern const SettingsUInt64 max_consume_snapshots;
 
 namespace FailPoints
 {
+extern const char paimon_incremental_read_pause_before_watermark_commit[];
 extern const char paimon_incremental_read_pause_after_watermark_commit[];
 }
 
@@ -357,9 +358,11 @@ void PaimonMetadata::validateTableIdentity() const
     Int64 current_schema0_time_millis = 0;
     Paimon::getValueFromJSON(current_schema0_time_millis, schema0_json, "timeMillis");
 
+    /// Not LOGICAL_ERROR: this is a disagreement with external state, not a broken
+    /// internal invariant, and LOGICAL_ERROR is treated as a bug by stress/fuzzer runs.
     if (current_schema0_time_millis != persistent_components.schema0_time_millis)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::INVALID_STATE,
             "Underlying Paimon table was recreated (schema-0 timeMillis changed: {} -> {}). "
             "Please DROP and re-CREATE the ClickHouse external table to pick up the new table identity.",
             persistent_components.schema0_time_millis,
@@ -612,23 +615,9 @@ ObjectIterator PaimonMetadata::iterate(
                     "Another server may be using the same replica_name.");
         }
 
-        bool lock_acquired = false;
-        SCOPE_EXIT(
-        {
-            try
-            {
-                if (lock_acquired)
-                    stream_state->releaseProcessingLock();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__,
-                    "Failed to release Paimon processing lock in SCOPE_EXIT");
-            }
-        });
-
-        stream_state->acquireProcessingLock();
-        lock_acquired = true;
+        /// The handle owns the session it acquired the lock with and releases the lock
+        /// on destruction, so every exit path below is fenced and leaves no orphan lock.
+        PaimonProcessingLockPtr processing_lock = stream_state->acquireProcessingLock();
 
         std::optional<Int64> last_consumed_snapshot_id;
         const UInt64 max_consume_snapshots = query_context->getSettingsRef()[Setting::max_consume_snapshots];
@@ -636,7 +625,14 @@ ObjectIterator PaimonMetadata::iterate(
 
         if (last_consumed_snapshot_id)
         {
-            stream_state->setCommittedSnapshot(*last_consumed_snapshot_id);
+            /// Test-only pause before the watermark is advanced: the batch is collected but
+            /// nothing is committed yet. Tests use this window to take the processing lock
+            /// away and pin down that the commit below then fails instead of overwriting
+            /// another consumer's progress.
+            FailPointInjection::pauseFailPoint(
+                FailPoints::paimon_incremental_read_pause_before_watermark_commit);
+
+            stream_state->setCommittedSnapshot(*processing_lock, *last_consumed_snapshot_id);
             /// Test-only pause inside the at-most-once window: the watermark is
             /// committed, the collected batch has not been delivered yet. A crash
             /// here loses the batch; the failpoint lets tests pin that semantics
@@ -666,16 +662,6 @@ std::optional<Int64> PaimonMetadata::getCommittedSnapshotId() const
     if (!persistent_components.hasStreamState())
         return std::nullopt;
     return persistent_components.stream_state->getCommittedSnapshotId();
-}
-
-void PaimonMetadata::commitSnapshot(Int64 snapshot_id)
-{
-    if (!persistent_components.hasStreamState())
-    {
-        LOG_WARNING(log, "commitSnapshot called but incremental read is disabled");
-        return;
-    }
-    persistent_components.stream_state->setCommittedSnapshot(snapshot_id);
 }
 
 void PaimonMetadata::scheduleBackgroundRefresh()
@@ -767,41 +753,96 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         snapshots_to_reserve = static_cast<size_t>(max_snapshots_to_load);
     snapshots.reserve(snapshots_to_reserve);
 
+    /// Paimon expiration removes a prefix of the snapshot ids, so a snapshot below the earliest
+    /// one still present was legitimately expired and the watermark may move past it. Any other
+    /// failure to load a snapshot is real and must propagate: skipping it would let a single
+    /// transient object storage error advance the watermark and permanently drop a committed
+    /// snapshot. The watermark stays put on that path, so the read can simply be retried.
+    ///
+    /// `earliest` is resolved on the failure path rather than before the loop so that a healthy
+    /// read pays nothing for it - the EARLIEST hint may be absent, in which case resolving it
+    /// means listing the whole snapshot directory.
+    auto was_expired_by_paimon = [&](Int64 id)
+    {
+        const auto earliest_snapshot_id = table_client->getEarliestSnapshotId();
+        if (!earliest_snapshot_id || id >= *earliest_snapshot_id)
+            return false;
+
+        LOG_INFO(log, "Snapshot_id={} was expired by Paimon (earliest available is {}), skipping",
+            id, *earliest_snapshot_id);
+        return true;
+    };
+
+    /// Spelling out the cost is part of the instruction: moving the cursor past a snapshot
+    /// that cannot be read is how the data in it is lost, so the operator has to opt into it.
+    auto unreadable_snapshot_hint = [&](Int64 id) -> String
+    {
+        if (!persistent_components.hasStreamState())
+            return {};
+
+        const auto & keeper_path = persistent_components.stream_state->getKeeperPath();
+        return fmt::format(
+            " If this snapshot is permanently unreadable, abandon it explicitly with: "
+            "clickhouse-keeper-client -q \"set '{}/committed_snapshot' '{}'\" - this permanently "
+            "drops the data committed in that snapshot.",
+            keeper_path, id);
+    };
+
     for (Int64 snapshot_id = from_snapshot_id + 1; snapshot_id <= to_snapshot_id; ++snapshot_id)
     {
         if (max_snapshots_to_load > 0 && snapshots.size() >= max_snapshots_to_load)
             break;
-
-        /// Track the highest snapshot_id we attempted to scan, regardless of whether
-        /// the snapshot was loaded, skipped (compact), or missing (expired by compaction).
-        /// The caller uses this to advance the watermark past gaps.
-        last_scanned_snapshot_id = snapshot_id;
 
         PaimonTableStatePtr state;
         try
         {
             state = loadStateForSnapshot(snapshot_id);
         }
+        catch (Exception & e)
+        {
+            if (was_expired_by_paimon(snapshot_id))
+            {
+                last_scanned_snapshot_id = snapshot_id;
+                continue;
+            }
+
+            /// The raw backend error says nothing about which table stalled or how to move on,
+            /// so name both. Abandoning the snapshot is left to the operator on purpose: it
+            /// drops committed data, and only they can decide that is acceptable.
+            e.addMessage(
+                "while reading Paimon snapshot {} of '{}' during an incremental read. "
+                "The consumed-snapshot cursor was not advanced, so this read can be retried "
+                "once the underlying error clears.{}",
+                snapshot_id,
+                persistent_components.table_path,
+                unreadable_snapshot_hint(snapshot_id));
+            throw;
+        }
         catch (...)
         {
-            /// Snapshot file may have been removed by Paimon compaction.
-            /// Log and skip — the watermark will still advance past it.
-            ///
-            /// We use catch(...) rather than filtering for specific "file not found"
-            /// exceptions because IObjectStorage has no unified "not found" exception
-            /// type — each backend (S3, Azure, Local, HDFS) throws its own SDK-level
-            /// exception.  Coupling this metadata layer to backend-specific exception
-            /// types would violate layering and require updating every time a new
-            /// backend is added.  Under At-Most-Once semantics the worst outcome of
-            /// a false positive (transient error mistaken for a missing snapshot) is
-            /// skipping one snapshot — which is within the accepted data-loss budget.
-            /// The logged error message provides sufficient observability for operators
-            /// to distinguish transient failures from genuine compaction gaps.
-            LOG_WARNING(log, "Failed to load snapshot_id={}, it may have been removed by "
-                "Paimon compaction. Skipping. Error: {}",
-                snapshot_id, getCurrentExceptionMessage(false));
-            continue;
+            if (was_expired_by_paimon(snapshot_id))
+            {
+                last_scanned_snapshot_id = snapshot_id;
+                continue;
+            }
+
+            /// Not a DB::Exception, so there is nothing to attach the context to - a missing
+            /// file on some object storage backends still surfaces as a bare std::exception.
+            /// Rebuild it instead, keeping the original code and message (with stack trace).
+            throw Exception(
+                getCurrentExceptionCode(),
+                "{}: while reading Paimon snapshot {} of '{}' during an incremental read. "
+                "The consumed-snapshot cursor was not advanced, so this read can be retried "
+                "once the underlying error clears.{}",
+                getCurrentExceptionMessage(/*with_stacktrace=*/true),
+                snapshot_id,
+                persistent_components.table_path,
+                unreadable_snapshot_hint(snapshot_id));
         }
+
+        /// Track the highest snapshot_id actually resolved, whether it is used or skipped
+        /// as compact. The caller uses this to advance the watermark past gaps.
+        last_scanned_snapshot_id = snapshot_id;
 
         if (skip_compact && state->isCompact())
         {
@@ -836,12 +877,41 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
         data_files = collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, true);
         last_consumed_snapshot_id = state->snapshot_id;
     }
-    else if (*committed_snapshot_id >= state->snapshot_id)
+    else if (*committed_snapshot_id == state->snapshot_id)
     {
         /// Already processed this snapshot, no new data
         LOG_DEBUG(log, "Snapshot {} already processed (committed={}), no new data",
                   state->snapshot_id, *committed_snapshot_id);
         return {};
+    }
+    else if (*committed_snapshot_id > state->snapshot_id)
+    {
+        /// The watermark can never exceed a snapshot id that once existed, so the only
+        /// way to get here is that the warehouse lost snapshots off the top. Treating
+        /// this as "no new data" (as a plain `>=` comparison would) silently drops every
+        /// subsequent commit at an id below the stale watermark, so fail instead.
+        ///
+        /// `state->snapshot_id` is trustworthy here: getLatestTableSnapshotInfo validates
+        /// the LATEST hint against the snapshot directory and falls back to a listing,
+        /// so a stale hint cannot make the latest snapshot id look smaller than it is.
+        ///
+        /// Nothing has been read and the watermark is untouched, so this failure is
+        /// idempotent: every poll fails the same way until an operator resolves it.
+        throw Exception(
+            ErrorCodes::INVALID_STATE,
+            "Paimon incremental read cursor is ahead of the warehouse: committed snapshot is {}, "
+            "but the latest snapshot in '{}' is {}. "
+            "The warehouse was rolled back, restored, or recreated while the Keeper cursor at '{}' "
+            "was not reset. No data was read and the cursor was not modified. "
+            "To resume from the warehouse's current head: "
+            "clickhouse-keeper-client -q \"set '{}/committed_snapshot' '{}'\". "
+            "Do NOT delete that node: it triggers a full re-read of the entire table.",
+            *committed_snapshot_id,
+            persistent_components.table_path,
+            state->snapshot_id,
+            persistent_components.stream_state->getKeeperPath(),
+            persistent_components.stream_state->getKeeperPath(),
+            state->snapshot_id);
     }
     else
     {

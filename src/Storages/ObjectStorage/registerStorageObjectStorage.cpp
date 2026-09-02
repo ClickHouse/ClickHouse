@@ -1864,6 +1864,37 @@ FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
 
+### Rewinding the warehouse {#rewinding-the-warehouse}
+
+The Keeper cursor at `paimon_keeper_path` records how far the stream has consumed, and incremental reads assume the warehouse only ever moves forward — Paimon snapshot ids increase monotonically and are never reused. Expiring old snapshots is fine: it removes a prefix and leaves the ids above it untouched.
+
+Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse from an older backup, rolling it back with another engine, or dropping and recreating the Paimon table at the same path all rewind the snapshot ids, and the writer then reuses ids the cursor has already consumed.
+
+**Rewinding the warehouse requires resetting the cursor in the same operation.** ClickHouse cannot reconstruct which snapshots a consumer already received once ids are reused, so a cursor left behind after a rewind produces undefined delivery: snapshots at reused ids may be skipped.
+
+When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
+
+```
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '<latest snapshot id>'"
+```
+
+Do not delete the `committed_snapshot` node to recover. An absent cursor means "never consumed", which makes the next read a full re-read of the whole table rather than a resume.
+
+### When a snapshot cannot be read {#when-a-snapshot-cannot-be-read}
+
+Snapshots that Paimon expired are skipped automatically: expiration removes a prefix of the snapshot ids, so anything below the warehouse's earliest snapshot is known to be gone and the cursor moves past it.
+
+Any other failure to read a snapshot — a transient object storage error, a corrupted snapshot file — fails the query and leaves the cursor where it is. There is deliberately no setting to tolerate this. Skipping an unread snapshot means permanently dropping the data committed in it, and a standing "tolerate errors" switch would turn every future network blip into silent data loss. Because the cursor is untouched, a transient error needs no intervention at all: the next poll re-reads the same range and succeeds.
+
+If a snapshot is genuinely unreadable and the stream must move on, abandon it explicitly. The error message names the command; with a cursor at 1 and an unreadable snapshot 3:
+
+```bash
+# Snapshot 2 is delivered normally by the failing read's predecessor; then abandon 3:
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+The next read resumes at snapshot 4. Only the data committed in snapshot 3 is lost, and the decision is recorded as an explicit operator action rather than inferred from a setting.
+
 ## Paimon to MergeTree via Refreshable Materialized View {#paimon-to-mergetree-via-refresh-mv}
 
 You can build an end-to-end pipeline that continuously syncs data from a Paimon table into a MergeTree table using a refreshable Materialized View in `APPEND` mode. Each refresh cycle reads only new incremental data from Paimon and appends it to the destination table.
