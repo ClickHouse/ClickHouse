@@ -57,6 +57,39 @@ out=$(${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${db}.dst4_05060 AS remote('127
 echo "$out" | grep -m1 -o "cannot be used to create a table"
 echo "$out" | grep -m1 -o "BAD_ARGUMENTS"
 
+# The `AS <table function>` path is not the only carrier of a table function into a persisted
+# definition: the `Remote` / `RemoteSecure` engines store one in `remote_table_function_ptr`. The SQL
+# parser only produces `viewIfPermitted(SELECT ... ELSE ...)` in table-expression position, but the
+# `clickhouse_json` dialect executes a deserialized AST, so the shape can be carried in engine
+# arguments. Splice the two ASTs together instead of writing the JSON out by hand, so the test
+# follows the serialization format rather than pinning it.
+json_create_query() {
+    ${CLICKHOUSE_CLIENT} --enable_json_ast_dialect 1 --dialect clickhouse_json --query "$1"
+}
+
+engine_ast() {
+    ${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON(\$\$CREATE TABLE ${db}.$1 ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(10))\$\$) AS create_ast, parseQueryToJSON(\$\$SELECT * FROM $2\$\$) AS select_ast FORMAT TSVRaw" \
+        | python3 -c "
+import json, sys
+create_ast, select_ast = (json.loads(part) for part in sys.stdin.read().rstrip('\n').split('\t'))
+select = select_ast['list_of_selects']['children'][0]
+table_function = select['tables']['children'][0]['table_expression']['table_function']
+create_ast['storage']['engine']['arguments']['children'][1] = table_function
+print(json.dumps(create_ast))
+"
+}
+
+echo "--- carried in a Remote engine argument through the JSON AST dialect, it is refused too ---"
+out=$({ json_create_query "$(engine_ast dst5_05060 "viewIfPermitted(SELECT * FROM ${db}.src_05060 ELSE null('x UInt64'))")"
+        ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM ${db}.dst5_05060"; } 2>&1)
+echo "$out" | grep -m1 -o "cannot be used to create a table"
+echo "$out" | grep -m1 -o "UNKNOWN_TABLE"
+echo "leaked: [$(echo "$out" | leaked)]"
+
+echo "--- control: an engine argument that does not depend on grants is still accepted ---"
+json_create_query "$(engine_ast dst6_05060 "numbers(10)")"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${db}.dst6_05060"
+
 echo "--- the ELSE fallback still works in a query, without the grant ---"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM viewIfPermitted(SELECT * FROM ${db}.src_05060 ELSE null('x UInt64'))"
 
@@ -74,5 +107,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst1_05060"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst2_05060"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst3_05060"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst4_05060"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst5_05060"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.dst6_05060"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${db}.src_05060"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"

@@ -12,6 +12,12 @@ leaked: []
 --- nested through loop(...) inside remote(...) is refused too ---
 cannot be used to create a table
 BAD_ARGUMENTS
+--- carried in a Remote engine argument through the JSON AST dialect, it is refused too ---
+cannot be used to create a table
+UNKNOWN_TABLE
+leaked: []
+--- control: an engine argument that does not depend on grants is still accepted ---
+10
 --- the ELSE fallback still works in a query, without the grant ---
 0
 --- and the query returns the source rows once permitted ---
