@@ -647,11 +647,14 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
 
     auto new_session_context = new_named_session->context;
     UInt64 max_sessions_for_user = 0;
+    SessionTracker::SessionTrackerHandle new_session_tracker_handle;
 
-    /// `acquireSession` has already published a newly created session into the named-session map,
-    /// before this initialization runs. If it throws (e.g. a returned setting violates a
-    /// constraint), the session must not remain reusable half-initialized: only remove sessions
-    /// THIS call created.
+    /// `acquireSession` has already published a newly created session into the named-session map
+    /// (and taken a reused one off its close schedule) before this initialization runs. Every step
+    /// below that can throw - including the admission check in `trackSession` - must therefore be
+    /// compensated: a session THIS call created must not remain reusable half-initialized, and a
+    /// reused session must be put back on its close schedule. Nothing is published into `this`
+    /// until all of them have succeeded.
     try
     {
         new_session_context->makeSessionContext();
@@ -671,9 +674,9 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
 
             /// Apply session settings received from the authentication server once, when the
             /// named session is created. Applied AFTER max_sessions_for_user is captured from
-            /// the login profiles (step 2), mirroring the unnamed makeSessionContext, so a
-            /// returned max_sessions_for_user does not change named-session admission. Not
-            /// re-applied on reattachment, so settings modified with SET persist.
+            /// the login profiles, mirroring the unnamed makeSessionContext, so a returned
+            /// max_sessions_for_user does not change named-session admission. Not re-applied
+            /// on reattachment, so settings modified with SET persist.
             new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
             new_session_context->applySettingsChanges(settings_from_auth_server);
         }
@@ -707,26 +710,40 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
             if (max_session_for_user_field)
                 max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
         }
+
+        /// Admission is part of the transactional initialization: `trackSession` throws
+        /// USER_SESSION_LIMIT_EXCEEDED when the user's session count is exhausted, and a session
+        /// refused here must not survive as a reusable named session initialized under the
+        /// refused request's roles and settings.
+        new_session_tracker_handle = new_session_context->getSessionTracker().trackSession(
+            *user_id,
+            { session_name_ },
+            max_sessions_for_user);
     }
     catch (...)
     {
-        /// A newly created named session was already published by acquireSession; if its
-        /// initialization throws it must not remain reusable half-initialized.
         if (new_named_session_created)
+        {
+            /// Remove the session this call published, so a later request with the same
+            /// session_id creates a fresh one instead of reusing a half-initialized one.
             NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_name_, new_named_session);
+        }
+        else
+        {
+            /// `acquireSession` removed the reused session from its close schedule; the
+            /// destructor of `this` will not release it because it was never assigned to
+            /// `named_session`, so restore the timeout scheduling here.
+            new_named_session->release();
+        }
         throw;
     }
 
     /// Session context is ready.
     session_context = std::move(new_session_context);
-    named_session = new_named_session;
+    named_session = std::move(new_named_session);
     named_session_created = new_named_session_created;
+    session_tracker_handle = std::move(new_session_tracker_handle);
     user = session_context->getUser();
-
-    session_tracker_handle = session_context->getSessionTracker().trackSession(
-        *user_id,
-        { session_name_ },
-        max_sessions_for_user);
 
     recordLoginSuccess(session_context);
 
