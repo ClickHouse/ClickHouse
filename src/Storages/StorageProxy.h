@@ -215,6 +215,12 @@ public:
         getNested()->updateExternalDynamicMetadataIfExists(context);
     }
 
+    /// The planner reads this to skip a join on a column that holds only defaults.
+    std::optional<ColumnDefaultnessStats> getColumnDefaultnessStats(const String & column_name, ContextPtr context) const override
+    {
+        return getNested()->getColumnDefaultnessStats(column_name, context);
+    }
+
     /// `INSERT` picks its block size and its parallel path from these.
     bool isDataLake() const override { return getNested()->isDataLake(); }
     bool isObjectStorage() const override { return getNested()->isObjectStorage(); }

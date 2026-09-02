@@ -922,6 +922,13 @@ _NOT_A_CATALOG_POINTER = re.compile(
 )
 
 
+def _without_comments(text):
+    """Blanks out comments, keeping the line layout so offsets and line numbers still match."""
+    return re.sub(
+        r"//[^\n]*|/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S
+    )
+
+
 def _cast_operand(text, open_paren):
     """The argument of a cast whose '(' is at `open_paren`, or None when unbalanced."""
     depth = 0
@@ -957,11 +964,11 @@ def check_storage_casts(files) -> str:
         ):
             continue
         try:
-            text = pathlib.Path(path).read_text(errors="replace")
+            lines = pathlib.Path(path).read_text(errors="replace").splitlines()
         except OSError:
             continue
 
-        lines = text.splitlines()
+        text = _without_comments("\n".join(lines))
         casts = [(m, m.group("cast"), _cast_operand(text, m.end() - 1)) for m in cast_head.finditer(text)]
         casts += [(m, "as", m.group("operand")) for m in as_cast.finditer(text)]
 
@@ -1022,19 +1029,17 @@ def check_storage_proxy_forwards(files) -> str:
     # The header of every deferrable engine, found by its declaration, so a class added to the cast
     # check above joins this sweep as well.
     declaration = re.compile(r"^\s*class\s+(" + "|".join(DEFERRABLE_STORAGE_CLASSES) + r")\b[^;]*$", re.M)
+    overrides = re.compile(r"\b(\w+)\s*\([^;{]*\)[^;{]*\boverride\b")
     overridden_by_engine = set()
     for path in pathlib.Path("src").rglob("*.h"):
-        text = path.read_text(errors="replace")
+        text = _without_comments(path.read_text(errors="replace"))
         if declaration.search(text):
-            overridden_by_engine |= set(
-                re.findall(r"\b(\w+)\s*\([^;{]*\)[^;{]*\boverride\b", text))
+            overridden_by_engine |= set(overrides.findall(text))
 
-    istorage_path = "src/Storages/IStorage.h"
-    istorage = pathlib.Path(istorage_path).read_text(errors="replace")
+    istorage = _without_comments(pathlib.Path("src/Storages/IStorage.h").read_text(errors="replace"))
     istorage_virtuals = set(re.findall(r"\bvirtual\b[^;{]*?\b(\w+)\s*\(", istorage))
 
-    proxy = pathlib.Path(proxy_path).read_text(errors="replace")
-    forwarded = set(re.findall(r"\b(\w+)\s*\([^;{]*\)[^;{]*\boverride\b", proxy))
+    forwarded = set(overrides.findall(_without_comments(pathlib.Path(proxy_path).read_text(errors="replace"))))
 
     missing = sorted((overridden_by_engine & istorage_virtuals) - forwarded - exempt)
     if not missing:
