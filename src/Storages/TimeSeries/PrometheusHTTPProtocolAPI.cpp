@@ -36,6 +36,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -43,8 +44,11 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <fmt/format.h>
+
+#include <vector>
 
 
 namespace DB
@@ -178,6 +182,35 @@ String unescapePrometheusLabelName(const String & name)
         pos = closing + 1;
     }
     return result;
+}
+
+/// Makes a "SELECT <expressions> FROM <table>" query.
+ASTPtr makeSelectFromTable(ASTs select_list, const StorageID & table_id)
+{
+    auto select_query = make_intrusive<ASTSelectQuery>();
+
+    auto select_list_exp = make_intrusive<ASTExpressionList>();
+    select_list_exp->children = std::move(select_list);
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+
+    auto table_exp = make_intrusive<ASTTableExpression>();
+    table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_id);
+    table_exp->children.push_back(table_exp->database_and_table_name);
+
+    auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+    table->table_expression = table_exp;
+    table->children.push_back(std::move(table_exp));
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(table));
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select_query));
+    select_with_union_query->children.push_back(list_of_selects);
+    select_with_union_query->list_of_selects = std::move(list_of_selects);
+    return select_with_union_query;
 }
 }
 
@@ -1000,6 +1033,340 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
     }
 
     /// Release the query slot early, flush the response and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
+}
+
+void PrometheusHTTPProtocolAPI::getTSDBStats(
+    WriteBuffer & response,
+    UInt64 limit,
+    QueryFinishCallback query_finish_callback)
+{
+    using PrometheusQueryToSQL::SQLSubquery;
+    using PrometheusQueryToSQL::SQLSubqueryType;
+    using PrometheusQueryToSQL::SelectQueryBuilder;
+
+    std::vector<SQLSubquery> subqueries;
+    auto add_subquery = [&](ASTPtr query, SQLSubqueryType type)
+    {
+        subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(query), type});
+        return subqueries.back().name;
+    };
+
+    /// Use the same logical label representation as /series and /labels. In particular, this
+    /// deduplicates unmerged tags rows and includes labels stored in dedicated tag columns.
+    auto series_ids_query = makeSeriesIDsQuery({R"({__name__!=""})"}, "", "");
+    auto labels_expression = makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>("series_id"));
+    labels_expression->setAlias("labels");
+    auto canonical_series_query = makeSelectFromSubquery(
+        {std::move(labels_expression)}, std::move(series_ids_query), /* distinct = */ true, {});
+    const String canonical_series_name = add_subquery(std::move(canonical_series_query), SQLSubqueryType::MATERIALIZED_TABLE);
+
+    /// SELECT tupleElement(label, 1) AS label_name, tupleElement(label, 2) AS label_value
+    /// FROM (canonical_series) ARRAY JOIN labels AS label
+    SelectQueryBuilder label_pairs_builder;
+    label_pairs_builder.from_table = canonical_series_name;
+    auto label = makeASTFunction("arrayJoin", make_intrusive<ASTIdentifier>("labels"));
+    label->setAlias("label");
+    auto label_name = makeASTFunction("tupleElement", label, make_intrusive<ASTLiteral>(1u));
+    label_name->setAlias("label_name");
+    label_pairs_builder.select_list.push_back(std::move(label_name));
+    auto label_value = makeASTFunction(
+        "tupleElement", make_intrusive<ASTIdentifier>("label"), make_intrusive<ASTLiteral>(2u));
+    label_value->setAlias("label_value");
+    label_pairs_builder.select_list.push_back(std::move(label_value));
+    label_pairs_builder.where = makeASTFunction(
+        "notEquals",
+        makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("label"), make_intrusive<ASTLiteral>(2u)),
+        make_intrusive<ASTLiteral>(""));
+    const String label_pairs_name = add_subquery(label_pairs_builder.getSelectQuery(), SQLSubqueryType::TABLE);
+
+    /// One row per distinct logical (label name, label value) pair, with the number of series using it.
+    SelectQueryBuilder pair_counts_builder;
+    pair_counts_builder.from_table = label_pairs_name;
+    pair_counts_builder.select_list.push_back(make_intrusive<ASTIdentifier>("label_name"));
+    pair_counts_builder.select_list.push_back(make_intrusive<ASTIdentifier>("label_value"));
+    auto series_count = makeASTFunction("count");
+    series_count->setAlias("series_count");
+    pair_counts_builder.select_list.push_back(std::move(series_count));
+    pair_counts_builder.group_by.push_back(make_intrusive<ASTIdentifier>("label_name"));
+    pair_counts_builder.group_by.push_back(make_intrusive<ASTIdentifier>("label_value"));
+    const String pair_counts_name = add_subquery(pair_counts_builder.getSelectQuery(), SQLSubqueryType::MATERIALIZED_TABLE);
+
+    /// Aggregate label-name cardinality and the approximate memory required for the label pairs.
+    SelectQueryBuilder label_stats_builder;
+    label_stats_builder.from_table = pair_counts_name;
+    label_stats_builder.select_list.push_back(make_intrusive<ASTIdentifier>("label_name"));
+    auto label_value_count = makeASTFunction("count");
+    label_value_count->setAlias("label_value_count");
+    label_stats_builder.select_list.push_back(std::move(label_value_count));
+    /// This follows the default Prometheus labels representation: each string contributes its byte length
+    /// plus one byte for the encoded length (or four bytes for strings of length 255 and larger).
+    auto encoded_string_size = [](ASTPtr value)
+    {
+        auto length = makeASTFunction("length", std::move(value));
+        auto encoded_length = makeASTFunction(
+            "if",
+            makeASTFunction("less", length->clone(), make_intrusive<ASTLiteral>(255u)),
+            make_intrusive<ASTLiteral>(1u),
+            make_intrusive<ASTLiteral>(4u));
+        return makeASTFunction("plus", std::move(length), std::move(encoded_length));
+    };
+
+    auto label_size = makeASTFunction(
+        "plus",
+        encoded_string_size(make_intrusive<ASTIdentifier>("label_name")),
+        encoded_string_size(make_intrusive<ASTIdentifier>("label_value")));
+    auto memory_bytes = makeASTFunction(
+        "sum",
+        makeASTFunction(
+            "multiply",
+            std::move(label_size),
+            make_intrusive<ASTIdentifier>("series_count")));
+    memory_bytes->setAlias("memory_bytes");
+    label_stats_builder.select_list.push_back(std::move(memory_bytes));
+    label_stats_builder.group_by.push_back(make_intrusive<ASTIdentifier>("label_name"));
+    const String label_stats_name = add_subquery(label_stats_builder.getSelectQuery(), SQLSubqueryType::MATERIALIZED_TABLE);
+
+    /// Build one scalar CTE containing an array of {name, value} objects. The bitwise complement
+    /// makes groupArraySorted keep the largest values without materializing all statistics entries.
+    auto add_stats_array = [&](const String & source_name, ASTPtr name_expression, ASTPtr value_expression, ASTPtr where)
+    {
+        SelectQueryBuilder builder;
+        builder.from_table = source_name;
+        builder.where = std::move(where);
+
+        auto value_sort_key = makeASTFunction("bitNot", value_expression->clone());
+        auto value_name_tuple = makeASTFunction("tuple", std::move(value_sort_key), std::move(name_expression));
+        auto sorted = addParametersToAggregateFunction(
+            makeASTFunction("groupArraySorted", std::move(value_name_tuple)), make_intrusive<ASTLiteral>(limit));
+        auto stats = makeASTFunction(
+            "arrayMap",
+            makeASTLambda(
+                {"x"},
+                makeASTFunction(
+                    "tuple",
+                    makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(2u)),
+                    makeASTFunction(
+                        "bitNot",
+                        makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))))),
+            std::move(sorted));
+        stats->setAlias("stats");
+        builder.select_list.push_back(std::move(stats));
+        return add_subquery(builder.getSelectQuery(), SQLSubqueryType::SCALAR);
+    };
+
+    const String metric_stats_name = add_stats_array(
+        pair_counts_name,
+        make_intrusive<ASTIdentifier>("label_value"),
+        make_intrusive<ASTIdentifier>("series_count"),
+        makeASTFunction("equals", make_intrusive<ASTIdentifier>("label_name"), make_intrusive<ASTLiteral>("__name__")));
+    const String label_value_stats_name = add_stats_array(
+        label_stats_name,
+        make_intrusive<ASTIdentifier>("label_name"),
+        make_intrusive<ASTIdentifier>("label_value_count"),
+        {});
+    const String memory_stats_name = add_stats_array(
+        label_stats_name,
+        make_intrusive<ASTIdentifier>("label_name"),
+        make_intrusive<ASTIdentifier>("memory_bytes"),
+        {});
+    const String pair_stats_name = add_stats_array(
+        pair_counts_name,
+        makeASTFunction(
+            "concat",
+            make_intrusive<ASTIdentifier>("label_name"),
+            make_intrusive<ASTLiteral>("="),
+            make_intrusive<ASTIdentifier>("label_value")),
+        make_intrusive<ASTIdentifier>("series_count"),
+        {});
+
+    SelectQueryBuilder series_count_builder;
+    series_count_builder.from_table = canonical_series_name;
+    auto logical_series_count = makeASTFunction("count");
+    logical_series_count->setAlias("num_series");
+    series_count_builder.select_list.push_back(std::move(logical_series_count));
+    const String logical_series_count_name = add_subquery(series_count_builder.getSelectQuery(), SQLSubqueryType::SCALAR);
+
+    /// TimeSeries has no Prometheus head block. Use stored per-series bounds when the tags target
+    /// exposes them, and leave them at zero for custom targets without those optional columns.
+    const auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
+    const auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, getContext())
+        ->getInMemoryMetadataPtr(getContext(), false);
+    const auto time_series_settings = time_series_storage->getStorageSettings();
+    const bool has_time_bounds = (*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time]
+        && tags_table_metadata->columns.has(TimeSeriesColumnNames::MinTime)
+        && tags_table_metadata->columns.has(TimeSeriesColumnNames::MaxTime);
+
+    std::optional<String> time_bounds_name;
+    if (has_time_bounds)
+    {
+        auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+        auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
+        UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+
+        auto to_milliseconds = [&](const char * column_name, const char * aggregate_function)
+        {
+            const auto * column = tags_table_metadata->columns.tryGet(column_name);
+            chassert(column);
+
+            ASTPtr value = make_intrusive<ASTIdentifier>(column_name);
+            if (typeid_cast<const DataTypeAggregateFunction *>(column->type.get()))
+                value = makeASTFunction("finalizeAggregation", std::move(value));
+
+            return makeASTFunction(
+                "ifNull",
+                makeASTFunction(
+                    "toUnixTimestamp64Milli",
+                    makeASTFunction(
+                        "toDateTime64",
+                        makeASTFunction(aggregate_function, std::move(value)),
+                        make_intrusive<ASTLiteral>(timestamp_scale))),
+                make_intrusive<ASTLiteral>(Int64{0}));
+        };
+
+        auto bounds = makeASTFunction(
+            "tuple",
+            to_milliseconds(TimeSeriesColumnNames::MinTime, "min"),
+            to_milliseconds(TimeSeriesColumnNames::MaxTime, "max"));
+        bounds->setAlias("time_bounds");
+        auto bounds_query = makeSelectFromTable({std::move(bounds)}, tags_table_id);
+        time_bounds_name = add_subquery(std::move(bounds_query), SQLSubqueryType::SCALAR);
+    }
+
+    SelectQueryBuilder final_builder;
+    final_builder.from_table = pair_counts_name;
+    final_builder.with = std::move(subqueries);
+
+    auto num_label_pairs = makeASTFunction("count");
+    num_label_pairs->setAlias("num_label_pairs");
+    final_builder.select_list.push_back(std::move(num_label_pairs));
+
+    ASTPtr num_series = make_intrusive<ASTIdentifier>(logical_series_count_name);
+    num_series = makeASTFunction("assumeNotNull", std::move(num_series));
+    num_series->setAlias("num_series");
+    final_builder.select_list.push_back(std::move(num_series));
+
+    ASTPtr min_time;
+    ASTPtr max_time;
+    if (time_bounds_name)
+    {
+        auto time_bounds = makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(*time_bounds_name));
+        min_time = makeASTFunction("tupleElement", time_bounds->clone(), make_intrusive<ASTLiteral>(1u));
+        max_time = makeASTFunction("tupleElement", std::move(time_bounds), make_intrusive<ASTLiteral>(2u));
+    }
+    else
+    {
+        /// Keep the serialized SQL expressions as Int64. A bare numeric literal would be inferred as UInt8.
+        min_time = makeASTFunction("toInt64", make_intrusive<ASTLiteral>(0u));
+        max_time = makeASTFunction("toInt64", make_intrusive<ASTLiteral>(0u));
+    }
+    min_time->setAlias("min_time");
+    max_time->setAlias("max_time");
+    final_builder.select_list.push_back(std::move(min_time));
+    final_builder.select_list.push_back(std::move(max_time));
+
+    auto add_final_array = [&](const String & name, const char * alias)
+    {
+        auto expression = makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(name));
+        expression->setAlias(alias);
+        final_builder.select_list.push_back(std::move(expression));
+    };
+    add_final_array(metric_stats_name, "series_count_by_metric_name");
+    add_final_array(label_value_stats_name, "label_value_count_by_label_name");
+    add_final_array(memory_stats_name, "memory_in_bytes_by_label_name");
+    add_final_array(pair_stats_name, "series_count_by_label_value_pair");
+
+    auto sql_query = final_builder.getSelectQuery();
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+
+    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
+    getContext()->setSetting("allow_experimental_analyzer", true);
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        getContext()->setSetting("enable_materialized_cte", true);
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+
+        /// Pull the first non-empty block before writing the header so an early exception still produces the correct error response.
+        bool has_output = false;
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() > 0)
+            {
+                has_output = true;
+                break;
+            }
+        }
+
+        if (!has_output)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The Prometheus TSDB statistics query returned no rows");
+
+        auto materialize_column = [&](const char * column_name) -> const ColumnPtr &
+        {
+            auto & column = block.getByName(column_name).column;
+            column = column->convertToFullColumnIfConst();
+            return column;
+        };
+
+        const auto & num_series_column = typeid_cast<const ColumnUInt64 &>(*materialize_column("num_series")).getData();
+        const auto & num_label_pairs_column = typeid_cast<const ColumnUInt64 &>(*materialize_column("num_label_pairs")).getData();
+        const auto & min_time_column = typeid_cast<const ColumnInt64 &>(*materialize_column("min_time")).getData();
+        const auto & max_time_column = typeid_cast<const ColumnInt64 &>(*materialize_column("max_time")).getData();
+
+        writeString(R"({"status":"success","data":{"headStats":{"numSeries":)", response);
+        writeIntText(num_series_column[0], response);
+        writeString(R"(,"numLabelPairs":)", response);
+        writeIntText(num_label_pairs_column[0], response);
+        writeString(R"(,"chunkCount":0,"minTime":)", response);
+        writeIntText(min_time_column[0], response);
+        writeString(R"(,"maxTime":)", response);
+        writeIntText(max_time_column[0], response);
+        writeString(R"(,"seriesCountByMetricName":)", response);
+
+        auto write_stats_array = [&](const char * column_name)
+        {
+            const auto & array_column = typeid_cast<const ColumnArray &>(*materialize_column(column_name));
+            const auto & offsets = array_column.getOffsets();
+            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+            const auto & name_column = tuple_column.getColumn(0);
+            const auto & value_column = typeid_cast<const ColumnUInt64 &>(tuple_column.getColumn(1)).getData();
+
+            writeString("[", response);
+            size_t end = offsets.empty() ? 0 : offsets[0];
+            for (size_t i = 0; i < end; ++i)
+            {
+                if (i)
+                    writeString(",", response);
+                writeString(R"({"name":)", response);
+                writeJSONString(name_column.getDataAt(i), response, format_settings);
+                writeString(R"(,"value":)", response);
+                writeIntText(value_column[i], response);
+                writeString("}", response);
+            }
+            writeString("]", response);
+        };
+
+        write_stats_array("series_count_by_metric_name");
+        writeString(R"(,"labelValueCountByLabelName":)", response);
+        write_stats_array("label_value_count_by_label_name");
+        writeString(R"(,"memoryInBytesByLabelName":)", response);
+        write_stats_array("memory_in_bytes_by_label_name");
+        writeString(R"(,"seriesCountByLabelValuePair":)", response);
+        write_stats_array("series_count_by_label_value_pair");
+        writeString("}}", response);
+
+        io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
     finishExecutedQuery(io, query_finish_callback);
 }
 
