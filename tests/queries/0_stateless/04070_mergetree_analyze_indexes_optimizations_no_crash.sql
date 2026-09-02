@@ -18,6 +18,10 @@ SELECT * FROM mergeTreeAnalyzeIndexesUUID('00000000-0000-0000-0000-000000000001'
 -- A well-formed constant array is still accepted and reaches the arity check.
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', CAST([1, 2, 3] AS Array(UInt8))); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- The heterogeneous array needs `Variant` as its common type. Pin the setting: the stress job
+-- randomizes `compatibility`, and a version below 26.1 restores this setting's old default of 0.
+SET use_variant_as_common_type = 1;
+
 -- A six-element array is decoded element by element, each with its own expected type. `data` has no
 -- parts, so the analysis itself returns nothing.
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [], 'vector_search_index_analysis', array('value', 'L2Distance', 1, [1.0], false, false));
