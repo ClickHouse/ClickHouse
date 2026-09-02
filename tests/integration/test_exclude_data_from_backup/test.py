@@ -86,7 +86,8 @@ def test_except_data_from_table_all_level():
     instance.query("INSERT INTO db2.t VALUES (2)")
 
     backup_name = new_backup_name()
-    instance.query(f"BACKUP ALL EXCEPT DATA FROM TABLE db1.t TO {backup_name}")
+    # Exclude system database to avoid system table restore conflicts
+    instance.query(f"BACKUP ALL EXCEPT DATABASE system EXCEPT DATA FROM TABLE db1.t TO {backup_name}")
 
     instance.query("DROP DATABASE db1")
     instance.query("DROP DATABASE db2")
@@ -244,3 +245,66 @@ def test_except_data_rejects_inner_table_name():
             f"Expected INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION (666), got: {error_message}"
 
     instance.query("DROP DATABASE test")
+
+
+def test_except_data_from_table_unqualified():
+    """Test EXCEPT DATA FROM TABLE with unqualified table name (uses current database)
+
+    Regression test for bug where setCurrentDatabase() didn't rewrite except_data_tables
+    for TABLE elements, causing unqualified table names to be silently dropped.
+    """
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.t")
+    instance.query("CREATE TABLE test.t (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("INSERT INTO test.t VALUES (1), (2), (3)")
+    assert instance.query("SELECT count() FROM test.t") == "3\n"
+
+    backup_name = new_backup_name()
+    # Use unqualified table name in both the main TABLE clause and EXCEPT DATA FROM clause
+    # The current database context should be properly applied to both
+    instance.query(f"BACKUP TABLE test.t EXCEPT DATA FROM TABLE t TO {backup_name}")
+
+    instance.query("DROP TABLE test.t")
+    instance.query(f"RESTORE TABLE test.t FROM {backup_name}")
+
+    # Data should NOT be restored (it was excluded via unqualified name)
+    assert instance.query("SELECT count() FROM test.t") == "0\n"
+    assert instance.query(
+        "SELECT name, type FROM system.columns WHERE database='test' AND table='t'"
+    ) == "id\tUInt64\n"
+
+    instance.query("DROP TABLE IF EXISTS test.t")
+    instance.query("DROP DATABASE IF EXISTS test")
+
+
+def test_except_data_from_table_formatting():
+    """Test that EXCEPT DATA FROM TABLE clause is correctly formatted in TABLE element
+
+    Regression test for bug where formatElement() didn't emit EXCEPT DATA FROM for
+    TABLE/TEMPORARY_TABLE types, which would break ON CLUSTER backups (the clause
+    would be lost when the query is formatted for distribution to worker hosts).
+
+    Note: This test only verifies formatting without actual cluster distribution.
+    For full ON CLUSTER coverage, see tests/integration/test_backup_restore_on_cluster/.
+    """
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.t1, test.t2")
+    instance.query("CREATE TABLE test.t1 (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("CREATE TABLE test.t2 (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("INSERT INTO test.t1 VALUES (1), (2), (3)")
+    instance.query("INSERT INTO test.t2 VALUES (4), (5), (6)")
+
+    backup_name = new_backup_name()
+    # This exercises the TABLE element's formatElement() path with EXCEPT DATA FROM.
+    # Both tables are backed up (structure); only t1's data is excluded.
+    instance.query(f"BACKUP TABLE test.t1, TABLE test.t2 EXCEPT DATA FROM TABLE test.t1 TO {backup_name}")
+
+    instance.query("DROP TABLE test.t1, test.t2")
+    instance.query(f"RESTORE TABLE test.t1, TABLE test.t2 FROM {backup_name}")
+
+    # t1 has no data (excluded), t2 has data
+    assert instance.query("SELECT count() FROM test.t1") == "0\n"
+    assert instance.query("SELECT count() FROM test.t2") == "3\n"
+
+    instance.query("DROP TABLE IF EXISTS test.t1, test.t2")
+    instance.query("DROP DATABASE IF EXISTS test")

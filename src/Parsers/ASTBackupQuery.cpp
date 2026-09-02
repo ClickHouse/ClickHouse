@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <algorithm>
 
@@ -116,6 +117,7 @@ namespace
 
                 if (element.partitions)
                     formatPartitions(*element.partitions, ostr, format);
+                formatExceptDataTables(element.except_data_tables, ostr, format);
                 break;
             }
 
@@ -129,6 +131,7 @@ namespace
                     ostr << " AS ";
                     ostr << backQuoteIfNeed(element.new_table_name);
                 }
+                formatExceptDataTables(element.except_data_tables, ostr, format);
                 break;
             }
 
@@ -251,6 +254,36 @@ void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database
             database_name = current_database;
         if (new_database_name.empty())
             new_database_name = current_database;
+
+        for (auto it = except_data_tables.begin(); it != except_data_tables.end();)
+        {
+            const auto & except_data_table = *it;
+            if (except_data_table.first.empty())
+            {
+                except_data_tables.emplace(DatabaseAndTableName{current_database, except_data_table.second});
+                it = except_data_tables.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+    else if (type == ASTBackupQuery::TEMPORARY_TABLE)
+    {
+        for (auto it = except_data_tables.begin(); it != except_data_tables.end();)
+        {
+            const auto & except_data_table = *it;
+            if (except_data_table.first.empty())
+            {
+                except_data_tables.emplace(DatabaseAndTableName{DatabaseCatalog::TEMPORARY_DATABASE, except_data_table.second});
+                it = except_data_tables.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
     }
     else if (type == ASTBackupQuery::ALL)
     {
