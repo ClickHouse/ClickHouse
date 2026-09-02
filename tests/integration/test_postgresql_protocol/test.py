@@ -9,6 +9,7 @@ import os
 import random
 import socket
 import struct
+import threading
 import time
 import uuid
 from contextlib import closing
@@ -1942,6 +1943,100 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
     cur = ch.cursor()
     cur.execute("DROP USER IF EXISTS pg_restricted")
     ch.close()
+
+
+def _assert_cancel_request_does_not_cancel_http_query(node, query_id, pid, key):
+    """Runs a long HTTP query under `query_id`, sends an unauthenticated PostgreSQL CancelRequest
+    naming (`pid`, `key`) while the query is running, and asserts the query is not affected."""
+    result = {}
+
+    def run_http_query():
+        try:
+            # The sleep must contribute to the returned value: a `sleepEachRow` column that no outer
+            # expression consumes is dropped from the plan, and the query finishes instantly instead
+            # of staying in the process list. One row per block gives the query one cancellation
+            # checkpoint per 0.3 s for ~9 s, so a cancel that (wrongly) went through would reliably
+            # fail it while the test is still watching.
+            result["output"] = node.http_query(
+                "SELECT sum(sleepEachRow(0.3) + number) FROM numbers(30)",
+                params={"query_id": query_id, "max_block_size": "1"},
+                user="default",
+                password="123",
+            )
+        except Exception as e:
+            result["error"] = str(e)
+
+    thread = threading.Thread(target=run_http_query)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            # Poll over HTTP: a `clickhouse-client` round trip through `docker exec` can take
+            # seconds under sanitizers, which would eat the window while the query is running.
+            if (
+                node.http_query(
+                    f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
+                    user="default",
+                    password="123",
+                ).strip()
+                == "1"
+            ):
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError(
+                f"The HTTP query did not show up in the process list: {result}"
+            )
+
+        # An unauthenticated cancel request naming exactly that (process id, secret key) pair.
+        with socket.create_connection((node.ip_address, server_port)) as sock:
+            sock.sendall(struct.pack("!iiII", 16, 80877102, pid, key))
+    finally:
+        thread.join()
+
+    assert result == {"output": "435\n"}
+
+
+def test_cancel_request_does_not_cancel_foreign_query(started_cluster):
+    """An unauthenticated PostgreSQL CancelRequest may only cancel queries that actually run on the
+    PostgreSQL interface. The query id string alone is not a credential: any other interface lets a
+    client pick an arbitrary query id, so a query that imitates the `postgres:<connection id>:<secret
+    key>` shape must not be cancellable this way."""
+    node = started_cluster.instances["node"]
+    _assert_cancel_request_does_not_cancel_http_query(node, "postgres:1:2", 1, 2)
+
+
+def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
+    """Once a PostgreSQL connection is gone, its `postgres:<connection id>:<secret key>` query ids
+    are free for any client to pick on another interface. A CancelRequest carrying that once-valid
+    (process id, secret key) pair must not cancel the later query: the cancel must be bound to the
+    exact query that was verified to run on the PostgreSQL interface, not to whatever currently
+    holds the id."""
+    node = started_cluster.instances["node"]
+
+    # Run a statement over the PostgreSQL interface to obtain a genuinely server-assigned id, then
+    # close the connection so the id is freed.
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    cur.execute("SELECT 20250807")
+    assert cur.fetchall() == [(20250807,)]
+    ch.close()
+
+    node.query("SYSTEM FLUSH LOGS query_log", password="123")
+    query_id = node.query(
+        "SELECT query_id FROM system.query_log"
+        " WHERE query_id LIKE 'postgres:%' AND query LIKE 'SELECT 20250807%' AND type = 'QueryFinish'"
+        " ORDER BY event_time_microseconds DESC LIMIT 1",
+        password="123",
+    ).strip()
+    _, pid, key = query_id.split(":")
+    _assert_cancel_request_does_not_cancel_http_query(node, query_id, int(pid), int(key))
 
 
 def test_bind_portal_snapshots_statement(started_cluster):

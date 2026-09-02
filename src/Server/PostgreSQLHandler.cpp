@@ -10,6 +10,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
@@ -261,6 +262,14 @@ PostgreSQLHandler::PostgreSQLHandler(
     , authentication_manager(auth_methods_)
     , prepared_statements_manager(std::nullopt)
 {
+    /// The secret key belongs to the connection, not to a single statement: it is handed to the client
+    /// once, in `BackendKeyData`, and the client presents it back on a separate connection to cancel
+    /// whatever this connection is running. Every statement of this connection therefore runs under the
+    /// query id `postgres:<connection id>:<secret key>`, which is both unguessable and the id a cancel
+    /// request resolves to. Statements of one connection run one after another, so reusing the id is safe.
+    pcg64_fast gen{randomSeed()};
+    secret_key = std::uniform_int_distribution<Int32>(0, INT32_MAX)(gen);
+
     changeIO(socket());
 
 #if USE_SSL
@@ -631,17 +640,31 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
     message_transport->flush();
 }
 
+String PostgreSQLHandler::queryIdFor(Int32 connection_id_, Int32 secret_key_)
+{
+    return fmt::format("postgres:{:d}:{:d}", connection_id_, secret_key_);
+}
+
+String PostgreSQLHandler::currentQueryId() const
+{
+    return queryIdFor(connection_id, secret_key);
+}
+
 void PostgreSQLHandler::cancelRequest()
 {
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
-    String query = fmt::format("KILL QUERY WHERE query_id = 'postgres:{:d}:{:d}'", msg->process_id, msg->secret_key);
-    auto replacement = std::make_unique<ReadBufferFromOwnString>(std::move(query));
-
-    auto query_context = session->makeQueryContext();
-    query_context->setCurrentQueryId("");
-    executeQuery(std::move(replacement), *out, query_context, {});
+    /// A cancel request arrives on a connection of its own which, by the protocol, never authenticates:
+    /// the pair of numbers it carries is the credential, and the secret key half of it is what makes the
+    /// query id of the connection being cancelled unguessable. So there is no authenticated session here
+    /// to make a query context from - cancel the query through the process list directly.
+    ///
+    /// PostgreSQL answers a cancel request with nothing at all and closes the connection, whatever the
+    /// outcome, so that a caller cannot probe for live backends. Report the outcome to the log only.
+    String query_id = queryIdFor(msg->process_id, msg->secret_key);
+    CancellationCode code = server.context()->getProcessList().sendCancelToPostgreSQLQuery(query_id);
+    LOG_DEBUG(log, "Cancellation of query {}: {}", query_id, code == CancellationCode::CancelSent ? "sent" : "not sent");
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -760,7 +783,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+        query_context->setCurrentQueryId(currentQueryId());
         QueryScope query_scope = QueryScope::create(query_context);
 
         String columns_to_insert;
@@ -857,7 +880,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+        query_context->setCurrentQueryId(currentQueryId());
 
         QueryScope query_scope = QueryScope::create(query_context);
 
@@ -944,12 +967,8 @@ void PostgreSQLHandler::processQuery()
         if (processCopyQuery(query_text))
             return;
 
-        pcg64_fast gen{randomSeed()};
-        std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
-
-        secret_key = dis(gen);
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+        query_context->setCurrentQueryId(currentQueryId());
 
         if (should_init_system_tables)
         {
@@ -973,8 +992,7 @@ void PostgreSQLHandler::processQuery()
 
         for (auto & sql_query : queries)
         {
-            secret_key = dis(gen);
-            query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+            query_context->setCurrentQueryId(currentQueryId());
 
             QueryScope query_scope = QueryScope::create(query_context);
 
@@ -1209,12 +1227,8 @@ void PostgreSQLHandler::processExecuteQuery()
                 "Execute on a named portal is not supported in the PostgreSQL wire protocol, "
                 "got portal name '{}'", query->portal_name);
 
-        pcg64_fast gen{randomSeed()};
-        std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
-
-        secret_key = dis(gen);
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+        query_context->setCurrentQueryId(currentQueryId());
 
         if (should_init_system_tables)
         {
