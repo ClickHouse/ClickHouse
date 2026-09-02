@@ -193,10 +193,18 @@ DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resol
     if (!latest_snapshot_version.has_value() || version >= latest_snapshot_version.value())
         latest_snapshot_version = version;
 
-    /// Replace rather than prefer an existing entry: a cached object for this version may be
-    /// poisoned by a still-stuck in-flight load, while this one has just loaded successfully.
-    snapshots.set(version, snapshot);
-    return LatestSnapshot{.snapshot = snapshot, .version = version, .created = true};
+    /// Keep an existing, initialized entry for this version (it carries cached schema and
+    /// statistics, and its credentials-rotation check must keep running against the state it
+    /// installed). Only an entry which never got a state — e.g. poisoned by a still-stuck
+    /// in-flight load — is replaced by this freshly loaded snapshot.
+    auto [cached, created] = snapshots.getOrSet(version, [&]() { return snapshot; });
+    if (!created && cached != snapshot && !cached->isInitialized())
+    {
+        snapshots.set(version, snapshot);
+        cached = snapshot;
+        created = true;
+    }
+    return LatestSnapshot{.snapshot = cached, .version = version, .created = created};
 }
 
 DeltaLake::TableSnapshotPtr

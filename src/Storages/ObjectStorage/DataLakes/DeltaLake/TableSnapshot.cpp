@@ -721,6 +721,12 @@ bool TableSnapshot::isAbandonedWithoutWaiters() const
         && inflight_load->waiters.load() == 0;
 }
 
+bool TableSnapshot::isInitialized() const
+{
+    std::lock_guard lock(mutex);
+    return kernel_snapshot_state != nullptr;
+}
+
 bool TableSnapshot::canShareInflightLoad(const KernelClientOptions & client_options) const
 {
     std::lock_guard lock(mutex);

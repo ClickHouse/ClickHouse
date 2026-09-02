@@ -45,6 +45,9 @@ public:
     /// rather than reusing this one, so that one object never resolves two different versions.
     bool isAbandonedWithoutWaiters() const;
 
+    /// True once a kernel snapshot state is installed (the object is usable as a cache entry).
+    bool isInitialized() const;
+
     /// False when a build is in flight with client options different from `client_options`:
     /// this PR forwards query-level S3 timeouts, so such a query must not adopt that build.
     bool canShareInflightLoad(const KernelClientOptions & client_options) const;
