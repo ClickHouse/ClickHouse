@@ -1899,14 +1899,28 @@ Snapshots that Paimon expired are skipped automatically: expiration removes a pr
 
 Any other failure to read a snapshot — a transient object storage error, a corrupted snapshot file — fails the query and leaves the cursor where it is. There is deliberately no setting to tolerate this. Skipping an unread snapshot means permanently dropping the data committed in it, and a standing "tolerate errors" switch would turn every future network blip into silent data loss. Because the cursor is untouched, a transient error needs no intervention at all: the next poll re-reads the same range and succeeds.
 
-If a snapshot is genuinely unreadable and the stream must move on, abandon it explicitly. The error message names the command; with a cursor at 1 and an unreadable snapshot 3:
+If a snapshot is genuinely unreadable and the stream must move on, abandon it explicitly. The error message names the command, but note what it costs: the failing read delivered nothing, so moving the cursor to the unreadable snapshot abandons **every** snapshot still unconsumed up to and including it — not only the unreadable one.
+
+With a cursor at 1 and snapshots 2, 3 and 4 pending where 3 is unreadable:
 
 ```bash
-# Snapshot 2 is delivered normally by the failing read's predecessor; then abandon 3:
+# Abandons snapshots 2 and 3; the next read resumes at 4.
 clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
 ```
 
-The next read resumes at snapshot 4. Only the data committed in snapshot 3 is lost, and the decision is recorded as an explicit operator action rather than inferred from a setting.
+To keep the readable ones, drain up to the unreadable snapshot first. Each poll consumes one snapshot and advances the cursor, until it reaches the one that cannot be read:
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+Either way the decision is recorded as an explicit operator action rather than inferred from a setting.
 
 ## Paimon to MergeTree via Refreshable Materialized View {#paimon-to-mergetree-via-refresh-mv}
 

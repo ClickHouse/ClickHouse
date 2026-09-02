@@ -800,9 +800,11 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         const auto & keeper_path = persistent_components.stream_state->getKeeperPath();
         return fmt::format(
             " If this snapshot is permanently unreadable, abandon it explicitly with: "
-            "clickhouse-keeper-client -q \"set '{}/committed_snapshot' '{}'\" - this permanently "
-            "drops the data committed in that snapshot.",
-            keeper_path, id);
+            "clickhouse-keeper-client -q \"set '{}/committed_snapshot' '{}'\". That permanently "
+            "drops every snapshot not yet consumed up to and including {}, not just this one - "
+            "the read failed before delivering any of them. To keep the readable ones, first "
+            "poll with SETTINGS max_consume_snapshots = 1 until the read fails again.",
+            keeper_path, id, id);
     };
 
     for (Int64 snapshot_id = from_snapshot_id + 1; snapshot_id <= to_snapshot_id; ++snapshot_id)
