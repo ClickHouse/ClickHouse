@@ -13,17 +13,30 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Analyzer/TableNode.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
+#include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageValues.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/quoteString.h>
 #include <thread>
 #include <cstddef>
@@ -202,6 +215,181 @@ public:
 };
 
 
+/// Executes a `SELECT` written by this interpreter and returns its whole result as a single block.
+static Block runInternalSelect(
+    const String & select_query, ContextMutablePtr query_context, std::shared_ptr<const EnabledQuota> quota_override = nullptr)
+{
+    auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
+
+    if (quota_override)
+        io.pipeline.setQuota(std::move(quota_override));
+
+    Blocks blocks;
+    io.executeWithCallbacks([&]()
+    {
+        PullingPipelineExecutor executor(io.pipeline);
+        Block block;
+        while (executor.pull(block))
+        {
+            if (!block.empty())
+                blocks.push_back(std::move(block));
+        }
+    });
+
+    Block res = concatenateBlocks(blocks);
+
+    /// Materialize const columns, because callers use typeid_cast to concrete column types.
+    materializeBlockInplace(res);
+
+    return res;
+}
+
+/// A `ColumnLowCardinality` produced by filtering keeps the dictionary of the column it was filtered
+/// from, so values that only removed rows referenced are still reachable through it (for example via
+/// `lowCardinalityKeys`). Rebuilding the column against a fresh dictionary drops them.
+static void rebuildLowCardinalityDictionaries(Block & block)
+{
+    for (auto & elem : block)
+    {
+        if (!elem.column || !elem.column->lowCardinality())
+            continue;
+
+        auto rebuilt = elem.type->createColumn();
+        rebuilt->insertRangeFrom(*elem.column, 0, elem.column->size());
+        elem.column = std::move(rebuilt);
+    }
+}
+
+/// Reads the queries the caller is allowed to kill, under a context with full access.
+static Block readKillableProcesses(const ContextPtr & context, const StoragePtr & storage, bool can_kill_foreign_queries)
+{
+    /// The predicate is evaluated against this block instead of the table, so every column it may name
+    /// has to be here. `SELECT *` omits the ALIAS and the virtual columns, and its width depends on
+    /// `asterisk_include_alias_columns`, which is the caller's to set.
+    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+    NamesAndTypesList columns_to_read = metadata->getColumnsWithVirtuals().getAll();
+
+    String select_query = "SELECT ";
+    bool first = true;
+    for (const auto & column : columns_to_read)
+    {
+        if (!first)
+            select_query += ", ";
+        first = false;
+        select_query += backQuoteIfNeed(column.name);
+    }
+    select_query += " FROM system.processes";
+
+    /// `system.processes.user` and the ownership test in `extractQueriesExceptMeAndCheckAccess` are the
+    /// same `ClientInfo::current_user` field, so this filter and that test accept the same rows.
+    if (!can_kill_foreign_queries)
+        select_query += " WHERE user = " + quoteString(context->getProcessListElement()->getClientInfo().current_user);
+
+    /// A copy of the global context has no bound user, so this read is not subject to a grant. The
+    /// caller's settings are not replayed into it: the query text above is fixed, and
+    /// `additional_table_filters` would add an expression of theirs to a read that has full access.
+    auto inner_context = Context::createCopy(context->getGlobalContext());
+    inner_context->makeQueryContext();
+    inner_context->setCurrentQueryId("");
+    inner_context->setProcessListElement(context->getProcessListElement());
+    inner_context->setProgressCallback(context->getProgressCallback());
+
+    /// A context with no bound user also has no quota, so the caller's is attached explicitly: this is
+    /// the one read that touches the real table.
+    Block res = runInternalSelect(select_query, std::move(inner_context), context->getQuota());
+    rebuildLowCardinalityDictionaries(res);
+    return res;
+}
+
+/// Applies the caller's effective `system.processes` row policy to an already materialized block.
+static void applyProcessesRowPolicy(Block & block, const ContextPtr & context, const StoragePtr & storage)
+{
+    auto row_policy_filter = context->getRowPolicyFilter("system", "processes", RowPolicyFilterType::SELECT_FILTER);
+    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
+        return;
+
+    /// A policy commonly spells `user = currentUser()`, which resolves against the context it is
+    /// compiled under, so it has to be the caller's and not the full-access one used for the read.
+    auto policy_context = Context::createCopy(context);
+    auto planner_context = std::make_shared<PlannerContext>(
+        policy_context,
+        std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}),
+        SelectQueryOptions{});
+
+    /// The real `system.processes` identity, so that `user`, `processes.user` and
+    /// `system.processes.user` bind exactly as they do when the policy is applied to a plain `SELECT`.
+    auto table_expression = std::make_shared<TableNode>(storage, policy_context);
+
+    /// Naming the block's columns here keeps `buildFilterInfo` from looking up table expression data
+    /// that only a full planner run registers.
+    auto block_names = block.getNameSet();
+
+    /// The analysis passes mutate the node they are given, and the policy AST is shared through the
+    /// access cache.
+    auto filter_info
+        = buildFilterInfo(row_policy_filter->expression->clone(), table_expression, planner_context, std::move(block_names));
+
+    /// A set over a subquery is only buildable once it has a query plan, and compiling the filter
+    /// registers such a subquery without planning it. `buildFilterExpression` below builds the sets.
+    for (const auto & subquery : planner_context->getPreparedSets().getSubqueries())
+    {
+        auto subquery_options = SelectQueryOptions{}.subquery();
+        subquery_options.forceMaterializeCTE();
+        Planner subquery_planner(
+            subquery->detachQueryTree(),
+            subquery_options,
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+        subquery_planner.buildQueryPlanIfNeeded();
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+    }
+
+    auto actions = VirtualColumnUtils::buildFilterExpression(std::move(filter_info.actions), policy_context);
+    VirtualColumnUtils::filterBlockWithExpression(actions, block);
+    rebuildLowCardinalityDictionaries(block);
+}
+
+/// Runs the caller's predicate over the materialized block, under the caller's own rights.
+static Block selectFromKillableProcesses(const ContextPtr & context, const ASTPtr & where_expression, Block block)
+{
+    auto query_context = Context::createCopy(context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+
+    ColumnsDescription columns{block.getNamesAndTypesList()};
+    auto creator = [&](const StorageID & table_id) -> StoragePtr { return std::make_shared<StorageValues>(table_id, columns, block); };
+
+    String table_name = "_kill_query_processes_" + toString(UUIDHelpers::generateV4());
+    query_context->addExternalTable(table_name, TemporaryTableHolder(query_context, creator));
+
+    /// Aliased `processes`, so that a predicate spelled `processes.<column>` resolves the way it does
+    /// against the table. An alias and not a subquery: a subquery would add a relation of its own for
+    /// the caller's limits and filter settings to apply to.
+    String select_query = "SELECT query_id, user, query FROM " + backQuoteIfNeed(table_name) + " AS processes";
+    if (where_expression)
+        select_query += " WHERE " + where_expression->formatWithSecretsOneLine();
+
+    return runInternalSelect(select_query, std::move(query_context));
+}
+
+/// The `system.processes` read for a caller who cannot select from that table: authorize the rows
+/// first, then let the caller's predicate choose among the rows that survived.
+static Block getKillableProcesses(const ContextPtr & context, const ASTPtr & where_expression)
+{
+    auto storage = DatabaseCatalog::instance().getTable(StorageID{"system", "processes"}, context);
+    bool can_kill_foreign_queries = context->getAccess()->isGranted(AccessType::KILL_QUERY);
+
+    Block block = readKillableProcesses(context, storage, can_kill_foreign_queries);
+    if (block.rows() == 0)
+        return {};
+
+    applyProcessesRowPolicy(block, context, storage);
+    if (block.rows() == 0)
+        return {};
+
+    return selectFromKillableProcesses(context, where_expression, std::move(block));
+}
+
+
 BlockIO InterpreterKillQueryQuery::execute()
 {
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
@@ -218,7 +406,16 @@ BlockIO InterpreterKillQueryQuery::execute()
     {
     case ASTKillQueryQuery::Type::Query:
     {
-        Block processes_block = getSelectResult("query_id, user, query", "system.processes");
+        /// The read below always names these three columns and every referenced column needs its own
+        /// `SELECT` grant, so a caller missing any of them cannot read `system.processes` at all. A
+        /// table-wide check would instead divert callers who hold only some of the columns.
+        static const Strings kill_query_columns{"query_id", "user", "query"};
+        bool can_read_processes
+            = getContext()->getAccess()->isGranted(AccessType::SELECT, "system", "processes", kill_query_columns);
+
+        Block processes_block = can_read_processes
+            ? getSelectResult("query_id, user, query", "system.processes")
+            : getKillableProcesses(getContext(), query.where_expression);
         if (processes_block.empty())
             return res_io;
 

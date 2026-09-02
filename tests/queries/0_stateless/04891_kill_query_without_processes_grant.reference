@@ -1,0 +1,30 @@
+1 killed=1
+1 alive=0
+2 killed=1
+2 alive=0
+3 killed=0
+3 alive=1
+4 killed=1
+4 alive=0
+5 killed=1
+5 alive=0
+6 distinct_users_killed=1
+6 own=0 foreign=1
+7 hidden killed=0
+7 hidden alive=1
+7 admitted killed=1
+7 admitted alive=0
+8 killed=0
+8 alive=1
+9 exception=0
+9 alive=1
+12 killed=1
+12 alive=0
+13 killed=1
+13 own=0 foreign=1
+14 killed=1
+14 alive=0
+15 killed=1
+15 alive=0
+16 killed=1
+16 alive=0
