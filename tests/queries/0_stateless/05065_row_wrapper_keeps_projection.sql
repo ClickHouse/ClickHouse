@@ -9,6 +9,8 @@ SET allow_experimental_row_type = 1;
 
 DROP TABLE IF EXISTS row_wrapper_projection;
 
+-- A projection is chosen only if it reads fewer marks than the table. With a randomized granularity
+-- of tens of thousands of rows both read the same couple of marks, so the granularity is pinned.
 CREATE TABLE row_wrapper_projection (
     id UInt64,
     a UInt64,
@@ -16,7 +18,7 @@ CREATE TABLE row_wrapper_projection (
     c UInt64,
     combined Row(a UInt64, b UInt64, c UInt64) MATERIALIZED tuple(a, b, c),
     PROJECTION p (SELECT a, b, c ORDER BY a)
-) ENGINE = MergeTree ORDER BY id;
+) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 
 INSERT INTO row_wrapper_projection (id, a, b, c)
     SELECT number, number % 100, number * 2, number * 3 FROM numbers(100000);
