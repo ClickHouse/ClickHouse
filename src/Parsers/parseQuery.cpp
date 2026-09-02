@@ -358,7 +358,10 @@ ASTPtr tryParseQuery(
                 /// when the query as a whole is not - an editor keeps coloring while the user types -
                 /// and only a parse produces them, so the shortcut cannot skip it. The result of that
                 /// parse is thrown away: the lexical error below is the better message, and it is the
-                /// one this position has always reported.
+                /// one this position has always reported. What the shortcut existed to avoid is paid
+                /// here instead, which is why only a caller that asked for highlighting pays it: the
+                /// parse of an obviously erroneous query can backtrack up to `max_parser_backtracks`
+                /// and, on reaching it, report by throwing rather than by returning.
                 if (diagnostics && diagnostics->expected.enable_highlighting)
                 {
                     ASTPtr discarded;
