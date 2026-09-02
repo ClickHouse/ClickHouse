@@ -420,3 +420,6 @@
 [submodule "contrib/MeCab"]
 	path = contrib/MeCab
 	url = https://github.com/taku910/mecab
+[submodule "contrib/substrait"]
+	path = contrib/substrait
+	url = https://github.com/substrait-io/substrait.git
