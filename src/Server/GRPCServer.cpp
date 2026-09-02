@@ -390,6 +390,7 @@ namespace
         std::mutex mutex;
         bool query_finished = false;
         bool transport_cancelled = false;
+        bool notify_done_fired = false;
         QueryStatusPtr query_status;
     };
 
@@ -416,12 +417,18 @@ namespace
             /// runs after `close()` observes `query_finished == true` under that mutex and skips the
             /// `IsCancelled()` deref of the already-destroyed responder. This is the only gRPC event
             /// that fires when a client drops a mid-query RPC without sending an explicit `QueryInfo.cancel`.
-            CompletionCallback * done_callback = new CompletionCallback;
+            auto * done_callback = new CompletionCallback;
+            notify_done_callback = done_callback;
             *done_callback = [state = cancellation_state, &context = grpc_context, done_callback](bool)
             {
                 bool recorded_transport_cancel = false;
                 {
                     std::lock_guard lock{state->mutex};
+                    /// The tag has been delivered, so the callback is now responsible for deleting
+                    /// itself (it does so below). `notify_done_fired` lets the `Runner` distinguish a
+                    /// delivered tag from a responder that never had its RPC run, whose callback it
+                    /// frees during shutdown (see `Runner::~Runner`).
+                    state->notify_done_fired = true;
                     /// The responder may already be destroyed by the time this tag runs: `close()`
                     /// sets `query_finished` under this same mutex before it resets the responder, so
                     /// guarding the `grpc_context` deref with `!query_finished` makes a late tag skip
@@ -451,12 +458,17 @@ namespace
                     FailPointInjection::pauseFailPoint("grpc_call_notify_done_pause");
                 delete done_callback;
             };
-            grpc_context.AsyncNotifyWhenDone(done_callback);
+            grpc_context.AsyncNotifyWhenDone(notify_done_callback);
         }
 
         virtual ~BaseResponder() = default;
 
         std::shared_ptr<RpcCancelState> cancellation_state;
+
+        /// The self-owning `AsyncNotifyWhenDone` completion callback, kept here so that `Runner`
+        /// can free it during shutdown when the tag was never delivered (a responder that never
+        /// received an RPC). A delivered tag deletes this object itself.
+        CompletionCallback * notify_done_callback = nullptr;
 
         virtual void start(GRPCService & grpc_service,
                            grpc::ServerCompletionQueue & new_call_queue,
@@ -2140,6 +2152,19 @@ public:
 
         if (queue_thread.joinable())
             queue_thread.join();
+
+        /// Free the `AsyncNotifyWhenDone` callbacks of responders that never had their tag delivered:
+        /// the queue thread is gone, so a pending tag can no longer fire, and the callback (a
+        /// self-owning object holding the shared `RpcCancelState`) would otherwise leak. A delivered
+        /// tag set `notify_done_fired` and deleted its callback already (`delete done_callback`).
+        auto free_never_fired_callbacks = [](auto & responders)
+        {
+            for (auto & responder : responders)
+                if (responder && !responder->cancellation_state->notify_done_fired)
+                    delete responder->notify_done_callback;
+        };
+        free_never_fired_callbacks(responders_for_new_calls);
+        free_never_fired_callbacks(leftover_responders);
     }
 
     void start()
@@ -2207,7 +2232,14 @@ private:
         std::lock_guard lock{mutex};
         auto responder = std::move(responders_for_new_calls[call_type]);
         if (should_stop)
+        {
+            /// Do not destroy the responder here: its `AsyncNotifyWhenDone` tag may still be pending
+            /// (an RPC that was accepted right around shutdown). Park it until after the queue thread
+            /// has been joined, so the tag, if it is delivered during the queue drain, always runs
+            /// against a live responder; `~Runner` then frees the callback if it never fired.
+            leftover_responders.push_back(std::move(responder));
             return;
+        }
         makeResponderForNewCall(call_type);
         if (responder_started_ok)
         {
@@ -2217,6 +2249,13 @@ private:
             auto * new_call_ptr = new_call.get();
             current_calls[new_call_ptr] = std::move(new_call);
             new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+        }
+        else
+        {
+            /// The RPC never started, so no tag can be delivered for this responder; keep it alive
+            /// until after the queue thread stops and let `~Runner` free its `AsyncNotifyWhenDone`
+            /// callback (see `notify_done_callback`).
+            leftover_responders.push_back(std::move(responder));
         }
     }
 
@@ -2276,6 +2315,10 @@ private:
     ThreadFromGlobalPool queue_thread;
     bool queue_is_shut_down = false;
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
+    /// Responders that were taken out of the pool around shutdown (an accepted RPC or a failed start)
+    /// but are never owned by a `Call`; kept alive until after `queue_thread.join()` so no pending
+    /// `AsyncNotifyWhenDone` tag dereferences a destroyed responder.
+    std::vector<std::unique_ptr<BaseResponder>> leftover_responders;
     std::map<Call *, std::unique_ptr<Call>> current_calls;
     std::vector<std::unique_ptr<Call>> finished_calls;
     bool should_stop = false;
