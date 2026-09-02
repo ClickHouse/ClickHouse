@@ -992,15 +992,6 @@ def check_storage_proxy_forwards(files) -> str:
     MergeTree family forces a decision about the proxy.
     """
     proxy_path = "src/Storages/StorageProxy.h"
-    engine_paths = [
-        "src/Storages/MergeTree/MergeTreeData.h",
-        "src/Storages/StorageMergeTree.h",
-        "src/Storages/StorageReplicatedMergeTree.h",
-        "src/Storages/SharedMergeTree/StorageSharedMergeTree.h",
-        "src/Storages/StorageSet.h",
-        "src/Storages/StorageJoin.h",
-        "src/Storages/RocksDB/StorageEmbeddedRocksDB.h",
-    ]
     if not pathlib.Path(proxy_path).exists():
         return ""
 
@@ -1022,14 +1013,21 @@ def check_storage_proxy_forwards(files) -> str:
         "onActionLockRemove",
         # Declared on the nested DataValidationTasksBase, not on IStorage itself.
         "size",
+        # Called on the storage the factory just built, never on one from the catalog.
+        "addInferredEngineArgsToCreateQuery",
+        # A storage calls this on itself while reading, so it is already the nested one.
+        "parallelizeOutputAfterReading",
     }
 
+    # The header of every deferrable engine, found by its declaration, so a class added to the cast
+    # check above joins this sweep as well.
+    declaration = re.compile(r"^\s*class\s+(" + "|".join(DEFERRABLE_STORAGE_CLASSES) + r")\b[^;]*$", re.M)
     overridden_by_engine = set()
-    for engine_path in engine_paths:
-        path = pathlib.Path(engine_path)
-        if path.exists():
+    for path in pathlib.Path("src").rglob("*.h"):
+        text = path.read_text(errors="replace")
+        if declaration.search(text):
             overridden_by_engine |= set(
-                re.findall(r"\b(\w+)\s*\([^;{]*\)[^;{]*\boverride\b", path.read_text(errors="replace")))
+                re.findall(r"\b(\w+)\s*\([^;{]*\)[^;{]*\boverride\b", text))
 
     istorage_path = "src/Storages/IStorage.h"
     istorage = pathlib.Path(istorage_path).read_text(errors="replace")

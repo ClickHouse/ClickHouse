@@ -208,6 +208,25 @@ public:
     /// silently disables them.
     bool isMergeTree() const override { return getNested()->isMergeTree(); }
 
+    /// A data lake reloads its schema here, and the callers do it right before reading the metadata,
+    /// so the answer has to come from the storage rather than from the stored definition.
+    void updateExternalDynamicMetadataIfExists(ContextPtr context) override
+    {
+        getNested()->updateExternalDynamicMetadataIfExists(context);
+    }
+
+    /// `INSERT` picks its block size and its parallel path from these.
+    bool isDataLake() const override { return getNested()->isDataLake(); }
+    bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
+    bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
+    bool prefersLargeBlocks() const override { return getNested()->prefersLargeBlocks(); }
+    bool supportsPartitionBy() const override { return getNested()->supportsPartitionBy(); }
+
+    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override
+    {
+        return getNested()->executeCommand(command_name, args, context);
+    }
+
     /// Gates the table-level `async_insert` setting, which is otherwise silently ignored.
     bool areAsynchronousInsertsEnabled() const override { return getNested()->areAsynchronousInsertsEnabled(); }
 
