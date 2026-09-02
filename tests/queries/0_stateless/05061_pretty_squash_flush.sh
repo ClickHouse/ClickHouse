@@ -26,9 +26,25 @@ wait_for_lines()
     done
 }
 
+wait_for_content()
+{
+    local file=$1
+    local pattern=$2
+
+    # Up to 30 seconds.
+    for _ in {1..300}
+    do
+        if grep -q -- "$pattern" "$file"
+        then
+            return
+        fi
+        sleep 0.1
+    done
+}
+
 echo '--- unframed output'
 
-output="${CLICKHOUSE_TMP}/05056_pretty_squash_flush.out"
+output="${CLICKHOUSE_TMP}/05061_pretty_squash_flush.out"
 : > "$output"
 
 $CLICKHOUSE_LOCAL --query "SELECT DISTINCT number % 2 AS x FROM numbers(1e18) FORMAT PrettyCompact" > "$output" 2>/dev/null &
@@ -49,19 +65,23 @@ echo '--- framed output'
 # after `consume` is useless here - `consume` only appends to the squashed chunk - so the background
 # writer has to take its own boundary once the table is rendered.
 
-framed="${CLICKHOUSE_TMP}/05056_pretty_squash_flush_framed.out"
+framed="${CLICKHOUSE_TMP}/05061_pretty_squash_flush_framed.out"
 : > "$framed"
 
-URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&framing_output_format=JSONEachPacketString&max_block_size=1&interactive_delay=3600000000&output_format_pretty_squash_consecutive_ms=50&max_execution_time=60&cancel_http_readonly_queries_on_client_close=1"
+# The stateless test server caps `max_rows_to_read` in its default profile, which `numbers(1e18)`
+# exceeds before the query even starts (`clickhouse-local` above has no such cap).
+URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&framing_output_format=JSONEachPacketString&max_block_size=1&interactive_delay=3600000000&output_format_pretty_squash_consecutive_ms=50&max_execution_time=60&cancel_http_readonly_queries_on_client_close=1&max_rows_to_read=0"
 
 ${CLICKHOUSE_CURL_COMMAND} -q -sS --no-buffer --max-time 60 "$URL" \
     -d "SELECT DISTINCT number % 2 AS x FROM numbers(1e18) FORMAT PrettyCompact" > "$framed" 2>/dev/null &
 pid=$!
 
-wait_for_lines "$framed" 1
+# A `data` packet carrying the rendered table arrives while the query is still running. Other packet
+# kinds (`profile_events`, `log`) may precede it, so wait for the `data` packet itself rather than
+# for the first line.
+wait_for_content "$framed" '"packet":"data"'
 
 { kill "$pid"; wait "$pid"; } 2>/dev/null
 
-# A `data` packet carrying the rendered table arrived while the query was still running.
-head -n 1 "$framed" | grep -o '"packet":"data"'
+grep -o -m 1 '"packet":"data"' "$framed"
 rm -f "$framed"
