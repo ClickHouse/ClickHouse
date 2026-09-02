@@ -144,7 +144,7 @@ def download_corpus(path):
         logging.warning(
             "Skipped corpora with no matching fuzzer binary; delete them from "
             "s3://%s/fuzzer/corpus/: %s",
-            Settings.S3_ARTIFACT_PATH,
+            Settings.S3_ARTIFACT_BUCKET,
             ", ".join(f"{name}.zip" for name in sorted(orphans)),
         )
 
@@ -380,8 +380,8 @@ def main():
     repo_path = Path(Utils.cwd())
 
     # The check name is accepted for consistency with the other job scripts,
-    # which all take it as a positional argument.
-    parse_args()
+    # which all take it as a positional argument; only the flags are used.
+    args = parse_args()
     info = Info()
 
     temp_path.mkdir(parents=True, exist_ok=True)
