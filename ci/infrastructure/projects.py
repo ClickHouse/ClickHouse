@@ -153,8 +153,6 @@ _RUNNER_SSM_PARAMETERS = [
     "arn:aws:ssm:*:*:parameter/chcache_password",
     # CI logs cluster credentials (host/password/etc.).
     "arn:aws:ssm:*:*:parameter/clickhouse_ci_logs*",
-    # OpenAI API key for LLM-based CI jobs.
-    "arn:aws:ssm:*:*:parameter/ci/llm/openai_api_key",
 ]
 
 
@@ -206,7 +204,7 @@ def _mac_runner_pool(
         # Legacy GitHub-runner labels (github:runner-type). Joined with ","
         # into the single tag; runner-init expands them into runner labels.
         # Underscore forms, distinct from the dashed pool/queue name.
-        runner_type=["pr-macos_m2", "pr-macos-m2"],
+        runner_type=["pr-macos-m2"],
         key_name="awswork",
         user_data_file="./ci/infra/scripts/user_data_macos.txt",
         root_volume_size_gb=100,
@@ -299,40 +297,41 @@ PROJECTS = [
             # ),
         ],
         report_pages=[Components.report_page_config],
-        image_builders=_IMAGE_BUILDERS,
-        github_token_minters=[_GH_TOKEN_MINTER],
-        orchestrator_pool=Components.OrchestratorPool(
-            instance_type="t4g.large",
-            scaling=Components.OrchestratorPool.Scaling.Auto,
-            size=0,
-            max_size=50,
-            volume_size_gb=40,
-            capacity_reserve=0,
-            image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
-            ext={
-                'allowed_users': ['maxknv'],
-                'iam_statements': [_ORCHESTRATOR_BEDROCK_IAM_STATEMENT],
-            },
-            user_data=_POOL_USER_DATA,
-        ),
-        runner_pools=[
-            _runner_pool("pr-amd-tiny", "t3.large", 40, 60),
-            _runner_pool("pr-amd-small", "m7i.2xlarge", 300, 150),
-            _runner_pool("pr-amd-small-cpu", "c7i.4xlarge", 200, 150),
-            _runner_pool("pr-amd-small-mem", "r7i.2xlarge", 200, 150),
-            _runner_pool("pr-amd-medium", "m7i.4xlarge", 1200, 200),
-            _runner_pool("pr-amd-medium-cpu", "c7i.8xlarge", 200, 200),
-            _runner_pool("pr-amd-medium-mem", "r7i.4xlarge", 200, 200),
-            _runner_pool("pr-amd-large", "m7i.8xlarge", 200, 150),
-            _runner_pool("pr-arm-tiny", "t4g.large", 20, 60),
-            _runner_pool("pr-arm-small", "m8g.2xlarge", 200, 150),
-            _runner_pool("pr-arm-small-cpu", "c8g.4xlarge", 200, 150),
-            _runner_pool("pr-arm-small-mem", "r8g.2xlarge", 200, 150),
-            _runner_pool("pr-arm-medium", "m8g.4xlarge", 800, 200),
-            _runner_pool("pr-arm-medium-cpu", "c8g.8xlarge", 200, 200),
-            _runner_pool("pr-arm-medium-mem", "r8g.4xlarge", 200, 200),
-            _runner_pool("pr-arm-large", "m8g.8xlarge", 200, 200),
-        ],
+        # TODO: migrate from tf configs
+        # image_builders=_IMAGE_BUILDERS,
+        # github_token_minters=[_GH_TOKEN_MINTER],
+        # orchestrator_pool=Components.OrchestratorPool(
+        #     instance_type="t4g.large",
+        #     scaling=Components.OrchestratorPool.Scaling.Auto,
+        #     size=0,
+        #     max_size=50,
+        #     volume_size_gb=40,
+        #     capacity_reserve=0,
+        #     image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
+        #     ext={
+        #         'allowed_users': ['maxknv'],
+        #         'iam_statements': [_ORCHESTRATOR_BEDROCK_IAM_STATEMENT],
+        #     },
+        #     user_data=_POOL_USER_DATA,
+        # ),
+        # runner_pools=[
+        #     _runner_pool("pr-amd-tiny", "t3.large", 40, 60),
+        #     _runner_pool("pr-amd-small", "m7i.2xlarge", 300, 150),
+        #     _runner_pool("pr-amd-small-cpu", "c7i.4xlarge", 200, 150),
+        #     _runner_pool("pr-amd-small-mem", "r7i.2xlarge", 200, 150),
+        #     _runner_pool("pr-amd-medium", "m7i.4xlarge", 1200, 200),
+        #     _runner_pool("pr-amd-medium-cpu", "c7i.8xlarge", 200, 200),
+        #     _runner_pool("pr-amd-medium-mem", "r7i.4xlarge", 200, 200),
+        #     _runner_pool("pr-amd-large", "m7i.8xlarge", 200, 150),
+        #     _runner_pool("pr-arm-tiny", "t4g.large", 20, 60),
+        #     _runner_pool("pr-arm-small", "m8g.2xlarge", 200, 150),
+        #     _runner_pool("pr-arm-small-cpu", "c8g.4xlarge", 200, 150),
+        #     _runner_pool("pr-arm-small-mem", "r8g.2xlarge", 200, 150),
+        #     _runner_pool("pr-arm-medium", "m8g.4xlarge", 800, 200),
+        #     _runner_pool("pr-arm-medium-cpu", "c8g.8xlarge", 200, 200),
+        #     _runner_pool("pr-arm-medium-mem", "r8g.4xlarge", 200, 200),
+        #     _runner_pool("pr-arm-large", "m8g.8xlarge", 200, 200),
+        # ],
         # macOS runners: fixed-capacity dedicated-host pools (no autoscaling).
         dedicated_runner_pools=[
             _mac_runner_pool(
@@ -340,10 +339,11 @@ PROJECTS = [
                 availability_zones=["ap-southeast-2b"],
                 instance_type="mac2-m2pro.metal",
                 image_id=MAC_OS_TAHOE_ARM_IMAGE_AMI,
-                quantity_per_az=1,
+                quantity_per_az=10,
                 vpc_name="macos-ap-southeast-2",
             ),
         ],
-        lambda_functions=[*CloudInfrastructure.SLACK_APP_LAMBDAS],
+        # TODO: make self-contained component SlackApp
+        # lambda_functions=[*CloudInfrastructure.SLACK_APP_LAMBDAS],
     )
 ]
