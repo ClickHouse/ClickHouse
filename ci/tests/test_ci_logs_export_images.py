@@ -241,3 +241,56 @@ def test_a_successful_probe_wins_over_a_later_failure(tmp_path):
     assert HELPER._disabled_reason(tmp_path) == "cannot connect"
     (tmp_path / "connected").touch()
     assert HELPER._disabled_reason(tmp_path) is None
+
+
+def test_shutdown_flushes_the_async_insert_queue_before_the_senders():
+    """The `_watcher` views insert through the `ci_logs_sender` profile, which
+    has `async_insert = 1` and `wait_for_async_insert = 0`: the rows `SYSTEM
+    FLUSH LOGS` materialises can still be in the asynchronous insert queue when
+    the `_sender` tables are flushed, and are lost with the container unless
+    the queue is flushed in between - the order the single-server exporter
+    already uses."""
+    statements = HELPER._shutdown_statements(["query_log", "text_log"])
+    assert statements.index("SYSTEM FLUSH LOGS") < statements.index(
+        "SYSTEM FLUSH ASYNC INSERT QUEUE"
+    )
+    senders = [s for s in statements if s.startswith("SYSTEM FLUSH DISTRIBUTED ")]
+    assert senders == [
+        "SYSTEM FLUSH DISTRIBUTED system.query_log_sender",
+        "SYSTEM FLUSH DISTRIBUTED system.text_log_sender",
+    ]
+    assert all(
+        statements.index("SYSTEM FLUSH ASYNC INSERT QUEUE") < statements.index(s)
+        for s in senders
+    )
+
+
+def test_flush_before_shutdown_runs_the_statements_in_order():
+    """`flush_before_shutdown` must send the whole sequence, in that order, as
+    the queries of the instance; a server without export tables is left alone."""
+
+    class Instance:
+        name = "node"
+        ci_logs_export_tables = ["query_log"]
+        queries = []
+
+        def query(self, sql, timeout=None):
+            self.queries.append(sql)
+
+    instance = Instance()
+    HELPER.flush_before_shutdown(instance)
+    assert len(instance.queries) == 1
+    sent = [s for s in instance.queries[0].split(";\n") if s]
+    assert sent == [
+        "SYSTEM FLUSH LOGS",
+        "SYSTEM FLUSH ASYNC INSERT QUEUE",
+        "SYSTEM FLUSH DISTRIBUTED system.query_log_sender",
+    ]
+
+    class Idle:
+        name = "idle"
+
+        def query(self, sql, timeout=None):
+            raise AssertionError("no export tables, nothing to flush")
+
+    HELPER.flush_before_shutdown(Idle())

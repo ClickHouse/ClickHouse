@@ -570,15 +570,30 @@ def _setup_for_instance(cluster, instance):
     )
 
 
+def _shutdown_statements(tables):
+    """The flushes that push the tail of the logs out of a server about to stop,
+    in the order the data travels: the log rows are materialised from the buffers
+    of the system tables, the `_watcher` views run as `ci_logs_sender` whose
+    profile has `async_insert = 1` with `wait_for_async_insert = 0`, so the rows
+    they produce sit in the asynchronous insert queue until it is flushed, and
+    only then do they reach the `_sender` tables the last statements send out.
+    Mirrors `stop` in `ci/jobs/scripts/log_export.py`."""
+    return [
+        "SYSTEM FLUSH LOGS",
+        "SYSTEM FLUSH ASYNC INSERT QUEUE",
+        *(f"SYSTEM FLUSH DISTRIBUTED system.{table}_sender" for table in tables),
+    ]
+
+
 def flush_before_shutdown(instance):
-    """Flush the logs and the pending Distributed sends, so that the data
-    accumulated since the last flush is not lost with the container.
-    Best effort: never raises."""
+    """Flush the logs, the asynchronous insert queue and the pending Distributed
+    sends, so that the data accumulated since the last flush is not lost with
+    the container. Best effort: never raises."""
     tables = getattr(instance, "ci_logs_export_tables", None)
     if not tables:
         return
     try:
-        statements = "SYSTEM FLUSH LOGS;\n" + "\n".join(f"SYSTEM FLUSH DISTRIBUTED system.{table}_sender;" for table in tables)
+        statements = "".join(f"{statement};\n" for statement in _shutdown_statements(tables))
         instance.query(statements, timeout=120)
     except Exception:
         logging.warning(
