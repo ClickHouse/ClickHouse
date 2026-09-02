@@ -393,7 +393,7 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
 /// ClickHouse-specific discriminator emitted by the writers: Arrow has a single UUID extension type,
 /// but ClickHouse has two UUID types (`UUID` with the historical half-swapped ordering and the
 /// correctly-sorting `UUID2`), so the exact type is recorded in an extra field-metadata key.
-static std::string_view clickHouseUUIDTypeMetadata(const ArrowField & field)
+static std::string_view getClickHouseUUIDTypeMetadata(const ArrowField & field)
 {
     auto it = field.custom_metadata.find("ClickHouse:type");
     if (it == field.custom_metadata.end())
@@ -416,14 +416,14 @@ bool isUUIDField(const ArrowField & field)
     /// A dictionary-encoded (`LowCardinality`) column cannot carry the `arrow.uuid` extension keys: the
     /// registered extension type rejects dictionary storage, so the Apache Arrow writer marks such a column
     /// with the ClickHouse-specific discriminator alone. It is authoritative here as well.
-    return !clickHouseUUIDTypeMetadata(field).empty();
+    return !getClickHouseUUIDTypeMetadata(field).empty();
 }
 
 bool isUUID2Field(const ArrowField & field)
 {
     if (!isUUIDField(field))
         return false;
-    return clickHouseUUIDTypeMetadata(field) == "UUID2";
+    return getClickHouseUUIDTypeMetadata(field) == "UUID2";
 }
 
 namespace
