@@ -6,7 +6,7 @@ Run from the docs root (the directory containing docs.json):
 
     python3 ../ci/jobs/scripts/docs/quickstarts_check.py .
 
-Five checks (see docs/get-started/quickstarts/README.md for the authoring
+Six checks (see docs/get-started/quickstarts/README.md for the authoring
 guide):
 
 1. Frontmatter metadata and badge markers. Every English and localized
@@ -42,9 +42,14 @@ guide):
 
 5. Cloud setup signup attribution. The English and localized Cloud setup
    guides must all use the same attributed signup URL.
+
+6. Localized quickstart navigation. The group labels added for the quickstart
+   explorer must use each locale's existing terminology instead of rendering
+   English labels in translated sidebars.
 """
 
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -70,6 +75,64 @@ LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
 CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
 INSTALL_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-install-page-banner"
 EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 43
+LOCALIZED_QUICKSTART_GROUPS = {
+    "ar": [
+        "الأدلة السريعة",
+        "جميع حالات الاستخدام",
+        "التحليلات في الوقت الفعلي",
+        "مستودعات البيانات",
+        "أوبزرفابيليتي",
+    ],
+    "es": [
+        "Guías de inicio rápido",
+        "Todos los casos de uso",
+        "Análisis en tiempo real",
+        "Almacenamiento de datos",
+        "Observabilidad",
+    ],
+    "fr": [
+        "Guides de démarrage rapide",
+        "Tous les cas d’usage",
+        "Analytique en temps réel",
+        "Entrepôt de données",
+        "Observabilité",
+    ],
+    "ja": [
+        "クイックスタート",
+        "すべてのユースケース",
+        "リアルタイム分析",
+        "データウェアハウジング",
+        "オブザーバビリティ",
+    ],
+    "ko": [
+        "빠른 시작",
+        "모든 사용 사례",
+        "실시간 분석",
+        "데이터 웨어하우징",
+        "관측성",
+    ],
+    "pt-BR": [
+        "Guias de início rápido",
+        "Todos os casos de uso",
+        "Analytics em tempo real",
+        "Armazenamento de dados",
+        "Observabilidade",
+    ],
+    "ru": [
+        "Быстрый старт",
+        "Все сценарии использования",
+        "Аналитика в реальном времени",
+        "Хранилище данных",
+        "Обсервабилити",
+    ],
+    "zh": [
+        "快速入门",
+        "所有用例",
+        "实时分析",
+        "数据仓库",
+        "可观测性",
+    ],
+}
 
 # The badge block the generator rewrites, same pattern as
 # update_quickstart_page in _site/scripts/update_quickstarts.py.
@@ -458,6 +521,53 @@ def check_install_cloud_banners(docs_root: Path) -> list:
     return errors
 
 
+def navigation_groups(node):
+    """Yield every navigation object that owns a named page group."""
+    if isinstance(node, dict):
+        if "group" in node and "pages" in node:
+            yield node
+        for value in node.values():
+            yield from navigation_groups(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from navigation_groups(value)
+
+
+def check_localized_quickstart_navigation(docs_root: Path) -> list:
+    """Ensure the new quickstart groups are translated in every locale."""
+    errors = []
+    for locale in LOCALES:
+        path = docs_root / locale / "get-started" / "navigation.json"
+        navigation = json.loads(path.read_text(encoding="utf-8"))
+        home = f"{locale}/get-started/quickstarts/home"
+        matches = [
+            group
+            for group in navigation_groups(navigation)
+            if home in group.get("pages", [])
+        ]
+        if len(matches) != 1:
+            errors.append(
+                f"{path.relative_to(docs_root)}: expected exactly one "
+                "Quickstarts group containing the explorer home page"
+            )
+            continue
+
+        quickstarts_group = matches[0]
+        labels = [quickstarts_group["group"]]
+        labels += [
+            page["group"]
+            for page in quickstarts_group["pages"]
+            if isinstance(page, dict) and "group" in page
+        ]
+        expected = LOCALIZED_QUICKSTART_GROUPS[locale]
+        if labels != expected:
+            errors.append(
+                f"{path.relative_to(docs_root)}: localized quickstart groups "
+                f"are {labels!r}; expected {expected!r}"
+            )
+    return errors
+
+
 def check_freshness(docs_root: Path) -> list:
     generator = docs_root / "_site" / "scripts" / "update_quickstarts.py"
     # Snapshot the content of everything the generator may rewrite, so the
@@ -513,6 +623,7 @@ def main() -> int:
     errors += check_localized_homepage_links(docs_root)
     errors += check_install_cloud_banners(docs_root)
     errors += check_cloud_setup_signup_attribution(docs_root)
+    errors += check_localized_quickstart_navigation(docs_root)
     # Only bother running the generator when the tags are valid — invalid tags
     # would just produce garbage slugs in the regenerated data.
     if not errors:

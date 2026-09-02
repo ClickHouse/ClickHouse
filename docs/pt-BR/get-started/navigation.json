@@ -10,12 +10,12 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "Quickstarts",
+          "group": "Guias de início rápido",
           "pages": [
             "pt-BR/get-started/quickstarts/home",
             {
               "expanded": false,
-              "group": "All use cases",
+              "group": "Todos os casos de uso",
               "pages": [
                 "pt-BR/get-started/setup/cloud",
                 "pt-BR/get-started/quickstarts/obtain-your-cloud-connection-details",
@@ -27,7 +27,7 @@
             },
             {
               "expanded": false,
-              "group": "Real-time analytics",
+              "group": "Analytics em tempo real",
               "pages": [
                 "pt-BR/get-started/quickstarts/create-your-first-materialized-view",
                 "pt-BR/get-started/quickstarts/create-your-first-projection",
@@ -36,7 +36,7 @@
             },
             {
               "expanded": false,
-              "group": "Data warehousing",
+              "group": "Armazenamento de dados",
               "pages": [
                 "pt-BR/get-started/quickstarts/connect-your-iceberg-catalog",
                 "pt-BR/get-started/quickstarts/mutations"
@@ -44,7 +44,7 @@
             },
             {
               "expanded": false,
-              "group": "Observability",
+              "group": "Observabilidade",
               "pages": [
                 "pt-BR/get-started/quickstarts/working-with-the-map-type"
               ]
