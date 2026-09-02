@@ -28,3 +28,8 @@ dynamically typed domain nested in a container	1
 dynamically typed domain nested in a container, ground truth	1
 variant domain	1
 variant domain, ground truth	1
+zero written as a string	1
+zero written as a string, ground truth	1
+constant denoting no number	1
+constant denoting no number, ground truth	1
+constant denoting no number	Granules: 1/3

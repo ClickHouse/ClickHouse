@@ -110,8 +110,8 @@ SELECT 'minmax index, non-zero constant', extract(explain, 'Granules: \\d+/\\d+'
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_signed_zero_minmax_control WHERE f = 2)
 WHERE match(explain, 'Granules: \\d+/\\d+');
 
--- A dynamically typed domain compares values of different types as equal, so a constant there does not
--- name a single stored value and no range can be built from it, whatever the constant's own type is.
+-- A dynamically typed domain compares values of different types as equal, so a zero there stands for a
+-- stored `-0.` however it is written, including on an alternative holding no floating-point value.
 DROP TABLE IF EXISTS t_signed_zero_dynamic;
 CREATE TABLE t_signed_zero_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY toString(d)
 SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
@@ -138,6 +138,28 @@ INSERT INTO t_signed_zero_variant VALUES (toFloat64('-0')::Variant(Float64, UInt
 SELECT 'variant domain', count() FROM t_signed_zero_variant WHERE v = toUInt64(0)::Variant(Float64, UInt64);
 SELECT 'variant domain, ground truth', countIf(v = toUInt64(0)::Variant(Float64, UInt64)) FROM t_signed_zero_variant;
 
+-- A string that parses as a zero is one of those spellings, and a comparison with it reads a stored
+-- `-0.` as a number.
+DROP TABLE IF EXISTS t_signed_zero_dynamic_string;
+CREATE TABLE t_signed_zero_dynamic_string (j JSON) ENGINE = MergeTree ORDER BY j.b::String
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_dynamic_string VALUES ('{"b":-0.0}');
+
+SELECT 'zero written as a string', count() FROM t_signed_zero_dynamic_string WHERE j.b = '0';
+SELECT 'zero written as a string, ground truth', countIf(j.b = '0') FROM t_signed_zero_dynamic_string;
+
+-- A constant that denotes no number stands for itself alone there, so its range still prunes.
+DROP TABLE IF EXISTS t_signed_zero_dynamic_control;
+CREATE TABLE t_signed_zero_dynamic_control (j JSON) ENGINE = MergeTree ORDER BY j.b::String
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_dynamic_control VALUES ('{"b":"str_0"}'), ('{"b":"str_1"}'), ('{"b":"str_2"}');
+
+SELECT 'constant denoting no number', count() FROM t_signed_zero_dynamic_control WHERE j.b = 'str_0';
+SELECT 'constant denoting no number, ground truth', countIf(j.b = 'str_0') FROM t_signed_zero_dynamic_control;
+SELECT 'constant denoting no number', extract(explain, 'Granules: \\d+/\\d+')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_signed_zero_dynamic_control WHERE j.b = 'str_0')
+WHERE match(explain, 'Granules: \\d+/\\d+');
+
 DROP TABLE t_signed_zero;
 DROP TABLE t_signed_zero_tuple;
 DROP TABLE t_signed_zero_tuple_control;
@@ -151,3 +173,5 @@ DROP TABLE t_signed_zero_minmax_control;
 DROP TABLE t_signed_zero_dynamic;
 DROP TABLE t_signed_zero_dynamic_nested;
 DROP TABLE t_signed_zero_variant;
+DROP TABLE t_signed_zero_dynamic_string;
+DROP TABLE t_signed_zero_dynamic_control;

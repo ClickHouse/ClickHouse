@@ -2382,9 +2382,8 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
-/// Whether the type is, or contains at any depth, a dynamically typed one. Such a type compares values
-/// of different types as equal, so a constant in that domain does not determine which values it stands
-/// for.
+/// Whether the type is, or contains at any depth, a dynamically typed one. Such a type holds values of
+/// several types at once and compares them across types.
 static bool hasDynamicallyTypedComponent(const DataTypePtr & type)
 {
     bool result = false;
@@ -2400,9 +2399,20 @@ static bool hasDynamicallyTypedComponent(const DataTypePtr & type)
 }
 
 
-/// Whether the value holds a floating-point zero at any depth.
+/// Whether the value is a number equal to zero, whatever type it is written in. A value that denotes no
+/// number at all converts to a null `Field`, and this conversion never throws.
+static bool fieldIsZeroWrittenInAnyType(const Field & field)
+{
+    const Field as_float = tryConvertFieldToType(field, DataTypeFloat64());
+    return !as_float.isNull() && as_float.safeGet<Float64>() == 0;
+}
+
+
+/// Whether the value holds a zero at any depth. `any_spelling_of_zero` widens that to a zero written in
+/// another numeric type, or as a string that parses as one, which a dynamically typed domain compares
+/// equal to a stored `-0.`.
 /// Iterative because `Field`s nest inside `Field`s and a recursive walk overflows the native stack.
-static bool fieldHoldsFloatZero(const Field & field)
+static bool fieldHoldsZero(const Field & field, bool any_spelling_of_zero)
 {
     absl::InlinedVector<const Field *, 16> pending{&field};
 
@@ -2434,6 +2444,8 @@ static bool fieldHoldsFloatZero(const Field & field)
                     pending.push_back(&entry.second);
                 break;
             default:
+                if (any_spelling_of_zero && fieldIsZeroWrittenInAnyType(*current))
+                    return true;
                 break;
         }
     }
@@ -2453,20 +2465,21 @@ static bool keyTransformCanSeparateEqualValues(
     const String & input_name,
     const DeterministicKeyTransformDag & dag)
 {
-    /// A stored `-0.` equals a `0` written as an integer in such a domain, so the constant does not
-    /// determine which values it stands for and no range can be built from it.
-    if (hasDynamicallyTypedComponent(dag.input_type))
-        return true;
-
     const WhichDataType key_input_domain(removeNullable(removeLowCardinality(dag.input_type)));
 
     /// The comparison reads the constant in the domain of the column the key expression consumes, and
     /// that is where its equality class lives: `WHERE f = 0` over a `Float64` column compares two floats.
     const Field key_input_value = tryConvertFieldToType(value, *dag.input_type, value_type.get());
 
+    /// A stored `-0.` equals a zero written in any other type in such a domain, so every spelling of a
+    /// zero there stands for both zeros. A value that denotes no number stands for itself alone, and a
+    /// constant that does not reach the domain at all leaves nothing to reason about.
+    if (hasDynamicallyTypedComponent(dag.input_type))
+        return key_input_value.isNull() || fieldHoldsZero(key_input_value, /*any_spelling_of_zero=*/ true);
+
     /// A container holds one sign combination per zero inside it, so one sibling does not decide it.
     if (key_input_value.getType() != Field::Types::Float64)
-        return fieldHoldsFloatZero(key_input_value);
+        return fieldHoldsZero(key_input_value, /*any_spelling_of_zero=*/ false);
 
     const Float64 zero = key_input_value.safeGet<Float64>();
     if (zero != 0)
