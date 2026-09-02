@@ -1,3 +1,4 @@
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -19,14 +20,15 @@ namespace ErrorCodes
 
 std::string extractTimeZoneNameFromColumn(const IColumn * column, const String & column_name)
 {
-    const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(column);
+    if (const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(column))
+        return time_zone_column->getValue<String>();
 
-    if (!time_zone_column)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of time zone argument of function, must be a constant string",
-                        column_name);
+    if (const ColumnConst * time_zone_lc_column = checkAndGetColumnConst<ColumnLowCardinality>(column))
+        return time_zone_lc_column->getValue<String>();
 
-    return time_zone_column->getValue<String>();
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of time zone argument of function, must be a constant string",
+                    column_name);
 }
 
 

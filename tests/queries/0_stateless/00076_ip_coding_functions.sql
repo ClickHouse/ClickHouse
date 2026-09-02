@@ -128,3 +128,19 @@ INSERT INTO addresses(addr) VALUES ('00000000000000000000FFFFC1FC110A'), ('00000
 SELECT cutIPv6(toFixedString(unhex(addr), 16), 0, 3) FROM addresses ORDER BY addr ASC;
 
 DROP TABLE addresses;
+
+SELECT 'LowCardinality';
+SELECT hex(IPv4StringToNum(toLowCardinality('0.0.0.1')));
+SELECT hex(IPv6StringToNum(toLowCardinality('0.0.0.1')));
+SELECT hex(IPv6StringToNum(toLowCardinality('2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D')));
+SELECT 'LowCardinality(Nullable)';
+SELECT hex(IPv4StringToNum(toLowCardinality(CAST(NULL AS Nullable(String)))));
+SELECT hex(IPv6StringToNum(toLowCardinality(CAST(NULL AS Nullable(String)))));
+SELECT 'LowCardinality OrNull';
+SELECT IPv4StringToNumOrNull(toLowCardinality('not.an.ip.addr'));
+SELECT IPv6StringToNumOrNull(toLowCardinality('not-an-ipv6-address'));
+SELECT toTypeName(IPv4StringToNumOrNull(toLowCardinality('0.0.0.1')));
+SELECT toTypeName(IPv6StringToNumOrNull(toLowCardinality('::1')));
+SELECT 'LowCardinality with cast_ipv4_ipv6_default_on_conversion_error';
+SELECT hex(IPv4StringToNum(toLowCardinality('not.an.ip.addr'))) SETTINGS cast_ipv4_ipv6_default_on_conversion_error = 1;
+SELECT hex(IPv6StringToNum(toLowCardinality('not-an-ipv6-address'))) SETTINGS cast_ipv4_ipv6_default_on_conversion_error = 1;
