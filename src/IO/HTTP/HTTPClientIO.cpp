@@ -557,7 +557,7 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
         /// half-parsed response header leaves the socket at an unknown offset, so the session must
         /// not be kept alive for a retry. Callers that reuse one session, such as `HTTPAuthClient`,
         /// would otherwise write the next request on top of the leftover bytes.
-        session.close();
+        session.reset();
         if (const auto * network_exception = session.networkException())
             network_exception->rethrow();
         throw;
