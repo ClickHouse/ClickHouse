@@ -484,8 +484,10 @@ std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
     return out;
 }
 
+/// Digests are the same whichever order the rows are hashed in, so which order ran is only visible
+/// through these counters. Asserting them is what makes a test notice grouping silently stopping.
 template <typename Trait>
-void checkColumnMD5(ColumnShape shape, size_t rows)
+void checkColumnMD5(ColumnShape shape, size_t rows, size_t expect_grouped, size_t expect_declined)
 {
     const auto inputs = makeTestColumn(shape, rows);
 
@@ -493,9 +495,17 @@ void checkColumnMD5(ColumnShape shape, size_t rows)
     for (const auto & s : inputs)
         col->insertData(s.data(), s.size());
 
+    const ProfileEvents::Count grouped_before = ProfileEvents::global_counters[ProfileEvents::MD5GroupedRows];
+    const ProfileEvents::Count declined_before = ProfileEvents::global_counters[ProfileEvents::MD5GroupingDeclinedRows];
+
     FixedChars digests;
     digests.resize(rows * 16);
     Trait::computeColumn(col->getChars(), col->getOffsets(), digests, rows);
+
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MD5GroupedRows] - grouped_before, expect_grouped)
+        << "rows hashed in grouped order";
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MD5GroupingDeclinedRows] - declined_before, expect_declined)
+        << "rows admitted by the column screen and then hashed in column order";
 
     for (size_t i = 0; i < rows; ++i)
     {
@@ -509,13 +519,18 @@ void checkColumnMD5(ColumnShape shape, size_t rows)
 
 TYPED_TEST(MD5MultiBufTest, ColumnBlockCountGrouping)
 {
-    /// 8192 rows clears the column-level gate's row minimum at every Ops width, and Mixed's halves are
+    /// 8192 rows clears the column screen's row minimum at every Ops width, and Mixed's halves are
     /// window-aligned, so its windows split into grouped and declining ones.
-    for (auto shape : {ColumnShape::Spread, ColumnShape::Flat, ColumnShape::Mixed})
-    {
-        SCOPED_TRACE("column shape " + std::to_string(static_cast<int>(shape)));
-        checkColumnMD5<TypeParam>(shape, 8192);
-    }
+    checkColumnMD5<TypeParam>(ColumnShape::Spread, 8192, 8192, 0);
+    checkColumnMD5<TypeParam>(ColumnShape::Flat, 8192, 0, 0);
+    checkColumnMD5<TypeParam>(ColumnShape::Mixed, 8192, 4096, 4096);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnBlockCountGroupingPartialWindow)
+{
+    /// 8709 is neither a multiple of the window nor of any batch width, so the last window is short and
+    /// its last grouped batch holds fewer rows than there are lanes.
+    checkColumnMD5<TypeParam>(ColumnShape::Spread, 8709, 8709, 0);
 }
 
 } // anonymous namespace
