@@ -162,9 +162,15 @@ ClickHouse はこのクエリを処理する際、無関係なデータを評価
 
 <br />
 
-① **パーティションプルーニング**: テーブルのパーティションキーに使われているカラムに対するクエリのフィルタに論理的に一致しないパーティション全体 (パーツの集合) を除外するために、[MinMax indexes](/ja/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) が使用されます。
+<Steps>
+  <Step title="パーティションプルーニング">
+    テーブルのパーティションキーに使われているカラムに対するクエリのフィルタに論理的に一致しないパーティション全体 (パーツの集合) を除外するために、[MinMax indexes](/ja/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) が使用されます。
+  </Step>
 
-② **Granule pruning**: 手順 ① の後に残った data parts に対しては、[プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を使い、テーブルの主キーに使われているカラムに対するクエリのフィルタに論理的に一致しないすべての[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行の block) を除外します。
+  <Step title="Granule pruning">
+    パーティションプルーニングの手順の後に残った データパーツ に対しては、[プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を使い、テーブルの主キーに使われているカラムに対するクエリのフィルタに論理的に一致しないすべての[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のブロック) を除外します。
+  </Step>
+</Steps>
 
 これらのデータプルーニングのステップは、上記のクエリ例について、[EXPLAIN](/ja/reference/statements/explain) 句を使って物理的なクエリ実行計画を[確認](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)することで観察できます。
 
@@ -208,14 +214,20 @@ WHERE date >= '2020-12-01'
 
 上の出力は、次のことを示しています。
 
-① パーティションプルーニング: 上記の EXPLAIN 出力の 7 行目から 18 行目は、ClickHouse がまず `date` フィールドの [MinMax index](/ja/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) を使って、存在する 3257 個の [グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のブロック) のうち 11 個を特定し、それらが、クエリの `date` フィルターに一致する行を含む、436 個あるアクティブなデータパーツのうち 1 個に格納されていることを示しています。
+<Steps>
+  <Step title="パーティションプルーニング">
+    上記の `EXPLAIN` 出力の 7 行目から 18 行目は、ClickHouse がまず `date` フィールドの [MinMax index](/ja/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) を使って、存在する 3257 個の [グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のブロック) のうち 11 個を特定し、それらが、クエリの `date` フィルターに一致する行を含む、436 個あるアクティブなデータパーツのうち 1 個に格納されていることを示しています。
+  </Step>
 
-② Granule pruning: 上記の EXPLAIN 出力の 19 行目から 24 行目は、続いて ClickHouse が、手順 ① で特定されたデータパーツの [プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) (`town` フィールドに対して作成されたもの) を使って、グラニュールの数 (クエリの `town` フィルターにも一致する可能性がある行を含むもの) を 11 から 1 にさらに絞り込むことを示しています。これは、さらに上で表示した、実行したクエリに対する ClickHouse-client の出力にも反映されています。
+  <Step title="Granule pruning">
+    上記の `EXPLAIN` 出力の 19 行目から 24 行目は、続いて ClickHouse が、パーティションプルーニングの手順で特定されたデータパーツの [プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) (`town` フィールドに対して作成されたもの) を使って、グラニュールの数 (クエリの `town` フィルターにも一致する可能性がある行を含むもの) を 11 から 1 にさらに絞り込むことを示しています。これは、さらに上で表示した、実行したクエリに対する ClickHouse client の出力にも反映されています。
 
-```response
-... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
-Peak memory usage: 2.73 MiB.
-```
+    ```response
+    ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+    Peak memory usage: 2.73 MiB.
+    ```
+  </Step>
+</Steps>
 
 つまり、ClickHouse がクエリ結果の算出にあたり、1 granule ([8192](/ja/reference/settings/merge-tree-settings/index-granularity#index_granularity) 行からなる block) を 6 ミリ秒でスキャンして処理したことを意味します。
 
