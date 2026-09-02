@@ -35,6 +35,20 @@ select count() from file(currentDatabase() || '_05047_of.parquet', Parquet, 't D
 select count() from file(currentDatabase() || '_05047_of.parquet', Parquet, 't DateTime')
     where t = toDateTime(1000000000, 'UTC') settings log_comment = '05047prune_of_mid';
 
+-- Same fix on the other schema branch: a UInt64 column is stored as physical INT64 with a
+-- UINT_64 annotation, so it goes through the logical-integer path rather than the raw one above.
+-- One row group per value; the second has a stat outside the DateTime range.
+insert into function file(currentDatabase() || '_05047_u64.parquet', Parquet, 't UInt64')
+    select arrayJoin([toUInt64(1000000000), toUInt64(5000000000)])
+    settings output_format_parquet_row_group_size = 1;
+
+-- The out-of-range row group must stay unpruned (both are read); the in-range one matches.
+select count() from file(currentDatabase() || '_05047_u64.parquet', Parquet, 't DateTime')
+    where t <= toDateTime(1500000000, 'UTC') settings log_comment = '05047prune_u64_keep_oor';
+-- The in-range row group is prunable; the out-of-range one is still read.
+select count() from file(currentDatabase() || '_05047_u64.parquet', Parquet, 't DateTime')
+    where t <= toDateTime(1, 'UTC') settings log_comment = '05047prune_u64_prune_in_range';
+
 -- Reading the same raw INT64 column as IPv4 is an unsupported cast; stats must not prune here,
 -- otherwise a fully-pruned scan would return an empty result instead of the cast error.
 select count() from file(currentDatabase() || '_05047.parquet', Parquet, 't IPv4')
@@ -47,6 +61,10 @@ select count() from file(currentDatabase() || '_05047_of.parquet', Parquet, 't D
     where t >= toDateTime(4294967295, 'UTC') settings input_format_parquet_filter_push_down = 0;
 select count() from file(currentDatabase() || '_05047_of.parquet', Parquet, 't DateTime')
     where t = toDateTime(1000000000, 'UTC') settings input_format_parquet_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05047_u64.parquet', Parquet, 't DateTime')
+    where t <= toDateTime(1500000000, 'UTC') settings input_format_parquet_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05047_u64.parquet', Parquet, 't DateTime')
+    where t <= toDateTime(1, 'UTC') settings input_format_parquet_filter_push_down = 0;
 
 system flush logs query_log;
 select distinct log_comment, ProfileEvents['ParquetReadRowGroups'], ProfileEvents['ParquetPrunedRowGroups']
