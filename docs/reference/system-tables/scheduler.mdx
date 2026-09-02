@@ -37,9 +37,9 @@ This table can be used for monitoring. The table contains a row for every schedu
 - `throughput` ([Nullable(Float64)](/reference/data-types/nullable)) — Current average throughput (dequeued cost per second).
 - `vruntime` ([Nullable(Float64)](/reference/data-types/nullable)) — For children of `fair` nodes only. Virtual runtime of a node used by SFQ algorithm to select the next child to process in a max-min fair manner.
 - `system_vruntime` ([Nullable(Float64)](/reference/data-types/nullable)) — For `fair` nodes only. Virtual runtime showing `vruntime` of the last processed resource request. Used during child activation as the new value of `vruntime`.
-- `queue_length` ([Nullable(UInt64)](/reference/data-types/nullable)) — For `fifo` nodes only. Current number of resource requests residing in the queue.
-- `queue_cost` ([Nullable(Int64)](/reference/data-types/nullable)) — For fifo nodes only. Sum of costs (e.g. size in bytes) of all requests residing in the queue.
-- `budget` ([Nullable(Int64)](/reference/data-types/nullable)) — For fifo nodes only. The number of available 'cost units' for new resource requests. Can appear in case of discrepancy of estimated and real costs of resource requests (e.g. after read/write failure)
+- `queue_length` ([Nullable(UInt64)](/reference/data-types/nullable)) — For `fifo` and `request_queue` nodes. Current number of resource requests residing in the queue.
+- `queue_cost` ([Nullable(Int64)](/reference/data-types/nullable)) — For `fifo` and `request_queue` nodes. Sum of costs (e.g. size in bytes) of all requests residing in the queue.
+- `budget` ([Nullable(Int64)](/reference/data-types/nullable)) — For `fifo` and `request_queue` nodes. The number of available 'cost units' for new resource requests. Can appear in case of discrepancy of estimated and real costs of resource requests (e.g. after read/write failure)
 - `is_satisfied` ([Nullable(UInt8)](/reference/data-types/nullable)) — For constraint nodes only (e.g. `inflight_limit`). Equals to `1` if all the constraint of this node are satisfied.
 - `inflight_requests` ([Nullable(Int64)](/reference/data-types/nullable)) — For `inflight_limit` nodes only. The number of resource requests dequeued from this node, that are currently in consumption state.
 - `inflight_cost` ([Nullable(Int64)](/reference/data-types/nullable)) — For `inflight_limit` nodes only. The sum of costs (e.g. bytes) of all resource requests dequeued from this node, that are currently in consumption state.
