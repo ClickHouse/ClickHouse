@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-fasttest, no-shared-catalog
+# Tags: race, zookeeper, no-fasttest
 
 set -e
 
@@ -26,8 +26,6 @@ function thread_exchange()
 
 # SharedMergeTree serializes metadata alters: a racing alter can be rejected with a retryable
 # CANNOT_ASSIGN_ALTER whose message says to retry, which is expected and filtered out below.
-# Shared Catalog rejects the losing side of a concurrent commit the same way (UNFINISHED), so
-# the test is tagged no-shared-catalog and test_shared_catalog::test_exchange_alter_race covers it.
 function thread_comment()
 {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
