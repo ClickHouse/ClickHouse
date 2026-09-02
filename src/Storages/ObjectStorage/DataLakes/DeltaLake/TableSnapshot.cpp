@@ -126,7 +126,7 @@ public:
         UpdateStatsFunc update_stats_func_,
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
-        , captured_credentials_fingerprint(helper_->getCredentialsFingerprint())
+        , captured_credentials_fingerprint(kernel_snapshot_state_->credentials_fingerprint)
         , helper(helper_)
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
