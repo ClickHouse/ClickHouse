@@ -655,7 +655,7 @@ void FailPointInjection::notifyFailPoint(const String &)
     throwDisabled();
 }
 
-void FailPointInjection::waitForPause(const String &, std::optional<UInt64>)
+bool FailPointInjection::waitForPause(const String &, std::optional<UInt64>)
 {
     throwDisabled();
 }
