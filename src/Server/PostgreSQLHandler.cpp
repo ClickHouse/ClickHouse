@@ -511,8 +511,16 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 {
     bool was_secure_connection = false;
     bool was_encryption_req = true;
-    readBinaryBigEndian(payload_size, *in);
-    readBinaryBigEndian(info, *in);
+    auto receive_first_message_header = [&]
+    {
+        readBinaryBigEndian(payload_size, *in);
+        if (payload_size < 8)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong PostgreSQL initial message length {}, it must be at least 8", payload_size);
+        readBinaryBigEndian(info, *in);
+    };
+
+    receive_first_message_header();
 
     switch (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info))
     {
@@ -534,10 +542,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
             was_encryption_req = false;
     }
     if (was_encryption_req)
-    {
-        readBinaryBigEndian(payload_size, *in);
-        readBinaryBigEndian(info, *in);
-    }
+        receive_first_message_header();
 
     if (secure_required && !was_secure_connection)
     {
@@ -618,9 +623,9 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> message;
     try
     {
-        if (payload_size < 8 || payload_size > max_startup_message_size)
+        if (payload_size < 9 || payload_size > max_startup_message_size)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                "Startup message declares a size of {} bytes, while it must be between 8 and {} bytes",
+                "Startup message declares a size of {} bytes, while it must be between 9 and {} bytes",
                 payload_size, max_startup_message_size);
 
         message = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::StartupMessage>(payload_size - 8);

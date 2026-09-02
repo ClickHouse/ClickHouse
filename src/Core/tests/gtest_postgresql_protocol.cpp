@@ -52,6 +52,18 @@ bool throwsUnknownPacket(const std::string & bytes, F && body)
     }
 }
 
+class FailingReadBuffer : public ReadBuffer
+{
+public:
+    FailingReadBuffer() : ReadBuffer(nullptr, 0) {}
+
+private:
+    bool nextImpl() override
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Synthetic read failure");
+    }
+};
+
 }
 
 TEST(PostgreSQLProtocol, DropMessageRejectsLengthBelowFour)
@@ -77,6 +89,95 @@ TEST(PostgreSQLProtocol, DropMessageRejectsLengthBelowFour)
     WriteBufferFromOwnString out;
     Messaging::MessageTransport mt(&in, &out);
     EXPECT_NO_THROW(mt.dropMessage());
+}
+
+TEST(PostgreSQLProtocol, StartupMessageRejectsParametersExceedingDeclaredPayload)
+{
+    std::string bytes("user\0default\0", 13);
+    bytes.push_back('\0');
+
+    {
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size()));
+        EXPECT_NO_THROW(msg.deserialize(in));
+        EXPECT_EQ(msg.user, "default");
+    }
+
+    ReadBufferFromMemory in(bytes.data(), bytes.size());
+    try
+    {
+        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size() - 1));
+        msg.deserialize(in);
+        FAIL() << "Expected malformed startup message to be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+    }
+    EXPECT_EQ(in.count(), bytes.size() - 1);
+}
+
+TEST(PostgreSQLProtocol, StartupMessageDoesNotReadPastDeclaredPayload)
+{
+    const std::string bytes("user\0default\0\0subsequent data", 29);
+
+    for (Int32 payload_size : {2, 7})
+    {
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        try
+        {
+            Messaging::StartupMessage msg(payload_size);
+            msg.deserialize(in);
+            FAIL() << "Expected truncated startup message to be rejected";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+        }
+        EXPECT_EQ(in.count(), payload_size);
+    }
+}
+
+TEST(PostgreSQLProtocol, StartupMessageValidatesPayloadAndTerminator)
+{
+    /// Total startup message lengths from 0 through 8 leave no room for the required final zero.
+    for (Int32 payload_size = -8; payload_size <= 0; ++payload_size)
+    {
+        EXPECT_TRUE(throwsUnknownPacket("", [&](ReadBuffer & in)
+        {
+            Messaging::StartupMessage msg(payload_size);
+            msg.deserialize(in);
+        })) << "payload_size = " << payload_size;
+    }
+
+    {
+        const std::string bytes(1, '\0');
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size()));
+        EXPECT_NO_THROW(msg.deserialize(in));
+        EXPECT_EQ(in.count(), bytes.size());
+    }
+
+    EXPECT_TRUE(throwsUnknownPacket("x", [&](ReadBuffer & in)
+    {
+        Messaging::StartupMessage msg(1);
+        msg.deserialize(in);
+    }));
+}
+
+TEST(PostgreSQLProtocol, StartupMessagePreservesUnrelatedReadErrors)
+{
+    FailingReadBuffer in;
+    Messaging::StartupMessage msg(1);
+    try
+    {
+        msg.deserialize(in);
+        FAIL() << "Expected synthetic read failure";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+    }
 }
 
 TEST(PostgreSQLProtocol, SASLResponseRejectsLengthBelowFour)
