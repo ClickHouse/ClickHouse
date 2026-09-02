@@ -13,6 +13,8 @@ CREATE TABLE t_qcc_lambda (a Int64, b Int64) ENGINE = MergeTree ORDER BY a;
 -- the query condition cache stores nothing for small tables
 INSERT INTO t_qcc_lambda SELECT number, number FROM numbers(1000000);
 
+-- the old analyzer never stores such filters in the query condition cache, pin the new one
+SET enable_analyzer = 1;
 SET use_query_condition_cache = 1;
 
 SELECT '= a filter with a non-deterministic lambda body is not cached =';
