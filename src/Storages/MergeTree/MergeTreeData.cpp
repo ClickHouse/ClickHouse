@@ -11044,8 +11044,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         /// For transactional operations, MergeTreeTransaction rollback handles unlocking.
         DataPartsVector locked_parts_to_cleanup;
 
-        FailPointInjection::pauseFailPoint(FailPoints::merge_tree_commit_pause_before_removing_covered_parts);
-
         for (const auto & part : precommitted_parts)
         {
             DataPartPtr covering_part;
@@ -11075,6 +11073,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
             if (!covering_part)
             {
+                if (!covered_parts.empty())
+                    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_commit_pause_before_removing_covered_parts);
+
                 MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
                 /// Track successfully locked parts for cleanup in case a later iteration fails.
                 if (!txn)

@@ -440,9 +440,9 @@ def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
         "CREATE TABLE mt4 (n int, m int) ENGINE=MergeTree ORDER BY n PARTITION BY n % 2"
         " SETTINGS remove_empty_parts = 0, old_parts_lifetime = 3600"
     )
-    # The failpoint is global and background merges commit through the very same function, so a merge
-    # could consume the pause while DROP PARTITION is still waiting for merges to stop.
-    node.query("SYSTEM STOP MERGES mt4")
+    # The failpoint is global: any commit that removes covered parts pauses at it, so a merge of any
+    # table would satisfy the wait below and the SIGKILL would then capture a different operation.
+    node.query("SYSTEM STOP MERGES")
 
     # Each committed transaction leaves one part with a real creation_tid, a committed creation_csn
     # and an empty removal_tid.  Partition 0 (even n) is dropped below, partition 1 is the control.
