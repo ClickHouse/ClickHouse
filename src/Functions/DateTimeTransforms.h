@@ -2213,21 +2213,26 @@ struct ToSecondImpl
 
 /// The factor transform of the subsecond extractors. They restart at zero every second, so their
 /// monotonicity claim holds only where both ends of the key range fall into the same second.
-/// For the argument types where the extractor is the constant 0 - a `DateTime` has no subsecond part -
-/// or is not supported at all, every pair of endpoints has to share a factor, because a constant
-/// function is monotonic; the extractors' own `execute` overloads reject the unsupported types before
-/// index analysis can be reached.
+/// For the argument types where the extractor is the constant 0 - a `DateTime` has no subsecond part,
+/// and neither does a `DateTime64(0)` - or is not supported at all, every pair of endpoints has to
+/// share a factor, because a constant function is monotonic; the extractors' own `execute` overloads
+/// reject the unsupported types before index analysis can be reached.
 struct ToStartOfSecondFactorImpl
 {
     static constexpr auto name = "toStartOfSecond";
 
     static DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
     {
+        /// A zero-precision value has no subsecond part at all, so the extractor is the constant 0 on it.
+        if (scale_multiplier == 1)
+            return DateTime64(0);
         return ToStartOfSecondImpl::execute(datetime64, scale_multiplier, time_zone);
     }
 
     static Time64 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
     {
+        if (scale_multiplier == 1)
+            return Time64(0);
         return ToStartOfSecondImpl::execute(time64, scale_multiplier, time_zone);
     }
 

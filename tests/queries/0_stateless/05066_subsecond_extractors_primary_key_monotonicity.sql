@@ -42,7 +42,20 @@ INSERT INTO t_datetime_key VALUES ('2024-01-01 00:00:00'), ('2024-01-01 00:00:05
 SELECT count() FROM t_datetime_key WHERE toMillisecond(d) = 0;
 SELECT count() FROM t_datetime_key WHERE toMillisecond(d) = 1;
 
+-- A `DateTime64(0)` has no subsecond part either, so the extractors are the constant 0 on it and
+-- the index stays usable across second boundaries.
+SELECT 'datetime64(0) key';
+DROP TABLE IF EXISTS t_datetime64_0_key;
+CREATE TABLE t_datetime64_0_key (d DateTime64(0)) ENGINE = MergeTree ORDER BY d
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_datetime64_0_key VALUES ('2024-01-01 00:00:00'), ('2024-01-01 00:00:01'), ('2024-01-01 00:00:02'), ('2024-01-01 00:00:03');
+SELECT count() FROM t_datetime64_0_key WHERE toMillisecond(d) = 0 SETTINGS force_primary_key = 1;
+SELECT count() FROM t_datetime64_0_key WHERE toMicrosecond(d) = 0 SETTINGS force_primary_key = 1;
+SELECT count() FROM t_datetime64_0_key WHERE toNanosecond(d) = 0 SETTINGS force_primary_key = 1;
+SELECT count() FROM t_datetime64_0_key WHERE toMillisecond(d) = 1 SETTINGS force_primary_key = 1;
+
 DROP TABLE t_millisecond_key;
 DROP TABLE t_microsecond_key;
 DROP TABLE t_nanosecond_key;
 DROP TABLE t_datetime_key;
+DROP TABLE t_datetime64_0_key;
