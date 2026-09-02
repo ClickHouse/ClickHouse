@@ -11,8 +11,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
+#include <Functions/checkMultiSearchAnyAvailability.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <IO/WriteBufferFromString.h>
 #include <Functions/Regexps.h>
@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
+    extern const SettingsBool force_daachorse_for_multi_search;
 }
 
 TextSearchQuery::TextSearchQuery(
@@ -1397,10 +1398,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & needles = value_field.safeGet<Array>();
-
-        /// Reject the same input the real `multiSearchAny` implementation rejects (more than 255 needles), so the
-        /// index does not silently prune all granules where the function would raise an exception instead.
-        checkMultiSearchNeedlesLimit(function_name, needles.size());
+        checkMultiSearchAnyAvailability(
+            function_name,
+            needles.size(),
+            getContext()->getSettingsRef()[Setting::force_daachorse_for_multi_search]);
 
         /// multiSearchAny(haystack, []) is always false.
         if (needles.empty())

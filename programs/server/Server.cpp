@@ -94,6 +94,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Functions/MultiSearchAhoCorasickCache.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
@@ -242,6 +243,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 cgroups_memory_usage_observer_wait_time;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
+    extern const ServerSettingsUInt64 multi_search_automaton_cache_size;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_num;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_ratio_to_cores;
     extern const ServerSettingsString concurrent_threads_scheduler;
@@ -2648,6 +2650,10 @@ try
     }
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
+#if USE_AHO_CORASICK
+    setMultiSearchAutomatonCacheMaxSize(server_settings[ServerSetting::multi_search_automaton_cache_size]);
+#endif
+
     NamedCollectionFactory::instance().loadIfNot();
     SQLDefinedHandlersFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
@@ -3110,6 +3116,9 @@ try
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
+#if USE_AHO_CORASICK
+                setMultiSearchAutomatonCacheMaxSize(new_server_settings[ServerSetting::multi_search_automaton_cache_size]);
+#endif
 #if USE_AVRO
                 global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePaimonMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);

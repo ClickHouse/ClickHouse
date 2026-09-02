@@ -4528,6 +4528,9 @@ Exception: Total regexp lengths too large.
     DECLARE(Bool, reject_expensive_hyperscan_regexps, true, R"(
 Reject patterns which will likely be expensive to evaluate with hyperscan (due to NFA state explosion)
 )", 0) \
+    DECLARE(Bool, force_daachorse_for_multi_search, false, R"(
+Force use of the daachorse (Aho-Corasick) algorithm for the `multiSearchAny*` family of functions (all case-sensitivity and UTF-8 variants) when the needle array is constant, even when the pattern count is below the automatic threshold (255). Normally daachorse is only used when there are more than 255 constant patterns. Has no effect on per-row (non-constant) needle arrays, or on other multi-search functions such as `multiSearchFirstIndex*`, `multiSearchFirstPosition*`, or `multiMatch*`. Useful for testing or when daachorse performs better for a specific workload.
+)", 0) \
     DECLARE(Bool, allow_simdjson, true, R"(
 Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.
 )", 0) \
