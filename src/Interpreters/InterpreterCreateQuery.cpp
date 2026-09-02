@@ -2084,7 +2084,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (database && database->isDatalakeCatalog())
     {
-        if (create.is_ordinary_view || create.is_materialized_view || create.is_window_view
+        if (create.is_ordinary_view || create.is_materialized_view
             || create.is_dictionary || create.attach || create.is_clone_as
             || create.replace_table || create.replace_view)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
