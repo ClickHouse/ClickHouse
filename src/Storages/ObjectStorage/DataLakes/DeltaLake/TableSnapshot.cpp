@@ -23,6 +23,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTracker.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -1102,13 +1103,21 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
     load->future = task->get_future().share();
 
     /// The build is shared by unrelated queries, so it must not run under the starting query's
-    /// thread group: its `max_memory_usage`, quota and accounting would silently apply to every
-    /// waiter. Give the worker a neutral group derived from the global context instead.
+    /// own thread group: its `max_memory_usage` and accounting would silently apply to every
+    /// waiter. The worker gets a group of its own instead: built from the starting query's
+    /// context, so that the kernel's log lines (`DeltaKernelTracing` in `system.text_log`) stay
+    /// attributed to the query which started the load, as they were when the load ran on the
+    /// query thread — but through the raw constructor, which applies no per-query memory
+    /// limits, and with the memory accounted to the server total rather than to that query.
     DB::ThreadGroupPtr thread_group;
-    if (auto global_context = DB::Context::getGlobalContextInstance())
+    DB::ContextPtr group_context = DB::CurrentThread::tryGetQueryContext();
+    if (!group_context)
+        group_context = DB::Context::getGlobalContextInstance();
+    if (group_context)
     {
-        thread_group = std::make_shared<DB::ThreadGroup>(global_context, /* os_threads_nice_value */ 0);
+        thread_group = std::make_shared<DB::ThreadGroup>(group_context, /* os_threads_nice_value */ 0);
         thread_group->memory_tracker.setDescription("Delta Lake snapshot load");
+        thread_group->memory_tracker.setParent(&total_memory_tracker);
     }
     else
         thread_group = DB::CurrentThread::getGroup();
