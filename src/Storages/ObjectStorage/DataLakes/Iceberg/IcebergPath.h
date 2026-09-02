@@ -53,6 +53,16 @@ private:
     String raw_path;
 };
 
+/// The URI scheme an Iceberg reader resolves for a ClickHouse object storage backend.
+/// A local disk is spelled `file`: `local` is ClickHouse's storage type token, not a
+/// filesystem URI scheme, and no Iceberg implementation resolves it.
+String toIcebergURIScheme(const String & storage_type_name);
+
+/// Build a `<scheme>://<authority><path>` URI for an Iceberg metadata document.
+/// Exactly one `/` separates authority from path. A backend with no namespace concept has an
+/// empty authority and an absolute path, which already carries that separator itself.
+String makeIcebergLocationURI(const String & storage_type_name, const String & authority, const String & path);
+
 /// Converts Iceberg metadata paths to actual object storage paths.
 ///
 /// This is the ONLY way to go from a metadata path to a storage path.
@@ -117,8 +127,8 @@ public:
     String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
     {
         String catalog_filename = metadata_path.serialize();
-        if (!catalog_filename.starts_with(blob_storage_type_name))
-            catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + catalog_filename;
+        if (!catalog_filename.contains("://"))
+            catalog_filename = makeIcebergLocationURI(blob_storage_type_name, blob_storage_namespace_name, catalog_filename);
         return catalog_filename;
     }
 

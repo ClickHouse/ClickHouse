@@ -21,6 +21,22 @@ std::string_view trimTrailingSlashes(std::string_view str)
 }
 }
 
+String toIcebergURIScheme(const String & storage_type_name)
+{
+    if (storage_type_name == "local")
+        return "file";
+    return storage_type_name;
+}
+
+String makeIcebergLocationURI(const String & storage_type_name, const String & authority, const String & path)
+{
+    String uri = toIcebergURIScheme(storage_type_name) + "://" + authority;
+    if (!path.starts_with('/'))
+        uri += '/';
+    uri += path;
+    return uri;
+}
+
 IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
     const String & table_location, const String & queried_path, const String & metadata_file_key)
 {
