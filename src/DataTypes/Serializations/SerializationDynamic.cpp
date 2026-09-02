@@ -696,7 +696,7 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
     /// are typed as Array(Dynamic) rather than throwing NO_COMMON_TYPE. Dynamic can hold any element value.
     auto field_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), field);
     encodeDataType(field_type, ostr);
-    getDataTypesCache().getSerialization(field_type->getName())->serializeBinary(field, ostr, settings);
+    getDataTypesCache().getSerialization(field_type)->serializeBinary(field, ostr, settings);
 }
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
@@ -708,7 +708,7 @@ void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, c
         return;
     }
 
-    getDataTypesCache().getSerialization(field_type->getName())->deserializeBinary(field, istr, settings);
+    getDataTypesCache().getSerialization(field_type)->deserializeBinary(field, istr, settings);
 }
 
 void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

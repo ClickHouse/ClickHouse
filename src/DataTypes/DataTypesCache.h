@@ -66,6 +66,7 @@ class DataTypesCache
 public:
     DataTypePtr getType(const String & type_name);
     SerializationPtr getSerialization(const String & type_name);
+    SerializationPtr getSerialization(const DataTypePtr & type);
 
 private:
     static constexpr size_t MAX_ELEMENTS = 16;

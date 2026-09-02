@@ -124,6 +124,23 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name)
     return getCacheElement(type_name).serialization;
 }
 
+SerializationPtr DataTypesCache::getSerialization(const DataTypePtr & type)
+{
+    const auto type_name = type->getName();
+
+    if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
+        return elem->serialization;
+
+    auto it = cache.find(type_name);
+    if (it != cache.end())
+        return it->second.serialization;
+
+    if (cache.size() >= MAX_ELEMENTS)
+        cache.clear();
+
+    return cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first->second.serialization;
+}
+
 const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name)
 {
     auto it = cache.find(type_name);
