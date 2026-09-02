@@ -22,7 +22,7 @@
       "download-pdf",
       {
         "description": "Setup instructions for the ClickHouse documentation MCP server",
-        "href": "https://clickhouse.com/docs",
+        "href": "https://clickhouse.com/docs/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
         "icon": "/images/icons/icon-mcp.svg",
         "title": "Set up the ClickHouse documentation MCP server"
       }
