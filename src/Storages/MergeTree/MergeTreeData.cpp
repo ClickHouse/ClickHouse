@@ -12123,6 +12123,13 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
             return false;
     }
 
+    /// A non-adaptive part records no per-mark row counts on disk, so its granularity is rebuilt from
+    /// the mark count and this table's `index_granularity`. Under a different value every mark maps to
+    /// the wrong row range.
+    if (!src_part->index_granularity_info.mark_type.adaptive
+        && src_part->index_granularity_info.fixed_index_granularity != (*settings)[MergeTreeSetting::index_granularity])
+        return false;
+
     return true;
 }
 
