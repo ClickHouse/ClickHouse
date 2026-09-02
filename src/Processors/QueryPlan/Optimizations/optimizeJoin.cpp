@@ -667,6 +667,10 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
     for (const auto & [action, null_rel] : rhs_outer_conditions_raw)
         lhs.outer_join_conditions[JoinActionRef(action, lhs.expression_actions)] = null_rel + shift;
+
+    /// The mark belongs to the flattened graph as a whole: reordering rebuilds every join step from it,
+    /// so a mark carried by any join of the merged sub-graph has to survive the merge.
+    lhs.disjunctions_optimization_applied |= rhs.disjunctions_optimization_applied;
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
