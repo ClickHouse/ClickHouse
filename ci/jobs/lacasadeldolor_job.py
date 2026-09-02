@@ -84,6 +84,14 @@ def _start_docker_in_docker():
     for i in range(retries):
         if Shell.check("docker info > /dev/null", verbose=True):
             break
+        if dockerd_proc.poll() is not None:
+            # The script exited instead of starting the daemon, e.g. it refused because the
+            # cgroup containment it was asked for could not be established. Say so now rather
+            # than after 40 more seconds of a timeout that names the wrong cause.
+            raise RuntimeError(
+                f"docker_in_docker.sh exited early (rc={dockerd_proc.returncode}); "
+                "see ./ci/tmp/docker-in-docker.log"
+            )
         if i == retries - 1:
             raise RuntimeError(
                 f"Docker daemon did not respond after {retries} attempts"
