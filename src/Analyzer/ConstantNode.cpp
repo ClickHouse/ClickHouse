@@ -209,7 +209,8 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
+    static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType(), /*date_time_as_numbers=*/true)); };
+    static const auto from_column_date_time_as_text = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType(), /*date_time_as_numbers=*/false)); };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
 
     if (options.use_source_expression_for_constants && source_expression)
@@ -227,7 +228,8 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     /// constants.
     if (typeMayContainDecimal(*constant_value_type))
     {
-        auto exact_ast = columnConstantToExactLiteralAST(constant_value.getColumn(), 0, constant_value_type);
+        auto exact_ast = columnConstantToExactLiteralAST(
+            constant_value.getColumn(), 0, constant_value_type, options.date_time_constants_as_numbers);
         if (!options.add_cast_for_constants)
             return exact_ast;
         /// columnConstantToExactLiteralAST already casts a scalar Decimal/DateTime64/Time64 value to its
@@ -236,7 +238,11 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     }
 
     if (!options.add_cast_for_constants)
-        return getCachedAST(from_column);
+    {
+        if (options.date_time_constants_as_numbers)
+            return getCachedAST(from_column);
+        return getCachedAST(from_column_date_time_as_text);
+    }
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
@@ -262,7 +268,9 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
         /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
-        ASTPtr constant_value_ast = getCachedAST(from_column);
+        ASTPtr constant_value_ast = options.date_time_constants_as_numbers
+            ? getCachedAST(from_column)
+            : getCachedAST(from_column_date_time_as_text);
 
         /// A Variant value is serialized as a plain literal of its current member type, while conversion to Variant
         /// is allowed only for types equal by name to one of its members. The literal does not keep the exact member
