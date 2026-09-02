@@ -503,7 +503,7 @@ namespace
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
-            : ISource(sample_block_)
+            : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)

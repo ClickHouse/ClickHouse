@@ -23,7 +23,7 @@ Vous pouvez insérer des données depuis S3 dans ClickHouse et également utilis
 La fonction de table `s3` vous permet de lire et d’écrire des fichiers depuis et vers un stockage compatible S3. La syntaxe générale est la suivante :
 
 ```sql
-s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
+s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
 ```
 
 où :
@@ -42,13 +42,13 @@ L&#39;utilisation de caractères génériques dans l&#39;expression du chemin pe
 Avant de créer la table dans ClickHouse, vous souhaiterez peut-être d’abord examiner de plus près les données du bucket S3. Vous pouvez le faire directement depuis ClickHouse à l’aide de l’instruction `DESCRIBE` :
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
 ```
 
 La sortie de l’instruction `DESCRIBE TABLE` devrait vous montrer comment ClickHouse infère automatiquement ces données telles qu’elles apparaissent dans le bucket S3. Remarquez qu’il reconnaît et décompresse aussi automatiquement le format de compression gzip :
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
 ```
 
 ```response
@@ -169,7 +169,7 @@ Nous pouvons interroger des données stockées dans S3 comme source, sans qu’e
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 10;
 ```
 
@@ -179,7 +179,7 @@ Les requêtes prennent également en charge les [colonnes virtuelles](/fr/refere
 
 ```sql
 SELECT  _path, _file, trip_id
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 5;
 ```
 
@@ -197,7 +197,7 @@ Vérifiez le nombre de lignes dans ce jeu de données d’exemple. Notez l’uti
 
 ```sql
 SELECT count() AS count
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
 ```
 
 ```response
@@ -215,7 +215,7 @@ Bien qu’utile pour l’échantillonnage des données et l’exécution de requ
 Le programme `clickhouse-local` vous permet d’effectuer rapidement des traitements sur des fichiers locaux sans déployer ni configurer le serveur ClickHouse. Toutes les requêtes utilisant la fonction de table `s3` peuvent être exécutées avec cet utilitaire. Par exemple :
 
 ```sql
-clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <div id="inserting-data-from-s3">
@@ -228,7 +228,7 @@ Pour ce faire, nous combinons notre fonction `s3` avec une simple instruction `I
 ```sql
 INSERT INTO trips
    SELECT *
-   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
    LIMIT 1000000;
 ```
 
@@ -239,7 +239,7 @@ INSERT INTO trips
 Si des politiques de sécurité réseau empêchent votre cluster ClickHouse d’établir des connexions sortantes, vous pourrez peut-être insérer des données S3 à l’aide de `clickhouse-local`. Dans l’exemple ci-dessous, nous lisons depuis un bucket S3 et insérons les données dans ClickHouse à l’aide de la fonction `remote` :
 
 ```sql
-clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <Note>
@@ -318,7 +318,7 @@ Le nœud qui reçoit la requête, appelé l’initiateur, crée une connexion av
 La fonction `s3Cluster` utilise le même format que les variantes sur nœud unique, à ceci près qu’un cluster cible est requis pour désigner les nœuds workers :
 
 ```sql
-s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+s3Cluster(cluster_name, source, [NOSIGN | access_key_id, secret_access_key,] format, structure)
 ```
 
 * `cluster_name` — Nom d’un cluster utilisé pour construire un ensemble d’adresses et de paramètres de connexion pour les serveurs distants et locaux.
@@ -337,6 +337,7 @@ INSERT INTO default.trips_all
    FROM s3Cluster(
        'events',
        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz',
+       NOSIGN,
        'TabSeparatedWithNames'
     )
 ```
@@ -351,7 +352,7 @@ Bien que les fonctions `s3` permettent d’exécuter des requêtes ad hoc sur de
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
-    ENGINE = S3(path, [aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS ...]
 ```
 
@@ -414,7 +415,7 @@ CREATE TABLE trips_raw
    `dropoff_ntacode`       FixedString(4),
    `dropoff_ntaname`       String,
    `dropoff_puma`          UInt16
-) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', 'TabSeparatedWithNames', 'gzip');
+) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', NOSIGN, 'TabSeparatedWithNames', 'gzip');
 ```
 
 Notez l’utilisation du motif `{0..9}` pour limiter la sélection aux dix premiers fichiers. Une fois créée, nous pouvons interroger cette table comme n’importe quelle autre table :
@@ -669,7 +670,7 @@ SETTINGS storage_policy='s3_main'
 ```
 
 ```sql
-INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
 Selon le matériel, cette dernière insertion de 1m lignes peut prendre quelques minutes. Vous pouvez en suivre la progression dans la table system.processes. N’hésitez pas à ajuster le nombre de lignes jusqu’à la limite de 10m et à essayer quelques requêtes d’exemple.
@@ -1284,7 +1285,7 @@ Ces tests permettront de vérifier que les données sont bien répliquées entre
          tip_amount,
          total_amount,
          payment_type
-     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
   ```
 * Vérifiez que les données sont stockées dans S3.
 

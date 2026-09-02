@@ -33,7 +33,7 @@ WHERE event_date >= today() - 7
 
 Utilisez la variante S3 pour AWS S3 et GCS. Azure et le système de fichiers local disposent de variantes dédiées (`icebergAzure`, `icebergLocal` et leurs équivalents pour les autres formats). Consultez [Interroger directement](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) pour la liste complète.
 
-[Paimon](/fr/reference/functions/table-functions/paimon) propose uniquement des fonctions de table.
+[Paimon](/fr/reference/functions/table-functions/paimon) propose des fonctions de table et des [moteurs de table expérimentaux](/fr/reference/engines/table-engines/integrations/paimon).
 
 <div id="table-engines">
   ### Moteurs de table
@@ -333,10 +333,10 @@ ORDER BY rows DESC;
 ```
 
 <div id="debug-query-log">
-  ### Vérifier le volume de données parcouru
+  ### Vérifier le volume du parcours des données
 </div>
 
-Comparez `read_rows` et `read_bytes` dans [system.query&#95;log](/fr/reference/system-tables/query_log) avant et après l’ajout de filtres ou le réglage des paramètres. Des ProfileEvents comme `ReadBufferFromS3Bytes` et `CachedReadBufferReadFromCacheBytes` indiquent quelle quantité de données provient du stockage objet par rapport au cache local. Consultez [l’optimisation des requêtes](/fr/guides/clickhouse/performance-and-monitoring/query-optimization) pour une présentation complète de query&#95;log et d’EXPLAIN.
+Comparez `read_rows` et `read_bytes` dans [`system.query_log`](/fr/reference/system-tables/query_log) avant et après l’ajout de filtres ou le réglage des paramètres. Des `ProfileEvents` comme `ReadBufferFromS3Bytes` et `CachedReadBufferReadFromCacheBytes` indiquent quelle quantité de données provient du stockage objet par rapport au cache local. Consultez [Diagnostiquer les requêtes lentes](/fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) pour une présentation complète de `query_log` et d’`EXPLAIN`.
 
 Désactivez [enable&#95;filesystem&#95;cache](/fr/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) lors du benchmarking afin que les accès au cache ne masquent pas les changements entre les exécutions.
 

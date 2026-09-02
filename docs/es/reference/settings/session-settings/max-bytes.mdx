@@ -44,7 +44,7 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración para controlar el volcado automático a disco de los hash joins. Un valor distinto de cero habilita el volcado y establece el umbral en bytes."}]}]} />
 
-Si se establece en un valor distinto de cero y `join_algorithm` es `hash`, `parallel_hash`, `default` o `auto`, el hash join se convertirá automáticamente en grace hash join para habilitar el volcado a disco cuando los datos del lado derecho superen esta cantidad de bytes. Cuando se establece en 0 (valor predeterminado), este umbral absoluto en bytes se desactiva, pero el volcado automático puede seguir produciéndose mediante `max_bytes_ratio_before_external_join` (cuyo valor predeterminado es `0.5`); establezca ambos en `0` para desactivar por completo el volcado automático. Un join que puede volcar a disco normalmente impide la optimización de lectura en orden mediante join; consulte [`query_plan_read_in_order_through_spilling_join`](/es/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) para saber cuándo la optimización se aplica de todos modos y el join se mantiene en memoria.
+Si se establece en un valor distinto de cero y `join_algorithm` es `hash`, `parallel_hash`, `default` o `auto`, el hash join se convertirá automáticamente en grace hash join para habilitar el volcado a disco cuando los datos del lado derecho superen esta cantidad de bytes. Cuando se establece en 0 (valor predeterminado), este umbral absoluto en bytes se desactiva, pero el volcado automático puede seguir produciéndose mediante `max_bytes_ratio_before_external_join` (cuyo valor predeterminado es `0.5`); establezca ambos en `0` para desactivar por completo el volcado automático. Impide la optimización de read in order a través de join.
 
 <div id="max_bytes_before_external_sort">
   ## max_bytes_before_external_sort
@@ -152,8 +152,6 @@ Por ejemplo, si se establece en `0.6`, `JOIN` permitirá usar el `60%` de la mem
 Si se establecen tanto `max_bytes_before_external_join` como `max_bytes_ratio_before_external_join`, se usa el umbral resultante más bajo. Si la proporción es `0`, solo se aplica la configuración absoluta.
 
 Solo tiene efecto cuando `join_algorithm` es `hash`, `parallel_hash`, `default` o `auto` y hay configurada una ruta de datos temporales.
-
-Un join que puede volcar datos normalmente impide la optimización de lectura en orden mediante join; consulte [`query_plan_read_in_order_through_spilling_join`](/es/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) para saber cuándo la optimización se aplica de todos modos y el join se mantiene en memoria, de modo que alcanzar esta proporción no lo convierta en grace hash join.
 
 <div id="max_bytes_ratio_before_external_sort">
   ## max_bytes_ratio_before_external_sort

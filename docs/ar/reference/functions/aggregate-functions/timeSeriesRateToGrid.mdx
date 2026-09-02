@@ -15,6 +15,8 @@ doc_type: 'reference'
 
 دالة تجميع تأخذ بيانات السلاسل الزمنية على هيئة أزواج من الطوابع الزمنية والقيم، وتحسب [معدلًا بأسلوب PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) من هذه البيانات على شبكة زمنية منتظمة يحددها الطابع الزمني للبداية والطابع الزمني للنهاية والخطوة. ولكل نقطة على الشبكة، تُؤخذ العينات اللازمة لحساب `rate` ضمن النافذة الزمنية المحددة.
 
+إذا كانت عدة عينات لها الطابع الزمني نفسه، فتُستخدم واحدة منها فقط: العينة ذات القيمة الأكبر. وتخسر قيمة NaN أمام أي قيمة أخرى، لذا لا تُستخدم قيمة NaN إلا إذا كانت جميع العينات عند هذا الطابع الزمني هي NaN.
+
 <Warning>
   هذه الدالة تجريبية، فعّلها بضبط `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
@@ -34,12 +36,12 @@ timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(times
 
 **الوسيطات**
 
-* `timestamp` — الطابع الزمني للعينة. يمكن أن يكون قيمًا فردية أو مصفوفات. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`Array(UInt32)`](/ar/reference/data-types/array) أو [`Array(DateTime)`](/ar/reference/data-types/array)
-* `value` — قيمة السلسلة الزمنية المقابلة للطابع الزمني. يمكن أن تكون قيمًا فردية أو مصفوفات. [`Float*`](/ar/reference/data-types/float) أو [`Array(Float*)`](/ar/reference/data-types/array)
+* `timestamp` — الطابع الزمني للعينة. يمكن أن يكون قيمًا فردية أو Array. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`Array(UInt32)`](/ar/reference/data-types/array) أو [`Array(DateTime)`](/ar/reference/data-types/array)
+* `value` — قيمة السلسلة الزمنية المقابلة للطابع الزمني. يمكن أن تكون قيمًا فردية أو Array. [`Float*`](/ar/reference/data-types/float) أو [`Array(Float*)`](/ar/reference/data-types/array)
 
 **القيمة المُعادة**
 
-تعيد قيم المعدل على الشبكة المحددة. تحتوي المصفوفة المُعادة على قيمة واحدة لكل نقطة في الشبكة الزمنية. تكون القيمة NULL إذا لم تكن هناك عينات كافية داخل النافذة لحساب قيمة المعدل لنقطة شبكة معيّنة. [`Array(Nullable(Float64))`](/ar/reference/data-types/array)
+تعيد قيم المعدل على الشبكة المحددة. تحتوي Array المُعادة على قيمة واحدة لكل نقطة في الشبكة الزمنية. تكون القيمة NULL إذا لم تكن هناك عينات كافية داخل النافذة لحساب قيمة المعدل لنقطة شبكة معيّنة. [`Array(Nullable(Float64))`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -68,7 +70,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,7 +90,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

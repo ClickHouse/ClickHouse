@@ -351,7 +351,13 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
   </Accordion>
 
   <Accordion title="如何在多个组织中使用 SAML 单点登录？">
-    ClickHouse Cloud 支持多组织 SSO，每个组织对应一个单独的连接。使用直接链接 (`https://console.clickhouse.cloud/?connection={organizationid}`) 分别登录各个组织，并在登录另一个组织之前先退出当前组织。如果您不希望您域名下的用户在 `https://console.clickhouse.cloud` 输入电子邮件地址时被自动定向到某个组织，请提交支持工单以取消此行为。
+    ClickHouse Cloud 支持多组织 SSO，每个组织对应一个单独的连接。
+
+    首次登录每个组织时，必须使用其直接链接 (`https://console.clickhouse.cloud/?connection={organizationId}`)。首次登录会在该组织中预配您的账户。如果您的组织已启用 SCIM，则可以跳过此步骤，因为您的账户已被预配。
+
+    后续登录时，请登录任意一个 SAML 组织。您的其他 SAML 组织会显示在控制台侧边栏的组织切换器中，选择其中一个即可通过其 SSO 登录该组织。
+
+    如果您不希望您域名下的用户在 `https://console.clickhouse.cloud` 输入电子邮件地址时被自动定向到某个组织，请提交支持工单以取消此行为。
   </Accordion>
 
   <Accordion title="为什么同一用户会显示多个账户？">

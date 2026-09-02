@@ -63,9 +63,9 @@ SELECT array(toInt32(5), toDateTime('1998-06-16'), toInt8(5)) AS a, toTypeName(a
 ```
 
 ```response title=Response
-Received exception from server (version 25.4.3):
-Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
-There is no supertype for types Int32, DateTime, Int8 ...
+┌─a───────────────────────────┬─toTypeName(a)─────────────────────────┐
+│ [5,'1998-06-16 00:00:00',5] │ Array(Variant(DateTime, Int32, Int8)) │
+└─────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayAUCPR">
@@ -205,7 +205,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);
 ```
 
 ```response title=Response
-[1, 0.4, -0.1, -0.4, -0.4]
+[1,0.4,-0.1,-0.4,-0.4]
 ```
 
 **대칭**
@@ -215,7 +215,7 @@ SELECT arrayAutocorrelation([10, 20, 10]);
 ```
 
 ```response title=Response
-[1, -0.6666666666666669, 0.16666666666666674]
+[1,-0.6666666666666669,0.16666666666666674]
 ```
 
 **상수**
@@ -225,7 +225,7 @@ SELECT arrayAutocorrelation([5, 5, 5]);
 ```
 
 ```response title=Response
-[nan, nan, nan]
+[nan,nan,nan]
 ```
 
 **제한됨**
@@ -235,7 +235,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);
 ```
 
 ```response title=Response
-[1, 0.4]
+[1,0.4]
 ```
 
 <div id="arrayAvg">
@@ -444,7 +444,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4, 5, 6]
+[1,2,3,4,5,6]
 ```
 
 <div id="arrayCount">
@@ -518,7 +518,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4]
+[1,2,3,4]
 ```
 
 **람다 사용**
@@ -528,7 +528,7 @@ SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 6, 12]
+[2,6,12]
 ```
 
 <div id="arrayCumSumNonNegative">
@@ -564,7 +564,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 0, 1]
+[1,2,0,1]
 ```
 
 **람다 사용 시**
@@ -574,7 +574,7 @@ SELECT arrayCumSumNonNegative(x -> x * 2, [1, -2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 0, 6]
+[2,0,6]
 ```
 
 <div id="arrayDifference">
@@ -668,7 +668,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1]);
 두 배열의 내적을 반환합니다.
 
 <Note>
-  두 벡터의 크기는 반드시 같아야 합니다. 배열과 튜플에는 서로 다른 타입의 요소가 함께 포함될 수도 있습니다.
+  두 벡터의 크기는 반드시 같아야 합니다. 배열과 튜플에는 서로 다른 타입의 원소가 함께 포함될 수도 있습니다.
 </Note>
 
 **구문**
@@ -687,7 +687,7 @@ arrayDotProduct(v1, v2)
 두 벡터의 내적입니다.
 
 <Note>
-  반환 타입은 인수의 타입에 따라 결정됩니다. 배열 또는 튜플에 서로 다른 타입의 요소가 섞여 있으면 결과 타입은 공통 상위 타입이 됩니다.
+  반환 타입은 인수의 타입에 따라 결정됩니다. 배열 또는 튜플에 서로 다른 타입의 원소가 섞여 있으면 결과 타입은 공통 상위 타입이 됩니다.
   두 `BFloat16` 배열은 `Float32`로 누적 연산되며 `Float32`를 반환합니다(`Float32` 배열 두 개와 동일한 규칙).
 </Note>
 
@@ -702,7 +702,7 @@ SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
 ```
 
 ```response title=Response
-32    UInt16
+32	UInt16
 ```
 
 **Tuple 예시**
@@ -712,7 +712,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 ```
 
 ```response title=Response
-32    Float64
+32	Float64
 ```
 
 <div id="arrayElement">
@@ -739,6 +739,8 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 연산자 `[n]`도 동일한 기능을 제공합니다.
 
+첫 번째 인수는 [QBit](/ko/reference/data-types/qbit)일 수도 있습니다. 해당 원소를 포함하는 스트라이드 그룹의 비트 평면만 읽어 QBit 원소 타입의 전체 정밀도로 n번째 벡터 원소를 재구성합니다.
+
 **구문**
 
 ```sql
@@ -747,7 +749,7 @@ arrayElement(arr, n)
 
 **인수**
 
-* `arr` — 검색할 배열입니다. [`Array(T)`](/ko/reference/data-types/array). - `n` — 가져올 원소의 위치 또는 위치 배열입니다. 위치는 널 허용일 수 있습니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Array((U)Int*)`](/ko/reference/data-types/array).
+* `arr` — 검색할 배열입니다. [`Array(T)`](/ko/reference/data-types/array) 또는 [`QBit`](/ko/reference/data-types/qbit). - `n` — 가져올 원소의 위치 또는 위치 배열입니다. 위치는 널 허용일 수 있습니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Array((U)Int*)`](/ko/reference/data-types/array).
 
 **반환 값**
 
@@ -868,7 +870,7 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 ```
 
 ```response title=Response
-NULL
+\N
 ```
 
 **인덱스 배열**
@@ -983,7 +985,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 
 도입 버전: v20.1.0
 
-소스 배열과 동일한 크기의 배열을 반환하며, 소스 배열에서 각 요소가 처음 나타나는 위치를 나타냅니다. 또한 배열 내부를 어디까지 확인할지 깊이를 지정하여 다차원 배열을 열거할 수 있습니다.
+소스 배열과 동일한 크기의 배열을 반환하며, 소스 배열에서 각 원소가 처음 나타나는 위치를 나타냅니다. 또한 배열 내부를 어디까지 확인할지 깊이를 지정하여 다차원 배열에 번호를 매길 수 있습니다.
 
 **구문**
 
@@ -993,20 +995,20 @@ arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)
 
 **인수**
 
-* `clear_depth` — 지정된 수준에서 요소별로 별도로 순번을 매깁니다. `max_arr_depth`보다 작거나 같아야 합니다. [`UInt*`](/ko/reference/data-types/int-uint)
-* `arr` — 순번을 매길 N차원 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `clear_depth` — 지정된 수준에서 원소별로 별도로 번호를 매깁니다. `max_arr_depth`보다 작거나 같아야 합니다. [`UInt*`](/ko/reference/data-types/int-uint)
+* `arr` — 번호를 매길 N차원 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 * `max_array_depth` — 유효한 최대 깊이입니다. `arr`의 깊이보다 작거나 같아야 합니다. [`UInt*`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-소스 배열에서 각 요소가 처음 나타나는 위치를 나타내는 배열을 반환합니다. [`Array`](/ko/reference/data-types/array)
+소스 배열에서 각 원소가 처음 나타나는 위치를 나타내는 배열을 반환합니다. [`Array`](/ko/reference/data-types/array)
 
 **예시**
 
 **기본 사용법**
 
 ```sql title=Query
--- clear_depth=1, max_array_depth=1로 설정하면 arrayEnumerateDense와 동일한 결과를 반환합니다.
+-- With clear_depth=1 and max_array_depth=1, the result is identical to what arrayEnumerateDense would give.
 
 SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 ```
@@ -1018,14 +1020,14 @@ SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 **다차원 배열 사용**
 
 ```sql title=Query
--- 이 예시에서 arrayEnumerateDenseRanked는 다차원 배열의 각 요소가 동일한 값을 가진 요소들 중에서
--- 몇 번째로 등장하는지를 나타내는 배열을 반환합니다.
--- 전달된 배열의 첫 번째 행 [10, 10, 30, 20]에 대한 결과의 첫 번째 행은 [1, 1, 2, 3]입니다.
--- 이는 10이 1번째와 2번째 위치에서 처음 등장한 숫자이고, 30이 3번째 위치에서 두 번째로 등장한 숫자이며,
--- 20이 4번째 위치에서 세 번째로 등장한 숫자임을 나타냅니다.
--- 두 번째 행 [40, 50, 10, 30]에 대한 결과의 두 번째 행은 [4,5,1,2]입니다.
--- 이는 40과 50이 해당 행의 1번째와 2번째 위치에서 각각 네 번째와 다섯 번째로 등장한 숫자이고,
--- 10(처음 등장한 숫자)이 3번째 위치에, 30(두 번째로 등장한 숫자)이 마지막 위치에 있음을 나타냅니다.
+-- In this example, arrayEnumerateDenseRanked is used to obtain an array indicating, for each element of the
+-- multidimensional array, what its position is among elements of the same value.
+-- For the first row of the passed array, [10, 10, 30, 20], the corresponding first row of the result is [1, 1, 2, 3],
+-- indicating that 10 is the first number encountered in position 1 and 2, 30 the second number encountered in position 3
+-- and 20 is the third number encountered in position 4.
+-- For the second row, [40, 50, 10, 30], the corresponding second row of the result is [4,5,1,2], indicating that 40
+-- and 50 are the fourth and fifth numbers encountered in position 1 and 2 of that row, that another 10
+-- (the first encountered number) is in position 3 and 30 (the second number encountered) is in the last position.
 
 SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 ```
@@ -1037,13 +1039,13 @@ SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 **clear&#95;depth를 늘린 예시**
 
 ```sql title=Query
--- clear_depth=2로 변경하면 각 행에 대해 열거가 새로 시작됩니다.
+-- Changing clear_depth=2 results in the enumeration occurring separately for each row anew.
 
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
 
 ```response title=Response
-[[1, 1, 2, 3], [1, 2, 3, 4]]
+[[1,1,2,3],[1,2,3,4]]
 ```
 
 <div id="arrayEnumerateUniq">
@@ -1052,11 +1054,11 @@ SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 
 도입 버전: v1.1.0
 
-소스 배열과 동일한 크기의 배열을 반환하며, 각 요소가 같은 값을 가진 요소들 가운데 몇 번째 위치인지를 나타냅니다.
+소스 배열과 동일한 크기의 배열을 반환하며, 각 원소가 같은 값을 가진 원소들 가운데 몇 번째 위치인지를 나타냅니다.
 
-이 함수는 `ARRAY JOIN` 및 배열 요소 집계에 사용할 때 유용합니다.
+이 함수는 `ARRAY JOIN` 및 배열 원소 집계에 사용할 때 유용합니다.
 
-이 함수는 동일한 크기의 여러 배열을 인수로 받을 수 있습니다. 이 경우 고유성은 모든 배열의 동일한 위치에 있는 요소들로 이루어진 튜플을 기준으로 판단됩니다.
+이 함수는 동일한 크기의 여러 배열을 인수로 받을 수 있습니다. 이 경우 고유성은 모든 배열의 동일한 위치에 있는 원소들로 이루어진 튜플을 기준으로 판단됩니다.
 
 **구문**
 
@@ -1071,7 +1073,7 @@ arrayEnumerateUniq(arr1[, arr2, ... , arrN])
 
 **반환 값**
 
-각 요소에 대해, 같은 값 또는 같은 튜플을 갖는 요소들 사이에서의 위치를 나타내는 배열을 반환합니다. [`Array(T)`](/ko/reference/data-types/array)
+각 원소에 대해, 같은 값 또는 같은 튜플을 갖는 원소들 사이에서의 위치를 나타내는 배열을 반환합니다. [`Array(T)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -1082,7 +1084,7 @@ SELECT arrayEnumerateUniq([10, 20, 10, 30]);
 ```
 
 ```response title=Response
-[1, 1, 2, 1]
+[1,1,2,1]
 ```
 
 **여러 개의 배열**
@@ -1098,37 +1100,38 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);
 **ARRAY JOIN 집계**
 
 ```sql title=Query
--- 각 목표 ID에 대해 전환 수(Goals 중첩 데이터 구조의 각 요소는 달성된 목표이며, 이를 전환이라고 합니다)와
--- 세션 수를 계산합니다. ARRAY JOIN 없이는 세션 수를 sum(Sign)으로 집계했을 것입니다. 그러나 이 경우
--- 행이 중첩된 Goals 구조로 인해 곱해지므로, 각 세션을 한 번씩만 집계하기 위해
--- arrayEnumerateUniq(Goals.ID) 함수의 반환값에 조건을 적용합니다.
+-- Each goal ID has a calculation of the number of conversions (each element in the Goals nested data structure is a goal that was reached, which we refer to as a conversion)
+-- and the number of sessions. Without ARRAY JOIN, we would have counted the number of sessions as sum(Sign). But in this particular case,
+-- the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, we apply a condition to the
+-- value of the arrayEnumerateUniq(Goals.ID) function.
+
+CREATE TABLE visits (CounterID UInt32, Sign Int8, Goals Nested(ID UInt32)) ENGINE = Memory;
+
+INSERT INTO visits VALUES
+    (160656, 1, [53225, 53225, 56600]),
+    (160656, 1, [53225, 2825062]),
+    (160656, 1, [56600, 56600, 2825062]),
+    (160657, 1, [53225]);
 
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
     sumIf(Sign, num = 1) AS Visits
-FROM test.visits
+FROM visits
 ARRAY JOIN
     Goals,
     arrayEnumerateUniq(Goals.ID) AS num
 WHERE CounterID = 160656
 GROUP BY GoalID
-ORDER BY Reaches DESC
+ORDER BY Reaches DESC, GoalID
 LIMIT 10
 ```
 
 ```response title=Response
 ┌──GoalID─┬─Reaches─┬─Visits─┐
-│   53225 │    3214 │   1097 │
-│ 2825062 │    3188 │   1097 │
-│   56600 │    2803 │    488 │
-│ 1989037 │    2401 │    365 │
-│ 2830064 │    2396 │    910 │
-│ 1113562 │    2372 │    373 │
-│ 3270895 │    2262 │    812 │
-│ 1084657 │    2262 │    345 │
-│   56599 │    2260 │    799 │
-│ 3271094 │    2256 │    812 │
+│   53225 │       3 │      2 │
+│   56600 │       3 │      2 │
+│ 2825062 │       2 │      2 │
 └─────────┴─────────┴────────┘
 ```
 
@@ -1139,8 +1142,8 @@ LIMIT 10
 도입 버전: v20.1.0
 
 소스 배열과 동일한 차원의 배열(또는 다차원 배열)을 반환하며,
-각 요소가 같은 값을 가진 요소들 사이에서 몇 번째 위치에 있는지를 나타냅니다.
-배열 내부를 어느 깊이까지 확인할지 지정할 수 있으므로, 다차원 배열도 열거할 수 있습니다.
+각 원소가 같은 값을 가진 원소들 사이에서 몇 번째 위치에 있는지를 나타냅니다.
+배열 내부를 어느 깊이까지 확인할지 지정할 수 있으므로, 다차원 배열에도 번호를 매길 수 있습니다.
 
 **구문**
 
@@ -1150,70 +1153,70 @@ arrayEnumerateUniqRanked(clear_depth, arr, max_array_depth)
 
 **인수**
 
-* `clear_depth` — 지정된 수준에서 요소에 각각 별도로 순번을 매깁니다. `max_arr_depth` 이하의 양의 정수입니다. [`UInt*`](/ko/reference/data-types/int-uint)
-* `arr` — 순번을 매길 N차원 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `clear_depth` — 지정된 수준에서 원소에 각각 별도로 번호를 매깁니다. `max_arr_depth` 이하의 양의 정수입니다. [`UInt*`](/ko/reference/data-types/int-uint)
+* `arr` — 번호를 매길 N차원 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 * `max_array_depth` — 유효한 최대 깊이입니다. `arr`의 깊이 이하인 양의 정수입니다. [`UInt*`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-`arr`와 크기가 같은 N차원 배열을 반환합니다. 각 요소에는 동일한 값을 가진 다른 요소들에 대한 해당 요소의 위치가 표시됩니다. [`Array(T)`](/ko/reference/data-types/array)
+`arr`와 크기가 같은 N차원 배열을 반환합니다. 각 원소에는 동일한 값을 가진 다른 원소들에 대한 해당 원소의 위치가 표시됩니다. [`Array(T)`](/ko/reference/data-types/array)
 
 **예시**
 
 **예시 1**
 
 ```sql title=Query
--- clear_depth=1이고 max_array_depth=1인 경우, arrayEnumerateUniqRanked의 결과는
--- 동일한 배열에 대해 arrayEnumerateUniq가 반환하는 결과와 같습니다.
+-- With clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
+-- is identical to that which arrayEnumerateUniq would give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [1, 2, 1], 1);
 ```
 
 ```response title=Response
-[1, 1, 2]
+[1,1,2]
 ```
 
 **예시 2**
 
 ```sql title=Query
--- clear_depth=1, max_array_depth=1인 경우, arrayEnumerateUniqRanked의 결과는
--- 동일한 배열에 대해 arrayEnumerateUniq가 반환하는 결과와 동일합니다.
-
-SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);", "[[1, 1, 1], [2, 3, 2], [2]]
-```
-
-```response title=Response
-[1, 1, 2]
-```
-
-**예시 3**
-
-```sql title=Query
--- 이 예시에서 arrayEnumerateUniqRanked는 다차원 배열의 각 요소가
--- 동일한 값을 가진 요소들 중 몇 번째로 등장하는지를 나타내는 배열을 반환합니다.
--- 전달된 배열의 첫 번째 행 [1, 2, 3]에 대한 결과는 [1, 1, 1]로,
--- 1, 2, 3이 각각 처음 등장함을 나타냅니다.
--- 두 번째 행 [2, 2, 1]에 대한 결과는 [2, 3, 3]으로,
--- 2가 두 번째와 세 번째로 등장하고, 1이 두 번째로 등장함을 나타냅니다.
--- 마찬가지로, 세 번째 행 [3]에 대한 결과는 [2]로,
--- 3이 두 번째로 등장함을 나타냅니다.
+-- with clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
+-- is identical to that which arrayEnumerateUniqwould give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [2, 3, 2], [2]]
+[[1,1,1],[2,3,2],[2]]
+```
+
+**예시 3**
+
+```sql title=Query
+-- In this example, arrayEnumerateUniqRanked is used to obtain an array indicating,
+-- for each element of the multidimensional array, what its position is among elements
+-- of the same value. For the first row of the passed array, [1, 2, 3], the corresponding
+-- result is [1, 1, 1], indicating that this is the first time 1, 2 and 3 are encountered.
+-- For the second row of the provided array, [2, 2, 1], the corresponding result is [2, 3, 3],
+-- indicating that 2 is encountered for a second and third time, and 1 is encountered
+-- for the second time. Likewise, for the third row of the provided array [3] the
+-- corresponding result is [2] indicating that 3 is encountered for the second time.
+
+SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
+```
+
+```response title=Response
+[[1,1,1],[2,3,2],[2]]
 ```
 
 **예시 4**
 
 ```sql title=Query
--- clear_depth=2로 변경하면 각 행마다 요소가 별도로 열거됩니다.
+-- Changing clear_depth=2, results in elements being enumerated separately for each row.
 SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3],[2, 2, 1],[3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [1, 2, 1], [1]]
+[[1,1,1],[1,2,1],[1]]
 ```
 
 <div id="arrayExcept">
@@ -1222,14 +1225,14 @@ SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3],[2, 2, 1],[3]], 2);
 
 도입 버전: v25.9.0
 
-원래 순서를 유지하면서 `except`에 없는 `source`의 요소를 담은 배열을 반환합니다.
+원래 순서를 유지하면서 `except`에 없는 `source`의 원소를 담은 배열을 반환합니다.
 
-이 함수는 두 배열 간의 차집합 연산을 수행합니다. `source`의 각 요소에 대해 해당 요소가 `except`에 있는지(정확히 비교하여) 확인합니다. 없으면 해당 요소가 결과에 포함됩니다.
+이 함수는 두 배열 간의 차집합 연산을 수행합니다. `source`의 각 원소에 대해 해당 원소가 `except`에 있는지(정확히 비교하여) 확인합니다. 없으면 해당 원소가 결과에 포함됩니다.
 
 이 연산은 다음과 같은 특성을 유지합니다.
 
-1. `source`의 요소 순서가 유지됩니다
-2. `except`에 없는 경우 `source`의 중복 요소도 유지됩니다
+1. `source`의 원소 순서가 유지됩니다
+2. `except`에 없는 경우 `source`의 중복 원소도 유지됩니다
 3. NULL은 별도의 값으로 처리됩니다
 
 **구문**
@@ -1240,12 +1243,12 @@ arrayExcept(source, except)
 
 **인수**
 
-* `source` — 필터링할 요소가 들어 있는 소스 배열입니다.  [`Array(T)`](/ko/reference/data-types/array)
-* `except` — 결과에서 제외할 요소가 들어 있는 배열입니다.  [`Array(T)`](/ko/reference/data-types/array)
+* `source` — 필터링할 원소가 들어 있는 소스 배열입니다.  [`Array(T)`](/ko/reference/data-types/array)
+* `except` — 결과에서 제외할 원소가 들어 있는 배열입니다.  [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
-입력 배열과 같은 타입이며, `except`에 없는 `source`의 요소를 포함한 배열을 반환합니다.  [`Array(T)`](/ko/reference/data-types/array)
+입력 배열과 같은 타입이며, `except`에 없는 `source`의 원소를 포함한 배열을 반환합니다.  [`Array(T)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -1256,7 +1259,7 @@ SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])
 ```
 
 ```response title=Response
-[1, 2, 2, 4]
+[1,2,2,4]
 ```
 
 **with&#95;nulls1**
@@ -1266,7 +1269,7 @@ SELECT arrayExcept([1, NULL, 2, NULL], [2])
 ```
 
 ```response title=Response
-[1, NULL, NULL]
+[1,NULL,NULL]
 ```
 
 **with&#95;nulls2**
@@ -1286,7 +1289,7 @@ SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])
 ```
 
 ```response title=Response
-['apple', 'cherry']
+['apple','cherry']
 ```
 
 <div id="arrayExists">
@@ -1331,10 +1334,10 @@ SELECT arrayExists(x, y -> x=y, [1, 2, 3], [0, 0, 0])
 
 도입 버전: v20.1.0
 
-`arrayFill` 함수는 첫 번째 요소부터 마지막 요소까지 소스 배열을 순차적으로 처리하며,
-각 위치에서 소스 배열과 조건 배열의 요소를 사용해 람다 조건을 평가합니다. 위치 i에서
-람다 함수의 평가 결과가 false이면, 해당 요소는 배열의 현재 상태에서 위치 i-1의 요소로
-대체됩니다. 첫 번째 요소는 조건과 관계없이 항상 유지됩니다.
+`arrayFill` 함수는 첫 번째 원소부터 마지막 원소까지 소스 배열을 순차적으로 처리하며,
+각 위치에서 소스 배열과 조건 배열의 원소를 사용해 람다 조건을 평가합니다. 위치 i에서
+람다 함수의 평가 결과가 false이면, 해당 원소는 배열의 현재 상태에서 위치 i-1의 원소로
+대체됩니다. 첫 번째 원소는 조건과 관계없이 항상 유지됩니다.
 
 **구문**
 
@@ -1344,7 +1347,7 @@ arrayFill(func(x [, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])
 
 **인수**
 
-* `func(x [, y1, ..., yN])` — 소스 배열(`x`)과 조건 배열(`y`)의 요소를 처리하는 람다 함수 `func(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])`입니다. [`람다 함수`](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func(x [, y1, ..., yN])` — 소스 배열(`x`)과 조건 배열(`y`)의 원소를 처리하는 람다 함수 `func(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])`입니다. [`람다 함수`](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `source_arr` — 처리할 소스 배열입니다. [`람다 함수`](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `[, cond1_arr, ... , condN_arr]` — 선택 사항입니다. 람다 함수에 추가 인수를 제공하는 N개의 조건 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 
@@ -1361,7 +1364,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 1, 2, 2]
+[1,1,2,2]
 ```
 
 **두 개의 배열 예시**
@@ -1371,7 +1374,7 @@ SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2,
 ```
 
 ```response title=Response
-[5, 5, 6, 6]
+[5,5,6,6]
 ```
 
 <div id="arrayFilter">
@@ -1431,7 +1434,7 @@ SELECT
 
 도입 버전: v1.1.0
 
-소스 배열에서 `func(x[, y1, y2, ... yN])`가 true를 반환하는 첫 번째 요소를 반환합니다. 해당 요소가 없으면 기본값을 반환합니다.
+소스 배열에서 `func(x[, y1, y2, ... yN])`가 true를 반환하는 첫 번째 원소를 반환합니다. 해당 원소가 없으면 기본값을 반환합니다.
 
 **구문**
 
@@ -1441,11 +1444,11 @@ arrayFirst(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])
 
 **인수**
 
-* `func(x[, y1, ..., yN])` — 소스 배열(`x`)과 조건 배열(`y`)의 요소에 대해 동작하는 람다 함수입니다. [람다 함수](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda). - `source_arr` — 처리할 소스 배열입니다. [`Array(T)`](/ko/reference/data-types/array). - `[, cond1_arr, ... , condN_arr]` — 선택 사항입니다. 람다 함수에 추가 인수를 제공하는 N개의 조건 배열입니다. [`Array(T)`](/ko/reference/data-types/array).
+* `func(x[, y1, ..., yN])` — 소스 배열(`x`)과 조건 배열(`y`)의 원소에 대해 동작하는 람다 함수입니다. [람다 함수](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda). - `source_arr` — 처리할 소스 배열입니다. [`Array(T)`](/ko/reference/data-types/array). - `[, cond1_arr, ... , condN_arr]` — 선택 사항입니다. 람다 함수에 추가 인수를 제공하는 N개의 조건 배열입니다. [`Array(T)`](/ko/reference/data-types/array).
 
 **반환 값**
 
-`λ`가 참이 되는 소스 배열의 첫 번째 요소를 반환하며, 그런 요소가 없으면 `T`의 기본값을 반환합니다.
+`λ`가 참이 되는 소스 배열의 첫 번째 원소를 반환하며, 그런 원소가 없으면 `T`의 기본값을 반환합니다.
 
 **예시**
 
@@ -1466,7 +1469,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayFirstIndex">
@@ -1556,7 +1559,7 @@ SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(re
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayFlatten">
@@ -1599,7 +1602,7 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 ```
 
 ```response title=Response
-[1, 2, 3]
+[1,2,3]
 ```
 
 <div id="arrayFold">
@@ -1761,6 +1764,8 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 이 함수가 적용된 컬럼의 값을 제외하면 다른 컬럼의 값은 모두 그대로 복사되며,
 해당 값은 대응하는 배열 값으로 대체됩니다.
 
+`unnest`(버전 26.5부터)는 함수 호출 형식(`SELECT unnest(arr)`)에서 `arrayJoin`의 대소문자를 구분하지 않는 별칭입니다. PostgreSQL 테이블 소스 구문은 지원되지 않습니다(`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, `LATERAL`). 이러한 쿼리에는 `ARRAY JOIN` 절을 사용하십시오.
+
 `unnest` 별칭을 통한 사용을 포함해 `arrayJoin`은 조인 중에 평가되는 `JOIN ON` 조건에서 사용할 수 없습니다. 이러한 조건은
 행 수를 유지해야 하기 때문입니다. 한쪽에만 적용되는 조건과 `arrayJoin`에 대한 동등 키는
 조인 전에 추출되므로 영향을 받지 않습니다. 논리합으로 분리되지 않은 `ALL INNER JOIN` 조건도 영향을 받지 않는데,
@@ -1796,11 +1801,11 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
 ```response title=Response
-┌─dst─┬─\'Hello\'─┬─src─────┐
-│   1 │ Hello     │ [1,2,3] │
-│   2 │ Hello     │ [1,2,3] │
-│   3 │ Hello     │ [1,2,3] │
-└─────┴───────────┴─────────┘
+┌─dst─┬─'Hello'─┬─src─────┐
+│   1 │ Hello   │ [1,2,3] │
+│   2 │ Hello   │ [1,2,3] │
+│   3 │ Hello   │ [1,2,3] │
+└─────┴─────────┴─────────┘
 ```
 
 **arrayJoin은 쿼리의 모든 절에 영향을 미칩니다**
@@ -2020,7 +2025,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayLastIndex">
@@ -2110,7 +2115,7 @@ SELECT arrayLastOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayLevenshteinDistance">
@@ -2215,7 +2220,7 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 ```
 
 ```response title=Response
-[3, 4, 5]
+[3,4,5]
 ```
 
 **서로 다른 배열의 요소로 튜플 생성하기**
@@ -2225,7 +2230,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 ```
 
 ```response title=Response
-[(1, 4),(2, 5),(3, 6)]
+[(1,4),(2,5),(3,6)]
 ```
 
 <div id="arrayMax">
@@ -2356,7 +2361,7 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 ```
 
 ```response title=Response
-(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)
+(0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
 <div id="arrayPartialReverseSort">
@@ -2368,7 +2373,7 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 이 함수는 `arrayReverseSort`와 동일하지만, 부분 정렬을 수행할 수 있도록 추가 `limit` 인수를 제공합니다.
 
 <Tip>
-  정렬된 요소만 유지하려면 `arrayResize`를 사용하십시오.
+  정렬된 원소만 유지하려면 `arrayResize`를 사용하십시오.
 </Tip>
 
 <Note>
@@ -2383,15 +2388,15 @@ arrayPartialReverseSort([f,] limit, arr [, arr1, ... ,arrN])
 
 **인수**
 
-* `f(arr[, arr1, ... ,arrN])` — 배열 `x`의 요소에 적용할 람다 함수입니다. [`람다 함수`](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `f(arr[, arr1, ... ,arrN])` — 배열 `x`의 원소에 적용할 람다 함수입니다. [`람다 함수`](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `limit` — 정렬이 수행되는 범위의 끝을 나타내는 인덱스 값입니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
 * `arr` — 정렬할 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 * `arr1, ... ,arrN` — `f`가 여러 인수를 받는 경우 사용할 추가 배열 N개입니다. [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
-원본 배열과 크기가 같은 배열을 반환합니다. 이 배열에서 `[1..limit]` 범위의 요소는
-내림차순으로 정렬되며, 나머지 요소 `(limit..N]`의 순서는 지정되지 않습니다.
+원본 배열과 크기가 같은 배열을 반환합니다. 이 배열에서 `[1..limit]` 범위의 원소는
+내림차순으로 정렬되며, 나머지 원소 `(limit..N]`의 순서는 지정되지 않습니다.
 
 **예시**
 
@@ -2402,7 +2407,7 @@ SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **simple&#95;string**
@@ -2422,7 +2427,7 @@ SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[9, 5]
+[9,5]
 ```
 
 **lambda&#95;simple**
@@ -2432,7 +2437,7 @@ SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **lambda&#95;complex**
@@ -2442,7 +2447,7 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[0, 1, 2]
+[0,1,2]
 ```
 
 <div id="arrayPartialShuffle">
@@ -2451,8 +2456,8 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 도입 버전: v23.2.0
 
-원본 배열과 동일한 크기의 배열을 반환합니다. 이 배열에서 `[1..limit]` 범위의 요소는 원본 배열에서 무작위로 선택된 부분집합입니다.
-나머지 `(limit..n]`에는 `[1..limit]` 범위에 포함되지 않은 요소가 정의되지 않은 순서로 들어갑니다.
+원본 배열과 동일한 크기의 배열을 반환합니다. 이 배열에서 `[1..limit]` 범위의 원소는 원본 배열에서 무작위로 선택된 부분집합입니다.
+나머지 `(limit..n]`에는 `[1..limit]` 범위에 포함되지 않은 원소가 정의되지 않은 순서로 들어갑니다.
 `limit` 값은 `[1..n]` 범위에 있어야 합니다. 이 범위를 벗어난 값은 전체 `arrayShuffle`을 수행하는 것과 동일합니다.
 
 <Note>
@@ -2475,11 +2480,11 @@ arrayPartialShuffle(arr [, limit[, seed]])
 
 * `arr` — 섞을 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 * `seed` — 선택 사항입니다. 난수 생성에 사용할 시드 값입니다. 지정하지 않으면 무작위 값이 사용됩니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
-* `limit` — 선택 사항입니다. 요소 교환 횟수를 제한하는 값이며, 범위는 `[1..N]`입니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
+* `limit` — 선택 사항입니다. 원소 교환 횟수를 제한하는 값이며, 범위는 `[1..N]`입니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-요소가 부분적으로 섞인 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+원소가 부분적으로 섞인 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -2500,7 +2505,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4])
 ```
 
 ```response title=Response
-[4, 1, 3, 2]
+[2,3,4,1]
 ```
 
 **random&#95;seed**
@@ -2520,7 +2525,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)
 ```
 
 ```response title=Response
-[3, 2, 1, 4]
+[3,2,1,4]
 ```
 
 **구체화하다**
@@ -2530,18 +2535,18 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 ```
 
 ```response title=Response
-┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [4,3,2,1]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,4,1,2]                │ [3,2,1]                  │
-│ [1,2,3,4]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,1,2,4]                │ [3,2,1]                  │
-│ [1,3,2,4]                │ [3,2,1]                  │
-└──────────────────────────┴──────────────────────────┘
+┌─arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42)─┬─arrayPartialShuffle([1, 2, 3], 2, 42)─┐
+│ [3,2,1,4]                                             │ [3,2,1]                               │
+│ [3,2,1,4]                                             │ [3,1,2]                               │
+│ [4,3,2,1]                                             │ [1,3,2]                               │
+│ [1,4,3,2]                                             │ [2,1,3]                               │
+│ [3,4,1,2]                                             │ [3,2,1]                               │
+│ [1,2,3,4]                                             │ [3,2,1]                               │
+│ [1,4,3,2]                                             │ [1,2,3]                               │
+│ [1,4,3,2]                                             │ [3,2,1]                               │
+│ [3,1,2,4]                                             │ [3,2,1]                               │
+│ [1,3,2,4]                                             │ [2,1,3]                               │
+└───────────────────────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayPartialSort">
@@ -2553,7 +2558,7 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 이 함수는 `arraySort`와 동일하지만, `limit` 인수가 추가되어 부분 정렬을 수행할 수 있습니다.
 
 <Tip>
-  정렬된 요소만 유지하려면 `arrayResize`를 사용하세요.
+  정렬된 원소만 유지하려면 `arrayResize`를 사용하세요.
 </Tip>
 
 <Note>
@@ -2568,15 +2573,15 @@ arrayPartialSort([f,] limit, arr [, arr1, ... ,arrN])
 
 **인수**
 
-* `f(arr[, arr1, ... ,arrN])` — 배열 요소에 적용할 람다 함수입니다. [`람다 함수`](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `f(arr[, arr1, ... ,arrN])` — 배열 원소에 적용할 람다 함수입니다. [`람다 함수`](/ko/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `limit` — 정렬이 수행될 인덱스 값입니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
 * `arr` — 정렬할 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 * `arr1, ... ,arrN` — `f`가 여러 인수를 받을 때 사용하는 추가 배열 N개입니다. [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
-원본 배열과 크기가 같은 배열을 반환합니다. 이 배열에서는 `[1..limit]` 범위의 요소가
-오름차순으로 정렬됩니다. 나머지 요소 `(limit..N]`의 순서는 지정되지 않습니다.
+원본 배열과 크기가 같은 배열을 반환합니다. 이 배열에서는 `[1..limit]` 범위의 원소가
+오름차순으로 정렬됩니다. 나머지 원소 `(limit..N]`의 순서는 지정되지 않습니다.
 
 **예시**
 
@@ -2587,7 +2592,7 @@ SELECT arrayPartialSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **simple&#95;string**
@@ -2597,7 +2602,7 @@ SELECT arrayPartialSort(2, ['expenses', 'lasso', 'embolism', 'gladly'])
 ```
 
 ```response title=Response
-['embolism', 'expenses', 'gladly', 'lasso']
+['embolism','expenses','gladly','lasso']
 ```
 
 **retain&#95;sorted**
@@ -2607,7 +2612,7 @@ SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **lambda&#95;simple**
@@ -2617,7 +2622,7 @@ SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **lambda&#95;complex**
@@ -2627,7 +2632,7 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[2, 1, 0]
+[2,1,0]
 ```
 
 <div id="arrayPopBack">
@@ -2661,7 +2666,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[1, 2]
+[1,2]
 ```
 
 <div id="arrayPopFront">
@@ -2695,7 +2700,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[2, 3]
+[2,3]
 ```
 
 <div id="arrayProduct">
@@ -3082,7 +3087,7 @@ SELECT arrayRemove([1, 2, 2, 3], 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **예시 2**
@@ -3092,7 +3097,7 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 ```
 
 ```response title=Response
-['a', 'b']
+['a','b']
 ```
 
 <div id="arrayResize">
@@ -3216,7 +3221,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 2, 2, NULL]
+[1,2,2,NULL]
 ```
 
 **두 개의 배열을 사용한 예시**
@@ -3226,7 +3231,7 @@ SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], 
 ```
 
 ```response title=Response
-[5, 6, 6, 2]
+[5,6,6,2]
 ```
 
 <div id="arrayReverseSort">
@@ -3320,7 +3325,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1], [2, 3, 4], [5]]
+[[1],[2,3,4],[5]]
 ```
 
 <div id="arrayRotateLeft">
@@ -3502,7 +3507,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;
 ```
 
 ```response title=Response
-[0, 0, 1, 2, 3, 4]
+[0,0,1,2,3,4]
 ```
 
 **n이 음수인 경우**
@@ -3512,7 +3517,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;
 ```
 
 ```response title=Response
-[3, 4, 5, 6, 0, 0]
+[3,4,5,6,0,0]
 ```
 
 **기본값 사용하기**
@@ -3522,7 +3527,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;
 ```
 
 ```response title=Response
-[42, 42, 1, 2, 3, 4]
+[42,42,1,2,3,4]
 ```
 
 <div id="arrayShingles">
@@ -3557,7 +3562,7 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
 ```
 
 ```response title=Response
-[[1, 2, 3], [2, 3, 4]]
+[[1,2,3],[2,3,4]]
 ```
 
 <div id="arrayShuffle">
@@ -3659,6 +3664,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 `NULL` 요소를 포함한 배열의 슬라이스를 반환합니다.
 
+첫 번째 인수는 [QBit](/ko/reference/data-types/qbit)일 수도 있습니다. 이 경우 결과는 선택한 차원에 대한 QBit(차원 부분 집합으로의 프로젝션)입니다. QBit의 차원은 타입의 일부이고 슬라이스는 최소 1개의 차원을 선택해야 하므로 `offset`과 `length`는 상수여야 합니다. QBit의 stride 그룹 경계에 맞춰 정렬된 슬라이스는 stride를 유지하며, 복사 없이 저장된 bit-plane 스트림을 재사용합니다.
+
 **구문**
 
 ```sql
@@ -3667,7 +3674,7 @@ arraySlice(arr, offset [, length])
 
 **인수**
 
-* `arr` — 슬라이스할 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `arr` — 슬라이스할 배열입니다. [`Array(T)`](/ko/reference/data-types/array) 또는 [`QBit`](/ko/reference/data-types/qbit)
 * `offset` — 배열의 끝에서부터의 오프셋입니다. 양수 값은 왼쪽부터의 오프셋을, 음수 값은 오른쪽부터의 들여쓰기를 나타냅니다. 배열 항목의 번호는 `1`부터 시작합니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
 * `length` — 필요한 슬라이스의 길이입니다. 음수 값을 지정하면 함수는 끝이 열린 슬라이스 `[offset, array_length - length]`를 반환합니다. 값을 생략하면 함수는 슬라이스 `[offset, the_end_of_array]`를 반환합니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
 
@@ -3684,7 +3691,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 ```response title=Response
-[2, NULL, 4]
+[2,NULL,4]
 ```
 
 <div id="arraySort">
@@ -3786,7 +3793,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1, 2, 3], [4, 5]]
+[[1,2,3],[4,5]]
 ```
 
 <div id="arraySum">
@@ -3974,7 +3981,7 @@ SELECT arrayTopK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
   ## arrayTranspose
 </div>
 
-추가된 버전: v26.4.0
+도입 버전: v26.4.0
 
 2차원 배열을 전치합니다.
 
@@ -4003,7 +4010,7 @@ SELECT arrayTranspose([[1, 2], [3, 4]])
 ```
 
 ```response title=Response
-[[1, 3], [2, 4]]
+[[1,3],[2,4]]
 ```
 
 **비정방 행렬**
@@ -4013,7 +4020,7 @@ SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])
 ```
 
 ```response title=Response
-[[1, 4], [2, 5], [3, 6]]
+[[1,4],[2,5],[3,6]]
 ```
 
 **String 타입 요소**
@@ -4023,7 +4030,7 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 ```
 
 ```response title=Response
-[['a', 'c'], ['b', 'd']]
+[['a','c'],['b','d']]
 ```
 
 <div id="arrayUnion">
@@ -4157,7 +4164,7 @@ SELECT arrayWithConstant(3, 1)
 ```
 
 ```response title=Response
-[1, 1, 1]
+[1,1,1]
 ```
 
 <div id="arrayZip">
@@ -4191,7 +4198,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
 ```response title=Response
-[('a', 5), ('b', 2), ('c', 1)]
+[('a',5),('b',2),('c',1)]
 ```
 
 <div id="arrayZipUnaligned">
@@ -4225,7 +4232,7 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 ```
 
 ```response title=Response
-[('a', 1),(NULL, 2),(NULL, 3)]
+[('a',1),(NULL,2),(NULL,3)]
 ```
 
 <div id="countEqual">
@@ -4619,7 +4626,7 @@ SELECT emptyArrayString()
 
 다음 버전에서 도입됨: v1.1.0
 
-빈 배열을 받아 기본값과 동일한 단일 요소 배열을 반환합니다.
+빈 배열을 받아 기본값과 동일한 단일 원소 배열을 반환합니다.
 
 **구문**
 
@@ -4633,7 +4640,7 @@ emptyArrayToSingle(arr)
 
 **반환 값**
 
-배열의 기본 타입 기본값 1개를 포함하는 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+배열의 기본 유형 기본값 1개를 포함하는 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -4655,7 +4662,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
 
 ```response title=Response
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
 ```
 
@@ -4886,15 +4893,15 @@ hasAll(set, subset)
 
 **인수**
 
-* `set` — 요소 집합을 담고 있는 임의 타입의 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
-* `subset` — `set`와 공통 상위 타입을 가지며, `set`의 부분집합인지 검사할 요소를 담고 있는 임의 타입의 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `set` — 원소 집합을 담고 있는 임의 유형의 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `subset` — `set`와 공통 상위 유형을 가지며, `set`의 부분집합인지 검사할 원소를 담고 있는 임의 유형의 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
-* `set`에 `subset`의 모든 요소가 포함되어 있으면 `1`입니다.
+* `set`에 `subset`의 모든 원소가 포함되어 있으면 `1`입니다.
 * 그렇지 않으면 `0`입니다.
 
-`set`과 `subset`의 요소가 공통 상위 타입을 갖지 않으면 `NO_COMMON_TYPE` 예외가 발생합니다.
+`set`과 `subset`의 원소가 공통 상위 유형을 갖지 않으면 `NO_COMMON_TYPE` 예외가 발생합니다.
 
 **예시**
 
@@ -4918,7 +4925,7 @@ SELECT hasAll([1, Null], [Null])
 1
 ```
 
-**서로 다른 자료형의 값을 포함하는 배열**
+**서로 다른 유형의 값을 포함하는 배열**
 
 ```sql title=Query
 SELECT hasAll([1.0, 2, 3, 4], [1, 3])
@@ -4938,14 +4945,15 @@ SELECT hasAll(['a', 'b'], ['a'])
 1
 ```
 
-**공통 타입이 없는 배열**
+**공통 유형이 없는 배열**
 
 ```sql title=Query
 SELECT hasAll([1], ['a'])
 ```
 
 ```response title=Response
-NO_COMMON_TYPE 예외가 발생합니다
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **중첩 배열**
@@ -4964,7 +4972,7 @@ SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])
 
 도입 버전: v1.1.0
 
-두 배열에 공통 요소가 있는지 확인합니다.
+두 배열에 공통 원소가 있는지 확인합니다.
 
 * `Null`은 값으로 처리됩니다.
 * 두 배열의 값 순서는 중요하지 않습니다.
@@ -4977,15 +4985,15 @@ hasAny(arr_x, arr_y)
 
 **인수**
 
-* `arr_x` — 요소 집합을 가진 임의 타입의 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
-* `arr_y` — 배열 `arr_x`와 공통 상위 타입을 갖는 임의 타입의 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `arr_x` — 원소 집합을 가진 임의 유형의 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
+* `arr_y` — 배열 `arr_x`와 공통 상위 유형을 갖는 임의 유형의 배열입니다. [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
-* `1` — `arr_x`와 `arr_y`에 공통 요소가 하나 이상 있는 경우입니다.
+* `1` — `arr_x`와 `arr_y`에 공통 원소가 하나 이상 있는 경우입니다.
 * `0` — 그 밖의 경우입니다.
 
-두 배열의 요소 중 하나라도 공통 상위 타입을 갖지 않으면 `NO_COMMON_TYPE` 예외가 발생합니다.
+두 배열의 원소 중 하나라도 공통 상위 유형을 갖지 않으면 `NO_COMMON_TYPE` 예외가 발생합니다.
 
 **예시**
 
@@ -5009,7 +5017,7 @@ SELECT hasAny([Null], [Null, 1])
 1
 ```
 
-**서로 다른 타입의 값을 포함하는 배열**
+**서로 다른 유형의 값을 포함하는 배열**
 
 ```sql title=Query
 SELECT hasAny([-128, 1., 512], [1])
@@ -5026,7 +5034,8 @@ SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])
 ```
 
 ```response title=Response
-`NO_COMMON_TYPE` 예외가 발생합니다
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **중첩 배열**
@@ -5045,17 +5054,17 @@ SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])
 
 도입 버전: v20.6.0
 
-array2의 모든 요소가 array1에 정확히 같은 순서로 나타나는지 확인합니다.
+array2의 모든 원소가 array1에 정확히 같은 순서로 나타나는지 확인합니다.
 따라서 array1 = prefix + array2 + suffix인 경우에만 함수는 `1`을 반환합니다.
 
-즉, 이 함수는 `hasAll` 함수처럼 array2의 모든 요소가 array1에 포함되어 있는지 확인합니다.
-추가로, array1과 array2에서 요소가 동일한 순서로 나타나는지도 확인합니다.
+즉, 이 함수는 `hasAll` 함수처럼 array2의 모든 원소가 array1에 포함되어 있는지 확인합니다.
+추가로, array1과 array2에서 원소가 동일한 순서로 나타나는지도 확인합니다.
 
 * array2가 비어 있으면 함수는 `1`을 반환합니다.
 * `NULL`은 값으로 처리됩니다. 즉, `hasSubstr([1, 2, NULL, 3, 4], [2,3])`는 `0`을 반환합니다. 반면 `hasSubstr([1, 2, NULL, 3, 4], [2,NULL,3])`는 `1`을 반환합니다.
 * 두 배열의 값 순서는 중요합니다.
 
-두 배열의 요소 중 공통 상위 타입이 없는 요소가 하나라도 있으면 `NO_COMMON_TYPE` 예외를 발생시킵니다.
+두 배열의 원소 중 공통 상위 유형이 없는 원소가 하나라도 있으면 `NO_COMMON_TYPE` 예외를 발생시킵니다.
 
 **구문**
 
@@ -5065,8 +5074,8 @@ hasSubstr(arr1, arr2)
 
 **인수**
 
-* `arr1` — 원소 집합으로 이루어진 임의 타입의 배열. [`Array(T)`](/ko/reference/data-types/array)
-* `arr2` — 원소 집합으로 이루어진 임의 타입의 배열. [`Array(T)`](/ko/reference/data-types/array)
+* `arr1` — 원소 집합으로 이루어진 임의 유형의 배열. [`Array(T)`](/ko/reference/data-types/array)
+* `arr2` — 원소 집합으로 이루어진 임의 유형의 배열. [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
@@ -5144,14 +5153,15 @@ SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])
 1
 ```
 
-**공통 타입이 없는 배열**
+**공통 유형이 없는 배열**
 
 ```sql title=Query
 SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 ```
 
 ```response title=Response
-`NO_COMMON_TYPE` 예외가 발생합니다
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 <div id="indexOf">
@@ -5257,7 +5267,7 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 문자열 또는 배열의 길이를 계산합니다.
 
 * String 또는 FixedString 인수의 경우 문자열의 바이트 수를 계산합니다.
-* 배열 인수의 경우 배열의 요소 수를 계산합니다.
+* 배열 인수의 경우 배열의 원소 수를 계산합니다.
 * QBit 인수의 경우 벡터의 차원을 계산합니다.
 * FixedString 또는 QBit 인수에 적용하면 이 함수는 상수 표현식입니다.
 
@@ -5277,11 +5287,11 @@ length(x)
 
 **인수**
 
-* `x` — 바이트 수(String/FixedString), 요소 수(배열), 또는 차원(QBit)을 계산할 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Array(T)`](/ko/reference/data-types/array) 또는 [`QBit`](/ko/reference/data-types/qbit)
+* `x` — 바이트 수(String/FixedString), 원소 수(배열), 또는 차원(QBit)을 계산할 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Array(T)`](/ko/reference/data-types/array) 또는 [`QBit`](/ko/reference/data-types/qbit)
 
 **반환 값**
 
-String/FixedString `x`의 바이트 수, 배열 `x`의 요소 수, 또는 QBit `x`의 차원을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+String/FixedString `x`의 바이트 수, 배열 `x`의 원소 수, 또는 QBit `x`의 차원을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
 
 **예시**
 
@@ -5352,9 +5362,9 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 ```
 
 ```response title=Response
-┌─str─┬─length(str)──┬─lengthUTF8(str)─┐
-│ ábc │            4 │               3 │
-└─────┴──────────────┴─────────────────┘
+┌─str─┬─length(str)─┬─lengthUTF8(str)─┐
+│ ábc │           4 │               3 │
+└─────┴─────────────┴─────────────────┘
 ```
 
 <div id="notEmpty">
@@ -5647,9 +5657,9 @@ SELECT replicate(1, ['a', 'b', 'c']);
 ```
 
 ```response title=Response
-┌─replicate(1, ['a', 'b', 'c'])───┐
-│ [1, 1, 1]                       │
-└─────────────────────────────────┘
+┌─replicate(1, ['a', 'b', 'c'])─┐
+│ [1,1,1]                       │
+└───────────────────────────────┘
 ```
 
 <div id="reverse">
@@ -5658,7 +5668,7 @@ SELECT replicate(1, ['a', 'b', 'c']);
 
 도입 버전: v1.1.0
 
-입력 배열의 요소 순서나 입력 문자열의 문자 순서를 반대로 바꿉니다.
+입력 배열의 원소 순서나 입력 문자열의 문자 순서를 반대로 바꿉니다.
 
 **구문**
 
@@ -5672,7 +5682,7 @@ reverse(arr | str)
 
 **반환 값**
 
-요소 또는 문자의 순서가 역순으로 된 배열 또는 문자열을 반환합니다.
+원소 또는 문자의 순서가 역순으로 된 배열 또는 문자열을 반환합니다.
 
 **예시**
 
@@ -5683,7 +5693,7 @@ SELECT reverse([1, 2, 3, 4]);
 ```
 
 ```response title=Response
-[4, 3, 2, 1]
+[4,3,2,1]
 ```
 
 **문자열 뒤집기**
@@ -5693,7 +5703,7 @@ SELECT reverse('abcd');
 ```
 
 ```response title=Response
-'dcba'
+dcba
 ```
 
 {/*AUTOGENERATED_END*/}

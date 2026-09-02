@@ -78,6 +78,10 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
   </Step>
 
   <Step title="Configurez l’infrastructure BYOC" id="set-up-byoc-infrastructure">
+    <Note>
+      Lorsque vous cliquez sur **Set up Infrastructure**, ClickHouse Cloud exécute automatiquement une [validation préalable](/fr/products/bring-your-own-cloud/onboarding/standard#preflight-validation) avant le provisionnement. Si votre VPC personnalisé ou votre compte ne répond pas aux exigences, la configuration est interrompue et les problèmes à corriger sont indiqués.
+    </Note>
+
     Dans la console ClickHouse Cloud, configurez les éléments suivants lors de la mise en place d’une nouvelle infrastructure :
 
     1. Sous **VPC configuration**, sélectionnez **Use existing VPC**.

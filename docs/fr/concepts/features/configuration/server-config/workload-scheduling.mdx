@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - applique l’éviction selon une précédence statique (une valeur plus faible signifie une précédence plus élevée) ; une allocation en attente de précédence plus élevée évince les allocations de précédence plus faible ; les nœuds enfants doivent spécifier `precedence` (la valeur par défaut est 0).
 * `queue` - feuille de la hiérarchie capable de contenir des allocations en cours d’exécution et en attente.
 
-<div id="deprecated-configuration">
-  ## Configuration XML obsolète
-</div>
-
-Une autre façon d’indiquer quels disques sont utilisés par une ressource consiste à utiliser le `storage_configuration` du serveur :
-
-Pour activer la planification des E/S pour un disque spécifique, vous devez spécifier `read_resource` et/ou `write_resource` dans la configuration de stockage. Cela indique à ClickHouse quelle ressource utiliser pour chaque requête de lecture et d’écriture sur le disque concerné. Les ressources de lecture et d’écriture peuvent faire référence au même nom de ressource, ce qui est utile pour les SSD locaux ou les HDD. Plusieurs disques différents peuvent également faire référence à la même ressource, ce qui est utile pour les disques distants si vous souhaitez permettre une répartition équitable de la bande passante réseau entre, par exemple, les workloads &quot;production&quot; et &quot;development&quot;.
-
-Exemple :
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-Notez que les options de configuration du serveur priment sur la méthode SQL de définition des ressources.
-
 <div id="see-also">
   ## Voir aussi
 </div>

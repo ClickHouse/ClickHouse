@@ -331,26 +331,20 @@ dbt-clickhouse는 기본적으로 영향을 받지 않은(삭제되지 않았고
   #### Delete+Insert 전략
 </div>
 
-ClickHouse는 버전 22.8에서 &quot;경량한 삭제(lightweight deletes)&quot;를 실험적 기능으로 추가했습니다. 경량한 삭제는 ClickHouse 데이터 파트를 다시 쓰지 않아도 되므로 ALTER TABLE ... DELETE
-작업보다 훨씬 빠릅니다. 증분 전략 `delete+insert`는
-경량한 삭제를 활용하여
-&quot;legacy&quot; 전략보다 훨씬 뛰어난 성능의 증분 머티리얼라이즈를 구현합니다. 하지만 이 전략을 사용할 때는 다음과 같은 중요한
-주의 사항이 있습니다:
+`delete+insert` 전략은 [경량한 삭제](/ko/concepts/features/operations/delete/lightweight-delete)를 사용해 영향을 받는 행을 제거한 후 새 행을 삽입합니다. 전체 테이블을 복사하지 않으므로 &quot;레거시&quot; 전략보다 성능이 훨씬 뛰어납니다. 프로필에서 `use_lw_deletes: true`를 설정하면 `delete+insert`가 기본 incremental 전략으로 지정됩니다.
 
-* `allow_experimental_lightweight_delete=1` 설정을 사용해 ClickHouse 서버에서 경량한 삭제를 활성화해야 하며,
-  또는 프로필에서 `use_lw_deletes=true`를 설정해야 합니다
-  (이 경우 dbt 세션에 해당 설정이 활성화됩니다)
-* 경량한 삭제는 이제 프로덕션 환경에서 사용할 수 있지만, 23.3 이전 버전의 ClickHouse에서는 성능 및 기타 문제가 있을 수
-  있습니다.
-* 이 전략은 영향을 받는 테이블/릴레이션에서 직접 동작하며(중간 또는 임시 테이블을 생성하지 않음),
-  작업 중 문제가 발생하면
-  증분 모델의 데이터가 유효하지 않은 상태가 될 가능성이 높습니다
-* 경량한 삭제를 사용할 때 dbt-clickhouse는 `allow_nondeterministic_mutations` 설정을 활성화합니다. 매우
-  드문 경우지만 비결정적 incremental&#95;predicates를 사용하면
-  업데이트되거나 삭제된 항목에 대해 경쟁 상태가 발생할 수 있으며(관련 로그 메시지가 ClickHouse 로그에 기록될 수 있음),
-  일관된 결과를 보장하려면
-  증분 프레디케이트에는 증분
-  머티리얼라이즈 중에 수정되지 않을 데이터에 대한 하위 쿼리만 포함해야 합니다.
+이 전략을 사용할 때는 다음과 같은 중요한 주의 사항이 있습니다.
+
+* 중간 또는 임시 테이블을 생성하지 않고 영향을 받는 테이블을 직접 처리하므로, 작업 중
+  문제가 발생하면 incremental 모델의 데이터가 유효하지 않은 상태가 될 가능성이 높습니다.
+* ClickHouse 설정 `allow_nondeterministic_mutations`가 필요합니다. 어댑터는 가능하면 자체
+  세션에서 이를 자동으로 활성화합니다. 활성화할 수 없는 경우(예: dbt 사용자가 읽기 전용인 경우) 동작은
+  전략을 선택한 방식에 따라 달라집니다. 기본 전략을 사용하는 모델은 자동으로 레거시
+  전략으로 폴백되며, `delete+insert` 또는 `microbatch`를 명시적으로 설정한 모델은 런타임에 실패하고, 프로필의
+  `use_lw_deletes: true`는 연결 시 실패합니다.
+* 매우 드문 경우, 비결정적인 `incremental_predicates`를 사용하면
+  업데이트되거나 삭제되는 항목에 race condition이 발생할 수 있습니다. 일관된 결과를 보장하려면 incremental 프레디케이트에는
+  incremental 머티리얼라이즈 중 수정되지 않을 데이터에 대한 하위 쿼리만 포함해야 합니다.
 
 <div id="microbatch-strategy">
   #### Microbatch 전략 (dbt-core &gt;= 1.9 필요)
@@ -427,10 +421,73 @@ microbatch 사용법에 대한 자세한 내용은 [공식 문서](https://docs.
   ## 머티리얼라이즈: 딕셔너리 (실험적)
 </div>
 
-ClickHouse 딕셔너리용 머티리얼라이즈를
-구현하는 방법에 대한
-예시는 https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test&#95;dictionary.py의 테스트를
-참조하십시오
+dbt 모델은 ClickHouse [딕셔너리](/ko/concepts/features/dictionaries/index)로 생성할 수 있습니다. `dbt run`을 실행할 때마다 `CREATE OR REPLACE DICTIONARY`를 사용하여 현재 모델 정의로 딕셔너리를 대체합니다.
+
+<div id="incremental-configurations">
+  ### 구성
+</div>
+
+| 옵션                     | 설명                                                                                                                                                                                 | 필수         |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `fields`               | `(name, type)` 쌍 목록으로 구성된 딕셔너리 구조입니다.                                                                                                                                              | 예          |
+| `primary_key`          | 딕셔너리 프라이머리 키입니다. 선택한 레이아웃이 요구하는 키 유형과 일치해야 합니다(예: `COMPLEX_KEY_*` 레이아웃의 복합 키).                                                                                                        | 예          |
+| `layout`               | `HASHED()`, `COMPLEX_KEY_HASHED()`, `DIRECT()` 등 딕셔너리를 메모리에 저장하는 데 사용되는 [레이아웃](/ko/reference/statements/create/dictionary/layouts/overview)입니다.                                       | 예          |
+| `source_type`          | 딕셔너리가 데이터를 읽어 올 위치입니다. `clickhouse`(기본값, 모델의 SQL 또는 `table` 옵션 사용) 또는 `http`를 지정합니다.                                                                                               |            |
+| `lifetime`             | 딕셔너리 갱신 주기를 제어하는 [`LIFETIME`](/ko/reference/statements/create/dictionary/lifetime) 절입니다. 예: `MIN 0 MAX 300`. dbt-clickhouse 1.10.0부터 선택 사항이며, `DIRECT()`처럼 이를 사용하지 않는 레이아웃에서는 생략하십시오. |            |
+| `table`                | `clickhouse` 소스에서만 사용합니다. 모델의 SQL 대신 기존 테이블에서 읽습니다.                                                                                                                                |            |
+| `update_field`         | `clickhouse` 소스에서만 사용합니다. 이전 갱신 이후 이 컬럼의 값이 변경된 행만 가져와 딕셔너리를 증분 갱신합니다. [LIFETIME](/ko/reference/statements/create/dictionary/lifetime)을 참조하십시오. dbt-clickhouse 1.10.0부터 사용할 수 있습니다.   |            |
+| `update_lag`           | `clickhouse` 소스에서만 사용합니다. `update_field` 사용 시 늦게 도착하는 업데이트를 고려하기 위해 이전 갱신 시간에서 빼는 초 단위 값입니다. dbt-clickhouse 1.10.0부터 사용할 수 있습니다.                                                   |            |
+| `connection_overrides` | `clickhouse` 소스에서만 사용합니다. 딕셔너리의 `SOURCE` 절에 사용되는 자격 증명을 재정의합니다. 예: `{'user': 'dictionary_reader'}`.                                                                                |            |
+| `url`, `format`        | `http` 소스에서만 사용합니다. 소스 파일의 URL 및 입력 형식입니다.                                                                                                                                         | `http`에 필수 |
+| `range`                | `RANGE_HASHED()` 레이아웃용 `RANGE` 절입니다. 예: `'min start max stop'`.                                                                                                                    |            |
+
+<div id="dictionary-clickhouse-source-example">
+  ### ClickHouse 소스를 사용하는 예시
+</div>
+
+모델의 SQL이 딕셔너리 소스 쿼리로 사용됩니다:
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('id', 'UInt64'),
+           ('name', 'String'),
+       ],
+       primary_key='id',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 300'
+) }}
+
+select id, name from {{ source('raw', 'people') }}
+```
+
+<div id="dictionary-http-source-example">
+  ### HTTP 소스 사용 예시
+</div>
+
+`source_type='http'`(또는 `table` 옵션)를 사용하면 모델의 SQL은 소스로 사용되지 않지만, dbt에서는 여전히 본문이 필요합니다. `select 1`을 자리 표시자로 사용하십시오:
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('LocationID', 'UInt16 DEFAULT 0'),
+           ('Borough', 'String'),
+           ('Zone', 'String'),
+       ],
+       primary_key='LocationID',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 0',
+       source_type='http',
+       url='https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv',
+       format='CSVWithNames'
+) }}
+
+select 1
+```
+
+range 및 direct 딕셔너리를 포함한 더 많은 예시는 [딕셔너리 테스트](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py)를 참조하십시오.
 
 <div id="materialization-distributed-table">
   ## 머티리얼라이즈: distributed_table (실험적)

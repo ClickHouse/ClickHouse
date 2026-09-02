@@ -52,6 +52,10 @@ GRANT default_role TO clickhouse_admin;
   ### التحكم الدقيق في الوصول
 </div>
 
+<Tip>
+  يُفضَّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (بيتا) لإدارة الوصول إلى قاعدة البيانات من وحدة التحكم. لا تتوافق أدوار `sql-console-role:<email>` مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
 يمكن أيضًا تهيئة وظيفة التحكم في الوصول هذه يدويًا بدقة على مستوى كل مستخدم. قبل إسناد أدوار `sql_console_*` الجديدة إلى المستخدمين، يجب إنشاء أدوار قاعدة البيانات الخاصة بمستخدمي SQL Console التي تطابق مساحة الاسم `sql-console-role:<email>`. على سبيل المثال:
 
 ```sql

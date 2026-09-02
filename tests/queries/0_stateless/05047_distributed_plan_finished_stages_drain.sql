@@ -1,7 +1,8 @@
--- Tags: no-old-analyzer, no-flaky-check, no-asan, no-msan, no-tsan, no-ubsan, no-debug
--- no-flaky-check and the sanitizer exclusions: the check below is a wall-clock bound, so it
--- needs runs where machine time relates to real time; the flaky check runs many copies of this
--- test at once and sanitizer builds are an order of magnitude slower.
+-- Tags: no-old-analyzer, no-flaky-check, no-asan, no-msan, no-tsan, no-ubsan, no-debug, no-parallel
+-- no-flaky-check, no-parallel and the sanitizer exclusions: the check below is a wall-clock
+-- bound, so it needs runs where machine time relates to real time; the flaky check runs many
+-- copies of this test at once, the parallel suite runs it alongside the rest of the suite on
+-- one server, and sanitizer builds are an order of magnitude slower.
 
 -- The distributed plan driver must pop every already-finished stage at once: stages finish
 -- together at the end of the query, and a driver that takes one stage per poll interval turns

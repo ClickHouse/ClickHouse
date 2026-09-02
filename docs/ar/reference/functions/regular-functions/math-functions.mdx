@@ -22,13 +22,13 @@ doc_type: 'reference'
 
 تُرجِع دالة جيب التمام العكسي للوسيطة.
 
-**البنية**
+**صيغة**
 
 ```sql
 acos(x)
 ```
 
-**المعاملات**
+**وسيطة**
 
 * `x` — القيمة المراد إيجاد جيب التمام العكسي لها. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal)
 
@@ -45,7 +45,7 @@ SELECT acos(0.5);
 ```
 
 ```response title=Response
-1.0471975511965979
+1.0471975511965974
 ```
 
 <div id="acosh">
@@ -86,18 +86,18 @@ SELECT acosh(1)
   ## asin
 </div>
 
-استُحدثت في: v1.1.0
+أُضيف في: v1.1.0
 
 تحسب دالة الجيب العكسي للوسيطة المقدَّمة.
 وبالنسبة إلى الوسائط ضمن النطاق `[-1, 1]`، فإنها تُرجِع قيمة ضمن النطاق `[-pi() / 2, pi() / 2]`.
 
-**الصياغة**
+**صيغة**
 
 ```sql
 asin(x)
 ```
 
-**الوسائط**
+**وسيطة**
 
 * `x` — الوسيطة المراد حساب قوس الجيب لها. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
 
@@ -114,7 +114,7 @@ SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))
 ```
 
 ```response title=Response
-1 1 1
+1	1	0.9999999999999999
 ```
 
 **float32**
@@ -134,7 +134,7 @@ SELECT asin(1.1), asin(-2), asin(inf), asin(nan)
 ```
 
 ```response title=Response
-nan nan nan nan
+nan	nan	nan	nan
 ```
 
 <div id="asinh">
@@ -626,15 +626,15 @@ SELECT exp2(3);
 
 يحسب مضروب قيمة عدد صحيح.
 مضروب العدد 0 هو 1. وبالمثل، تُرجِع الدالة `factorial()` القيمة `1` لأي قيمة سالبة.
-الحد الأقصى للقيمة الموجبة لوسيط الإدخال هو `20`، وأي قيمة `21` أو أكبر ستتسبب في استثناء.
+الحد الأقصى للقيمة الموجبة لوسيطة الإدخال هو `20`، وأي قيمة `21` أو أكبر ستتسبب في استثناء.
 
-**الصياغة**
+**صيغة**
 
 ```sql
 factorial(n)
 ```
 
-**الوسائط**
+**وسيطة**
 
 * `n` — قيمة عدد صحيح يُراد حساب مضروبه. الحد الأقصى للقيمة هو 20. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
 
@@ -647,7 +647,7 @@ factorial(n)
 **مثال على الاستخدام**
 
 ```sql title=Query
-factorial(10)
+SELECT factorial(10)
 ```
 
 ```response title=Response
@@ -966,9 +966,9 @@ SELECT lgamma(5);
 
 قُدِّم في: v1.1.0
 
-يعيد اللوغاريتم الطبيعي للوسيطة.
+يعيد اللوغاريتم الطبيعي لوسيطة الدالة.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 log(x)
@@ -976,7 +976,7 @@ log(x)
 
 **الأسماء المستعارة**: `ln`
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `x` — العدد المراد حساب اللوغاريتم الطبيعي له. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal)
 
@@ -993,7 +993,7 @@ SELECT log(10);
 ```
 
 ```response title=Response
-2.302585092994046
+2.3025850938475476
 ```
 
 <div id="log10">
@@ -1549,7 +1549,7 @@ SELECT tgamma(5);
 يعيد رقم الفئة التي تقع فيها المعلمة `operand` ضمن مُدرَّج تكراري يحتوي على `count` فئات متساوية العرض تمتد عبر النطاق من `low` إلى `high`. ويعيد 0 إذا كانت `operand` أقل من `low`، ويعيد `count`+1 إذا كانت `operand` أكبر من `high` أو تساويه.
 يوجد أيضًا اسم مستعار غير حساس لحالة الأحرف باسم `WIDTH_BUCKET` لتوفير التوافق مع قواعد البيانات الأخرى.
 
-**البنية**
+**الصيغة**
 
 ```sql
 widthBucket(operand, low, high, count)
@@ -1557,7 +1557,7 @@ widthBucket(operand, low, high, count)
 
 **الأسماء المستعارة**: `width_bucket`
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `operand` — القيمة المطلوب تحديد الفئة التي تقع ضمنها. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
 * `low` — الحد الأدنى لنطاق المُدرَّج التكراري. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
@@ -1573,7 +1573,7 @@ widthBucket(operand, low, high, count)
 **مثال على الاستخدام**
 
 ```sql title=Query
-widthBucket(10.15, -8.6, 23, 18)
+SELECT widthBucket(10.15, -8.6, 23, 18)
 ```
 
 ```response title=Response

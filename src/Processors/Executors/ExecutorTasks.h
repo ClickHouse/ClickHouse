@@ -5,7 +5,6 @@
 #include <Processors/Executors/ThreadsQueue.h>
 #include <Processors/Executors/TasksQueue.h>
 #include <Common/ISlotControl.h>
-#include <stack>
 
 namespace DB
 {
@@ -62,7 +61,6 @@ class ExecutorTasks
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
 
 public:
-    using Stack = std::stack<UInt64>;
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
     using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;

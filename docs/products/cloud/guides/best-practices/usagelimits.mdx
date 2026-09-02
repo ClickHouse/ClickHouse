@@ -2,60 +2,101 @@
 slug: /cloud/bestpractices/usage-limits
 sidebarTitle: 'Usage limits'
 title: 'Usage limits'
-description: 'Describes the recommended usage limits in ClickHouse Cloud'
+description: 'Describes organization, warehouse, and service usage limits in ClickHouse Cloud'
 doc_type: 'reference'
 keywords: ['usage limits', 'quotas', 'best practices', 'resource management', 'cloud features']
 ---
 
-While ClickHouse is known for its speed and reliability, optimal performance is 
-achieved within certain operating parameters. For example, having too many tables,
+ClickHouse is built for speed and reliability. In order to maintain optimal performance, there are
+certain operating parameters we recommend. For example, having too many tables,
 databases, or parts can negatively impact performance. To prevent this, ClickHouse
-Cloud enforces limits across several operational dimensions. 
-The default values of these guardrails are listed below. Unless specified otherwise,
-these guardrails are on the service level. 
+Cloud enforces limits across several operational dimensions.
+
+Soft limits apply at three different scopes. The sections below start with the
+service-level limits, which are the ones most workloads run into first.
+
+| Scope                                          | What it covers                                                                     | Limits at this scope                                                          |
+|------------------------------------------------|------------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
+| **[Service](#service-limits)**                 | A single service and its compute                                                   | Per-service compute (query concurrency, batch ingest); data object limits when run standalone (see below) |
+| **[Warehouse](#warehouse-limits)**             | One [warehouse](/products/cloud/features/infrastructure/warehouses) — the group of services that share the same data | Combined replicas across the warehouse; data objects in the shared catalog (tables, databases, and so on) |
+| **[Organization](#organization-limits)**       | Your whole ClickHouse Cloud organization (all warehouses and services combined)    | Number of services; number of warehouses                                      |
+
+The scope of the **data object limits** (databases, tables, columns, partitions, and parts) depends on how you run your services.
+If you run **standalone services**, these limits apply per service.
+As soon as services share data in a **warehouse**, the same limits instead apply once to the warehouse's shared catalog.
+The numbers don't change — only the level they are measured at does.
 
 <Tip>
-If you've run up against one of these guardrails, it's possible that you're 
+If you've run up against one of these guardrails, it's possible that you're
 implementing your use case in an unoptimized way. Contact [support](https://clickhouse.com/support/program) and
-we will gladly help you refine your use case to avoid exceeding the guardrails 
-or look together at how we can increase them in a controlled manner. 
+we will gladly help you refine your use case to avoid exceeding the guardrails
+or look together at how we can increase them in a controlled manner.
 </Tip>
 
-| Dimension                     | Limit                                                                                             |
-|-------------------------------|---------------------------------------------------------------------------------------------------|
-| **Databases**                 | 1000                                                                                              |
-| **Tables**                    | 5000                                                                                              |
-| **Views**                     | 15000                                                                                             |
-| **Dictionaries**              | 5000                                                                                              |
-| **Named collections** (private preview)        | 1000                                                                                              |
-| **Columns**                   | ~1000 (wide format is preferred to compact)                                                       |
-| **Partitions**                | 50k                                                                                               |
-| **Parts**                     | 10k (see [`max_parts_in_total`](/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000) setting) |
-| **Part size**                 | 150 GB                                                                                            |
-| **Services per organization** | 20 (soft)                                                                                         |
-| **Replicas per service**      | 20 (soft)                                                                                         |
-| **Replicas per warehouse**    | 50 (soft)                                                                                         |
-| **Low cardinality**           | 10k or less                                                                                       |
-| **Primary keys in a table**   | 4–5 that sufficiently filter down the data                                                        |
-| **Query concurrency**         | 1000 (per replica)                                                                                |
-| **Batch ingest**              | Anything > 1M rows is split into 1M-row blocks                                                    |
+## Service limits {#service-limits}
 
-For warehouse replica and scaling limits, see [warehouses](/products/cloud/features/infrastructure/warehouses#scaling).
+The limits below apply to a **standalone service** (and, for data object counts, to that service's storage).
 
+If the service belongs to a **warehouse**, the data object limits (databases, tables, columns, partitions, and parts) instead apply to the warehouse's shared catalog, as described in [Warehouse limits](#warehouse-limits) below — the values are unchanged, but they are measured across the whole warehouse rather than the single service. The remaining limits, such as **query concurrency** and **batch ingest**, stay per-service (or per-replica) in both cases.
 
-The values above are default guardrails. The limit enforced for a specific service may be higher than the value shown here, as larger services are configured with more headroom. The actual limit that applies to your service is included in the warning you receive as you approach it. For services already exceeding the above usage limits, table/database limits are set at the service's current table/database count plus 25%.
+| Dimension                   | Limit                                                                                             |
+|-----------------------------|---------------------------------------------------------------------------------------------------|
+| **Databases**               | 1000                                                                                              |
+| **Tables**                  | 5000                                                                                              |
+| **Views**                   | 15000                                                                                             |
+| **Dictionaries**            | 5000                                                                                              |
+| **Named collections** (private preview) | 1000                                                                                  |
+| **Columns**                 | ~1000 (wide format is preferred to compact)                                                       |
+| **Partitions**              | 50k                                                                                               |
+| **Parts**                   | 10k (see [`max_parts_in_total`](/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000) setting) |
+| **Part size**               | 150 GB                                                                                            |
+| **Low cardinality**         | 10k or less                                                                                       |
+| **Primary keys in a table** | 4–5 that sufficiently filter down the data                                                        |
+| **Query concurrency**       | 1000 (per replica)                                                                                |
+| **Batch ingest**            | Anything > 1M rows is split into 1M-row blocks                                                    |
+
+The values above are default guardrails. The limit enforced for a specific service may be higher than the value shown here, as larger services are configured with more headroom. The actual limit that applies to your service is included in the warning you receive as you approach it. For services already exceeding these limits, the table and database limits are set at the service's current count plus 25%.
 
 <Note>
-For Single Replica Services, the maximum number of databases is restricted to 
+For Single Replica Services, the maximum number of databases is restricted to
 100, and the maximum number of tables is restricted to 500. In addition, storage
 for Basic Tier Services is limited to 1 TB. The view, dictionary, and named
 collection limits above are a single value that applies to all services,
 including Single Replica Services.
 </Note>
 
-Your service's specific warn and throw limits can be verified by querying system.server_settings. For example,
-```
-SELECT * 
-FROM system.server_settings 
+Your service's specific warn and throw limits can be verified by querying `system.server_settings`. For example:
+
+```sql
+SELECT *
+FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
+
+## Warehouse limits {#warehouse-limits}
+
+A [warehouse](/products/cloud/features/infrastructure/warehouses) is a set of services that share the same data.
+Warehouse limits apply to that shared group as a whole — not to each service separately or across the organization.
+
+| Dimension                  | Limit                                          |
+|----------------------------|------------------------------------------------|
+| **Replicas per warehouse** | 50 (soft)                                      |
+
+The replica limit is the **combined** replica count across all services in the warehouse.
+Because every service in a warehouse shares a single ClickHouse Keeper, this limit exists to protect Keeper stability. The default of 50 is soft and depends on your data and workload; the ceiling is higher on ClickHouse 26.6+, and we plan to raise it further in the future.
+Contact [support](https://clickhouse.com/support/program) to raise it; for more detail on warehouse scaling, see [warehouses](/products/cloud/features/infrastructure/warehouses#scaling).
+
+There is **no separate cap on the number of services** in a warehouse — it is bounded only by the combined replica limit above.
+
+Because services in a warehouse share one catalog (the same tables, databases, views, and so on), the [service-level data object limits](#service-limits) above are counted **once per warehouse** rather than multiplied per service. Separate warehouses are isolated from each other, so each warehouse counts its own tables and databases toward these limits.
+
+## Organization limits {#organization-limits}
+
+These limits apply across an entire ClickHouse Cloud organization — that is, across all of its warehouses and services combined.
+
+| Dimension                       | Limit      |
+|---------------------------------|------------|
+| **Warehouses per organization** | No limit   |
+| **Services per organization**   | 20 (soft)  |
+
+The **services per organization** limit counts every service across *all* warehouses in the organization. This is a historical guardrail rather than a hard cap; contact [support](https://clickhouse.com/support/program) and they can typically raise it after a quick review.

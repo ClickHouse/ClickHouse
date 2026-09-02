@@ -53,6 +53,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "sumMappedArrays",
         "minMappedArrays",
         "maxMappedArrays",
+        "timeSeriesGroupArray",
     };
 
     // check function
@@ -240,6 +241,7 @@ The following aggregate functions are supported:
 - [`sumMap` (`sumMappedArrays`)](/reference/functions/aggregate-functions/sumMap)
 - [`minMap` (`minMappedArrays`)](/reference/functions/aggregate-functions/minMap)
 - [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/maxMap)
+- [`timeSeriesGroupArray`](/reference/functions/aggregate-functions/timeSeriesGroupArray) (with a single argument of type `Array(Tuple(timestamp, value))`)
 
 :::note
 Values of the `SimpleAggregateFunction(func, Type)` have the same `Type`,

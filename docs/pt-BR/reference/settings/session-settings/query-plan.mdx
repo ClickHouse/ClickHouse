@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para ativar ou desativar a otimização do plano que materializa apenas os n melhores grupos de cada bucket de dois níveis quando uma agregação final alimenta ORDER BY com suas saídas usando LIMIT n e é possível comprovar que a seleção por bucket é exata."}]}]} />
+
+Ativa ou desativa uma otimização no nível do plano de consulta que, quando uma agregação final alimenta `ORDER BY` com as saídas da agregação usando `LIMIT n` e o plano comprova que a seleção por bucket é exata, materializa apenas os n melhores grupos de cada bucket de dois níveis nessa ordem durante a conversão final da agregação. O resultado é exato: um grupo que não está entre os n melhores de seu próprio bucket tem pelo menos n grupos à sua frente globalmente e, portanto, não pode estar entre os n melhores globais.
+Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) estiver definida como 1.
+
+Valores possíveis:
+
+* 0 - Desativar
+* 1 - Ativar
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
@@ -145,6 +161,21 @@ Valores possíveis:
 * 0 - Desabilita
 * 1 - Habilita
 
+<div id="query_plan_fuse_filter_into_array_join">
+  ## query_plan_fuse_filter_into_array_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova otimização que incorpora um filtro em colunas associadas a ARRAY JOIN à etapa ARRAY JOIN, ativada por padrão."}]}]} />
+
+Ativa ou desativa uma otimização no nível do plano de consulta que incorpora um filtro em colunas de elementos associadas a `ARRAY JOIN` à etapa `ARRAY JOIN`, filtrando os arrays no espaço dos elementos antes da expansão, para que os elementos filtrados nunca sejam expandidos ou replicados.
+Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) for 1.
+
+<Note>
+  Esta é uma configuração para especialistas que deve ser usada apenas por desenvolvedores para depuração. A configuração pode mudar no futuro de forma incompatível com versões anteriores ou ser removida.
+</Note>
+
 <div id="query_plan_join_shard_by_pk_ranges">
   ## query_plan_join_shard_by_pk_ranges
 </div>
@@ -234,6 +265,8 @@ Controla o valor máximo de LIMIT que permite usar o plano de consulta para a ot
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "Nova configuração."}]}]} />
 
 Controla o valor máximo do limite que permite avaliar o plano de consulta para a otimização TopK usando índice de salto minmax e filtragem dinâmica por limiar. Se for zero, não haverá limite.
+
+Esta configuração também controla o comportamento de [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/pt-BR/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,13 +451,23 @@ Otimiza a leitura com FINAL no ReplacingMergeTree criando um conjunto de chaves 
 
 Usar o plano de consulta na otimização de materialização lazy.
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para usar a materialização lazy em consultas `ORDER BY ... LIMIT n` que leem arquivos Parquet locais com a função de tabela `file` e o mecanismo de tabela `File`."}]}]} />
+
+Use a otimização de materialização lazy para ler arquivos Parquet locais com a função de tabela `file` e o mecanismo de tabela `File`: em consultas `ORDER BY ... LIMIT n`, as colunas desnecessárias para ordenação e filtragem são lidas apenas para as `n` linhas que permanecem após o `LIMIT`. Só tem efeito se `query_plan_optimize_lazy_materialization` estiver habilitada.
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para usar a materialização lazy em consultas `ORDER BY ... LIMIT n` que leem arquivos Parquet do armazenamento de objetos (incluindo tabelas Iceberg)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para usar a materialização lazy em consultas `ORDER BY ... LIMIT n` que leem arquivos Parquet do armazenamento de objetos (incluindo tabelas Iceberg)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para usar a materialização lazy em consultas `ORDER BY ... LIMIT n` que leem arquivos Parquet do armazenamento de objetos (incluindo tabelas Iceberg)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "Nova configuração para usar a materialização lazy em consultas `ORDER BY ... LIMIT n` que leem arquivos Parquet do armazenamento de objetos (incluindo tabelas Iceberg)."}]}]} />
 
 Use a otimização de materialização lazy para ler arquivos Parquet do armazenamento de objetos (incluindo tabelas Iceberg): em consultas `ORDER BY ... LIMIT n`, as colunas desnecessárias para ordenação e filtragem são lidas apenas para as `n` linhas que permanecem após o `LIMIT`. Só tem efeito se `query_plan_optimize_lazy_materialization` estiver habilitada.
 
@@ -450,6 +493,26 @@ Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations]
 <Note>
   Esta é uma configuração para usuários avançados que deve ser usada apenas para depuração por desenvolvedores. A configuração pode mudar no futuro de formas incompatíveis com versões anteriores ou ser removida.
 </Note>
+
+Valores possíveis:
+
+* 0 - Desabilitar
+* 1 - Habilitar
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para deslocar funções que reduzem o volume (`length`, `lengthUTF8`, `empty`, `notEmpty`) para baixo das etapas `Sorting` e `Filter`, substituindo a coluna de argumento ampla pelo resultado de tamanho fixo. previous_value=false para que a `compatibility` com versões anteriores à 26.8 restaure o comportamento anterior (sem push down)."}]}]} />
+
+Ativa ou desativa uma otimização no nível do plano de consulta que desloca funções que reduzem o volume (`length`, `lengthUTF8`, `empty`, `notEmpty`)
+para baixo no plano de execução, abaixo das etapas `Sorting` e `Filter`. O resultado de tamanho fixo substitui o
+argumento amplo `String` / `FixedString`, de modo que ele não é mais transportado por essas etapas.
+A reescrita é aplicada somente quando a coluna de argumento não é necessária acima da etapa abaixo da qual ela é deslocada.
+
+Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) estiver definida como 1.
 
 Valores possíveis:
 
@@ -500,22 +563,6 @@ Valores possíveis:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Nova configuração"}]}]} />
 
 Mantém a leitura em ordem da tabela à esquerda em operações JOIN, que pode ser aproveitada por etapas subsequentes.
-
-<div id="query_plan_read_in_order_through_spilling_join">
-  ## query_plan_read_in_order_through_spilling_join
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração que permite propagar a leitura em ordem por um hash join com um limite automático de spill, mantendo essa junção na memória para preservar a ordem prometida. previous_value=false para que a `compatibility` com versões anteriores à 26.8 restaure o comportamento conservador anterior, no qual essa junção nunca é usada para leitura em ordem, mas sempre pode fazer spill."}]}]} />
-
-Permite que [`query_plan_read_in_order_through_join`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) também se aplique a um hash join com um limite automático de spill para disco configurado por [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
-
-Essa junção só pode prometer preservar a ordem da tabela à esquerda se nunca fizer spill, pois o spill distribui as linhas em buckets por hash. Quando a otimização se aplica, a junção é mantida na memória e o limite de spill deixa de ser acionado: em vez disso, a tabela do lado direito é limitada pelo memory tracker, como se nenhum spill automático estivesse configurado.
-
-Defina como `0` para manter o comportamento conservador de nunca propagar a leitura em ordem por uma junção que possa fazer spill. As consultas que dependem de spill para permanecer dentro do limite de memória e que, de outra forma, se tornariam elegíveis para a otimização continuam funcionando como antes.
-
-A otimização independente de `ORDER BY ... LIMIT` por meio de `JOIN`, que envia um `Sort` e um `Limit` para o lado preservado da junção, nunca depende de a junção preservar alguma ordem e continua disponível para junções que podem fazer spill, independentemente desta configuração. No entanto, ela dá lugar à leitura em ordem quando isso é possível. Portanto, com esta configuração ativada, um `ORDER BY ... LIMIT` sobre uma junção que pode fazer spill, cujo lado preservado pode transmitir linhas na ordem solicitada, recebe o plano de leitura em ordem em vez de um `Sort` e `Limit` enviados para baixo. Essa transição mantém as condições anteriores, principalmente que [`query_plan_join_swap_table`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_join_swap_table) esteja explicitamente definido como `false`: com o `auto` padrão, uma otimização posterior pode trocar os lados da junção e invalidar o plano de leitura em ordem. Assim, a transição nunca é efetivada, e essas consultas mantêm o `Sort` e o `Limit` enviados para baixo.
 
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct

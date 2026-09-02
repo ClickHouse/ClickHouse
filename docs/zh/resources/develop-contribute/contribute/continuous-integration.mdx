@@ -305,7 +305,7 @@ python -m ci.praktika run "Build (amd_debug)"
 
 在拉取请求中，大多数名称以 `selected tests` 结尾的 sanitizer 作业不会运行整个测试套件。
 它们只运行针对变更选定的测试：拉取请求新增或修改的测试、该拉取请求中已失败的测试，以及根据覆盖率数据库覆盖已变更代码行的测试。
-MSan/WasmEdge 作业仍会运行完整测试套件，因为现有的 Wasm UDF 测试与 MSan 不兼容。完整测试套件也会在 debug 和普通二进制配置中运行；启用 sanitizers 的构建则通过[压力测试](#stress-test)进行测试，master 分支则会在每种配置下运行完整测试套件。
+完整测试套件会在 debug 和普通二进制配置中运行；启用 sanitizers 的构建则通过[压力测试](#stress-test)进行测试，master 分支则会在每种配置下运行完整测试套件。
 
 <div id="integration-tests">
   ## 集成测试

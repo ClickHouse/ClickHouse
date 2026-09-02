@@ -34,7 +34,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_key` - storage&#95;account&#95;url を使用する場合は、ここで account key を指定できます
 * `format` — ファイルの[フォーマット](/ja/reference/formats/index)。
 * `compression` — サポートされる値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。デフォルトでは、ファイル拡張子から圧縮を自動判別します (`auto` を設定した場合と同じです) 。
-* `partition_strategy` – オプション: `wildcard` または `hive`。`wildcard` ではパス内に `{_partition_id}` が必要で、これはパーティションキーに置き換えられます。`hive` ではワイルドカードは使用できず、パスをテーブルのルートとみなし、Snowflake IDs をファイル名、ファイルフォーマットを拡張子とする Hive スタイルのパーティションディレクトリを生成します。パスに `{_partition_id}` プレースホルダーが含まれる場合は、そのようなパスと互換性がある唯一の方式である `wildcard` がデフォルトになります。それ以外の場合、デフォルトは `file_like_engine_default_partition_strategy` 設定です (`26.6` より古い `compatibility` 設定では `wildcard`、それ以外では `hive`) 。
+* `partition_strategy` – オプション: `wildcard` または `hive`。`wildcard` ではパス内に `{_partition_id}` が必要で、これはパーティションキーに置き換えられます。`hive` ではワイルドカードは使用できず、パスをテーブルのルートとみなし、Snowflake IDs をファイル名、ファイルフォーマットを拡張子とする Hive スタイルのパーティションディレクトリを生成します。明示的な方式を指定しない場合、`{_partition_id}` を含むパスでは `wildcard` が使用されます。別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` が使用され、それ以外の場合はパーティション方式は使用されません。
 * `partition_columns_in_data_file` - `hive` パーティション方式でのみ使用されます。データファイル内にパーティションカラムが書き込まれているものとして ClickHouse が扱うかどうかを指定します。デフォルトは `false` です。
 * `extra_credentials` - 認証には `client_id` と `tenant_id` を使用します。extra&#95;credentials が指定されている場合、`account_name` と `account_key` より優先されます。
 
@@ -121,7 +121,9 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
   #### パーティション方式
 </div>
 
-`wildcard`: ファイルパス内の `{_partition_id}` ワイルドカードを実際のパーティションキーに置き換えます。読み取りはサポートされていません。パスに `{_partition_id}` プレースホルダーが含まれる場合 (このようなパスと互換性がある唯一の戦略) はデフォルトで選択され、それ以外では `compatibility` 設定が `26.6` より前の場合に選択されます。残りの場合、デフォルトは `hive` です (`file_like_engine_default_partition_strategy` 設定を参照) 。
+`wildcard`: ファイルパス内の `{_partition_id}` ワイルドカードを実際のパーティションキーに置き換えます。読み取りはサポートされていません。パスに `{_partition_id}` が含まれる場合、デフォルトで選択されます。
+
+`partition_strategy` が設定されていない場合、別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` が使用され、それ以外の場合はパーティション方式は使用されません。
 
 `hive` は、読み取りと書き込みに Hive スタイルのパーティション化を実装します。読み取りは再帰的な glob パターンを使用して行われます。書き込みでは、次のフォーマットでファイルが生成されます: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
 

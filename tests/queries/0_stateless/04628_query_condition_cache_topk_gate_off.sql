@@ -1,4 +1,4 @@
--- Tags: long, no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1M rows for the QCC to populate.
 --
@@ -28,8 +28,6 @@ SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET optimize_move_to_prewhere = 0;
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 SET max_threads = 1;
 

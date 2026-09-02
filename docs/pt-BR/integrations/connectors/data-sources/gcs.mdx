@@ -165,10 +165,10 @@ SETTINGS storage_policy='gcs_main'
 ```
 
 ```sql
-INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
-Dependendo do hardware, essa última operação de `insert` de 1m de linhas pode levar alguns minutos para ser executada. Você pode acompanhar o progresso por meio da tabela `system.processes`. Sinta-se à vontade para ajustar a contagem de linhas até o limite de 10m e explorar algumas consultas de exemplo.
+Dependendo do hardware, essa última operação de `inserção` de 1m de linhas pode levar alguns minutos para ser executada. Você pode acompanhar o progresso por meio da tabela `system.processes`. Sinta-se à vontade para ajustar a contagem de linhas até o limite de 10m e explorar algumas consultas de exemplo.
 
 ```sql
 SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amount FROM trips_gcs GROUP BY passenger_count;
@@ -643,7 +643,7 @@ INSERT INTO trips SELECT
     tip_amount,
     total_amount,
     payment_type
-FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames')
+FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 1000000
 ```
 

@@ -328,25 +328,19 @@ dbt-clickhouse 默认会创建一个新的临时表，其中包含所有未受�
   #### Delete+Insert 策略
 </div>
 
-ClickHouse 在 22.8 版本中将“lightweight deletes”作为一项 Experimental 功能引入。轻量级删除明显快于 ALTER TABLE ... DELETE
-操作，因为它们不需要重写 ClickHouse 数据分区片段。增量策略 `delete+insert`
-利用轻量级删除来实现
-性能显著优于“legacy”策略的增量物化。不过，使用此策略时有一些重要
-注意事项：
+`delete+insert` 策略使用[轻量级删除](/zh/concepts/features/operations/delete/lightweight-delete)移除受影响的行，然后插入新行。由于无需复制整个表，其性能显著优于“legacy”策略。在 profile 中设置 `use_lw_deletes: true` 会将 `delete+insert` 设为默认的增量策略。
 
-* 必须在你的 ClickHouse server 上通过设置
-  `allow_experimental_lightweight_delete=1` 启用轻量级删除，或者你
-  必须在你的 profile 中设置 `use_lw_deletes=true` (这会为你的 dbt session 启用该设置)
-* 轻量级删除现已可用于生产环境，但在早于 23.3 的 ClickHouse 版本上可能仍存在性能及其他问题。
-* 该策略直接作用于受影响的表/relation (不会创建任何中间表或临时表) ，
-  因此如果操作期间出现问题，
-  增量模型中的数据很可能会处于无效状态
-* 使用轻量级删除时，dbt-clickhouse 会启用设置 `allow_nondeterministic_mutations`。在某些非常
-  罕见的情况下，如果使用非确定性的 incremental&#95;predicates，
-  这可能会导致已更新/已删除项出现竞态条件 (以及 ClickHouse 日志中相关的日志消息) 。
-  为确保结果一致，
-  增量谓词应只包含针对在增量
-  物化期间不会被修改的数据的子查询。
+使用此策略时需注意以下事项：
+
+* 它直接在受影响的表上操作，不会创建任何中间表或临时表，因此如果操作过程中出现
+  问题，增量模型中的数据很可能处于无效状态。
+* 它需要启用 ClickHouse 设置 `allow_nondeterministic_mutations`。adapter 会尽可能在其
+  自身 session 中自动启用该设置。如果无法启用 (例如，您的 dbt 用户对此设置只有只读权限) ，具体行为
+  取决于策略的选择方式：使用默认策略的模型会静默回退到 legacy
+  策略；显式设置 `delete+insert` 或 `microbatch` 的模型会在运行时失败；而 profile 中的 `use_lw_deletes: true`
+  会在连接时失败。
+* 在极少数情况下，使用非确定性的 `incremental_predicates` 可能会导致已
+  更新或删除的项发生竞态条件。为确保结果一致，增量谓词应仅包含针对增量物化期间不会被修改的数据的子查询。
 
 <div id="microbatch-strategy">
   #### 微批次策略 (需要 dbt-core &gt;= 1.9)
@@ -423,9 +417,73 @@ ClickHouse 在 22.8 版本中将“lightweight deletes”作为一项 Experiment
   ## 物化：字典 (Experimental)
 </div>
 
-有关如何为
-ClickHouse 字典实现物化的示例，请参阅测试
-https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test&#95;dictionary.py
+dbt 模型可以创建为 ClickHouse [字典](/zh/concepts/features/dictionaries/index)。每次执行 `dbt run` 时，都会使用 `CREATE OR REPLACE DICTIONARY` 将字典替换为当前的模型定义。
+
+<div id="incremental-configurations">
+  ### 配置
+</div>
+
+| 选项                     | 描述                                                                                                                                                            | 必需         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `fields`               | 字典结构，以 `(name, type)` 对组成的列表表示。                                                                                                                               | 是          |
+| `primary_key`          | 字典主键。必须与所选布局所需的键类型匹配 (例如，`COMPLEX_KEY_*` 布局要求使用复合键) 。                                                                                                         | 是          |
+| `layout`               | 用于将字典存储在内存中的[布局](/zh/reference/statements/create/dictionary/layouts/overview)，例如 `HASHED()`、`COMPLEX_KEY_HASHED()` 或 `DIRECT()`。                                 | 是          |
+| `source_type`          | 字典的数据读取来源：`clickhouse` (默认，使用模型的 SQL 或 `table` 选项) 或 `http`。                                                                                                  |            |
+| `lifetime`             | 控制字典刷新频率的 [`LIFETIME`](/zh/reference/statements/create/dictionary/lifetime) 子句，例如 `MIN 0 MAX 300`。自 dbt-clickhouse 1.10.0 起可选；对于不使用该子句的布局 (如 `DIRECT()`) ，请省略此项。 |            |
+| `table`                | 仅适用于 `clickhouse` 源。从现有表读取数据，而不使用模型的 SQL。                                                                                                                     |            |
+| `update_field`         | 仅适用于 `clickhouse` 源。仅拉取该列值自上次更新以来发生变化的行，以增量方式刷新字典。请参阅 [LIFETIME](/zh/reference/statements/create/dictionary/lifetime)。自 dbt-clickhouse 1.10.0 起可用。               |            |
+| `update_lag`           | 仅适用于 `clickhouse` 源。使用 `update_field` 时，从上次更新时间中减去的秒数，用于处理延迟到达的更新。自 dbt-clickhouse 1.10.0 起可用。                                                                |            |
+| `connection_overrides` | 仅适用于 `clickhouse` 源。覆盖字典 `SOURCE` 子句中使用的凭据，例如 `{'user': 'dictionary_reader'}`。                                                                                |            |
+| `url`, `format`        | 仅适用于 `http` 源。源文件的 URL 及其输入格式。                                                                                                                                | `http` 时为是 |
+| `range`                | 用于 `RANGE_HASHED()` 布局的 `RANGE` 子句，例如 `'min start max stop'`。                                                                                                 |            |
+
+<div id="dictionary-clickhouse-source-example">
+  ### 使用 ClickHouse 源的示例
+</div>
+
+模型的 SQL 将成为字典源查询：
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('id', 'UInt64'),
+           ('name', 'String'),
+       ],
+       primary_key='id',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 300'
+) }}
+
+select id, name from {{ source('raw', 'people') }}
+```
+
+<div id="dictionary-http-source-example">
+  ### 使用 HTTP 数据源的示例
+</div>
+
+使用 `source_type='http'` (或 `table` 选项) 时，模型的 SQL 不会用作数据源，但 dbt 仍需要一个主体 — 请使用 `select 1` 作为占位符：
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('LocationID', 'UInt16 DEFAULT 0'),
+           ('Borough', 'String'),
+           ('Zone', 'String'),
+       ],
+       primary_key='LocationID',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 0',
+       source_type='http',
+       url='https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv',
+       format='CSVWithNames'
+) }}
+
+select 1
+```
+
+有关更多示例 (包括范围字典和直接字典) ，请参阅[字典测试](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py)。
 
 <div id="materialization-distributed-table">
   ## 物化：distributed_table (experimental)

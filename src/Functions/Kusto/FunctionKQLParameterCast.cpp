@@ -200,8 +200,11 @@ private:
     /// makes the result an interval again.
     FunctionBasePtr convertIntervalToNanoseconds(const ColumnsWithTypeAndName & arguments, const IntervalKind & kind) const
     {
-        const DataTypePtr ticks_type = arguments[0].type->isNullable() ? makeNullable(std::make_shared<DataTypeInt64>())
-                                                                       : std::static_pointer_cast<const IDataType>(std::make_shared<DataTypeInt64>());
+        /// A `LowCardinality` wrapper is not itself `Nullable`: the plan receives the column with
+        /// the wrapper removed and its null map intact, so the nullability is the dictionary's.
+        const DataTypePtr value_type = removeLowCardinality(arguments[0].type);
+        const DataTypePtr ticks_type = value_type->isNullable() ? makeNullable(std::make_shared<DataTypeInt64>())
+                                                                : std::static_pointer_cast<const IDataType>(std::make_shared<DataTypeInt64>());
 
         KQLPlanBuilder plan(getContext());
         const size_t value_slot = plan.argument(ticks_type);

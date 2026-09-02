@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.mdx';
 
 <BetaBadge />
 
@@ -133,11 +134,13 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 6. 원본 MySQL 데이터베이스에서 복제할 테이블을 선택할 수 있습니다. 테이블을 선택할 때 대상 ClickHouse 데이터베이스에서 테이블 이름을 변경하거나 특정 컬럼을 제외할 수도 있습니다.
 
+7. <SettingPartitionBy />
+
 <div id="review-permissions-and-start-the-clickpipe">
   ### 권한을 검토하고 ClickPipe를 시작합니다
 </div>
 
-7. 권한 드롭다운에서 &quot;Full access&quot; 역할을 선택한 다음 &quot;Complete Setup&quot;을 클릭하세요.
+8. 권한 드롭다운에서 &quot;Full access&quot; 역할을 선택한 다음 &quot;Complete Setup&quot;을 클릭하세요.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="권한 검토" size="lg" border />
 

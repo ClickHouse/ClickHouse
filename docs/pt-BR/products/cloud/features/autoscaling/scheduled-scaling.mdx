@@ -7,18 +7,18 @@ title: 'Scheduled scaling'
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 Os serviços do ClickHouse Cloud escalam automaticamente com base na utilização de CPU e memória, mas muitas cargas de trabalho seguem padrões previsíveis — picos diários de ingestão, jobs em lote executados durante a noite ou tráfego que cai acentuadamente nos fins de semana. Para esses casos de uso, o Scheduled Scaling permite definir exatamente quando seu serviço deve aumentar ou reduzir a escala, independentemente das métricas em tempo real.
 
-Com o Scheduled Scaling, você configura um conjunto de regras baseadas em tempo diretamente no console do ClickHouse Cloud. Cada regra especifica um horário, uma recorrência (diária, semanal ou personalizada) e o tamanho de destino — seja o número de réplicas (horizontal) ou o nível de memória (vertical). No horário agendado, o ClickHouse Cloud aplica automaticamente a alteração, para que seu serviço esteja dimensionado corretamente antes da chegada da demanda, em vez de reagir depois.
+Com o Scheduled Scaling, você configura um conjunto de regras baseadas em tempo diretamente no console do ClickHouse Cloud. Cada regra especifica os dias em que está ativa, uma hora de início e uma hora de término em UTC e as configurações a serem aplicadas durante essa janela — o número de réplicas (horizontal), a memória mínima e máxima por réplica (vertical) e se o serviço pode ficar ocioso. Enquanto a janela estiver ativa, o ClickHouse Cloud aplica essas configurações e, quando ela termina, reverte para sua configuração de scaling padrão, para que seu serviço esteja dimensionado corretamente antes da chegada da demanda, em vez de reagir depois.
 
-Isso é diferente do autoscaling baseado em métricas, que responde dinamicamente à pressão sobre CPU e memória. O Scheduled Scaling é determinístico: você sabe exatamente quando o scaling acontecerá e para qual tamanho. As duas abordagens são complementares — um serviço pode ter um cronograma básico de scaling e ainda se beneficiar do autoscaling dentro dessa janela se as cargas de trabalho variarem de forma inesperada.
+Isso é diferente do autoscaling baseado em métricas, que responde dinamicamente à pressão sobre CPU e memória. O Scheduled Scaling é determinístico: você sabe exatamente quando o scaling acontecerá e para qual tamanho. As duas abordagens são complementares — um serviço pode ter um agendamento básico de scaling e ainda se beneficiar do autoscaling dentro dessa janela se as cargas de trabalho variarem de forma inesperada.
 
-No momento, o Scheduled Scaling está disponível em **Private Preview**. Para habilitá-lo para sua organização, entre em contato com o suporte do ClickHouse.
+No momento, o Scheduled Scaling está disponível em **Beta**.
 
 <div id="setting-up-a-scaling-schedule">
   ## Configurando um agendamento de escalonamento
@@ -32,11 +32,11 @@ Para configurar um agendamento, acesse seu serviço no console do ClickHouse Clo
 
 Cada regra exige:
 
-* **Hora:** quando a ação de escalonamento deve ocorrer (no seu fuso horário local)
-* **Recorrência:** com que frequência a regra se repete (por exemplo, todos os dias úteis, todo domingo)
-* **Tamanho de destino:** o número de réplicas ou a alocação de memória para a qual deve escalar
+* **Dias ativos:** os dias da semana aos quais a regra se aplica
+* **Hora de início e término:** a janela durante a qual a regra se aplica, informado em **UTC** e em horas inteiras. Uma janela cuja hora de término é anterior à hora de início se estende pela noite até o dia seguinte
+* **Configurações a aplicar:** o número de réplicas, a memória mínima e máxima por réplica e o tempo mínimo de ociosidade (ou sem ociosidade) a usar enquanto a janela estiver ativa
 
-Várias regras podem ser combinadas para formar um agendamento semanal completo. Por exemplo, você pode escalar para 5 réplicas todos os dias úteis às 6h e reduzir novamente para 2 réplicas às 20h.
+Várias regras podem ser combinadas para formar um agendamento semanal completo, desde que suas janelas não se sobreponham. Por exemplo, uma única regra que abrange de segunda a sexta-feira, das 06:00 às 20:00 UTC, pode manter seu serviço em um tamanho maior durante o dia de trabalho, com sua configuração padrão sendo aplicada fora dessa janela.
 
 <div id="use-cases">
   ## Casos de uso

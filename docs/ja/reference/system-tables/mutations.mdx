@@ -23,6 +23,7 @@ doc_type: 'reference'
 * `mutation_id` ([String](/ja/reference/data-types/string)) — ミューテーションのID。レプリケートテーブルの場合、これらのIDはClickHouse Keeperの`<table_path_in_clickhouse_keeper>/mutations/`ディレクトリ内のznode名に対応します。非レプリケートテーブルの場合、IDはテーブルのデータディレクトリ内のファイル名に対応します。
 * `command` ([String](/ja/reference/data-types/string)) — ミューテーションコマンドの文字列 (ALTER TABLE [db.]tableの後に続くクエリ部分) 。
 * `create_time` ([DateTime](/ja/reference/data-types/datetime)) — ミューテーションコマンドが実行のために送信された日時。
+* `finish_time` ([DateTime](/ja/reference/data-types/datetime)) — ミューテーションが完了した日時。ミューテーションがまだ完了していない場合、または完了時刻が不明な場合はゼロです。非レプリケートテーブルの場合、この値はメモリ内で追跡され、テーブルが再読み込みされると (例: serverの再起動時) リセットされます。レプリケートテーブルの場合、この値はレプリカごとに異なります。再起動後、直近に完了したミューテーションの完了時刻はKeeperから復元されますが、それ以前に完了したミューテーションではゼロが報告されます。
 * `block_numbers.partition_id` ([Array(String)](/ja/reference/data-types/array)) — レプリケートテーブルのミューテーションでは、この配列にパーティションIDが格納されます (パーティションごとに1レコード) 。非レプリケートテーブルのミューテーションでは、配列は空です。
 * `block_numbers.number` ([Array(Int64)](/ja/reference/data-types/array)) — レプリケートテーブルのミューテーションでは、この配列にパーティションごとに1レコードが格納され、ミューテーションが取得したblock番号が記録されます。そのパーティション内でミューテーションされるのは、この番号より小さい番号のblockを含むパーツのみです。非レプリケートテーブルでは、すべてのパーティションのblock番号が単一の数列を構成します。したがって、非レプリケートテーブルのミューテーションでは、このカラムにミューテーションが取得した単一のblock番号を持つ1レコードが格納されます。
 * `parts_in_progress_names` ([Array(String)](/ja/reference/data-types/array)) — 現在ミューテーション中のデータパーツ名の配列。
@@ -30,7 +31,7 @@ doc_type: 'reference'
 * `parts_to_do` ([Int64](/ja/reference/data-types/int-uint)) — ミューテーションを完了するためにミューテーションが必要なデータパーツ数。注: `parts_to_do` = 0であっても、ミューテーションが必要となる新しいデータパーツを作成中の長時間実行されているINSERTが原因で、レプリケートテーブルのミューテーションがまだ完了していない場合があります。
 * `parts_postpone_reasons` ([Map(String, String)](/ja/reference/data-types/map)) — パーツ名と処理延期の理由のmap。
 * `is_done` ([UInt8](/ja/reference/data-types/int-uint)) — ミューテーションが完了したかどうかを示すフラグ。設定可能な値: ミューテーションが完了している場合は1、まだ処理中の場合は0。
-* `is_killed` ([UInt8](/ja/reference/data-types/int-uint)) — ミューテーションがkillされたかどうかを示します。ClickHouse Cloudでのみ利用可能です。注: is&#95;killed=1は、ミューテーションが完全に終了したことを必ずしも意味しません。ミューテーションがis&#95;killed=1かつis&#95;done=0の状態で長期間残ることがあります。これは、別の長時間実行中のミューテーションがkillされたミューテーションをブロックしている場合に発生することがあります。これは正常な状況です。
+* `is_killed` ([UInt8](/ja/reference/data-types/int-uint)) — ミューテーションが停止されたかどうかを示します。ClickHouse Cloudでのみ利用可能です。注: is&#95;killed=1は、ミューテーションが完全に終了したことを必ずしも意味しません。ミューテーションがis&#95;killed=1かつis&#95;done=0の状態で長期間残ることがあります。これは、別の長時間実行中のミューテーションが停止されたミューテーションをブロックしている場合に発生することがあります。これは正常な状況です。
 * `latest_failed_part` ([String](/ja/reference/data-types/string)) — ミューテーションできなかった直近のパーツの名前。
 * `latest_fail_time` ([DateTime](/ja/reference/data-types/datetime)) — 直近のパーツミューテーション失敗の日時。
 * `latest_fail_reason` ([String](/ja/reference/data-types/string)) — 直近のパーツミューテーション失敗の原因となった例外メッセージ。
@@ -46,7 +47,7 @@ doc_type: 'reference'
 * `is_killed` ([UInt8](/ja/reference/data-types/int-uint)) — ミューテーションが停止されたかどうかを示します。**ClickHouse Cloudでのみ利用できます。**
 
 <Note>
-  `is_killed=1`であっても、ミューテーションが完全に完了したとは限りません。`is_killed=1`かつ`is_done=0`の状態が長期間続く場合があります。これは、別の長時間実行中のミューテーションによって、停止されたミューテーションがブロックされている場合に発生することがあります。これは正常な状態です。
+  `is_killed=1` は、ミューテーションが完全に完了したことを必ずしも意味しません。`is_killed=1` かつ `is_done=0` の状態が長期間続く可能性があります。これは、別の長時間実行されるミューテーションが停止されたミューテーションをブロックしている場合に発生することがあります。これは正常な状況です。
 </Note>
 
 * `is_done` ([UInt8](/ja/reference/data-types/int-uint)) — ミューテーションが完了しているかどうかを示すフラグ。設定可能な値:

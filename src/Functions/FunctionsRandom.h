@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
 
 
 namespace DB

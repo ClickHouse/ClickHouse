@@ -17,7 +17,7 @@ doc_type: '참고'
 
 chDB 엔진을 사용해 SQL 쿼리를 실행합니다.
 
-내장 ClickHouse 엔진을 사용해 SQL 문을 실행하는 핵심 쿼리 함수입니다. 다양한 출력 형식을 지원하며, 인메모리 데이터베이스 또는 파일 기반 데이터베이스에서 사용할 수 있습니다.
+내장 ClickHouse 엔진을 사용해 SQL 문을 실행하는 핵심 쿼리 함수입니다. 다양한 출력 형식을 지원하며, 임시 데이터베이스 또는 파일 기반 데이터베이스에서 사용할 수 있습니다.
 
 **구문**
 
@@ -31,7 +31,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | --------------- | --- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str | *필수*    | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                            |
 | `output_format` | str | `"CSV"` | 결과의 출력 형식입니다. 지원되는 포맷:<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 상세 로깅 활성화 |
-| `path`          | str | `""`    | 데이터베이스 파일 경로입니다. 기본적으로 인메모리 데이터베이스를 사용합니다.<br />파일 경로 또는 인메모리 데이터베이스를 나타내는 `":memory:"`를 사용할 수 있습니다                                                                                                                                                       |
+| `path`          | str | `""`    | 데이터베이스 파일 경로입니다. 기본적으로 임시 비영속 데이터베이스(`":memory:"`와 동일)를 사용합니다.<br />디스크에 유지하려면 파일 경로를 전달하십시오                                                                                                                                                              |
 | `udf_path`      | str | `""`    | 레거시 하위 프로세스 기반 UDF 디렉터리 경로입니다. 네이티브 Python UDF에는 필요하지 않습니다([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                            |
 
 **반환값**
@@ -45,7 +45,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | `pa.Table`         | `output_format`이 `"ArrowTable"` 또는 `"arrowtable"`인 경우 |
 | chdb result object | 기타 포맷인 경우                                             |
 
-**예외**
+**발생 예외**
 
 | 예외            | 조건                                 |
 | ------------- | ---------------------------------- |
@@ -82,7 +82,8 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 chDB 엔진을 사용해 SQL 쿼리를 실행합니다.
 
-내장 ClickHouse 엔진을 사용해 SQL 문을 실행하는 핵심 쿼리 함수입니다. 다양한 출력 형식을 지원하며, 인메모리 데이터베이스 또는 파일 기반 데이터베이스에서 사용할 수 있습니다.
+내장 ClickHouse 엔진을 사용해 SQL 문을 실행하는 핵심 쿼리 함수입니다. 다양한 출력 형식을 지원하며, 임시
+데이터베이스 또는 파일 기반 데이터베이스에서 사용할 수 있습니다.
 
 **구문**
 
@@ -92,25 +93,25 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 
 **매개변수**
 
-| 매개변수            | 유형  | Default    | Description                                                                                                                                                                                                                                                         |
+| 매개변수            | 유형  | 기본값    | 설명                                                                                                                                                                                                                                                         |
 | --------------- | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str | *required* | 실행할 SQL 쿼리 문자열                                                                                                                                                                                                                                                      |
 | `output_format` | str | `"CSV"`    | 결과의 출력 형식입니다. 지원되는 포맷은 다음과 같습니다.<br />• `"CSV"` - 쉼표로 구분된 값<br />• `"JSON"` - JSON 포맷<br />• `"Arrow"` - Apache Arrow 형식<br />• `"Parquet"` - Parquet 포맷<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - 상세 로깅 활성화 |
-| `path`          | str | `""`       | 데이터베이스 파일 경로입니다. 기본값은 인메모리 데이터베이스입니다.<br />파일 경로 또는 인메모리 데이터베이스를 위한 `":memory:"`를 사용할 수 있습니다                                                                                                                                                                        |
+| `path`          | str | `""`       | 데이터베이스 파일 경로입니다. 기본값은 임시 비영구 데이터베이스(`":memory:"`와 동일)입니다.<br />디스크에 유지하려면 파일 경로를 전달하십시오                                                                                                                                                                             |
 | `udf_path`      | str | `""`       | 레거시 하위 프로세스 기반 UDF 디렉터리의 경로입니다. 네이티브 Python UDF에는 필요하지 않습니다([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                     |
 
 **반환값**
 
 지정된 형식으로 쿼리 결과를 반환합니다.
 
-| Return 유형          | Condition                                             |
+| 반환 유형          | Condition                                             |
 | ------------------ | ----------------------------------------------------- |
 | `str`              | CSV, JSON과 같은 텍스트 형식인 경우                              |
 | `pd.DataFrame`     | `output_format`이 `"DataFrame"` 또는 `"dataframe"`인 경우   |
 | `pa.Table`         | `output_format`이 `"ArrowTable"` 또는 `"arrowtable"`인 경우 |
 | chdb result object | 그 밖의 포맷인 경우                                           |
 
-**예외**
+**발생 예외**
 
 | Exception                 | Condition                          |
 | ------------------------- | ---------------------------------- |
@@ -241,8 +242,7 @@ chdb.to_df(r)
 chDB 백그라운드 서버에 대한 연결을 생성합니다.
 
 이 함수는 chDB(ClickHouse) 데이터베이스 엔진에 대한 [Connection](#chdb-state-sqlitelike-connection)을 생성합니다.
-프로세스당 열려 있는 연결은 하나만 허용됩니다.
-동일한 연결 문자열(connection string)로 여러 번 호출하면 동일한 연결 객체를 반환합니다.
+각 호출은 독립적인 연결을 반환하며, 동일한 데이터베이스 경로에 대한 연결을 동시에 여러 개 열 수 있습니다.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -256,21 +256,21 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 **기본 포맷**
 
-| 포맷                        | 설명               |
-| ------------------------- | ---------------- |
-| `":memory:"`              | 인메모리 데이터베이스(기본값) |
-| `"test.db"`               | 상대 경로 데이터베이스 파일  |
-| `"file:test.db"`          | 상대 경로와 동일        |
-| `"/path/to/test.db"`      | 절대 경로 데이터베이스 파일  |
-| `"file:/path/to/test.db"` | 절대 경로와 동일        |
+| 포맷                        | 설명              |
+| ------------------------- | --------------- |
+| `":memory:"`              | 임시 데이터베이스(기본값)  |
+| `"test.db"`               | 상대 경로 데이터베이스 파일 |
+| `"file:test.db"`          | 상대 경로와 동일       |
+| `"/path/to/test.db"`      | 절대 경로 데이터베이스 파일 |
+| `"file:/path/to/test.db"` | 절대 경로와 동일       |
 
 **쿼리 매개변수 사용 시**
 
-| 포맷                                                 | 설명              |
-| -------------------------------------------------- | --------------- |
-| `"file:test.db?param1=value1&param2=value2"`       | 매개변수가 포함된 상대 경로 |
-| `"file::memory:?verbose&log-level=test"`           | 매개변수가 포함된 인메모리  |
-| `"///path/to/test.db?param1=value1&param2=value2"` | 매개변수가 포함된 절대 경로 |
+| 포맷                                                 | 설명                  |
+| -------------------------------------------------- | ------------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | 매개변수가 포함된 상대 경로     |
+| `"file::memory:?verbose&log-level=test"`           | 매개변수가 포함된 임시 데이터베이스 |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 매개변수가 포함된 절대 경로     |
 
 **쿼리 매개변수 처리**
 
@@ -297,31 +297,30 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ----------------- |
 | `RuntimeError` | 데이터베이스 연결에 실패한 경우 |
 
-<Warning>
-  프로세스당 하나의 connection만 지원됩니다.
-  새 connection을 생성하면 기존 connection은 닫힙니다.
-</Warning>
+<Note>
+  하나의 프로세스는 하나의 데이터베이스 경로에 바인딩된 내장 엔진 하나를 실행합니다. 동일한 경로에 대한 여러 연결은 공존하며 동시에 쿼리를 실행할 수 있습니다. 연결이 하나라도 열려 있는 상태에서 *다른* 경로를 열면 `RuntimeError`가 발생합니다. 먼저 열려 있는 연결을 닫으십시오.
+</Note>
 
 **예시**
 
 ```pycon
->>> # 인메모리 데이터베이스
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # 파일 기반 데이터베이스
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # 매개변수 사용
->>> conn = connect("data.db?mode=ro")  # 읽기 전용 모드
->>> conn = connect(":memory:?verbose&log-level=debug")  # 디버그 로깅
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # 자동 정리를 위한 컨텍스트 매니저 사용
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # 연결 자동 종료
+>>> # Connection automatically closed
 ```
 
 **관련 항목**
@@ -354,8 +353,7 @@ chDB 관련 오류를 위한 기본 예외 클래스입니다.
 기반 클래스: `object`
 
 Session은 쿼리 상태를 유지합니다.
-path가 `None`이면 임시 디렉터리를 생성해 데이터베이스 경로로 사용하고,
-세션이 닫히면 해당 임시 디렉터리가 삭제됩니다.
+path가 `None`이면 세션은 프로세스 전체에서 공유하는 임시(`:memory:`) 데이터베이스를 사용하므로, 경로가 없는 모든 세션은 서로의 테이블을 볼 수 있습니다. 이러한 세션이나 연결이 모두 닫힌 후에만 해당 임시 디렉터리가 삭제됩니다.
 또한 path를 전달해 해당 경로에 데이터베이스를 생성하고 데이터를 유지할 수도 있습니다.
 
 연결 문자열을 사용해 경로와 기타 매개변수를 전달할 수도 있습니다.
@@ -366,16 +364,16 @@ class chdb.session.Session(path=None)
 
 **예시**
 
-| 연결 문자열                                  | Description             |
-| -------------------------------------------------- | ----------------------- |
-| `":memory:"`                                       | 인메모리 데이터베이스             |
-| `"test.db"`                                        | 상대 경로                   |
-| `"file:test.db"`                                   | 위와 동일                   |
-| `"/path/to/test.db"`                               | 절대 경로                   |
-| `"file:/path/to/test.db"`                          | 위와 동일                   |
-| `"file:test.db?param1=value1&param2=value2"`       | 쿼리 매개변수가 있는 상대 경로       |
-| `"file::memory:?verbose&log-level=test"`           | 쿼리 매개변수가 있는 인메모리 데이터베이스 |
-| `"///path/to/test.db?param1=value1&param2=value2"` | 쿼리 매개변수가 있는 절대 경로       |
+| 연결 문자열                                             | 설명           |
+| -------------------------------------------------- | --------------------- |
+| `":memory:"`                                       | 임시 데이터베이스             |
+| `"test.db"`                                        | 상대 경로                 |
+| `"file:test.db"`                                   | 위와 동일                 |
+| `"/path/to/test.db"`                               | 절대 경로                 |
+| `"file:/path/to/test.db"`                          | 위와 동일                 |
+| `"file:test.db?param1=value1&param2=value2"`       | 쿼리 매개변수가 있는 상대 경로     |
+| `"file::memory:?verbose&log-level=test"`           | 쿼리 매개변수가 있는 임시 데이터베이스 |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 쿼리 매개변수가 있는 절대 경로     |
 
 <Info>
   **연결 문자열 인자 처리**
@@ -390,12 +388,12 @@ class chdb.session.Session(path=None)
   * “mode=ro”는 clickhouse에서 “–readonly=1”로 처리됩니다 (읽기 전용 모드)
 </Info>
 
-<Warning>
+<Note>
   **중요**
 
-  * 한 번에 하나의 세션만 사용할 수 있습니다. 새 세션을 만들려면 기존 세션을 닫아야 합니다.
-  * 새 세션을 만들면 기존 세션이 닫힙니다.
-</Warning>
+  * 동일한 데이터베이스 경로를 공유하는 경우 여러 세션이 공존할 수 있습니다.
+  * 다른 데이터베이스 경로를 사용하려면 먼저 열려 있는 세션을 닫으십시오.
+</Note>
 
 ***
 
@@ -736,8 +734,7 @@ id,name
 chDB 백그라운드 서버와의 [연결](#chdb-state-sqlitelike-connection)을 생성합니다.
 
 이 함수는 chDB(ClickHouse) 데이터베이스 엔진에 대한 연결을 설정합니다.
-프로세스당 하나의 연결만 열어 둘 수 있습니다. 동일한
-connection string으로 여러 번 호출하면 동일한 연결 객체를 반환합니다.
+각 호출은 독립적인 연결을 반환하며, 동일한 데이터베이스 경로에 대한 연결을 동시에 여러 개 열 수 있습니다.
 
 **구문**
 
@@ -747,7 +744,7 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 
 **매개변수**
 
-| Parameter                          | Type | Default      | Description                      |
+| 매개변수                          | 유형 | Default      | 설명                      |
 | ---------------------------------- | ---- | ------------ | -------------------------------- |
 | `connection_string(str, optional)` | str  | `":memory:"` | 데이터베이스 연결 문자열입니다. 아래 포맷을 참조하십시오. |
 
@@ -755,28 +752,28 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 
 지원되는 연결 문자열 포맷:
 
-| Format                    | Description       |
-| ------------------------- | ----------------- |
-| `":memory:"`              | 메모리 내 데이터베이스(기본값) |
-| `"test.db"`               | 상대 경로 데이터베이스 파일   |
-| `"file:test.db"`          | 상대 경로와 동일         |
-| `"/path/to/test.db"`      | 절대 경로 데이터베이스 파일   |
-| `"file:/path/to/test.db"` | 절대 경로와 동일         |
+| Format                    | 설명     |
+| ------------------------- | --------------- |
+| `":memory:"`              | 임시 데이터베이스(기본값)  |
+| `"test.db"`               | 상대 경로 데이터베이스 파일 |
+| `"file:test.db"`          | 상대 경로와 동일       |
+| `"/path/to/test.db"`      | 절대 경로 데이터베이스 파일 |
+| `"file:/path/to/test.db"` | 절대 경로와 동일       |
 
 **쿼리 매개변수 포함**
 
-| Format                                             | Description     |
-| -------------------------------------------------- | --------------- |
-| `"file:test.db?param1=value1&param2=value2"`       | 매개변수가 포함된 상대 경로 |
-| `"file::memory:?verbose&log-level=test"`           | 매개변수가 포함된 인메모리  |
-| `"///path/to/test.db?param1=value1&param2=value2"` | 매개변수가 포함된 절대 경로 |
+| Format                                             | 설명         |
+| -------------------------------------------------- | ------------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | 매개변수가 포함된 상대 경로     |
+| `"file::memory:?verbose&log-level=test"`           | 매개변수가 포함된 임시 데이터베이스 |
+| `"///path/to/test.db?param1=value1&param2=value2"` | 매개변수가 포함된 절대 경로     |
 
 **쿼리 매개변수 처리**
 
 쿼리 매개변수는 시작 인수로 ClickHouse 엔진에 전달됩니다.
 특수 매개변수 처리:
 
-| Special Parameter | Becomes        | Description |
+| 특수 매개변수 | Becomes        | 설명 |
 | ----------------- | -------------- | ----------- |
 | `mode=ro`         | `--readonly=1` | 읽기 전용 모드    |
 | `verbose`         | (flag)         | 상세 로깅 활성화   |
@@ -786,43 +783,40 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 
 **반환값**
 
-| Return Type  | Description                                                                                                                                                                                 |
+| 반환 유형  | 설명                                                                                                                                                                                 |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Connection` | 다음을 지원하는 데이터베이스 연결 객체입니다:<br />• `Connection.cursor()`를 사용한 커서 생성<br />• `Connection.query()`를 사용한 직접 쿼리 실행<br />• `Connection.send_query()`를 사용한 스트리밍 쿼리 실행<br />• 자동 정리를 위한 컨텍스트 매니저 프로토콜 |
 
-**예외 발생**
+**발생 예외**
 
 | Exception      | Condition         |
 | -------------- | ----------------- |
 | `RuntimeError` | 데이터베이스 연결에 실패한 경우 |
 
-<Warning>
-  **경고**
-
-  프로세스당 하나의 연결만 지원됩니다.
-  새 연결을 생성하면 기존 연결은 모두 종료됩니다.
-</Warning>
+<Note>
+  하나의 프로세스에서는 하나의 데이터베이스 경로에 바인딩된 내장 엔진 하나가 실행됩니다. 동일한 경로에 대한 여러 연결은 공존할 수 있으며 동시에 쿼리를 실행할 수 있습니다. 연결이 하나라도 열려 있는 동안 *다른* 경로를 열면 `RuntimeError`가 발생하므로, 먼저 열려 있는 연결을 닫으십시오.
+</Note>
 
 **예시**
 
 ```pycon
->>> # 인메모리 데이터베이스
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # 파일 기반 데이터베이스
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # 매개변수 사용
->>> conn = connect("data.db?mode=ro")  # 읽기 전용 모드
->>> conn = connect(":memory:?verbose&log-level=debug")  # 디버그 로깅
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # 자동 정리를 위한 컨텍스트 매니저 사용
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # 연결 자동 종료
+>>> # Connection automatically closed
 ```
 
 **관련 항목**
@@ -1840,11 +1834,11 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **매개변수**
 
-| 매개변수   | 유형  | 기본값    | 설명                                     |
-| ------ | --- | ------ | -------------------------------------- |
-| `path` | str | `None` | 데이터베이스 파일 경로입니다. 인메모리 데이터베이스는 None입니다. |
+| 매개변수   | 유형  | 기본값    | 설명                                       |
+| ------ | --- | ------ | ---------------------------------------- |
+| `path` | str | `None` | 데이터베이스 파일 경로입니다. 임시 비영속 데이터베이스는 None입니다. |
 
-**예외**
+**발생 예외**
 
 | 예외                                   | 조건              |
 | ------------------------------------ | --------------- |
@@ -1918,7 +1912,7 @@ chdb.dbapi.Binary(x)
 
 chDB 데이터베이스용 DB-API 2.0 호환 연결입니다.
 
-이 클래스는 chDB 데이터베이스에 연결하고 상호 작용할 수 있는 표준 DB-API 인터페이스를 제공합니다. 인메모리 데이터베이스와 파일 기반 데이터베이스를 모두 지원합니다.
+이 클래스는 chDB 데이터베이스에 연결하고 상호 작용할 수 있는 표준 DB-API 인터페이스를 제공합니다. 임시 데이터베이스와 파일 기반 데이터베이스를 모두 지원합니다.
 
 이 연결은 내부의 chDB 엔진을 관리하며, 쿼리 실행, 트랜잭션 관리(ClickHouse에서는 no-op), 커서 생성용 메서드를 제공합니다.
 
@@ -1928,13 +1922,13 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **매개변수**
 
-| 매개변수 | 유형 | Default | Description                                                                                                                         |
-| --------- | ---- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `path`    | str  | `None`  | 데이터베이스 파일 경로입니다. `None`이면 인메모리 데이터베이스를 사용합니다. &#39;database.db&#39;와 같은 파일 경로를 지정하거나, &#39;:memory:&#39;를 사용하려면 `None`을 지정할 수 있습니다. |
+| 매개변수   | 유형  | Default | 설명                                                                                                                |
+| ------ | --- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `path` | str | `None`  | 데이터베이스 파일 경로입니다. `None`(기본값)이면 임시 비영속 데이터베이스(`':memory:'`와 동일)를 사용합니다. 디스크에 유지하려면 &#39;database.db&#39;와 같은 파일 경로를 전달하십시오. |
 
 **변수**
 
-| Variable   | 유형 | Description                           |
+| Variable   | 유형   | 설명                           |
 | ---------- | ---- | ------------------------------------- |
 | `encoding` | str  | 쿼리의 문자 인코딩이며, 기본값은 &#39;utf8&#39;입니다. |
 | `open`     | bool | 연결이 열려 있으면 True, 닫혀 있으면 False입니다.     |
@@ -1942,7 +1936,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **예시**
 
 ```pycon
->>> # 인메모리 데이터베이스
+>>> # Temporary database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -1951,7 +1945,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # 파일 기반 데이터베이스
+>>> # File-based database
 >>> conn = Connection('mydata.db')
 >>> with conn.cursor() as cur:
 ...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
@@ -1960,7 +1954,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # 컨텍스트 매니저 사용
+>>> # Context manager usage
 >>> with Connection() as cur:
 ...     cur.execute("SELECT version()")
 ...     version = cur.fetchone()
@@ -3342,7 +3336,7 @@ DB-API 2.0의 유형 비교를 위해 확장된 frozenset입니다.
 
 이 클래스는 DB-API 2.0의 유형 비교 의미 체계를 지원하도록 frozenset을 확장한 것입니다.
 이를 통해 개별 항목을 집합과 비교할 때
-동등 및 부등 연산자를 모두 사용해 유연하게 유형을 검사할 수 있습니다.
+동등 및 부등 연산자를 모두 사용해 유연하게 유형을 확인할 수 있습니다.
 
 이는 STRING, BINARY, NUMBER 등의 유형 상수에 사용되며,
 field&#95;type이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;과 같은 비교를 가능하게 합니다.
@@ -3351,9 +3345,9 @@ field&#95;type이 단일 유형 값일 때 &quot;field&#95;type == STRING&quot;�
 
 ```pycon
 >>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
->>> FIELD_TYPE.STRING == string_types  # True 반환
->>> FIELD_TYPE.INT != string_types     # True 반환
->>> FIELD_TYPE.BLOB in string_types    # False 반환
+>>> FIELD_TYPE.STRING == string_types  # Returns True
+>>> FIELD_TYPE.INT != string_types     # Returns True
+>>> FIELD_TYPE.BLOB in string_types    # Returns False
 ```
 
 **사용 예시**
@@ -3365,16 +3359,16 @@ import chdb.dbapi as dbapi
 
 print("chdb driver version: {0}".format(dbapi.get_client_info()))
 
-# 연결 및 커서 생성
+# Create connection and cursor
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# 쿼리 실행
+# Execute query
 cur.execute('SELECT version()')
 print("description:", cur.description)
 print("data:", cur.fetchone())
 
-# 정리
+# Clean up
 cur.close()
 conn.close()
 ```
@@ -3387,7 +3381,7 @@ import chdb.dbapi as dbapi
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# 테이블 생성
+# Create table
 cur.execute("""
     CREATE TABLE employees (
         id UInt32,
@@ -3397,7 +3391,7 @@ cur.execute("""
     ) ENGINE = Memory
 """)
 
-# 데이터 삽입
+# Insert data
 cur.execute("""
     INSERT INTO employees VALUES
     (1, 'Alice', 'Engineering', 75000.00),
@@ -3405,10 +3399,10 @@ cur.execute("""
     (3, 'Charlie', 'Engineering', 80000.00)
 """)
 
-# 데이터 쿼리
+# Query data
 cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
 
-# 결과 조회
+# Fetch results
 print("Column names:", [desc[0] for desc in cur.description])
 for row in cur.fetchall():
     print(row)
@@ -3421,19 +3415,19 @@ conn.close()
 ```python
 import chdb.dbapi as dbapi
 
-# 인메모리 데이터베이스 (기본값)
+# Temporary database (default)
 conn1 = dbapi.connect()
 
-# 영구 데이터베이스 파일
+# Persistent database file
 conn2 = dbapi.connect("./my_database.chdb")
 
-# 매개변수를 사용한 연결
+# Connection with parameters
 conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
 
-# 읽기 전용 연결
+# Read-only connection
 conn4 = dbapi.connect("./my_database.chdb?mode=ro")
 
-# 자동 연결 정리
+# Automatic connection cleanup
 with dbapi.connect("test.chdb") as conn:
     cur = conn.cursor()
     cur.execute("SELECT count() FROM numbers(1000)")

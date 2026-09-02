@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Vue d’ensemble'
+sidebarTitle: 'Rust'
 keywords: ['clickhouse', 'rs', 'rust', 'cargo', 'crate', 'http', 'client', 'connect', 'integrate']
 slug: /integrations/rust
 description: 'Le client Rust officiel pour se connecter à ClickHouse.'
@@ -189,7 +189,7 @@ insert.end().await?;
 
 * Si `end()` n’est pas appelé, l’`INSERT` est annulé.
 * Les lignes sont envoyées progressivement en flux afin de répartir la charge sur le réseau.
-* ClickHouse n’insère les lots de façon atomique que si toutes les lignes tiennent dans la même partition et que leur nombre est inférieur à [`max_insert_block_size`](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
+* ClickHouse n’insère les lots de façon atomique que si toutes les lignes tiennent dans la même partition et que leur nombre est inférieur à [`max_insert_block_size`](/fr/reference/settings/session-settings#max_insert_block_size).
 
 <div id="async-insert-server-side-batching">
   ### Async insert (batching côté serveur)

@@ -26,6 +26,7 @@ workflow = Workflow.Config(
     name="NightlySQLancer",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         release_build_job,
         asan_ubsan_build_job,

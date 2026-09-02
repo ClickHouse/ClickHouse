@@ -66,29 +66,29 @@ print(f"Execution time: {result.elapsed()} seconds")
 ```python
 import chdb
 
-# 연결 생성 (기본값: 인메모리)
+# 연결 생성 (":memory:" is a temporary, non-persistent database)
 conn = chdb.connect(":memory:")
-# 파일 기반 사용 시: conn = chdb.connect("mydata.db")
+# Or use file-based: conn = chdb.connect("mydata.db")
 
-# 쿼리 실행을 위한 커서 생성
+# Create cursor for query execution
 cur = conn.cursor()
 
 # 쿼리 실행
 cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
 
-# 다양한 방식으로 결과 가져오기
-print(cur.fetchone())    # 단일 행: (0, '0')
-print(cur.fetchmany(2))  # 여러 행: ((1, '1'), (2, '2'))
+# 다양한 방식으로 결과 조회
+print(cur.fetchone())    # Single row: (0, '0')
+print(cur.fetchmany(2))  # Multiple rows: ((1, '1'), (2, '2'))
 
 # 메타데이터 조회
 print(cur.column_names())  # ['number', 'str']
 print(cur.column_types())  # ['UInt64', 'String']
 
-# 커서를 이터레이터로 사용
+# Use cursor as iterator
 for row in cur:
     print(row)
 
-# 리소스는 반드시 닫기
+# Always close resources
 cur.close()
 conn.close()
 ```

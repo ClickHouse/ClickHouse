@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # statement becomes several reads of the same table on the same server, each carrying a different
 # query id, so the long running query competes against itself for the single max_concurrent_queries
 # slot and is rejected instead of holding it.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0 --enable_parallel_replicas 0"
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_parallel_replicas 0"
 
 function wait_for_query_to_start() {
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT sum(read_rows) FROM system.processes WHERE query_id = '$1'") == 0 ]]; do sleep 0.1; done

@@ -16,20 +16,20 @@
 
 SET use_query_condition_cache = 0;
 
-DROP TABLE IF EXISTS t_cv_span SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_span SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_zr SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_zr SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_zl SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_zl SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_u32 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_u32 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_u8 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_u8 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_u8g SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_u8g SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_cv_span;
+DROP TABLE IF EXISTS m_cv_span;
+DROP TABLE IF EXISTS t_cv_zr;
+DROP TABLE IF EXISTS m_cv_zr;
+DROP TABLE IF EXISTS t_cv_zl;
+DROP TABLE IF EXISTS m_cv_zl;
+DROP TABLE IF EXISTS t_cv_u32;
+DROP TABLE IF EXISTS m_cv_u32;
+DROP TABLE IF EXISTS t_cv_f64p;
+DROP TABLE IF EXISTS m_cv_f64p;
+DROP TABLE IF EXISTS t_cv_u8;
+DROP TABLE IF EXISTS m_cv_u8;
+DROP TABLE IF EXISTS t_cv_u8g;
+DROP TABLE IF EXISTS m_cv_u8g;
 
 -- ---------------------------------------------------------------------------------------------
 -- Case 6: must-not-flip / must-stay-monotone controls.
@@ -123,17 +123,17 @@ SELECT 'c8 live wrap ge', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() F
 SELECT 'c8 live wrap eq', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_u8g WHERE intDiv(toInt8(-100), a) = 1) WHERE explain ILIKE '%Granules: 1/4%';
 SELECT 'c8 live wrap le', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_u8g WHERE intDiv(toInt8(-100), a) <= -50) WHERE explain ILIKE '%Granules: 1/4%';
 
-DROP TABLE t_cv_span SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_span SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_zr SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_zr SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_zl SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_zl SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_u32 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_u32 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_u8 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_u8 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_u8g SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_u8g SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_cv_span;
+DROP TABLE m_cv_span;
+DROP TABLE t_cv_zr;
+DROP TABLE m_cv_zr;
+DROP TABLE t_cv_zl;
+DROP TABLE m_cv_zl;
+DROP TABLE t_cv_u32;
+DROP TABLE m_cv_u32;
+DROP TABLE t_cv_f64p;
+DROP TABLE m_cv_f64p;
+DROP TABLE t_cv_u8;
+DROP TABLE m_cv_u8;
+DROP TABLE t_cv_u8g;
+DROP TABLE m_cv_u8g;

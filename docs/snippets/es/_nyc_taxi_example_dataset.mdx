@@ -1,0 +1,29 @@
+---
+title: Conjunto de datos de ejemplo de taxis de Nueva York
+---
+
+<Note>
+  El archivo Parquet de origen ocupa aproximadamente 5,8 GB. La carga puede tardar varios minutos, según la red y los recursos disponibles.
+</Note>
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi;
+USE nyc_taxi;
+
+CREATE TABLE nyc_taxi.trips_small_inferred
+ORDER BY () EMPTY
+AS SELECT *
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet',
+    NOSIGN,
+    Parquet
+);
+
+INSERT INTO nyc_taxi.trips_small_inferred
+SELECT *
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet',
+    NOSIGN,
+    Parquet
+);
+```

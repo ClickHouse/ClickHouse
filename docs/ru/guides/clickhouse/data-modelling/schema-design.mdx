@@ -27,7 +27,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Приведенная выше схема намеренно не оптимизирована для целей этого руководства.
 
 <div id="establish-initial-schema">
-  ## Создание начальной схемы
+  ## Создание исходной схемы
 </div>
 
 Поскольку таблица `posts` станет основной для большинства аналитических запросов, мы сосредоточимся на создании схемы именно для неё. Эти данные доступны в публичном S3 бакете `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet`, где каждому году соответствует отдельный файл.
@@ -37,32 +37,32 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 ClickHouse предоставляет возможность автоматического определения схемы, чтобы выявлять типы данных в наборе данных. Это поддерживается для всех форматов данных, включая Parquet. Мы можем воспользоваться этой возможностью, чтобы определить типы ClickHouse для данных с помощью табличной функции s3 и команды [`DESCRIBE`](/ru/reference/statements/describe-table). Обратите внимание, что ниже мы используем глоб-шаблон `*.parquet`, чтобы прочитать все файлы в папке `stackoverflow/parquet/posts`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
 ```response
 ┌─name──────────────────┬─type───────────────────────────┐
-│ Id                    │ Nullable(Int64)               │
-│ PostTypeId            │ Nullable(Int64)               │
-│ AcceptedAnswerId      │ Nullable(Int64)               │
+│ Id                    │ Nullable(Int64)                │
+│ PostTypeId            │ Nullable(Int64)                │
+│ AcceptedAnswerId      │ Nullable(Int64)                │
 │ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
-│ Score                 │ Nullable(Int64)               │
-│ ViewCount             │ Nullable(Int64)               │
-│ Body                  │ Nullable(String)              │
-│ OwnerUserId           │ Nullable(Int64)               │
-│ OwnerDisplayName      │ Nullable(String)              │
-│ LastEditorUserId      │ Nullable(Int64)               │
-│ LastEditorDisplayName │ Nullable(String)              │
+│ Score                 │ Nullable(Int64)                │
+│ ViewCount             │ Nullable(Int64)                │
+│ Body                  │ Nullable(String)               │
+│ OwnerUserId           │ Nullable(Int64)                │
+│ OwnerDisplayName      │ Nullable(String)               │
+│ LastEditorUserId      │ Nullable(Int64)                │
+│ LastEditorDisplayName │ Nullable(String)               │
 │ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
 │ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
-│ Title                 │ Nullable(String)              │
-│ Tags                  │ Nullable(String)              │
-│ AnswerCount           │ Nullable(Int64)               │
-│ CommentCount          │ Nullable(Int64)               │
-│ FavoriteCount         │ Nullable(Int64)               │
-│ ContentLicense        │ Nullable(String)              │
-│ ParentId              │ Nullable(String)              │
+│ Title                 │ Nullable(String)               │
+│ Tags                  │ Nullable(String)               │
+│ AnswerCount           │ Nullable(Int64)                │
+│ CommentCount          │ Nullable(Int64)                │
+│ FavoriteCount         │ Nullable(Int64)                │
+│ ContentLicense        │ Nullable(String)               │
+│ ParentId              │ Nullable(String)               │
 │ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
 │ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
 └───────────────────────┴────────────────────────────────┘
@@ -76,7 +76,7 @@ SETTINGS describe_compact_output = 1
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 Несколько важных моментов:
@@ -123,7 +123,7 @@ ORDER BY tuple()
 После определения исходной схемы мы можем загрузить данные с помощью `INSERT INTO SELECT`, читая их через табличную функцию S3. Ниже показано, как загрузить данные `posts` примерно за 2 минуты на 8-ядерном экземпляре ClickHouse Cloud.
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -275,13 +275,13 @@ LIMIT 3
 
 ```response
 ┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
-│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
-│ 78183948 │ About memory barrier                                               │               52 │
-│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
-└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
+│ 78203063 │ How to avoid default initialization of objects in std::vector?    │           74 │
+│ 78183948 │ About memory barrier                                              │           52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │           49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────┘
 
-10 строк в наборе. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
-Пиковое потребление памяти: 429.38 MiB.
+10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
+Peak memory usage: 429.38 MiB.
 ```
 
 > Запрос здесь выполняется очень быстро, хотя все 60 млн строк были линейно просканированы — ClickHouse просто быстрый :) Вам придётся поверить нам на слово: на масштабах TB и PB ключи сортировки действительно того стоят!
@@ -320,7 +320,7 @@ ENGINE = MergeTree
 ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
 COMMENT 'Ordering Key'
 
---заполнить таблицу из существующей таблицы
+--populate table from existing table
 
 INSERT INTO posts_v3 SELECT * FROM posts_v2
 ```

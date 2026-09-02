@@ -1,0 +1,40 @@
+-- the default id type is dictionary-encoded
+Tuple(UInt64, LowCardinality(UUID))
+-- the default id generator dictionary-encodes the tags hash
+tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))
+-- the selector returns the id with the declared type
+Tuple(UInt64, LowCardinality(UUID))
+-- whole-metric selector: results and the emitted id range
+1970-01-01 00:01:40.000	1
+1970-01-01 00:03:20.000	2
+1970-01-01 00:05:00.000	3
+1970-01-01 00:01:40.000	5
+1970-01-01 00:02:30.000	10
+1970-01-01 00:04:10.000	20
+1	1
+-- partial selector: results, no id range
+1970-01-01 00:01:40.000	1
+1970-01-01 00:03:20.000	2
+1970-01-01 00:05:00.000	3
+1970-01-01 00:01:40.000	1
+1970-01-01 00:03:20.000	2
+1970-01-01 00:05:00.000	3
+1970-01-01 00:02:30.000	10
+1970-01-01 00:04:10.000	20
+0
+-- prometheus query evaluation over the dictionary-encoded ids
+[('__name__','foo')]	5
+[('__name__','foo'),('env','dev')]	20
+[('__name__','foo'),('env','prod')]	2
+[('env','dev')]	0.066667
+[('env','prod')]	0.01
+-- the same queries over the plain layout return the same results
+[('__name__','foo')]	5
+[('__name__','foo'),('env','dev')]	20
+[('__name__','foo'),('env','prod')]	2
+[('env','dev')]	0.066667
+[('env','prod')]	0.01
+-- a custom generator with a LowCardinality id also works
+Tuple(UInt64, LowCardinality(UUID))
+1970-01-01 00:01:40.000	1
+1970-01-01 00:02:30.000	10

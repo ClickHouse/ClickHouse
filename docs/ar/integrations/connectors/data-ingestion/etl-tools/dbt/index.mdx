@@ -49,7 +49,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 * [x] التجسيد للعرض
 * [x] التجسيد تزايدية
 * [x] التجسيد تزايدية من نوع Microbatch
-* [x] التجسيدات من نوع Materialized View (تستخدم صيغة `TO` الخاصة بـ MATERIALIZED VIEW، وهي تجريبية)
+* [x] التجسيدات من نوع عرض مُجسَّد (تستخدم صيغة `TO` الخاصة بـ MATERIALIZED VIEW، وهي تجريبية)
 * [x] Seeds
 * [x] Sources
 * [x] إنشاء الوثائق
@@ -59,6 +59,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 * [x] التجسيد مؤقتة
 * [x] التجسيد للجدول الموزع (تجريبية)
 * [x] التجسيد تزايدية موزعة (تجريبية)
+* [x] تجسيد Dictionary (تجريبية)
 * [x] العقود
 * [x] إعدادات الأعمدة الخاصة بـ ClickHouse (Codec، TTL...)
 * [x] إعدادات الجداول الخاصة بـ ClickHouse (indexes، projections...)
@@ -75,24 +76,22 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 يوفر dbt خمسة أنواع من التجسيد، وكلها مدعومة بواسطة `dbt-clickhouse`:
 
-* **view** (الافتراضي): يُبنى النموذج كـ view في قاعدة البيانات. وفي ClickHouse يُنشأ هذا كـ [view](/ar/reference/statements/create/view).
-* **table**: يُبنى النموذج كـ table في قاعدة البيانات. وفي ClickHouse يُنشأ هذا كـ [table](/ar/reference/statements/create/table).
+* **عرض** (الافتراضي): يُبنى النموذج كـ عرض في قاعدة البيانات. وفي ClickHouse يُنشأ هذا كـ [عرض](/ar/reference/statements/create/view).
+* **جدول**: يُبنى النموذج كـ جدول في قاعدة البيانات. وفي ClickHouse يُنشأ هذا كـ [جدول](/ar/reference/statements/create/table).
 * **ephemeral**: لا يُبنى النموذج مباشرةً في قاعدة البيانات، بل يُدرج داخل النماذج التابعة على شكل CTEs ‏(Common Table Expressions).
-* **incremental**: يُجسَّد النموذج في البداية كـ table، وفي عمليات التشغيل اللاحقة يُدرج dbt rows جديدة ويحدّث rows المتغيرة في table.
-* **materialized view**: يُبنى النموذج كـ materialized view في قاعدة البيانات. وفي ClickHouse يُنشأ هذا كـ [materialized view](/ar/reference/statements/create/view#materialized-view).
+* **incremental**: يُجسَّد النموذج في البداية كـ جدول، وفي عمليات التشغيل اللاحقة يُدرج dbt rows جديدة ويحدّث rows المتغيرة في جدول.
+* **عرض مُجسَّد**: يُبنى النموذج كـ عرض مُجسَّد في قاعدة البيانات. وفي ClickHouse يُنشأ هذا كـ [عرض مُجسَّد](/ar/reference/statements/create/view#materialized-view).
 
-وتحدد الصياغة الإضافية وclausees المختلفة كيفية تحديث هذه النماذج إذا تغيّرت بياناتها الأساسية. ويوصي dbt عمومًا بالبدء بتجسيد view إلى أن يصبح الأداء مصدر قلق. ويوفر تجسيد table تحسينًا في الأداء وقت الاستعلام عبر حفظ نتائج استعلام النموذج في table، مقابل زيادة في التخزين. ويطوّر نهج incremental هذه الفكرة أكثر، بحيث يمكن التقاط التحديثات اللاحقة على البيانات الأساسية في target table.
-
-كما يدعم [المهايئ الحالي](https://github.com/silentsokolov/dbt-clickhouse) لـ ClickHouse أيضًا أنواع التجسيد **dictionary** و**distributed table** و**distributed incremental**. ويدعم المهايئ كذلك [snapshots](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy) و[seeds](https://docs.getdbt.com/docs/building-a-dbt-project/seeds) في dbt.
+وتحدد الصياغة الإضافية وclausees المختلفة كيفية تحديث هذه النماذج إذا تغيّرت بياناتها الأساسية. ويوصي dbt عمومًا بالبدء بتجسيد عرض إلى أن يصبح الأداء مصدر قلق. ويوفر تجسيد جدول تحسينًا في الأداء وقت الاستعلام عبر حفظ نتائج استعلام النموذج في جدول، مقابل زيادة في التخزين. ويطوّر نهج incremental هذه الفكرة أكثر، بحيث يمكن التقاط التحديثات اللاحقة على البيانات الأساسية في target جدول.
 
 فيما يلي [الميزات التجريبية](/ar/reference/settings/beta-and-experimental-features) في `dbt-clickhouse`:
 
 | النوع                                   | هل هو مدعوم؟                                          | التفاصيل                                                                                                                                                                                                                                                                     |
 | --------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Materialized View materialization       | نعم. الإنشاء باستخدام explicit target ما يزال في Beta | ينشئ [materialized view](/ar/reference/statements/create/view#materialized-view).                                                                                                                                                                                               |
-| Distributed table materialization       | نعم، تجريبي                                           | ينشئ [distributed table](/ar/reference/engines/table-engines/special/distributed).                                                                                                                                                                                              |
-| Distributed incremental materialization | نعم، تجريبي                                           | نموذج incremental يستند إلى الفكرة نفسها الخاصة بـ distributed table. لاحظ أن بعض الاستراتيجيات غير مدعومة؛ راجع [قسم الوثائق الخاص بها](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-distributed-incremental) لمزيد من المعلومات. |
-| Dictionary materialization              | نعم، تجريبي                                           | ينشئ [dictionary](/ar/reference/engines/table-engines/special/dictionary).                                                                                                                                                                                                      |
+| عرض مُجسَّد تجسيد       | نعم. الإنشاء باستخدام explicit target ما يزال في Beta | ينشئ [عرض مُجسَّد](/ar/reference/statements/create/view#materialized-view).                                                                                                                                                                                               |
+| Distributed جدول تجسيد       | نعم، تجريبي                                           | ينشئ [distributed جدول](/ar/reference/engines/table-engines/special/distributed).                                                                                                                                                                                              |
+| Distributed incremental تجسيد | نعم، تجريبي                                           | نموذج incremental يستند إلى الفكرة نفسها الخاصة بـ distributed جدول. لاحظ أن بعض الاستراتيجيات غير مدعومة؛ راجع [قسم الوثائق الخاص بها](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-distributed-incremental) لمزيد من المعلومات. |
+| Dictionary تجسيد              | نعم، تجريبي                                           | ينشئ [dictionary](/ar/reference/engines/table-engines/special/dictionary).                                                                                                                                                                                                      |
 
 <div id="setup-of-dbt-and-the-clickhouse-adapter">
   ## إعداد dbt ومهايئ ClickHouse
@@ -176,16 +175,29 @@ profile: 'clickhouse-service'
 
 تتمثل إحدى الاستراتيجيات الشائعة في استخدام مهام [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci)، بحيث لا يُعاد نشر سوى النماذج المعدّلة (وتبعياتها الصاعدة والهابطة). ويعتمد هذا النهج على المخرجات الناتجة عن عمليات التشغيل في بيئة الإنتاج لديك (أي [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json)) لتقليل زمن تشغيل مشروعك وضمان عدم حدوث انجراف في المخطط بين البيئات.
 
-وللحفاظ على تزامن بيئات التطوير لديك وتجنب تشغيل نماذجك على عمليات نشر متقادمة، يمكنك استخدام [clone](https://docs.getdbt.com/reference/commands/clone) أو حتى [defer](https://docs.getdbt.com/reference/node-selection/defer).
+وللحفاظ على تزامن بيئات التطوير لديك وتجنب تشغيل نماذجك على عمليات نشر متقادمة، يمكنك استخدام [clone](https://docs.getdbt.com/reference/commands/clone) أو حتى [defer](https://docs.getdbt.com/reference/node-selection/defer). في ClickHouse، ينسخ `dbt clone` جداول MergeTree باستخدام عبارة `CLONE` ذات النسخ الصفري — راجع [استنساخ النماذج باستخدام dbt clone](#dbt-clone) أدناه للاطلاع على التفاصيل.
 
-نوصي باستخدام عنقود ClickHouse أو خدمة مخصصة لبيئة الاختبار (أي بيئة مرحلية) لتجنب التأثير في تشغيل بيئة الإنتاج لديك. ولضمان أن تكون بيئة الاختبار ممثلةً للواقع، من المهم استخدام مجموعة فرعية من بيانات الإنتاج لديك، إلى جانب تشغيل dbt بطريقة تمنع انجراف المخطط بين البيئات.
+نوصي باستخدام عنقود ClickHouse أو خدمة مخصصة لبيئة الاختبار (أي بيئة الاختبار قبل الإنتاج) لتجنب التأثير في تشغيل بيئة الإنتاج لديك. ولضمان أن تكون بيئة الاختبار ممثلةً للواقع، من المهم استخدام مجموعة فرعية من بيانات الإنتاج لديك، إلى جانب تشغيل dbt بطريقة تمنع انجراف المخطط بين البيئات.
 
 * إذا لم تكن بحاجة إلى بيانات حديثة للاختبار، يمكنك استعادة نسخة احتياطية من بيانات الإنتاج لديك إلى البيئة المرحلية.
-* إذا كنت بحاجة إلى بيانات حديثة للاختبار، فيمكنك استخدام مزيج من [`remoteSecure()` table function](/ar/reference/functions/table-functions/remote) والعروض المادية القابلة للتحديث لإدراج البيانات بالوتيرة المطلوبة. وهناك خيار آخر يتمثل في استخدام تخزين الكائنات كوسيط، وكتابة البيانات دوريًا من خدمة الإنتاج لديك، ثم استيرادها إلى البيئة المرحلية باستخدام دوال الجداول الخاصة بتخزين الكائنات أو ClickPipes (للاستيعاب المستمر).
+* إذا كنت بحاجة إلى بيانات حديثة للاختبار، فيمكنك استخدام مزيج من [`remoteSecure()` دالة جدول](/ar/reference/functions/table-functions/remote) والعروض المُجسَّدة القابلة للتحديث لإدراج البيانات بالوتيرة المطلوبة. وهناك خيار آخر يتمثل في استخدام تخزين الكائنات كوسيط، وكتابة البيانات دوريًا من خدمة الإنتاج لديك، ثم استيرادها إلى البيئة المرحلية باستخدام دوال الجداول الخاصة بتخزين الكائنات أو ClickPipes (للاستيعاب المستمر).
 
 كما أن استخدام بيئة مخصصة لاختبارات CI يتيح لك إجراء اختبارات يدوية من دون التأثير في بيئة الإنتاج لديك. فعلى سبيل المثال، قد ترغب في توجيه أداة BI إلى هذه البيئة لاختبارها.
 
 أما بالنسبة إلى النشر (أي خطوة CD)، فنوصي باستخدام المخرجات الناتجة عن عمليات النشر في بيئة الإنتاج لديك لتحديث النماذج التي تغيّرت فقط. ويتطلب ذلك إعداد تخزين الكائنات (مثل S3) كتخزين وسيط لمخرجات dbt لديك. وبعد إتمام ذلك، يمكنك تشغيل أمر مثل `dbt build --select state:modified+ --state path/to/last/deploy/state.json` لإعادة بناء الحد الأدنى من النماذج المطلوبة بشكل انتقائي استنادًا إلى ما تغيّر منذ آخر تشغيل في بيئة الإنتاج.
+
+<div id="dbt-clone">
+  #### استنساخ النماذج باستخدام `dbt clone`
+</div>
+
+بدءًا من الإصدار 1.10.1 من dbt-clickhouse، يستخدم الأمر [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) تعليمة النسخ الصفري في ClickHouse، `CREATE OR REPLACE TABLE ... CLONE AS ...`، لاستنساخ النماذج المُجسَّدة كجداول تستخدم محركًا من عائلة MergeTree. ينشئ ذلك نسخة من الجدول دون تكرار data parts الأساسية، مما يجعله طريقة سريعة ومنخفضة التكلفة لمزامنة البيئات، مثل إعداد بيئة تطوير أو [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) استنادًا إلى حالة production.
+
+تعود النماذج التي لا يمكن استنساخها بهذه الطريقة إلى سلوك dbt الافتراضي، وهو إنشاء عرض يشير إلى relation المصدر:
+
+* الجداول التي تستخدم محركات غير MergeTree
+* Distributed materializations
+
+بالنسبة إلى نماذج عرض مُجسَّد، لا يُستنسخ سوى target جدول؛ أما عرض مُجسَّد نفسها فتُنشأ فوق الجدول المستنسخ.
 
 <div id="troubleshooting-common-issues">
   ## استكشاف المشكلات الشائعة وإصلاحها
@@ -207,6 +219,23 @@ profile: 'clickhouse-service'
 </div>
 
 قد تستغرق بعض العمليات وقتًا أطول من المتوقع بسبب استعلامات معيّنة في ClickHouse. ولمعرفة أي الاستعلامات تستغرق وقتًا أطول بشكل أدق، ارفع [مستوى السجل](https://docs.getdbt.com/reference/global-configs/logs#log-level) إلى `debug` — سيؤدي ذلك إلى عرض الوقت المستغرَق لكل استعلام. على سبيل المثال، يمكن تحقيق ذلك بإضافة `--log-level debug` إلى أوامر dbt.
+
+<div id="query-id-tracking">
+  ### ربط عمليات تشغيل dbt باستعلامات ClickHouse
+</div>
+
+للاطلاع على التفاصيل من جانب الخادم، بدءًا من الإصدار 1.10.1 من dbt-clickhouse، يُخصَّص لكل عبارة ينفذها المُهايئ معرّف استعلام خاص بها (UUID4)، ويُمرَّر إلى ClickHouse. ويُعاد معرّف العبارة الرئيسية للنموذج ضمن `adapter_response` في نتيجة dbt الخاصة به، لذا يكون متاحًا في مخرجات dbt، مثل [`run_results.json`](https://docs.getdbt.com/reference/artifacts/run-results-json). يمكنك البحث عنه في جدول [`system.query_log`](/ar/reference/system-tables/query_log) لفحص توقيت تلك العبارة واستخدامها للموارد:
+
+```sql
+SELECT query_id, query, query_duration_ms, read_rows, memory_usage
+FROM system.query_log
+WHERE query_id = '<query_id from run_results.json>'
+  AND type = 'QueryFinish'
+```
+
+لاحظ أن عملية تجسيد تُنفِّذ عادةً عدة عبارات لكل model ‏(مثل DDL وعمليات inserts)، ولكل منها query ID خاص بها؛ أما المعرّف الموجود في `run_results.json` فلا يحدد إلا العبارة الرئيسية الخاصة بـ model. للعثور على جميع العبارات المرتبطة بعملية تشغيل، استخدم filter على `system.query_log` استنادًا إلى [تعليق query الخاص بـ dbt](https://docs.getdbt.com/reference/project-configs/query-comment) المضمَّن في نص كل query بدلًا من ذلك.
+
+يتيح query ID أيضًا لأدوات observability التي تستهلك مخرجات dbt (مثل Elementary) ربط عمليات تشغيل models في dbt بـ entries في `system.query_log` تلقائيًا.
 
 <div id="limitations">
   ## القيود

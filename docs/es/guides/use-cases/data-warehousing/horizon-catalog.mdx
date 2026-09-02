@@ -1,0 +1,148 @@
+---
+slug: /use-cases/data-lake/horizon-catalog
+sidebarTitle: 'Catálogo Horizon'
+title: 'Catálogo Snowflake Horizon'
+description: 'Consulta y escribe en tablas Iceberg administradas por Snowflake mediante Snowflake Horizon Catalog con ClickHouse DataLakeCatalog.'
+keywords: ['Horizon', 'Snowflake', 'Iceberg', 'Lago de datos', 'Polaris']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse puede conectarse a [Snowflake Horizon Catalog](https://docs.snowflake.com/en/user-guide/tables-iceberg-access-using-external-query-engine-snowflake-horizon)
+a través de la API REST de Iceberg que expone Horizon (basada en Apache Polaris).
+Esto permite **leer y escribir** tablas Iceberg administradas por Snowflake desde ClickHouse mediante el
+motor de base de datos `DataLakeCatalog` con `catalog_type = 'horizon'`.
+
+Horizon está relacionado con Snowflake Open Catalog / Polaris autohospedado, pero no es lo mismo:
+
+|                         | Open Catalog / Polaris (`catalog_type = 'rest'`) | Horizon (`catalog_type = 'horizon'`)                                                                                                         |
+| ----------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Endpoint                | URI de Open Catalog o de Polaris autohospedado   | `https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog`                                                                         |
+| Warehouse               | Nombre del catálogo o warehouse de Polaris       | Nombre de la **base de datos** de Snowflake (normalmente en mayúsculas)                                                                      |
+| Ámbito de autenticación | `PRINCIPAL_ROLE:ALL` (habitual)                  | `session:role:<ROLE>`                                                                                                                        |
+| Credencial              | `client_id:client_secret`                        | PAT o JWT de par de claves como `catalog_credential` (OAuth client&#95;secret; no se separa por &#39;:&#39;), o `auth_header` de tipo bearer |
+
+<Note>
+  Dado que esta función está en beta, actívela con:
+  `SET allow_experimental_database_iceberg = 1;`
+  (o `SET allow_database_iceberg = 1;`, según la versión de ClickHouse).
+</Note>
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Una cuenta de Snowflake con tablas Iceberg administradas por Snowflake
+* Endpoint REST de Horizon Iceberg:
+  `https://<organization>-<account>.snowflakecomputing.com/polaris/api/catalog`
+* Un rol de Snowflake con privilegios sobre las tablas Iceberg (y privilegios de escritura si va a usar INSERT)
+* Autenticación mediante una de las siguientes opciones:
+  * Token de acceso programático (PAT)
+  * JWT de par de claves intercambiado por un token de acceso
+  * Token de acceso OAuth externo (como `auth_header` de tipo bearer)
+* Almacenamiento de objetos accesible desde ClickHouse (se recomiendan las credenciales proporcionadas)
+* ClickHouse con soporte para DataLakeCatalog Iceberg
+
+<div id="connecting">
+  ## Crear una conexión
+</div>
+
+<div id="option-a-programmatic-access-token-recommended">
+  ### Opción A: token de acceso programático (recomendada)
+</div>
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE horizon_catalog
+ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
+SETTINGS
+    catalog_type = 'horizon',
+    warehouse = 'ICEBERG_TEST_DB',
+    catalog_credential = '<PAT>',
+    auth_scope = 'session:role:DATA_ENGINEER',
+    oauth_server_uri = 'https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog/v1/oauth/tokens',
+    vended_credentials = 1;
+```
+
+`warehouse` debe ser el nombre de la **base de datos** de Snowflake (no de un warehouse virtual de Snowflake).
+Los identifiers de Snowflake sin comillas se escriben en mayúsculas.
+
+<div id="option-b-pre-exchanged-bearer-access-token">
+  ### Opción B: Token de acceso de bearer intercambiado previamente
+</div>
+
+```sql
+CREATE DATABASE horizon_catalog
+ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
+SETTINGS
+    catalog_type = 'horizon',
+    warehouse = 'ICEBERG_TEST_DB',
+    auth_header = 'Authorization: Bearer <ACCESS_TOKEN>',
+    vended_credentials = 1;
+```
+
+<div id="query">
+  ## Consultar tablas Iceberg
+</div>
+
+```sql
+USE horizon_catalog;
+SHOW TABLES;
+
+SELECT count(*) FROM `PUBLIC.test_table`;
+SHOW CREATE TABLE `PUBLIC.test_table`;
+```
+
+<Note>
+  El espacio de nombres (schema) y la tabla suelen especificarse como `` `SCHEMA.table` ``, salvo que
+  estén habilitados los espacios de nombres de tabla experimentales.
+</Note>
+
+<div id="write">
+  ## Ruta de escritura
+</div>
+
+Con un rol que tenga permisos INSERT/UPDATE/DELETE (y CREATE ICEBERG TABLE al crear tablas),
+ClickHouse puede escribir a través del mismo catálogo:
+
+```sql
+-- Insert into an existing Snowflake-managed Iceberg table
+INSERT INTO horizon_catalog.`PUBLIC.test_table`
+SELECT
+    number AS id,
+    concat('name_', toString(number)) AS name
+FROM numbers(100);
+
+-- Create a new Iceberg table in the Horizon catalog (requires CREATE ICEBERG TABLE)
+CREATE TABLE horizon_catalog.`PUBLIC.clickhouse_written`
+(
+    id Int64,
+    name String
+)
+ENGINE = Iceberg;
+```
+
+La sintaxis exacta de `CREATE TABLE` depende de la compatibilidad de escritura de ClickHouse Iceberg / DataLakeCatalog para catálogos REST
+en su versión; los errores de privilegios de Snowflake aparecen como errores HTTP del catálogo.
+
+<div id="loading">
+  ## Carga en MergeTree
+</div>
+
+```sql
+CREATE TABLE my_clickhouse_table
+(
+    id Int64,
+    name String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO my_clickhouse_table
+SELECT * FROM horizon_catalog.`PUBLIC.test_table`;
+```

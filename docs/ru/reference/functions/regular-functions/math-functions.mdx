@@ -45,7 +45,7 @@ SELECT acos(0.5);
 ```
 
 ```response title=Response
-1.0471975511965979
+1.0471975511965974
 ```
 
 <div id="acosh">
@@ -114,7 +114,7 @@ SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))
 ```
 
 ```response title=Response
-1 1 1
+1	1	0.9999999999999999
 ```
 
 **float32**
@@ -134,7 +134,7 @@ SELECT asin(1.1), asin(-2), asin(inf), asin(nan)
 ```
 
 ```response title=Response
-nan nan nan nan
+nan	nan	nan	nan
 ```
 
 <div id="asinh">
@@ -647,7 +647,7 @@ factorial(n)
 **Пример использования**
 
 ```sql title=Query
-factorial(10)
+SELECT factorial(10)
 ```
 
 ```response title=Response
@@ -994,7 +994,7 @@ SELECT log(10);
 ```
 
 ```response title=Response
-2.302585092994046
+2.3025850938475476
 ```
 
 <div id="log10">
@@ -1560,21 +1560,21 @@ widthBucket(operand, low, high, count)
 
 **Аргументы**
 
-* `operand` — Значение, для которого определяется интервал. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
+* `operand` — Значение, для которого определяется бакет. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
 * `low` — Нижняя граница диапазона гистограммы. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
 * `high` — Верхняя граница диапазона гистограммы. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
-* `count` — Количество интервалов одинаковой ширины. Не может быть равно нулю. [`UInt8/16/32/64`](/ru/reference/data-types/int-uint)
+* `count` — Количество бакетов одинаковой ширины. Не может быть равно нулю. [`UInt8/16/32/64`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
-Возвращает номер интервала в виде целого числа. Возвращает 0, если operand &lt; low, и count+1, если operand &gt;= high. [`UInt8/16/32/64`](/ru/reference/data-types/int-uint)
+Возвращает номер бакета в виде целого числа. Возвращает 0, если operand &lt; low, и count+1, если operand &gt;= high. [`UInt8/16/32/64`](/ru/reference/data-types/int-uint)
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
-widthBucket(10.15, -8.6, 23, 18)
+SELECT widthBucket(10.15, -8.6, 23, 18)
 ```
 
 ```response title=Response

@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "ClickHouse 소개",
+      "group": "About ClickHouse",
       "pages": [
         "ko/resources/about/index",
         "ko/resources/about/adopters",
@@ -10,5 +10,5 @@
     }
   ],
   "icon": "/images/icons/icon-about.svg",
-  "item": "소개"
+  "item": "About"
 }

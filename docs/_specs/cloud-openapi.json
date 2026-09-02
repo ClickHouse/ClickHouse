@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1078296",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1090366",
       "email": "support@clickhouse.com"
     }
   },
@@ -19459,11 +19459,11 @@
             ]
           },
           "minReplicaMemoryGb": {
-            "description": "Minimum memory per replica (Gb) when no schedule entry is active.",
+            "description": "Minimum memory per replica (Gb) when no schedule entry is active. Absent for services that do not autoscale memory.",
             "type": "number"
           },
           "maxReplicaMemoryGb": {
-            "description": "Maximum memory per replica (Gb) when no schedule entry is active.",
+            "description": "Maximum memory per replica (Gb) when no schedule entry is active. Absent for services that do not autoscale memory.",
             "type": "number"
           },
           "minReplicas": {
@@ -25093,6 +25093,7 @@
             "type": "string",
             "enum": [
               "QUERY_ERROR",
+              "QUERY_TIMEOUT",
               "WEBHOOK_ERROR",
               "INVALID_ALERT",
               "UNKNOWN"
@@ -25218,6 +25219,15 @@
           }
         ]
       },
+      "ClickStackAlertChannels": {
+        "type": "array",
+        "description": "Notification channels to trigger when the alert fires or resolves. Between 1 and 10 channels; duplicates are rejected.",
+        "minItems": 1,
+        "maxItems": 10,
+        "items": {
+          "$ref": "#/components/schemas/ClickStackAlertChannel"
+        }
+      },
       "ClickStackAlertResponse": {
         "properties": {
           "dashboardId": {
@@ -25266,9 +25276,10 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
             "type": "string",
             "enum": [
+              "30s",
               "1m",
               "5m",
               "15m",
@@ -25323,6 +25334,9 @@
           },
           "channel": {
             "$ref": "#/components/schemas/ClickStackAlertChannel"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/ClickStackAlertChannels"
           },
           "name": {
             "description": "Human-friendly alert name.",
@@ -25463,9 +25477,10 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
             "type": "string",
             "enum": [
+              "30s",
               "1m",
               "5m",
               "15m",
@@ -25520,6 +25535,9 @@
           },
           "channel": {
             "$ref": "#/components/schemas/ClickStackAlertChannel"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/ClickStackAlertChannels"
           },
           "name": {
             "description": "Human-friendly alert name.",
@@ -25603,9 +25621,10 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
             "type": "string",
             "enum": [
+              "30s",
               "1m",
               "5m",
               "15m",
@@ -25661,6 +25680,9 @@
           "channel": {
             "$ref": "#/components/schemas/ClickStackAlertChannel"
           },
+          "channels": {
+            "$ref": "#/components/schemas/ClickStackAlertChannels"
+          },
           "name": {
             "description": "Human-friendly alert name.",
             "type": [
@@ -25695,10 +25717,10 @@
           }
         }
       },
-      "ClickStackSavedFilterValue": {
+      "ClickStackSqlSavedFilterValue": {
         "properties": {
           "type": {
-            "description": "Filter type. Currently only \"sql\" is supported.",
+            "description": "Filter type.",
             "type": "string",
             "enum": [
               "sql"
@@ -25713,6 +25735,48 @@
         },
         "required": [
           "condition"
+        ]
+      },
+      "ClickStackVariableSavedFilterValue": {
+        "properties": {
+          "type": {
+            "description": "Filter type.",
+            "type": "string",
+            "enum": [
+              "variable"
+            ],
+            "example": "variable"
+          },
+          "name": {
+            "description": "The variableName of the dashboard variable this selection belongs to. Only allowed for variable-enabled filters.",
+            "type": "string",
+            "example": "service"
+          },
+          "values": {
+            "type": "array",
+            "description": "Selected values",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "hdx-oss-dev-api"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "values"
+        ]
+      },
+      "ClickStackSavedFilterValue": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackSqlSavedFilterValue"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackVariableSavedFilterValue"
+          }
         ]
       },
       "ClickStackNumberFormat": {
@@ -26511,6 +26575,26 @@
           "aggFn"
         ]
       },
+      "ClickStackFormula": {
+        "properties": {
+          "expression": {
+            "description": "Arithmetic expression over the select items by position, e.g. \"A / (A + B) * 100\" for a success-rate percentage.",
+            "type": "string",
+            "example": "A / (A + B) * 100"
+          },
+          "alias": {
+            "description": "Display label for the formula series in chart legends and column headers. Falls back to the raw expression text when unset.",
+            "type": "string",
+            "example": "Success rate %"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
       "ClickStackLineBuilderChartConfig": {
         "properties": {
           "displayType": {
@@ -26559,6 +26643,22 @@
           },
           "compareToPreviousPeriod": {
             "description": "Overlay the equivalent previous time period for comparison.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
             "type": "boolean"
           }
         },
@@ -26609,6 +26709,22 @@
           },
           "numberFormat": {
             "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -26860,6 +26976,17 @@
           },
           "onClick": {
             "$ref": "#/components/schemas/ClickStackOnClick"
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived columns computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula columns are returned; the raw operand columns are hidden.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -26885,9 +27012,16 @@
           },
           "select": {
             "type": "array",
-            "description": "Exactly one aggregated value to display as a single number.",
+            "description": "Exactly one aggregated value to display as a single number — unless \"formulas\" is set, in which case the select items are the formula's operands and the (single) formula value is displayed instead.",
             "items": {
               "$ref": "#/components/schemas/ClickStackSelectItem"
+            }
+          },
+          "formulas": {
+            "type": "array",
+            "description": "A single derived value computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Number tiles display the formula value and always hide the operand series.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
             }
           },
           "numberFormat": {
@@ -26965,7 +27099,7 @@
             "$ref": "#/components/schemas/ClickStackNumberFormat"
           },
           "limit": {
-            "description": "Maximum number of slices (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first slices in that order. Omit to fetch all groups.",
+            "description": "Maximum number of slices (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first slices in that order. Omit or set 0 to fetch all groups.",
             "type": "integer",
             "example": 10
           }
@@ -27012,7 +27146,7 @@
             "$ref": "#/components/schemas/ClickStackNumberFormat"
           },
           "limit": {
-            "description": "Maximum number of bars (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first bars in that order. Omit to fetch all groups.",
+            "description": "Maximum number of bars (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first bars in that order. Omit or set 0 to fetch all groups.",
             "type": "integer",
             "example": 10
           }
@@ -27796,7 +27930,7 @@
             "example": "Environment"
           },
           "expression": {
-            "description": "Key expression used when applying this dashboard filter key",
+            "description": "SQL expression used when querying values for this filter, and when applying this dashboard filter to tiles.",
             "type": "string",
             "example": "environment"
           },
@@ -27833,13 +27967,28 @@
           },
           "appliesToSourceIds": {
             "type": "array",
-            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s).",
+            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s). Scopes the broadcast condition only, so a non-empty array is rejected when isBroadcastEnabled is false, and is omitted from responses for such a filter.",
             "items": {
               "type": "string"
             },
             "example": [
               "65f5e4a3b9e77c001a111111"
             ]
+          },
+          "isBroadcastEnabled": {
+            "description": "Whether the selected value is applied as a filter condition on every builder tile this filter applies to (see appliesToSourceIds), and every raw sql tile using the $__filters macro. Omitting the field means enabled.",
+            "type": "boolean",
+            "example": false
+          },
+          "isVariableEnabled": {
+            "description": "Whether the selected value is exposed to tile queries as a dashboard variable named by variableName. Tiles may reference it as `$variableName` or using the (preferred) `$__filter($<variableName>)` and `$__conditionalAll(<condition>, $<variableName>)` macros.",
+            "type": "boolean",
+            "example": true
+          },
+          "variableName": {
+            "description": "Token tiles reference this filter's selected value by, as `$variableName`. Must start with a letter and may contain only letters, numbers, and underscores. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed, so a variable-enabled filter whose name derives nothing usable must send this field explicitly. Variable names must be unique across a dashboard's variable-enabled filters. Names the variable only, so the field is rejected when isVariableEnabled is not true, and is omitted from responses for such a filter.",
+            "type": "string",
+            "example": "environment"
           }
         },
         "required": [
@@ -27865,7 +28014,7 @@
             "example": "Environment"
           },
           "expression": {
-            "description": "Key expression used when applying this dashboard filter key",
+            "description": "SQL expression used when querying values for this filter, and when applying this dashboard filter to tiles.",
             "type": "string",
             "example": "environment"
           },
@@ -27902,13 +28051,28 @@
           },
           "appliesToSourceIds": {
             "type": "array",
-            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s).",
+            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s). Scopes the broadcast condition only, so a non-empty array is rejected when isBroadcastEnabled is false, and is omitted from responses for such a filter.",
             "items": {
               "type": "string"
             },
             "example": [
               "65f5e4a3b9e77c001a111111"
             ]
+          },
+          "isBroadcastEnabled": {
+            "description": "Whether the selected value is applied as a filter condition on every builder tile this filter applies to (see appliesToSourceIds), and every raw sql tile using the $__filters macro. Omitting the field means enabled.",
+            "type": "boolean",
+            "example": false
+          },
+          "isVariableEnabled": {
+            "description": "Whether the selected value is exposed to tile queries as a dashboard variable named by variableName. Tiles may reference it as `$variableName` or using the (preferred) `$__filter($<variableName>)` and `$__conditionalAll(<condition>, $<variableName>)` macros.",
+            "type": "boolean",
+            "example": true
+          },
+          "variableName": {
+            "description": "Token tiles reference this filter's selected value by, as `$variableName`. Must start with a letter and may contain only letters, numbers, and underscores. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed, so a variable-enabled filter whose name derives nothing usable must send this field explicitly. Variable names must be unique across a dashboard's variable-enabled filters. Names the variable only, so the field is rejected when isVariableEnabled is not true, and is omitted from responses for such a filter.",
+            "type": "string",
+            "example": "environment"
           },
           "id": {
             "description": "Unique dashboard filter key ID",
@@ -27949,7 +28113,7 @@
           },
           "filters": {
             "type": "array",
-            "description": "Dashboard filter keys to add to the dashboard and apply across all tiles",
+            "description": "Dropdown filters added to the dashboard. Each one broadcasts its selected value as a condition, acts as a variable which can be referenced in tile queries, or both.",
             "items": {
               "$ref": "#/components/schemas/ClickStackFilterInput"
             }
@@ -28072,7 +28236,7 @@
           },
           "filters": {
             "type": "array",
-            "description": "Dashboard filter keys on the dashboard, applied across all tiles",
+            "description": "Dropdown filters added to the dashboard. Each one broadcasts its selected value as a condition, acts as a variable which can be referenced in tile queries, or both.",
             "items": {
               "$ref": "#/components/schemas/ClickStackFilter"
             }
@@ -28149,7 +28313,7 @@
           },
           "filters": {
             "type": "array",
-            "description": "Dashboard filter keys added to the dashboard and applied to all tiles",
+            "description": "Dropdown filters added to the dashboard. Each one broadcasts its selected value as a condition, acts as a variable which can be referenced in tile queries, or both.",
             "items": {
               "$ref": "#/components/schemas/ClickStackFilter"
             }
@@ -28322,6 +28486,29 @@
         "required": [
           "permissions"
         ]
+      },
+      "ClickStackValidationErrorItemErrors": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "ClickStackValidationErrorItem": {
+        "properties": {
+          "type": {
+            "description": "Request part that failed validation.",
+            "type": "string",
+            "example": "Body"
+          },
+          "errors": {
+            "$ref": "#/components/schemas/ClickStackValidationErrorItemErrors"
+          }
+        }
+      },
+      "ClickStackValidationError": {
+        "type": "array",
+        "description": "zod-express-middleware validation failures.",
+        "items": {
+          "$ref": "#/components/schemas/ClickStackValidationErrorItem"
+        }
       },
       "ClickStackSavedSearchFilter": {
         "properties": {
@@ -28513,7 +28700,7 @@
       "ClickStackFilterSettingsColumn": {
         "properties": {
           "name": {
-            "description": "Column name used to load filters for prepending to every query for the source.",
+            "description": "Column of the source's table that selected filter values are matched against. Also the key the selection is persisted under in links, saved searches, and dashboards.",
             "type": "string",
             "example": "ServiceName"
           },
@@ -28521,6 +28708,19 @@
             "description": "Display label for the column",
             "type": "string",
             "example": "Service Name"
+          },
+          "valueExpression": {
+            "description": "Optional SQL expression, evaluated against the filter-values table, that produces the available filter options. Use it when the options live in a differently-named column, or must be transformed to match the values stored in the source table. Defaults to reading `name` as a plain column when omitted.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "lower(service_name)"
+          },
+          "allowAll": {
+            "description": "Whether to offer an \"All\" option that expands to every available value at query time. Best suited to low-cardinality columns. Defaults to false.",
+            "type": "boolean",
+            "example": false
           }
         },
         "required": [
@@ -28822,6 +29022,14 @@
               "null"
             ],
             "example": "ServiceName"
+          },
+          "serviceVersionExpression": {
+            "description": "Expression identifying the running release of a service. Defaults to the OpenTelemetry service.version resource attribute when unset. Where services carry the release on different attributes, fall back across them with coalesce(nullIf(a, ''), nullIf(b, '')).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ResourceAttributes['service.version']"
           },
           "severityTextExpression": {
             "description": "Expression to extract the severity/log level text.",
@@ -29133,6 +29341,14 @@
               "null"
             ],
             "example": "ServiceName"
+          },
+          "serviceVersionExpression": {
+            "description": "Expression identifying the running release of a service. Defaults to the OpenTelemetry service.version resource attribute when unset. Where services carry the release on different attributes, fall back across them with coalesce(nullIf(a, ''), nullIf(b, '')).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ResourceAttributes['service.version']"
           },
           "resourceAttributesExpression": {
             "description": "Expression to extract resource-level attributes.",

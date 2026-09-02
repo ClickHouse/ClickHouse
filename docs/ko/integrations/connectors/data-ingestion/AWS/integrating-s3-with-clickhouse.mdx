@@ -23,7 +23,7 @@ S3의 데이터를 ClickHouse에 삽입할 수 있으며, S3를 내보내기 대
 `s3` 테이블 함수를 사용하면 S3 호환 스토리지에서 파일을 읽고 쓸 수 있습니다. 구문은 다음과 같습니다:
 
 ```sql
-s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
+s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
 ```
 
 여기서:
@@ -42,13 +42,13 @@ s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compr
 ClickHouse에서 테이블을 생성하기 전에 먼저 S3 버킷의 데이터를 자세히 살펴보는 것이 좋습니다. ClickHouse에서 `DESCRIBE` 문을 사용하면 이를 직접 확인할 수 있습니다:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
 ```
 
 `DESCRIBE TABLE` 문의 출력에는 S3 버킷에 저장된 이 데이터를 ClickHouse가 어떻게 자동으로 추론하는지가 표시됩니다. 또한 gzip 압축 포맷도 자동으로 인식하고 압축을 해제합니다:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
 ```
 
 ```response
@@ -169,7 +169,7 @@ ClickHouse에 영구적으로 저장하지 않아도 S3 데이터를 소스로 �
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 10;
 ```
 
@@ -179,7 +179,7 @@ LIMIT 10;
 
 ```sql
 SELECT  _path, _file, trip_id
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 5;
 ```
 
@@ -197,7 +197,7 @@ LIMIT 5;
 
 ```sql
 SELECT count() AS count
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
 ```
 
 ```response
@@ -215,7 +215,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trip
 `clickhouse-local` 프로그램을 사용하면 ClickHouse 서버를 배포하거나 구성하지 않고도 로컬 파일을 빠르게 처리할 수 있습니다. `s3` 테이블 함수를 사용하는 모든 쿼리는 이 유틸리티로 실행할 수 있습니다. 예시:
 
 ```sql
-clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <div id="inserting-data-from-s3">
@@ -223,12 +223,12 @@ clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu
 </div>
 
 ClickHouse의 기능을 최대한 활용하기 위해, 다음으로 데이터를 읽어 인스턴스에 삽입합니다.
-이를 위해 `s3` 함수와 간단한 `INSERT` 구문을 함께 사용합니다. 대상 테이블이 필요한 구조를 제공하므로 컬럼을 나열할 필요는 없습니다. 이 경우 컬럼은 테이블 DDL 구문에 지정된 순서대로 나타나야 합니다. 컬럼은 `SELECT` 절에서의 위치를 기준으로 매핑됩니다. 1,000만 개의 모든 행을 삽입하는 작업은 ClickHouse 인스턴스에 따라 몇 분 정도 걸릴 수 있습니다. 아래에서는 빠른 응답을 위해 100만 개의 행만 삽입합니다. 필요에 따라 `LIMIT` 절이나 컬럼 선택을 조정해 일부 데이터만 가져오십시오:
+이를 위해 `s3` 함수와 간단한 `INSERT` 문을 함께 사용합니다. 대상 테이블이 필요한 구조를 제공하므로 컬럼을 나열할 필요는 없습니다. 이 경우 컬럼은 테이블 DDL 문에 지정된 순서대로 나타나야 합니다. 컬럼은 `SELECT` 절에서의 위치를 기준으로 매핑됩니다. 1,000만 개의 모든 행을 삽입하는 작업은 ClickHouse 인스턴스에 따라 몇 분 정도 걸릴 수 있습니다. 아래에서는 빠른 응답을 위해 100만 개의 행만 삽입합니다. 필요에 따라 `LIMIT` 절이나 컬럼 선택을 조정해 일부 데이터만 가져오십시오:
 
 ```sql
 INSERT INTO trips
    SELECT *
-   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
    LIMIT 1000000;
 ```
 
@@ -239,7 +239,7 @@ INSERT INTO trips
 네트워크 보안 정책으로 인해 ClickHouse 클러스터에서 외부 연결을 시작할 수 없는 경우, `clickhouse-local`을 사용해 S3 데이터를 삽입할 수 있습니다. 아래 예시에서는 S3 버킷에서 데이터를 읽어 `remote` 함수를 사용해 ClickHouse에 삽입합니다:
 
 ```sql
-clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <Note>
@@ -318,7 +318,7 @@ LIMIT 100000;
 `s3Cluster` 함수는 단일 노드 variant와 동일한 포맷을 사용하지만, worker 노드를 지정하기 위해 대상 클러스터를 반드시 지정해야 합니다:
 
 ```sql
-s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+s3Cluster(cluster_name, source, [NOSIGN | access_key_id, secret_access_key,] format, structure)
 ```
 
 * `cluster_name` — 원격 및 로컬 서버에 대한 주소 집합과 연결 매개변수를 구성하는 데 사용되는 클러스터의 이름입니다.
@@ -337,6 +337,7 @@ INSERT INTO default.trips_all
    FROM s3Cluster(
        'events',
        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz',
+       NOSIGN,
        'TabSeparatedWithNames'
     )
 ```
@@ -351,7 +352,7 @@ INSERT INTO default.trips_all
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
-    ENGINE = S3(path, [aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS ...]
 ```
 
@@ -414,10 +415,10 @@ CREATE TABLE trips_raw
    `dropoff_ntacode`       FixedString(4),
    `dropoff_ntaname`       String,
    `dropoff_puma`          UInt16
-) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', 'TabSeparatedWithNames', 'gzip');
+) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', NOSIGN, 'TabSeparatedWithNames', 'gzip');
 ```
 
-처음 10개 파일만 대상으로 제한하기 위해 `{0..9}` pattern을 사용한 점에 유의하십시오. 생성이 완료되면 이 table은 다른 table과 마찬가지로 쿼리할 수 있습니다:
+처음 10개 파일만 대상으로 제한하기 위해 `{0..9}` pattern을 사용한 점에 유의하십시오. 생성이 완료되면 이 테이블은 다른 테이블과 마찬가지로 쿼리할 수 있습니다:
 
 ```sql
 SELECT DISTINCT(pickup_ntaname)
@@ -669,7 +670,7 @@ SETTINGS storage_policy='s3_main'
 ```
 
 ```sql
-INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
 하드웨어에 따라 앞서 언급한 100만 행 삽입은 실행하는 데 몇 분 정도 걸릴 수 있습니다. 진행 상황은 system.processes 테이블을 통해 확인할 수 있습니다. 행 수는 최대 1000만까지 조정하고 몇 가지 예제 쿼리도 살펴보세요.
@@ -1284,7 +1285,7 @@ sudo service clickhouse-server start
          tip_amount,
          total_amount,
          payment_type
-     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
   ```
 * 데이터가 S3에 저장되는지 확인합니다.
 

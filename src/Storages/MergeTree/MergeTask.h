@@ -84,6 +84,12 @@ class MergeTask
 {
 public:
     static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
+    /// Marks the suffix of the throwaway temporary part of `OPTIMIZE ... DRY RUN`. Kept short:
+    /// it replaces the part name in the temporary directory name, so it is paid on every dry run.
+    static constexpr auto DRY_RUN_TEMP_INFIX = "dr_";
+
+    /// Assembles the temporary directory name of a merge.
+    static String buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix);
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,

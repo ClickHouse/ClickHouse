@@ -460,6 +460,23 @@ UInt64 ColumnObject::getNumberOfDefaultRows() const
     return num_rows - num_non_default;
 }
 
+bool ColumnObject::hasOnlyTypeDefaults() const
+{
+    for (const auto & [path, column] : typed_paths)
+    {
+        if (!column->hasOnlyTypeDefaults())
+            return false;
+    }
+
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+    {
+        if (!column->hasOnlyTypeDefaults())
+            return false;
+    }
+
+    return shared_data->hasOnlyTypeDefaults();
+}
+
 std::string_view ColumnObject::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());

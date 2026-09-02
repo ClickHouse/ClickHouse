@@ -25,6 +25,11 @@ using FunctionHasTokenOrNull
 REGISTER_FUNCTION(HasToken)
 {
     FunctionDocumentation::Description description = R"(
+:::note
+`hasToken` has certain pitfalls when used for lookups in text indexes with non-`splitByNonAlpha` tokenizers and/or preprocessor/postprocessor expressions.
+We recommend using `hasAnyTokens` and `hasAllTokens` instead.
+:::
+
 Checks if the given token is present in the haystack.
 
 Uses [splitByNonAlpha](/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha) as tokenizer, i.e. a token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]` (numbers, ASCII characters and underscore).

@@ -290,7 +290,7 @@ SELECT divide(25,5) AS quotient, toTypeName(quotient)
 ```
 
 ```response title=Response
-5 Float64
+5	Float64
 ```
 
 **0으로 나누기**
@@ -336,7 +336,7 @@ divideDecimal(x, y[, result_scale])
 **예시 1**
 
 ```sql title=Query
-divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
+SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
 ```
 
 ```response title=Response
@@ -356,9 +356,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 ┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
 │                                             -5.7 │
 └──────────────────────────────────────────────────┘
-┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
-│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
-└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+┌───a─┬───b─┬─divideDecimal(a, b, 1)─┬─divideDecimal(a, b, 5)─┐
+│ -12 │ 2.1 │                   -5.7 │               -5.71428 │
+└─────┴─────┴────────────────────────┴────────────────────────┘
 ```
 
 <div id="divideOrNull">
@@ -466,7 +466,7 @@ SELECT 1/0 AS infimum, ifNotFinite(infimum,42)
 ```
 
 ```response title=Response
-inf  42
+inf	42
 ```
 
 <div id="intDiv">
@@ -506,9 +506,9 @@ SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
+┌──res─┬─toTypeName(res)─┐
+│ 1000 │ Int64           │
+└──────┴─────────────────┘
 ```
 
 **몫이 피제수의 표현 범위를 벗어납니다**
@@ -680,11 +680,11 @@ isInfinite(x)
 **숫자가 무한대인지 확인**
 
 ```sql title=Query
-SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))
+SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 ```
 
 ```response title=Response
-1 0 0
+1	0	0
 ```
 
 <div id="isNaN">
@@ -1218,13 +1218,24 @@ SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Decimal 형 오버플로우**
+**multiplyDecimal 사용 시 오버플로우 없음**
 
 ```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
     multiplyDecimal(a, b);
+```
+
+```response title=Response
+┌─────────────a─┬─────────────b─┬─multiplyDecimal(a, b)─┐
+│ -12.647987876 │ 123.967645643 │       -1567.941279108 │
+└───────────────┴───────────────┴───────────────────────┘
+```
+
+**일반 곱셈에서의 Decimal 오버플로우**
+
+```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
@@ -1232,12 +1243,8 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
-│ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
-└───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
-Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow:
-While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
+Received exception:
+Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
 ```
 
 <div id="negate">

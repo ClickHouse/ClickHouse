@@ -1,0 +1,406 @@
+---
+slug: /optimize/diagnose-slow-queries
+sidebarTitle: '느린 쿼리 진단'
+title: '느린 쿼리 진단'
+description: '느린 ClickHouse 쿼리를 식별하고 리소스 사용량 및 쿼리 계획을 살펴보는 방법을 알아봅니다'
+doc_type: 'guide'
+keywords: ['쿼리 최적화', '쿼리 로그', '느린 쿼리', 'EXPLAIN', '성능']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ko/_nyc_taxi_example_dataset.mdx';
+
+느린 쿼리 진단은 쿼리 이력의 증거를 검토하는 것부터 시작합니다. 이 가이드에서는 `system.query_log`를 사용해 반복되는 느린 쿼리 패턴을 찾고, 대표적인 실행을 선택한 뒤 리소스 사용량을 검토하는 방법을 설명합니다. এরপর `EXPLAIN`을 사용해 쿼리 계획을 살펴보고, 쿼리 또는 스키마를 변경하기 전에 병목 지점에 대한 가설을 세웁니다.
+
+<div id="before-you-begin">
+  ## 시작하기 전에
+</div>
+
+이 가이드의 예시에서는 `nyc_taxi.trips_small_inferred` 테이블을 사용합니다. 아직 테이블을 생성하고 로드하지 않았다면, 예시를 그대로 실행할 수 있도록 다음을 수행하십시오:
+
+<Accordion title="예시 데이터셋 설정">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+이 가이드의 쿼리 로그 결과를 재현하려면 데이터셋을 로드한 후 세 가지 [예시 워크로드 쿼리](/ko/guides/clickhouse/performance-and-monitoring/query-optimization-example#define-the-baseline-workload)를 모두 최소 2번 실행하십시오. 그런 다음 완료된 실행 결과를 아래 예시에서 사용할 수 있도록 쿼리 로그를 플러시하십시오:
+
+```sql
+SYSTEM FLUSH LOGS;
+```
+
+`SYSTEM FLUSH LOGS`를 실행할 수 없는 경우 쿼리 로그가 자동으로 플러시될 때까지 기다린 후 첫 번째 조회를 다시 시도하십시오. 자체 워크로드를 진단할 때는 `system.query_log`에 확인하려는 시간 범위에 해당하는 완료된 실행 기록이 있는지 확인하십시오.
+
+<div id="how-it-works">
+  ## 작동 방식
+</div>
+
+기본적으로 ClickHouse는 완료된 쿼리 정보를 [`system.query_log`](/ko/reference/system-tables/query_log) 테이블에 기록합니다. 각 레코드에는 쿼리 실행 시간, 읽은 행 수, CPU 및 메모리 사용량, 파일 시스템 캐시 활동이 포함될 수 있습니다.
+
+이러한 측정값을 통해 느린 쿼리 패턴을 파악하고 리소스 사용 방식을 이해할 수 있습니다. 대표적인 실행을 선택한 후에는 쿼리 계획을 살펴보고 쿼리에서 시간이 소요될 수 있는 지점을 조사할 수 있습니다.
+
+클러스터에서는 쿼리 로그 데이터가 각 노드에 로컬로 유지됩니다. 이 가이드의 예시에서는 모든 레플리카를 쿼리하기 위해 [`clusterAllReplicas`](/ko/reference/functions/table-functions/cluster)를 사용하고, 현재 `system.query_log` 테이블과 시스템 테이블 스키마 변경 후에도 유지되는 버전이 지정된 `query_log_N` 테이블을 포함하기 위해 [`merge`](/ko/reference/functions/table-functions/merge)를 사용합니다.
+
+각 쿼리 로그 예시에는 클러스터형 배포와 단일 노드 배포를 위한 탭이 포함되어 있습니다. ClickHouse Cloud는 클러스터 예시에서 사용하는 `default` 클러스터를 제공합니다. 자가 관리형 배포에서는 `default`를 [`system.clusters`](/ko/reference/system-tables/clusters)에 나열된 클러스터로 바꾸십시오.
+
+<Note>
+  예시에서는 일시적으로 사용할 수 없는 레플리카 때문에 진단 쿼리가 실패하지 않도록 [`skip_unavailable_shards`](/ko/reference/settings/session-settings#skip_unavailable_shards)를 설정합니다. 이는 자동 스케일링 중에 특히 유용합니다. 건너뛴 레플리카의 레코드는 포함되지 않으므로 결과가 불완전할 수 있습니다.
+</Note>
+
+<div id="diagnose-a-slow-query">
+  ## 느린 쿼리 진단
+</div>
+
+쿼리 로그에서 완료된 실행을 바탕으로 다음 3단계를 순서대로 진행하십시오. 반복되는 느린 쿼리 패턴을 식별하고, 대표적인 실행을 선택한 다음 쿼리의 실행 계획을 확인합니다.
+
+<Steps titleSize="h3">
+  <Step title="후보 쿼리 식별" id="identify-candidate-queries">
+    먼저 완료된 초기 쿼리를 `normalized_query_hash` 기준으로 그룹화합니다. 이렇게 하면 반복적으로 나타나는 쿼리 패턴과 개별적으로 느린 실행을 구분할 수 있습니다. 다음 쿼리는 중앙값 실행 시간을 기준으로 패턴의 순위를 매기고, 각 패턴에 대한 예시 쿼리를 함께 보여줍니다:
+
+    <Tabs>
+      <Tab title="클러스터">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1
+        ```
+      </Tab>
+
+      <Tab title="단일 노드">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        ```
+      </Tab>
+    </Tabs>
+
+    `executions`를 사용하면 반복적으로 실행되는 워크로드와 일회성 쿼리를 구분할 수 있습니다. 실행 시간 중앙값이 크거나, 실행 횟수가 잦거나, 리소스 사용량이 높은 패턴은 한 번 느리게 실행된 쿼리보다 조사 대상으로서 우선순위가 높습니다.
+
+    간단히 현황을 파악하기 위해, 다음 쿼리는 NYC Taxi 데이터셋에 대해 서로 다른 최대 5개의 쿼리 패턴(query pattern) 각각에서 가장 느리게 완료된 실행을 나열합니다. 이때 데이터셋 로딩 SQL 문과 동일한 패턴의 반복 실행은 제외됩니다. 다음 단계에서는 위에서 선택한 `normalized_query_hash`에 해당하는 실행으로 쿼리 이력(query history)의 범위를 좁힙니다.
+
+    <Tabs>
+      <Tab title="클러스터">
+        ```sql
+        -- 지난 1시간 동안 nyc_taxi 데이터베이스에서 실행 시간이 긴 쿼리 상위 5개 찾기
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        SETTINGS skip_unavailable_shards = 1
+        FORMAT VERTICAL
+        ```
+      </Tab>
+
+      <Tab title="단일 노드">
+        ```sql
+        -- 지난 1시간 동안 nyc_taxi 데이터베이스에서 실행 시간이 긴 쿼리 상위 5개 찾기
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM merge('system', '^query_log')
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        FORMAT VERTICAL
+        ```
+      </Tab>
+    </Tabs>
+
+    ```response
+    Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+    Row 1:
+    ──────
+    normalized_query_hash: 11000678248135956062
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:36
+    query_duration_ms: 2967
+    query:             WITH
+      dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+      trip_distance / trip_time * 3600 AS speed_mph
+    SELECT
+      quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM
+      nyc_taxi.trips_small_inferred
+    WHERE
+      speed_mph > 30
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 2:
+    ──────
+    normalized_query_hash: 4194765292165295011
+    type:              QueryFinish
+    event_time:        2024-11-27 11:11:33
+    query_duration_ms: 2026
+    query:             SELECT
+        payment_type,
+        COUNT() AS trip_count,
+        formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+        AVG(total_amount) AS total_amount_avg,
+        AVG(tip_amount) AS tip_amount_avg
+    FROM
+        nyc_taxi.trips_small_inferred
+    WHERE
+        pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+    GROUP BY
+        payment_type
+    ORDER BY
+        trip_count DESC;
+
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 3:
+    ──────
+    normalized_query_hash: 1891814463795712754
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:17
+    query_duration_ms: 1860
+    query:             SELECT
+      avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+    FROM nyc_taxi.trips_small_inferred
+    WHERE passenger_count = 1 or passenger_count = 2
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+    ```
+
+    `query_duration_ms` 필드에는 쿼리 실행 시간이 밀리초 단위로 저장됩니다. 이 결과에서 가장 오래 실행된 쿼리는 2,967ms가 소요되었습니다.
+
+    쿼리 실행 시간이 아닌 리소스 사용량을 기준으로 후보 쿼리를 찾을 수도 있습니다:
+
+    <Accordion title="리소스를 많이 사용하는 쿼리 찾기">
+      이 쿼리는 최근 쿼리를 메모리 사용량순으로 정렬하고 각 쿼리의 CPU 사용량을 표시합니다. 결과는 워크로드와 배포 환경에 따라 달라집니다.
+
+      <Tabs>
+        <Tab title="클러스터">
+          ```sql
+          -- 메모리 사용량 기준 상위 쿼리
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM clusterAllReplicas('default', merge('system', '^query_log'))
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          SETTINGS skip_unavailable_shards = 1
+          ```
+        </Tab>
+
+        <Tab title="단일 노드">
+          ```sql
+          -- 메모리 사용량 기준 상위 쿼리
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM merge('system', '^query_log')
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          ```
+        </Tab>
+      </Tabs>
+    </Accordion>
+  </Step>
+
+  <Step title="대표 쿼리 실행을 선택합니다" id="choose-a-representative-query-run">
+    느린 실행이 한 번 발생했다고 해서 반드시 문제가 있는 것은 아닙니다. 임시 쿼리나 일시적인 시스템 부하로 인한 이상치일 수 있습니다. 쿼리 계획을 살펴보기 전에 리터럴 값만 다른 쿼리에서 동일한 [`normalized_query_hash`](/ko/reference/system-tables/query_log#columns)를 기준으로 완료된 실행 여러 건을 검토하십시오. 해당 패턴의 일반적인 실행 시간과 리소스 사용량을 보여 주는 실행을 선택하십시오.
+
+    `selected_hash`에 할당된 값을 조사하려는 패턴의 `normalized_query_hash`로 바꾸십시오:
+
+    <Tabs>
+      <Tab title="클러스터">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1;
+        ```
+      </Tab>
+
+      <Tab title="단일 노드">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10;
+        ```
+      </Tab>
+    </Tabs>
+
+    1. `read_rows`와 `read_bytes`가 비슷한 실행을 찾으십시오.
+    2. 해당 실행의 `query_duration_ms`와 `memory_usage`를 비교하십시오.
+    3. `query_duration_ms`가 중앙값에 가장 가까운 `query_id`를 선택하십시오.
+
+    <Note>
+      과거 쿼리 로그 결과는 캐시 상태와 시스템 부하에 따라 달라질 수 있으므로, 최적화 변경 사항을 비교하는 데 사용하지 말고 조사할 쿼리를 선택하는 데만 사용하십시오. 쿼리 로그에 완료된 실행이 충분히 없다면 비슷한 조건에서 쿼리를 몇 차례 실행하십시오. 다음 가이드인 [쿼리 병목 현상 격리](/ko/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)에서는 변경 사항을 비교하기 위해 통제된 측정값을 수집하는 방법을 설명합니다.
+    </Note>
+
+    예시 쿼리 로그 결과를 보면 각 후보는 약 3억 2,904만 행을 읽었습니다. 참고로 예시 테이블의 행 수를 확인하십시오:
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    ```
+
+    ```response
+    Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+       ┌───count()─┐
+    1. │ 329044175 │ -- 329.04 million
+       └───────────┘
+    ```
+
+    테이블에는 3억 2,904만 개의 행이 있으며, 이는 각 후보의 `read_rows`에 보고된 수와 거의 같습니다. 이는 쿼리가 테이블의 대부분 또는 전체를 스캔했음을 시사하지만, 해당 행을 읽은 이유나 이 정도의 읽기량이 쿼리에 적절한지는 알 수 없습니다. 다음으로 쿼리 계획을 확인하여 ClickHouse가 데이터를 선택하고 처리한 방식을 살펴보십시오.
+  </Step>
+
+  <Step title="실행 계획 확인" id="explain-statement">
+    대표적인 실행을 선택한 후 [`EXPLAIN`](/ko/reference/statements/explain)을 사용하여 쿼리를 실행하지 않고 ClickHouse가 쿼리 실행을 어떻게 계획하는지 확인합니다. 출력에는 ClickHouse가 수행할 것으로 예상하는 작업과 작업 간 데이터 이동 방식이 표시되어 쿼리 로그의 측정값을 더 잘 이해하는 데 도움이 됩니다.
+
+    사용 가능한 출력 형식에 관한 자세한 내용은 [분석기를 사용하여 쿼리 실행 이해하기](/ko/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer)를 참조하십시오. 이 예시에서 `EXPLAIN`은 ClickHouse가 데이터를 읽고 필터링하는 방식을 어떻게 계획하는지와 일부 데이터를 건너뛸 수 있는지를 보여줍니다.
+
+    출력은 ClickHouse가 데이터를 읽고, 필터링하고, 처리할 것으로 예상하는 방식을 보여주는 작업 트리입니다. 하위 작업은 상위 작업 아래에 표시됩니다. 가장 깊은 읽기 작업부터 시작한 다음 계획을 위로 따라가며 ClickHouse가 데이터를 최종 결과로 변환하는 방식을 확인합니다.
+
+    이 예시에서는 쿼리 로그 결과에서 계산된 속도 쿼리를 살펴봅니다:
+
+    ```sql
+    EXPLAIN actions = 1, compact = 1, pretty = 1, indexes = 1
+    WITH
+        dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+        (trip_distance / trip_time) * 3600 AS speed_mph
+    SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM nyc_taxi.trips_small_inferred
+    WHERE speed_mph > 30
+    ```
+
+    출력에는 다음 작업이 포함됩니다. 파트 및 그래뉼 수와 같은 세부 정보는 데이터 저장 방식에 따라 달라집니다.
+
+    ```response
+    Output: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+
+    Aggregating
+    │  Aggregates: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    └──Filter
+       │  Filter column: trip_distance / dateDiff('s', pickup_datetime, dropoff_datetime) * 3600 > 30
+       └──ReadFromMergeTree (nyc_taxi.trips_small_inferred)
+    ```
+
+    아래에서 위로 살펴보면 계획은 쿼리의 각 부분과 다음과 같이 대응됩니다:
+
+    1. `ReadFromMergeTree`는 `nyc_taxi.trips_small_inferred`에서 데이터를 읽습니다. `Indexes` 섹션이 없고 `read_rows`가 테이블의 행 수와 일치하므로, ClickHouse가 테이블 전체를 읽고 있음을 알 수 있습니다.
+    2. `Filter`는 `speed_mph > 30`의 확장된 표현식을 보여줍니다. ClickHouse는 읽은 모든 행에 대해 운행 시간과 속도를 계산한 후 시속 30마일을 초과하는 행만 유지합니다.
+    3. `Aggregating`은 필터링된 `trip_distance` 값의 분위수를 계산합니다.
+
+    이 계획에서는 테스트할 작업 부하를 3가지로 식별할 수 있습니다. 즉, 모든 행 읽기, 필터링 중 `speed_mph` 계산, 분위수 계산입니다.
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+다음으로 [쿼리 병목 지점 격리](/ko/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)를 참조하여 의심되는 작업 원인을 통제된 환경에서 테스트하는 방법을 알아보십시오. 이 가이드에서는 점차 단순해지는 쿼리 구조를 비교하여 추가 조사가 필요한 작업을 식별합니다.

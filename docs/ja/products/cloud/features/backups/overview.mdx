@@ -10,8 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/ja/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-データベースのバックアップは、予期せぬ理由でデータが失われた場合でも、最後に成功したバックアップからサービスを以前の状態に復元できるようにすることで、安全網として機能します。
-これにより、ダウンタイムを最小限に抑え、業務上重要なデータが永久に失われるのを防ぎます。
+データベースのバックアップは、最後に成功したバックアップからサービスを以前の状態に復元できるように設計されています。
 
 <div id="backups">
   ## バックアップ
@@ -34,8 +33,7 @@ ClickHouse Cloud のバックアップは、フルバックアップと増分バ
 </div>
 
 バックアップは、Basic、Scale、Enterprise ティアでは、ストレージとは別に計測・課金されます。
-すべてのサービスでは、デフォルトで1日1回のバックアップが設定されます。Scale ティア以上では、Cloudコンソールの Settings タブから追加で設定できます。
-各バックアップは少なくとも24時間保持されます。
+現在、各サービスには、保持期間が24時間の1日1回のバックアップがデフォルトで設定されています。バックアップ設定は、サービスおよび契約によって異なる場合があります。
 
 詳細については、[&quot;バックアップの確認と復元&quot;](/ja/products/cloud/guides/backups/review-and-restore-backups)を参照してください。
 
@@ -64,8 +62,8 @@ ClickHouse Cloud では、**Scale** および **Enterprise** ティアのサー�
 </div>
 
 ClickHouse Cloud では、バックアップをお使いのクラウドサービスプロバイダー (CSP) アカウントのストレージ (AWS S3、Google Cloud Storage、または Azure Blob Storage) にエクスポートできます。
-独自のバケットへのバックアップを設定した場合でも、ClickHouse Cloud は引き続き自身のバケットに毎日バックアップを取得します。
-これは、お使いのバケット内のバックアップが破損した場合でも、復元元として少なくとも 1 つのデータのコピーを確保するためです。
+独自のバケットへのバックアップを設定した場合でも、ClickHouse Cloud はデフォルトで引き続き独自のバックアップを取得します。
+
 ClickHouse Cloud のバックアップの仕組みについて詳しくは、[バックアップ](/ja/products/cloud/guides/backups/review-and-restore-backups)のドキュメントを参照してください。
 
 このガイドでは、バックアップを AWS、GCP、Azure のオブジェクトストレージにエクスポートする方法と、アカウント内のそれらのバックアップを新しい ClickHouse Cloud サービスに復元する方法を説明します。

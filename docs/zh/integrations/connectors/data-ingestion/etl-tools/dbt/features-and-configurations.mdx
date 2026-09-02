@@ -181,10 +181,29 @@ dbt 依赖写入后读取一致性模型。如果无法保证所有操作都发�
 | aws&#95;access&#95;key&#95;id     | S3 访问密钥 ID。                                                                                                      |
 | aws&#95;secret&#95;access&#95;key | S3 密钥。                                                                                                           |
 | role&#95;arn                      | 为安全访问 S3 而创建的 IAM role 的 ARN。更多信息请参见此[文档](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。       |
+| external&#95;id                   | 担任 IAM role 时与 `role_arn` 一并传递的外部 ID。需要设置 `role_arn`。自 dbt-clickhouse 1.10.2 起可用。                                |
 | compression                       | S3 对象使用的压缩方法。如果未提供，ClickHouse 将尝试根据文件名判断压缩方式。                                                                    |
 
-有关如何使用此宏的示例，请参见
-[S3 测试文件](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)。
+<div id="s3source-example">
+  #### 示例
+</div>
+
+在 `dbt_project.yml` 中定义共享配置 (字典名称必须以 `s3` 结尾) ：
+
+```yaml
+vars:
+  taxi_s3:
+    bucket: 'datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi'
+    fmt: 'TabSeparatedWithNames'
+```
+
+然后在模型中调用该宏。上述任一参数也可在调用时直接传入，并优先于字典配置值：
+
+```sql
+select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
+```
+
+更多示例请参见 [S3 测试文件](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)。
 
 <div id="cross-database-macro-support">
   ### 跨数据库宏支持

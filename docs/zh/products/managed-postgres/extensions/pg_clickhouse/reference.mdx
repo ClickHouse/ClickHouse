@@ -678,15 +678,8 @@ try=# EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');
  2025-12-11 |              197
  2025-12-12 |              190
  2025-12-13 |              195
-(5 行)
+(5 rows)
 ```
-
-<Warning>
-  参数化执行会导致 [http 驱动](#create-server) 在 25.8 之前的 ClickHouse 版本中
-  无法正确转换 DateTime 时区，因为该[底层缺陷]当时尚未[修复]。请注意，PostgreSQL
-  有时即使不使用 `PREPARE`，也会采用参数化查询计划。对于任何需要精确时区转换的查询，
-  如果无法升级到 25.8 或更高版本，请改用 [binary driver](#create-server)。
-</Warning>
 
 与往常一样，pg&#95;clickhouse 会下推聚合操作，如 [EXPLAIN](#explain)
 的详细输出所示：
@@ -718,7 +711,7 @@ try=# EXPLAIN (VERBOSE) EXECUTE avg_durations_between_dates('2025-12-09', '2025-
 (4 rows)
 ```
 
-使用 [DEALLOCATE] 解除分配预处理语句：
+使用 [DEALLOCATE] 释放预处理语句：
 
 ```pgsql
 try=# DEALLOCATE avg_durations_between_dates;

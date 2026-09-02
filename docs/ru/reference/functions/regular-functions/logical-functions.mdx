@@ -30,7 +30,7 @@ doc_type: 'reference'
 Настройка [`short_circuit_function_evaluation`](/ru/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) определяет, используется ли укороченное вычисление.
 Если она включена, `val_i` вычисляется, только если `(val_1 AND val_2 AND ... AND val_{i-1})` равно `true`.
 
-Например, при укороченном вычислении при выполнении запроса `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)` исключение деления на ноль не генерируется.
+Например, при укороченном вычислении при выполнении запроса `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)` исключение при делении на ноль не генерируется.
 Ноль в качестве аргумента считается `false`, ненулевые значения считаются `true`.
 
 **Синтаксис**
@@ -47,8 +47,8 @@ and(val1, val2[, ...])
 
 Возвращает:
 
-* `0`, если хотя бы один аргумент равен `false`
-* `NULL`, если ни один аргумент не равен `false` и хотя бы один аргумент равен `NULL`
+* `0`, если хотя бы один аргумент интерпретируется как `false`
+* `NULL`, если ни один аргумент не интерпретируется как `false` и хотя бы один аргумент равен `NULL`
 * `1` в противном случае
   [`Nullable(UInt8)`](/ru/reference/data-types/nullable)
 
@@ -71,7 +71,7 @@ SELECT and(NULL, 1, 10, -2);
 ```
 
 ```response title=Response
-ᴺᵁᴸᴸ
+\N
 ```
 
 <div id="not">
@@ -125,7 +125,7 @@ SELECT NOT(1);
 Параметр [`short_circuit_function_evaluation`](/ru/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) определяет, используется ли укороченное вычисление.
 Если он включен, `val_i` вычисляется только в том случае, если `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` равно `true`.
 
-Например, при укороченном вычислении при выполнении запроса `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)` исключение из-за деления на ноль не генерируется.
+Например, при укороченном вычислении при выполнении запроса `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)` исключение при делении на ноль не генерируется.
 Ноль в качестве аргумента считается `false`, а ненулевые значения — `true`.
 
 **Синтаксис**
@@ -142,9 +142,9 @@ or(val1, val2[, ...])
 
 Возвращает:
 
-* `1`, если хотя бы один аргумент вычисляется в `true`
-* `0`, если все аргументы вычисляются в `false`
-* `NULL`, если все аргументы вычисляются в `false` и хотя бы один аргумент имеет значение `NULL`
+* `1`, если хотя бы один аргумент интерпретируется как `true`
+* `0`, если все аргументы интерпретируются как `false`
+* `NULL`, если все аргументы интерпретируются как `false` и хотя бы один аргумент имеет значение `NULL`
   [`Nullable(UInt8)`](/ru/reference/data-types/nullable)
 
 **Примеры**
@@ -166,7 +166,7 @@ SELECT or(0, NULL);
 ```
 
 ```response title=Response
-ᴺᵁᴸᴸ
+\N
 ```
 
 <div id="xor">

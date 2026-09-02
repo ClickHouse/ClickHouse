@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "서버 설정",
+  "group": "Server Settings",
   "pages": [
     "ko/reference/settings/server-settings/settings",
     "ko/reference/settings/server-settings/settings/access-control",

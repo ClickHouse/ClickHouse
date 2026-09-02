@@ -15,6 +15,8 @@ doc_type: 'reference'
 
 タイムスタンプと値の組として時系列データを受け取り、開始タイムスタンプ、終了タイムスタンプ、step で定義される一定間隔の時間グリッド上で、このデータから [PromQL ライクな irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) を計算する集約関数です。グリッド上の各点について、`irate` の計算に使うサンプルは、指定された時間ウィンドウ内のものが考慮されます。
 
+複数のサンプルが同じタイムスタンプを持つ場合、使用されるのはそのうち 1 つだけです。最も大きい値を持つサンプルが使用されます。NaN 値は他のすべての値より優先順位が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ NaN 値が使用されます。
+
 <Warning>
   この関数は実験的です。有効にするには、`allow_experimental_time_series_aggregate_functions=true` を設定してください。
 </Warning>

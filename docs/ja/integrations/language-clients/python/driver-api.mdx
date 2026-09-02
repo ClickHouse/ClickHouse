@@ -321,6 +321,8 @@ ClickHouse Connect クライアントの `query*` メソッドと `command` メ�
 
 ClickHouse は、クエリの値に対する[サーバーサイドバインディング](/ja/concepts/features/interfaces/client#cli-queries-with-parameters)をサポートしています。バインドする値は、クエリとは別に HTTP パラメータとして送信されます。ClickHouse Connect は、`{<name>:<datatype>}` 形式の式を検出すると、このモードを使用します。値は Python の辞書として渡します。
 
+パラメータ名は ClickHouse の ASCII BareWord 名である必要があります。ドライバーは、`{$tenant_id:String}` のようにサーバーが受け入れる場合、名前の先頭、途中、末尾にある `$` を受け入れます。`$` で始まり `$` で終わる辞書キーで、`bytes`、`bytearray`、`memoryview` などのバッファ値を持つものは、ClickHouse Connect&#39;s raw binary パラメータ規約用に予約されています。このようなキーを非バイナリのサーバーサイドパラメータに使用する場合は、`{name:Type}` プレースホルダーを 1 つだけ使用してください。繰り返される `$tag$` 名は、ClickHouse によってヒアドキュメントマーカーとして解析される可能性があります。
+
 null 許容値には Python の `None` を使用します。ネストされた `None` 値は、`Array` および `Tuple` パラメータ内、ならびに `dict_parameter_format` が `"map"` に設定されている場合は `Map` リテラル内でサポートされます。
 
 * Python の辞書、DateTime 値、文字列値を使用したサーバーサイドバインディング
@@ -904,7 +906,7 @@ finally:
     connection.close()
 ```
 
-`Cursor.execute` と `Cursor.executemany` は、追加の `settings` および `query_formats` キーワード引数を受け付けます。`settings` は ClickHouse 設定を渡します。`query_formats` は、ステートメントが行を返す場合に、`Client.query` と同じマッピングを使用して、ClickHouse 型ごとに読み取りフォーマットを適用します。`executemany` は、実体化済みの行シーケンスを伴う互換性のある `INSERT ... VALUES` ステートメントに対して、ドライバーの Native 一括挿入パスを使用します。`fetchone`、`fetchmany`、および `fetchall` は、現在の実体化済みの結果を消費します。
+`Cursor.execute` と `Cursor.executemany` は、追加の `settings` および `query_formats` キーワード引数を受け付けます。`settings` は ClickHouse 設定を渡します。`query_formats` は、ステートメントが行を返す場合に、`Client.query` と同じマッピングを使用して、ClickHouse 型ごとに読み取りフォーマットを適用します。`Cursor.execute` は、キーワード専用の `pyformat_encoded` 引数も受け付けます。デフォルト値の `True` は、DB-API の `pyformat` 契約に従います。SQLAlchemy dialect は、ステートメントコンパイラが生のパーセント記号を出力した場合にこれを `False` に設定するため、通常、アプリケーションで設定する必要はありません。`executemany` は、実体化済みの行シーケンスを伴う互換性のある `INSERT ... VALUES` ステートメントに対して、ドライバーの Native 一括挿入パスを使用します。`fetchone`、`fetchmany`、および `fetchall` は、現在の実体化済みの結果を消費します。
 
 `Cursor.description` は、各結果カラムの型から `null_ok` を導出します。null 非許容型は `False` を返し、`Nullable` ラッパー、`Variant`、および `Dynamic` を含む null 許容型は `True` を返します。`None` は null 許容性が不明であることを意味します。先頭のコメントを無視して `SELECT` または `WITH` で始まるクエリが、行もカラムメタデータも返さない場合、カーソルは `description` を設定するために `LIMIT 0` メタデータクエリを実行します。そのメタデータクエリが失敗した場合、`description` は空のままになります。
 

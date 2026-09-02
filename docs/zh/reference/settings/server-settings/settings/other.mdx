@@ -170,6 +170,12 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。因此，无需重启服
 </compression>
 ```
 
+<div id="config-file">
+  ## 配置文件
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />指定服务器配置文件。
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -177,12 +183,6 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。因此，无需重启服
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Yes" />
 
 ClickHouse 重新加载配置并检查是否有新更改的频率
-
-<div id="config-file">
-  ## 配置文件
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />指定服务器配置文件。
 
 <div id="core_dump">
   ## core_dump
@@ -973,7 +973,7 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
   ## message_queue_disable_insertion
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />禁用消息队列引擎 (Kafka、RabbitMQ、NATS) 向已附加的 materialized view 进行插入
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />禁用消息队列引擎 (Kafka、RabbitMQ、NATS) 向已附加的 materialized view 进行插入
 
 <div id="metric_log">
   ## metric_log

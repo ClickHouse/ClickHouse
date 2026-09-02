@@ -112,6 +112,12 @@ function configure()
     #
     /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk "$@"
 
+    # These jobs mix config drop-ins and binaries of different versions (the upgrade
+    # check boots the previous release with the current repo's configs) - an unknown
+    # config option is expected here and must not prevent the server from starting.
+    echo "<clickhouse><skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings></clickhouse>" \
+        > /etc/clickhouse-server/config.d/skip_check_for_incorrect_settings.xml
+
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
       | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" \

@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "홈",
+      "group": "Home",
       "icon": "house",
       "pages": [
         "ko/integrations/language-clients/index"
@@ -32,7 +32,7 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "타사 클라이언트",
+      "group": "Third-party clients",
       "icon": "users",
       "pages": [
         "ko/integrations/language-clients/third-party/client-libraries"
@@ -40,5 +40,5 @@
     }
   ],
   "icon": "/images/icons/icon-language-clients.svg",
-  "item": "언어 클라이언트"
+  "item": "Language clients"
 }

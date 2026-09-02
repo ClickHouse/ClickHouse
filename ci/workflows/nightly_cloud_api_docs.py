@@ -16,7 +16,7 @@ workflow = Workflow.Config(
         Job.Config(
             name="Sync Cloud API docs",
             command="python3 ./ci/jobs/cloud_api_docs_nightly.py",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
     ],

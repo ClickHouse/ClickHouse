@@ -40,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 75
+    version: int = 76
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -56,6 +56,14 @@ class RunnerConfig:
     max_jobs: int = 1
     max_chill: int = 600
     max_life: int = 3600 * 24
+
+    # When true, the per-job _work wipe in run_job is skipped so the git checkout
+    # survives between jobs. Set for the incremental-sync runner type below, whose
+    # dedicated always-warm ASG reuses one instance to fetch into an existing
+    # checkout instead of re-cloning the full ClickHouse history every cron run.
+    keep_workspace: bool = False
+    # Runner type that reuses its checkout across jobs (see keep_workspace).
+    incremental_sync_runner_type: str = "private-incremental-sync"
 
     free_blocks_threshold: int = 3_000_000
     free_blocks_threshold_percent: int = 5
@@ -202,9 +210,15 @@ class Runner:
             raise RuntimeError("github:runner-type tag is not set for the instance")
         self.labels = f"self-hosted,{sys.platform},{self.runner_type}"
 
-        if "style" in self.runner_type:
+        if "style" in self.runner_type or "tiny" in self.runner_type:
             config.max_chill = 7200
             config.max_jobs = 10
+
+        if self.runner_type == config.incremental_sync_runner_type:
+            # Serve many cron runs on one warm instance and keep its checkout;
+            # max_life still recycles the instance daily for a clean re-clone.
+            config.max_jobs = 1_000_000
+            config.keep_workspace = True
 
         log(f"max jobs: {config.max_jobs}")
         log(f"max chill: {config.max_chill}")
@@ -256,10 +270,15 @@ class Runner:
 
     def _cleanup_workspace(self) -> None:
         """Remove _work directory to clean up workspace."""
+        # Diagnostic logs are always rotated; the _work checkout is preserved
+        # for runner types that reuse it across jobs (see config.keep_workspace).
+        shutil.rmtree(config.log_dir, ignore_errors=True)
+        if config.keep_workspace:
+            log("keep_workspace is set: preserving _work checkout between jobs")
+            return
         work_dir = Path(config.runner_home) / "_work"
         if work_dir.exists():
             shutil.rmtree(work_dir)
-        shutil.rmtree(config.log_dir, ignore_errors=True)
 
     def remove_if_not_running(self) -> bool:
         """Unregister the runner from GitHub.

@@ -16,6 +16,8 @@ doc_type: 'reference'
 دالة تجميع تأخذ بيانات السلاسل الزمنية على هيئة أزواج من الطوابع الزمنية والقيم، وتحسب [دلتا بأسلوب مشابه لـ PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) من هذه البيانات على شبكة زمنية منتظمة يحددها الطابع الزمني للبداية، والطابع الزمني للنهاية، والخطوة.
 وبالنسبة إلى كل نقطة على الشبكة، تُؤخذ العينات المستخدمة في حساب `delta` ضمن النافذة الزمنية المحددة.
 
+إذا كانت عدة عينات تحمل الطابع الزمني نفسه، فلا تُستخدم إلا واحدة منها: العينة ذات القيمة الأكبر. تخسر قيمة NaN أمام أي قيمة أخرى، لذا لا تُستخدم قيمة NaN إلا إذا كانت جميع العينات عند هذا الطابع الزمني NaN.
+
 <Warning>
   هذه الدالة تجريبية. فعِّلها عبر ضبط `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
@@ -69,7 +71,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,7 +92,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                   │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                    │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

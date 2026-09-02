@@ -167,9 +167,10 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
     const UInt32 items_count = uncompressed_size / data_bytes_size;
 
-    static const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
+    /// Not static: data_bytes_size is an argument, so a static keeps the first caller's width.
+    const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
     // -1 since there must be at least 1 non-zero bit.
-    static const auto LEADING_ZEROES_BIT_LENGTH = DATA_BIT_LENGTH - 1;
+    const auto LEADING_ZEROES_BIT_LENGTH = DATA_BIT_LENGTH - 1;
 
     // worst case (for 32-bit value):
     // 11 + 5 bits of leading zeroes bit-size + 5 bits of data bit-size + non-zero data bits.

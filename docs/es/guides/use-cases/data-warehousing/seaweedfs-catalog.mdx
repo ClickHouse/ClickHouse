@@ -72,7 +72,7 @@ Para el desarrollo y las pruebas locales, puede ejecutar SeaweedFS y ClickHouse 
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -101,7 +101,7 @@ networks:
     driver: bridge
 ```
 
-El comando `mini` inicia toda la pila de SeaweedFS en un único contenedor. El indicador `-tableBucket=analytics` crea de antemano un bucket de S3 Tables llamado `analytics`, que sirve como warehouse de Iceberg.
+El comando `mini` inicia toda la pila de SeaweedFS en un único contenedor. El indicador `-tableBucket=analytics` crea de antemano un bucket de S3 Tables llamado `analytics`, que sirve como warehouse de Iceberg. `-admin.port=12646` mantiene el puerto gRPC de administración que SeaweedFS deriva a partir de él por debajo del rango de puertos efímeros de Linux, donde, de otro modo, una conexión de inicio podría reclamarlo primero.
 
 **Paso 3:** Ejecute el siguiente comando para iniciar los servicios:
 

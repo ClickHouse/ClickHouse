@@ -70,10 +70,17 @@ VectorWithMemoryTracking<size_t> TableFunctionExplain::skipAnalysisForArguments(
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
     size_t table_function_node_arguments_size = table_function_node_arguments.size();
 
-    if (table_function_node_arguments_size == 3)
-        return {2};
+    /// `viewExplain` is the internal lowered form of `SELECT * FROM (EXPLAIN ...)`.
+    /// Its first two arguments must remain string literals: the `EXPLAIN` kind and
+    /// serialized settings, for example `indexes = 1`. The optional third argument
+    /// must remain the unresolved `SELECT` query being explained. `parseArguments`
+    /// consumes these AST shapes directly, so they do not need expression analysis.
+    VectorWithMemoryTracking<size_t> result;
+    result.reserve(table_function_node_arguments_size);
+    for (size_t i = 0; i < table_function_node_arguments_size; ++i)
+        result.push_back(i);
 
-    return {};
+    return result;
 }
 
 void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr context)

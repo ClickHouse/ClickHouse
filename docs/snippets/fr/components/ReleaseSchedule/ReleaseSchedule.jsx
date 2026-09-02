@@ -1,4 +1,9 @@
 const ReleaseSchedule = ({ releases = [] }) => {
+  const groupStartStyle = {
+    borderLeft: "1px solid rgba(128, 128, 128, 0.35)",
+    paddingLeft: 16,
+  };
+
   const StatusIndicator = ({ status }) => {
     const color =
       status === "green" ? "#22c55e" :
@@ -17,40 +22,38 @@ const ReleaseSchedule = ({ releases = [] }) => {
   };
 
   const DateCell = ({ date, note, status }) => (
-    <span>
-      <StatusIndicator status={status} />
-      {date}
-      {note && <Tooltip tip={note}><Icon icon="circle-info" size={12} /></Tooltip>}
-    </span>
-  );
-
-  const ChannelSchedule = ({ startDate, endDate, note, status }) => (
-    <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span>
-        <strong>Début :</strong>{" "}
-        <DateCell date={startDate} note={note} status={status} />
-      </span>
-      <span>
-        <strong>Fin :</strong>{" "}
-        <DateCell date={endDate} status={status} />
-      </span>
+    <span style={{ whiteSpace: "nowrap" }}>
+      {status && <StatusIndicator status={status} />}
+      {note ? <Tooltip tip={note}>{date}</Tooltip> : date}
     </span>
   );
 
   return (
     <table>
+      <colgroup />
+      <colgroup span={2} />
+      <colgroup span={2} />
+      <colgroup span={2} />
       <thead>
         <tr>
-          <th>Version</th>
-          <th>
+          <th rowSpan={2} scope="col">Version</th>
+          <th colSpan={2} scope="colgroup" style={groupStartStyle}>
             <a href="/docs/manage/updates#fast-release-channel-early-upgrades">Canal rapide</a>
           </th>
-          <th>
-            <a href="/docs/manage/updates#regular-release-channel">Canal standard</a>
+          <th colSpan={2} scope="colgroup" style={groupStartStyle}>
+            <a href="/docs/manage/updates#regular-release-channel">Canal régulier</a>
           </th>
-          <th>
+          <th colSpan={2} scope="colgroup" style={groupStartStyle}>
             <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades">Canal lent</a>
           </th>
+        </tr>
+        <tr>
+          <th scope="col" style={groupStartStyle}>Début</th>
+          <th scope="col">Fin</th>
+          <th scope="col" style={groupStartStyle}>Début</th>
+          <th scope="col">Fin</th>
+          <th scope="col" style={groupStartStyle}>Début</th>
+          <th scope="col">Fin</th>
         </tr>
       </thead>
       <tbody>
@@ -62,11 +65,11 @@ const ReleaseSchedule = ({ releases = [] }) => {
             release.regular_end_date,
             release.slow_start_date,
             release.slow_end_date,
-          ].every((date) => date === "Terminé");
+          ].every((date) => date === "Completed");
 
           return (
             <tr key={idx}>
-              <td>
+              <th scope="row">
                 {release.changelog_link ? (
                   <a href={release.changelog_link} target="_blank" rel="noopener noreferrer">
                     {release.version}
@@ -74,37 +77,19 @@ const ReleaseSchedule = ({ releases = [] }) => {
                 ) : (
                   release.version
                 )}
-              </td>
+              </th>
               {isCompleted ? (
-                <td colSpan={3} style={{ textAlign: "center" }}>
-                  <DateCell date="Terminé" status="green" />
+                <td colSpan={6} style={{ textAlign: "center" }}>
+                  <DateCell date="Terminée" status="green" />
                 </td>
               ) : (
                 <>
-                  <td>
-                    <ChannelSchedule
-                      startDate={release.fast_start_date}
-                      endDate={release.fast_end_date}
-                      note={release.fast_delay_note}
-                      status={release.fast_progress}
-                    />
-                  </td>
-                  <td>
-                    <ChannelSchedule
-                      startDate={release.regular_start_date}
-                      endDate={release.regular_end_date}
-                      note={release.regular_delay_note}
-                      status={release.regular_progress}
-                    />
-                  </td>
-                  <td>
-                    <ChannelSchedule
-                      startDate={release.slow_start_date}
-                      endDate={release.slow_end_date}
-                      note={release.slow_delay_note}
-                      status={release.slow_progress}
-                    />
-                  </td>
+                  <td style={groupStartStyle}><DateCell date={release.fast_start_date} note={release.fast_delay_note} status={release.fast_progress} /></td>
+                  <td><DateCell date={release.fast_end_date} status={release.fast_progress} /></td>
+                  <td style={groupStartStyle}><DateCell date={release.regular_start_date} note={release.regular_delay_note} status={release.regular_progress} /></td>
+                  <td><DateCell date={release.regular_end_date} status={release.regular_progress} /></td>
+                  <td style={groupStartStyle}><DateCell date={release.slow_start_date} note={release.slow_delay_note} status={release.slow_progress} /></td>
+                  <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
                 </>
               )}
             </tr>

@@ -10,17 +10,9 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/clickpipes/_target_ch_partition_by.mdx';
-
-<BetaBadge/>
-
-<Info>
-Ingesting data from MySQL to ClickHouse Cloud via ClickPipes is in public beta.
-</Info>
 
 The MySQL ClickPipe provides a fully-managed and resilient way to ingest data from MySQL and MariaDB databases into ClickHouse Cloud. It supports both **bulk loads** for one-time ingestion and **Change Data Capture (CDC)** for continuous ingestion.
 

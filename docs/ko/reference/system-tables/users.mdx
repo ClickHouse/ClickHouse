@@ -23,7 +23,8 @@ doc_type: '참고'
 * `storage` ([String](/ko/reference/data-types/string)) — 사용자 저장소 경로입니다. access&#95;control&#95;path 매개변수에서 구성합니다.
 * `auth_type` ([Array(Enum8(&#39;no&#95;password&#39; = 0, &#39;plaintext&#95;password&#39; = 1, &#39;sha256&#95;password&#39; = 2, &#39;double&#95;sha1&#95;password&#39; = 3, &#39;ldap&#39; = 4, &#39;kerberos&#39; = 5, &#39;ssl&#95;certificate&#39; = 6, &#39;bcrypt&#95;password&#39; = 7, &#39;ssh&#95;key&#39; = 8, &#39;http&#39; = 9, &#39;jwt&#39; = 10, &#39;scram&#95;sha256&#95;password&#39; = 11, &#39;no&#95;authentication&#39; = 12))](/ko/reference/data-types/array)) — 인증 유형을 표시합니다. 비밀번호 없음, 평문 비밀번호, SHA256으로 인코딩된 비밀번호, 이중 SHA-1로 인코딩된 비밀번호, bcrypt로 인코딩된 비밀번호 등 여러 방식으로 사용자를 식별할 수 있습니다.
 * `auth_params` ([Array(String)](/ko/reference/data-types/array)) — auth&#95;type에 따른 JSON 포맷의 인증 매개변수입니다.
-* `valid_until` ([Array(DateTime)](/ko/reference/data-types/array)) — 사용자 자격 증명의 만료 일시입니다.
+* `valid_until` ([Array(DateTime64(0))](/ko/reference/data-types/array)) — 인증 메서드별 사용자 자격 증명의 만료 일시입니다. 저장된 값은 서버 또는 세션 시간대로 렌더링되는 절대 시점이며, 저장된 값 `0`(Unix epoch, `UTC` 서버에서는 `1970-01-01 00:00:00`으로 렌더링됨)은 자격 증명이 만료되지 않음을 의미하는 센티널입니다.
+* `auth_grants` ([Array(String)](/ko/reference/data-types/array)) — 각 인증 메서드에 대해 `GRANTS` 절에 지정된 접근 권한 제한이며, 접근 권한이 제한되지 않은 경우 빈 문자열입니다.
 * `host_ip` ([Array(String)](/ko/reference/data-types/array)) — ClickHouse 서버 연결이 허용된 호스트의 IP 주소입니다.
 * `host_names` ([Array(String)](/ko/reference/data-types/array)) — ClickHouse 서버 연결이 허용된 호스트 이름입니다.
 * `host_names_regexp` ([Array(String)](/ko/reference/data-types/array)) — ClickHouse 서버 연결이 허용된 호스트 이름의 정규식입니다.

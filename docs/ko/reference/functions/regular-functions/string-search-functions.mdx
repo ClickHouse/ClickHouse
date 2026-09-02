@@ -197,9 +197,9 @@ SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
 ```
 
 ```response title=Response
-┌─countSubstri⋯AAA', 'aa')─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
 ```
 
 **start&#95;pos 인수를 사용하는 경우**
@@ -209,9 +209,9 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'abc', 4)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 <div id="countSubstringsCaseInsensitiveUTF8">
@@ -247,9 +247,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯шка', 'КА')─┐
-│                        4 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **start&#95;pos 인수를 사용하는 경우**
@@ -259,9 +259,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'КА', 13)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="extract">
@@ -456,14 +456,14 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 도입 버전: v25.10.0
 
-[`hasAnyTokens`](#hasAnyTokens)와 유사하지만, `needle` 문자열 또는 배열의 모든 토큰이 `input` 문자열과 일치하면 1을, 그렇지 않으면 0을 반환합니다. `input`이 컬럼인 경우, 해당 조건을 만족하는 모든 행을 반환합니다.
+[`hasAnyTokens`](#hasAnyTokens)와 유사하지만, `needle` 문자열 또는 배열의 모든 토큰이 `input` 문자열과 일치하면 1을 반환하고, 그렇지 않으면 0을 반환합니다. `input`이 컬럼인 경우 이 조건을 만족하는 모든 행을 반환합니다.
 
 <Note>
   최적의 성능을 위해 컬럼 `input`에는 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)가 정의되어 있어야 합니다.
   텍스트 인덱스가 정의되어 있지 않으면 함수는 브루트 포스(전체 스캔) 방식으로 컬럼을 스캔하며, 이는 인덱스 조회보다 훨씬 느립니다.
 </Note>
 
-검색 전에 함수가 토큰화를 수행합니다
+검색 전에 함수는 다음을 토큰화합니다.
 
 * `input` 인수(항상), 그리고
 * `needle` 인수([String](/ko/reference/data-types/string)로 지정된 경우)는
@@ -473,8 +473,8 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 표현식이 구성되어 있으면, `needle`이 `String`으로 지정된 경우 토큰화 전에 전처리기가 적용됩니다.
   텍스트 인덱스에 [후처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 표현식이 구성되어 있으면, 후처리기는 `needle` 토큰과 `input` 토큰 모두에 적용됩니다(즉, 둘 다 토큰화 이후에 적용됩니다).
 
-중복된 토큰(token)은 무시됩니다.
-예시: 검색 패턴 = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
+중복된 토큰은 무시됩니다.
+예: 검색 패턴 = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)(예: `lowerUTF8`)가 정의되어 있으면, `hasAllTokens`는 이를 `input`에 적용하고, `needles`가 [String](/ko/reference/data-types/string)인 경우에는 토큰화 전에 `needles`에도 적용합니다. `needles`가 [Array(String)](/ko/reference/data-types/array)인 경우에는 그 요소가 있는 그대로 전달되며 전처리기는 적용되지 않습니다.
@@ -485,26 +485,28 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **구문**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **별칭**: `hasAllToken`
 
 **인수**
 
-* `input` — 입력 컬럼. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array)
-* `needles` — 검색할 토큰. [`String`](/ko/reference/data-types/string) 또는 [`Array(String)`](/ko/reference/data-types/array)
-* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 기본값으로 `splitByNonAlpha`가 사용됩니다. [`const String`](/ko/reference/data-types/string)
+* `input` — 입력 컬럼. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable) 또는 [`Nullable(FixedString)`](/ko/reference/data-types/nullable) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(String))`](/ko/reference/data-types/array) 또는 [`Array(Nullable(FixedString))`](/ko/reference/data-types/array)
+* `needles` — 검색 패턴. [`String`](/ko/reference/data-types/string) 또는 [`Array(String)`](/ko/reference/data-types/array)
+* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 기본값으로 `splitByNonAlpha`가 사용됩니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
 
-모든 needle이 일치하면 1을, 그렇지 않으면 0을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+모든 검색 패턴이 일치하면 1을 반환합니다. 그렇지 않으면 0을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
 
 **예시**
 
-**문자열 needle을 사용한 기본 사용법**
+**문자열 니들(needle)을 사용한 기본 사용법**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -524,9 +526,11 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**배열에서 토큰화하지 않고 있는 그대로 검색할 needle을 지정합니다**
+**배열에서 토큰화하지 않고 AS-IS로 검색할 검색 패턴 지정하기**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -549,6 +553,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 **`tokens` 함수를 사용해 검색 패턴 생성하기**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -575,14 +581,16 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
 ```
 
 **배열 및 맵 컬럼의 사용 예시**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -602,6 +610,8 @@ INSERT INTO log VALUES
 **배열 컬럼 예시**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -629,6 +639,8 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **mapKeys 사용 예시**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -656,6 +668,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **mapValues 사용 예시**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -686,7 +700,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 도입 버전: v25.10.0
 
-`needle` 문자열 또는 배열의 토큰 중 하나 이상이 `input` 문자열과 일치하면 1을, 그렇지 않으면 0을 반환합니다. `input`이 컬럼인 경우 해당 조건을 만족하는 모든 행을 반환합니다.
+`needle` 문자열 또는 배열의 토큰 중 하나 이상이 `input` 문자열과 일치하면 1을, 그렇지 않으면 0을 반환합니다. `input`이 컬럼인 경우 이 조건을 만족하는 모든 행을 반환합니다.
 
 <Note>
   최적의 성능을 위해 컬럼 `input`에는 [텍스트 인덱스(text index)](/ko/reference/engines/table-engines/mergetree-family/textindexes)가 정의되어 있어야 합니다.
@@ -704,7 +718,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
   텍스트 인덱스에 [후처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 표현식이 구성되어 있으면, 후처리기는 `needle` 토큰과 `input` 토큰 모두에 적용됩니다(즉, 둘 다 토큰화 후에 적용됨).
 
 중복된 토큰은 무시됩니다.
-예시: [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
+예를 들어, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)(예: `lowerUTF8`)가 정의되어 있으면, `hasAnyTokens`는 이를 `input`에 적용하고, `needles`가 [String](/ko/reference/data-types/string)인 경우 토큰화 전에 `needles`에도 적용합니다. `needles`가 [Array(String)](/ko/reference/data-types/array)인 경우 그 요소는 있는 그대로 전달되며 전처리기는 적용되지 않습니다.
@@ -715,7 +729,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **구문**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **별칭**: `hasAnyToken`
@@ -724,17 +738,19 @@ hasAnyTokens(input, needles)
 
 * `input` — 입력 컬럼입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable) 또는 [`Nullable(FixedString)`](/ko/reference/data-types/nullable) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(String))`](/ko/reference/data-types/array) 또는 [`Array(Nullable(FixedString))`](/ko/reference/data-types/array)
 * `needles` — 검색 대상 토큰입니다. [`String`](/ko/reference/data-types/string) 또는 [`Array(String)`](/ko/reference/data-types/array)
-* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 `splitByNonAlpha`가 기본값으로 사용됩니다. [`const String`](/ko/reference/data-types/string)
+* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 `splitByNonAlpha`가 기본값으로 사용됩니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
 
-일치하는 항목이 하나 이상 있으면 `1`을, 없으면 `0`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+일치하는 항목이 하나 이상 있으면 `1`을 반환합니다. 없으면 `0`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
 
 **예시**
 
-**문자열 needle을 사용한 기본 사용법**
+**문자열 니들을 사용한 기본 사용법**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -754,9 +770,11 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**배열에서 검색할 needle을 토큰화하지 않고 있는 그대로 지정합니다**
+**배열에서 토큰화 없이 있는 그대로 검색할 needle을 지정합니다**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -779,6 +797,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 **`tokens` 함수를 사용해 검색 패턴 생성하기**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -801,6 +821,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
 **배열 및 맵 컬럼 사용 예시**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -820,6 +842,8 @@ INSERT INTO log VALUES
 **배열 컬럼을 사용한 예시**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -847,6 +871,8 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **mapKeys를 사용한 예시**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -874,6 +900,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **mapValues를 사용한 예시**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -908,12 +936,13 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   컬럼 `input`에는 최적의 성능을 위해 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)가 정의되어 있어야 합니다.
-  텍스트 인덱스가 정의되어 있지 않으면 이 함수는 브루트 포스(전체 스캔) 컬럼 스캔을 수행하며, 이는 인덱스 조회보다 훨씬 느립니다.
+  텍스트 인덱스가 정의되어 있지 않으면 이 함수는 브루트 포스(전체 스캔)을 수행하며, 이는 인덱스 조회보다 훨씬 느립니다.
 </Note>
 
 검색 전에 이 함수는 텍스트 인덱스에 지정된 토크나이저를 사용해 `input` 인수와 `phrase` 인수를 모두 토큰화합니다.
 컬럼에 텍스트 인덱스가 정의되어 있지 않으면, 선택적 세 번째 인수로 토크나이저를 제공한 경우를 제외하고 `splitByNonAlpha` 토크나이저를 대신 사용합니다.
-토크나이저 인수는 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` 중 하나여야 합니다.
+토크나이저 인수는 `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, `icu` 중 하나여야 합니다.
+텍스트 인덱스에 후처리기도 정의되어 있으면 `hasPhrase`에서 `splitByRegexp`는 지원되지 않습니다.
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)가 정의되어 있으면(예: `lowerUTF8`), `hasPhrase`는 토큰화 전에 이를 `input`과 `phrase` 모두에 적용합니다.
@@ -1088,9 +1117,9 @@ SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая си
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯ 'СИСТЕМА')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
+│                                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="hasSubsequenceUTF8">
@@ -1125,9 +1154,9 @@ SELECT hasSubsequenceUTF8('картошка', 'кошка');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯', 'кошка')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
 ```
 
 **일치하지 않는 부분수열**
@@ -1137,9 +1166,9 @@ SELECT hasSubsequenceUTF8('картошка', 'апельсин');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯'апельсин')─┐
-│                        0 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
+│                                          0 │
+└────────────────────────────────────────────┘
 ```
 
 <div id="hasToken">
@@ -1267,9 +1296,9 @@ SELECT hasTokenOrNull('apple banana cherry', 'ban ana');
 ```
 
 ```response title=Response
-┌─hasTokenOrNu⋯ 'ban ana')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
+│                                             ᴺᵁᴸᴸ │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="highlight">
@@ -1441,9 +1470,9 @@ SELECT like('ClickHouse', 'Click_ouse');
 ```
 
 ```response title=Response
-┌─like('ClickH⋯lick_ouse')─┐
-│                        1 │
-└──────────────────────────┘
+┌─like('ClickHouse', 'Click_ouse')─┐
+│                                1 │
+└──────────────────────────────────┘
 ```
 
 **일치하지 않는 패턴**
@@ -1538,7 +1567,7 @@ re2의 기본 동작과 달리 `.`은 줄바꿈과도 일치합니다. 이를 �
 
 부분 문자열을 검색하기만 하면 되는 경우에는 [`like`](#like) 또는 [`position`](#position) 함수를 대신 사용할 수 있으며, 이 함수들이 이 함수보다 훨씬 빠르게 동작합니다.
 
-대체 연산자 구문: `haystack REGEXP pattern`.
+대체 연산자 구문: `haystack REGEXP pattern` 또는 `haystack ~ pattern`(PostgreSQL 스타일)입니다.
 
 **구문**
 
@@ -1595,6 +1624,48 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 └────────────────────────┴──────────────────────────┘
 ```
 
+<div id="matchCaseInsensitive">
+  ## matchCaseInsensitive
+</div>
+
+도입 버전: v26.8.0
+
+[`match`](#match)와 유사하지만 대소문자를 구분하지 않고 일치시킵니다.
+
+이 함수는 RE2 정규식 라이브러리를 사용합니다. 지원되는 구문은 [re2](https://github.com/google/re2/wiki/Syntax)를 참조하십시오.
+
+대체 연산자 구문: `haystack ~* pattern`(PostgreSQL 스타일).
+
+**구문**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**인수**
+
+* `haystack` — 패턴을 검색할 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `pattern` — 정규식 패턴입니다. 상수이거나 컬럼에서 가져올 수 있습니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+대소문자를 구분하지 않고 패턴이 일치하면 `1`을 반환하고, 그렇지 않으면 `0`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseInsensitive('Hello World', 'hello.*')─┬─matchCaseInsensitive('Hello World', 'HELLO.*')─┐
+│                                              1 │                                              1 │
+└────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+```
+
 <div id="multiFuzzyMatchAllIndices">
   ## multiFuzzyMatchAllIndices
 </div>
@@ -1611,7 +1682,7 @@ multiFuzzyMatchAllIndices(haystack, distance, [pattern1, pattern2, ..., patternN
 
 **인수**
 
-* `haystack` — 검색을 수행할 `String`입니다. [`String`](/ko/reference/data-types/string)
+* `haystack` — 검색을 수행할 문자열입니다. [`String`](/ko/reference/data-types/string)
 * `distance` — 퍼지 매칭의 최대 편집 거리입니다. [`UInt8`](/ko/reference/data-types/int-uint)
 * `pattern` — 일치 여부를 확인할 패턴의 배열입니다. [`Array(String)`](/ko/reference/data-types/array)
 
@@ -1628,9 +1699,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯, 'House'])─┐
-│ [3,1,4,2]                │
-└──────────────────────────┘
+┌─multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose', 'House'])─┐
+│ [3,1,4,2]                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAny">
@@ -1672,9 +1743,9 @@ SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHos
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯lickHose'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAnyIndex">
@@ -1693,7 +1764,7 @@ multiFuzzyMatchAnyIndex(haystack, distance, [pattern1, pattern2, ..., patternn])
 
 **인수**
 
-* `haystack` — 검색이 수행되는 String입니다. [`String`](/ko/reference/data-types/string)
+* `haystack` — 검색이 수행되는 문자열입니다. [`String`](/ko/reference/data-types/string)
 * `distance` — 퍼지 매칭의 최대 편집 거리입니다. [`UInt8`](/ko/reference/data-types/int-uint)
 * `pattern` — 매칭할 패턴의 배열입니다. [`Array(String)`](/ko/reference/data-types/array)
 
@@ -1710,9 +1781,9 @@ SELECT multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'Clic
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯ickHouse'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse'])─┐
+│                                                                                  2 │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiMatchAllIndices">
@@ -1731,7 +1802,7 @@ multiMatchAllIndices(haystack, [pattern1, pattern2, ..., patternn])
 
 **인수**
 
-* `haystack` — 검색을 수행할 String입니다. [`String`](/ko/reference/data-types/string)
+* `haystack` — 검색을 수행할 문자열입니다. [`String`](/ko/reference/data-types/string)
 * `pattern` — 매칭에 사용할 정규식입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
@@ -1747,9 +1818,9 @@ SELECT multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse']);
 ```
 
 ```response title=Response
-┌─multiMatchAl⋯', 'ouse'])─┐
-│ [3, 2, 4]                │
-└──────────────────────────┘
+┌─multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse'])─┐
+│ [3,2,4]                                                                 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiMatchAny">
@@ -1835,9 +1906,9 @@ SELECT multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click']);
 ```
 
 ```response title=Response
-┌─multiMatchAn⋯, 'Click'])─┐
-│                        3 │
-└──────────────────────────┘
+┌─multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click'])─┐
+│                                                             3 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositions">
@@ -1911,9 +1982,9 @@ SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯['c', 'h'])─┐
-│ [1,6]                    │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
+│ [1,6]                                                            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsCaseInsensitiveUTF8">
@@ -1948,9 +2019,9 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!
 ```
 
 ```response title=Response
-┌─multiSearchA⋯й', 'МИР'])─┐
-│ [1, 13]                  │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
+│ [1,13]                                                                                │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsUTF8">
@@ -2098,9 +2169,9 @@ SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯те', ['з'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAnyUTF8">
@@ -2172,9 +2243,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **대소문자 구분 동작**
@@ -2184,9 +2255,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **일치하는 항목을 찾을 수 없습니다**
@@ -2196,9 +2267,9 @@ SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
+│                                                         0 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitive">
@@ -2234,9 +2305,9 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯, 'Hello'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello'])─┐
+│                                                                       1 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitiveUTF8">
@@ -2271,9 +2342,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK',
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server'])─┐
+│                                                                                            1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **UTF-8 대소문자 처리**
@@ -2283,9 +2354,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир'
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'ПРИВЕТ'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ'])─┐
+│                                                                         1 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 **일치하는 항목이 없습니다**
@@ -2295,9 +2366,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test'])─┐
+│                                                                            0 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexUTF8">
@@ -2333,9 +2404,9 @@ SELECT multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', '
 ```
 
 ```response title=Response
-┌─multiSearchF⋯вствуйте'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте'])─┐
+│                                                                      1 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstPosition">
@@ -2525,7 +2596,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 ```response title=Response
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                        0.1 │
+│                                 0.06666667 │
 └────────────────────────────────────────────┘
 ```
 
@@ -2535,7 +2606,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 도입 버전: v20.1.0
 
-[`ngramDistance`](#ngramDistance)의 대소문자 비구분 버전을 제공합니다.
+[`ngramDistance`](#ngramDistance)의 대소문자를 구분하지 않는 변형을 제공합니다.
 대소문자를 구분하지 않고 두 문자열 사이의 4-그램 거리를 계산합니다.
 반환 값이 작을수록 두 문자열의 유사도가 높습니다.
 
@@ -2563,9 +2634,9 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
-│                                                       0 │
-└─────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
+│                                                        0 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceCaseInsensitiveUTF8">
@@ -2603,9 +2674,9 @@ SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
-│                                             0.5 │
-└─────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
+│                                              0.5 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceUTF8">
@@ -2761,7 +2832,7 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 ```response title=Response
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                                        1 │
+│                                               0.57142854 │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -2771,7 +2842,7 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 도입 버전: v20.1.0
 
-`ngramSearch`의 UTF-8 버전을 제공합니다.
+`ngramSearch`의 UTF-8 변형을 제공합니다.
 `haystack`과 `needle`이 UTF-8 문자열이라고 가정합니다.
 두 UTF-8 문자열 사이의 3-그램 거리가 지정된 임계값 이하인지 확인합니다.
 
@@ -2800,7 +2871,7 @@ SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')
 
 ```response title=Response
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                      1 │
+│                                    0.5 │
 └────────────────────────────────────────┘
 ```
 
@@ -2838,9 +2909,9 @@ SELECT notILike('ClickHouse', '%house%');
 ```
 
 ```response title=Response
-┌─notILike('Cl⋯ '%house%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notILike('ClickHouse', '%house%')─┐
+│                                 0 │
+└───────────────────────────────────┘
 ```
 
 <div id="notLike">
@@ -2877,9 +2948,9 @@ SELECT notLike('ClickHouse', '%House%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯ '%House%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%House%')─┐
+│                                0 │
+└──────────────────────────────────┘
 ```
 
 **일치하지 않는 패턴**
@@ -2889,9 +2960,93 @@ SELECT notLike('ClickHouse', '%SQL%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯', '%SQL%')─┐
-│                        1 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%SQL%')─┐
+│                              1 │
+└────────────────────────────────┘
+```
+
+<div id="notMatch">
+  ## notMatch
+</div>
+
+도입 버전: v26.8.0
+
+[`match`](#match)와 유사하지만 결과를 부정합니다. 즉, 문자열이 정규식 패턴과 일치하지 않는지 확인합니다.
+
+이 함수는 RE2 정규식 라이브러리를 사용합니다. 지원되는 구문은 [re2](https://github.com/google/re2/wiki/Syntax)를 참조하십시오.
+
+대체 연산자 구문: `haystack !~ pattern` (PostgreSQL 스타일).
+
+**구문**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**인수**
+
+* `haystack` — 패턴을 검색할 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `pattern` — 정규식 패턴입니다. 상수이거나 컬럼에서 가져올 수 있습니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+패턴이 일치하면 `0`을 반환하고, 그렇지 않으면 `1`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('Hello World', 'Hello.*')─┬─notMatch('Hello World', 'goodbye.*')─┐
+│                                  0 │                                    1 │
+└────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="notMatchCaseInsensitive">
+  ## notMatchCaseInsensitive
+</div>
+
+도입 버전: v26.8.0
+
+[`matchCaseInsensitive`](#matchCaseInsensitive)와 유사하지만 결과를 부정합니다. 즉, 문자열이 정규식 패턴과 대소문자를 구분하지 않고 일치하지 않는지 확인합니다.
+
+이 함수는 RE2 정규식 라이브러리를 사용합니다. 지원되는 구문은 [re2](https://github.com/google/re2/wiki/Syntax)를 참조하십시오.
+
+대체 연산자 구문: `haystack !~* pattern` (PostgreSQL 스타일).
+
+**구문**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**인수**
+
+* `haystack` — 패턴을 검색할 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `pattern` — 정규식 패턴입니다. 상수이거나 컬럼에서 가져올 수 있습니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+패턴이 대소문자를 구분하지 않고 일치하면 `0`을 반환하고, 그렇지 않으면 `1`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCaseInsensitive('Hello World', 'hello.*')─┬─notMatchCaseInsensitive('Hello World', 'GOODBYE.*')─┐
+│                                                 0 │                                                   1 │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="position">
@@ -3088,9 +3243,9 @@ SELECT positionUTF8('Motörhead', 'r')
 ```
 
 ```response title=Response
-┌─position('Motörhead', 'r')─┐
-│                          5 │
-└────────────────────────────┘
+┌─positionUTF8('Motörhead', 'r')─┐
+│                              5 │
+└────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

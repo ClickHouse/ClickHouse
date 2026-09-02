@@ -41,7 +41,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
 #include <base/range.h>
@@ -49,6 +48,7 @@
 #include <base/unaligned.h>
 
 #include <algorithm>
+#include <memory>
 
 namespace DB
 {
@@ -920,30 +920,38 @@ public:
 
 ) // DECLARE_MULTITARGET_CODE
 
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <typename Impl, typename Name>
 class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
 {
 public:
-    explicit FunctionIntHash(ContextPtr context) : selector(context)
+    explicit FunctionIntHash([[maybe_unused]] ContextPtr context)
     {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
-
-    #if USE_MULTITARGET_CODE
-        /// The v3 registration is needed because `FunctionsHashingMisc.cpp` is compiled at `-march=x86-64-v2`
-        /// (to dodge an unrelated SLP regression), so the `Default` namespace inherits v2 codegen. Without this
-        /// per-function v3 attribute path, the dispatcher has no AVX2 specialization to pick and falls back to
-        /// the v2 body, regressing hash-on-UUID/Decimal queries by 12-18%.
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::x86_64_v4,
-            TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
-    #endif
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
+            return;
+        }
+#endif
+#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+        /// Only reached from the translation units pinned to `-march=x86-64-v2` in
+        /// `src/Functions/CMakeLists.txt` (`FunctionsHashingMisc.cpp`), where `Default` inherits v2
+        /// codegen and this per-function body is the only AVX2 one. Everywhere else `Default` is
+        /// already built for the AVX2 baseline, so there is nothing to choose between.
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
+            return;
+        }
+#endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -952,7 +960,7 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 DECLARE_MULTITARGET_CODE(
@@ -1656,26 +1664,60 @@ public:
 
 ) // DECLARE_MULTITARGET_CODE
 
+struct ImplWyHash64;
+
+/// Which arguments an implementation wants the AVX-512 body for. Measured v3 against v4 over every
+/// legal (function, argument type) pair: AVX-512 wins nearly everywhere, and the three exceptions are
+/// below. Ratios are the geometric mean over the types in each class.
+///
+/// `javaHash` and `hiveHash` are a byte-serial `h = 31 * h + c` chain, run once per input byte. The
+/// AVX2 body vectorizes that loop across rows; at 512 bits LLVM's cost model abandons vectorization
+/// and emits scalar code instead. The trip count decides which way it goes, so the choice follows the
+/// argument width rather than the function: 1.16x faster for arguments of 8 bytes and under, 0.56x for
+/// 16- and 32-byte ones (`UUID`, `IPv6`, `(U)Int128/256`, `Decimal128/256`), a tie for strings.
+///
+/// `wyHash64` is 0.85x on arguments of 8 bytes and under and ties on everything else, so AVX-512 buys
+/// it nothing at any width.
+///
+/// Everything else stays on AVX-512, worth up to 1.93x (`xxHash64`), 1.71x (`xxh3`), 1.57x
+/// (`murmurHash2_64`) and 1.44x (`cityHash64`).
+enum class HashAVX512Usage : uint8_t
+{
+    Always,
+    /// Only when every argument is a fixed-size value of at most 8 bytes.
+    NarrowOnly,
+    Never,
+};
+
+template <typename Impl>
+constexpr HashAVX512Usage hash_avx512_usage = HashAVX512Usage::Always;
+template <> inline constexpr HashAVX512Usage hash_avx512_usage<JavaHashImpl> = HashAVX512Usage::NarrowOnly;
+template <> inline constexpr HashAVX512Usage hash_avx512_usage<HiveHashImpl> = HashAVX512Usage::NarrowOnly;
+template <> inline constexpr HashAVX512Usage hash_avx512_usage<ImplWyHash64> = HashAVX512Usage::Never;
+
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <typename Impl, bool Keyed = false, typename KeyType = char, typename KeyColumnsType = char>
 class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>
 {
 public:
-    explicit FunctionAnyHash(ContextPtr context) : selector(context)
+    explicit FunctionAnyHash([[maybe_unused]] ContextPtr context)
     {
-        selector
-            .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-
 #if USE_MULTITARGET_CODE
-        /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
-        /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
-        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        if constexpr (hash_avx512_usage<Impl> != HashAVX512Usage::Never)
+        {
+            if (isArchSupported(TargetArch::x86_64_v4))
+                avx512_impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        }
 #endif
+        baseline_impl = makeBaselineImpl();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        if (avx512_impl && wantsAVX512(arguments))
+            return avx512_impl->executeImpl(arguments, result_type, input_rows_count);
+        return baseline_impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -1684,7 +1726,32 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    static std::unique_ptr<IFunction> makeBaselineImpl()
+    {
+#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+        /// See the note in `FunctionIntHash`: only the v2-pinned translation units get here.
+        if (isArchSupported(TargetArch::x86_64_v3))
+            return std::make_unique<TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+#endif
+        return std::make_unique<TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+    }
+
+    static bool wantsAVX512([[maybe_unused]] const ColumnsWithTypeAndName & arguments)
+    {
+        if constexpr (hash_avx512_usage<Impl> == HashAVX512Usage::NarrowOnly)
+        {
+            for (const auto & argument : arguments)
+            {
+                if (!argument.type->haveMaximumSizeOfValue() || argument.type->getMaximumSizeOfValueInMemory() > 8)
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    std::unique_ptr<IFunction> baseline_impl;
+    /// Null when the CPU has no AVX-512, or when this implementation never wants it.
+    std::unique_ptr<IFunction> avx512_impl;
 };
 
 

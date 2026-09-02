@@ -50,7 +50,7 @@ Par défaut, les données dont le TTL a expiré sont supprimées lorsque ClickHo
 
 Pour modifier le TTL, vous avez deux possibilités :
 
-1. **Modifier les schémas des tables (recommandé)**. Pour cela, vous devez vous connecter à l’instance ClickHouse, par exemple avec [clickhouse-client](/fr/concepts/features/interfaces/cli) ou la [Cloud SQL Console](/fr/products/cloud/features/sql-console-features/sql-console). Par exemple, vous pouvez modifier le TTL de la table `otel_logs` à l’aide de l’instruction DDL suivante :
+1. **Modifier les schémas des tables (recommandé)**. Pour cela, vous devez vous connecter à l’instance ClickHouse, par exemple avec [clickhouse-client](/fr/concepts/features/interfaces/client) ou la [Cloud SQL Console](/fr/products/cloud/features/sql-console-features/sql-console). Par exemple, vous pouvez modifier le TTL de la table `otel_logs` à l’aide de l’instruction DDL suivante :
 
 ```sql
 ALTER TABLE default.otel_logs

@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Primeros pasos",
+      "group": "Get started",
       "pages": [
         "es/products/managed-postgres/overview",
         "es/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Características",
+      "group": "Features",
       "pages": [
         "es/products/managed-postgres/connection",
         "es/products/managed-postgres/settings",
@@ -35,19 +35,19 @@
       ]
     },
     {
-      "group": "Precios",
+      "group": "Pricing",
       "pages": [
         "es/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "Integración de ClickHouse",
+      "group": "ClickHouse Integration",
       "pages": [
         "es/products/managed-postgres/clickhouse-integration"
       ]
     },
     {
-      "group": "Migraciones",
+      "group": "Migrations",
       "pages": [
         "es/products/managed-postgres/migrations/overview",
         "es/products/managed-postgres/migrations/pg_dump-pg_restore",

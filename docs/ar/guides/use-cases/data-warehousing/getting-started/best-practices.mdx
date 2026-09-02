@@ -31,9 +31,9 @@ FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
 WHERE event_date >= today() - 7
 ```
 
-استخدم بديل S3 مع AWS S3 وGCS. ولدى Azure ونظام الملفات المحلي بدائل مخصّصة (`icebergAzure` و`icebergLocal`، وما يقابلهما للتنسيقات الأخرى). راجع [الاستعلام مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) للاطلاع على القائمة الكاملة.
+استخدم بديل S3 مع AWS S3 وGCS. ولدى Azure ونظام الملفات المحلي بدائل مخصّصة (`icebergAzure` و`icebergLocal`، وما يقابلهما للتنسيقات الأخرى). راجع [الاستعلام المباشر](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) للاطلاع على القائمة الكاملة.
 
-يوفّر [Paimon](/ar/reference/functions/table-functions/paimon) دوال جدولية فقط.
+يوفّر [Paimon](/ar/reference/functions/table-functions/paimon) دوال جدولية و[محركات جدول تجريبية](/ar/reference/engines/table-engines/integrations/paimon).
 
 <div id="table-engines">
   ### محركات الجداول
@@ -336,7 +336,7 @@ ORDER BY rows DESC;
   ### تحقّق من حجم المسح
 </div>
 
-قارن بين `read_rows` و`read_bytes` في [system.query&#95;log](/ar/reference/system-tables/query_log) قبل إضافة عوامل التصفية أو ضبط الإعدادات وبعدها. تُظهر ProfileEvents مثل `ReadBufferFromS3Bytes` و`CachedReadBufferReadFromCacheBytes` مقدار البيانات التي جاءت من التخزين الكائني مقابل ذاكرة التخزين المؤقت المحلية. راجع [تحسين الاستعلام](/ar/guides/clickhouse/performance-and-monitoring/query-optimization) للحصول على شرح كامل لـ query&#95;log وEXPLAIN.
+قارن بين `read_rows` و`read_bytes` في [`system.query_log`](/ar/reference/system-tables/query_log) قبل إضافة عوامل التصفية أو ضبط الإعدادات وبعدها. تُظهر `ProfileEvents` مثل `ReadBufferFromS3Bytes` و`CachedReadBufferReadFromCacheBytes` مقدار البيانات التي جاءت من التخزين الكائني مقابل ذاكرة التخزين المؤقت المحلية. راجع [تشخيص الاستعلامات البطيئة](/ar/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) للحصول على شرح كامل لـ `query_log` و`EXPLAIN`.
 
 عطّل [enable&#95;filesystem&#95;cache](/ar/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) عند إجراء اختبارات الأداء حتى لا تُخفي مرات الوصول إلى ذاكرة التخزين المؤقت الفروق بين التشغيلات.
 
@@ -375,8 +375,8 @@ WHERE query_id = '<previous_query_id>';
   ## الخطوات التالية
 </div>
 
-* [البدء](/ar/guides/use-cases/data-warehousing/getting-started/overview) — دليل شامل بدءًا من الاستعلام المباشر وصولًا إلى إعادة كتابة البيانات
-* [الاستعلام المباشر](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) — دوال جدولية والمحركات وإصدارات العنقود للتنسيقات الأربعة
-* [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — إعداد `DataLakeCatalog` باستخدام Unity Catalog
+* [البدء](/ar/guides/use-cases/data-warehousing/getting-started/overview) — دليل شامل من الاستعلام المباشر إلى إعادة الكتابة
+* [الاستعلام المباشر](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) — الدوال الجدولية والمحركات وإصدارات العناقيد للتنسيقات الأربعة
+* [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — إعداد `DataLakeCatalog` مع Unity Catalog
 * [الكتابة إلى بحيرات البيانات](/ar/guides/use-cases/data-warehousing/getting-started/writing-data) — إعادة كتابة البيانات إلى Iceberg وDelta Lake
-* [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) — مقارنة الميزات عبر التنسيقات والكتالوجات وواجهات التخزين الخلفية
+* [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) — مقارنة الميزات بين التنسيقات والكتالوجات وواجهات التخزين الخلفية

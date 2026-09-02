@@ -171,7 +171,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 <Note>
-  La replicación de valores [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) no es compatible. Se utilizará el valor predeterminado del tipo de dato.
+  Los valores de [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) se replican. Cuando PostgreSQL envía una referencia TOAST sin cambios durante una actualización, se conserva el valor existente. Una columna de identidad de réplica TOAST sin cambios requiere que PostgreSQL envíe una tupla de clave anterior; de lo contrario, no se puede identificar la fila.
 </Note>
 
 <div id="settings">

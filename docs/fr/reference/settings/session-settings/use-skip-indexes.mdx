@@ -67,9 +67,9 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "Changement de la valeur par défaut du paramètre"}]}]} />
 
-Contrôle l&#39;utilisation des index de saut lors de l&#39;exécution d&#39;une requête avec le modificateur FINAL.
+Contrôle l&#39;utilisation des index de saut lors de l&#39;exécution d&#39;une requête avec le modificateur `FINAL`.
 
-Les index de saut peuvent exclure des lignes (granules) contenant les données les plus récentes, ce qui peut entraîner des résultats incorrects pour une requête avec le modificateur FINAL. Lorsque ce paramètre est activé, les index de saut sont appliqués même avec le modificateur FINAL, ce qui peut améliorer les performances, mais avec le risque d&#39;ignorer des mises à jour récentes. Ce paramètre doit être activé en même temps que le paramètre use&#95;skip&#95;indexes&#95;if&#95;final&#95;exact&#95;mode (activé par défaut).
+Les index de saut peuvent exclure des lignes (granules) contenant les données les plus récentes, ce qui peut entraîner des résultats incorrects pour une requête avec le modificateur `FINAL`. Lorsque ce paramètre est activé, les index de saut sont appliqués même avec le modificateur `FINAL`, ce qui peut améliorer les performances. L&#39;exactitude des résultats dépend toujours du paramètre `use_skip_indexes_if_final_exact_mode`, qui est activé par défaut et parcourt les parts supplémentaires qui chevauchent les plages renvoyées par l&#39;index de saut. Le risque d&#39;ignorer des mises à jour récentes ne s&#39;applique que si ce paramètre est désactivé.
 
 Valeurs possibles :
 

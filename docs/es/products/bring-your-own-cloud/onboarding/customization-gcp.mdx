@@ -33,6 +33,10 @@ Si prefieres usar una VPC existente para desplegar ClickHouse BYOC en lugar de d
   </Step>
 
   <Step title="Configura la infraestructura de BYOC" id="set-up-byoc-infrastructure">
+    <Note>
+      Al hacer clic en **Set up Infrastructure**, ClickHouse Cloud ejecuta automáticamente la [validación previa](/es/products/bring-your-own-cloud/onboarding/standard#preflight-validation) antes del aprovisionamiento, para comprobar que la cuenta de servicio de administración tenga los permisos necesarios y que las API de Google Cloud requeridas estén habilitadas. La validación automática de una VPC propia aún no forma parte de la comprobación previa de GCP, así que asegúrate de que tu VPC cumpla los [requisitos de red](#configure-existing-vpc) anteriores antes de comenzar.
+    </Note>
+
     En la consola de ClickHouse Cloud, configura lo siguiente al crear una nueva infraestructura:
 
     1. En **VPC configuration**, selecciona **Use existing VPC**.

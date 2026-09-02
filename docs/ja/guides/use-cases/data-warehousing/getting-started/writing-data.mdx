@@ -107,7 +107,7 @@ Peak memory usage: 485.15 MiB.
   ### Iceberg テーブルを作成する
 </div>
 
-Iceberg にデータを書き込むには、[`IcebergS3` テーブルエンジン](/ja/reference/engines/table-engines/integrations/iceberg)を使用してテーブルを作成します。
+既存の Iceberg テーブルから直接読み取る場合は、[`icebergS3` テーブル関数](/ja/reference/functions/table-functions/iceberg)の使用を推奨します。このガイドでは、スタンドアロンの Iceberg テーブルを作成してデータを投入するため、明示的なスキーマを指定した[`IcebergS3` テーブルエンジン](/ja/reference/engines/table-engines/integrations/iceberg)を使用します。例に示す S3 ロケーションには、すでに完成したテーブルが含まれています。`CREATE` および `INSERT` ステートメントを実行するには、両方のロケーションを、自身で管理する空で書き込み可能な S3 プレフィックスと認証情報に置き換えてください。
 
 なお、スキーマは MergeTree の元テーブルに比べて簡略化する必要があります。ClickHouse は Iceberg や基盤となる Parquet ファイルよりも豊富な型システムをサポートしているため、`Enum`、`LowCardinality`、`UInt8` などの型は Iceberg ではサポートされておらず、互換性のある型にマッピングする必要があります。
 
@@ -138,8 +138,10 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 `INSERT INTO SELECT` を使用して、MergeTree テーブルから Iceberg テーブルへデータを書き込みます。この例では、ロンドンの取引だけを書き込みます。
 
+この例には、[`allow_insert_into_iceberg` 設定](/ja/reference/settings/session-settings/allow#allow_insert_into_iceberg)が必要です。現在の成熟度と制限事項については、[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix)を参照してください。
+
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 
 INSERT INTO uk.uk_iceberg SELECT *
 FROM uk.uk_price_paid

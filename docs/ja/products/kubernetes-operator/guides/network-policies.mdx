@@ -2,15 +2,15 @@
 position: 7
 slug: /clickhouse-operator/guides/network-policies
 title: ネットワークポリシー
-keywords: ['kubernetes', 'network policy', 'security', 'メトリクス', 'webhook']
-description: 'operator が Kubernetes の NetworkPolicies を使って controller manager ポッドへのイングレスをメトリクスおよび webhook のエンドポイントに対して制限する方法、それらを有効にする方法、さらにラベル付けが必要なクライアントのネームスペースについて説明します。'
+keywords: ['kubernetes', 'network policy', 'security', 'メトリクス', 'webhook', 'イングレス']
+description: 'operator が ClickHouse および Keeper クラスターの Kubernetes NetworkPolicies を管理する方法、クライアントおよび監視トラフィックを許可する方法、さらに controller manager ポッドへのイングレスを制限する方法について説明します。'
 doc_type: 'guide'
 ---
 
-operator には、**controller manager ポッド** に到達できるトラフィックを制限するための、任意で利用できる Kubernetes の `NetworkPolicy` リソースが用意されています。対象は operator プロセス自体であり、ClickHouse server や Keeper のポッドは含まれません。これらはデフォルトでは無効なので、operator へのイングレスを分離したい場合にのみ有効化します。
+operator は、どちらもデフォルトで無効になっている 2 つのレベルで Kubernetes の `NetworkPolicy` リソースを管理します。
 
-これらのポリシーは、operator が他のクライアント向けに公開している 2 つのポート、つまりメトリクス
-エンドポイントと admission webhook を対象とします。
+* **クラスターポリシー** — `ClickHouseCluster` および `KeeperCluster` リソースの内部トラフィックを対象とするクラスターごとのポリシーで、各カスタムリソースの `spec.networkPolicy` で有効化します。
+* **operator ポッドポリシー** — メトリクスおよび webhook エンドポイントへのイングレスを controller manager ポッド自体に対して制限する、チャート に含まれるポリシーです。
 
 <Note>
   `NetworkPolicy` は、クラスターの CNI プラグインがこれを実装している場合にのみ適用されます
@@ -18,6 +18,110 @@ operator には、**controller manager ポッド** に到達できるトラフ�
   リソースは作成されても実際には効果がなく、Kubernetes も
   エラーを返しません。これらに依存する前に、使用中の CNI がポリシーを適用することを確認してください。
 </Note>
+
+<div id="cluster-network-policies">
+  ## クラスターのNetworkPolicy
+</div>
+
+クラスターごとにマネージドポリシーを有効にします。
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+```
+
+管理対象のポリシーは、**クラスター内部のトラフィックのみ**を対象とします。ポッドを選択すると、
+イングレスはデフォルト拒否となり、operator はクラスターの動作に必要な通信のみを許可します。
+
+| クラスター      | 許可される送信元                                                       | 許可されるポート                                       |
+| ---------- | -------------------------------------------------------------- | ---------------------------------------------- |
+| ClickHouse | クラスター自身のポッド                                                    | `9009` (interserver) 、`9001` (management)      |
+| ClickHouse | Operator ポッド (ラベル `clickhouse.com/role: operator`、任意のネームスペース)  | `9001`、`9002` (management)                     |
+| Keeper     | クラスター自身のポッド                                                    | `9234` (Raft)                                  |
+| Keeper     | Operator ポッドおよびこの Keeper を参照するすべての `ClickHouseCluster`         | `2181`、`2281` (client) 、`9123` (HTTP control)  |
+
+Keeper は `keeperClusterRef` に基づいて ClickHouse クラスターを許可します。参照を
+追加または削除すると、他のネームスペースからの参照も含めて、Keeper のポリシーが
+自動的に更新されます。
+
+<div id="allowing-clients">
+  ### クライアントと監視の許可
+</div>
+
+クライアント接続とメトリクスのスクレイプは**対象に含まれません**。managed
+ポリシー を有効にすると、許可するまでクライアントポート (`9000`/`8123`、または TLS
+バリアント) やメトリクスポートに到達できなくなります。NetworkPolicy は加算的に適用されるため、
+managed ポリシー と併せて独自の ポリシー でアクセスを許可します。
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients
+  namespace: <cluster-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: <name>-clickhouse
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          role: my-app
+    ports:
+    - protocol: TCP
+      port: 9000
+```
+
+同じことが Prometheus によるスクレイプ (ClickHouse ではポート `9363`、
+Keeper では `9090`) にも当てはまります。監視用ネームスペースを明示的に許可してください。
+
+`networkPolicy.policy: Disabled` (デフォルト) を設定すると、管理対象の
+ポリシーは削除されます。ユーザー定義のポリシーは、クラスターの `app` ラベルが
+付与されている場合を除き、operator が変更することはありません。
+
+<div id="np-cluster-wide-disable">
+  ### クラスター全体での無効化
+</div>
+
+NetworkPolicy の管理は、operator&#39;s
+`ENABLE_NETWORK_POLICY` 環境変数により、クラスター全体で無効にすることもできます。`ENABLE_NETWORK_POLICY=false` の場合、
+operator は `spec.networkPolicy.policy` の設定にかかわらず、**すべての** ClickHouseCluster および KeeperCluster に対する
+NetworkPolicy のリコンサイルをスキップし、`NetworkPolicy` リソースを**一切監視しません**。そのため、operator&#39;s
+ServiceAccount には `networkpolicies.networking.k8s.io` に対する RBAC 権限は不要です。これは、これらの権限を意図的に付与していない
+制限付き ServiceAccount で operator を実行する場合に有用です。
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: ENABLE_NETWORK_POLICY
+  value: "false"
+```
+
+Helm では、同じスイッチがチャートの値として提供されています。
+
+```yaml
+# values.yaml
+controller:
+  networkPolicyManagement:
+    enabled: false
+```
+
+<div id="operator-pod-policies">
+  ## Operator ポッドポリシー
+</div>
+
+チャート には、**controller manager ポッド**、つまり operator プロセス自体に到達できるトラフィックを制限するための任意のポリシーも含まれています。これらは、operator が他のクライアント向けに公開している 2 つのポート、メトリクスエンドポイントと admission webhook を対象とします。
 
 <div id="what-the-helm-chart-creates">
   ## Helm チャートで作成されるもの

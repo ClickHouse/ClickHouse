@@ -82,9 +82,17 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 عند إضافة أذونات للبيانات إلى دور مخصص، ينشئ ClickHouse Cloud دورًا مطابقًا في كل خدمة محددة، مع البادئة `cloud:`. على سبيل المثال، يظهر الدور المخصص المسمى `readonly` في قاعدة البيانات باسم `cloud:readonly`. يحصل أعضاء الدور المخصص على أذونات قاعدة البيانات هذه عند اتصالهم بالخدمة عبر المصادقة من دون كلمة مرور في SQL Console.
 
-<Info>
-  تكون للأدوار المعيّنة يدويًا في قاعدة البيانات باستخدام [اصطلاح التسمية `sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) أولوية على الأدوار المعيّنة عبر Console.
-</Info>
+<Tip>
+  تحل أدوار قاعدة البيانات التي يديرها Cloud محل أدوار [`sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) المعيّنة يدويًا، وهي غير متوافقة مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### المتطلبات الأساسية
+</div>
+
+تعتمد أدوار قاعدة البيانات المخصصة في الخدمة على [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)، ولا تُطبّق عندما تكون معطّلة. قبل إضافة أذونات للبيانات إلى دور، انتقل إلى الخدمة، وافتح `Settings`، ثم ابحث عن بطاقة `JWT authentication` في قسم `Security`. تأكد من أن مفتاح التبديل `SQL Console` مفعّل.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="بطاقة مصادقة JWT مع تفعيل مفتاح تبديل SQL Console" size="lg" force />
 
 <Steps>
   <Step title="إضافة أذونات للبيانات إلى دور" id="add-data-permissions">
@@ -92,17 +100,17 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   </Step>
 
   <Step title="تحديد الخدمة" id="select-data-permissions-service">
-    حدد الخدمة التي تنطبق عليها الأذونات. أضف المزيد من الخدمات لتطبيق الأذونات على خدمات متعددة.
+    حدد الخدمة التي تنطبق عليها الأذونات. أضف المزيد من الخدمات لتطبيق أذونات `Read-only` أو `Admin` نفسها على خدمات متعددة.
   </Step>
 
   <Step title="اختيار مستوى الوصول" id="choose-data-access-level">
-    حدد مستوى الوصول `Read-only` أو `Admin` أو `Custom`. عند اختيار `Custom`، عرّف أذونات محددة للوصول إلى البيانات باستخدام عبارات [`GRANT`](/ar/reference/statements/grant) في ClickHouse.
+    حدد مستوى الوصول `Read-only` أو `Admin` أو `Custom`. عند اختيار `Custom`، عرّف أذونات محددة للوصول إلى البيانات باستخدام عبارات [`GRANT`](/ar/reference/statements/grant) في ClickHouse. لا يمكن تحديد مستوى الوصول `Custom` إلا عندما تستهدف الأذونات خدمة واحدة؛ ولتحديد أذونات مخصصة لخدمات متعددة، أضف إذن `Data` منفصلًا لكل خدمة.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="مربع حوار إنشاء دور جديد مع أذونات للبيانات محددة بعبارات منح مخصصة" size="md" />
   </Step>
 
   <Step title="إنشاء الدور" id="create-role-with-data-permissions">
-    انقر فوق `Create role`. تُنشأ أدوار قاعدة البيانات في الخدمات المحددة.
+    انقر فوق `Create role`. تُنشأ أدوار قاعدة البيانات في الخدمات المحددة. قد يستغرق نشر الأدوار في إحدى الخدمات ما يصل إلى 10 دقائق، لكن المستخدمين الذين أُسنِد إليهم الدور يحصلون على أذوناته فورًا عند الاستعلام عن الخدمة.
   </Step>
 </Steps>
 
@@ -110,7 +118,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   ### التحقق من أدوار قاعدة البيانات
 </div>
 
-تُنشأ الأدوار المُدارة عبر Console في قاعدة البيانات بالبادئة `cloud:` ونوع التخزين `cloud`. لعرضها، نفّذ query على table `system.roles` في الخدمة:
+تُنشأ الأدوار المُدارة عبر Console في قاعدة البيانات بالبادئة `cloud:` ونوع التخزين `cloud`، وقد يستغرق ظهورها بعد إنشائها ما يصل إلى 10 دقائق. لعرضها، نفّذ query على table `system.roles` في الخدمة:
 
 ```sql
 SELECT * FROM system.roles;

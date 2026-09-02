@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre permettant d’activer ou de désactiver l’optimisation du plan qui matérialise uniquement les n meilleurs groupes de chaque compartiment à deux niveaux lorsqu’une agrégation finale alimente ORDER BY sur ses résultats avec LIMIT n et qu’il est possible de prouver que la sélection par compartiment est exacte."}]}]} />
+
+Active ou désactive une optimisation au niveau du plan de requête qui, lorsqu’une agrégation finale alimente `ORDER BY` sur les résultats de l’agrégation avec `LIMIT n` et que le plan prouve que la sélection par compartiment est exacte, matérialise uniquement les n meilleurs groupes de chaque compartiment à deux niveaux, dans cet ordre, lors de la conversion finale de l’agrégation. Le résultat est exact : un groupe ne figurant pas parmi les n meilleurs groupes de son propre compartiment est précédé d’au moins n groupes au niveau global et ne peut donc pas figurer parmi les n meilleurs groupes globaux.
+Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) est défini sur 1.
+
+Valeurs possibles :
+
+* 0 - Désactiver
+* 1 - Activer
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
@@ -145,6 +161,21 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
+<div id="query_plan_fuse_filter_into_array_join">
+  ## query_plan_fuse_filter_into_array_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouvelle optimisation fusionnant un filtre sur des colonnes soumises à ARRAY JOIN dans l’étape ARRAY JOIN, activée par défaut."}]}]} />
+
+Active ou désactive une optimisation au niveau du plan de requête qui fusionne un filtre sur des colonnes d’éléments soumises à `ARRAY JOIN` dans l’étape `ARRAY JOIN`. Les tableaux sont ainsi filtrés dans l’espace des éléments avant leur expansion, de sorte que les éléments exclus par le filtre ne sont jamais développés ni répliqués.
+Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) est défini sur 1.
+
+<Note>
+  Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer de manière non rétrocompatible ou être supprimé ultérieurement.
+</Note>
+
 <div id="query_plan_join_shard_by_pk_ranges">
   ## query_plan_join_shard_by_pk_ranges
 </div>
@@ -233,7 +264,9 @@ Contrôle la valeur maximale de LIMIT autorisant l&#39;utilisation du plan de re
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "Nouveau paramètre."}]}]} />
 
-Définit la valeur maximale de la limite autorisant l’évaluation du plan de requête pour l’optimisation TopK à l’aide de l’index de saut minmax et du filtrage dynamique par seuil. Si elle vaut zéro, aucune limite n’est appliquée.
+Définit la valeur maximale de LIMIT autorisant l’évaluation du plan de requête pour l’optimisation TopK à l’aide de l’index de saut minmax et du filtrage dynamique par seuil. Si elle vaut zéro, aucune limite n’est appliquée.
+
+Ce paramètre contrôle également le comportement de [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/fr/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,13 +451,23 @@ Optimise la lecture avec FINAL à partir de ReplacingMergeTree en construisant u
 
 Utiliser le plan de requête pour l’optimisation par matérialisation différée.
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser la matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` lisant des fichiers Parquet locaux avec la fonction de table `file` et le moteur de table `File`."}]}]} />
+
+Utilise l&#39;optimisation de matérialisation différée lors de la lecture de fichiers Parquet locaux avec la fonction de table `file` et le moteur de table `File` : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes non nécessaires au tri et au filtrage ne sont lues que pour les `n` lignes conservées après l&#39;application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser la matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` lisant des fichiers Parquet depuis le stockage d'objets, y compris les tables Iceberg."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser la matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` lisant des fichiers Parquet depuis le stockage d'objets, y compris les tables Iceberg."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser la matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` lisant des fichiers Parquet depuis le stockage d'objets, y compris les tables Iceberg."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser la matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` lisant des fichiers Parquet depuis le stockage d'objets, y compris les tables Iceberg."}]}]} />
 
 Utilise l&#39;optimisation de matérialisation différée pour lire des fichiers Parquet depuis le stockage d&#39;objets, y compris les tables Iceberg : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes inutiles pour le tri et le filtrage ne sont lues que pour les `n` lignes conservées après application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
 
@@ -450,6 +493,26 @@ N&#39;a d&#39;effet que si le paramètre [query&#95;plan&#95;enable&#95;optimiza
 <Note>
   Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu&#39;à des fins de débogage. Ce paramètre peut à l&#39;avenir évoluer de manière non rétrocompatible, voire être supprimé.
 </Note>
+
+Valeurs possibles :
+
+* 0 - Désactiver
+* 1 - Activer
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de déplacer les fonctions réduisant le volume (`length`, `lengthUTF8`, `empty`, `notEmpty`) après les étapes `Sorting` et `Filter`, afin de remplacer la colonne d’argument de grande taille par un résultat de taille fixe. previous_value=false permet à `compatibility` avec les versions antérieures à la version 26.8 de restaurer le comportement précédent (sans déplacement)."}]}]} />
+
+Active ou désactive une optimisation au niveau du plan de requête qui déplace les fonctions réduisant le volume (`length`, `lengthUTF8`, `empty`, `notEmpty`)
+vers le bas du plan d’exécution, après les étapes `Sorting` et `Filter`. Le résultat de taille fixe remplace
+l’argument `String` / `FixedString` de grande taille, de sorte que celui-ci n’est plus transmis à travers ces étapes.
+Cette réécriture n’est appliquée que si la colonne d’argument n’est pas nécessaire en amont de l’étape après laquelle elle est déplacée.
+
+Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) est égal à 1.
 
 Valeurs possibles :
 
@@ -500,22 +563,6 @@ Valeurs possibles :
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Nouveau paramètre"}]}]} />
 
 Conserve la lecture dans l’ordre depuis la table de gauche lors des opérations JOIN, afin qu’elle puisse être utilisée par les étapes suivantes.
-
-<div id="query_plan_read_in_order_through_spilling_join">
-  ## query_plan_read_in_order_through_spilling_join
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant de propager la lecture dans l'ordre à travers une hash join avec un seuil de déversement automatique, en maintenant cette jointure en mémoire afin de préserver l'ordre promis. previous_value=false afin que `compatibility` avec les versions antérieures à 26.8 rétablisse le comportement conservateur préexistant, dans lequel une telle jointure n'est jamais utilisée pour la lecture dans l'ordre, mais peut toujours déverser des données sur disque."}]}]} />
-
-Permet à [`query_plan_read_in_order_through_join`](/fr/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) de s&#39;appliquer également à une hash join pour laquelle un seuil de déversement automatique sur disque est configuré avec [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
-
-Une telle jointure ne peut garantir la préservation de l&#39;ordre de la table de gauche que si elle ne déverse jamais de données sur disque, car ce déversement répartit les lignes dans des compartiments selon leur hachage. Lorsque l&#39;optimisation s&#39;applique, la jointure est donc maintenue en mémoire et le seuil de déversement ne se déclenche plus : la table de droite est alors limitée par le traqueur de mémoire, comme si aucun déversement automatique n&#39;était configuré.
-
-Définissez ce paramètre sur `0` pour conserver le comportement conservateur consistant à ne jamais propager la lecture dans l&#39;ordre à travers une jointure susceptible de déverser des données sur disque. Les requêtes qui s&#39;appuient sur ce déversement pour respecter la limite de mémoire et qui, sans cela, deviendraient éligibles à l&#39;optimisation continuent de fonctionner comme auparavant.
-
-L&#39;optimisation distincte `ORDER BY ... LIMIT` via `JOIN`, qui pousse un `Sort` et un `Limit` vers le côté préservé de la jointure, ne dépend jamais de la préservation de l&#39;ordre par la jointure et reste disponible pour les jointures pouvant déverser des données sur disque, indépendamment de ce paramètre. Elle s&#39;efface toutefois au profit de la lecture dans l&#39;ordre lorsque celle-ci est possible : ainsi, lorsque ce paramètre est activé, un `ORDER BY ... LIMIT` sur une jointure pouvant déverser des données sur disque, dont le côté préservé peut produire les lignes dans l&#39;ordre demandé, utilise le plan de lecture dans l&#39;ordre plutôt qu&#39;un `Sort` et un `Limit` poussés vers le bas. Ce basculement conserve ses conditions préexistantes, notamment que [`query_plan_join_swap_table`](/fr/reference/settings/session-settings/query-plan#query_plan_join_swap_table) soit explicitement défini sur `false` : avec la valeur par défaut `auto`, une optimisation ultérieure peut échanger les côtés de la jointure et invalider le plan de lecture dans l&#39;ordre ; le basculement n&#39;est donc jamais effectué et ces requêtes conservent le `Sort` et le `Limit` poussés vers le bas.
 
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct

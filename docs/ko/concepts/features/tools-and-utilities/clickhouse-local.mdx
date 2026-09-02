@@ -248,7 +248,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--echo-query-id [ <bool> ]` — 실행 전에 `query_id`를 출력합니다. 선택적 불리언 값을 받습니다. 대화형 모드에서는 기본적으로 활성화되고 batch mode에서는 비활성화됩니다.
 * `--echo-query-separator <string>` — 포맷된 출력 쿼리 앞에 이 구분자를 출력합니다(`--echo-formatted` 필요). 이렇게 하면 직접 입력한 쿼리와 다시 포맷되어 출력된 쿼리를 더 쉽게 구분할 수 있습니다. 기본값은 빈 문자열(비활성화)입니다.
 * `--highlight`, `--hilite` `<bool>` — 명령 프롬프트와 출력되는 쿼리의 구문 강조를 전환합니다. 기본적으로 활성화됩니다. 강조는 터미널에 출력할 때만 적용됩니다.
-* `--hints <bool>` — 커서가 입력 끝에 있을 때 가장 잘 일치하는 제안에 대해 입력 중 자동 완성 힌트(인라인 &quot;ghost&quot; 텍스트)를 표시합니다. 위/아래(또는 Ctrl-Up/Ctrl-Down)로 힌트를 탐색할 수 있으며, Tab 또는 Right로 인라인 힌트를 수락할 수 있습니다. `Enter`는 힌트가 명시적으로 선택된 경우에만 해당 힌트를 수락하고, 그렇지 않으면 쿼리를 실행합니다. `Tab`은 기존 완성 목록도 엽니다. `--highlight`가 필요하며(힌트에는 색상이 필요함), 제안 기능도 필요합니다(따라서 `--disable_suggestion`도 이를 비활성화합니다). 기본적으로 활성화됩니다.
+* `--hints <bool>` — 커서가 입력 끝에 있을 때 가장 잘 일치하는 제안에 대해 입력 중 자동 완성 힌트(인라인 &quot;ghost&quot; 텍스트)를 표시합니다. 위/아래(또는 Ctrl-Up/Ctrl-Down)로 힌트를 탐색할 수 있으며, Tab 또는 Right로 인라인 힌트를 수락할 수 있습니다. `Enter`는 힌트가 명시적으로 선택된 경우에만 해당 힌트를 수락하고, 그렇지 않으면 쿼리를 실행합니다. `Tab`은 기존 완성 목록도 엽니다. `--highlight`가 필요합니다(힌트에는 색상이 필요함). 제안 힌트에는 제안 기능도 필요하므로 `--disable_suggestion`은 해당 힌트를 비활성화합니다. 클라이언트의 [`/` 명령어](/ko/interfaces/client#slash-commands)는 정적 목록이므로 `--hints`와 `--highlight`가 활성화되어 있는 한 계속 힌트로 표시됩니다. 힌트가 비활성화되어 있어도 `Tab`으로 `/` 명령어를 완성할 수 있습니다. 기본적으로 활성화됩니다.
 * `--verbose` — 쿼리 실행에 대한 자세한 정보를 표시합니다.
 * `--logger.console` — 콘솔에 로그를 기록합니다.
 * `--logger.log` — 로그 파일 이름입니다.

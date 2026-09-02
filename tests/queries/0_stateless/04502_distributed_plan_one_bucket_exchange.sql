@@ -15,7 +15,6 @@ INSERT INTO t_one_bucket_r SELECT number, number * 100 FROM numbers(500);
 
 -- make_distributed_plan rejects aggregation with a group-by row limit
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 
 -- One-bucket shuffle join, multi-bucket readers

@@ -18,11 +18,11 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-Genera una excepción si el valor de esta configuración es menor o igual que el número actual de consultas que se procesan simultáneamente.
+Genera una excepción si el número actual de consultas que se procesan simultáneamente alcanza o supera el valor de este SETTING.
 
 Ejemplo: `max_concurrent_queries_for_all_users` se puede establecer en 99 para todos los usuarios, y el administrador de la base de datos puede establecerlo en 100 para sí mismo a fin de ejecutar consultas de investigación incluso cuando el servidor está sobrecargado.
 
-Modificar la configuración para una consulta o un usuario no afecta a otras consultas.
+Modificar el SETTING para una consulta o un usuario no afecta a otras consultas.
 
 Valores posibles:
 

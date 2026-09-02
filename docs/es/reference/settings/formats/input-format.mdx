@@ -625,7 +625,7 @@ Profundidad máxima de un campo en JSON. No es un límite estricto y no es neces
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "536870912"},{"label": "Nueva configuración para limitar el tamaño máximo de un único objeto JSON en bytes"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "536870912"},{"label": "Nueva configuración para limitar el tamaño máximo de un único objeto JSON en bytes"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "536870912"},{"label": "Nueva configuración para limitar el tamaño máximo de un único objeto JSON en bytes"}]}]} />
 
 Tamaño máximo permitido de un único objeto JSON, en bytes. Los objetos que superen este límite se rechazan, ya que probablemente estén malformados. Esto evita el agotamiento de memoria cuando se analiza un documento JSON malformado como un único objeto. Se aplica el mismo límite tanto en las rutas de análisis paralelas como en las no paralelas. Establézcalo en 0 para desactivar la comprobación.
 

@@ -83,6 +83,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,6 +163,9 @@ ALTER TABLE table DROP INDEX text_idx;
   可以通过可选参数指定分隔符，例如 `tokenizer = splitByString([', ', '; ', '\n', '\\'])`。
   请注意，每个分隔符字符串都可以包含多个字符 (如示例中的 `', '`) 。
   如果未显式指定，默认分隔符列表 (例如 `tokenizer = splitByString`) 为单个空格字符 `[' ']`。
+* `splitByRegexp(re)` 按用户定义的正则表达式分隔符 `re` 拆分字符串 (参见函数 [splitByRegexp](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)) 。
+  `re` 参数为必需参数，例如 `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`。
+  与 `splitByString` 的固定分隔符字符串不同，正则表达式分隔符可以保留包含特殊字符的标记 (如 `C++` 或 `C#`)，而其他分词器会将其拆分。
 * `asciiCJK` 使用 Unicode 单词边界规则将字符串拆分为标记 (类似于 [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)) 。ASCII 字母数字字符和下划线会与连接符一起组成标记 (字母使用 ASCII `:`，同类字符使用 `.` 和 `'`) 。非 ASCII Unicode 字符 (包括 [CJK](https://en.wikipedia.org/wiki/CJK_characters) 字符) 会成为单字符标记。
 * `chinese[(granularity)]` 使用字典和隐马尔可夫模型将中文文本分词 (该算法遵循 [jieba](https://github.com/fxsjy/jieba)；内置字典和模型数据源自 [cppjieba](https://github.com/yanyiwu/cppjieba))。与将每个非 ASCII 字符视为单字符标记的 `asciiCJK` 不同，`chinese` 会将连续的中文字符组合成词语 (例如 `北京大学` 会成为一个标记 `北京大学`，而不是四个单字符标记)。这可为中文文本生成更有意义的标记，并提高搜索质量。对于通用/混合文本，请使用 `asciiCJK`；对于纯中文文本，请使用 `chinese`。可选的 `granularity` 参数可以是 `'coarse_grained'` (未指定时的默认值) 或 `'fine_grained'`。后者还会枚举重叠的子词，例如 `北京邮电大学` 还会生成 `北京`、`邮电`、`大学`。细粒度分词可提高召回率，但会导致索引更大。
   使用 [hasAnyTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens) 搜索 `chinese` 文本索引 (它们会使用 `chinese` 分词器对 needle 进行分词)，而不要使用 `hasToken` (它只按 ASCII 分隔符拆分)。
@@ -176,7 +181,7 @@ ALTER TABLE table DROP INDEX text_idx;
   如果提供了参数 `min_cutoff_length`，则只返回长度大于或等于 `min_cutoff_length` 的 n-grams。
   与 `ngrams(N)` 相比，`sparseGrams` 分词器会生成长度可变的 N-grams，因此能更灵活地表示原始文本。
   例如，`tokenizer = sparseGrams(3, 5, 4)` 会在内部从输入字符串生成 3-、4-、5-grams，但只返回 4- 和 5-grams。
-* `array` 不执行分词，也就是说，每行的值都是一个标记 (参见函数 [array](/zh/reference/functions/regular-functions/array-functions#array)) 。
+* `array` 不执行分词，也就是说，每行的值都是一个标记 (参见函数 [array](/zh/reference/functions/regular-functions/array-functions#array)) 。为兼容其他系统，`keyword` 可作为 `array` 的别名使用。
 
 所有可用的分词器都列在 [system.tokenizers](/zh/reference/system-tables/tokenizers) 中。
 
@@ -409,7 +414,7 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 
 后处理器会在构建索引期间应用于每个生成的标记 (对于 `array` 分词器，每个数组元素都是一个标记)。查询时，其行为取决于所使用的函数：
 
-* 对于 `hasToken`、`hasAllTokens`、`hasAnyTokens` 和 `hasPhrase` (使用任何受支持的分词器)：后处理器会同时应用于 haystack 标记和搜索 needle，从而实现完全归一化的匹配 (例如，不区分大小写的搜索)。对于 `hasPhrase`，后处理后的标记会被连续定位，因此后处理器丢弃的标记不会留下位置间隙，短语仍可跨越该标记匹配——例如，使用会丢弃 `the` 的停用词后处理器时，`hasPhrase(col, 'see cat')` 可匹配文档 `see the cat`。
+* 对于 `hasToken`、`hasAllTokens`、`hasAnyTokens` 和 `hasPhrase` (使用任何受支持的分词器)：后处理器会同时应用于 haystack 标记和搜索 needle，从而实现完全归一化的匹配 (例如，不区分大小写的搜索)。对于 `hasPhrase`，后处理后的标记会被连续定位，因此后处理器丢弃的标记不会留下位置间隙，短语仍可跨越该标记匹配——例如，使用会丢弃 `the` 的停用词后处理器时，`hasPhrase(col, 'see cat')` 可匹配文档 `see the cat`。唯一的例外是在 `splitByRegexp` 索引上使用 `hasPhrase`，该索引不支持后处理器 (此组合会因异常而被拒绝)。
 * 对于所有其他函数 (`=`、`IN`、`has`、`hasAny`、`hasAll`、`mapContains*`)：仅会对搜索 needle 进行后处理，以用于索引提示查找；行级谓词仍会与原始列值进行比较。
 
 示例：
@@ -517,31 +522,31 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 对于会查询文本索引的谓词，在进行粒度级检查之前，会先对搜索值应用预处理器和后处理器，以便索引查找使用与构建索引时存储的相同标记。
 对于大多数函数 (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`) ，文本索引仅用于跳过无关的数据块；ClickHouse 仍会针对原始列数据，使用原始谓词验证每一条保留下来的行。
 对于标记搜索函数 (`hasToken`, `hasAllTokens`, `hasAnyTokens`) ，文本索引是主要的求值路径：ClickHouse 会通过与索引构建时相同的预处理器、分词器和后处理器对 needle 进行归一化，并将这一规范化结果同时用于带索引和不带索引的表分片。使用后处理器时，haystack 标记也会在查询时被归一化 (适用于任何分词器，而不仅仅是 `array`) ，因此比较两侧都会以一致的方式进行转换，结果也不依赖于索引是通过直接读取 (设置 `query_plan_direct_read_from_text_index`) 访问，还是某个分片是否具有 materialized 索引——例如，配合 `lower` 后处理器，可为 `hasAllTokens(col, ['FOO'])` 启用不区分大小写的匹配。
-在未使用 `support_phrase_search` 时，`hasPhrase` 仅将索引用作提示，并使用原始谓词验证每一条保留下来的行；后处理器还会以相同方式对短语和 haystack 标记进行归一化，因此结果与读取路径无关，而且被后处理器丢弃的标记也不会破坏短语的相邻关系。在 `support_phrase_search = 1` 时，`hasPhrase` 会使用精确的直接读取 (如果有后处理器，仍会应用) 。
+在未使用 `support_phrase_search` 时，`hasPhrase` 仅将索引用作提示，并使用原始谓词验证每一条保留下来的行；后处理器还会以相同方式对短语和 haystack 标记进行归一化，因此结果与读取路径无关，而且被后处理器丢弃的标记也不会破坏短语的相邻关系。在 `support_phrase_search = 1` 时，`hasPhrase` 会使用精确的直接读取 (如果有后处理器，仍会应用) 。此后处理器支持不适用于 `splitByRegexp` 分词器：在结合后处理器的 `splitByRegexp` 索引上使用 `hasPhrase` 会被拒绝 (请参阅下方脚注 ³) 。
 被后处理器映射为空字符串的搜索标记会被忽略，也就是视为在搜索短语中不存在。
 
-| 函数                                                                                                      | 支持预处理器                  | 兼容的分词器                                                          | 支持后处理器 |
-| ------------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------- | ------ |
-| `=`                                                                                                     | 是                       | 全部                                                              | 是      |
-| `IN`                                                                                                    | 是                       | 全部                                                              | 是      |
-| [hasToken](/zh/reference/functions/regular-functions/string-search-functions#hasToken)                     | 是                       | 全部 (专为 `splitByNonAlpha` 设计)                                    | 是      |
-| [hasAnyTokens(col, str)](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 是                       | 全部                                                              | 是      |
-| [hasAllTokens(col, str)](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 是                       | 全部                                                              | 是      |
-| [hasAnyTokens(col, arr)](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 否 (数组元素会按原样作为标记)        | 全部                                                              | 是      |
-| [hasAllTokens(col, arr)](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 否 (数组元素会按原样作为标记)        | 全部                                                              | 是      |
-| [hasPhrase](/zh/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | 是                       | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | 是      |
-| [startsWith](/zh/reference/functions/regular-functions/string-functions#startsWith)                        | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | 是      |
-| [endsWith](/zh/reference/functions/regular-functions/string-functions#endsWith)                            | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | 是      |
-| [like](/zh/reference/functions/regular-functions/string-search-functions#like)                             | 是¹                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | 是¹     |
-| [match](/zh/reference/functions/regular-functions/string-search-functions#match)                           | 是¹                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | 是¹     |
-| [ilike](/zh/reference/functions/regular-functions/string-search-functions#like)                            | 是² (仅限 `lower`/`upper`) | `splitByNonAlpha`, `array`²                                     | 否²     |
-| [mapContainsKey](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | 是                       | 全部                                                              | 是      |
-| [mapContainsValue](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | 是                       | 全部                                                              | 是      |
-| [mapContainsKeyLike](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | 是      |
-| [mapContainsValueLike](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | 是      |
-| [has](/zh/reference/functions/regular-functions/array-functions#has)                                       | 是                       | `array`                                                         | 是      |
-| [hasAny](/zh/reference/functions/regular-functions/array-functions#hasAny)                                 | 是                       | `array`                                                         | 是      |
-| [hasAll](/zh/reference/functions/regular-functions/array-functions#hasAll)                                 | 是                       | `array`                                                         | 是      |
+| 函数                                                                                                      | 支持预处理器                  | 兼容的分词器                                                                            | 支持后处理器 |
+| ------------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------- | ------ |
+| `=`                                                                                                     | 是                       | 全部                                                                                | 是      |
+| `IN`                                                                                                    | 是                       | 全部                                                                                | 是      |
+| [hasToken](/zh/reference/functions/regular-functions/string-search-functions#hasToken)                     | 是                       | 全部 (专为 `splitByNonAlpha` 设计)                                                      | 是      |
+| [hasAnyTokens(col, str)](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 是                       | 全部                                                                                | 是      |
+| [hasAllTokens(col, str)](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 是                       | 全部                                                                                | 是      |
+| [hasAnyTokens(col, arr)](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 否 (数组元素会按原样作为标记)        | 全部                                                                                | 是      |
+| [hasAllTokens(col, arr)](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 否 (数组元素会按原样作为标记)        | 全部                                                                                | 是      |
+| [hasPhrase](/zh/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | 是                       | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | 是³     |
+| [startsWith](/zh/reference/functions/regular-functions/string-functions#startsWith)                        | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 是      |
+| [endsWith](/zh/reference/functions/regular-functions/string-functions#endsWith)                            | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 是      |
+| [like](/zh/reference/functions/regular-functions/string-search-functions#like)                             | 是¹                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | 是¹     |
+| [match](/zh/reference/functions/regular-functions/string-search-functions#match)                           | 是¹                      | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | 是¹     |
+| [ilike](/zh/reference/functions/regular-functions/string-search-functions#like)                            | 是² (仅限 `lower`/`upper`) | `splitByNonAlpha`, `array`²                                                       | 否²     |
+| [mapContainsKey](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | 是                       | 全部                                                                                | 是      |
+| [mapContainsValue](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | 是                       | 全部                                                                                | 是      |
+| [mapContainsKeyLike](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 是      |
+| [mapContainsValueLike](/zh/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | 是                       | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 是      |
+| [has](/zh/reference/functions/regular-functions/array-functions#has)                                       | 是                       | `array`                                                                           | 是      |
+| [hasAny](/zh/reference/functions/regular-functions/array-functions#hasAny)                                 | 是                       | `array`                                                                           | 是      |
+| [hasAll](/zh/reference/functions/regular-functions/array-functions#hasAll)                                 | 是                       | `array`                                                                           | 是      |
 
 ¹ 对于列出的分词器，`LIKE` 和 `match` 会将直接读取作为提示使用；否则会回退为穷举扫描。
 此外，对于不带预处理器或后处理器的 `splitByNonAlpha` 和 `array` 分词器，`LIKE` 还支持 *直接读取 (不使用提示)&#x20;*&#x20;(通过 `use_text_index_like_evaluation_by_dictionary_scan` 启用) 。
@@ -549,6 +554,8 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ² `ILIKE` 仅支持通过直接读取 (不使用提示) 来执行 (`use_text_index_like_evaluation_by_dictionary_scan = 1`，且分词器为 `splitByNonAlpha` 或 `array`) 。
 不会回退到将索引用作提示的方式：如果该设置被禁用，或分词器不在支持范围内，则不会对 `ILIKE` 使用索引。
 如果存在预处理器，则必须为 `lower` 或 `upper`；不支持后处理器。
+
+³ 对 `splitByRegexp` 文本索引使用 `hasPhrase` **不**支持后处理器：该组合会因异常而被拒绝，因为后处理器的行级重写假定标记采用 `splitByNonAlpha` 风格的空白拆分。若不使用后处理器，`splitByRegexp` 可完全由 `hasPhrase` 支持。
 
 **Experimental：支持短语搜索参数 (可选)&#x20;**。
 
@@ -836,7 +843,7 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 不同于 `hasAllTokens` 只要求所有标记出现在任意位置，`hasPhrase` 要求它们按连续序列出现。
 搜索短语会使用为索引列配置的同一个分词器进行分词。
 当文本索引使用后处理器时，搜索短语在索引查找之前也会先进行归一化。
-请注意，该函数要求使用 `splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` 或 `icu` 分词器之一。
+请注意，该函数要求使用 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK` 或 `icu` 分词器之一。
 
 示例：
 
@@ -1275,7 +1282,7 @@ WHERE hasPhrase(col, 'weather in Tokyo')
 这一过程开销相对较高，也比常规文本搜索查询更慢。
 要加快短语搜索查询，请在文本索引中启用位置存储 (参见上文的 `Optional parameters`) 。
 
-`hasPhrase` 可与分词器 `splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` 和 `icu` 搭配使用。
+`hasPhrase` 可与分词器 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK` 和 `icu` 搭配使用。
 给定的短语字符串会使用该索引的分词器进行分词。
 短语中的分隔符字符会被忽略：`hasPhrase(text, 'quick+brown')` 等同于 `hasPhrase(text, 'quick brown')`，前提是使用 `splitByNonAlpha` 作为分词器。
 
@@ -1556,6 +1563,14 @@ Aggregating
 * 对包含大量标记的文本索引进行物化 (例如 100 亿个标记) 可能会消耗大量内存。文本索引的物化
   既可能直接发生 (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) ，也可能在 分片 merge 过程中间接发生。
 * 无法对包含超过 4,294,967,296 (= 2^32 = 约 42 亿) 行的 分片 进行文本索引物化。如果没有 materialized 文本索引，查询会回退为在该 分片 内进行缓慢的暴力搜索。作为最坏情况估算，假设一个 分片 只包含一个 String 类型的列，并且未修改 MergeTree 设置 `max_bytes_to_merge_at_max_space_in_pool` (默认值：150 GB) 。在这种情况下，如果该列平均每行包含的字符数少于 29.5，就会出现这种情况。在实际场景中，表通常还包含其他列，因此该阈值会比这小很多倍 (具体取决于其他列的数量、类型和大小) 。
+
+<div id="upgrade-notes">
+  ## 升级说明
+</div>
+
+文本索引的磁盘格式版本由表级设置 [`text_index_serialization_version`](/zh/reference/settings/merge-tree-settings/text-index) (默认值：`v2_with_positions`) 控制。
+该设置表示一种偏好，而非硬性约束：如果配置的版本无法表示某个索引，系统会自动选择能够表示该索引的较新版本，因此写入文本索引不会因该设置而失败。
+进行滚动升级时，请在已升级的服务器上通过 [`compatibility`](/zh/reference/settings/session-settings/compatibility#compatibility) 设置固定格式：如果该设置指定的版本早于引入相应格式的版本，`text_index_serialization_version` 会自动回退到较旧的值，较新服务器会继续写入较旧服务器仍可读取的格式。
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## 文本索引与基于布隆过滤器的索引对比

@@ -92,6 +92,9 @@ class Labels:
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
+    # Gates the Darwin (macOS) "Fast test" job in PRs; it is skipped unless this
+    # label is applied. See DARWIN_FAST_TEST_JOBS in filter_job.py.
+    CI_MACOS = "ci-macos"
 
     # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"

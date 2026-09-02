@@ -24,6 +24,22 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 执行 drop 时，是否删除所有 Iceberg 文件。
 
+<div id="iceberg_delete_manifest_decode_concurrency">
+  ## iceberg_delete_manifest_decode_concurrency
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "新增设置，用于限制读取第一行之前可并发解码的 Iceberg 删除 manifest 文件数量。在 26.8 之前，每次解码一个 manifest，同时拉取下一个 manifest，因此 `2` 是最接近此前行为的等效值；此前行为会将这些 manifest 的对象存储往返时间之和置于返回第一行前的关键路径上。"}]}]} />
+
+在读取任何数据文件之前，查询执行期间可并发解码的 Iceberg 删除 manifest 文件的最大数量。
+
+必须先解码所有删除 manifest，才能读取任何数据文件，因此这项工作位于返回第一行之前的关键路径上。一次解码多个 manifest 可重叠执行对象存储往返和按行剪枝工作。
+
+当 Iceberg 元数据文件缓存被禁用或已满时，较高的值会增加查询初始化期间的峰值内存占用，因为每个正在处理的 manifest 都会保留各自解码后的内容。
+
+必须大于零；`1` 表示每次解码一个 manifest。
+
 <div id="iceberg_manifest_min_count_to_compact">
   ## iceberg_manifest_min_count_to_compact
 </div>

@@ -51,6 +51,10 @@ FROM (
 
 SELECT * FROM t1 ALL INNER JOIN tj ON t1.a = tj.a WHERE t1.a = tj.d ORDER BY ALL;
 
+-- Disabled so the correlated subquery decorrelates via the CROSS JOIN this section verifies,
+-- instead of being planned away by equivalent-expression substitution.
+SET correlated_subqueries_substitute_equivalent_expressions = 0;
+
 SELECT '-- CROSS JOIN from correlated subquery with condition `Int32` = `Nullable(Int32)`';
 SELECT
     countIf(explain LIKE '%Type: cross%') AS cross_joins,

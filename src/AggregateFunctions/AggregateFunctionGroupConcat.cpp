@@ -15,7 +15,7 @@ extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
+void GroupConcatData::checkAndUpdateSize(UInt64 add, Arena * arena)
 {
     if (data_size + add >= allocated_size)
     {
@@ -25,19 +25,11 @@ void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
     }
 }
 
-void GroupConcatDataBase::insertChar(const char * str, UInt64 str_size, Arena * arena)
+void GroupConcatData::insertChar(const char * str, UInt64 str_size, Arena * arena)
 {
     checkAndUpdateSize(str_size, arena);
     memcpy(data + data_size, str, str_size);
     data_size += str_size;
-}
-
-void GroupConcatDataBase::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
-{
-    WriteBufferFromOwnString buff;
-    serialization->serializeText(*column, row_num, buff, FormatSettings{});
-    auto string = buff.stringView();
-    insertChar(string.data(), string.size(), arena);
 }
 
 UInt64 GroupConcatData::getSize(size_t i) const

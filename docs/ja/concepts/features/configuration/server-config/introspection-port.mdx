@@ -1,0 +1,60 @@
+---
+description: '通常のポートが接続を受け付けないサーバーの起動中またはシャットダウン中にクエリを処理するネイティブプロトコルポート。'
+sidebarTitle: 'イントロスペクションポート'
+slug: /operations/introspection-port
+title: 'イントロスペクションポート'
+doc_type: 'reference'
+---
+
+`clickhouse-server` が起動中またはシャットダウン中に停止した場合、通常のポートは接続を受け付けず、サーバーの実行状況を確認することもできません。
+
+イントロスペクションポートは、サーバーがテーブルのAttachを開始する前に起動し、テーブルのdetachが完了した後にのみ停止するネイティブプロトコルのTCPリスナーです。この期間中、operatorは標準の `clickhouse-client` で接続し、`SHOW PROCESSLIST`、`SELECT * FROM system.stack_trace`、`SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5` などのクエリを実行できます。
+
+<div id="configuration">
+  ## 設定
+</div>
+
+イントロスペクションポートは、`<introspection>true</introspection>` でマークされた[コンポーザブルプロトコル](/ja/concepts/features/configuration/server-config/composable-protocols)のエンドポイントです。デフォルトでは、イントロスペクションポートは設定されていません。
+
+```xml
+<protocols>
+    <introspection_native>
+        <type>tcp</type>
+        <introspection>true</introspection>
+        <description>introspection native protocol (tcp)</description>
+        <host>127.0.0.1</host>
+        <port>9010</port>
+    </introspection_native>
+
+    <introspection_native_secure>
+        <type>tls</type>
+        <impl>introspection_native</impl>
+        <introspection>true</introspection>
+        <description>secure introspection native protocol (tcp_secure)</description>
+        <host>127.0.0.1</host>
+        <port>9011</port>
+    </introspection_native_secure>
+</protocols>
+```
+
+通常のコンポーザブルプロトコルエンドポイントであるため、エンドポイントでサポートされるすべての機能をサポートします。`host`、`port`、`description`、`networks` の許可リスト、`default_database`、および `tls` と `proxy1` レイヤーによるラッピングが利用できます。
+
+`introspection` フラグは、`port` を持つエントリであるエンドポイントのプロパティであり、`impl` 参照を介して継承されません。そのため、1 つのレイヤーをイントロスペクションエンドポイントと通常のエンドポイントで共有できます。
+
+以下のセマンティクスはネイティブプロトコルハンドラーによって実装されるため、スタックの末尾は `tcp` レイヤーである必要があります。スタックに `http`、`mysql`、`postgres`、`prometheus`、または `interserver` レイヤーを含むエンドポイントをマークしようとすると、必要なときに応答しなくなるポートが生成されるのではなく、起動時に `INVALID_CONFIG_PARAMETER` で拒否されます。
+
+| キー              | 説明                                                            |
+| --------------- | ------------------------------------------------------------- |
+| `introspection` | コンポーザブルプロトコルエンドポイントをイントロスペクションポートとしてマークします。デフォルトは `false` です。 |
+
+<div id="behavior">
+  ## 動作
+</div>
+
+* 受け付けられるクエリは、`SELECT`、`SHOW`、`DESCRIBE`、`EXPLAIN`、`EXISTS`、`KILL QUERY`、`SYSTEM`、`SET`、`USE` です。DDL やデータを変更するクエリを含むその他すべてのクエリは、サーバー状態が完全に構築される前または終了処理中でもポートが開いているため、`QUERY_IS_PROHIBITED` で拒否されます。
+* `SYSTEM RELOAD CONFIG` および `SYSTEM RELOAD USERS` は、起動中に設定を再読み込みすると初期化順序が崩れる可能性があるため、サーバーが完全に起動するまで `QUERY_IS_PROHIBITED` で拒否されます。
+* これらのポートで実行されるクエリは、`SHOW PROCESSLIST` と同様に、`max_concurrent_queries` とワークロードスケジューラの対象外です。
+* 接続は専用のスレッドプールで処理されるため、通常の接続プールが枯渇してもこれらのポートには影響しません。プールサイズは `max_connections` で決まります。
+* CPU 過負荷によりサーバーが通常の接続を拒否している場合でも、接続は受け付けられます。
+* 通常の認証と認可がすべて適用されます。このポートに接続しても、追加のアクセス権は付与されません。ただし、前述の同時実行制限は適用されないため、運用担当者のみが到達できるアドレスにバインドしてください。
+* これらのポートは `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (`ALL` および `CUSTOM` を含む) の対象外であり、設定の再読み込み時にも再構成されません。

@@ -39,22 +39,16 @@ O fluxo de autenticação funciona da seguinte forma:
 
 Todo JWT apresentado ao ClickHouse deve conter as seguintes claims:
 
-| Claim | Descrição                                                                                        |
-| ----- | ------------------------------------------------------------------------------------------------ |
-| `alg` | Algoritmo de assinatura (claim do cabeçalho). Valores aceitos: `HS256`, `RS256`, `ES256`.        |
-| `exp` | Tempo de expiração. Define o `valid_until` do usuário efêmero.                                   |
-| `iat` | Horário de emissão. Usado para impedir a reutilização de tokens antigos para a mesma identidade. |
-| `iss` | Emissor. Comparado com o emissor esperado do provedor.                                           |
-| `sub` | Sujeito. Passa a fazer parte do nome de usuário gerado.                                          |
-| `aud` | Audiência. Comparado com a audiência esperada do provedor.                                          |
+| Claim | Descrição                                                                                                                                                     |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `alg` | Algoritmo de assinatura (claim do cabeçalho). Valor aceito: `RS256`. A partir da versão 26.8, os algoritmos EC `ES256`, `ES384` e `ES512` também são aceitos. |
+| `exp` | Tempo de expiração. Define o `valid_until` do usuário efêmero.                                                                                                |
+| `iat` | Horário de emissão. Usado para impedir a reutilização de tokens antigos para a mesma identidade.                                                              |
+| `iss` | Emissor. Comparado com o emissor esperado do provedor.                                                                                                        |
+| `sub` | Sujeito. Passa a fazer parte do nome de usuário gerado.                                                                                                       |
+| `aud` | Audiência. Comparado com a audiência esperada do provedor.                                                                                                    |
 
 A claim `kid` (ID da chave) do cabeçalho também é obrigatória quando a resolução de chaves baseada em JWKS é usada.
-
-<Info>
-  **O modo JWKS oferece suporte apenas a chaves RSA**
-
-  Enquanto provedores com chave estática aceitam `HS256`, `RS256` ou `ES256`, provedores baseados em JWKS aceitam apenas JWKs cujo `kty` é `RSA` (ou seja, tokens assinados com `RS256`). Tokens assinados com chaves HMAC (`HS256`) ou EC (`ES256`) não podem ser verificados em um endpoint JWKS e serão rejeitados.
-</Info>
 
 <div id="other-recognized-claims">
   ### Outras claims reconhecidas
@@ -263,20 +257,17 @@ Você não precisa configurar nada para usar esse autenticador. Ele é provision
 
 <VersionBadge minVersion="26.4" />
 
-<EnterprisePlanFeatureBadge feature="Autenticação JWT com um provedor de identidade personalizado" support="true" />
+<EnterprisePlanFeatureBadge feature="Autenticação JWT com um provedor de identidade personalizado" />
 
-Além do autenticador integrado, você pode configurar seu serviço ClickHouse Cloud para aceitar JWTs emitidos pelo seu próprio provedor de identidade (por exemplo, Microsoft Entra ou Okta). Este é um recurso beta, disponível no plano Enterprise para serviços que executam o ClickHouse versão 26.4 ou posterior. Para habilitá-lo, abra um [chamado de suporte](https://clickhouse.com/support/program) com os seguintes detalhes de configuração:
+Além do autenticador integrado, você pode configurar seu serviço ClickHouse Cloud para aceitar JWTs emitidos pelo seu próprio provedor de identidade (por exemplo, Microsoft Entra ou Okta). Este é um recurso beta, disponível no plano Enterprise para serviços que executam o ClickHouse versão 26.4 ou posterior. Você pode configurá-lo por conta própria no Cloud Console em **Settings → Security → JWT authentication** — consulte [Configuração da autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) para obter instruções passo a passo. Cada provedor é definido pelos seguintes itens:
 
-| Parâmetro                | Descrição                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ID do serviço            | O UUID do serviço ClickHouse Cloud no qual a autenticação JWT será habilitada. Você pode encontrá-lo na URL do Cloud Console ao abrir o serviço.                                                                                                                                                                                                                                   |
-| Emissor                  | O valor do claim `iss` nos tokens emitidos pelo seu provedor de identidade, normalmente a URL do provedor (por exemplo, `https://your-tenant.okta.com`). O ClickHouse rejeita tokens cujo emissor não corresponde a esse valor.                                                                                                                                               |
-| Audiência                | O valor do claim `aud` que seu provedor de identidade inclui nos tokens destinados a este serviço. O ClickHouse rejeita tokens emitidos para uma audiência diferente.                                                                                                                                                                                                         |
-| URL do JWKS              | O endpoint HTTPS no qual seu provedor de identidade publica seu JSON Web Key Set (por exemplo, `https://idp.example.com/.well-known/jwks.json`). O ClickHouse obtém as chaves públicas desse endpoint para verificar as assinaturas dos tokens. A verificação de JWKS funciona apenas com chaves RSA (`RS256`), conforme descrito em [Claims obrigatórias](#required-claims). |
-| Claim de roles    | O nome do claim do token que contém as roles do ClickHouse para o usuário efêmero (o padrão é `clickhouse:roles`). O claim deve conter um array JSON de nomes de roles, por exemplo, `["analyst", "reader"]`.                                                                                                                                                        |
-| Claim de grants | O nome do claim do token que contém fragmentos SQL `GRANT` para o usuário efêmero (o padrão é `clickhouse:grants`). O claim deve conter um array JSON de fragmentos de grants, por exemplo, `["SELECT ON analytics.*", "INSERT ON analytics.events"]`.                                                                                                               |
-
-As roles especificadas no claim de roles já devem existir no serviço (crie-as com `CREATE ROLE`). O limite de permissões restringe os direitos de acesso efetivos provenientes dos claims de roles e de grants, conforme descrito em [Direitos de acesso](#access-rights).
+| Parâmetro                 | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nome                      | Um nome único para o provedor no serviço.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Emissor                   | O valor do claim `iss` nos tokens emitidos pelo seu provedor de identidade, normalmente a URL do provedor (por exemplo, `https://your-tenant.okta.com`). O ClickHouse rejeita tokens cujo emissor não corresponde a esse valor.                                                                                                                                                                                                                                              |
+| Audiência                 | O valor do claim `aud` que seu provedor de identidade inclui nos tokens destinados a este serviço. O ClickHouse rejeita tokens emitidos para uma audiência diferente.                                                                                                                                                                                                                                                                                                        |
+| URL do JWKS               | O endpoint HTTPS no qual seu provedor de identidade publica seu JSON Web Key Set (por exemplo, `https://idp.example.com/.well-known/jwks.json`). O ClickHouse obtém as chaves públicas desse endpoint para verificar as assinaturas dos tokens. A verificação de JWKS funciona com chaves RSA (`RS256`) e, a partir da versão 26.8, com chaves EC nas curvas P-256, P-384 e P-521 (`ES256`, `ES384`, `ES512`), conforme descrito em [Claims obrigatórias](#required-claims). |
+| Claim de roles (opcional) | O nome do claim do token que contém as roles do ClickHouse para o usuário efêmero. Deixe em branco para usar o nome de claim padrão `clickhouse:roles`. O claim deve conter um JSON array de nomes de roles, por exemplo, `["analyst", "reader"]`.                                                                                                                                                                                                                           |
 
 <div id="interserver-communication">
   ## Comunicação entre servidores

@@ -19,40 +19,36 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 Чтобы ограничить доступ к вашим сервисам ClickHouse Cloud только адресами AWS PrivateLink, следуйте инструкциям ClickHouse Cloud по [IP Access Lists](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
 
-<Note>
-  ClickHouse Cloud поддерживает [межрегиональный PrivateLink](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/) из следующих регионов:
+ClickHouse Cloud поддерживает [межрегиональный PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region) для сервисов, размещённых в следующих регионах AWS:
 
-  * sa-east-1
-  * il-central-1
-  * me-south-1
-  * mx-central-1
-  * eu-central-2
-  * eu-north-1
-  * eu-south-2
-  * eu-west-3
-  * eu-south-1
-  * eu-west-2
-  * eu-west-1
-  * eu-central-1
-  * ca-west-1
-  * ca-central-1
-  * ap-northeast-1
-  * ap-southeast-2
-  * ap-southeast-1
-  * ap-northeast-2
-  * ap-northeast-3
-  * ap-south-1
-  * ap-southeast-5
-  * ap-southeast-4
-  * ap-southeast-3
-  * ap-south-2
-  * ap-east-1
-  * af-south-1
-  * us-west-2
-  * us-west-1
-  * us-east-2
-  * us-east-1
-</Note>
+Таблица охватывает только регионы размещения сервисов. Для регионов интерфейсных VPC endpoint потребителей используется отдельный список разрешённых; например, `mx-central-1` является разрешённым регионом потребителя, хотя сервисы, размещённые в нём, не могут включить межрегиональный доступ.
+
+| Код региона      | Название региона                         |
+| ---------------- | ---------------------------------------- |
+| `af-south-1`     | Африка (Кейптаун)                        |
+| `ap-east-1`      | Азиатско-Тихоокеанский регион (Гонконг)  |
+| `ap-northeast-1` | Азиатско-Тихоокеанский регион (Токио)    |
+| `ap-northeast-2` | Азиатско-Тихоокеанский регион (Сеул)     |
+| `ap-south-1`     | Азиатско-Тихоокеанский регион (Мумбаи)   |
+| `ap-southeast-1` | Азиатско-Тихоокеанский регион (Сингапур) |
+| `ap-southeast-2` | Азиатско-Тихоокеанский регион (Сидней)   |
+| `ap-southeast-3` | Азиатско-Тихоокеанский регион (Джакарта) |
+| `ap-southeast-5` | Азиатско-Тихоокеанский регион (Малайзия) |
+| `ca-central-1`   | Канада (Центральный)                     |
+| `eu-central-1`   | Европа (Франкфурт)                       |
+| `eu-north-1`     | Европа (Стокгольм)                       |
+| `eu-west-1`      | Европа (Ирландия)                        |
+| `eu-west-2`      | Европа (Лондон)                          |
+| `il-central-1`   | Израиль (Тель-Авив)                      |
+| `me-central-1`   | Ближний Восток (ОАЭ)                     |
+| `sa-east-1`      | Южная Америка (Сан-Паулу)                |
+| `us-east-1`      | Восток США (N. Virginia)                 |
+| `us-east-2`      | Восток США (Огайо)                       |
+| `us-west-2`      | Запад США (Орегон)                       |
+
+<Warning>
+  Межрегиональный PrivateLink не поддерживается для сервисов ClickHouse Cloud, размещённых в `ap-east-2` или `mx-central-1`. Чтобы подключиться к сервису в любом из этих регионов с помощью PrivateLink, создайте интерфейсный VPC endpoint в том же регионе AWS, что и сервис.
+</Warning>
 
 <Note>
   AWS взимает плату за межрегиональную передачу данных. Подробнее см. в разделе [тарифы AWS PrivateLink](https://aws.amazon.com/privatelink/pricing/).
@@ -376,61 +372,51 @@ jq .result
   ## Устранение неполадок
 </div>
 
-<div id="multiple-privatelinks-in-one-region">
-  ### Несколько PrivateLink в одном регионе
-</div>
+<AccordionGroup>
+  <Accordion title="Несколько PrivateLink в одном регионе" id="multiple-privatelinks-in-one-region">
+    В большинстве случаев для каждой VPC достаточно создать один сервис конечной точки. Эта конечная точка может маршрутизировать запросы из VPC к нескольким сервисам ClickHouse Cloud.
+    См. [здесь](#considerations)
+  </Accordion>
 
-В большинстве случаев достаточно создать только один сервис конечной точки для каждой VPC. Эта конечная точка может маршрутизировать запросы из VPC к нескольким сервисам ClickHouse Cloud.
-См. [здесь](#considerations)
+  <Accordion title="Время ожидания подключения к частной конечной точке истекло" id="connection-to-private-endpoint-timed-out">
+    * Подключите группу безопасности к VPC Endpoint.
+    * Проверьте правила `inbound` в группе безопасности, подключённой к Endpoint, и разрешите доступ к портам ClickHouse.
+    * Проверьте правила `outbound` в группе безопасности, подключённой к VM, используемой для проверки подключения, и разрешите подключения к портам ClickHouse.
+  </Accordion>
 
-<div id="connection-to-private-endpoint-timed-out">
-  ### Превышено время ожидания подключения к частной конечной точке
-</div>
+  <Accordion title="Частное имя хоста: адрес хоста не найден" id="private-hostname-not-found-address-of-host">
+    * Проверьте конфигурацию DNS
+  </Accordion>
 
-* Прикрепите группу безопасности к конечной точке VPC.
-* Проверьте правила `inbound` в группе безопасности, прикреплённой к конечной точке, и разрешите порты ClickHouse.
-* Проверьте правила `outbound` в группе безопасности, прикреплённой к виртуальной машине, используемой для проверки подключения, и разрешите подключения к портам ClickHouse.
+  <Accordion title="Соединение сброшено удалённой стороной" id="connection-reset-by-peer">
+    * Скорее всего, Endpoint ID не был добавлен в список разрешённых для сервиса; см. [шаг](#add-endpoint-id-to-services-allow-list)
+  </Accordion>
 
-<div id="private-hostname-not-found-address-of-host">
-  ### Приватное имя хоста: адрес хоста не найден
-</div>
+  <Accordion title="Проверка фильтров конечных точек" id="checking-endpoint-filters">
+    Перед выполнением каких-либо команд задайте следующие переменные среды:
 
-* Проверьте конфигурацию DNS
+    ```bash
+    KEY_ID=<Key ID>
+    KEY_SECRET=<Key secret>
+    ORG_ID=<please set ClickHouse organization ID>
+    INSTANCE_ID=<Instance ID>
+    ```
 
-<div id="connection-reset-by-peer">
-  ### Соединение сброшено удалённой стороной
-</div>
+    Вы можете получить `INSTANCE_ID` из [шага](#option-2-api).
 
-* Скорее всего, Endpoint ID не был добавлен в список разрешённых для сервиса, см. [шаг](#add-endpoint-id-to-services-allow-list)
+    ```shell
+    curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+    -X GET -H "Content-Type: application/json" \
+    "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
+    jq .result.privateEndpointIds
+    ```
+  </Accordion>
 
-<div id="checking-endpoint-filters">
-  ### Проверка фильтров конечной точки
-</div>
+  <Accordion title="Подключение к удалённой базе данных" id="connecting-to-a-remote-database">
+    Согласно [документации AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
 
-Перед выполнением любых команд задайте следующие переменные окружения:
+    > Используйте AWS PrivateLink, если у вас есть клиент-серверная архитектура и вы хотите предоставить одной или нескольким VPC-потребителям однонаправленный доступ к определённому сервису или набору экземпляров в VPC поставщика сервиса. Только клиенты в VPC-потребителе могут инициировать подключение к сервису в VPC поставщика сервиса.
 
-```bash
-KEY_ID=<Key ID>
-KEY_SECRET=<Key secret>
-ORG_ID=<please set ClickHouse organization ID>
-INSTANCE_ID=<Instance ID>
-```
-
-Вы можете получить `INSTANCE_ID`, выполнив действия из [этого шага](#option-2-api).
-
-```shell
-curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
--X GET -H "Content-Type: application/json" \
-"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
-jq .result.privateEndpointIds
-```
-
-<div id="connecting-to-a-remote-database">
-  ### Подключение к удалённой базе данных
-</div>
-
-Согласно [документации AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
-
-> Используйте AWS PrivateLink, если у вас есть клиент-серверная архитектура и вы хотите предоставить одной или нескольким VPC-потребителям однонаправленный доступ к определённому сервису или набору экземпляров в VPC поставщика сервиса. Только клиенты в VPC-потребителе могут инициировать подключение к сервису в VPC поставщика сервиса.
-
-Чтобы подключить табличные функции [MySQL](/ru/reference/functions/table-functions/mysql) или [PostgreSQL](/ru/reference/functions/table-functions/postgresql) в ClickHouse Cloud к базе данных, размещённой в вашей AWS VPC, настройте группы безопасности AWS так, чтобы разрешить подключения из ClickHouse Cloud. См. [IP-адреса egress по умолчанию для регионов ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api), а также [доступные статические IP-адреса](https://api.clickhouse.cloud/static-ips.json).
+    Чтобы подключить табличные функции [MySQL](/ru/reference/functions/table-functions/mysql) или [PostgreSQL](/ru/reference/functions/table-functions/postgresql) в ClickHouse Cloud к базе данных, размещённой в вашей AWS VPC, настройте группы безопасности AWS так, чтобы разрешить подключения из ClickHouse Cloud. См. [IP-адреса egress по умолчанию для регионов ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api), а также [доступные статические IP-адреса](https://api.clickhouse.cloud/static-ips.json).
+  </Accordion>
+</AccordionGroup>

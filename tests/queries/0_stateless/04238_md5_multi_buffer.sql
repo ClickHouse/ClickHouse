@@ -18,10 +18,9 @@ SELECT hex(MD5(repeat('x', 56)));  -- spills to 2 blocks
 SELECT hex(MD5(repeat('x', 64)));  -- exactly 1 full block + padding block
 SELECT hex(MD5(repeat('x', 128))); -- 2 full blocks + padding block
 
--- Batch boundary tests with various row counts.
--- Note: ImplementationSelector only benchmarks implementations for input_rows_count > 1000,
--- so these small batches run the default (scalar) path via the selector.
--- The gtest (gtest_md5.cpp) provides deterministic per-arch SIMD coverage.
+-- Batch boundary tests with various row counts. The implementation is chosen from the CPU's
+-- capabilities alone, so every row count below goes through the same SIMD path, including the
+-- ones smaller than one batch of lanes. The gtest (gtest_md5.cpp) covers every arch on one host.
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(3);
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(4);
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(5);
@@ -54,6 +53,5 @@ SELECT hex(MD5(repeat('x', 100000)));
 -- Single row (tests batch size = 1)
 SELECT hex(MD5('single'));
 
--- Large batch: crosses the ImplementationSelector threshold (> 1000 rows),
--- enabling it to benchmark and potentially select a SIMD implementation.
+-- Large batch: many full batches of lanes plus a partial trailing one.
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(10000);

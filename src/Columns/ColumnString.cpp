@@ -888,6 +888,11 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
     return column_sizes;
 }
 
+bool ColumnString::hasOnlyTypeDefaults() const
+{
+    return chars.empty();
+}
+
 /// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].
 /// Uses memchr+append fast path: no-NUL strings are copied in one append call.
 void ColumnString::serializeAsComparable(size_t n, String & out) const

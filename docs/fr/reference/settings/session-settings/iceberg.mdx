@@ -24,6 +24,22 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Indique s’il faut ou non supprimer tous les fichiers Iceberg lors d’un drop.
 
+<div id="iceberg_delete_manifest_decode_concurrency">
+  ## iceberg_delete_manifest_decode_concurrency
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "Nouvelle option limitant le nombre de fichiers manifest de suppression Iceberg décodés simultanément avant la lecture de la première ligne. Avant la version 26.8, les manifestes étaient décodés un par un, tandis que la récupération du suivant était déjà en cours. `2` est donc l'équivalent le plus proche du comportement précédent, qui plaçait la somme de leurs allers-retours vers le stockage d'objets sur le chemin critique avant la première ligne."}]}]} />
+
+Nombre maximal de fichiers manifest de suppression Iceberg décodés simultanément lors de l&#39;exécution d&#39;une requête avant la lecture de tout fichier de données.
+
+Tous les manifestes de suppression doivent être décodés avant la lecture de tout fichier de données ; ce travail se trouve donc sur le chemin critique avant le renvoi de la première ligne. Le décodage simultané de plusieurs manifestes permet de chevaucher les allers-retours vers le stockage d&#39;objets et le travail d&#39;élagage par ligne.
+
+Des valeurs plus élevées augmentent le pic de mémoire lors de l&#39;initialisation de la requête lorsque le cache des fichiers de métadonnées Iceberg est désactivé ou plein, car chaque manifeste en cours de traitement conserve alors son propre contenu décodé.
+
+Doit être supérieur à zéro ; `1` décode les manifestes un par un.
+
 <div id="iceberg_manifest_min_count_to_compact">
   ## iceberg_manifest_min_count_to_compact
 </div>

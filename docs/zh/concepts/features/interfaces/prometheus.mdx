@@ -133,6 +133,8 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 | `/prometheus/api/v1/read`        | Prometheus 远程读取 |
 | `/prometheus/api/v1/query`       | 即时 PromQL 查询    |
 | `/prometheus/api/v1/query_range` | 范围 PromQL 查询    |
+| `/prometheus/api/v1/series`      | 序列元数据           |
+| `/prometheus/api/v1/metadata`    | 指标家族元数据         |
 
 该示例未在处理程序中指定 `database` 和 `table`。每个请求都必须提供 `table` 查询参数。还可以提供 `database`、使用如 `prometheus.metrics` 这样的限定表名，或者省略数据库以使用 `default`。这样，一个处理程序即可为多个 `TimeSeries` 表提供服务。
 
@@ -160,7 +162,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
   ### 通过 远程写入 摄取指标
 </div>
 
-ClickHouse 支持 [Prometheus remote-write 协议](https://prometheus.io/docs/specs/remote_write_spec/)。配置 Prometheus 以向该处理程序写入数据：
+ClickHouse 支持 [Prometheus 远程写入 协议](https://prometheus.io/docs/specs/remote_write_spec/)。配置 Prometheus 以向该处理程序写入数据：
 
 ```yaml
 remote_write:
@@ -171,6 +173,15 @@ remote_write:
 ```
 
 Prometheus 会将样本写入 `prometheus.metrics` 表。
+
+要将多个并发远程写入请求中的数据合并为更少的 parts，请在 URL 中添加 `async_insert` 设置 (或在 user profile 中启用该设置) ，以启用[异步插入](/zh/reference/settings/session-settings/async-insert#async_insert)：
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
+```
+
+ClickHouse 仅在数据已刷新到 `TimeSeries` 表的所有内部表后，才会确认异步远程写入请求，不受 [`wait_for_async_insert`](/zh/reference/settings/session-settings/wait-for#wait_for_async_insert) 设置影响：远程写入协议将已确认的写入视为持久化写入。如果刷新失败，请求会返回错误，Prometheus 将重试。
 
 <div id="promql-query-support">
   ### 使用 PromQL 查询
@@ -226,7 +237,7 @@ datasources:
 Grafana 会将 `/api/v1/query` 或 `/api/v1/query_range` 追加到此基础 URL，并在每个请求中添加 `customQueryParameters`。
 
 <Note>
-  目前仅实现了查询端点 `/api/v1/query` 和 `/api/v1/query_range`。Grafana Prometheus 数据源用于浏览标记、模板变量和查询构建器自动补全的元数据端点 (`/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values`) 尚未实现，调用时会返回错误。请使用代码模式编写 PromQL 表达式，而不要使用查询构建器。
+  目前仅实现了查询端点 `/api/v1/query` 和 `/api/v1/query_range` 以及元数据端点 `/api/v1/series`、`/api/v1/labels` 和 `/api/v1/metadata`。`/api/v1/series` 至少需要一个 `match[]` 序列选择器，支持可选的 `start`、`end` 和 `limit` 参数，并返回每个选择器匹配的序列的并集。`/api/v1/labels` 接受相同的参数，其中 `match[]` 为可选项，并返回匹配的序列的已排序标记名称 (未提供选择器时则返回所有序列的标记名称) 。Grafana Prometheus 数据源用于浏览标记、模板变量和查询构建器自动补全的标记值端点 (`/api/v1/label/<name>/values`) 尚未实现，调用时会返回错误。请使用代码模式编写 PromQL 表达式，而不要使用查询构建器。
 </Note>
 
 <div id="sql-entry-points">
@@ -254,6 +265,28 @@ FROM prometheusQuery(
     'rate(http_requests_total[5m])',
     now()
 );
+```
+
+<div id="metadata">
+  ### 查询指标元数据
+</div>
+
+`/prometheus/api/v1/metadata` 端点返回存储在 `TimeSeries` 表的 `Metrics` 目标表中的指标元数据，包括每个指标族的类型、帮助文本和单位。它支持 URL 查询字符串中的以下 Prometheus 参数：
+
+| 参数                 | 描述                              |
+| ------------------ | ------------------------------- |
+| `metric`           | 仅返回此指标族的元数据。                    |
+| `limit`            | 限制返回的指标族数量。负值表示不限制；零表示不返回任何指标族。 |
+| `limit_per_metric` | 限制每个指标族返回的元数据对象数量。零和负值表示不限制。    |
+
+默认的 `Metrics` 目标表是按指标族名称排序的 `ReplacingMergeTree`：它会保留每个指标族最近写入的元数据条目。只有在目标表仍保留这些条目时，才会返回每个指标族的多个条目——例如在其 parts 合并之前，或该表使用会保留这些条目的引擎时。
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
+  --data-urlencode "metric=http_requests_total" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
 ```
 
 <div id="remote-read">

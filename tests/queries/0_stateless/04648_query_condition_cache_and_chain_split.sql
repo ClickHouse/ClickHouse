@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
 -- Tests that the query condition cache is populated for granules eliminated by any conjunct of a WHERE, not just by the
@@ -7,8 +7,6 @@
 -- condition, and its empty chunk - which holds the `MarkRangesInfo` identifying the granule - was dropped before the
 -- residual transform could record it.
 
--- Does additional QCC lookups that the test doesn't expect
-set automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
 set parallel_replicas_local_plan=1;
 
 SET enable_analyzer = 1;

@@ -185,11 +185,29 @@ dbt использует модель согласованности чтени�
 | aws&#95;access&#95;key&#95;id     | Идентификатор ключа доступа S3.                                                                                                                                                                |
 | aws&#95;secret&#95;access&#95;key | Секретный ключ S3.                                                                                                                                                                             |
 | role&#95;arn                      | ARN роли IAM, созданной для безопасного доступа к S3. Подробнее см. в этой [документации](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).                                     |
+| external&#95;id                   | Внешний ID, передаваемый вместе с `role_arn` при принятии роли IAM. Требует указания `role_arn`. Доступно начиная с dbt-clickhouse 1.10.2.                                                     |
 | compression                       | Метод сжатия, используемый для объектов S3. Если не указан, ClickHouse попытается определить тип сжатия по имени файла.                                                                        |
 
-См.
-[тестовый файл S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)
-с примерами использования этого макроса.
+<div id="s3source-example">
+  #### Пример
+</div>
+
+Определите общую конфигурацию в `dbt_project.yml` (имя словаря должно оканчиваться на `s3`):
+
+```yaml
+vars:
+  taxi_s3:
+    bucket: 'datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi'
+    fmt: 'TabSeparatedWithNames'
+```
+
+Затем вызовите макрос в модели. Любой из указанных выше аргументов можно также передать непосредственно при вызове — они будут иметь приоритет над значениями словаря:
+
+```sql
+select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
+```
+
+См. [тестовый файл S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py) для дополнительных примеров.
 
 <div id="cross-database-macro-support">
   ### Поддержка макросов для разных баз данных

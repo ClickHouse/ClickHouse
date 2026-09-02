@@ -1,11 +1,11 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "概念",
+  "item": "Concepts",
   "pages": [
     "zh/concepts/index",
     {
       "expanded": true,
-      "group": "基础知识",
+      "group": "Fundamentals",
       "pages": [
         "zh/concepts/core-concepts/index",
         "zh/concepts/core-concepts/glossary",
@@ -19,11 +19,11 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouse 概念",
+      "group": "ClickHouse concepts",
       "pages": [
         "zh/concepts/features/index",
         {
-          "group": "materialized views",
+          "group": "Materialized views",
           "pages": [
             "zh/concepts/features/materialized-views/index",
             "zh/concepts/features/materialized-views/incremental-materialized-view",
@@ -32,28 +32,28 @@
           ]
         },
         {
-          "group": "字典",
+          "group": "Dictionaries",
           "pages": [
             "zh/concepts/features/dictionaries/index",
             "zh/concepts/features/dictionaries/best-practices"
           ]
         },
         {
-          "group": "投影",
+          "group": "Projections",
           "pages": [
             "zh/concepts/features/projections/projections",
             "zh/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "性能",
+          "group": "Performance",
           "pages": [
             "zh/concepts/features/performance/index",
             "zh/concepts/features/performance/prewhere",
             "zh/concepts/features/performance/allocation-profiling",
             "zh/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "缓存",
+              "group": "Caches",
               "pages": [
                 "zh/concepts/features/performance/caches/caches",
                 "zh/concepts/features/performance/caches/query-cache",
@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "数据跳过索引",
+              "group": "Skipping-indexes",
               "pages": [
                 "zh/concepts/features/performance/skip-indexes/skipping-indexes",
                 "zh/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -70,7 +70,7 @@
             },
             "zh/concepts/features/performance/lazy-materialization",
             {
-              "group": "故障排查",
+              "group": "Troubleshooting",
               "pages": [
                 "zh/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "zh/concepts/features/performance/troubleshoot/oom-canary",
@@ -81,10 +81,10 @@
           ]
         },
         {
-          "group": "操作",
+          "group": "Operations",
           "pages": [
             {
-              "group": "插入",
+              "group": "Insert",
               "pages": [
                 "zh/concepts/features/operations/insert/inserting-data",
                 "zh/concepts/features/operations/insert/asyncinserts",
@@ -95,13 +95,13 @@
               ]
             },
             {
-              "group": "查询",
+              "group": "Select",
               "pages": [
                 "zh/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "更新",
+              "group": "Update",
               "pages": [
                 "zh/concepts/features/operations/update/index",
                 "zh/concepts/features/operations/update/overview",
@@ -109,7 +109,7 @@
               ]
             },
             {
-              "group": "删除",
+              "group": "Delete",
               "pages": [
                 "zh/concepts/features/operations/delete/index",
                 "zh/concepts/features/operations/delete/overview",
@@ -122,10 +122,10 @@
           ]
         },
         {
-          "group": "配置",
+          "group": "Configuration",
           "pages": [
             {
-              "group": "设置",
+              "group": "Settings",
               "pages": [
                 "zh/concepts/features/configuration/settings/overview",
                 "zh/concepts/features/configuration/settings/settings-query-level",
@@ -141,7 +141,7 @@
               ]
             },
             {
-              "group": "服务器配置",
+              "group": "Server config",
               "pages": [
                 "zh/concepts/features/configuration/server-config/configuration-files",
                 "zh/concepts/features/configuration/server-config/storing-data",
@@ -149,13 +149,14 @@
                 "zh/concepts/features/configuration/server-config/workload-scheduling",
                 "zh/concepts/features/configuration/server-config/quotas",
                 "zh/concepts/features/configuration/server-config/composable-protocols",
-                "zh/concepts/features/configuration/server-config/startup-scripts"
+                "zh/concepts/features/configuration/server-config/startup-scripts",
+                "zh/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
         },
         {
-          "group": "安全与认证",
+          "group": "Security and auth",
           "pages": [
             "zh/concepts/features/security/index",
             "zh/concepts/features/security/access-rights",
@@ -169,7 +170,7 @@
               ]
             },
             {
-              "group": "外部身份验证器",
+              "group": "External authenticators",
               "pages": [
                 "zh/concepts/features/security/external-authenticators/index",
                 {
@@ -194,7 +195,7 @@
           ]
         },
         {
-          "group": "备份与恢复",
+          "group": "Backup and restore",
           "pages": [
             "zh/concepts/features/backup-restore/overview",
             "zh/concepts/features/backup-restore/restore-settings",
@@ -206,17 +207,20 @@
           ]
         },
         {
-          "group": "接口",
+          "group": "Interfaces",
           "pages": [
             "zh/concepts/features/interfaces/native-clients-interfaces-index",
             "zh/concepts/features/interfaces/cli",
             "zh/concepts/features/interfaces/client",
+            "zh/concepts/features/interfaces/mcp",
             {
-              "group": "驱动与接口",
+              "group": "Drivers and interfaces",
               "pages": [
                 "zh/concepts/features/interfaces/overview",
                 "zh/concepts/features/interfaces/http",
+                "zh/concepts/features/interfaces/framing-formats",
                 "zh/concepts/features/interfaces/tcp",
+                "zh/concepts/features/interfaces/adbc",
                 "zh/concepts/features/interfaces/jdbc",
                 "zh/concepts/features/interfaces/mysql",
                 {
@@ -235,9 +239,10 @@
             "zh/concepts/features/interfaces/web-sql",
             "zh/concepts/features/interfaces/web-ui-color-coding",
             "zh/concepts/features/interfaces/web-ui-pinned-columns",
+            "zh/concepts/features/interfaces/web-ui-result-shaping",
             "zh/concepts/features/interfaces/web-terminal",
             {
-              "group": "第三方客户端",
+              "group": "Third-party clients",
               "pages": [
                 "zh/concepts/features/interfaces/third-party/index"
               ]
@@ -245,7 +250,7 @@
           ]
         },
         {
-          "group": "工具与实用程序",
+          "group": "Tools and utilities",
           "pages": [
             "zh/concepts/features/tools-and-utilities/index",
             "zh/concepts/features/tools-and-utilities/backupview",
@@ -265,7 +270,7 @@
     },
     {
       "expanded": true,
-      "group": "最佳实践",
+      "group": "Best practices",
       "pages": [
         "zh/concepts/best-practices/index",
         "zh/concepts/best-practices/choosing-a-primary-key",

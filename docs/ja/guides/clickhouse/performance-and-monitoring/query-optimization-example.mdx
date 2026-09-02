@@ -1,0 +1,414 @@
+---
+slug: /optimize/query-optimization-example
+sidebarTitle: 'クエリ最適化の実例'
+title: 'クエリ最適化の実例'
+description: 'スキーマと順序キーの変更によるClickHouseのクエリパフォーマンス改善の実例'
+doc_type: 'guide'
+keywords: ['クエリ最適化', 'パフォーマンス', 'NYC Taxi', 'データ型', '順序キー']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
+
+このガイドでは、NYC Taxi dataset に2つの最適化アプローチを適用します。まず、より適切なカラム型を選択することで、保存・処理するデータ量を削減します。次に、選択性の高いクエリでClickHouseが不要なデータをスキップできるようにする順序キーを導入します。各変更は同じベースラインを基準に測定します。この例で従う全体的なワークフローについては、[クエリ最適化の概要](/ja/guides/clickhouse/performance-and-monitoring/query-optimization)を参照してください。
+
+<div id="before-you-begin">
+  ## 始める前に
+</div>
+
+例では、`nyc_taxi.trips_small_inferred` テーブルを使用します。まだ作成してデータを読み込んでいない場合は、以下を実行してください。
+
+<Accordion title="サンプルデータセットをセットアップする">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+ソースの Parquet ファイルには、約3億2,900万行が含まれています。このガイドの所要時間は単一のデプロイメントで計測したものであり、利用可能なコンピュートリソースによって異なります。同一の所要時間を期待するのではなく、ステージ間での相対的な変化を比較してください。
+
+この方法を自身のワークロードに適用する際は、クエリやスキーマを変更する前に、[遅いクエリを診断する](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) を使用して繰り返し発生するクエリパターンを特定し、代表的な実行を選択してください。
+
+<div id="process-overview">
+  ## プロセスの概要
+</div>
+
+この例は、次の 3 つの段階で進めます。
+
+1. 推定したスキーマに対して、独立した 3 つのワークロードクエリを実行し、ベースラインを確立します。
+2. より適切なカラム型を持つテーブルを作成して同じデータを読み込み、クエリを再実行します。
+3. 同じ最適化済みスキーマと順序キーを持つ別のテーブルを作成し、再度クエリを実行します。
+
+スキーマと順序キーを別々の段階で変更することで、それぞれの効果を区別しやすくなります。[最適化のアプローチ](/ja/guides/clickhouse/performance-and-monitoring/optimization-approaches)では、これらの変更を検討すべきタイミングと検証方法について説明しています。比較可能な測定値を収集するための詳しいガイダンスについては、[クエリのボトルネックを切り分ける](/ja/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)を参照してください。
+
+<div id="define-the-baseline-workload">
+  ## ベースラインとなるワークロードを定義する
+</div>
+
+ワークロードの実行に使用したのと同じクライアントセッションで、リモートデータのファイルシステムキャッシュ、クエリキャッシュ、クエリ条件キャッシュを無効にします。
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+```
+
+<Note>
+  これらの設定は、テスト中の繰り返し実行結果を比較可能にするのに役立ちます。測定が完了したら、元の値に戻してください。
+</Note>
+
+以下の3つの独立したクエリが、ベースラインワークロードを構成します。以降のステージで作成する各テーブルに対して、3つすべてを実行してください。各クエリを同等の条件下で複数回実行し、中央値などの代表的な実行時間と、読み取った行数およびピークメモリ使用量を記録してください。`system.query_log` からこれらの値を取得する方法を含む測定ワークフローの全体については、[再現可能なベースラインを確立する](/ja/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks#establish-a-repeatable-baseline)を参照してください。
+
+<div id="calculated-speed-filter">
+  ### 計算した乗車速度でフィルタリングする
+</div>
+
+このクエリでは、時速30マイルを超える乗車について距離の分布を求める前に、乗車時間と速度を計算します。
+
+```sql
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+FORMAT JSON;
+```
+
+<div id="date-range-aggregation">
+  ### 日付範囲内の乗車記録を集計する
+</div>
+
+このクエリは、2009 年第 1 四半期の乗車回数、走行距離、平均支払額を計算します。
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+<div id="passenger-count-filter">
+  ### 乗客数でフィルタリング
+</div>
+
+このクエリは、乗客数が1人または2人の乗車記録の平均乗車時間を計算します。
+
+```sql
+SELECT avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 OR passenger_count = 2
+FORMAT JSON;
+```
+
+元の測定結果は次のとおりです。
+
+| ワークロード    |    実行時間 |    読み取り行数 |     ピークメモリ |
+| --------- | ------: | --------: | ---------: |
+| 計算速度フィルター | 1.699 秒 | 329.04 百万 | 440.24 MiB |
+| 日付範囲集計    | 1.419 秒 | 329.04 百万 | 546.75 MiB |
+| 乗客数フィルター  | 1.414 秒 | 329.04 百万 | 451.53 MiB |
+
+3 つのクエリはいずれも約 3 億 2,900 万行を読み取っており、これはテーブルの行数にほぼ等しい値です。このことから、ワークロードの 2 つの側面を改善できる可能性が見えてきます。まず、選択したカラムの処理コストを下げ、次にフィルターで絞り込める場合は選択する行数を減らします。
+
+<div id="optimize-the-schema">
+  ## スキーマを最適化する
+</div>
+
+スキーマ推論はデータセットの調査を始める実用的な方法ですが、推論された型はワークロードで必要とされるものよりも広範囲であったり、許容範囲が広すぎたりする場合があります。推論された型が不要だと決めつけず、スキーマを変更する前にデータを確認してください。
+
+<div id="nullable">
+  ### 不要な Nullable カラムを避ける
+</div>
+
+[`Nullable`](/ja/reference/data-types/nullable) カラムでは、値に加えて null マスクも保存されます。null 値と型のデフォルト値を区別する必要がある場合は `Nullable` を使用しますが、値が必ず存在するカラムでは使用を避けてください。
+
+例のスキーマで使用しているカラムの null 値をカウントします。
+
+```sql
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
+fare_amount_nulls:         0
+extra_nulls:               0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+このデータセットで null 値を含むのは、`ratecode_id`、`mta_tax`、`payment_type` だけです。最適化後のスキーマでは、これらのカラムには `Nullable` を残し、他のカラムからは削除します。
+
+<div id="low-cardinality">
+  ### 繰り返し値には LowCardinality を使用する
+</div>
+
+[`LowCardinality`](/ja/reference/data-types/lowcardinality) は辞書エンコーディングを使用し、繰り返し値の多いカラムのストレージ使用量と処理負荷を削減できます。適用する前に、異なる値の数を確認してください。
+
+```sql
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+これら4つのカラムに含まれる異なる値の数は、行数に比べて大幅に少なくなっています。これらは `LowCardinality` の有力な候補ですが、ワークロードに対する効果は実際に測定する必要があります。候補を特定する際の目安としては、異なる値が約10,000個であることが有用ですが、これは固定の上限ではありません。
+
+<div id="optimize-data-type">
+  ### より適切なデータ型を選択する
+</div>
+
+必要な範囲と精度を安全に維持できる、最も小さい型を使用します。たとえば、推論された `Int64` や `Float64` を置き換える前に、数値カラムの最小値と最大値を確認します。
+
+```sql
+SELECT
+    min(payment_type),
+    max(payment_type),
+    min(passenger_count),
+    max(passenger_count)
+FROM nyc_taxi.trips_small_inferred;
+```
+
+```response
+   ┌─min(payment_type)─┬─max(payment_type)─┬─min(passenger_count)─┬─max(passenger_count)─┐
+1. │                 1 │                 4 │                    0 │                  255 │
+   └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+```
+
+どちらの整数カラムも [`UInt8`](/ja/reference/data-types/int-uint) に収まりますが、`passenger_count` は最大値である 255 に達します。この例では、`trip_distance` に [`Float32`](/ja/reference/data-types/float)、金額には [`Decimal32`](/ja/reference/data-types/decimal) も使用しています。このデータセット内のすべての値は対象の範囲内に収まり、この例では集計結果を比較するワークロードであるため、浮動小数点精度の低下とセント単位の金額精度を許容しています。ソース値の完全な精度が必要な場合は、より広い範囲のソース型を維持してください。この例のクエリでは秒未満の精度が不要なため、同じ `UTC` タイムゾーン内で、推論された [`DateTime64`](/ja/reference/data-types/datetime64) カラムを [`DateTime`](/ja/reference/data-types/datetime) に置き換えています。
+
+これらの選択は、このデータセットに固有のものです。同じ変更を適用する前に、本番データに求められる範囲、精度、NULL 許容性を確認してください。
+
+<div id="apply-the-optimizations">
+  ### スキーマの変更を適用する
+</div>
+
+このステージでスキーマの変更を個別に測定できるよう、順序キーを指定せずにテーブルを作成します。
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_no_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO nyc_taxi.trips_small_no_pk
+SELECT *
+FROM nyc_taxi.trips_small_inferred;
+```
+
+各ワークロードクエリで `nyc_taxi.trips_small_inferred` を `nyc_taxi.trips_small_no_pk` に置き換え、3 つのクエリをすべて再実行します。元の例では、次のような代表値が得られました。
+
+| ワークロード    |  推定したスキーマ | 最適化されたスキーマ |        読み取り行数 | 最適化後のピークメモリ |
+| --------- | --------: | ---------: | -------------: | ----------: |
+| 計算速度フィルター | 1.699 sec |  1.353 sec | 329.04 million |  337.12 MiB |
+| 日付範囲集計   | 1.419 sec |  1.171 sec | 329.04 million |  531.09 MiB |
+| 乗客数フィルター  | 1.414 sec |  1.188 sec | 329.04 million |  265.05 MiB |
+
+クエリが読み取る行数は同じですが、最適化されたスキーマでは、それらの行が表すデータ量が削減されます。そのため、選択するデータを変えずに、クエリの実行時間とピークメモリを改善できます。
+
+2 つのテーブルのディスク上のサイズを比較します。
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE active = 1
+  AND database = 'nyc_taxi'
+  AND table IN ('trips_small_inferred', 'trips_small_no_pk')
+GROUP BY database, table
+ORDER BY sum(data_compressed_bytes) DESC;
+```
+
+```response
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+このデータセットでは、スキーマを最適化することで、圧縮後のストレージ使用量を7.38 GiBから4.89 GiBへ、約34%削減できます。
+
+<div id="optimize-the-ordering-key">
+  ## 順序キーを最適化する
+</div>
+
+[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーでは、順序キーによって行のディスク上での配置が決まります。ClickHouse はこの順序に基づいてスパースプライマリインデックスを構築し、クエリのフィルター条件を満たさないグラニュールをスキップします。多くのトランザクション型データベースの主キーとは異なり、一意性を保証するものではありません。
+
+順序キーには、重要で繰り返し実行されるクエリで使用するフィルターを反映させる必要があります。カラムの順序は重要です。クエリが有用なプレフィックスでフィルタリングする場合、キーは最も効果的に機能します。カーディナリティの低いカラムは、頻繁にフィルタリングされる場合、効果的な先頭のキー要素となることがあります。また、時間ベースのワークロードでは、時間の部分が役立つことがよくあります。選択に関する詳しいガイダンスについては、[主キーの選択](/ja/best-practices/choosing-a-primary-key)を参照してください。
+
+この例では、`(passenger_count, pickup_datetime, dropoff_datetime)` を使用します。`passenger_count` は異なる値が少なく、乗客数でフィルタリングする条件に使用されます。一方、`pickup_datetime` は日付範囲の集約に使用されます。`pickup_datetime` は先頭のカラムではありませんが、先頭カラムに条件が指定されていない場合でも、ClickHouse は後続のキーカラムの値を使用してデータを除外できます。一般に、順序キーの有用なプレフィックスでフィルタリングすると、より効果的に枝刈りできます。
+
+<div id="apply-the-ordering-key-change">
+  ### 順序キーの変更を適用する
+</div>
+
+前のステージで使用した最適化済みスキーマと同じスキーマでテーブルを作成します。変更するのは順序キーのみです。
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY (passenger_count, pickup_datetime, dropoff_datetime);
+
+INSERT INTO nyc_taxi.trips_small_pk
+SELECT *
+FROM nyc_taxi.trips_small_no_pk;
+```
+
+各ワークロードクエリのテーブル名を `nyc_taxi.trips_small_pk` に置き換えた後、3つのクエリをすべて再実行します。
+
+<div id="compare-the-results">
+  ## 結果を比較する
+</div>
+
+元のガイドでは、3 つの段階で以下の測定値が記録されています。
+
+| ワークロード    | 測定値         |       推定したスキーマ |      最適化したスキーマ | 最適化したスキーマと順序キー |
+| --------- | ----------- | -------------: | -------------: | -------------: |
+| 計算速度フィルター | 実行時間    |      1.699 sec |      1.353 sec |      0.765 sec |
+|           | 読み取り行数      | 329.04 million | 329.04 million | 329.04 million |
+|           | ピークメモリ |     440.24 MiB |     337.12 MiB |     444.19 MiB |
+| 日付範囲集計    | 実行時間    |      1.419 sec |      1.171 sec |      0.248 sec |
+|           | 読み取り行数      | 329.04 million | 329.04 million |  41.46 million |
+|           | ピークメモリ |     546.75 MiB |     531.09 MiB |     173.50 MiB |
+| 乗客数フィルター  | 実行時間    |      1.414 sec |      1.188 sec |      0.431 sec |
+|           | 読み取り行数      | 329.04 million | 329.04 million | 276.99 million |
+|           | ピークメモリ |     451.53 MiB |     265.05 MiB |     197.38 MiB |
+
+スキーマを最適化するとストレージ使用量が削減され、選択した値をより低コストで処理できます。日付範囲集計では、ClickHouse が指定した日付範囲外のグラニュールをスキップできるため、順序キーによる追加の改善が最も大きくなります。乗客数フィルターでも、最初のキーカラムを条件にフィルタリングするため、読み取り行数が減少します。計算速度フィルターでは、順序キーの有効なプレフィックスではなく、`pickup_datetime`、`dropoff_datetime`、`trip_distance` からフィルター条件が導出されるため、引き続きテーブル全体を読み取ります。
+
+`EXPLAIN indexes = 1` を使用して日付範囲集計を確認します。
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  ClickHouse 25.9 以降では、これらの設定により、`EXPLAIN` で使用された索引と、それらによって除外されたパーツおよびグラニュールが報告されます。
+</Note>
+
+```response
+ReadFromMergeTree (nyc_taxi.trips_small_pk)
+Indexes:
+  PrimaryKey
+    Keys:
+      pickup_datetime
+    Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf)))
+    Parts: 9/9
+    Granules: 5061/40167
+```
+
+プライマリインデックスは、40,167 個のグラニュールのうち 5,061 個を選択します。この絞り込みにより、日付範囲の集計で処理される行数は、全体の 3 億 2,904 万行ではなく 4,146 万行になります。
+
+<div id="apply-the-method-to-your-workload">
+  ## ワークロードにこの手法を適用する
+</div>
+
+ご自身のワークロードにも同じ手順を適用してください。
+
+1. ベースラインの実行時間、読み取り行数とバイト数、ピークメモリを記録します。
+2. 選択したカラムに、不必要に幅の広い型や許容範囲の広い型が使われていないか確認します。
+3. データレイアウトを変更せずに、スキーマ変更を適用して測定します。
+4. 重要で繰り返し実行されるクエリで使用されるフィルターに基づいて、順序キーをテストします。
+5. `EXPLAIN indexes = 1` で選択されるデータを比較し、同等の条件でベースラインクエリを再実行します。
+
+この例の型や順序キーが、別のデータセットにも適しているとは限りません。これらの判断は、観測した値とクエリフィルターに基づいて行ってください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+スキーマやソートキーを変更しても特定されたボトルネックを解消できない場合は、[最適化アプローチ](/ja/guides/clickhouse/performance-and-monitoring/optimization-approaches)に戻り、projections、materialized view、データスキッピングインデックス、または事前計算を検討してください。

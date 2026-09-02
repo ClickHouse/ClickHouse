@@ -59,6 +59,8 @@ public:
     void adjustRightMark(size_t right_mark);
     ReadBuffer * getDataBuffer();
 
+    size_t getFileSize() const { return file_size; }
+
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
     virtual size_t getRightOffset(size_t right_mark) = 0;

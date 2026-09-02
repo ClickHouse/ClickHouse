@@ -22,7 +22,7 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para habilitar la agregación adaptativa de `GROUP BY`, que congela la tabla hash local de cada hilo cuando alcanza `adaptive_aggregator_freeze_threshold` claves. Así, las claves frecuentes se siguen agregando en las pequeñas tablas locales, mientras que las claves poco frecuentes se enrutan según su hash a colas pendientes por bucket y se agregan exactamente una vez durante la fusión paralela por bucket; de este modo, las claves poco frecuentes se almacenan y procesan una vez, en lugar de una vez por hilo."}]}]} />
 
-Habilita el algoritmo adaptativo de `GROUP BY`: cada hilo agrega datos en su tabla hash local hasta alcanzar `adaptive_aggregator_freeze_threshold` claves; entonces, la tabla se congela, de modo que las filas con claves ya vistas (frecuentes) siguen actualizándola in situ, mientras que las claves nuevas (poco frecuentes) se enrutan según su hash a colas pendientes por bucket y se agregan exactamente una vez durante la fusión paralela por bucket. Las claves frecuentes permanecen en pequeñas tablas residentes en caché, y las claves poco frecuentes se almacenan y procesan una vez, en lugar de una vez por hilo.
+Habilita el algoritmo adaptativo de `GROUP BY`: cada hilo agrega datos en su tabla hash local hasta alcanzar `adaptive_aggregator_freeze_threshold` claves (o `adaptive_aggregator_freeze_threshold_bytes` de memoria); entonces, la tabla se congela, de modo que las filas con claves ya vistas (frecuentes) siguen actualizándola in situ, mientras que las claves nuevas (poco frecuentes) se enrutan según su hash a colas pendientes por bucket y se agregan exactamente una vez durante la fusión paralela por bucket. Las claves frecuentes permanecen en pequeñas tablas residentes en caché, y las claves poco frecuentes se almacenan y procesan una vez, en lugar de una vez por hilo.
 
 Se respetan las configuraciones de agregación externa (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`): al superar el umbral, las colas pendientes se vacían anticipadamente en la tabla compartida y, si eso no basta para volver a situarse por debajo de él, la tabla compartida se vuelca al disco mediante la agregación externa ordinaria.
 
@@ -48,6 +48,18 @@ Hace que el procesador vuelque datos al almacenamiento externo de forma adaptati
 
 Habilita `DISTINCT` en las subconsultas `IN`. Esta configuración implica una compensación: al habilitarla, puede reducir considerablemente el tamaño de las tablas temporales transferidas en las subconsultas `IN` distribuidas y acelerar de forma significativa la transferencia de datos entre segmentos, ya que garantiza que solo se envíen valores únicos.
 Sin embargo, habilitar esta configuración añade trabajo adicional de merging en cada nodo, ya que debe realizarse la deduplicación (`DISTINCT`). Use esta configuración cuando la transferencia de red sea un cuello de botella y el costo adicional de merging sea aceptable.
+
+<div id="enable_alp_codec">
+  ## enable_alp_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva opción de configuración para habilitar individualmente el códec de compresión experimental `ALP`, sin `allow_experimental_codecs`."}]}]} />
+
+Permite utilizar el códec de compresión experimental `ALP`.
 
 <div id="enable_automatic_decision_for_merging_across_partitions_for_final">
   ## enable_automatic_decision_for_merging_across_partitions_for_final
@@ -127,6 +139,17 @@ La siguiente tabla muestra el comportamiento de esta configuración para varias 
 
 Si se establece en true, permite utilizar el índice de texto.
 
+<div id="enable_function_early_short_circuit">
+  ## enable_function_early_short_circuit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+
+Habilita el plegado anticipado de constantes mediante cortocircuito para `and` y `or` durante el análisis de consultas.
+Cuando está habilitada, se analizan las ramas no alcanzables de subconsultas escalares aptas para preservar sus tipos y validar la semántica de las consultas, pero no se ejecutan. La optimización recurre al análisis normal cuando se requiere la cardinalidad escalar o valores en tiempo de ejecución.
+
 <div id="enable_global_with_statement">
   ## enable_global_with_statement
 </div>
@@ -136,6 +159,37 @@ Si se establece en true, permite utilizar el índice de texto.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "Propagar las sentencias WITH a las consultas UNION y a todas las subconsultas de forma predeterminada"}]}]} />
 
 Propagar las sentencias WITH a las consultas UNION y a todas las subconsultas
+
+<div id="enable_group_by_top_k_optimization">
+  ## enable_group_by_top_k_optimization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para controlar la optimización de filtrado TopK durante la agregación en consultas `GROUP BY key ORDER BY key LIMIT N`."}]}]} />
+
+Habilita la optimización de filtrado TopK durante la agregación en consultas `GROUP BY keys ORDER BY <prefix of keys> LIMIT K` y en consultas `GROUP BY keys LIMIT K` sin `ORDER BY` (en este caso, cualquier grupo de `K` es un resultado válido, por lo que se sintetiza una ordenación de todas las claves).
+
+Cuando está habilitada, la agregación mantiene un heap acotado con las `K` claves principales observadas hasta el momento y omite insertar nuevas filas en la tabla hash cuando su clave de agrupación no puede formar parte del resultado final. Esto evita agregar filas que se descartarían con el posterior `ORDER BY ... LIMIT` y, cuando el heap clasifica la clave completa de `GROUP BY`, también elimina de la tabla hash intermedia los grupos expulsados, limitando su tamaño a `LIMIT` en lugar de al número de claves distintas. Cuando `ORDER BY` solo abarca un prefijo propio de las claves de `GROUP BY`, la clasificación no puede identificar un grupo completo, por lo que solo se omiten filas: la tabla hash conserva todos los grupos admitidos y aún puede crecer según la cardinalidad de las columnas de clave restantes.
+
+La optimización se deshabilita cuando el valor solicitado de `LIMIT` es superior a [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/es/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) o al límite estricto de `100000`, porque el coste de memoria y CPU del heap aumenta con el valor solicitado de `LIMIT`.
+
+La optimización se omite para formas de consulta en las que eliminar grupos podría cambiar el resultado, incluidos `WITH TOTALS`, `HAVING`, `QUALIFY`, las funciones de ventana, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, un `COLLATE` en cualquiera de las claves de `GROUP BY` coincidentes (un `COLLATE` en una columna posterior de `ORDER BY`, después del prefijo de clave completo, no puede afectar a qué grupos cumplen los requisitos, por lo que no deshabilita la optimización), `ORDER BY` sobre una agregación o sobre cualquier elemento que no sea un prefijo inicial de las claves de `GROUP BY`, y cuando se establece `max_rows_to_group_by` o `exact_rows_before_limit`.
+
+Valores posibles:
+
+* 0 — Deshabilitada.
+* 1 — Habilitada.
+
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración para habilitar la transformación del payload de un hash join a un diseño por filas."}]}]} />
+
+Habilita la transformación del payload de un hash join a un diseño por filas.
 
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
@@ -331,6 +385,18 @@ Permite que la agregación eficiente en memoria (consulte `distributed_aggregati
 Puede mejorar el rendimiento cuando los tamaños de los buckets de agregación son desiguales, al permitir que una réplica envíe buckets con identificadores más altos al iniciador mientras sigue procesando algunos buckets pesados con identificadores más bajos.
 La desventaja es un uso de memoria potencialmente mayor.
 
+<div id="enable_quantized_codec">
+  ## enable_quantized_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva opción para habilitar de forma individual el códec de compresión experimental `Quantized`, sin `allow_experimental_codecs`."}]}]} />
+
+Permite usar el códec de compresión experimental `Quantized`.
+
 <div id="enable_reads_from_query_cache">
   ## enable_reads_from_query_cache
 </div>
@@ -445,6 +511,18 @@ Cuando está desactivado, cualquier expresión de tabla que use el modificador `
 en el momento de generar el plan. Este es el control general de la
 funcionalidad de consultas en streaming; otras capacidades pueden estar controladas por sus propios ajustes.
 
+<div id="enable_sz3_codec">
+  ## enable_sz3_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para habilitar de forma individual el códec de compresión experimental `SZ3`, sin `allow_experimental_codecs`."}]}]} />
+
+Permite usar el códec de compresión experimental `SZ3`.
+
 <div id="enable_time_time64_type">
   ## enable_time_time64_type
 </div>
@@ -499,5 +577,17 @@ Valores posibles:
 
 * 0 - Deshabilitado
 * 1 - Habilitado
+
+<div id="enable_zxc_codec">
+  ## enable_zxc_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para habilitar de forma individual el códec de compresión experimental `ZXC`, sin `allow_experimental_codecs`."}]}]} />
+
+Permite utilizar el códec de compresión experimental `ZXC`.
 
 {/*AUTOGENERATED_END*/}

@@ -31,9 +31,9 @@ FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
 WHERE event_date >= today() - 7
 ```
 
-Используйте вариант S3 для AWS S3 и GCS. Для Azure и локальной файловой системы предусмотрены отдельные варианты (`icebergAzure`, `icebergLocal` и эквиваленты для других форматов). Полный список см. в разделе [Прямые запросы](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly).
+Используйте вариант S3 для AWS S3 и GCS. Для Azure и локальной файловой системы предусмотрены отдельные варианты (`icebergAzure`, `icebergLocal` и эквиваленты для других форматов). Полный список см. в разделе [Прямое выполнение запросов](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly).
 
-Для [Paimon](/ru/reference/functions/table-functions/paimon) доступны только табличные функции.
+[Paimon](/ru/reference/functions/table-functions/paimon) предоставляет табличные функции и [экспериментальные движки таблиц](/ru/reference/engines/table-engines/integrations/paimon).
 
 <div id="table-engines">
   ### Движки таблиц
@@ -336,7 +336,7 @@ ORDER BY rows DESC;
   ### Проверьте объём сканирования
 </div>
 
-Сравните `read_rows` и `read_bytes` в [system.query&#95;log](/ru/reference/system-tables/query_log) до и после добавления фильтров или изменения настроек. ProfileEvents, такие как `ReadBufferFromS3Bytes` и `CachedReadBufferReadFromCacheBytes`, показывают, какой объём данных поступил из Объектного хранилища, а какой — из локального кэша. Полное пошаговое руководство по `query_log` и EXPLAIN см. в разделе [Оптимизация запросов](/ru/guides/clickhouse/performance-and-monitoring/query-optimization).
+Сравните `read_rows` и `read_bytes` в [`system.query_log`](/ru/reference/system-tables/query_log) до и после добавления фильтров или изменения настроек. `ProfileEvents`, такие как `ReadBufferFromS3Bytes` и `CachedReadBufferReadFromCacheBytes`, показывают, какой объём данных поступил из Объектного хранилища, а какой — из локального кэша. Полное пошаговое руководство по `query_log` и `EXPLAIN` см. в разделе [Диагностика медленных запросов](/ru/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries).
 
 Отключайте [enable&#95;filesystem&#95;cache](/ru/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) при проведении бенчмаркинга, чтобы попадания в кэш не скрывали различия между запусками.
 

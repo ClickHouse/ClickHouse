@@ -4,7 +4,9 @@
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingSource.h>
+#include <Core/SettingsTierType.h>
 
+#include <optional>
 #include <unordered_map>
 
 namespace Poco::Util
@@ -82,6 +84,7 @@ public:
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
+
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
@@ -174,6 +177,11 @@ private:
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
+
+    bool isAnyTierRestricted() const;
+
+    /// A checker refusing the change if `allow_feature_tier` disables `tier`, nothing if it allows it.
+    std::optional<Checker> getTierChecker(std::string_view setting_name, SettingsTierType tier) const;
     Checker getMergeTreeChecker(std::string_view short_name) const;
 
     std::string_view resolveSettingNameWithCache(std::string_view name) const;

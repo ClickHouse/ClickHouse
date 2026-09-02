@@ -1,166 +1,202 @@
 ---
 sidebarTitle: '术语表'
-description: '本页列出了与 ClickHouse 相关的常用词汇和短语及其定义。'
+description: '数据库概念和 ClickHouse 术语的定义，重点介绍与事务型数据库不同的行为。'
 title: '术语表'
 slug: /concepts/glossary
 keywords: ['术语表', '定义', '术语']
+mode: 'wide'
 doc_type: 'reference'
 ---
 
 {/* no-glossary */}
 
-<div id="atomicity">
+import { Glossary } from '/snippets/zh/components/Glossary/Glossary.jsx'
+
+数据库概念和 ClickHouse 术语词汇表，包括常见数据库术语在 ClickHouse 中的不同含义。
+
+export const glossaryMetadata = {
+  delete: { learnMore: '/deletes/overview' },
+  deduplication: { aliases: ['重复行', '唯一约束'], learnMore: '/guides/developer/deduplication' },
+  dictionary: { learnMore: '/dictionary' },
+  'distributed-table': { learnMore: '/engines/table-engines/special/distributed' },
+  final: { aliases: ['仍然有重复数据', '查询时合并'], code: true, learnMore: '/sql-reference/statements/select/from#final-modifier' },
+  granule: { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
+  'incremental-materialized-view': { aliases: ['插入触发器'], learnMore: '/materialized-view/incremental-materialized-view' },
+  json: { code: true, learnMore: '/sql-reference/data-types/newjson' },
+  'materialized-view': { aliases: ['MV', '存储查询', '插入触发器', '动态表', '动态表'], learnMore: '/materialized-views' },
+  merge: { learnMore: '/merges' },
+  mergetree: { code: true, learnMore: '/engines/table-engines/mergetree-family/mergetree' },
+  mutation: { aliases: ['ALTER UPDATE', 'ALTER DELETE', 'MERGE 语句'], learnMore: '/concepts/best-practices/avoid-mutations' },
+  'nullable-column': { aliases: ['NULL', 'NULL 与默认值'], learnMore: '/sql-reference/data-types/nullable' },
+  parts: { learnMore: '/concepts/core-concepts/parts' },
+  partition: { aliases: ['PARTITION BY', '分区裁剪'], learnMore: '/partitions' },
+  'partitioning-key': { learnMore: '/concepts/core-concepts/partitions' },
+  'primary-key': { aliases: ['ORDER BY', '排序键', '唯一键', '唯一约束'], learnMore: '/concepts/core-concepts/primary-indexes' },
+  projection: { aliases: ['projection 与 materialized view 的区别', '替代排序'], learnMore: '/data-modeling/projections' },
+  'refreshable-materialized-view': { aliases: ['定时 materialized view', '刷新 materialized view', '定时查询', '定时查询'], learnMore: '/materialized-view/refreshable-materialized-view' },
+  replacingmergetree: { aliases: ['upsert', '去重', '仍有重复数据', 'MERGE 语句'], code: true, learnMore: '/guides/replacing-merge-tree' },
+  'secondary-index': { learnMore: '/optimize/skipping-indexes' },
+  'skipping-index': { learnMore: '/optimize/skipping-indexes' },
+  'sorting-key': { aliases: ['ORDER BY', '主键', '磁盘存储顺序', '聚簇键', '聚簇列', '聚簇表', 'CLUSTER BY'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
+  'sparse-index': { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes' },
+  'table-engine': { learnMore: '/engines/table-engines' },
+  transaction: { learnMore: '/guides/developer/transactional' },
+  ttl: { aliases: ['过期', '保留', '数据保留'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
+  update: { aliases: ['行更新', '轻量级更新'], legacyIds: ['lightweight-update'], learnMore: '/updating-data/overview' },
+  upsert: { aliases: ['ON CONFLICT', '插入或更新', 'MERGE 语句'], learnMore: '/guides/replacing-merge-tree' },
+  warehouse: { aliases: ['计算与计算分离', '虚拟仓库', '虚拟仓库'], learnMore: '/cloud/reference/warehouses' },
+}
+
+<Glossary metadata={glossaryMetadata}>
   ## 原子性
-</div>
 
-原子性确保一个事务 (一系列数据库操作) 被视为一个单一且不可分割的整体。这意味着事务中的所有操作要么全部执行，要么全部不执行。一个原子事务的典型例子是将资金从一个银行账户转到另一个账户。如果转账过程中的任何一步失败，整个事务都会失败，资金仍会留在第一个账户中。原子性确保资金既不会丢失，也不会凭空产生。
+  原子性意味着一个操作要么被完整观察到，要么完全观察不到。在 ClickHouse 中，向某个 `MergeTree` 家族表的单个分区执行的 insert，只要其所有行作为一个块写入，就是原子的。跨分区的 insert 对每个分区分别保证原子性；向分布式表执行的 insert 则对每个 shard 分别保证原子性。多语句事务仍处于实验阶段，且存在诸多限制。
 
-<div id="block">
   ## 块
-</div>
 
-块是组织数据处理和存储的逻辑单元。每个块都包含列式数据，这些数据会一起处理，以提升查询执行期间的性能。通过按块处理数据，ClickHouse 能够高效利用 CPU 核心，减少缓存未命中并促进向量化执行。ClickHouse 使用多种压缩算法 (如 LZ4、ZSTD 和 Delta) 对块中的数据进行压缩。
+  块是一种自描述的列式行批次，用于查询处理和数据传输。块是运行时和传输层面的单位；而数据分区片段和粒度则是相互独立的存储与索引概念。以块为单位处理列值，使向量化执行成为可能。
 
-<div id="cluster">
   ## 集群
-</div>
 
-一组协同工作的节点 (服务器) ，共同用于存储和处理数据。
+  由一组协同工作、共同存储和处理数据的节点 (服务器) 组成的集合。
 
-<div id="cmek">
   ## CMEK
-</div>
 
-客户管理的加密密钥 (CMEK) 使客户能够使用其密钥管理服务 (KMS) 中的密钥来加密 ClickHouse 磁盘数据密钥，从而保护其静态数据。
+  在 ClickHouse Cloud 中，客户管理的加密密钥 (CMEK) 允许使用客户密钥管理服务 (KMS) 中的密钥来保护静态数据所使用的数据加密密钥 (DEK) 。
 
-<div id="dictionary">
+  ## 删除
+
+  对于 `MergeTree` 家族的表，删除行可以有以下几种方式：使用 `DELETE FROM` 将行标记为已删除、使用 `ALTER TABLE ... DELETE` 重写受影响的数据片段，或者高效地删除整个分区。轻量级删除会先让这些行对后续查询不可见，随后在后台合并过程中再将数据物理删除。
+
+  ## 去重
+
+  在 ClickHouse 中，去重可能指代不同的机制。对于行版本去重，`ReplacingMergeTree` 等引擎会依据排序键识别重复版本，并在分区内的后台合并过程中将其消除。Replicated 表引擎则可以另外依据块标识符，对重试的插入块进行去重。
+
   ## 字典
-</div>
 
-字典是键值对映射，适用于各种类型的参考列表。这是一项强大的功能，可在查询中高效使用字典，而这通常比对参考表使用 `JOIN` 更高效。
+  字典提供对内存中或外部源中参考数据的键值访问。对于适用的基于键的查找，使用字典函数或直接对字典执行 `JOIN`，可避免反复扫描参考表。
 
-<div id="distributed-table">
   ## 分布式表
-</div>
 
-ClickHouse 中的分布式表是一种特殊类型的表，它本身不存储数据，而是为集群中多个服务器上的分布式查询处理提供一个统一的视图。
+  ClickHouse 中的分布式表是一种特殊的表，它本身不存储数据，而是为跨集群中多台服务器的分布式查询处理提供统一的视图。
 
-<div id="granule">
+  ## `FINAL`
+
+  `FINAL` 是一个查询修饰符，它在读取数据时应用引擎的合并期转换，而不会真正合并已存储的 parts。它可以在后台合并完成之前，从 `ReplacingMergeTree` 等引擎返回已归并一致的结果，代价是额外的查询时计算与内存开销。
+
   ## 粒度
-</div>
 
-粒度是未压缩块中的一批行。读取数据时，ClickHouse 访问的是粒度而非单独的行，因此能够在分析型工作负载中更高效地处理数据。默认情况下，一个粒度包含 8192 行。主索引中每个粒度对应一个条目。
+  粒度 (granule) 是 ClickHouse 进行主索引裁剪时读取的最小逻辑行分组。默认情况下，一个粒度最多包含 8,192 行，但自适应索引粒度可能生成更小的粒度。主索引通常为每个粒度存储一个条目。
 
-<div id="incremental-materialized-view">
   ## 增量materialized view
-</div>
 
-在 ClickHouse 中，增量materialized view 是一种在写入时处理并聚合数据的 materialized view。当新数据写入源表时，materialized view 仅对新写入的块执行预定义的 SQL 聚合查询，并将聚合结果写入目标表。
+  增量materialized view 会在数据插入 source table 时执行其查询，并将结果写入 target table。它只处理新插入的块，而不是 source table 当前的完整状态；对参与 join 的 right-side 表所做的更改也不会重新触发它。
 
-<div id="lightweight-update">
-  ## 轻量级更新
-</div>
+  ## `JSON`
 
-ClickHouse 中的轻量级更新是一项实验性功能，允许你使用标准 SQL UPDATE 语法更新表中的行；但与传统变更不同，它不会重写整个列或数据分区片段，而是会创建仅包含已更新列和行的“补丁分区片段”。这些更新会通过补丁应用立即反映在 SELECT 查询中，但只有在后续合并期间，物理数据才会被实际更新。
+  `JSON` 类型用于存储半结构化文档，这类文档的路径和类型在不同行之间可能各不相同。ClickHouse 会将发现的路径存储为 subcolumn，使查询能够高效读取单个字段。如果 schema 是稳定的，请改用类型化列或 `Tuple` 等结构化类型。
 
-<div id="mark-file">
   ## 标记文件
-</div>
 
-ClickHouse 中的标记文件用于存储“标记”，即帮助 ClickHouse 快速定位特定数据范围在数据文件中存储位置的索引条目。
+  标记文件存储用于在压缩列数据中定位粒度的偏移量。每个标记记录压缩文件中的一个偏移量，以及对应解压块内的一个偏移量，使 ClickHouse 无需读取整列即可寻道到指定粒度。
 
-<div id="materialized-view">
-  ## materialized view
-</div>
+  ## Materialized view
 
-ClickHouse 中的 materialized view 是一种机制：当数据插入源表时，它会自动对这些数据运行查询，并将转换后或聚合后的结果存储到单独的目标表中，以加快查询速度。
+  ClickHouse 提供两种物化视图模型。增量物化视图类似于插入时触发器，只处理新插入的数据块；而可刷新物化视图则按周期在完整数据集上重新执行其查询。其他数据库中名称相似的功能可能兼具这两种行为，因此并不总是能一一对应。
 
-<div id="mergetree">
-  ## MergeTree
-</div>
+  ## Merge
 
-ClickHouse 中的 MergeTree 是一种表引擎，专为高数据摄取速率和海量数据而设计。它是 ClickHouse 的核心存储引擎，提供列式存储、自定义分区、稀疏主索引，以及对后台数据合并的支持。
+  ClickHouse 中的 merge 是一种后台存储操作，用于将同一分区内较小的不可变数据分区片段合并成更大的 parts。根据 table engine 的不同，merge 还可以对行进行聚合、折叠或替换；它与事务型 SQL `MERGE` 语句并不是一回事。
 
-<div id="mutation">
+  ## `MergeTree`
+
+  ClickHouse 中的 `MergeTree` 是一种表引擎，专为高数据摄取速率和海量数据场景而设计。它是 ClickHouse 的核心存储引擎，提供列式存储、自定义分区、稀疏主索引以及后台数据合并等特性。
+
   ## 变更
-</div>
 
-在 ClickHouse 中，变更是指对表中现有数据进行修改或删除的操作，通常使用 ALTER TABLE ... UPDATE 或 ALTER TABLE ... DELETE 等命令。变更以异步后台进程的形式执行：它会重写受影响的整个数据分区片段，而不是原地修改行。
+  对于 `MergeTree` 家族的表，变更 (mutation) 使用 `ALTER TABLE ... UPDATE` 或 `ALTER TABLE ... DELETE` 等命令来修改或删除已有数据。与 OLTP 中的行更新不同，它会重写受影响的数据分区片段，且通常异步执行；parts 一旦就绪即被替换，因此该操作并非覆盖整张表的原子事务。
 
-<div id="on-the-fly-mutation">
+  ## Nullable 列
+
+  若要将 `NULL` 与 `T` 类型的普通值 (如 `0` 或空字符串) 区分开来，列必须使用 `Nullable(T)`。ClickHouse 会单独存储一份 null 掩码，这会带来额外的存储和处理开销，因此请仅在缺失值本身具有明确语义时才使用 nullable 列，而不要将其作为默认选择。
+
   ## 即时变更
-</div>
 
-ClickHouse 中的即时变更是一种机制：提交变更后，无需等待后台变更过程完成，更新或删除操作便会立即在后续的 SELECT 查询中生效。
+  当变更及其后续读取均启用了 `apply_mutations_on_fly` 时，ClickHouse 会在执行 `SELECT` 查询时应用待处理的更新或删除，因此在已存储的 parts 被重写之前即可看到这些变更的结果。变更本身仍会在后台异步 materialize。
 
-<div id="parts">
-  ## parts
-</div>
+  ## Parts
 
-磁盘上的物理文件，用于存储表中部分数据。这与分区不同；分区是通过分区键创建的、对表数据进行的逻辑划分。
+  数据分区片段 (data part) 是存储上一组不可变的文件，包含表中的一部分行。parts 由 insert 操作创建，并由分区内的 background merges 合并。分区是数据的逻辑分组，而 part 与之不同，它是由 ClickHouse 管理的物理存储单元。
 
-<div id="partitioning-key">
+  ## 分区
+
+  分区是 `MergeTree` 家族表中数据分区片段的逻辑分组。分区主要服务于数据管理操作，例如删除、移动以及对成组数据应用保留策略。对于仅涉及少量分区的查询，分区裁剪能带来帮助，但就查询性能而言，排序键和主键通常更为重要。
+
   ## 分区键
-</div>
 
-ClickHouse 中的分区键是创建表时在 `PARTITION BY` 子句中定义的 SQL 表达式。它决定了数据在磁盘上如何在逻辑上划分为分区。分区键的每个唯一值都会形成各自独立的物理分区，从而能够高效执行数据管理操作，例如删除、移动或归档整个分区。
+  分区键是表的 `PARTITION BY` 子句中的表达式。产生相同 partition ID 的行属于同一个逻辑分区，而不同的插入操作会在该分区内创建各自独立的数据分区片段。这种分组方式使得可以对整个分区执行删除、移动或归档等操作。
 
-<div id="primary-key">
   ## 主键
-</div>
 
-在 ClickHouse 中，主键决定数据在磁盘上的存储顺序，并用于构建可加快查询过滤速度的稀疏索引。与传统数据库不同，ClickHouse 中的主键不强制要求唯一性——多行可以具有相同的主键值。
+  与许多事务型数据库中的 primary key 不同，ClickHouse 的 primary key 并不是行级唯一性约束。它定义的是稀疏主索引所包含的列，从而帮助 ClickHouse 在读取时跳过部分 granule。默认情况下，它与 `ORDER BY` 定义的 sorting key 一致；若单独定义，则必须是 sorting key 的前缀。
 
-<div id="projection">
   ## 投影
-</div>
 
-ClickHouse 中的投影是一种隐藏且自动维护的表，它以不同的顺序存储数据，或存储预先计算好的聚合结果，以加快查询速度，尤其适用于按不在主键中的列进行过滤的查询。
+  projection 是对表数据自动维护的一种表示形式，它可以采用不同的排序方式、只包含部分列，或存储预先计算好的聚合结果。查询原始表时，ClickHouse 能够自动选择使用它。projection 会重复存储数据并带来额外的写入开销，不过 `_part_offset` 类型的 projection 可以通过对基础表进行额外读取来换取存储空间的节省。
 
-<div id="refreshable-materialized-view">
   ## 可刷新materialized view
-</div>
 
-可刷新materialized view 是一种 materialized view，会定期针对整个数据集重新执行查询，并将结果存储到目标表中。与增量materialized view 不同，可刷新materialized view 按计划进行更新，并且能够支持复杂查询，包括 JOIN 和 UNION，且没有限制。
+  可刷新物化视图会按照设定的计划，周期性地在完整数据集上重新执行其查询，并替换或追加已存储的结果。与增量物化视图不同，它不由每个插入块触发，并且可以使用复杂查询。它可以取代用于物化 `SELECT` 结果的定时查询，但它并不是可执行任意 DDL 或 DML 语句的通用调度器。
 
-<div id="replica">
+  ## `ReplacingMergeTree`
+
+  `ReplacingMergeTree` 通过接受具有相同 sorting key 的多个行版本，并在 background merges 期间仅保留其中一个版本，来实现对 updates 和 upsert 的建模。deduplication 是最终完成的，而非写入时的唯一性保证，因此在使用 `FINAL`、等价的查询逻辑，或相关 parts 完成 merge 之前，查询可能会看到多个版本。
+
   ## 副本
-</div>
 
-存储在 ClickHouse 数据库中的数据副本。为实现冗余和提高可靠性，你可以为同一份数据保留任意数量的副本。副本通常与 ReplicatedMergeTree 表引擎配合使用，该引擎使 ClickHouse 能够在不同服务器之间保持多份数据副本的同步。
+  副本是指与其他副本维护或访问同一份逻辑表数据的服务器或计算实例，用于提升可用性和查询处理能力。使用 `ReplicatedMergeTree` 时，各副本分别维护独立的数据拷贝；而使用 `SharedMergeTree` 的 ClickHouse Cloud 副本则共享对象存储。
 
-<div id="shard">
+  ## 二级索引
+
+  在 ClickHouse 中，与传统 secondary index 最接近的对应物通常是 data skipping index。它不通过 B 树定位单独的行，而是为成组的粒度存储 metadata，从而让 ClickHouse 可以跳过那些不可能包含匹配值的块，不必对其进行读取。
+
   ## 分片
-</div>
 
-数据的一个子集。ClickHouse 中，你的数据始终至少会有一个分片。如果不将数据拆分到多台服务器上，数据就会存储在单个分片中。当单台服务器的容量不足时，可以通过将数据分布到多台服务器上的多个分片来分摊负载。
+  分片 (shard) 是表数据的一个逻辑子集，在分布式部署中被分配给某一台服务器或某个副本组。分片将数据和查询负载拆分到多台服务器上；副本则为每个分片内的数据提供冗余访问或并行访问能力。
 
-<div id="skipping-index">
   ## 跳过索引
-</div>
 
-跳过索引会在多个连续粒度的层面存储少量元数据，使 ClickHouse 能够避免扫描无关的行。跳过索引是投影的一种轻量级替代方案。
+  跳过索引会为一个或多个连续粒度存储紧凑的元数据，使 ClickHouse 得以跳过读取那些不可能匹配查询的块。当被索引的值与表的排序方式相关时，其效果最佳；而当匹配的值出现在大多数被索引的块中时，它带来的收益可能十分有限。
 
-<div id="sorting-key">
   ## 排序键
-</div>
 
-在 ClickHouse 中，排序键定义了行在磁盘上的物理排列顺序。如果未指定主键，ClickHouse 会将排序键用作主键。如果两者都已指定，则主键必须是排序键的前缀。
+  对于 `MergeTree` 家族的表，`ORDER BY` 子句定义排序键，即每个数据分区片段内行的物理排列顺序。它的作用类似于其他分析型数据库中的聚簇列或聚簇键，但 ClickHouse 用它来维持确定的字典序行顺序。如果没有单独指定主键，排序键同时也会作为主键；这两个键彼此相关，但不要求完全一致。
 
-<div id="sparse-index">
   ## 稀疏索引
-</div>
 
-一种索引方式，其中主索引为一组行包含一个条目，而不是为每一行单独包含一个条目。与一组行对应的这个条目称为标记。使用稀疏索引时，ClickHouse 会先找出可能匹配查询的若干组行，然后再分别处理这些行组以找到匹配项。因此，主索引足够小，可以加载到内存中。
+  稀疏主索引只为每个粒度存储键值，而不是为每一行存储一个条目。ClickHouse 借助这些条目定位候选粒度，再读取其中的行。由于索引大小随粒度数量增长，而非随行数增长，索引通常足够小，可以常驻内存。
 
-<div id="table-engine">
   ## 表引擎
-</div>
 
-ClickHouse 中的表引擎决定了数据的写入、存储和访问方式。MergeTree 是最常用的表引擎，支持快速插入海量数据，并在后台进行处理。
+  ClickHouse 中的表引擎决定了数据的写入、存储和访问方式。`MergeTree` 是最常用的表引擎，它支持快速插入大量数据，并在后台对这些数据进行处理。
 
-<div id="ttl">
-  ## TTL
-</div>
+  ## 事务
 
-生存时间 (TTL) 是 ClickHouse 的一项功能，可在经过一段时间后自动移动、删除或汇总列或行。这样你就能更高效地管理存储，因为可以删除、移动或归档不再需要频繁访问的数据。
+  在 ClickHouse 中，事务保证的适用范围与典型的 OLTP 数据库不同。满足条件的插入在块或分区级别具备原子性，而使用 `COMMIT` 和 `ROLLBACK` 的传统多语句事务仍处于实验阶段，且存在较多限制。
+
+  ## 生存时间 (`TTL`)
+
+  `TTL` 规则会在表达式满足条件后移动、删除或汇总数据。过期并非即时生效：ClickHouse 通常在后台 merge 期间才对过期数据执行相应操作，因此在 merge 处理到相关 parts 之前，已过期的行仍会保留在磁盘上，并可能被查询返回。
+
+  ## 更新
+
+  ClickHouse 针对不可变、以追加写入为主的数据进行了优化，而不适合频繁的原地行更新。更新通常借助专用表引擎、以插入新版本数据的方式来实现，或者以变更 (mutation) 的形式执行，即重写受影响的数据分区片段。
+
+  ## Upsert (插入或更新)
+
+  `MergeTree` 家族的表不支持事务性的 `INSERT ... ON CONFLICT` upsert。通常的做法是向 `ReplacingMergeTree` 等引擎插入更新版本的行，以此模拟 upsert。旧版本会在后台 merge 期间被清理，因此在 merge 完成之前，查询可能需要使用 `FINAL` 或等价的逻辑。
+
+  ## 仓库
+
+  在 ClickHouse Cloud 中，仓库是一组共享相同数据、但各自拥有独立计算资源和端点的服务。在以仓库表示单个计算集群的系统中，单个 ClickHouse 服务才是更贴近的对应概念；而 ClickHouse 仓库则包含多个服务。
+</Glossary>

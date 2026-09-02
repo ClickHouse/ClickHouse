@@ -12,6 +12,7 @@ workflow = Workflow.Config(
     name="NightlyKeeperFaults",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         binary_build_job,
         JobConfigs.keeper_stress_job.set_name("Keeper Stress (Faults)"),

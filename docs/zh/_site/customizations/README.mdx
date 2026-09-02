@@ -25,6 +25,9 @@ title: README
 * `raise-issue-link.js` — 将 Mintlify 默认的“Raise issue”反馈链接改为指向仓库的 Documentation issue 表单 (`.github/ISSUE_TEMPLATE/60_documentation-issue.yaml`)，并预填当前页面 path。
 * `scroll-reset.js` — 恢复前进式 client-side 导航时滚动到顶部的行为；当配置了通知横幅时，Next.js 会跳过这一行为。对后退/前进 (`popstate`) 保持不干预，以便浏览器/路由器恢复先前位置，并在跨页面哈希链接时滚动到锚点。
 * `tab-nav.js` — 将桌面端顶部导航选项卡 (Home / Database / Solutions / Integrations) 关联到各自的目标 URL，同时将导航保持在当前活动 locale 和基础 path 内。
+* `webterminal.js` — 在文档站点底部添加一个受 Stripe 启发的开发者托盘。窄版“ClickHouse terminal”栏和 `~` 键均可切换打开其上方带内边距的面板，其中嵌入了 `https://play.clickhouse.com/webterminal?user=play` — clickhouse.com 同样使用的 Playground 终端。固定栏会在页面末尾预留相应空间，因此不会遮挡页脚控件。终端打开时，文档页面会被锁定并隐藏滚动条；终端滚动受到限制，不会移动面板后方的页面。终端打开时该栏仍然可见；再次点击它、使用其箭头、按 `~` 或 `Escape`，或将面板顶部边缘向下拖动，均可将其收起。仅限桌面端。两个部署细节：
+  * 文档通过带有 `Content-Security-Policy` 的方式提供服务，其中的 `frame-src` 必须列出 `https://play.clickhouse.com`，否则浏览器会阻止 iframe，面板将保持为空。该标头由 clickhouse.com edge 设置，而非此仓库。
+  * 终端通过 `postMessage` 向页面报告 `Escape` 和 session 结束，这就是读者输入 `exit` 时关闭面板的机制。较旧的 Playground build 仅向 `clickhouse.com` 和 `clickhouse.cloud` 父级发送这些通知，因此在预览 deployments 中，session 结束时面板会保持打开状态，直到 Playground 运行包含对应 `programs/server/webterminal.html` 更改的 build。凭据仅与受信任的父级双向交换。
 * `clickhouse-sql-lexer-wasm.js` — 将 ClickHouse 的 SQL 词法分析器 (由 `src/Parsers/Lexer.cpp` 编译为 WebAssembly) 以 base64 全局变量的形式暴露出来。快照来自 ClickHouse 的 `programs/server/play.html`；如果上游词法分析器或关键字列表发生变化，请重新提取。
 * `clickhouse-sql-highlight.js` — 使用 WASM 词法分析器重新高亮 `language="sql"` 代码块 (采用 ClickHouse 原生配色，与 play.html / ClickHouse 客户端保持一致) ，替代 Shiki。必须在 `clickhouse-sql-lexer-wasm.js` 之后加载。其他语言则保持 Shiki 的渲染结果不变。
 

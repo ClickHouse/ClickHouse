@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` — выполняет вытеснение в соответствии со статическим приоритетом (меньшее значение означает более высокий приоритет); ожидающее выделение с более высоким приоритетом вытесняет выделения с более низким приоритетом; дочерние узлы должны задавать `precedence` (по умолчанию 0).
 * `queue` — листовой узел иерархии, способный удерживать выполняющиеся и ожидающие выделения.
 
-<div id="deprecated-configuration">
-  ## Устаревшая XML-конфигурация
-</div>
-
-Альтернативный способ указать, какие диски использует ресурс, — это `storage_configuration` сервера:
-
-Чтобы включить планирование ввода-вывода для конкретного диска, необходимо указать `read_resource` и/или `write_resource` в конфигурации хранилища. Так ClickHouse понимает, какой ресурс использовать для всех операций чтения и записи на данном диске. Ресурсы чтения и записи могут ссылаться на одно и то же имя ресурса, что полезно для локальных SSD или HDD. Несколько разных дисков также могут ссылаться на один и тот же ресурс, что полезно для удаленных дисков, если вы хотите обеспечить справедливое распределение пропускной способности сети, например между рабочими нагрузками &quot;production&quot; и &quot;development&quot;.
-
-Пример:
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-Обратите внимание, что параметры конфигурации сервера имеют приоритет над определением ресурсов через SQL.
-
 <div id="see-also">
   ## См. также
 </div>

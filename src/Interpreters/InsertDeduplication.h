@@ -152,8 +152,12 @@ public:
 private:
     explicit DeduplicationInfo(bool async_insert_);
 
-    /// Column-major hash: for each column, hash the row range. Used by the unified path.
-    UInt128 calculateDataHashColumnWise(size_t offset, const Block & block) const;
+    /// Column-major hash of every token that still needs one, in a single pass over the columns.
+    void calculateDataHashes() const;
+
+    /// The token's column-major data hash, computing the batch on first demand. Used by the
+    /// unified path for the tokens which carry no user token.
+    UInt128 getDataHash(size_t offset) const;
     DeduplicationHash getBlockUnifiedHash(size_t offset, const std::string & partition_) const;
 
 

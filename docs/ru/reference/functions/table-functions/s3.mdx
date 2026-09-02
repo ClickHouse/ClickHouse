@@ -41,20 +41,20 @@ s3(named_collection[, option=value [,..]])
 
 Табличная функция `s3` поддерживает следующие простые параметры:
 
-| Параметр                                | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                                   | URL бакета с путём к файлу. В режиме только для чтения поддерживаются следующие подстановочные шаблоны: `*`, `**`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc'`, `'def'` — строки. Подробнее см. [здесь](/ru/reference/engines/table-engines/integrations/s3#wildcards-in-path).                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `NOSIGN`                                | Если указать это ключевое слово вместо учетных данных, запросы не будут подписываться.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `access_key_id` and `secret_access_key` | Ключи, задающие учетные данные для использования с указанной конечной точкой. Необязательно.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `session_token`                         | Токен сеанса для использования с указанными ключами. Необязателен при передаче ключей.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `format`                                | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `structure`                             | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `compression_method`                    | Параметр необязателен. Поддерживаемые значения: `none`, `gzip` или `gz`, `brotli` или `br`, `xz` или `LZMA`, `zstd` или `zst`. По умолчанию метод сжатия определяется автоматически по расширению файла.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `headers`                               | Параметр необязателен. Позволяет передавать заголовки в запросе S3. Передавайте в формате `headers(key=value)`, например `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `partition_strategy`                    | Параметр необязателен. Поддерживаемые значения: `wildcard` или `hive`. Для `wildcard` в пути требуется `{_partition_id}`, который заменяется ключом партиционирования. `hive` не допускает подстановочные шаблоны, предполагает, что путь является корнем таблицы, и создаёт директории с партициями в стиле Hive, где в качестве имён файлов используются Snowflake ID, а в качестве расширения — формат файла. Если путь содержит заполнитель `{_partition_id}`, по умолчанию используется `wildcard` — единственная стратегия, совместимая с таким путём. В противном случае по умолчанию используется настройка `file_like_engine_default_partition_strategy` (`wildcard` в настройках `compatibility` старше `26.6`, в противном случае — `hive`). |
-| `partition_columns_in_data_file`        | Параметр необязателен. Используется только со стратегией партиционирования `hive`. Указывает ClickHouse, следует ли ожидать, что столбцы партиции будут записаны в файл данных. Значение по умолчанию — `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `extra_credentials`                     | Параметр необязателен. Используется для передачи `role_arn` для ролевого доступа в ClickHouse Cloud. Шаги настройки см. в [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `storage_class_name`                    | Параметр необязателен. Поддерживаемые значения: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Поддерживаются только классы хранилища S3, допускающие немедленное извлечение данных (архивные классы, такие как `GLACIER` и `DEEP_ARCHIVE`, не поддерживаются). Позволяет указать [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). По умолчанию — `STANDARD`.                                                                                                                                                                                                                                                                      |
+| Параметр                                | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                   | URL бакета с путём к файлу. В режиме только для чтения поддерживаются следующие подстановочные шаблоны: `*`, `**`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc'`, `'def'` — строки. Подробнее см. [здесь](/ru/reference/engines/table-engines/integrations/s3#wildcards-in-path).                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `NOSIGN`                                | Если указать это ключевое слово вместо учетных данных, запросы не будут подписываться.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `access_key_id` and `secret_access_key` | Ключи, задающие учетные данные для использования с указанной конечной точкой. Необязательно.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `session_token`                         | Токен сеанса для использования с указанными ключами. Необязателен при передаче ключей.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `format`                                | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `structure`                             | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `compression_method`                    | Параметр необязателен. Поддерживаемые значения: `none`, `gzip` или `gz`, `brotli` или `br`, `xz` или `LZMA`, `zstd` или `zst`. По умолчанию метод сжатия определяется автоматически по расширению файла.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `headers`                               | Параметр необязателен. Позволяет передавать заголовки в запросе S3. Передавайте в формате `headers(key=value)`, например `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `partition_strategy`                    | Параметр необязателен. Поддерживаемые значения: `wildcard` или `hive`. Для `wildcard` в пути требуется `{_partition_id}`, который заменяется ключом партиционирования. `hive` не допускает подстановочные шаблоны, предполагает, что путь является корнем таблицы, и создаёт директории с партициями в стиле Hive, где в качестве имён файлов используются Snowflake ID, а в качестве расширения — формат файла. Без явного указания стратегии путь с `{_partition_id}` использует `wildcard`. Путь с другим glob не использует стратегию партиционирования и игнорирует `PARTITION BY`. Путь без glob использует `hive`, если `file_like_engine_default_partition_strategy` имеет значение `hive`; в противном случае стратегия партиционирования не используется. |
+| `partition_columns_in_data_file`        | Параметр необязателен. Используется только со стратегией партиционирования `hive`. Указывает ClickHouse, следует ли ожидать, что столбцы партиции будут записаны в файл данных. Значение по умолчанию — `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `extra_credentials`                     | Параметр необязателен. Используется для передачи `role_arn` для ролевого доступа в ClickHouse Cloud. Шаги настройки см. в [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `storage_class_name`                    | Параметр необязателен. Поддерживаемые значения: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Поддерживаются только классы хранилища S3, допускающие немедленное извлечение данных (архивные классы, такие как `GLACIER` и `DEEP_ARCHIVE`, не поддерживаются). Позволяет указать [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). По умолчанию — `STANDARD`.                                                                                                                                                                                                                                                                                  |
 
 <Info>
   **GCS**
@@ -93,6 +93,7 @@ s3(named_collection[, option=value [,..]])
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -114,7 +115,8 @@ LIMIT 5;
   ```sql
   SELECT *
   FROM s3(
-     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
+     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+     NOSIGN
   )
   LIMIT 5;
   ```
@@ -157,7 +159,7 @@ LIMIT 5;
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -170,7 +172,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -183,11 +185,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
   Если в списке файлов есть диапазоны чисел с ведущими нулями, используйте конструкцию с фигурными скобками для каждой цифры отдельно или символ `?`.
 </Tip>
 
-Подсчитайте общее количество строк в файлах с именами `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
+Подсчитайте общее количество строк в файлах с именами `file-1.csv`, ..., `file-4.csv`:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -213,22 +215,22 @@ SELECT name, value FROM existing_table;
 Glob ** можно использовать для рекурсивного обхода каталогов. Рассмотрим пример ниже — он рекурсивно извлечёт все файлы из каталога `my-test-bucket-768`:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-Следующий запрос рекурсивно извлекает данные из всех файлов `test-data.csv.gz` в любой папке внутри каталога `my-test-bucket`:
+Следующий запрос рекурсивно извлекает данные из всех файлов `test-data.csv.gz` во всех папках внутри каталога `my-test-bucket`:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 Примечание. В конфигурационном файле сервера можно указать пользовательские URL-маппер. Пример:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` будет преобразован в `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
+URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` будет заменён на `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
 
 Пользовательский маппер можно добавить в `config.xml`:
 
@@ -267,7 +269,9 @@ FROM s3(creds, url='https://s3-object-url.csv')
 
 Поддерживается только для запросов INSERT.
 
-`wildcard`: заменяет подстановочный шаблон `{_partition_id}` в пути к файлу на фактическое значение ключа партиционирования. Выбирается по умолчанию, если путь содержит заполнитель `{_partition_id}` (это единственная стратегия, совместимая с таким путём), а в остальных случаях — при значении `compatibility` ниже `26.6`; в оставшихся случаях значением по умолчанию является `hive` (см. настройку `file_like_engine_default_partition_strategy`).
+`wildcard`: заменяет подстановочный шаблон `{_partition_id}` в пути к файлу на фактическое значение ключа партиционирования. Выбирается по умолчанию, если путь содержит `{_partition_id}`.
+
+Если `partition_strategy` не задана, путь с другим glob не использует стратегию партиционирования и игнорирует `PARTITION BY`. Путь без glob использует `hive`, когда `file_like_engine_default_partition_strategy` имеет значение `hive`; в противном случае стратегия партиционирования не используется.
 
 `hive` реализует секционирование в стиле Hive для чтения и записи. Файлы создаются в следующем формате: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -368,7 +372,8 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -441,7 +446,7 @@ Peak memory usage: 192.27 KiB.
 
 ```sql
 SET s3_base = 's3://clickhouse-public-datasets/';
-SELECT count() FROM s3('hits_compatible/hits.csv');
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
 <div id="storage-settings">

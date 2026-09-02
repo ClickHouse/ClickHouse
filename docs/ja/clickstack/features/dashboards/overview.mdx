@@ -200,13 +200,54 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
 
 各タイルには、値の表示方法を制御するための **Display Settings** ドロワーがあります。タイルエディタで **Display Settings** をクリックすると開けます。利用できるオプションは、可視化の種類によって異なります。
 
-Number タイルでは **Background chart** を表示できます。これは値の背後に描かれるトレンドのスパークラインで、選択した time range における推移をひと目で確認できます。SLO や error-budget タイルでは、現在の値だけでなく、その値がどう推移しているかも重要になるため、特に便利です。
+<div id="number-tile-color">
+  #### 数値タイルの色
+</div>
 
-Number タイルを選択した状態で **Display Settings** を開き、**Background chart** を **Line** または **Area** に設定します (無効にする場合は **None**) 。このスパークラインは、タイルのクエリを time-bucketed した結果から生成されるため、追加の設定は不要です。既定ではタイルの色を引き継ぎますが、特定のパレット色を使いたい場合は **Background color** を設定して上書きできます。
+数値タイルでは、厳選されたチャートパレットから静的な**色**を選択できます。数値タイルを選択した状態で**表示設定**を開き、**色**コントロール (アクセシビリティ用のラベルは**数値タイルの色**) から色見本を選択します。選択を解除すると、デフォルトのテキスト色が使用されます。
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Background chart が Area に設定された Number タイルの Display Settings ドロワー" size="lg" />
+色は生の16進数値ではなくパレットトークンとして保存されるため、ライト、ダーク、IDE の各テーマでも同じタイルが適切に表示されます。
 
-Background chart は、query-builder の Number タイルに適用されます。Raw SQL の Number タイルは、bucket 化できる time dimension を持たない単一の値しか返さないため、このオプションは表示されますが無効になっています。
+**カテゴリトークン** (複数系列用の色相) :
+
+| トークン               | ラベル  |
+| ------------------ | ---- |
+| `chart-blue`       | 青    |
+| `chart-orange`     | オレンジ |
+| `chart-red`        | 赤    |
+| `chart-cyan`       | シアン  |
+| `chart-green`      | 緑    |
+| `chart-pink`       | ピンク  |
+| `chart-purple`     | 紫    |
+| `chart-light-blue` | 水色   |
+| `chart-brown`      | 茶色   |
+| `chart-gray`       | 灰色   |
+
+**セマンティックトークン** (ステータス向け) :
+
+| トークン            | ラベル |
+| --------------- | --- |
+| `chart-success` | 成功  |
+| `chart-warning` | 警告  |
+| `chart-error`   | エラー |
+
+数値がステータスを表す場合は、セマンティックトークンを使用します (例: エラー数には `chart-error`、正常率には `chart-success`) 。ステータスを示さずに関連する KPI タイルを視覚的に区別したい場合は、カテゴリトークンを使用します。
+
+古い設定では、従来の数値トークン (`chart-1` ～ `chart-10`) が保存されている場合があります。ClickStack はダッシュボードの読み込み時に、これらを上記の色相名付きトークンにマッピングします。
+
+同じパレットは、同じドロワー内で任意に設定できる**カラールール**にも使用されます。カラールールは表示値に対して順番に評価される条件で、最後に一致したルールが優先されます。どのルールにも一致しない場合は、静的な色が適用され、それもない場合はデフォルトのテキスト色が使用されます。
+
+<div id="number-tile-background-chart">
+  #### 数値タイルの Background chart
+</div>
+
+数値タイルでは **Background chart** を表示できます。これは値の背後に描かれるトレンドのスパークラインで、選択した time range における推移をひと目で確認できます。SLO や error-budget タイルでは、現在の値だけでなく、その値がどう推移しているかも重要になるため、特に便利です。
+
+数値タイルを選択した状態で **Display Settings** を開き、**Background chart** を **Line** または **Area** に設定します (無効にする場合は **None**) 。このスパークラインは、タイルのクエリを time-bucketed した結果から生成されるため、追加の設定は不要です。既定ではタイルの色を引き継ぎますが、特定のパレット色を使いたい場合は **Background color** を設定して上書きできます。
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Background chart が Area に設定された 数値タイルの Display Settings ドロワー" size="lg" />
+
+Background chart は、query-builder の 数値タイルに適用されます。Raw SQL の 数値タイルは、bucket 化できる time dimension を持たない単一の値しか返さないため、このオプションは表示されますが無効になっています。
 
 Table タイルでは **Alternate Row Background** を使って行を交互に色分けできるため、列数の多いテーブルでも確認しやすくなります。これは既定ではオフです。
 
@@ -215,6 +256,46 @@ Table タイルを選択した状態で **Display Settings** を開き、**Alter
 <Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Alternate Row Background がオンになったテーブルタイルの Display Settings ドロワー" size="lg" />
 
 テーブルタイルでは、スクロールしてもヘッダー行とデータの間の区切り線が維持されるため、カラム見出しを見分けやすくなります。
+
+<div id="api-number-tile-color">
+  #### Dashboards API: 数値タイルの色
+</div>
+
+外部 API (`POST` / `PUT` `/api/v2/dashboards`) を使用してダッシュボードを作成または更新する場合は、builder の数値タイル 設定 の `color` にパレットトークンを設定します。生の 16 進数値は使用できません。
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` には、上記のカテゴリ別およびセマンティックのリストにある任意の トークン (例: `chart-blue` または `chart-success`) を指定できます。任意の `backgroundChart.color` で、同じ トークン enum を使用してスパークラインの色を上書きできます。認証とベース URL については、[ClickStack API リファレンス](/ja/clickstack/api-reference)を参照してください。
 
 <div id="dashboard-listing-search">
   ## ダッシュボード - 一覧と検索
@@ -233,28 +314,37 @@ Table タイルを選択した状態で **Display Settings** を開き、**Alter
 <Tagging />
 
 <div id="custom-filters">
-  ## カスタムフィルタ
+  ## カスタムフィルタと変数
 </div>
 
 すべてのダッシュボードで利用できる[フリーテキストフィルタ](#filter-dashboards)に加えて、保存済みダッシュボードでは、ClickHouse にクエリしたデータをもとに値が設定されるカスタムのドロップダウンフィルタも利用できます。これにより、再利用可能なポイント＆クリック式のフィルタ操作が可能になり、ダッシュボードの閲覧者は式を手動で入力しなくても絞り込みを行えます。
 
 <Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="利用可能なサービス名を表示するサービスのドロップダウンフィルタ" size="lg" />
 
-以下の手順では、[&quot;ダッシュボードの作成&quot;](#creating-dashboards)セクションで作成したダッシュボードにカスタムフィルタを追加する方法を示します。
+各フィルタでは、閲覧者が1つ以上の値を選択でき、その値に対して次のいずれか、または両方を実行します。
+
+* **ブロードキャスト** — 一致するタイルにフィルタ条件として選択内容を適用します。タイルを更新してフィルタを参照する必要はありません。
+* **変数** — 選択内容を `$variableName` としてタイルのクエリで利用できるようにし、各タイルで値を使用する場所と方法を決定できます。
+
+フィルタでは、この2つのうち少なくとも1つを実行する必要があります。フィルタの作成時には、ブロードキャストがデフォルトで有効になります。
+
+以下の手順では、[&quot;ダッシュボードの作成&quot;](#creating-dashboards)セクションで作成したダッシュボードにフィルタを追加する方法を示します。
 
 <Steps>
   <Step title="Edit Filters ダイアログを開く" id="open-edit-filters">
-    保存済みダッシュボードを開き、ツールバーから **Edit Filters** を選択します。
+    保存済みダッシュボードを開き、ツールバーから **Edit Filters and Variables** を選択します。
 
     <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="ダッシュボードのツールバーにある Edit Filters ボタン" size="lg" />
   </Step>
 
   <Step title="新しいフィルタを追加する" id="add-new-filter">
-    **Add new filter** をクリックします。**Name** を入力し、**データソース** を選択し、**Filter expression** (ドロップダウンに表示する値を生成する SQL のカラムまたは式) を入力してフィルタを設定します。**Save filter** をクリックします。
+    **Add new filter** をクリックします。**Display Name** を入力し、**データソース** を選択し、**Filter expression** (ドロップダウンに表示する値を生成する SQL のカラムまたは式) を入力してフィルタを設定します。**Save filter** をクリックします。
 
     たとえば、トレースデータ用のサービスフィルタを追加するには、`Traces` データソースで `ServiceName` をフィルタ式として使用します。&quot;Dropdown values filter&quot; は任意で、ドロップダウンに表示する値を絞り込めます。
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Name、データソース、Filter expression の各フィールドがある Add filter ダイアログ" size="md" />
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Display Name、データソース、Filter expression の各フィールドがある Add filter ダイアログ" size="md" />
+
+    同じダイアログでは、以下で説明するフィルタ値を[ブロードキャスト](#broadcast-filters)するかどうか、および[変数として利用可能にする](#dashboard-variables)かどうかも設定できます。
 
     Filters モーダルには、そのダッシュボードに設定されているすべてのフィルタが表示されます。ここから既存のフィルタを編集または削除したり、追加したりできます。
 
@@ -276,6 +366,85 @@ Table タイルを選択した状態で **Display Settings** を開き、**Alter
 
 <Note>
   カスタムのドロップダウンフィルタは保存済みダッシュボードで利用できます。この機能の実例については、[Kubernetes ダッシュボード](#kubernetes-dashboard)を参照してください。ここでは、ポッド、デプロイメント、ノード名、ネームスペース、クラスター向けの組み込みドロップダウンフィルタが提供されています。
+</Note>
+
+<div id="broadcast-filters">
+  ### ブロードキャスト
+</div>
+
+**フィルタ条件をブロードキャスト**を有効にすると、選択した値が、フィルタを明示的に参照していないダッシュボードのタイルにもフィルタ条件として適用されます。デフォルトでは、この条件はすべてのタイルに適用されます。**ログソースに適用**を使用すると、指定したログソースを使用するタイルにのみ適用できます。これは、フィルタ式がダッシュボード内の一部のデータに対してのみ意味を持つ場合に便利です。
+
+チャートビルダーのタイルには、ブロードキャストフィルタが自動的に適用されます。Raw SQL タイルでは、[`$__filters` マクロ](/ja/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro)を含め、ログソースを選択する必要があります。ClickStack は手書きのクエリ内で条件を適用する箇所を推論できないためです。
+
+<div id="dashboard-variables">
+  ### 変数
+</div>
+
+**Available as variable** を有効にすると、フィルタの選択内容を `$variableName` としてタイルクエリでも使用できます。**Variable name** のデフォルトは、使用できない文字を削除したフィルタの表示名ですが、変更できます。名前は文字で始め、文字、数字、アンダースコアのみを使用できます。
+
+`WHERE` 条件をブロードキャストしたくない場合は、変数を使用します。たとえば、値を `SELECT` 式、`HAVING` 句、結合キーで使用する場合や、フィルタ自身の式とは異なるカラムでタイルをフィルタリングする場合です。
+
+<div id="referencing-variables">
+  #### 変数の参照
+</div>
+
+変数は、ドロップダウンで現在選択されている値に展開されます。参照形式によってレンダリング方法が決まります。
+
+| 参照                  | 展開結果                                                                                               | 未選択時   |
+| ------------------- | -------------------------------------------------------------------------------------------------- | ------ |
+| `$name`, `${name}`  | コンテキストに応じて、`sqlstring` または `lucene` フォーマットの選択値。`${name}_total` のように、名前の後に単語文字が続く場合は、中かっこで名前を区切ります。 | `NULL` |
+| `${name:sqlstring}` | 選択値を単一引用符で囲み、カンマ区切りにし、SQL値としてエスケープしたもの (例: `'a', 'b'`) 。                                           | `NULL` |
+| `${name:csv}`       | 引用符なしのカンマ区切り: `a,b`。SQL用にはエスケープされません。                                                              | 空文字列   |
+| `${name:regex}`     | 正規表現としてエスケープされた選択肢: `(a\|b)`。                                                                      | `.*`   |
+| `${name:lucene}`    | Lucene入力用の、引用符で囲まれた項の `OR`: `("a" OR "b")`。                                                        | `("")` |
+
+何も選択されていない場合、`$name` は `NULL` としてレンダリングされます。そのため、SQL述語が必要な箇所では、以下のマクロを使用してください。どちらのマクロも、変数が未選択の場合は `1=1` に展開されるため、クエリは有効なままです。
+
+| マクロ                                           | 説明                                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | `variable` に値が選択されている場合は `toString(<filter expression>) IN ($variable)` に、そうでない場合は `1=1` に展開されます。 |
+| `$__filter(<expression>, $<variable>)`        | `variable` に値が選択されている場合は `<expression> IN ($variable)` に、そうでない場合は `1=1` に展開されます。                  |
+| `$__conditionalAll(<condition>, $<variable>)` | 変数に選択がある場合は `<condition>` に、そうでない場合は `1=1` に展開されます。                                               |
+
+<div id="variables-in-builder-tiles">
+  #### チャートビルダーのタイルで変数を使用する
+</div>
+
+チャートビルダーのすべての SQL 式入力で変数参照を使用できます。対象には、`SELECT` カラム、系列ごとの式、`WHERE`、`GROUP BY`、`HAVING` が含まれます。エディタではダッシュボードの変数が自動補完され、現在の選択に応じて各参照がどのように展開されるかが表示されます。
+
+SQL モードでは、変数が未選択の場合でもクエリが有効なままとなるよう、`$__filter` および `$__conditionalAll` マクロを使用することを推奨します。Lucene 入力ではマクロを使用できないため、代わりに生の変数を参照してください (例: `ServiceName:$service`) 。
+
+Lucene 入力では、変数参照自体を引用符で囲むかどうかによって、複数値の選択をどのように照合するかが決まります。`$service` で `a,b` を選択した場合:
+
+| 参照                       | 展開後                                    | 照合動作                                                                          |
+| ------------------------ | -------------------------------------- | ----------------------------------------------------------------------------- |
+| `ServiceName:$service`   | `ServiceName:("a" OR "b")`             | 部分文字列一致 — SQL では `ServiceName ILIKE '%a%' OR ServiceName ILIKE '%b%'` に変換されます |
+| `ServiceName:"$service"` | `(ServiceName:"a" OR ServiceName:"b")` | 選択した各値との完全一致                                                                  |
+
+選択した値を部分文字列ではなく `Field` と完全一致させる場合は、変数参照を引用符で囲んでください — `Field:"$var"`。
+
+<div id="variables-in-sql-tiles">
+  #### SQL タイルで変数を使用する
+</div>
+
+Raw SQL タイルでは、クエリ内のどの箇所でも同じように変数を参照できます。
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+SQL タイルで使用できるマクロの一覧については、[SQL ベースの可視化](/ja/clickstack/features/dashboards/sql-visualizations#dashboard-variables)を参照してください。
+
+<Note>
+  ダッシュボード変数を参照するタイルのアラートは、ダッシュボードで選択した値ではなく、すべての変数が空の状態で評価されます。
 </Note>
 
 <div id="drilldown-to-search">

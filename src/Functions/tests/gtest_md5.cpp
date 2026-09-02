@@ -131,24 +131,24 @@ struct ScalarMD5Trait
     }
 };
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if defined(__AVX2__)
 
 struct AVX2MD5Trait
 {
-    using Ops = DB::TargetSpecific::x86_64_v3::AVX2MD5Ops;
+    using Ops = DB::TargetSpecific::Default::AVX2MD5Ops;
     static constexpr size_t lanes = Ops::lanes;
 
-    static void skipIfUnsupported()
-    {
-        if (!DB::isArchSupported(DB::TargetArch::x86_64_v3))
-            GTEST_SKIP() << "x86_64_v3 (AVX2) not supported on this host";
-    }
+    static void skipIfUnsupported() { }
 
     static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
     {
-        DB::TargetSpecific::x86_64_v3::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
+        DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
 };
+
+#endif
+
+#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 
 struct AVX512MD5Trait
 {
@@ -203,9 +203,12 @@ protected:
 
 using MD5Implementations = ::testing::Types<
     ScalarMD5Trait
+#if defined(__AVX2__)
+    ,
+    AVX2MD5Trait
+#endif
 #if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
     ,
-    AVX2MD5Trait,
     AVX512MD5Trait
 #endif
 #if USE_MD5_AARCH64_ASIMD

@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'نظرة عامة'
+sidebarTitle: 'Rust'
 keywords: ['clickhouse', 'rs', 'rust', 'cargo', 'crate', 'http', 'client', 'connect', 'integrate']
 slug: /integrations/rust
 description: 'عميل Rust الرسمي للاتصال بـ ClickHouse.'
@@ -189,7 +189,7 @@ insert.end().await?;
 
 * إذا لم يتم استدعاء `end()`، فسيتم إلغاء `INSERT`.
 * تُرسَل الصفوف تدريجيًا على شكل تدفّق لتوزيع حمل الشبكة.
-* يُدرِج ClickHouse الدُفعات بصورة ذرّية فقط إذا كانت جميع الصفوف تقع ضمن partition نفسها وكان عددها أقل من [`max_insert_block_size`](/ar/reference/settings/session-settings/max-insert#max_insert_block_size).
+* يُدرِج ClickHouse الدُفعات بصورة ذرّية فقط إذا كانت جميع الصفوف تقع ضمن partition نفسها وكان عددها أقل من [`max_insert_block_size`](/ar/reference/settings/session-settings#max_insert_block_size).
 
 <div id="async-insert-server-side-batching">
   ### الإدراج غير المتزامن (التجميع من جهة الخادم)

@@ -25,7 +25,7 @@ ClickStack 支持基于原始 SQL 查询的可视化。这让你能够完全控�
 
 1. 选择一个要用于运行查询的 **ClickHouse 连接**。
 2. 也可以选择一个 **Source** —— 这样就能通过 `$__filters` 宏将仪表板级过滤器应用到图表。
-3. 在编辑器中编写 SQL 查询，使用查询参数和宏与仪表板的时间范围及过滤器集成。
+3. 在编辑器中编写 SQL 查询，使用查询参数和宏与仪表板的时间范围、过滤器及变量集成。
 4. 点击 **play** 按钮预览结果，然后点击 **Save**。
 
 <div id="query-parameters">
@@ -118,11 +118,27 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
   ### 仪表板过滤器宏
 </div>
 
-| Macro        | Description                  |
-| ------------ | ---------------------------- |
-| `$__filters` | 替换为仪表板级过滤条件 (需要选择一个 Source)  |
+| Macro        | Description                 |
+| ------------ | --------------------------- |
+| `$__filters` | 替换为仪表板级过滤条件 (需要选择一个 Source) |
 
 当在图表中选择了 **Source** 且仪表板过滤器已启用时，`$__filters` 会展开为对应的 SQL `WHERE` 条件。未选择 Source 或未应用任何过滤器时，它会展开为 `(1=1)`，因此始终可以安全地将其包含在 `WHERE` 子句中。
+
+只有启用了 **Broadcast filter condition** 的过滤器才会由 `$__filters` 应用。作为变量公开的过滤器会被显式引用，如下所述。
+
+<div id="dashboard-variables">
+  ### 仪表板变量宏
+</div>
+
+当仪表板过滤器[可用作变量](/zh/clickstack/features/dashboards/overview#dashboard-variables)时，可在查询的任何位置引用其选中值。只有属于声明了至少一个变量的仪表板的卡片才能使用这些宏。
+
+| 宏                                             | 描述                                                                                  |
+| --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | 当为 `variable` 选择了值时，展开为 `toString(<filter expression>) IN ($variable)`；否则展开为 `1=1`。 |
+| `$__filter(<expression>, $<variable>)`        | 当为 `variable` 选择了值时，展开为 `<expression> IN ($variable)`；否则展开为 `1=1`。                  |
+| `$__conditionalAll(<condition>, $<variable>)` | 当变量有选中值时，展开为 `<condition>`；否则展开为 `1=1`。                                             |
+
+变量值也可直接插值为 `$name` 或 `${name}`，并可选择指定格式：`${name:sqlstring}` (默认) 、`${name:csv}` 或 `${name:regex}`。在默认格式下，未选择任何值时，直接引用会呈现为 `NULL`；因此，凡是需要谓词的位置，建议优先使用上述宏。
 
 <div id="how-results-are-plotted">
   ## 查询结果的绘制方式
@@ -214,6 +230,24 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
+<div id="example-line-chart-variables">
+  ### 折线图 — 使用仪表板变量
+</div>
+
+假设仪表板中有一个基于 `ServiceName` 的 `service` 变量，以及一个基于 `SeverityText` 的 `severity` 变量，此查询会将图表范围限定为当前选定的服务，并排除选定的严重性级别。当变量未选择任何值时，两个宏都会展开为 `1=1`，因此在查看者选择值之前，图表不会应用过滤器。
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
 <div id="example-stacked-bar">
   ### 堆叠条形图 — 按严重级别统计的错误数
 </div>
@@ -288,3 +322,5 @@ WHERE $__timeFilter(TimestampTime)
 * 基于 SQL 的可视化必须且只能包含一条 SQL 查询，不支持多条查询。
 * SQL 编辑器会为查询参数和宏提供自动补全建议。
 * 必须先选择一个 source，才能将 仪表板 过滤器应用到基于 SQL 的可视化中。该 source 应与所查询的表一致，以确保过滤准确。
+* 仪表板变量无需 source——其值来自仪表板的过滤器下拉列表，而非卡片自身的 source。
+* 引用了仪表板变量的 SQL 卡片上的告警，会在所有变量均为空状态时进行评估，而不会使用仪表板中选定的值。

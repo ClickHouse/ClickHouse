@@ -3,15 +3,17 @@ slug: /cloud/managed-postgres/upgrades
 sidebarTitle: 'Upgrades'
 title: 'Upgrades'
 description: 'Como funcionam os upgrades de versão do PostgreSQL no ClickHouse Managed Postgres'
-keywords: ['upgrades do Managed Postgres', 'versão do Postgres', 'upgrade menor', 'upgrade principal', 'janela de manutenção']
+keywords: ['upgrades do Managed Postgres', 'versão do Postgres', 'atualização de versão menor', 'upgrade principal', 'janela de manutenção', 'upgrades agendados']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
-O ClickHouse Managed Postgres realiza upgrades de versão do PostgreSQL para manter suas instâncias seguras e atualizadas. Há suporte tanto para upgrades de versões secundárias quanto para upgrades entre versões principais, com interrupção mínima.
+O ClickHouse Managed Postgres realiza upgrades de versão do PostgreSQL para manter suas instâncias seguras e atualizadas. Há suporte tanto para atualizações de versões menores quanto para upgrades entre versões principais, com interrupção mínima.
 
 <div id="maintenance-updates">
   ## Atualizações de manutenção
@@ -27,14 +29,114 @@ Essas operações são realizadas por meio de failover e normalmente resultam ap
 
 Para instâncias com [standbys](/pt-BR/products/managed-postgres/high-availability) habilitados, a atualização é aplicada primeiro ao standby, seguida de um failover para minimizar o tempo de inatividade.
 
-<div id="maintenance-windows">
-  ## Janelas de manutenção
+<div id="scheduled-upgrades">
+  ## Upgrades agendados
 </div>
 
-A janela de manutenção padrão é das 14:00 às 16:00 UTC, aos domingos.
-O tempo de indisponibilidade esperado é inferior a 1 minuto durante essa janela.
+<ScalePlanFeatureBadge feature="Upgrades agendados" linking_verb_are="true" />
 
-Para organizations do tier Enterprise, o ClickHouse Managed Postgres oferece suporte a janelas de manutenção, para que upgrades e outras operações de manutenção possam ser agendados no horário que cause o menor impacto possível à sua carga de trabalho. O suporte na UI e na API para configurar janelas de manutenção estará disponível em breve. Enquanto isso, entre em contato com o [suporte](https://clickhouse.com/support/program) para definir uma janela de manutenção para a sua instância.
+Por padrão, a manutenção é aplicada à sua instância sempre que um novo lançamento fica disponível.
+Com **upgrades agendados**, você escolhe uma janela de duas horas em UTC durante a qual essa
+manutenção pode ser aplicada, para que o breve failover ocorra no horário que menos
+interfira na sua carga de trabalho. O tempo de inatividade esperado é inferior a 1 minuto dentro da janela.
+
+No plano Enterprise, você também pode restringir os upgrades a
+[dias específicos da semana](#days-of-the-week). No plano Scale, você escolhe apenas o período,
+e os upgrades podem ser aplicados em qualquer dia dentro dele.
+
+<div id="configure-a-schedule">
+  ### Configurar um agendamento
+</div>
+
+<Steps>
+  <Step title="Abra as configurações da instância" id="open-settings">
+    Selecione a instância, depois **Settings** no menu à esquerda e role até a seção
+    **Configuration**.
+  </Step>
+
+  <Step title="Abra o painel de upgrades agendados" id="open-flyout">
+    Na subseção **Upgrades agendados**, selecione **Configure schedule**. Se já houver um agendamento
+    definido, o agendamento atual será exibido e o botão mostrará **Edit schedule**.
+  </Step>
+
+  <Step title="Escolha um período" id="pick-time-period">
+    Selecione uma das doze janelas UTC de duas horas na lista **Time period (UTC)**. É obrigatório
+    selecionar um período.
+  </Step>
+
+  <Step title="Opcionalmente, restrinja os dias" id="pick-days">
+    No plano Enterprise, selecione um ou mais dias em **Day(s) of the week**. Deixe todos os
+    dias desmarcados para permitir upgrades em qualquer dia dentro do período.
+  </Step>
+
+  <Step title="Salvar" id="save">
+    Selecione **Save**. O agendamento entra em vigor imediatamente e é exibido na
+    subseção **Upgrades agendados**, por exemplo:
+    `Scheduled upgrades: Sat, Sun at 12:00 a.m. - 2:00 a.m. UTC`.
+  </Step>
+</Steps>
+
+Você precisa da permissão `control-plane:postgres-service:manage` na instância para alterar
+o agendamento. Os controles também ficam desabilitados enquanto uma instância está parada ou ainda
+está sendo provisionada.
+
+<div id="time-periods">
+  ### Períodos de tempo
+</div>
+
+As janelas têm duração de duas horas e são sempre expressas em UTC — não é possível selecionar o fuso horário
+local. As janelas disponíveis são:
+
+| Primeira metade do dia (UTC) | Segunda metade do dia (UTC) |
+| ---------------------------- | --------------------------- |
+| 12:00 a.m. - 2:00 a.m.       | 12:00 p.m. - 2:00 p.m.      |
+| 2:00 a.m. - 4:00 a.m.        | 2:00 p.m. - 4:00 p.m.       |
+| 4:00 a.m. - 6:00 a.m.        | 4:00 p.m. - 6:00 p.m.       |
+| 6:00 a.m. - 8:00 a.m.        | 6:00 p.m. - 8:00 p.m.       |
+| 8:00 a.m. - 10:00 a.m.       | 8:00 p.m. - 10:00 p.m.      |
+| 10:00 a.m. - 12:00 p.m.      | 10:00 p.m. - 12:00 a.m.     |
+
+Horários de início personalizados, durações de janela personalizadas e mais de uma janela por instância não são
+suportados.
+
+<div id="days-of-the-week">
+  ### Dias da semana
+</div>
+
+<EnterprisePlanFeatureBadge feature="Restringir upgrades a dias específicos da semana" />
+
+A restrição de dias é opcional:
+
+* **Nenhum dia selecionado** — os upgrades podem ser aplicados em qualquer dia, dentro do período escolhido.
+* **Um ou mais dias selecionados** — os upgrades são aplicados apenas nesses dias, dentro do
+  período escolhido. Selecionar os sete dias equivale a não selecionar nenhum.
+
+<div id="schedule-scope">
+  ### A que se aplica um agendamento
+</div>
+
+Um agendamento se aplica apenas à **manutenção da plataforma** — upgrades de versões
+secundárias, atualizações de recursos do serviço gerenciado e patches do sistema operacional descritos em
+[Atualizações de manutenção](#maintenance-updates).
+
+As alterações que você inicia não são adiadas para a janela e são aplicadas assim
+que você as faz. Isso inclui o [escalonamento](/pt-BR/products/managed-postgres/scaling) de uma instância,
+o redimensionamento do armazenamento e a alteração de [parâmetros de configuração](/pt-BR/products/managed-postgres/settings).
+
+<Note>
+  Os upgrades agendados são realizados conforme possível. A manutenção poderá ser aplicada fora da sua janela quando for
+  necessária para a saúde da sua instância — por exemplo, quando o uso de disco atingir 95% — ou para
+  a aplicação de patches críticos de segurança e correções de vulnerabilidades. Você será notificado sobre essas exceções conforme
+  necessário.
+</Note>
+
+<div id="read-replicas">
+  ### Réplicas de leitura
+</div>
+
+As [réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas) seguem o agendamento da
+instância primária e não têm agendamento próprio; por isso, a seção **Upgrades agendados**
+não é exibida para elas.
 
 <div id="major-version-upgrades">
   ## Upgrades entre versões principais

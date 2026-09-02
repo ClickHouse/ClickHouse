@@ -284,7 +284,7 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
 **Inversion du chemin**
@@ -294,7 +294,7 @@ SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **Séparateur personnalisé**
@@ -304,7 +304,7 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
 **Cas particulier avec des points**
@@ -314,7 +314,7 @@ SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **Élément unique**
@@ -324,7 +324,7 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
 **Séparateur vide**
@@ -334,7 +334,7 @@ SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -347,7 +347,7 @@ Découpe une chaîne, séparée par la chaîne constante spécifiée `separator`
 Des sous-chaînes vides peuvent être renvoyées si le séparateur apparaît au début ou à la fin de la chaîne, ou s&#39;il y a plusieurs séparateurs consécutifs.
 
 <Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau résultant lorsque l&#39;argument `max_substrings > 0`.
+  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau de résultats lorsque l&#39;argument `max_substrings > 0`.
 </Note>
 
 Des sous-chaînes vides peuvent être renvoyées dans les cas suivants :
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -442,7 +442,7 @@ Des sous-chaînes vides peuvent être produites lorsque :
 * la chaîne d’origine est vide alors que l’expression régulière ne l’est pas.
 
 <Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
+  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
 </Note>
 
 **Syntaxe**
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **Expression régulière vide**
@@ -503,7 +503,7 @@ Des sous-chaînes vides peuvent être produites lorsque :
 * La chaîne d’origine `s` est vide alors que le séparateur ne l’est pas
 
 <Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
+  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
 </Note>
 
 **Syntaxe**
@@ -515,7 +515,7 @@ splitByString(separator, s[, max_substrings])
 **Arguments**
 
 * `separator` — Le séparateur. [`String`](/fr/reference/data-types/string)
-* `s` — La chaîne à scinder. [`String`](/fr/reference/data-types/string)
+* `s` — La chaîne à découper. [`String`](/fr/reference/data-types/string)
 * `max_substrings` — Facultatif. Lorsque `max_substrings > 0`, le nombre de sous-chaînes renvoyées ne dépassera pas `max_substrings` ; sinon, la fonction renverra autant de sous-chaînes que possible. Valeur par défaut : `0`. [`Int64`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
@@ -531,9 +531,9 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
 **Séparateur vide**
@@ -599,17 +599,18 @@ Tokenizers disponibles :
 
 * `splitByNonAlpha` découpe les chaînes sur les caractères ASCII non alphanumériques (voir aussi la fonction [splitByNonAlpha](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` découpe les chaînes selon certaines chaînes de séparation `S` définies par l’utilisateur (voir aussi la fonction [splitByString](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByString)). Les séparateurs peuvent être spécifiés à l’aide d’un paramètre facultatif, par exemple `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Notez que chaque chaîne peut être composée de plusieurs caractères (`', '` dans l’exemple). La liste de séparateurs par défaut, si elle n’est pas explicitement spécifiée, est un seul espace `[' ']`.
+* `splitByRegexp(re)` découpe les chaînes selon une expression régulière de séparation `re` définie par l’utilisateur (voir aussi la fonction [splitByRegexp](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)). L’expression régulière est obligatoire, par exemple `tokens(value, 'splitByRegexp', '[^\p{L}\p{N}#+]+')`. Contrairement à `splitByString`, un séparateur sous forme d’expression régulière peut préserver les tokens contenant des caractères spéciaux (tels que `C++` ou `C#`).
 * `asciiCJK` découpe les chaînes en tokens en appliquant les règles Unicode de délimitation des mots (similaires à UAX #29). Les caractères ASCII alphanumériques et les traits de soulignement forment des tokens avec des connecteurs (`:` pour les lettres, `.` et `'` pour les caractères de même type). Les caractères Unicode non ASCII deviennent des tokens d’un seul caractère.
 * `chinese` segmente le texte chinois en mots à l’aide d’un dictionnaire et d’un modèle de Markov caché (l’algorithme suit [jieba](https://github.com/fxsjy/jieba) ; le dictionnaire intégré et les données du modèle sont dérivés de [cppjieba](https://github.com/yanyiwu/cppjieba)). Contrairement à `asciiCJK`, qui traite chaque caractère non ASCII comme un token d’un seul caractère, `chinese` regroupe les caractères chinois consécutifs en mots, ce qui produit des tokens plus significatifs et une meilleure qualité de recherche pour le texte chinois. Un argument facultatif `granularity` peut être `coarse_grained` (la valeur par défaut) ou `fine_grained` ; ce dernier énumère également les sous-mots qui se chevauchent, améliorant le rappel au prix d’un index plus volumineux.
 * `icu(locale)` découpe les chaînes en tokens de mots à l’aide de la segmentation Unicode des mots (UAX #29) de la bibliothèque ICU. Pour les écritures sans espace entre les mots (par exemple le chinois, le japonais et le thaï), ICU applique une segmentation fondée sur un dictionnaire, de sorte que ces textes sont découpés en mots significatifs. `locale` correspond aux paramètres régionaux ICU transmis au segmenteur (la segmentation dépend principalement de l’écriture et du dictionnaire ; les paramètres régionaux sélectionnent les adaptations propres aux paramètres régionaux d’ICU) ; il est obligatoire et transmis comme argument distinct, par exemple `tokens(value, 'icu', 'ja')`.
 * `japanese` découpe le texte japonais en mots à l’aide de l’analyseur morphologique MeCab. Nécessite un dictionnaire configuré dans la configuration du serveur (voir la documentation sur l’[index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes)).
 * `ngrams(N)` découpe les chaînes en `N`-grammes de taille identique (voir aussi la fonction [ngrams](/fr/reference/functions/regular-functions/splitting-merging-functions#ngrams)). La longueur des ngrams peut être spécifiée à l’aide d’un paramètre entier facultatif compris entre 1 et 8, par exemple `tokens(value, 'ngrams', 3)`. La taille de ngram par défaut, si elle n’est pas explicitement spécifiée, est 3.
 * `sparseGrams(min_length, max_length, min_cutoff_length)` découpe les chaînes en n-grammes de longueur variable comportant au minimum `min_length` caractères et au maximum `max_length` caractères (bornes incluses) (voir aussi la fonction [sparseGrams](/fr/reference/functions/regular-functions/string-functions#sparseGrams)). Sauf indication explicite, `min_length` et `max_length` valent respectivement 3 et 100. Si le paramètre `min_cutoff_length` est fourni, seuls les n-grammes dont la longueur est supérieure ou égale à `min_cutoff_length` sont renvoyés. Par rapport à `ngrams(N)`, le tokenizer `sparseGrams` produit des N-grammes de longueur variable, ce qui permet une représentation plus souple du texte d’origine. Par exemple, `tokens(value, 'sparseGrams', 3, 5, 4)` génère en interne des 3-, 4- et 5-grammes à partir de la chaîne d’entrée, mais seuls les 4- et 5-grammes sont renvoyés.
-* `array` n’effectue aucune tokenisation, c’est-à-dire que chaque valeur de ligne constitue un token (voir aussi la fonction [array](/fr/reference/functions/regular-functions/array-functions#array)).
+* `array` n’effectue aucune tokenisation, c’est-à-dire que chaque valeur de ligne constitue un token (voir aussi la fonction [array](/fr/reference/functions/regular-functions/array-functions#array)). Pour assurer la compatibilité avec d’autres systèmes, `keyword` est disponible comme alias de `array`.
 
-Dans le cas du tokenizer `splitByString`, si les tokens ne forment pas un [code préfixe](https://en.wikipedia.org/wiki/Prefix_code), vous souhaiterez probablement que la correspondance privilégie d’abord les séparateurs les plus longs.
+Dans le cas du tokenizer `splitByString`, si les tokens ne forment pas un [code préfixe](https://en.wikipedia.org/wiki/Prefix_code), il est probablement préférable que la correspondance privilégie les séparateurs les plus longs.
 Pour ce faire, transmettez les séparateurs par ordre décroissant de longueur.
-Par exemple, avec separators = `['%21', '%']`, la chaîne `%21abc` serait découpée en `['abc']`, tandis que separators = `['%', '%21']` donnerait `['21ac']` (ce qui n’est probablement pas ce que vous vouliez).
+Par exemple, avec separators = `['%21', '%']`, la chaîne `%21abc` serait tokenisée en `['abc']`, tandis qu&#39;avec separators = `['%', '%21']`, elle serait tokenisée en `['21ac']` (ce qui n&#39;est probablement pas le résultat souhaité).
 
 **Syntaxe**
 
@@ -617,6 +618,7 @@ Par exemple, avec separators = `['%21', '%']`, la chaîne `%21abc` serait décou
 tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
+tokens(value, 'splitByRegexp', regexp)
 tokens(value, 'asciiCJK')
 tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
@@ -629,10 +631,11 @@ tokens(value, 'array')
 **Arguments**
 
 * `value` — La chaîne d&#39;entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
-* `tokenizer` — Le tokenizer à utiliser. Les valeurs acceptées sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s&#39;il n&#39;est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les valeurs acceptées sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s&#39;il n&#39;est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 * `locale` — Pertinent uniquement si l&#39;argument `tokenizer` est `icu` : paramètre régional obligatoire, par exemple `'ja'`. [`const String`](/fr/reference/data-types/string)
-* `n` — Pertinent uniquement si l&#39;argument `tokenizer` est `ngrams` : paramètre facultatif qui définit la longueur des ngrammes. S&#39;il n&#39;est pas défini explicitement, la valeur par défaut est `3`. [`const UInt8`](/fr/reference/data-types/int-uint)
+* `n` — Pertinent uniquement si l&#39;argument `tokenizer` est `ngrams` : paramètre facultatif qui définit la longueur des n-grammes. S&#39;il n&#39;est pas défini explicitement, la valeur par défaut est `3`. [`const UInt8`](/fr/reference/data-types/int-uint)
 * `separators` — Pertinent uniquement si l&#39;argument `tokenizer` est `split` : paramètre facultatif qui définit les chaînes de séparation. S&#39;il n&#39;est pas défini explicitement, la valeur par défaut est `[' ']`. [`const Array(String)`](/fr/reference/data-types/array)
+* `regexp` — Pertinent uniquement si l&#39;argument `tokenizer` est `splitByRegexp` : paramètre obligatoire qui définit le séparateur d&#39;expression régulière. [`const String`](/fr/reference/data-types/string)
 * `min_length` — Pertinent uniquement si l&#39;argument `tokenizer` est `sparseGrams` : paramètre facultatif qui définit la longueur minimale des grammes, par défaut `3`. [`const UInt8`](/fr/reference/data-types/int-uint)
 * `max_length` — Pertinent uniquement si l&#39;argument `tokenizer` est `sparseGrams` : paramètre facultatif qui définit la longueur maximale des grammes, par défaut `100`. [`const UInt8`](/fr/reference/data-types/int-uint)
 * `min_cutoff_length` — Pertinent uniquement si l&#39;argument `tokenizer` est `sparseGrams` : paramètre facultatif qui définit la longueur minimale de coupure. [`const UInt8`](/fr/reference/data-types/int-uint)
@@ -644,7 +647,7 @@ Renvoie le tableau de tokens résultant de la chaîne d&#39;entrée. [`Array`](/
 
 **Exemples**
 
-**Tokenizer par défaut**
+**Tokenizer n-gramme**
 
 ```sql title=Query
 SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;
@@ -654,7 +657,7 @@ SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;
 ['test1','test2','test3','test4']
 ```
 
-**Tokenizer n-gram**
+**Tokenizer n-gramme**
 
 ```sql title=Query
 SELECT tokens('abc def', 'ngrams', 3) AS tokens;
@@ -702,8 +705,9 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `value` — La chaîne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
 * `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, sa valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 * `locale` — Pertinent uniquement si l’argument `tokenizer` est `icu` : le paramètre régional obligatoire, par exemple `'ja'`. [`const String`](/fr/reference/data-types/string)
-* `n` — Pertinent uniquement si l’argument `tokenizer` est `ngrams` : paramètre facultatif qui définit la longueur des ngrams. S’il n’est pas défini explicitement, sa valeur par défaut est `3`. [`const UInt8`](/fr/reference/data-types/int-uint)
+* `n` — Pertinent uniquement si l’argument `tokenizer` est `ngrams` : paramètre facultatif qui définit la longueur des n-grammes. S’il n’est pas défini explicitement, sa valeur par défaut est `3`. [`const UInt8`](/fr/reference/data-types/int-uint)
 * `separators` — Pertinent uniquement si l’argument `tokenizer` est `split` : paramètre facultatif qui définit les chaînes de séparation. S’il n’est pas défini explicitement, sa valeur par défaut est `[' ']`. [`const Array(String)`](/fr/reference/data-types/array)
+* `regexp` — Pertinent uniquement si l’argument `tokenizer` est `splitByRegexp` : paramètre obligatoire qui définit l’expression régulière utilisée comme séparateur. [`const String`](/fr/reference/data-types/string)
 * `min_length` — Pertinent uniquement si l’argument `tokenizer` est `sparseGrams` : paramètre facultatif qui définit la longueur minimale des grammes, par défaut `3`. [`const UInt8`](/fr/reference/data-types/int-uint)
 * `max_length` — Pertinent uniquement si l’argument `tokenizer` est `sparseGrams` : paramètre facultatif qui définit la longueur maximale des grammes, par défaut `100`. [`const UInt8`](/fr/reference/data-types/int-uint)
 * `min_cutoff_length` — Pertinent uniquement si l’argument `tokenizer` est `sparseGrams` : paramètre facultatif qui définit la longueur minimale de coupure. [`const UInt8`](/fr/reference/data-types/int-uint)

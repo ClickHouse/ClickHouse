@@ -40,7 +40,7 @@ ClickHouse にデータが入ったので、いくつかのクエリを実行し
 パーサーの目的は、クエリテキストを AST (抽象構文木) へ変換することです。この処理は、`EXPLAIN AST` を使って可視化できます。
 
 ```sql
-EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -64,8 +64,22 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 
 出力は抽象構文木 (AST) で、以下のように可視化できます。
 
-<Image img="/images/guides/developer/analyzer2.webp" alt="ASTの出力" size="md" />
-
+```mermaid
+graph TD
+    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
+    el_root --> sq["SelectQuery"]
+    sq --> el_select["ExpressionList"]
+    sq --> tisq["TablesInSelectQuery"]
+    el_select --> fmin["Function min (alias minimum_date)"]
+    el_select --> fmax["Function max (alias maximum_date)"]
+    fmin --> el_min["ExpressionList"]
+    el_min --> id_min["Identifier timestamp"]
+    fmax --> el_max["ExpressionList"]
+    el_max --> id_max["Identifier timestamp"]
+    tisq --> tisqe["TablesInSelectQueryElement"]
+    tisqe --> te["TableExpression"]
+    te --> ti["TableIdentifier session_events"]
+```
 各ノードには対応する子ノードがあり、木全体でクエリ全体の構造を表しています。これはクエリを処理するための論理構造です。エンドユーザーの観点では (クエリ実行に関心がある場合を除き) 、それほど有用ではありません。このツールは主に開発者が使用します。
 
 <div id="analyzer">

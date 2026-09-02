@@ -714,17 +714,8 @@ try=# EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');
 (5 rows)
 ```
 
-<Warning>
-  L&#39;exécution paramétrée empêche le [pilote « http »](#create-server) de
-  convertir correctement les fuseaux horaires des valeurs DateTime sur les versions de ClickHouse antérieures à 25.8,
-  version dans laquelle le [bogue sous-jacent] a été [corrigé]. Notez que PostgreSQL peut parfois
-  utiliser un plan de requête paramétré même sans `PREPARE`. Pour toute requête
-  nécessitant une conversion précise des fuseaux horaires, si une mise à niveau vers la version 25.8 ou
-  ultérieure n&#39;est pas possible, utilisez plutôt le [pilote « binary »](#create-server).
-</Warning>
-
-pg&#95;clickhouse pousse les agrégations, comme d&#39;habitude, comme on peut le voir dans la
-sortie [EXPLAIN](#explain) en mode verbose :
+pg&#95;clickhouse délègue les agrégations, comme d&#39;habitude, comme on peut le voir dans la
+sortie détaillée de [EXPLAIN](#explain) :
 
 ```pgsql
 try=# EXPLAIN (VERBOSE) EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');

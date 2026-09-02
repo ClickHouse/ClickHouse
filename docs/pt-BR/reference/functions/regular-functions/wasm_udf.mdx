@@ -49,8 +49,7 @@ Ative o suporte a WebAssembly na configuração do ClickHouse:
 
 Implementações de engine disponíveis:
 
-* `wasmtime` (padrão, recomendado) — usa [WasmTime](https://github.com/bytecodealliance/wasmtime)
-* `wasmedge` — usa [WasmEdge](https://github.com/WasmEdge/WasmEdge)
+* `wasmtime` (padrão e, atualmente, a única) — usa [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
 <div id="quick-start">
   ## Início rápido
@@ -211,7 +210,7 @@ DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
 Se alguma UDF existente fizer referência a um dos módulos encontrados, a exclusão falhará; portanto, primeiro você deve excluir essas UDFs.
 
 <div id="create-a-webassembly-udf">
-  ## Criar uma UDF em WebAssembly
+  ## Criar uma WebAssembly UDF
 </div>
 
 **Sintaxe**:
@@ -233,7 +232,7 @@ RETURNS return_type
 * `function_name`: Nome da função no ClickHouse. Pode ser diferente do nome da função exportada no módulo.
 * `FROM 'module_name' :: 'source_function_name'`: Nome do módulo WASM carregado e nome da função no módulo WASM a ser usada (o padrão é function&#95;name)
 * `ARGUMENTS`: Lista de nomes e tipos de argumentos (os nomes são opcionais e usados em formatos de serialização compatíveis com campos nomeados)
-* `ABI`: Versão da Interface Binária de Aplicação
+* `ABI`: Versão da Application Binary Interface
   * `ROW_DIRECT`: Mapeamento direto de tipos, processamento linha por linha
   * `BUFFERED_V1`: Processamento baseado em blocos com serialização
   * `ASSEMBLYSCRIPT`: Processamento linha por linha para módulos produzidos pelo compilador [AssemblyScript](https://www.assemblyscript.org). Tipos numéricos são mapeados para tipos primitivos do AssemblyScript; `String` do ClickHouse é mapeado para `string` do AssemblyScript.
@@ -241,7 +240,7 @@ RETURNS return_type
 * `SHA256_HASH`: Hash esperado do módulo para verificação (preenchido automaticamente se omitido); pode ser usado para garantir que o módulo WASM correto seja carregado em diferentes réplicas.
 * `SETTINGS`: Configurações por função
   * `serialization_format` String — Formato usado para serializar blocos de argumentos passados ao módulo e analisar o resultado retornado. Usado apenas por `ABI BUFFERED_V1`. Valores compatíveis: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary` e `Buffers`. Padrão: `MsgPack`. Formatos baseados em blocos, como `Buffers`, devem retornar uma única coluna cujo tipo corresponda à assinatura da função declarada.
-  * `webassembly_udf_enable_fuel` Bool — Habilita um orçamento finito de fuel para a função. Padrão: `true`. Quando `false`, a configuração no nível da consulta `webassembly_udf_max_fuel` é ignorada para esta função. Desabilitar os limites de fuel pode melhorar o desempenho ao usar o engine `wasmtime`. No entanto, para código guest não confiável ou com bugs, isso pode aumentar o risco de execução descontrolada.
+  * `webassembly_udf_enable_fuel` Bool — Habilita um orçamento finito de fuel para a função. Padrão: `true`. Quando `false`, a configuração no nível da consulta `webassembly_udf_max_fuel` é ignorada para esta função. Desabilitar os limites de fuel pode melhorar o desempenho. No entanto, para código guest não confiável ou com bugs, isso pode aumentar o risco de execução descontrolada.
 
 <div id="abis-versions">
   ## Versões de ABI

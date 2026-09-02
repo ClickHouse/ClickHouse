@@ -2,93 +2,91 @@
 title: '设置 ClickHouse 文档 MCP 服务器'
 sidebarTitle: '设置文档 MCP 服务器'
 slug: /resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server
-description: '通过 Model Context Protocol 将 AI 工具连接到 ClickHouse 文档。'
+description: '通过模型上下文协议将 AI 工具连接到 ClickHouse 文档。'
 doc_type: 'guide'
 date: 2026-08-20
-tags: ['Tools and Utilities']
-keywords: ['MCP', 'Model Context Protocol', 'AI 工具', '文档']
+tags: ['工具和实用程序']
+keywords: ['MCP', '模型上下文协议', 'AI 工具', '文档']
 ---
 
 <Info>
-本页介绍如何配置用于搜索 ClickHouse 文档的 MCP 服务器。如需查询 ClickHouse 数据，请使用[开源 ClickHouse MCP 服务器](/zh/guides/use-cases/ai-ml/MCP)或 [ClickHouse Cloud 远程 MCP 服务器](/zh/products/cloud/features/ai-ml/remote-mcp)。
+  本页面介绍如何配置 MCP 服务器，以搜索 ClickHouse 文档。如需查询 ClickHouse 数据，请使用[开源 ClickHouse MCP 服务器](/zh/guides/use-cases/ai-ml/MCP)或 [ClickHouse Cloud 远程 MCP 服务器](/zh/products/cloud/features/ai-ml/remote-mcp)。
 </Info>
 
-使用 Model Context Protocol (MCP)，直接通过 AI 工具查询 ClickHouse 文档。
+使用模型上下文协议 (MCP) ，可直接通过 AI 工具查询 ClickHouse 文档。
 
-## 连接 AI 工具 {#connect-your-ai-tool}
+<div id="connect-your-ai-tool">
+  ## 连接 AI 工具
+</div>
 
 <Tabs>
-<Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+  <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+    在终端中运行：
 
-在终端中运行：
+    ```bash
+    claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user
+    ```
+  </Tab>
 
-```bash
-claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user
-```
+  <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
+    将以下内容添加到 `claude_desktop_config.json`：
 
-</Tab>
-<Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-
-添加到 `claude_desktop_config.json`：
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
+    ```
+  </Tab>
 
-</Tab>
-<Tab title="Codex" icon="/images/logo-codex.svg">
+  <Tab title="Codex" icon="/images/logo-codex.svg">
+    在终端中运行：
 
-在终端中运行：
+    ```bash
+    codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp
+    ```
+  </Tab>
 
-```bash
-codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp
-```
+  <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
+    将以下内容添加到 `.cursor/mcp.json`：
 
-</Tab>
-<Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-
-添加到 `.cursor/mcp.json`：
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
+    ```
+  </Tab>
 
-</Tab>
-<Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+  <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+    将以下内容添加到 `~/.codeium/windsurf/mcp_config.json`：
 
-添加到 `~/.codeium/windsurf/mcp_config.json`：
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
-
-</Tab>
+    ```
+  </Tab>
 </Tabs>
 
-## 为您的编程智能体添加 ClickHouse 技能 {#add-clickhouse-skills}
+<div id="add-clickhouse-skills">
+  ## 将 ClickHouse 技能添加到您的编码 agent
+</div>
 
-安装 ClickHouse 技能，为您的智能体提供专业的 ClickHouse 知识和最佳实践：
+安装 ClickHouse 技能，让您的 agent 掌握 ClickHouse 专业知识和最佳实践：
 
 ```bash
 npx skills add https://clickhouse.com

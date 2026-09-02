@@ -227,6 +227,50 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 相同。重新加载 config 时，会检测到自定义 handlers 部分的更改，并自动重启
 相应的端点。
 
+<div id="default-session-user-per-endpoint">
+  ### 每个端点的默认会话用户
+</div>
+
+如果客户端连接时未指定用户名 (例如，HTTP 请求
+未包含 `user` 参数，或原生协议 `Hello` 数据包中的用户名
+为空) ，服务器会将其认证为默认会话用户，即
+`default_session_user` [服务器设置](/zh/reference/settings/server-settings/settings)，
+其默认值为 `default`。
+
+`<default_session_user>` 标签会针对单个端点覆盖此设置。这样，
+不同的监听端口即可为不同的匿名用户提供服务：
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <readonly_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <default_session_user>readonly_user</default_session_user>
+  </readonly_http>
+
+</protocols>
+```
+
+在此示例中，端口 8123 上未提供凭据的请求将以全局配置的默认会话用户进行身份验证，而端口 8124 上的请求将以 `readonly_user` 进行身份验证。显式指定用户名的客户端不受影响。
+
+系统会从端点所属模块向其引用的 (`impl`)
+模块查找该标签，离端点最近的值优先。此设置适用于 `tcp`、`http`、
+`mysql` 和 `postgres` 协议处理程序，以及对请求进行身份验证的 `prometheus` 处理程序
+(`remote_write`、`remote_read`、`query` 和 `api_v1`) ；指标暴露
+端点 (包括仅提供指标的 Keeper 端点) 无需身份验证，并会忽略此设置。使用固定用户的处理程序 (`http_handlers` 规则中 `handler`
+内的 `user` 键，或 `prometheus.handlers` 规则中 `handler` 内的 `user` 键) 将以其配置的用户进行身份验证，同样会忽略此设置——尤其是，
+空的 `default_session_user` 不会拒绝这些请求。此设置不能与
+`interserver` 协议一起使用：服务器间连接通过集群
+secret 和初始用户进行身份验证，绝不会使用默认会话用户。
+
 <div id="some-modules-can-contain-specific-for-its-layer-parameters">
   ### 指定额外的 layer 参数
 </div>

@@ -109,6 +109,39 @@ ORDER BY ALL
 SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0;
 {% endfor %}
 
+SELECT '-- constant index over a replicated array that survives a LIMIT (const-index compute-on-nested branch)';
+-- Source-only expressions are normally computed below the expansion, so `big[2]` never sees a
+-- replicated array there. The LIMIT barrier keeps the projection above the ARRAY JOIN, and `big`
+-- crosses it as `ColumnReplicated`. `compile_expressions = 0` keeps the call out of the JIT
+-- (the harness may randomize `min_count_to_compile_expression` to 0).
+{% for i in range(2) -%}
+SELECT big[2], length(big)
+FROM (SELECT big FROM (SELECT range(10 + number) AS big, if(number % 10 = 0, [1, 2, 3], []) AS r FROM numbers(20)) ARRAY JOIN r AS x LIMIT 3)
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, enable_parallel_replicas = 0, compile_expressions = 0;
+{% endfor %}
+
+SELECT '-- array and index lazily indexed by a JOIN under LIMIT (shared-indexes compute-on-nested branch)';
+-- A LIMIT (<= query_plan_max_limit_for_join_lazy_indexing) above a hash JOIN with >= 3 probe-side
+-- columns makes the join wrap all probe columns in `ColumnReplicated` sharing one indexes column
+-- (`optimizeJoinLazyIndexing`), including the fixed-size `idx` that the type-based usefulness
+-- heuristic would otherwise materialize. Only 3 of the 20 probe rows are matched, so `big[idx]`
+-- (shared-indexes branch) and `big[2]` (constant-index branch) must both compact 17 unused nested
+-- rows before the recursion on the nested columns.
+DROP TABLE IF EXISTS t04628_left;
+DROP TABLE IF EXISTS t04628_right;
+CREATE TABLE t04628_left (k UInt64, big Array(UInt64), idx UInt64) ENGINE = Memory;
+CREATE TABLE t04628_right (k UInt64) ENGINE = Memory;
+INSERT INTO t04628_left SELECT number + 1, range(number + 3), number % 3 + 1 FROM numbers(20);
+INSERT INTO t04628_right VALUES (9), (4), (7);
+{% for i in range(2) -%}
+SELECT big[idx], big[2]
+FROM t04628_left AS l INNER JOIN t04628_right AS r ON l.k = r.k
+LIMIT 100
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0, compile_expressions = 0, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0, enable_join_runtime_filters = 0;
+{% endfor %}
+DROP TABLE t04628_left;
+DROP TABLE t04628_right;
+
 SELECT '-- large array is not materialized per joined row';
 {% for i in range(2) -%}
 SELECT sum(length(arraySlice(big, x, 2))) + sum(length(big[x]))

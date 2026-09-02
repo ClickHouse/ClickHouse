@@ -96,6 +96,7 @@ public:
     void insert(const Field & x) override { tuple->insert(x); }
     bool tryInsert(const Field & x) override { return tuple->tryInsert(x); }
     bool isDefaultAt(size_t n) const override { return tuple->isDefaultAt(n); }
+    bool hasOnlyTypeDefaults() const override { return tuple->hasOnlyTypeDefaults(); }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;

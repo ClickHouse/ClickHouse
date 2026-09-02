@@ -11,7 +11,7 @@ Usage:
 
 URL formats:
   - GitHub PR URL:  https://github.com/ClickHouse/ClickHouse/pull/12345
-  - CI HTML URL:    https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=...&sha=...
+  - CI HTML URL:    https://s3.amazonaws.com/clickhouse-test-reports/praktika.html?PR=...&sha=...
 
 Options:
   --arch <amd|arm|all>   Filter by architecture (default: all)
@@ -219,7 +219,7 @@ def resolve_pr(pr_url):
             raise RuntimeError("No CI bot comment found")
 
         url_pattern = re.compile(
-            r"https://s3\.amazonaws\.com/clickhouse(?:-private)?-test-reports/json\.html\?[^\s)]+"
+            r"https://s3\.amazonaws\.com/clickhouse(?:-private)?-test-reports/(?:praktika|json)\.html\?[^\s)]+"
         )
         ci_url = None
         for comment in comments:
@@ -283,6 +283,12 @@ def resolve_html_url(html_url):
 # Shard discovery
 # ---------------------------------------------------------------------------
 
+# Normalized name of the workflow the performance comparison runs in. It is the
+# path segment inserted between <sha> and result_<job>.json in the S3 layout
+# (Utils.normalize_string("PR") == "pr").
+WORKFLOW_SEGMENT = "pr"
+
+
 def normalize_job_name(name):
     """Normalize a job name to the S3 directory format."""
     result = name.lower()
@@ -294,7 +300,12 @@ def normalize_job_name(name):
 
 def get_performance_shards(base_url, pr_number, sha):
     """Fetch the PR-level result JSON and extract perf shard info."""
-    pr_json_url = f"{base_url}/PRs/{pr_number}/{sha}/result_pr.json"
+    # The S3 layout inserts the normalized workflow name as a path segment:
+    #   PRs/<pr>/<sha>/<normalized_workflow>/result_<job>.json
+    # The performance comparison always runs in the "PR" workflow, whose normalized
+    # name is "pr" (Utils.normalize_string("PR")). See get_s3_prefix_static in
+    # ci/praktika/_environment.py and buildResultPath in ci/praktika/praktika.html.
+    pr_json_url = f"{base_url}/PRs/{pr_number}/{sha}/{WORKFLOW_SEGMENT}/result_pr.json"
     pr_json = json.loads(fetch_url(pr_json_url))
 
     shards = []
@@ -322,8 +333,12 @@ def get_performance_shards(base_url, pr_number, sha):
                             break
 
                     if not tsv_link:
+                        # Fallback only: sub-result artifacts are uploaded under the workflow
+                        # segment plus the normalized sub-result row name (see
+                        # _ResultS3.upload_result_files_to_s3), i.e.
+                        #   PRs/<pr>/<sha>/<workflow>/<row_name>/all-query-metrics.tsv
                         dir_name = normalize_job_name(name)
-                        tsv_link = f"{base_url}/PRs/{pr_number}/{sha}/{dir_name}/all-query-metrics.tsv"
+                        tsv_link = f"{base_url}/PRs/{pr_number}/{sha}/{WORKFLOW_SEGMENT}/{dir_name}/all-query-metrics.tsv"
 
                     shards.append({
                         "name": name,
@@ -787,7 +802,7 @@ def main():
     url = args.url
     if "github.com" in url and "/pull/" in url:
         resolved = resolve_pr(url)
-    elif "json.html" in url:
+    elif "praktika.html" in url or "json.html" in url:
         resolved = resolve_html_url(url)
     else:
         print("Error: URL must be a GitHub PR URL or CI HTML URL", file=sys.stderr)

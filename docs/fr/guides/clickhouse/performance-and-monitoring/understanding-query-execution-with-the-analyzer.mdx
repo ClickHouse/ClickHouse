@@ -40,7 +40,7 @@ Voyons maintenant chaque composant à l’œuvre lors de l’exécution d’une 
 L’objectif d’un analyseur syntaxique est de transformer le texte de la requête en un AST (arbre syntaxique abstrait). Cette étape peut être visualisée à l’aide de `EXPLAIN AST` :
 
 ```sql
-EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -64,8 +64,22 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 
 Le résultat est un arbre syntaxique abstrait qui peut être visualisé comme ci-dessous :
 
-<Image img="/images/guides/developer/analyzer2.webp" alt="Sortie AST" size="md" />
-
+```mermaid
+graph TD
+    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
+    el_root --> sq["SelectQuery"]
+    sq --> el_select["ExpressionList"]
+    sq --> tisq["TablesInSelectQuery"]
+    el_select --> fmin["Function min (alias minimum_date)"]
+    el_select --> fmax["Function max (alias maximum_date)"]
+    fmin --> el_min["ExpressionList"]
+    el_min --> id_min["Identifier timestamp"]
+    fmax --> el_max["ExpressionList"]
+    el_max --> id_max["Identifier timestamp"]
+    tisq --> tisqe["TablesInSelectQueryElement"]
+    tisqe --> te["TableExpression"]
+    te --> ti["TableIdentifier session_events"]
+```
 Chaque nœud a des nœuds enfants, et l’ensemble de l’arbre représente la structure globale de votre requête. Il s’agit d’une structure logique qui facilite le traitement d’une requête. Du point de vue de l’utilisateur final (sauf s’il s’intéresse à l’exécution des requêtes), ce n’est pas très utile ; cet outil est principalement destiné aux développeurs.
 
 <div id="analyzer">

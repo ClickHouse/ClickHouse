@@ -91,11 +91,16 @@ public:
     /// Fills `res` with the groups assigned to the sets of tags which were added to the collector
     /// with identifiers from a column. Throws an exception if some identifier is unknown.
     /// `id_column` must not be Nullable. Any previous contents of `res` are discarded.
+    /// Dictionary-encoded (LowCardinality) id components are read through the dictionary and use
+    /// the same typed maps as plain components; only the identifiers of actual rows are looked up,
+    /// so a shared dictionary is allowed to also contain identifiers whose rows were all filtered
+    /// out and which are therefore unknown to the collector.
     void getGroupByID(const ColumnPtr & id_column, PaddedPODArray<Group> & res) const;
 
     /// Returns the sets of tags which were added to the collector with identifiers from a column.
     /// Throws an exception if some identifier is unknown.
     /// `id_column` must not be Nullable.
+    /// Dictionary-encoded identifiers are processed the same way as in getGroupByID.
     VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const ColumnPtr & id_column) const;
 
     /// Removes a tag from a group and returns the result group.

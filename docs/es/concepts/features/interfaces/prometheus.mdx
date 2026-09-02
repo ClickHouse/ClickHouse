@@ -127,12 +127,14 @@ Configure un handler enrutado por prefijo en el puerto HTTP principal de ClickHo
 
 `<defaults/>` conserva los handler integrados para endpoints como `/ping` y para solicitudes SQL. El prefijo anterior expone estos endpoints mediante un único handler:
 
-| Endpoint                         | Finalidad                      |
-| -------------------------------- | ------------------------------ |
-| `/prometheus/api/v1/write`       | Escritura remota de Prometheus |
-| `/prometheus/api/v1/read`        | Lectura remota de Prometheus   |
-| `/prometheus/api/v1/query`       | Consultas PromQL instantáneas  |
-| `/prometheus/api/v1/query_range` | Consultas PromQL por intervalo |
+| Endpoint                         | Finalidad                       |
+| -------------------------------- | ------------------------------- |
+| `/prometheus/api/v1/write`       | Escritura remota de Prometheus  |
+| `/prometheus/api/v1/read`        | Lectura remota de Prometheus    |
+| `/prometheus/api/v1/query`       | Consultas PromQL instantáneas   |
+| `/prometheus/api/v1/query_range` | Consultas PromQL de rango       |
+| `/prometheus/api/v1/series`      | Metadatos de series             |
+| `/prometheus/api/v1/metadata`    | Metadatos de la familia métrica |
 
 El ejemplo omite `database` y `table` del handler. Cada solicitud debe incluir el parámetro de consulta `table`. También puede incluir `database`, usar un nombre de tabla completo como `prometheus.metrics` u omitir la base de datos para usar `default`. Esto permite que un único handler atienda varias tablas `TimeSeries`.
 
@@ -160,7 +162,7 @@ Configuración de enrutamiento y del handler:
   ### Ingeste métricas mediante escritura remota
 </div>
 
-ClickHouse admite el [protocolo remote-write de Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). Configure Prometheus para que escriba en el controlador:
+ClickHouse admite el [protocolo remote-write de Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). Configure Prometheus para que escriba en el handler:
 
 ```yaml
 remote_write:
@@ -171,6 +173,15 @@ remote_write:
 ```
 
 Prometheus envía muestras a la tabla `prometheus.metrics`.
+
+Para agrupar los datos de muchas solicitudes simultáneas de remote-write en menos partes, habilite las [inserciones asíncronas](/es/reference/settings/session-settings/async-insert#async_insert) añadiendo la configuración `async_insert` a la URL (o habilitándola en el perfil de usuario):
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
+```
+
+ClickHouse confirma una solicitud de escritura remota asíncrona solo después de que los datos se hayan vaciado en todas las tablas internas de la tabla `TimeSeries`, independientemente de la configuración de [`wait_for_async_insert`](/es/reference/settings/session-settings/wait-for#wait_for_async_insert): el protocolo remote-write considera duradera una escritura confirmada. Si el vaciado falla, la solicitud devuelve un error y Prometheus la reintenta.
 
 <div id="promql-query-support">
   ### Consultas con PromQL
@@ -226,7 +237,7 @@ datasources:
 Grafana agrega `/api/v1/query` o `/api/v1/query_range` a esta URL base y añade `customQueryParameters` a cada solicitud.
 
 <Note>
-  Solo están implementados los endpoints de consulta `/api/v1/query` y `/api/v1/query_range`. Los endpoints de metadatos que utiliza un origen de datos de Prometheus en Grafana para explorar etiquetas, variables de plantilla y el autocompletado del constructor de consultas (`/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`) no están implementados y devuelven un error. Escriba expresiones de PromQL en el modo de código en lugar de usar el constructor de consultas.
+  Solo están implementados los endpoints de consulta `/api/v1/query` y `/api/v1/query_range` y los endpoints de metadatos `/api/v1/series`, `/api/v1/labels` y `/api/v1/metadata`. `/api/v1/series` requiere al menos un selector de series `match[]`, admite los parámetros opcionales `start`, `end` y `limit`, y devuelve la unión de las series coincidentes con cada selector. `/api/v1/labels` acepta los mismos parámetros, con `match[]` como opcional, y devuelve los nombres de etiquetas ordenados de las series coincidentes (o de todas las series cuando no se proporcionan selectores). El endpoint de valores de etiquetas (`/api/v1/label/<name>/values`), que utiliza un origen de datos de Prometheus en Grafana para explorar etiquetas, variables de plantilla y el autocompletado del constructor de consultas, no está implementado y devuelve un error. Escriba expresiones de PromQL en el modo de código en lugar de usar el constructor de consultas.
 </Note>
 
 <div id="sql-entry-points">
@@ -254,6 +265,28 @@ FROM prometheusQuery(
     'rate(http_requests_total[5m])',
     now()
 );
+```
+
+<div id="metadata">
+  ### Consultar metadatos de métricas
+</div>
+
+El endpoint `/prometheus/api/v1/metadata` devuelve los metadatos de las métricas almacenados en la tabla de destino `Metrics` de la tabla `TimeSeries`: el tipo, el texto de ayuda y la unidad de cada familia de métricas. Admite los siguientes parámetros de Prometheus en la cadena de consulta de la URL:
+
+| Parámetro          | Descripción                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric`           | Devuelve metadatos solo para esta familia de métricas.                                                                                        |
+| `limit`            | Limita el número de familias de métricas devueltas. Un valor negativo indica que no hay límite; cero no devuelve ninguna familia de métricas. |
+| `limit_per_metric` | Limita el número de objetos de metadatos devueltos para cada familia de métricas. Los valores cero y negativos indican que no hay límite.     |
+
+La tabla de destino `Metrics` predeterminada es una `ReplacingMergeTree` ordenada por el nombre de la familia de métricas: conserva la entrada de metadatos escrita más recientemente para cada familia de métricas. Solo se devuelven varias entradas por familia mientras la tabla de destino las almacene: antes de que se fusionen sus partes o cuando la tabla se define con un motor que las conserva.
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
+  --data-urlencode "metric=http_requests_total" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
 ```
 
 <div id="remote-read">

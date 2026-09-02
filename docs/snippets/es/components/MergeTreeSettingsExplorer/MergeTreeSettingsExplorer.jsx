@@ -1,7 +1,7 @@
 const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
   // El renderizador de producción de Mintlify evalúa el componente exportado sin
-  // conservar los enlaces del ámbito del módulo. El estado diferido mantiene los datos generados
-  // en ese ámbito de evaluación y los construye una sola vez por montaje.
+  // conservar los enlaces a nivel de módulo. El estado perezoso mantiene los datos generados
+  // en ese ámbito de evaluación y los construye solo una vez por montaje.
   const [entries] = useState(() => [
     {
       label: "add_minmax_*",
@@ -726,9 +726,10 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "shared_merge_*",
-      count: 51,
+      count: 53,
       settings: [
         { name: "shared_merge_tree_activate_coordinated_merges_tasks", path: "/shared-merge#shared_merge_tree_activate_coordinated_merges_tasks", default: "0" },
+        { name: "shared_merge_tree_blobs_list_inline_file_max_bytes", path: "/shared-merge#shared_merge_tree_blobs_list_inline_file_max_bytes", default: "0" },
         { name: "shared_merge_tree_create_per_replica_metadata_nodes", path: "/shared-merge#shared_merge_tree_create_per_replica_metadata_nodes", default: "0" },
         { name: "shared_merge_tree_disable_merges_and_mutations_assignment", path: "/shared-merge#shared_merge_tree_disable_merges_and_mutations_assignment", default: "0" },
         { name: "shared_merge_tree_empty_partition_lifetime", path: "/shared-merge#shared_merge_tree_empty_partition_lifetime", default: "86400" },
@@ -785,6 +786,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
           default: "0"
         },
         { name: "shared_merge_tree_update_replica_flags_delay_ms", path: "/shared-merge#shared_merge_tree_update_replica_flags_delay_ms", default: "30000" },
+        { name: "shared_merge_tree_use_blobs_list_for_parts", path: "/shared-merge#shared_merge_tree_use_blobs_list_for_parts", default: "0" },
         { name: "shared_merge_tree_use_metadata_hints_cache", path: "/shared-merge#shared_merge_tree_use_metadata_hints_cache", default: "1" },
         { name: "shared_merge_tree_use_outdated_parts_compact_format", path: "/shared-merge#shared_merge_tree_use_outdated_parts_compact_format", default: "1" },
         { name: "shared_merge_tree_use_too_many_parts_count_from_virtual_parts", path: "/shared-merge#shared_merge_tree_use_too_many_parts_count_from_virtual_parts", default: "0" },
@@ -814,14 +816,15 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "text_index_*",
-      count: 6,
+      count: 7,
       settings: [
         { name: "text_index_dictionary_block_frontcoding_compression", path: "/text-index#text_index_dictionary_block_frontcoding_compression", default: "1" },
         { name: "text_index_dictionary_block_size", path: "/text-index#text_index_dictionary_block_size", default: "512" },
         { name: "text_index_max_memory_usage_before_flush", path: "/text-index#text_index_max_memory_usage_before_flush", default: "1073741824" },
         { name: "text_index_max_processed_tokens_before_flush", path: "/text-index#text_index_max_processed_tokens_before_flush", default: "100000000" },
         { name: "text_index_posting_list_block_size", path: "/text-index#text_index_posting_list_block_size", default: "1048576" },
-        { name: "text_index_posting_list_codec", path: "/text-index#text_index_posting_list_codec", default: "none" }
+        { name: "text_index_posting_list_codec", path: "/text-index#text_index_posting_list_codec", default: "none" },
+        { name: "text_index_serialization_version", path: "/text-index#text_index_serialization_version", default: "v2_with_positions" }
       ],
       children: []
     },
@@ -1131,7 +1134,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} {matchingCount === 1 ? "ajuste coincidente" : "ajustes coincidentes"}
+            {matchingCount} matching {matchingCount === 1 ? "setting" : "settings"}
           </span>
         </div>
       )}
@@ -1140,7 +1143,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
           <div className="min-w-max font-semibold">/merge-tree-settings</div>
           <button
             type="button"
-            aria-label={allGroupsExpanded ? "Contraer todo" : "Expandir todo"}
+            aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
@@ -1149,13 +1152,13 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
               {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
             </svg>
-            <span>{allGroupsExpanded ? "Contraer todo" : "Expandir todo"}</span>
+            <span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">No se encontraron ajustes coincidentes</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">No matching settings</div>
         )}
       </div>
     </div>

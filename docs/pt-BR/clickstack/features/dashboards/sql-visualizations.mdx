@@ -17,7 +17,7 @@ As visualizações baseadas em SQL são úteis quando você precisa ir além do 
   ## Criando uma visualização baseada em SQL
 </div>
 
-Para criar uma visualização baseada em SQL, abra o editor de tile do dashboard e selecione a aba **SQL**.
+Para criar uma visualização baseada em SQL, abra o editor de bloco do dashboard e selecione a aba **SQL**.
 
 <Image img="/images/use-cases/observability/sql-editor-button.webp" alt="Botão do SQL Editor" size="lg" />
 
@@ -25,7 +25,7 @@ A partir daí:
 
 1. Selecione uma **conexão do ClickHouse** para executar a consulta.
 2. Opcionalmente, selecione uma **Source** — isso permite aplicar filtros no nível do dashboard ao seu gráfico por meio da macro `$__filters`.
-3. Escreva sua consulta SQL no editor, usando parâmetros de consulta e macros para integrá-la ao intervalo de tempo e aos filtros do dashboard.
+3. Escreva sua consulta SQL no editor, usando parâmetros de consulta e macros para integrá-la ao intervalo de tempo, aos filtros e às variáveis do dashboard.
 4. Clique no botão **play** para visualizar os resultados e depois em **Save**.
 
 <div id="query-parameters">
@@ -124,6 +124,22 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 Quando uma **Source** é selecionada no gráfico e os filtros do dashboard estão ativos, `$__filters` se expande para as condições SQL `WHERE` correspondentes. Quando nenhuma Source é selecionada ou nenhum filtro é aplicado, ele se expande para `(1=1)`, portanto é sempre seguro incluí-lo em uma cláusula `WHERE`.
 
+Somente os filtros com a **Condição de filtro de transmissão** ativada são aplicados por `$__filters`. Os filtros expostos como variáveis são referenciados explicitamente, conforme descrito abaixo.
+
+<div id="dashboard-variables">
+  ### Macros de variáveis de dashboard
+</div>
+
+Quando um filtro de dashboard está [disponível como variável](/pt-BR/clickstack/features/dashboards/overview#dashboard-variables), é possível fazer referência aos valores selecionados em qualquer parte da consulta. Essas macros estão disponíveis apenas em blocos pertencentes a um dashboard que declara pelo menos uma variável.
+
+| Macro                                         | Descrição                                                                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | Expande para `toString(<filter expression>) IN ($variable)` quando há valores selecionados para `variable` ou para `1=1` caso contrário. |
+| `$__filter(<expression>, $<variable>)`        | Expande para `<expression> IN ($variable)` quando há valores selecionados para `variable` ou para `1=1` caso contrário.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | Expande para `<condition>` quando a variável tem uma seleção ou para `1=1` caso contrário.                                               |
+
+Os valores de uma variável também podem ser interpolados diretamente como `$name` ou `${name}`, com um formato opcional: `${name:sqlstring}` (o padrão), `${name:csv}` ou `${name:regex}`. No formato padrão, uma referência direta é renderizada como `NULL` antes de qualquer seleção; portanto, prefira as macros acima sempre que for esperado um predicado.
+
 <div id="how-results-are-plotted">
   ## Como os resultados da consulta são exibidos nos gráficos
 </div>
@@ -214,6 +230,24 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
+<div id="example-line-chart-variables">
+  ### Gráfico de linhas — usando variáveis do dashboard
+</div>
+
+Em um dashboard com uma variável `service` em `ServiceName` e uma variável `severity` em `SeverityText`, esta consulta restringe o gráfico à seleção atual de serviço e exclui as severidades selecionadas. Ambas as macros são expandidas para `1=1` quando suas variáveis não têm nenhuma seleção; portanto, o gráfico é exibido sem filtros até que o visualizador escolha um valor.
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
 <div id="example-stacked-bar">
   ### Gráfico de barras empilhadas — contagem de erros por nível de severidade
 </div>
@@ -288,3 +322,5 @@ O único valor numérico `total_errors` da primeira linha é exibido.
 * As visualizações baseadas em SQL devem conter exatamente uma única consulta SQL - várias consultas não são compatíveis.
 * O editor SQL fornece sugestões de preenchimento automático tanto para parâmetros de consulta quanto para macros.
 * É necessário selecionar uma source para aplicar os filtros do dashboard às visualizações baseadas em SQL. A source deve corresponder à tabela consultada, para garantir uma filtragem precisa.
+* As variáveis do dashboard não exigem uma source — os valores vêm dos menus suspensos de filtro do dashboard, não da source do próprio bloco.
+* Alertas em um bloco SQL que faz referência a uma variável do dashboard são avaliados com todas as variáveis em seu estado vazio, e não com os valores selecionados no dashboard.

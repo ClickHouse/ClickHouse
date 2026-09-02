@@ -166,14 +166,23 @@ struct DotProductTransposed
     template <typename InputType, typename AccumulatorType>
     static void distanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
     {
-        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
+        /// Independent partials, so the reduction is not one dependent add chain. This changes the summation
+        /// order: with a floating-point accumulator, same-signed products that overflow only once grouped
+        /// reduce to a non-finite value where a sequential sum stays finite.
+        constexpr size_t unroll_count = 4;
+        AccumulatorType partial[unroll_count]{};
+        size_t i = 0;
+        const size_t unrolled_end = array_size / unroll_count * unroll_count;
+        _Pragma("clang loop vectorize(disable)")
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t j = 0; j < unroll_count; ++j)
+                partial[j] += static_cast<AccumulatorType>(x[i + j]) * static_cast<AccumulatorType>(y[i + j]);
+
         AccumulatorType ab = 0;
-        for (size_t i = 0; i != array_size; ++i)
-        {
-            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
-            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
-            ab += xi * yi;
-        }
+        for (const auto & p : partial)
+            ab += p;
+        for (; i != array_size; ++i)
+            ab += static_cast<AccumulatorType>(x[i]) * static_cast<AccumulatorType>(y[i]);
         *result = static_cast<Float64>(ab);
     }
 };
@@ -663,8 +672,13 @@ private:
             : (std::is_same_v<CalcT, BFloat16> ? simsimd_datatype_bf16_k
                                                : (std::is_same_v<CalcT, Float32> ? simsimd_datatype_f32_k : simsimd_datatype_f64_k));
         simsimd_kernel_punned_t simd_kernel = nullptr;
-        simsimd_capability_t unused = simsimd_cap_any_k;
-        simsimd_find_kernel_punned(Kernel::metric_kind, datatype, simsimd_capabilities(), simsimd_cap_any_k, &simd_kernel, &unused);
+        simsimd_capability_t used_capability = simsimd_cap_any_k;
+        simsimd_find_kernel_punned(Kernel::metric_kind, datatype, simsimd_capabilities(), simsimd_cap_any_k, &simd_kernel, &used_capability);
+        /// SimSIMD does not implement every (metric, datatype) pair for every ISA, so a `serial` capability means
+        /// it has no vector kernel for this host. Its serial `dot` is the same sum in the same accumulator width
+        /// as `distanceScalar` above, while its `l2` and `cos` are not.
+        if (Kernel::metric_kind == simsimd_metric_dot_k && is_floating_point<CalcT> && used_capability == simsimd_cap_serial_k)
+            return nullptr;
         return std::bit_cast<simsimd_metric_dense_punned_t>(simd_kernel); /// NOLINT(bugprone-bitwise-pointer-cast)
     }
 #endif

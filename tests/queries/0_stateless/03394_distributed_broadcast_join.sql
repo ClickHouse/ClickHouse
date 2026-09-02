@@ -8,7 +8,6 @@ insert into small select number, [number] from numbers(0, 1000);
 insert into big select number, [number] from numbers(0, 100000);
 
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.

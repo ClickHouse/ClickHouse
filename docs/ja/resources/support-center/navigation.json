@@ -1,11 +1,11 @@
 {
   "groups": [
     {
-      "group": "ナレッジベース",
+      "group": "Knowledgebase",
       "pages": [
         "ja/resources/support-center/home",
         {
-          "group": "パフォーマンスと最適化",
+          "group": "Performance & optimization",
           "pages": [
             "ja/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "ja/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -40,7 +40,7 @@
           ]
         },
         {
-          "group": "データのインポートとエクスポート",
+          "group": "Data import & export",
           "pages": [
             "ja/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "ja/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -60,7 +60,7 @@
           ]
         },
         {
-          "group": "構成と設定",
+          "group": "Configuration & settings",
           "pages": [
             "ja/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "ja/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
@@ -71,7 +71,7 @@
           ]
         },
         {
-          "group": "インテグレーションとクライアントライブラリ",
+          "group": "Integrations & client libraries",
           "pages": [
             "ja/resources/support-center/knowledge-base/integrations/node-js-example",
             "ja/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "group": "トラブルシューティングとエラー",
+          "group": "Troubleshooting & errors",
           "pages": [
             "ja/resources/support-center/troubleshooting/index",
             "ja/resources/support-center/troubleshooting/troubleshooting",
@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "テーブルとスキーマ",
+          "group": "Tables & schema",
           "pages": [
             "ja/resources/support-center/knowledge-base/tables-schema/add-column",
             "ja/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "クエリとSQL",
+          "group": "Queries & SQL",
           "pages": [
             "ja/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "ja/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -126,7 +126,7 @@
           ]
         },
         {
-          "group": "materialized view とプロジェクション",
+          "group": "Materialized views & projections",
           "pages": [
             "ja/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ja/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "group": "監視とデバッグ",
+          "group": "Monitoring & debugging",
           "pages": [
             "ja/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "ja/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -150,7 +150,7 @@
           ]
         },
         {
-          "group": "セキュリティとアクセス制御",
+          "group": "Security & access control",
           "pages": [
             "ja/resources/support-center/knowledge-base/security/check-users-roles",
             "ja/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -161,7 +161,7 @@
           ]
         },
         {
-          "group": "データ管理",
+          "group": "Data management",
           "pages": [
             "ja/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
             "ja/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
@@ -173,7 +173,7 @@
           ]
         },
         {
-          "group": "セットアップとインストール",
+          "group": "Setup & installation",
           "pages": [
             "ja/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "ja/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
@@ -185,11 +185,11 @@
           ]
         },
         {
-          "group": "一般情報とよくある質問",
+          "group": "General & FAQs",
           "pages": [
             "ja/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "一般",
+              "group": "General",
               "pages": [
                 "ja/resources/support-center/knowledge-base/general-faqs/index",
                 "ja/resources/support-center/knowledge-base/general-faqs/columnar-database",
@@ -211,7 +211,7 @@
               ]
             },
             {
-              "group": "ユースケース",
+              "group": "Use cases",
               "pages": [
                 "ja/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "ja/resources/support-center/knowledge-base/general-faqs/key-value",
@@ -221,7 +221,7 @@
               ]
             },
             {
-              "group": "インテグレーション",
+              "group": "Integration",
               "pages": [
                 "ja/resources/support-center/knowledge-base/integrations/index",
                 "ja/resources/support-center/knowledge-base/data-import-export/json-import",
@@ -229,7 +229,7 @@
               ]
             },
             {
-              "group": "操作",
+              "group": "Operations",
               "pages": [
                 "ja/resources/support-center/knowledge-base/general-faqs/operations-index",
                 "ja/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -241,7 +241,7 @@
           ]
         },
         {
-          "group": "ヒントとコツ",
+          "group": "Tips & tricks",
           "pages": [
             "ja/resources/support-center/tips-and-tricks/community-wisdom",
             "ja/resources/support-center/tips-and-tricks/cost-optimization",
@@ -256,5 +256,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "サポートセンター"
+  "item": "Support center"
 }

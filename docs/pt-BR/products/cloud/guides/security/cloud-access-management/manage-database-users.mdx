@@ -23,11 +23,9 @@ Os usuários do console SQL são criados para cada sessão e autenticados com ce
 
 As funções básicas do console SQL podem ser atribuídas a usuários com as permissões Service Read Only e Service Admin. Para mais informações, consulte [Gerenciar atribuições de funções do console SQL](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). Este guia mostra como criar uma função personalizada para um usuário do console SQL.
 
-<Note>
-  **Gerenciar funções de banco de dados pelo console (beta)**
-
-  Você também pode gerenciar funções de banco de dados diretamente no console do ClickHouse Cloud adicionando permissões de dados a funções personalizadas. Esse recurso está em beta e está disponível para serviços que executam o ClickHouse versão 26.4 e posteriores. As funções atribuídas manualmente usando a convenção de nomenclatura `sql-console-role:<email>` têm precedência sobre as funções atribuídas pelo console. Para mais informações, consulte [Gerenciar funções de banco de dados](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
-</Note>
+<Tip>
+  Prefira [funções de banco de dados gerenciadas pela Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para gerenciar o acesso ao banco de dados pelo console. As funções `sql-console-role:<email>` não são compatíveis com a [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
 
 Para criar uma função personalizada para um usuário do console SQL e atribuir a ela uma função geral, execute os comandos a seguir. O endereço de e-mail deve corresponder ao endereço de e-mail do usuário no console.
 

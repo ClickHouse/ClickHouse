@@ -17,9 +17,9 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
   ## join_algorithm
 </div>
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' a été déprécié au profit d'algorithmes de jointure explicitement spécifiés, et parallel_hash est désormais préféré à hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Ajout de `ie_join` à la liste par défaut, afin qu'une jointure dont la section `ON` ne comporte que des conditions d'inégalité soit exécutée avec IEJoin au lieu d'un `CROSS JOIN` avec filtre. Étant placé en dernier, il n'est utilisé que lorsque les autres algorithmes ne s'appliquent pas."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' a été déprécié au profit d'algorithmes de jointure explicitement spécifiés, et parallel_hash est désormais préféré à hash"}]}]} />
 
 Spécifie quel algorithme de [JOIN](/fr/reference/statements/select/join) est utilisé.
 
@@ -36,7 +36,7 @@ Valeurs possibles :
 
 * grace&#95;hash
 
-Le [grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) est utilisé. Grace hash fournit une option d&#39;algorithme permettant d&#39;exécuter des jointures complexes de manière performante tout en limitant l&#39;utilisation de la mémoire.
+Le [grace jointure par hachage](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) est utilisé. Grace hash fournit une option d&#39;algorithme permettant d&#39;exécuter des jointures complexes de manière performante tout en limitant l&#39;utilisation de la mémoire.
 
 La première phase d&#39;une grace join lit la table de droite et la divise en N buckets selon la valeur de hachage des colonnes clés (initialement, N vaut `grace_hash_join_initial_buckets`). Cela est fait de façon à garantir que chaque bucket puisse être traité indépendamment. Les lignes du premier bucket sont ajoutées à une table de hachage en mémoire, tandis que les autres sont enregistrées sur disque. Si la table de hachage dépasse la limite de mémoire (par exemple, telle que définie par [`max_bytes_in_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_join), le nombre de buckets augmente, ainsi que le bucket attribué à chaque ligne. Toutes les lignes qui n&#39;appartiennent pas au bucket courant sont vidées et réattribuées.
 
@@ -44,7 +44,7 @@ Prend en charge `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
 * hash
 
-L&#39;[algorithme de hash join](https://en.wikipedia.org/wiki/Hash_join) est utilisé. Il s&#39;agit de l&#39;implémentation la plus générique, qui prend en charge toutes les combinaisons de type et de strictness, ainsi que plusieurs clés de jointure combinées avec `OR` dans la section `JOIN ON`.
+L&#39;[algorithme de jointure par hachage](https://en.wikipedia.org/wiki/Hash_join) est utilisé. Il s&#39;agit de l&#39;implémentation la plus générique, qui prend en charge toutes les combinaisons de type et de strictness, ainsi que plusieurs clés de jointure combinées avec `OR` dans la section `JOIN ON`.
 
 Lors de l&#39;utilisation de l&#39;algorithme `hash`, la partie droite de `JOIN` est chargée en RAM.
 
@@ -60,7 +60,7 @@ Une variante de l&#39;[algorithme sort-merge](https://en.wikipedia.org/wiki/Sort
 
 `RIGHT JOIN` et `FULL JOIN` ne sont pris en charge qu&#39;avec la strictness `ALL` (`SEMI`, `ANTI`, `ANY` et `ASOF` ne sont pas pris en charge).
 
-Lors de l&#39;utilisation de l&#39;algorithme `partial_merge`, ClickHouse trie les données et les écrit sur disque. L&#39;algorithme `partial_merge` de ClickHouse diffère légèrement de l&#39;implémentation classique. D&#39;abord, ClickHouse trie la table de droite par clés de jointure, par blocs, et crée un index min-max pour les blocs triés. Ensuite, il trie des parties de la table de gauche par `join key` et les joint à la table de droite. L&#39;index min-max est également utilisé pour ignorer les blocs inutiles de la table de droite.
+Lors de l&#39;utilisation de l&#39;algorithme `partial_merge`, ClickHouse trie les données et les écrit sur le disque. L&#39;algorithme `partial_merge` de ClickHouse diffère légèrement de l&#39;implémentation classique. Tout d&#39;abord, ClickHouse trie la table de droite par clés de jointure en blocs et crée un index min-max pour les blocs triés. Il trie ensuite des parties de la table de gauche par `clé de jointure` et les joint à la table de droite. L&#39;index min-max est également utilisé pour ignorer les blocs inutiles de la table de droite.
 
 * direct
 

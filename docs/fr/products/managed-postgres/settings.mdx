@@ -40,3 +40,11 @@ Pour modifier un paramètre, cliquez sur le bouton **Modifier les paramètres**.
 Toutes les modifications apportées aux paramètres de configuration sont généralement enregistrées sur l’instance en moins d’une minute. Certains paramètres nécessitent un redémarrage de la base de données pour être pris en compte. Ces modifications seront appliquées au prochain redémarrage, que vous pouvez déclencher manuellement depuis la barre d’outils **Service actions**.
 
 Consultez la [documentation](https://www.postgresql.org/docs/current/runtime-config.html) officielle sur les paramètres de configuration. La liste des paramètres pouvant être définis sera bientôt élargie. En attendant, contactez le [support](https://clickhouse.com/support/program) pour demander la prise en charge d’un paramètre qui ne l’est pas encore.
+
+<div id="scheduled-upgrades">
+  ## Mises à niveau planifiées
+</div>
+
+La section **Configuration** vous permet également de définir quand la maintenance de la plateforme — mises à niveau mineures de PostgreSQL, mises à jour de fonctionnalités du service managé et correctifs du système d’exploitation — est appliquée à votre instance. Sélectionnez **Configurer la planification** dans la sous-section **Mises à niveau planifiées** afin de choisir une fenêtre de deux heures en UTC et, éventuellement, les jours de la semaine durant lesquels les mises à niveau peuvent être appliquées.
+
+Pour connaître les fenêtres disponibles et ce qu’une planification couvre ou non, consultez [les mises à niveau planifiées](/fr/products/managed-postgres/upgrades#scheduled-upgrades).

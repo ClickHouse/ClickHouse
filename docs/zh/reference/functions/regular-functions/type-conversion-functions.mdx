@@ -317,9 +317,9 @@ SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
 ```
 
 ```response title=Response
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
+│                                                           999 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 **使用隐式默认值的转换失败**
@@ -760,7 +760,7 @@ AS parseDateTime32BestEffort
 
 ```response title=Response
 ┌─parseDateTime32BestEffort─┐
-│       2015-07-07 12:04:41 │
+│       2010-09-10 06:51:25 │
 └───────────────────────────┘
 ```
 
@@ -798,7 +798,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -837,7 +837,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -965,7 +965,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─┐
+┌───────────────────valid─┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -1004,7 +1004,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─────────────────┐
+┌───────────────────valid─┬─────────────────invalid─┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1043,7 +1043,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────────┬─fallback_to_standard────┐
+┌───────────────us_format─┬────fallback_to_standard─┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1082,7 +1082,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─┐
+┌────────────────valid_us─┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -1121,7 +1121,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─────────────────┐
+┌────────────────valid_us─┬─────────────────invalid─┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1441,7 +1441,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1492,7 +1492,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1532,7 +1532,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────┬─fallback_to_standard─┐
+┌───────────us_format─┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
 ```
@@ -1560,7 +1560,7 @@ parseDateTimeBestEffortUSOrNull(time_string[, time_zone])
 
 **返回值**
 
-将 `time_string` 按照美国日期格式优先级解析为 DateTime 并返回；如果输入无法解析，则返回 `NULL`。[`DateTime`](/zh/reference/data-types/datetime) 或 [`NULL`](/zh/reference/syntax#null)
+将 `time_string` 按照美国日期格式优先规则解析为 DateTime 并返回；如果输入无法解析，则返回 `NULL`。[`DateTime`](/zh/reference/data-types/datetime) 或 [`NULL`](/zh/reference/syntax#null)
 
 **示例**
 
@@ -1572,7 +1572,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─┐
+┌────────────valid_us─┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1600,7 +1600,7 @@ parseDateTimeBestEffortUSOrZero(time_string[, time_zone])
 
 **返回值**
 
-以美国日期格式优先的方式将 `time_string` 解析为 `DateTime` 并返回；如果输入无法解析，则返回零日期/日期时间 (`1970-01-01` 或 `1970-01-01 00:00:00`) 。[`DateTime`](/zh/reference/data-types/datetime)
+以美国日期格式优先规则的方式将 `time_string` 解析为 `DateTime` 并返回；如果输入无法解析，则返回零日期/日期时间 (`1970-01-01` 或 `1970-01-01 00:00:00`) 。[`DateTime`](/zh/reference/data-types/datetime)
 
 **示例**
 
@@ -1612,7 +1612,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─────────────┐
+┌────────────valid_us─┬─────────────invalid─┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1772,7 +1772,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 ```response title=Response
 ┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                            2025-01-04 23:00:00  │
+│                                             2025-01-04 23:00:00 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1946,7 +1946,7 @@ SELECT reinterpretAsDateTime(65), reinterpretAsDateTime('A')
 
 ```response title=Response
 ┌─reinterpretAsDateTime(65)─┬─reinterpretAsDateTime('A')─┐
-│       1970-01-01 01:01:05 │        1970-01-01 01:01:05 │
+│       1970-01-01 00:01:05 │        1970-01-01 00:01:05 │
 └───────────────────────────┴────────────────────────────┘
 ```
 
@@ -1978,15 +1978,16 @@ reinterpretAsFixedString(x)
 **使用示例**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsFixedString(toDate('1970-03-07'))
+    hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsFixedString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsFixedString(toDate('1970-03-07'))─┐
-│ A                                                           │ A                                              │
-└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+┌─hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsFixedString(toDate('1970-03-07')))─┐
+│ 510E0000                                                         │ 4100                                                │
+└──────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="reinterpretAsFloat32">
@@ -2338,15 +2339,16 @@ reinterpretAsString(x)
 **用法示例**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsString(toDate('1970-03-07'))
+    hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
-│ A                                                      │ A                                         │
-└────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+┌─hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsString(toDate('1970-03-07')))─┐
+│ 510E                                                        │ 41                                             │
+└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
 ```
 
 **Array 转 String 示例**
@@ -2639,7 +2641,7 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
 
 ```response title=Response
 ┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+│ 08090a0b-0c0d-0e0f-0001-020304050607                                  │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2665,7 +2667,7 @@ toBFloat16(expr)
 
 **参数**
 
-* `expr` — 返回数值或数值字符串表示形式的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression)
+* `expr` — 返回数值或数字字符串表示形式的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression)
 
 **返回值**
 
@@ -2684,9 +2686,11 @@ FORMAT Vertical;
 ```
 
 ```response title=Response
-toBFloat16(toFloat32(42.7)): 42.5
-toBFloat16(t⋯32('42.7')):    42.5
-toBFloat16('42.7'):          42.5
+Row 1:
+──────
+toBFloat16(toFloat32(42.7)):   42.5
+toBFloat16(toFloat32('42.7')): 42.5
+toBFloat16('42.7'):            42.5
 ```
 
 <div id="toBFloat16OrNull">
@@ -2741,9 +2745,7 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-\N
-12.25
-12.3125
+\N	12.25	12.3125
 ```
 
 <div id="toBFloat16OrZero">
@@ -2798,9 +2800,7 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-0
-12.25
-12.3125
+0	12.25	12.3125
 ```
 
 <div id="toBool">
@@ -2841,6 +2841,8 @@ FORMAT Vertical
 ```
 
 ```response title=Response
+Row 1:
+──────
 toBool(toUInt8(1)):      true
 toBool(toInt8(-1)):      true
 toBool(toFloat32(1.01)): true
@@ -2940,7 +2942,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           2025-01-01
+value:             2025-01-01
 toTypeName(value): Date32
 ```
 
@@ -2954,7 +2956,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1899-01-01
+value:             1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -3365,23 +3367,26 @@ SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **作为指定精度的 Decimal**
 
 ```sql title=Query
 SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
--- 没有小数点时，该值仍被视为以秒为单位的 Unix 时间戳
+-- Without the decimal point the value is still treated as Unix Timestamp in seconds
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **指定时区**
@@ -3391,9 +3396,9 @@ SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)──────────────┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
 ```
 
 <div id="toDateTime64OrDefault">
@@ -3442,7 +3447,7 @@ SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2
 ```
 
 ```response title=Response
-2000-12-31 23:00:00.000
+2001-01-01 00:00:00.000
 ```
 
 <div id="toDateTime64OrNull">
@@ -3795,7 +3800,7 @@ SELECT toDecimal128OrDefault('Inf', 0, CAST('-1', 'Decimal128(0)'))
 
 * Float* 值 `NaN` 和 `Inf` 及其字符串表示形式 (不区分大小写) 。
 * 二进制值和十六进制值的字符串表示形式。
-* 超出 `Decimal128` 取值范围的值：`(-1*10^(38 - S), 1*10^(38 - S))`。
+* 超出 `Decimal128` 范围的值：`(-1*10^(38 - S), 1*10^(38 - S))`。
 
 另请参阅：
 
@@ -3828,7 +3833,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -3863,7 +3868,7 @@ toDecimal128OrZero(expr, S)
 
 **参数**
 
-* `expr` — 返回数字或数字字符串表示形式的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression)
+* `expr` — 返回数字或数值字符串表示形式的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression)
 * `S` — 取值范围为 0 到 38 的 scale 参数，用于指定数字的小数部分最多可以有多少位。[`UInt8`](/zh/reference/data-types/int-uint)
 
 **返回值**
@@ -3880,7 +3885,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4016,7 +4021,7 @@ SELECT toDecimal256OrDefault('Inf', 0, CAST('-1', 'Decimal256(0)'))
 
 * Float* 类型的 `NaN` 和 `Inf` 值，或其字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式。
-* 超出 `Decimal256` 取值范围的值：`(-1 * 10^(76 - S), 1 * 10^(76 - S))`。
+* 超出 `Decimal256` 范围的值：`(-1 * 10^(76 - S), 1 * 10^(76 - S))`。
 
 另请参阅：
 
@@ -4049,7 +4054,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4107,7 +4112,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4276,7 +4281,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4300,7 +4305,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 * 二进制和十六进制值的字符串表示形式。
 
 <Note>
-  如果输入值超出 `Decimal32` 的范围：`(-1*10^(9 - S), 1*10^(9 - S))`，则函数返回 `0`。
+  如果输入值超出 `Decimal32` 的取值范围：`(-1*10^(9 - S), 1*10^(9 - S))`，则函数返回 `0`。
 </Note>
 
 **语法**
@@ -4328,7 +4333,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4352,7 +4357,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toDecimal64('0xc0fe', 1);`。
 
 <Note>
-  如果 `expr` 的值超出 `Decimal64` 的范围：`(-1*10^(18 - S), 1*10^(18 - S))`，则可能发生溢出。
+  如果 `expr` 的值超出 `Decimal64` 的取值范围：`(-1*10^(18 - S), 1*10^(18 - S))`，则可能发生溢出。
   小数部分中多余的数字会被截去 (不进行四舍五入) 。
   整数部分中多余的数字会导致抛出异常。
 </Note>
@@ -4393,11 +4398,11 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-a:      2.0
+a:      2
 type_a: Decimal(18, 1)
-b:      4.20
+b:      4.2
 type_b: Decimal(18, 2)
-c:      4.200
+c:      4.2
 type_c: Decimal(18, 3)
 ```
 
@@ -4498,7 +4503,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4509,7 +4514,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 引入版本：v20.1.0
 
 将输入值转换为 [Decimal(18, S)](/zh/reference/data-types/decimal) 类型的值，但如果发生错误则返回 `0`。
-与 [`toDecimal64`](#toDecimal64) 类似，但在转换错误时返回 `0`，而不是抛出异常。
+与 [`toDecimal64`](#toDecimal64) 类似，但在转换出错时返回 `0`，而不是抛出异常。
 
 支持的参数：
 
@@ -4522,7 +4527,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 * 二进制和十六进制值的字符串表示形式。
 
 <Note>
-  如果输入值超出 `Decimal64` 的范围：`(-1*10^(18 - S), 1*10^(18 - S))`，函数将返回 `0`。
+  如果输入值超出 `Decimal64` 的取值范围：`(-1*10^(18 - S), 1*10^(18 - S))`，函数将返回 `0`。
 </Note>
 
 另请参见：
@@ -4556,7 +4561,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4656,13 +4661,14 @@ toFixedString(s, N)
 **使用示例**
 
 ```sql title=Query
-SELECT toFixedString('foo', 8) AS s;
+-- The padding is made of null bytes, so the result is shown with `hex`.
+SELECT hex(toFixedString('foo', 8)) AS s;
 ```
 
 ```response title=Response
-┌─s─────────────┐
-│ foo\0\0\0\0\0 │
-└───────────────┘
+┌─s────────────────┐
+│ 666F6F0000000000 │
+└──────────────────┘
 ```
 
 <div id="toFloat32">
@@ -4829,7 +4835,7 @@ Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  \N
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat32OrZero">
@@ -5043,7 +5049,7 @@ Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  \N
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat64OrZero">
@@ -5232,7 +5238,7 @@ See also:
 * [`toInt128OrZero`](#toInt128OrZero)。
 * [`toInt128OrDefault`](#toInt128OrDefault)。
 
-**Syntax**
+**语法**
 
 ```sql
 toInt128OrNull(x)
@@ -5261,7 +5267,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  \N
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt128OrZero">
@@ -5448,7 +5454,7 @@ SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt16OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值无法表示在 [Int16](/zh/reference/data-types/int-uint) 的范围内，结果会发生上溢或下溢。
+  如果输入值无法表示在 [Int16](/zh/reference/data-types/int-uint) 的表示范围内，结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -5466,7 +5472,7 @@ toInt16OrNull(x)
 
 **参数**
 
-* `x` — 数值的 `String` 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数值的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -5487,7 +5493,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): \N
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt16OrZero">
@@ -5508,7 +5514,7 @@ toInt16OrNull('abc'): \N
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt16OrZero('0xc0fe');`。
 
 <Note>
-  如果输入值超出 [Int16](/zh/reference/data-types/int-uint) 的取值范围，结果会发生上溢或下溢。
+  如果输入值超出 [Int16](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -5526,7 +5532,7 @@ toInt16OrZero(x)
 
 **参数**
 
-* `x` — 数值的 `String` 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数值的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -5546,7 +5552,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt16OrZero('16'): 16
+toInt16OrZero('16'):  16
 toInt16OrZero('abc'): 0
 ```
 
@@ -5679,7 +5685,7 @@ SELECT toInt256OrDefault('abc', CAST('-1', 'Int256'))
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt256OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值超出了 [Int256](/zh/reference/data-types/int-uint) 的可表示范围，则结果会发生上溢或下溢。
+  如果输入值超出了 [Int256](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -5697,7 +5703,7 @@ toInt256OrNull(x)
 
 **参数**
 
-* `x` — 数字的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数字的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -5718,7 +5724,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  \N
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt256OrZero">
@@ -5905,7 +5911,7 @@ SELECT toInt32OrDefault('abc', CAST('-1', 'Int32'))
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt32OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值无法在 [Int32](/zh/reference/data-types/int-uint) 的取值范围内表示，结果会发生上溢或下溢。
+  如果输入值无法在 [Int32](/zh/reference/data-types/int-uint) 的表示范围内表示，结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -5944,7 +5950,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): \N
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt32OrZero">
@@ -5983,7 +5989,7 @@ toInt32OrZero(x)
 
 **参数**
 
-* `x` — 数字的 `String` 表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数字的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -6003,7 +6009,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt32OrZero('32'): 32
+toInt32OrZero('32'):  32
 toInt32OrZero('abc'): 0
 ```
 
@@ -6179,7 +6185,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): \N
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt64OrZero">
@@ -6366,7 +6372,7 @@ SELECT toInt8OrDefault('abc', CAST('-1', 'Int8'))
 * 二进制值和十六进制值的字符串表示形式，例如 `SELECT toInt8OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值无法在 [Int8](/zh/reference/data-types/int-uint) 的范围内表示，结果会发生上溢或下溢。
+  如果输入值无法在 [Int8](/zh/reference/data-types/int-uint) 的表示范围内表示，结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -6384,7 +6390,7 @@ toInt8OrNull(x)
 
 **参数**
 
-* `x` — 数值的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数值的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -6405,7 +6411,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): \N
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt8OrZero">
@@ -6444,7 +6450,7 @@ toInt8OrZero(x)
 
 **参数**
 
-* `x` — 数值的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数值的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -6464,7 +6470,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt8OrZero('8'): 8
+toInt8OrZero('8'):   8
 toInt8OrZero('abc'): 0
 ```
 
@@ -6510,7 +6516,7 @@ SELECT
 
 ```response title=Response
 ┌─seconds─┬─days─┬─months─┐
-│ 5       │ 3    │ 2      │
+│       5 │    3 │      2 │
 └─────────┴──────┴────────┘
 ```
 
@@ -7565,7 +7571,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): \N
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt128OrZero">
@@ -7800,7 +7806,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): \N
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt16OrZero">
@@ -7992,7 +7998,7 @@ SELECT toUInt256OrDefault('abc', CAST('0', 'UInt256'))
 * 二进制值和十六进制值的字符串表示形式，例如 `SELECT toUInt256OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值无法在 [`UInt256`](/zh/reference/data-types/int-uint) 的范围内表示，则结果会发生上溢或下溢。
+  如果输入值无法在 [`UInt256`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -8031,7 +8037,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): \N
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt256OrZero">
@@ -8227,7 +8233,7 @@ SELECT toUInt32OrDefault('abc', CAST('0', 'UInt32'))
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt32OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值无法在 [`UInt32`](/zh/reference/data-types/int-uint) 的范围内表示，则结果会发生上溢或下溢。
+  如果输入值无法在 [`UInt32`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -8266,7 +8272,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): \N
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt32OrZero">
@@ -8462,7 +8468,7 @@ SELECT toUInt64OrDefault('abc', CAST('0', 'UInt64'))
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt64OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值无法在 [`UInt64`](/zh/reference/data-types/int-uint) 的范围内表示，结果会发生上溢或下溢。
+  如果输入值无法在 [`UInt64`](/zh/reference/data-types/int-uint) 的取值范围内表示，结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -8501,7 +8507,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): \N
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt64OrZero">
@@ -8736,7 +8742,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): \N
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt8OrZero">
@@ -8830,7 +8836,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
 ```response title=Response
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
 ```
@@ -9005,9 +9011,9 @@ SELECT toUnixTimestamp64Nano(dt64);
 ```
 
 ```response title=Response
-┌─toUnixTimestamp64Nano(dt64)────┐
-│            1739489491011123456 │
-└────────────────────────────────┘
+┌─toUnixTimestamp64Nano(dt64)─┐
+│         1739489491011123456 │
+└─────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Second">

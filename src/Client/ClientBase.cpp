@@ -3129,10 +3129,17 @@ void ClientBase::processParsedSingleQuery(
     /// at, and emitting `BEL` would just contaminate the captured stderr stream.
     /// The default lives here (not in the CLI option) so that a value from the
     /// client config file is not clobbered when the flag is omitted.
+    ///
+    /// The threshold is checked against the client's own clock rather than
+    /// `elapsedSeconds`, which prefers the server-reported time. The server-reported time only
+    /// advances when a `Progress` packet arrives, and no final `Progress` packet is sent when a query
+    /// fails, so on the error path it is stale by an unbounded amount - enough to skip the chime for a
+    /// query that clearly ran past the threshold. The wall-clock time the user waited for is also what
+    /// the chime is about.
     UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 5);
     if (chime_threshold_seconds > 0
         && stderr_is_a_tty
-        && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+        && progress_indication.clientElapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
     {
         error_stream << '\x07';
         error_stream.flush();

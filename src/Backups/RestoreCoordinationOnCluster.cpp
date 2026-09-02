@@ -314,7 +314,7 @@ void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_
 {
     auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::generateUUIDForTable");
     String query_str = create_query.formatWithSecretsOneLine();
-    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
+    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* for_restore= */ true};
     String new_uuids_str = new_uuids.toString();
 
     auto holder = with_retries.createRetriesControlHolder("generateUUIDForTable");

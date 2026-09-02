@@ -197,9 +197,9 @@ SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
 ```
 
 ```response title=Response
-┌─countSubstri⋯AAA', 'aa')─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
 ```
 
 **Avec l’argument start&#95;pos**
@@ -209,9 +209,9 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'abc', 4)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 <div id="countSubstringsCaseInsensitiveUTF8">
@@ -220,7 +220,7 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 
 Introduit dans : v21.1.0
 
-Comme [`countSubstrings`](#countSubstrings), mais compte sans distinction entre majuscules et minuscules et suppose que haystack est une chaîne UTF-8.
+Comme [`countSubstrings`](#countSubstrings), mais compte sans tenir compte de la casse et suppose que haystack est une chaîne UTF-8.
 
 **Syntaxe**
 
@@ -247,9 +247,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯шка', 'КА')─┐
-│                        4 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **Avec l’argument start&#95;pos**
@@ -259,9 +259,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'КА', 13)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="extract">
@@ -485,26 +485,28 @@ Par exemple, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité 
 **Syntaxe**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
-**Alias** : `hasAllToken`
+**Alias** : `hasAllToken`
 
 **Arguments**
 
-* `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array)
+* `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie 1 si tous les `needles` correspondent. Sinon, renvoie 0. [`UInt8`](/fr/reference/data-types/int-uint)
+Renvoie 1 si toutes les aiguilles correspondent. 0 sinon. [`UInt8`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
-**Utilisation de base avec un `needle` de type chaîne**
+**Utilisation de base avec une chaîne comme aiguille**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -524,9 +526,11 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Spécifiez un tableau de needles à rechercher tels quels (sans tokenisation)**
+**Spécifier des needles à rechercher telles quelles (sans tokenisation) dans un Array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -549,6 +553,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 **Créer des needles avec la fonction `tokens`**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -575,14 +581,16 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
 ```
 
 **Exemples d&#39;utilisation des colonnes de type Array et Map**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -602,6 +610,8 @@ INSERT INTO log VALUES
 **Exemple avec une colonne de type Array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -629,6 +639,8 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **Exemple avec mapKeys**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -656,6 +668,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **Exemple avec mapValues**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -684,16 +698,16 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
   ## hasAnyTokens
 </div>
 
-Introduit dans : v25.10.0
+Introduit dans : v25.10.0
 
-Renvoie 1 si au moins un token de la chaîne ou du tableau `needle` correspond à la chaîne `input`, et 0 sinon. Si `input` est une colonne, renvoie toutes les lignes qui satisfont cette condition.
+Renvoie 1 si au moins un jeton dans la chaîne ou le tableau `needle` correspond à la chaîne `input`, et 0 sinon. Si `input` est une colonne, renvoie toutes les lignes qui satisfont cette condition.
 
 <Note>
   La colonne `input` doit avoir un [index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) défini pour des performances optimales.
   Si aucun index de texte n&#39;est défini, la fonction effectue un balayage exhaustif de la colonne, ce qui est de plusieurs ordres de grandeur plus lent qu&#39;une recherche via l&#39;index.
 </Note>
 
-Avant la recherche, la fonction tokenise :
+Avant la recherche, la fonction tokenise
 
 * l&#39;argument `input` (toujours), et
 * l&#39;argument `needle` (s&#39;il est fourni sous forme de [String](/fr/reference/data-types/string))
@@ -715,7 +729,7 @@ Par exemple, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité de la mêm
 **Syntaxe**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **Alias** : `hasAnyToken`
@@ -724,7 +738,7 @@ hasAnyTokens(input, needles)
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -732,9 +746,11 @@ Renvoie `1` s’il existe au moins une correspondance. `0` sinon. [`UInt8`](/fr/
 
 **Exemples**
 
-**Utilisation de base avec une chaîne comme needle**
+**Utilisation de base avec une chaîne `needle`**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -754,9 +770,11 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Spécifier les needles à rechercher tels quels (sans tokenisation) dans un tableau**
+**Spécifier les &#39;needles&#39; à rechercher tels quels (sans tokenisation) dans un tableau**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -779,6 +797,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 **Générer des needles avec la fonction `tokens`**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -801,6 +821,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
 **Exemples d&#39;utilisation des colonnes Array et Map**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -820,6 +842,8 @@ INSERT INTO log VALUES
 **Exemple avec une colonne Array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -847,6 +871,8 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **Exemple avec mapKeys**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -874,6 +900,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **Exemple avec mapValues**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -913,7 +941,8 @@ Vérifie si `input` contient tous les tokens de `phrase` dans un ordre consécut
 
 Avant la recherche, la fonction tokenise les arguments `input` et `phrase` à l&#39;aide du tokenizer spécifié pour l&#39;index de texte.
 Si aucun index de texte n&#39;est défini pour la colonne, le tokenizer `splitByNonAlpha` est utilisé à la place — sauf si un tokenizer est fourni comme troisième argument facultatif.
-L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` ou `icu`.
+L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` ou `icu`.
+Notez que `splitByRegexp` n&#39;est pas pris en charge pour `hasPhrase` lorsque l&#39;index de texte définit également un postprocessor.
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasPhrase` l&#39;applique à la fois à `input` et à `phrase` avant la tokenisation.
@@ -1088,9 +1117,9 @@ SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая си
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯ 'СИСТЕМА')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
+│                                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="hasSubsequenceUTF8">
@@ -1125,9 +1154,9 @@ SELECT hasSubsequenceUTF8('картошка', 'кошка');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯', 'кошка')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
 ```
 
 **Sous-séquence non correspondante**
@@ -1137,9 +1166,9 @@ SELECT hasSubsequenceUTF8('картошка', 'апельсин');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯'апельсин')─┐
-│                        0 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
+│                                          0 │
+└────────────────────────────────────────────┘
 ```
 
 <div id="hasToken">
@@ -1267,9 +1296,9 @@ SELECT hasTokenOrNull('apple banana cherry', 'ban ana');
 ```
 
 ```response title=Response
-┌─hasTokenOrNu⋯ 'ban ana')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
+│                                             ᴺᵁᴸᴸ │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="highlight">
@@ -1441,9 +1470,9 @@ SELECT like('ClickHouse', 'Click_ouse');
 ```
 
 ```response title=Response
-┌─like('ClickH⋯lick_ouse')─┐
-│                        1 │
-└──────────────────────────┘
+┌─like('ClickHouse', 'Click_ouse')─┐
+│                                1 │
+└──────────────────────────────────┘
 ```
 
 **Motif sans correspondance**
@@ -1538,7 +1567,7 @@ Le motif n’est pas ancré. Pour faire correspondre la chaîne entière, ancrez
 
 Si vous souhaitez simplement rechercher des sous-chaînes, vous pouvez utiliser à la place les fonctions [`like`](#like) ou [`position`](#position), qui sont bien plus rapides que cette fonction.
 
-Syntaxe d’opérateur alternative : `haystack REGEXP pattern`.
+Syntaxe d’opérateur alternative : `haystack REGEXP pattern` ou `haystack ~ pattern` (style PostgreSQL).
 
 **Syntaxe**
 
@@ -1595,6 +1624,48 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 └────────────────────────┴──────────────────────────┘
 ```
 
+<div id="matchCaseInsensitive">
+  ## matchCaseInsensitive
+</div>
+
+Introduit dans : v26.8.0
+
+Similaire à [`match`](#match), mais effectue une correspondance sans tenir compte de la casse.
+
+Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
+
+Syntaxe d’opérateur alternative : `haystack ~* pattern` (style PostgreSQL).
+
+**Syntaxe**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**Arguments**
+
+* `haystack` — Chaîne dans laquelle le motif est recherché. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motif d’expression régulière. Peut être une constante ou provenir d’un colonne. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie `1` si le motif correspond sans tenir compte de la casse, `0` sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseInsensitive('Hello World', 'hello.*')─┬─matchCaseInsensitive('Hello World', 'HELLO.*')─┐
+│                                              1 │                                              1 │
+└────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+```
+
 <div id="multiFuzzyMatchAllIndices">
   ## multiFuzzyMatchAllIndices
 </div>
@@ -1628,9 +1699,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯, 'House'])─┐
-│ [3,1,4,2]                │
-└──────────────────────────┘
+┌─multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose', 'House'])─┐
+│ [3,1,4,2]                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAny">
@@ -1672,9 +1743,9 @@ SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHos
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯lickHose'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAnyIndex">
@@ -1710,9 +1781,9 @@ SELECT multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'Clic
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯ickHouse'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse'])─┐
+│                                                                                  2 │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiMatchAllIndices">
@@ -1747,9 +1818,9 @@ SELECT multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse']);
 ```
 
 ```response title=Response
-┌─multiMatchAl⋯', 'ouse'])─┐
-│ [3, 2, 4]                │
-└──────────────────────────┘
+┌─multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse'])─┐
+│ [3,2,4]                                                                 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiMatchAny">
@@ -1809,7 +1880,7 @@ SELECT multiMatchAny('Hello World', ['goodbye.*', 'foo.*'])
 
 Introduit dans : v20.1.0
 
-Comme [`multiMatchAny`](#multiMatchAny), mais renvoie l’un des indices correspondant à la chaîne analysée.
+Comme [`multiMatchAny`](#multiMatchAny), mais renvoie l’un des indices correspondant à la chaîne haystack.
 
 **Syntaxe**
 
@@ -1819,12 +1890,12 @@ multiMatchAnyIndex(haystack, [pattern1, pattern2, ..., patternn])
 
 **Arguments**
 
-* `haystack` — Chaîne dans laquelle effectuer la recherche. [`String`](/fr/reference/data-types/string)
-* `pattern` — Expressions régulières à mettre en correspondance. [`Array(String)`](/fr/reference/data-types/array)
+* `haystack` — Chaîne haystack dans laquelle effectuer la recherche. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motifs à mettre en correspondance. [`Array(String)`](/fr/reference/data-types/array)
 
 **Valeur renvoyée**
 
-Renvoie l’indice (à partir de 1) de la première expression régulière correspondante, ou 0 si aucune correspondance n’est trouvée. [`UInt64`](/fr/reference/data-types/int-uint)
+Renvoie l’indice (à partir de 1) du premier motif correspondant, ou 0 si aucune correspondance n’est trouvée. [`UInt64`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
@@ -1835,9 +1906,9 @@ SELECT multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click']);
 ```
 
 ```response title=Response
-┌─multiMatchAn⋯, 'Click'])─┐
-│                        3 │
-└──────────────────────────┘
+┌─multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click'])─┐
+│                                                             3 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositions">
@@ -1900,7 +1971,7 @@ multiSearchAllPositionsCaseInsensitive(haystack, needle1[, needle2, ...])
 
 **Valeur renvoyée**
 
-Renvoie un tableau contenant les positions de début en octets, comptées à partir de 1 (si la sous-chaîne a été trouvée), ou `0` si la sous-chaîne n’a pas été trouvée. [`Array(UInt64)`](/fr/reference/data-types/array)
+Renvoie un tableau contenant les positions de départ en octets, comptées à partir de 1 (si la sous-chaîne a été trouvée), ou `0` si la sous-chaîne n’a pas été trouvée. [`Array(UInt64)`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -1911,9 +1982,9 @@ SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯['c', 'h'])─┐
-│ [1,6]                    │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
+│ [1,6]                                                            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsCaseInsensitiveUTF8">
@@ -1937,7 +2008,7 @@ multiSearchAllPositionsCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., nee
 
 **Valeur renvoyée**
 
-Tableau des positions de début en octets, en comptant à partir de 1 (si la sous-chaîne a été trouvée). Renvoie 0 si la sous-chaîne n&#39;a pas été trouvée. [`Array`](/fr/reference/data-types/array)
+Tableau des positions de départ en octets, en comptant à partir de 1 (si la sous-chaîne a été trouvée). Renvoie 0 si la sous-chaîne n&#39;a pas été trouvée. [`Array`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -1948,9 +2019,9 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!
 ```
 
 ```response title=Response
-┌─multiSearchA⋯й', 'МИР'])─┐
-│ [1, 13]                  │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
+│ [1,13]                                                                                │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsUTF8">
@@ -2083,7 +2154,7 @@ multiSearchAnyCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])
 **Arguments**
 
 * `haystack` — chaîne UTF-8 dans laquelle la recherche est effectuée. [`String`](/fr/reference/data-types/string)
-* `needle` — sous-chaînes UTF-8 à rechercher. [`Array(String)`](/fr/reference/data-types/array)
+* `needle` — needles UTF-8 à rechercher. [`Array(String)`](/fr/reference/data-types/array)
 
 **Valeur renvoyée**
 
@@ -2098,9 +2169,9 @@ SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯те', ['з'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAnyUTF8">
@@ -2146,7 +2217,7 @@ SELECT multiSearchAnyUTF8('你好，世界', ['你', '界']) AS result
 
 Introduit dans : v20.1.0
 
-Recherche plusieurs chaînes recherchées dans une chaîne source (sensible à la casse) et renvoie l’indice, à partir de 1, de la première chaîne trouvée.
+Recherche plusieurs needles dans une chaîne haystack (sensible à la casse) et renvoie l’indice, à partir de 1, du premier needle trouvé.
 
 **Syntaxe**
 
@@ -2156,12 +2227,12 @@ multiSearchFirstIndex(haystack, [needle1, needle2, ..., needleN])
 
 **Arguments**
 
-* `haystack` — La chaîne dans laquelle effectuer la recherche. [`String`](/fr/reference/data-types/string)
-* `needles` — Tableau de chaînes à rechercher. [`Array(String)`](/fr/reference/data-types/array)
+* `haystack` — La chaîne haystack dans laquelle effectuer la recherche. [`String`](/fr/reference/data-types/string)
+* `needles` — Tableau de needles à rechercher. [`Array(String)`](/fr/reference/data-types/array)
 
 **Valeur renvoyée**
 
-Renvoie l’indice à partir de 1 (position dans le tableau `needles`) de la première chaîne trouvée dans `haystack`. Renvoie 0 si aucune chaîne n’est trouvée. La recherche est sensible à la casse. [`UInt64`](/fr/reference/data-types/int-uint)
+Renvoie l’indice à partir de 1 (position dans le tableau `needles`) du premier needle trouvé dans `haystack`. Renvoie 0 si aucun needle n’est trouvé. La recherche est sensible à la casse. [`UInt64`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
@@ -2172,9 +2243,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Sensibilité à la casse**
@@ -2184,9 +2255,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Aucune correspondance trouvée**
@@ -2196,9 +2267,9 @@ SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
+│                                                         0 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitive">
@@ -2234,9 +2305,9 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯, 'Hello'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello'])─┐
+│                                                                       1 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitiveUTF8">
@@ -2245,7 +2316,7 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);
 
 Introduit dans : v20.1.0
 
-Recherche plusieurs chaînes à trouver dans une chaîne source, sans tenir compte de la casse avec prise en charge de l’encodage UTF-8, et renvoie l’index, à partir de 1, de la première chaîne trouvée.
+Recherche plusieurs needles dans une chaîne haystack, sans tenir compte de la casse avec prise en charge de l’encodage UTF-8, et renvoie l’indice, à partir de 1, du premier needle trouvé.
 
 **Syntaxe**
 
@@ -2255,12 +2326,12 @@ multiSearchFirstIndexCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needl
 
 **Arguments**
 
-* `haystack` — La chaîne dans laquelle effectuer la recherche. [`String`](/fr/reference/data-types/string)
-* `needles` — Tableau de chaînes à rechercher. [`Array(String)`](/fr/reference/data-types/array)
+* `haystack` — La chaîne haystack dans laquelle effectuer la recherche. [`String`](/fr/reference/data-types/string)
+* `needles` — Tableau de needles à rechercher. [`Array(String)`](/fr/reference/data-types/array)
 
 **Valeur renvoyée**
 
-Renvoie l’index à partir de 1 (position dans le tableau `needles`) de la première `needle` trouvée dans `haystack`. Renvoie 0 si aucune `needle` n’est trouvée. La recherche est insensible à la casse et respecte l’encodage des caractères UTF-8. [`UInt64`](/fr/reference/data-types/int-uint)
+Renvoie l’indice à partir de 1 (position dans le tableau `needles`) du premier `needle` trouvé dans `haystack`. Renvoie 0 si aucun `needle` n’est trouvé. La recherche est insensible à la casse et respecte l’encodage des caractères UTF-8. [`UInt64`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
@@ -2271,9 +2342,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK',
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server'])─┐
+│                                                                                            1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Gestion de la casse en UTF-8**
@@ -2283,9 +2354,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир'
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'ПРИВЕТ'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ'])─┐
+│                                                                         1 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Aucune correspondance trouvée**
@@ -2295,9 +2366,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test'])─┐
+│                                                                            0 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexUTF8">
@@ -2333,9 +2404,9 @@ SELECT multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', '
 ```
 
 ```response title=Response
-┌─multiSearchF⋯вствуйте'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте'])─┐
+│                                                                      1 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstPosition">
@@ -2494,7 +2565,7 @@ SELECT multiSearchFirstPositionUTF8('Здравствуй, мир',['мир', '�
 
 Introduit dans : v20.1.0
 
-Calcule la distance 4-gram entre deux chaînes.
+Calcule la distance 4-gramme entre deux chaînes.
 Pour ce faire, elle calcule la différence symétrique entre deux multiensembles de 4-grammes et la normalise par la somme de leurs cardinalités.
 Plus la valeur renvoyée est faible, plus les chaînes sont similaires.
 
@@ -2508,8 +2579,8 @@ ngramDistance(haystack, needle)
 
 **Arguments**
 
-* `haystack` — Chaîne de caractères de comparaison. [`String`](/fr/reference/data-types/string)
-* `needle` — Chaîne de caractères de comparaison. [`String`](/fr/reference/data-types/string)
+* `haystack` — Chaîne à comparer. [`String`](/fr/reference/data-types/string)
+* `needle` — Chaîne à comparer. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -2525,7 +2596,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 ```response title=Response
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                        0.1 │
+│                                 0.06666667 │
 └────────────────────────────────────────────┘
 ```
 
@@ -2563,9 +2634,9 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
-│                                                       0 │
-└─────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
+│                                                        0 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceCaseInsensitiveUTF8">
@@ -2603,9 +2674,9 @@ SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
-│                                             0.5 │
-└─────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
+│                                              0.5 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceUTF8">
@@ -2761,7 +2832,7 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 ```response title=Response
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                                        1 │
+│                                               0.57142854 │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -2800,7 +2871,7 @@ SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')
 
 ```response title=Response
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                      1 │
+│                                    0.5 │
 └────────────────────────────────────────┘
 ```
 
@@ -2838,9 +2909,9 @@ SELECT notILike('ClickHouse', '%house%');
 ```
 
 ```response title=Response
-┌─notILike('Cl⋯ '%house%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notILike('ClickHouse', '%house%')─┐
+│                                 0 │
+└───────────────────────────────────┘
 ```
 
 <div id="notLike">
@@ -2877,9 +2948,9 @@ SELECT notLike('ClickHouse', '%House%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯ '%House%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%House%')─┐
+│                                0 │
+└──────────────────────────────────┘
 ```
 
 **Motif sans correspondance**
@@ -2889,9 +2960,93 @@ SELECT notLike('ClickHouse', '%SQL%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯', '%SQL%')─┐
-│                        1 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%SQL%')─┐
+│                              1 │
+└────────────────────────────────┘
+```
+
+<div id="notMatch">
+  ## notMatch
+</div>
+
+Introduit dans : v26.8.0
+
+Similaire à [`match`](#match), mais inverse le résultat : vérifie que la chaîne ne correspond pas au motif d’expression régulière.
+
+Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
+
+Syntaxe d’opérateur alternative : `haystack !~ pattern` (style PostgreSQL).
+
+**Syntaxe**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**Arguments**
+
+* `haystack` — Chaîne dans laquelle le motif est recherché. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motif d’expression régulière. Peut être une constante ou provenir d’un colonne. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie `0` si le motif correspond, `1` sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('Hello World', 'Hello.*')─┬─notMatch('Hello World', 'goodbye.*')─┐
+│                                  0 │                                    1 │
+└────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="notMatchCaseInsensitive">
+  ## notMatchCaseInsensitive
+</div>
+
+Introduit dans : v26.8.0
+
+Similaire à [`matchCaseInsensitive`](#matchCaseInsensitive), mais inverse le résultat : vérifie que la chaîne ne correspond pas au motif d’expression régulière sans tenir compte de la casse.
+
+Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
+
+Syntaxe d’opérateur alternative : `haystack !~* pattern` (style PostgreSQL).
+
+**Syntaxe**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**Arguments**
+
+* `haystack` — Chaîne dans laquelle le motif est recherché. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motif d’expression régulière. Peut être une constante ou provenir d’un colonne. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie `0` si le motif correspond sans tenir compte de la casse, `1` sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCaseInsensitive('Hello World', 'hello.*')─┬─notMatchCaseInsensitive('Hello World', 'GOODBYE.*')─┐
+│                                                 0 │                                                   1 │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="position">
@@ -3088,9 +3243,9 @@ SELECT positionUTF8('Motörhead', 'r')
 ```
 
 ```response title=Response
-┌─position('Motörhead', 'r')─┐
-│                          5 │
-└────────────────────────────┘
+┌─positionUTF8('Motörhead', 'r')─┐
+│                              5 │
+└────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

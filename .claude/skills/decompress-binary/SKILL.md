@@ -52,9 +52,11 @@ The packed `clickhouse` ELF is the entry with `exec = true`.
 1. Download the binary from the build job for the exact commit, for example:
 
    ```bash
-   curl -s "https://clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/build_<arch>_<sanitizer>/clickhouse" -o clickhouse.sfx
+   curl -s "https://clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/pr/build_<arch>_<sanitizer>/clickhouse" -o clickhouse.sfx
    ```
 
+   The path segment after `<sha>` is the normalized workflow name — `pr` for PR
+   builds, `masterci` for master/reference builds (`REFs/master/<sha>/masterci/...`).
    Find the precise URL in the build job's `artifact_report_build_*.json`, or via
    `.claude/tools/fetch_ci_report.js "<pr-url>"`. Download in the foreground (a
    killed/resumed `curl` can append garbage past EOF and break the trailer; verify

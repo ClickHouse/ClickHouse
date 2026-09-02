@@ -59,6 +59,9 @@ Los siguientes motores de tabla también son compatibles y se usan tal cual. El 
 * Null
 * Buffer
 * Memory
+
+- `IcebergS3` y `IcebergAzure`
+
 * Deltalake
 * Hudi
 * MySQL
@@ -68,6 +71,8 @@ Los siguientes motores de tabla también son compatibles y se usan tal cual. El 
 * PostgreSQL
 * S3
 * Kafka
+
+Los motores de tabla experimentales `PaimonS3` y `PaimonAzure` pueden habilitarse en determinados servicios de ClickHouse Cloud. Ponte en contacto con Support para confirmar la disponibilidad.
 
 <div id="interfaces">
   ### Interfaces
@@ -87,6 +92,8 @@ Los diccionarios son una forma habitual de acelerar las búsquedas en ClickHouse
 
 Ofrecemos compatibilidad con consultas federadas de ClickHouse para la comunicación entre clústeres en la nube y con clústeres externos autogestionados de ClickHouse. Actualmente, ClickHouse Cloud admite consultas federadas mediante los siguientes motores de integración:
 
+* `IcebergS3` y `IcebergAzure`
+* `PaimonS3` y `PaimonAzure` (experimental; contacte con Support para conocer la disponibilidad)
 * Deltalake
 * Hudi
 * MySQL
@@ -130,7 +137,7 @@ Las funcionalidades experimentales están deshabilitadas en los servicios de Cli
   ### Colecciones con nombre
 </div>
 
-Las [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections) aún no son compatibles con ClickHouse Cloud.
+Las [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections) creadas mediante DDL pueden habilitarse en algunos servicios de ClickHouse Cloud. Contacta con Support para confirmar la disponibilidad. Las colecciones con nombre definidas en archivos de configuración no están disponibles porque los usuarios no pueden modificar los archivos de configuración del servidor en ClickHouse Cloud.
 
 <div id="operational-defaults-and-considerations">
   ## Valores predeterminados y consideraciones operativas

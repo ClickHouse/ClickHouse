@@ -1,0 +1,317 @@
+---
+title: 'Configuração'
+sidebarTitle: 'Configuração'
+description: 'Configure o ClickHouse Connector: instâncias do ClickHouse, listas de permissões de operadores, políticas de rede, redação, espelhos privados e armazenamento'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'conector', 'configuração']
+doc_type: 'guide'
+---
+
+Esta página aborda as alterações de configuração que você provavelmente fará após instalar o ClickHouse Connector. Para ver todas as chaves, seus valores padrão e significados, consulte a [referência de configuração](/pt-BR/products/bring-your-own-cloud/connector/reference/configuration); para flags de comando, consulte a [referência da CLI](/pt-BR/products/bring-your-own-cloud/connector/reference/cli).
+
+<div id="configuration-surfaces">
+  ## Superfícies de configuração
+</div>
+
+O conector tem uma superfície de configuração para cada destino de instalação.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    `clicklink clctl init` cria, no diretório de trabalho, uma sobreposição de valores chamada `clicklink-values.yaml` e implanta o chart `clicklink-connector` com ela. A sobreposição é o registro persistente da sua implantação: ao executar `init` novamente, ela é mantida, a menos que você informe `--force`, de modo que suas edições sejam preservadas em novas execuções e durante a recuperação.
+
+    <Note>
+      Os comandos de operação nesta página e em [operações](/pt-BR/products/bring-your-own-cloud/connector/operations) usam a CLI `helm`. Somente o `init` inclui um cliente Helm integrado.
+    </Note>
+
+    Edite a sobreposição e aplique-a:
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # o espaço de nomes do conector escolhido durante o init
+    CHART_VERSION="$(helm get metadata clicklink-connector -n "${CONNECTOR_NAMESPACE}" | awk '/^VERSION:/{print $2}')"
+    helm upgrade clicklink-connector clicklink-connector \
+      --repo https://releases.clicklink.clickhouse.com/charts \
+      --version "${CHART_VERSION}" \
+      --namespace "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+
+    Esse bloco reaplica os valores editados à versão do chart já instalada, para que uma alteração de configuração não resulte também em um upgrade não planejado; atualizar para uma nova versão é uma etapa intencional abordada em [operações](/pt-BR/products/bring-your-own-cloud/connector/operations). Em uma instalação espelhada que usa um repositório de charts, substitua `--repo` pelo seu espelho.
+
+    Uma instalação a partir de uma referência direta ao chart (`oci://`, uma URL ou um arquivo ou diretório local; consulte [espelhos privados](#private-mirrors)) não tem um repositório para consulta. Execute o upgrade novamente usando a referência a partir da qual você instalou:
+
+    ```bash
+    helm upgrade clicklink-connector <same-chart-reference> \
+      --version "${CHART_VERSION}" \
+      -n "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+  </Tab>
+
+  <Tab title="VM Linux">
+    `clicklink clctl init` grava em `/etc/clicklink/config.yaml`. Ao executar `init` novamente, uma configuração existente é mantida, a menos que você informe `--force`; portanto, é seguro editar o arquivo manualmente. Após a edição, reinicie os daemons e verifique:
+
+    ```bash
+    sudo systemctl restart clicklink-scraper clicklink-troubleshooter
+    sudo clicklink clctl preflight
+    ```
+  </Tab>
+</Tabs>
+
+<div id="clickhouse-instances">
+  ## Adicionar ou alterar instâncias do ClickHouse
+</div>
+
+Cada entrada em `instances` nomeia um endpoint do protocolo nativo do ClickHouse a partir do qual o conector lê: `host`, `port`, `database`, `secure`, além de `namespace` e `cluster` no Kubernetes. As credenciais nunca ficam na configuração; cada componente obtém seu usuário somente leitura do ClickHouse a partir do pacote de acesso criado pelo provisionamento.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    Adicione a instância aos maps de ambos os componentes em `clicklink-values.yaml` e adicione o respectivo espaço de nomes a `networkPolicy.clickhouseNamespaces` (correspondente ao label `kubernetes.io/metadata.name` do espaço de nomes):
+
+    ```yaml
+    scraper:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    troubleshooter:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    networkPolicy:
+      clickhouseNamespaces:
+        - "clickhouse"
+    ```
+
+    Provisione acesso somente leitura para cada componente a partir da sua estação de trabalho. `--apply-ch-grants` aplica as permissões geradas do ClickHouse no pod usando `kubectl exec`; sem essa opção, o comando cria apenas os recursos do Kubernetes e deixa `ch-grants.sql` no disco para que você o aplique. Se o usuário administrador tiver senha, adicione `--ch-admin-password-stdin` e forneça-a por pipe.
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # o espaço de nomes do conector escolhido durante a inicialização
+    clicklink clctl scraper access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    clicklink clctl troubleshoot access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    ```
+
+    Para uma instância gerenciada por operador sem um administrador capaz de executar SQL, substitua `--apply-ch-grants` por `--ch-user-via cr` (as flags de seleção de pod permanecem); consulte a [referência da CLI](/pt-BR/products/bring-your-own-cloud/connector/reference/cli). Em seguida, associe o par Secret e ServiceAccount criado por cada comando ao map `accessBundles` correspondente e execute o `helm upgrade` mostrado acima:
+
+    ```yaml
+    scraper:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-scraper-access-analytics
+          serviceAccountName: pcm-scraper-analytics
+
+    troubleshooter:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-troubleshooter-access-analytics
+          serviceAccountName: pcm-troubleshooter-analytics
+    ```
+  </Tab>
+
+  <Tab title="VM Linux">
+    Adicione a instância a `/etc/clicklink/config.yaml`:
+
+    ```yaml
+    instances:
+      analytics:
+        host: "10.0.12.34"
+        port: 9440
+        database: "default"
+        secure: true
+        cluster: "default"
+    ```
+
+    Em seguida, provisione o acesso para cada componente no host como root. Cada comando aplica as permissões do ClickHouse e reinicia o respectivo daemon (omita a reinicialização com `--skip-restart`):
+
+    ```bash
+    sudo clicklink clctl scraper access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    sudo clicklink clctl troubleshoot access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Os mesmos comandos `access provision`, com `--force`, rotacionam as credenciais do ClickHouse de uma instância. Consulte [operações](/pt-BR/products/bring-your-own-cloud/connector/operations).
+</Tip>
+
+<div id="operator-allowlist">
+  ## Lista de permissões de operadores
+</div>
+
+As sessões gerenciadas pelo gateway de sessão são controladas por uma lista de permissões de endereços de e-mail de operadores: cada solicitação ao gateway de sessão deve incluir um token de ID OIDC de curta duração cujo e-mail atestado conste na lista. Uma lista de permissões vazia fecha o gateway, impedindo que qualquer pessoa abra uma sessão por meio dele. Em uma VM, o usuário root no host também pode gerenciar sessões diretamente pelo arquivo de sessão local; a lista de permissões controla apenas o acesso pelo gateway. Consulte [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) para conhecer o modelo de confiança completo.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    A lista de permissões fica na sobreposição e é renderizada em um ConfigMap. Para alterá-la, edite a lista e execute `helm upgrade`:
+
+    ```yaml
+    clctl:
+      gateway:
+        enabled: true
+        allowedOperators:
+          - "oncall@example.com"
+          - "dba@example.com"
+    ```
+  </Tab>
+
+  <Tab title="VM Linux">
+    O `init` grava a lista de permissões em `/etc/clicklink/allowed-operators.txt`, com um e-mail por linha:
+
+    ```text
+    oncall@example.com
+    dba@example.com
+    ```
+
+    O solucionador de problemas relê o arquivo a cada 30 segundos, portanto as alterações entram em vigor sem reinicialização.
+  </Tab>
+</Tabs>
+
+<div id="network-policy">
+  ## Política de rede e tráfego de saída
+</div>
+
+No Kubernetes, o chart inclui uma NetworkPolicy padrão que nega todo o tráfego, com uma lista de permissão de saída (`networkPolicy.enabled: true`). Os objetos NetworkPolicy só têm efeito quando são aplicados pelo CNI; com um CNI que os aplica, o conector não tem tráfego de saída até que `allowEgressCIDRs` especifique os CIDRs por trás do endpoint da API do conector.
+
+```yaml
+networkPolicy:
+  enabled: true
+  # CIDRs behind your connector API endpoint. Required under an enforcing CNI.
+  allowEgressCIDRs:
+    - "203.0.113.0/24"
+  # Ports opened to allowEgressCIDRs.
+  allowEgressPorts:
+    - 443
+  # Namespaces of your ClickHouse Services, matched by the
+  # kubernetes.io/metadata.name label. Empty allows no in-cluster
+  # ClickHouse access.
+  clickhouseNamespaces:
+    - "clickhouse"
+  # Kubernetes API server CIDRs. On managed Kubernetes the API server sits
+  # outside the cluster network, so it cannot be matched with a selector.
+  apiserverCIDRs:
+    - "172.16.0.0/28"
+```
+
+Duas regras merecem atenção especial:
+
+* **`apiserverCIDRs`**: quando está vazio, o chart não gera nenhuma regra de egress para o servidor de API. Os daemons falham na primeira solicitação de token ao Kubernetes com um erro de rede, o que indica que essa configuração deve ser definida. No Kubernetes gerenciado, use os CIDRs do endpoint do servidor de API do cluster.
+* **`clctl.gateway.jwksEgressCIDRs`**: quando o gateway de sessão está habilitado, o solucionador de problemas busca o JWKS do seu provedor de identidade para validar os tokens de operador. Em uma política de negação por padrão, deixar esse campo vazio bloqueia todas as verificações de token:
+
+```yaml
+clctl:
+  gateway:
+    jwksEgressCIDRs:
+      - "199.36.153.8/30"
+```
+
+Um exemplo é o intervalo `private.googleapis.com`, que abrange um provedor de identidade do Google acessado por Private Google Access; para qualquer outro provedor de identidade, informe o intervalo desse provedor (ou o CIDR do proxy de saída à frente dele).
+
+Outros dois controles de Entrada: `metricsScrapeSelector` restringe a Entrada para coleta de métricas a um Espaço de nomes específico do Prometheus por rótulo, e `kubeletProbeCIDRs` permite explicitamente sondas de integridade do agente de nó do Kubernetes em ambientes com negação padrão estrita. Consulte a [referência de configuração](/pt-BR/products/bring-your-own-cloud/connector/reference/configuration) para ver a lista completa de chaves.
+
+<div id="redaction-patterns">
+  ## Padrões de redação
+</div>
+
+A saída do solucionador de problemas é redigida antes de sair do seu ambiente. Os padrões integrados abrangem `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key` e `connection-string-credentials`. Você pode adicionar seus próprios padrões em um arquivo YAML; eles são executados primeiro, na ordem em que aparecem no arquivo, seguidos pelos padrões integrados. Uma entrada que reutiliza o `name` de um padrão integrado o substitui.
+
+Cada padrão aceita `name` (obrigatório, único), `regex` (obrigatório, sintaxe RE2 do Go), `replace` (o padrão é `[REDACTED]`, com suporte a referências de captura `$1`) e `case_insensitive` (o padrão é `false`):
+
+```yaml
+version: 1
+patterns:
+  - name: internal-hostname
+    regex: '\b[a-z0-9-]+\.corp\.example\.com\b'
+    replace: '[REDACTED:internal-host]'
+
+  # Reusing a built-in name replaces the built-in pattern.
+  - name: ipv4
+    regex: '\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    replace: '[REDACTED:ip]'
+```
+
+Em uma VM, o arquivo é `/etc/clicklink/redaction-patterns.yaml`; o instalador fornece um arquivo padrão comentado e preserva sua versão durante os upgrades. No Kubernetes, coloque o YAML em um ConfigMap com a chave `redaction-patterns.yaml` e defina `troubleshooter.redaction.patternsConfigMap` como o nome dele; o chart o monta no mesmo caminho.
+
+<Warning>
+  O solucionador de problemas se recusa a iniciar se houver um arquivo de padrões inválido e registra nos logs a entrada problemática. `clicklink clctl preflight` valida o arquivo; portanto, execute-o antes de reiniciar o daemon.
+</Warning>
+
+<div id="private-mirrors">
+  ## Espelhos privados e endpoints dentro da fronteira
+</div>
+
+O chart publicado predefine `image.repository` para a imagem pública do conector, compatível com várias arquiteturas e assinada com cosign; portanto, instalações simples não exigem values de imagem. Para inspecionar os padrões publicados:
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+helm show values clicklink-connector \
+  --repo https://releases.clicklink.clickhouse.com/charts \
+  --version "${CLICKLINK_VERSION#v}"
+```
+
+Para extrair usando seu próprio registry, substitua o repository na sobreposição:
+
+```yaml
+image:
+  repository: "registry.example.com/mirrors/clicklink"
+```
+
+Para instalar o próprio chart a partir de um espelho, `init` aceita `--chart` como o nome de um chart resolvido a partir de `--chart-repo` ou como uma referência `oci://` direta, uma URL, um arquivo compactado local ou um diretório local. Por padrão, `--chart-version` usa a própria versão da CLI, para que o binário e o chart sejam atualizados juntos:
+
+```bash
+clicklink clctl init --handoff handoff.yaml --target helm \
+  --chart oci://registry.example.com/charts/clicklink-connector
+```
+
+Quando o endpoint da API do conector estiver por trás de uma CA privada dentro da sua fronteira, passe `--api-private-ca` para `init`: isso configura `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, para que o endpoint seja verificado em relação à cadeia de CAs do pacote de inscrição, em vez das raízes do sistema. Em uma VM, o equivalente é `api.tls.ca_file` em `/etc/clicklink/config.yaml`; `init` instala a cadeia do pacote em `/etc/clicklink/tls/ca.crt`, que é adicionada às raízes do sistema para verificação. Para inscrição e assinatura de certificados em ambientes totalmente isolados da internet, consulte [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding).
+
+<div id="storage">
+  ## Armazenamento
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    O solucionador de problemas mantém seu estado em um PersistentVolumeClaim, de modo que o estado da sessão e o histórico de auditoria persistem mesmo após o reagendamento de pods do Kubernetes:
+
+    ```yaml
+    persistence:
+      enabled: true
+      storageClass: "gp3"
+      size: 5Gi
+    ```
+
+    Uma `storageClass` vazia usa a StorageClass padrão do cluster. Se o cluster não tiver nenhuma marcada como padrão, `init` exigirá uma, informada pelo prompt ou por `--storage-class`.
+  </Tab>
+
+  <Tab title="VM Linux">
+    O scraper armazena métricas em buffer em `/var/lib/clicklink/buffer` para garantir entrega pelo menos uma vez enquanto o endpoint da API estiver inacessível, mantendo os dados por até 168 horas ou 1024 MB, e faz upload a uma taxa limitada a 1 MB/s por padrão:
+
+    ```yaml
+    scraper:
+      buffer:
+        path: /var/lib/clicklink/buffer
+        retention: 168h
+        max_size_mb: 1024
+    ```
+
+    `clicklink clctl preflight` inclui verificações de disco para o diretório do buffer e `/var/log`.
+  </Tab>
+</Tabs>

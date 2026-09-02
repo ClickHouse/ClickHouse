@@ -43,7 +43,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -70,10 +70,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_max_block_size` - Число строк, собираемых с помощью poll(s) для сброса данных из NATS. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `nats_flush_interval_ms` - Тайм-аут для сброса данных, прочитанных из NATS. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_wait_for_flush_interval` - Если `true`, фоновый цикл стриминга остаётся открытым на весь интервал сброса (`nats_flush_interval_ms` или, в противном случае, `stream_flush_interval_ms`) вместо завершения сразу после опустошения очереди consumer, что позволяет накопить больше сообщений в одном блоке ценой дополнительной задержки ингестии до одного интервала сброса. По умолчанию: `false` (поведение с низкой задержкой: опустошить очередь и завершить).
-* `nats_username` - Имя пользователя NATS.
-* `nats_password` - Пароль NATS.
-* `nats_token` - Токен аутентификации NATS.
-* `nats_credential_file` - Путь к файлу учётных данных NATS.
+* `nats_username` - Имя пользователя NATS. Если оно хранится в именованной коллекции, определённой в файле конфигурации сервера, запрос не может переопределить `nats_url` или `nats_server_list` этой коллекции.
+* `nats_password` - Пароль NATS. Если он хранится в именованной коллекции, определённой в файле конфигурации сервера, запрос не может переопределить `nats_url` или `nats_server_list` этой коллекции.
+* `nats_token` - Токен аутентификации NATS. Если он хранится в именованной коллекции, определённой в файле конфигурации сервера, запрос не может переопределить `nats_url` или `nats_server_list` этой коллекции.
+* `nats_credential_file` - Путь к файлу учётных данных NATS. Принимается только из именованной коллекции, определённой в файле конфигурации сервера, если её `nats_url` и `nats_server_list` не переопределяются запросом, поскольку сервер открывает этот путь со своими правами. Вместо этого в запросе передайте содержимое файла в `nats_credentials`.
+* `nats_credentials` - Содержимое учётных данных NATS (та же полезная нагрузка, что и в файле `.creds` с JWT пользователя и seed). Поскольку это единственный вариант, доступный в запросе, он заменяет `nats_credential_file`, унаследованный из именованной коллекции, а не конфликтует с ним, если только оператор не заблокировал этот путь с помощью `<nats_credential_file overridable="false">`. Ему нельзя присвоить пустую строку, чтобы удалить учётные данные, содержащиеся в именованной коллекции.
 * `nats_startup_connect_tries` - Количество попыток подключения при запуске. По умолчанию: `5`.
 * `nats_max_rows_per_message` — Максимальное количество строк, записываемых в одно сообщение NATS для построчных форматов. (по умолчанию: `1`).
 * `nats_commit_on_select` - Выполнять коммит сообщений при выполнении запроса. Применяется только к JetStream; в core NATS нет подтверждений. По умолчанию: `0`.

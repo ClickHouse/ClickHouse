@@ -170,6 +170,12 @@ ClickHouse перезагружает встроенные словари каж
 </compression>
 ```
 
+<div id="config-file">
+  ## файл конфигурации
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Указывает на файл конфигурации сервера.
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -177,12 +183,6 @@ ClickHouse перезагружает встроенные словари каж
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Yes" />
 
 Как часто ClickHouse будет перезагружать конфигурацию и проверять наличие изменений
-
-<div id="config-file">
-  ## файл конфигурации
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Указывает на файл конфигурации сервера.
 
 <div id="core_dump">
   ## core_dump
@@ -974,7 +974,7 @@ Refreshable materialized views всегда получают значения п
   ## message_queue_disable_insertion
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Да" />Отключает вставку из движков очередей сообщений (Kafka, RabbitMQ, NATS) в присоединенные materialized view
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Отключает вставку из движков очередей сообщений (Kafka, RabbitMQ, NATS) в присоединенные materialized view
 
 <div id="metric_log">
   ## metric_log

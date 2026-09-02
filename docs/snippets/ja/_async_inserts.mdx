@@ -70,9 +70,11 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
   ### 重複排除と信頼性
 </div>
 
-デフォルトでは、ClickHouse は同期挿入に対して自動的に重複排除を行うため、障害発生時でも安全に再試行できます。ただし、非同期挿入では明示的に有効化しない限り、この機能は無効です (依存する materialized view がある場合は有効にしないでください — [issue を参照](https://github.com/ClickHouse/ClickHouse/issues/66003)) 。
+バージョン26.2以降、ClickHouseは同期挿入に加え、非同期挿入でも自動的に重複排除を行います。これにより、重複排除ログを保持するテーブルでは安全に再試行できます。`*ReplicatedMergeTree`エンジンはデフォルトで重複排除ログを保持します。通常の`MergeTree`テーブルでは、`non_replicated_deduplication_window`を正の値に設定する必要があります。どちらの挿入タイプも、デフォルトで`enable`に設定されている[`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)によって制御されます。依存するmaterialized viewもサポートされています。
 
-実際には、重複排除が有効になっていれば、たとえばタイムアウトやネットワーク切断によって同じ挿入が再試行された場合でも、ClickHouse は重複分を安全に無視できます。これにより、冪等性を維持し、データの二重書き込みを防げます。
+実際には、たとえばタイムアウトやネットワーク切断によって同じ挿入が再試行された場合、ClickHouseは重複を安全に無視できます。これにより冪等性が維持され、データの二重書き込みを防止できます。非同期挿入では、重複排除はフラッシュされたバッチ単位ではなくユーザークエリ単位で行われるため、重複したクエリによって同じバッチ内の他のクエリが破棄されることはありません。
+
+詳細と、非同期挿入におけるmaterialized viewに適用される唯一の制約については、[再試行時の挿入の重複排除](/ja/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts)を参照してください。
 
 <div id="enabling-asynchronous-inserts">
   ### 非同期挿入の有効化
