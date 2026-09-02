@@ -2,7 +2,6 @@
 
 SET ast_fuzzer_runs = 0;
 SET ast_fuzzer_any_query = 0;
-SET ignore_drop_queries_probability = 0;
 
 DROP TABLE IF EXISTS 05043_keeper_map_canonical_writer_parenthesized SYNC;
 DROP TABLE IF EXISTS 05043_keeper_map_canonical_writer_nested_second SYNC;
