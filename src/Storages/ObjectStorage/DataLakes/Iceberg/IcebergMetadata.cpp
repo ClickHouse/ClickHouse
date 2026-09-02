@@ -407,7 +407,8 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
             {
                 /// second, we fetch, parse and cache each manifest file
                 auto manifest_file_ptr = getManifestFileEntriesHandle(
-                    object_storage, persistent_components, ctx, log, entry, actual_table_state_snapshot.schema_id);
+                    object_storage, persistent_components, ctx, log, entry, actual_table_state_snapshot.schema_id,
+                    actual_table_state_snapshot.trusted_uuid_incarnation);
             }
         }
 
@@ -1083,6 +1084,13 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         log,
         getCompressionMethodFromMetadataFile(table_state_snapshot.metadata_file_path),
         persistent_components.trusted_table_uuid->getForPinnedIncarnation(table_state_snapshot.trusted_uuid_incarnation));
+
+    /// The pin only keys the content cache: a read that misses it goes to storage and can return
+    /// the file of a table that replaced this one at the same root. The file's own `table-uuid`
+    /// settles which table this snapshot really describes.
+    persistent_components.checkMetadataBelongsToValidatedTable(
+        metadata_object, table_state_snapshot.trusted_uuid_incarnation, "the query");
+
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
@@ -1303,7 +1311,8 @@ IcebergMetadata::IcebergFiles IcebergMetadata::getFilesForManifest(
 
     const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_index];
     auto handle = getManifestFileEntriesHandle(
-        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id);
+        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id,
+        table_state.trusted_uuid_incarnation);
 
     IcebergFiles result;
     for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
@@ -1340,7 +1349,8 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id,
+            table_state_snapshot->trusted_uuid_incarnation);
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
@@ -1371,7 +1381,8 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id,
+            table_state_snapshot->trusted_uuid_incarnation);
 
         if (!files_handle.areAllDataFilesEligibleForLazyMaterialization(table_state_snapshot->schema_id))
             return false;
@@ -1409,7 +1420,8 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id,
+            actual_table_state_snapshot.trusted_uuid_incarnation);
 
         /// Live delete files make an exact metadata-only count impossible:
         /// - the record count of an equality delete file is the number of delete predicates,
@@ -1463,7 +1475,8 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id,
+            actual_table_state_snapshot.trusted_uuid_incarnation);
         auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
@@ -1778,6 +1791,11 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         log,
         getCompressionMethodFromMetadataFile(actual_table_state_snapshot.metadata_file_path),
         persistent_components.trusted_table_uuid->getForPinnedIncarnation(actual_table_state_snapshot.trusted_uuid_incarnation));
+
+    /// Same reason as in `getRelevantDataSnapshotFromTableStateSnapshot`: validate the file that
+    /// came back before its `schema_id` and `sort_order_id` are read as this table's.
+    persistent_components.checkMetadataBelongsToValidatedTable(
+        metadata_object, actual_table_state_snapshot.trusted_uuid_incarnation, "the query");
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(

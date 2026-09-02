@@ -121,7 +121,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     ContextPtr local_context,
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id)
+    Int32 table_snapshot_schema_id,
+    std::optional<UInt64> pinned_incarnation)
 {
     auto cacheable_info = getManifestFile(
         object_storage,
@@ -134,7 +135,11 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         cacheable_info.deserializer,
         cache_key.manifest_file_path,
         persistent_table_components.path_resolver,
-        *persistent_table_components.getSchemaProcessor(),
+        /// `ManifestFileIterator::create` registers the manifest's schema in this processor, so it
+        /// must be the processor of the incarnation the caller was validated against. Resolving the
+        /// live cell here would register the pinned table's schema ids in the processor of a table
+        /// that replaced it in the meantime.
+        *persistent_table_components.getSchemaProcessorForPinnedIncarnation(pinned_incarnation),
         cache_key.added_sequence_number,
         cache_key.added_snapshot_id,
         cache_key.first_row_id,

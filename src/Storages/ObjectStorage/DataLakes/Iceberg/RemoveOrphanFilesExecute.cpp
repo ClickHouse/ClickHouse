@@ -267,7 +267,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE remove_orphan_files");
 
     auto [reachable, metadata_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
+        object_storage, persistent_table_components, data_lake_settings, context, log, validated_incarnation);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -284,7 +284,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
     auto [_recheck_files, recheck_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
+        object_storage, persistent_table_components, data_lake_settings, context, log, validated_incarnation);
     if (recheck_version != metadata_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Metadata version changed during orphan scan (v{} -> v{}); "

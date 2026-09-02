@@ -363,6 +363,7 @@ void collectRetainedFiles(
     ContextPtr context,
     LoggerPtr log,
     Int32 current_schema_id,
+    std::optional<UInt64> validated_incarnation,
     std::set<Iceberg::IcebergPathFromMetadata> & retained_manifest_paths,
     std::set<Iceberg::IcebergPathFromMetadata> & retained_data_file_paths,
     std::set<Iceberg::IcebergPathFromMetadata> & retained_manifest_list_paths)
@@ -383,7 +384,7 @@ void collectRetainedFiles(
             retained_manifest_paths.insert(manifest_entry.manifest_file_path);
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log,
-                manifest_entry, current_schema_id);
+                manifest_entry, current_schema_id, validated_incarnation);
             collectAllFilePaths(entries_handle, retained_data_file_paths);
         }
     }
@@ -408,7 +409,8 @@ ExpiredFiles collectExpiredFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    std::optional<UInt64> validated_incarnation)
 {
     ExpiredFiles result;
     std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_list_paths;
@@ -444,7 +446,7 @@ ExpiredFiles collectExpiredFiles(
             {
                 auto entries_handle = getManifestFileEntriesHandle(
                     object_storage, persistent_table_components, context, log,
-                    manifest_entry, current_schema_id);
+                    manifest_entry, current_schema_id, validated_incarnation);
 
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                     if (!retained_data_file_paths.contains(entry->parsed_entry->file_path_key))
@@ -764,10 +766,11 @@ ExpireSnapshotsResult expireSnapshots(
         std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_list_paths;
         collectRetainedFiles(
             partition.retained_snapshots, object_storage, persistent_table_components, context, log,
-            current_schema_id, retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
+            current_schema_id, validated_incarnation, retained_manifest_paths, retained_data_file_paths,
+            retained_manifest_list_paths);
         auto expired_files = collectExpiredFiles(
             partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
-            object_storage, persistent_table_components, context, log, current_schema_id);
+            object_storage, persistent_table_components, context, log, current_schema_id, validated_incarnation);
 
         if (options.dry_run)
         {

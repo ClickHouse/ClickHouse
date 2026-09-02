@@ -24,7 +24,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    std::optional<UInt64> validated_incarnation)
 {
     SnapshotReferencedFiles files;
 
@@ -45,7 +46,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
             files.manifest_paths.insert(manifest_entry.manifest_file_path);
 
             auto entries_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id);
+                object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id,
+                validated_incarnation);
 
             for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                 files.data_file_paths.insert(entry->parsed_entry->file_path_key);
@@ -127,7 +129,8 @@ ReachableFilesResult collectReachableFiles(
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
-    LoggerPtr log)
+    LoggerPtr log,
+    std::optional<UInt64> validated_incarnation)
 {
     auto [version, metadata_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
@@ -149,6 +152,13 @@ ReachableFilesResult collectReachableFiles(
         log,
         compression_method,
         persistent_table_components.getTableUuid());
+
+    /// The whole reachable set is derived from this file, and the read may have gone to storage
+    /// rather than to the cache: a table replaced at the same root reaches a different set of
+    /// files, and taking it for the validated one would mark every file of the validated table as
+    /// an orphan. Validate before the walk starts.
+    persistent_table_components.checkMetadataBelongsToValidatedTable(
+        metadata, validated_incarnation, "EXECUTE remove_orphan_files");
 
     std::unordered_set<String> reachable;
     const auto & resolver = persistent_table_components.path_resolver;
@@ -174,7 +184,7 @@ ReachableFilesResult collectReachableFiles(
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
 
     auto snapshot_files = collectSnapshotReferencedFiles(
-        snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
+        snapshots, object_storage, persistent_table_components, context, log, current_schema_id, validated_incarnation);
 
     for (const auto & path : snapshot_files.manifest_list_paths)
         reachable.insert(resolver.resolve(path));

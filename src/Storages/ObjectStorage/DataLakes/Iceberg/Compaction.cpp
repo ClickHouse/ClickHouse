@@ -257,7 +257,8 @@ static Plan getPlan(
             if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id),
+                validated_incarnation);
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
@@ -442,7 +443,8 @@ static bool writeConsolidatedManifestFile(
     CompressionMethod compression_method,
     const DataLakeStorageSettings & data_lake_settings,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id)
+    const StorageID & table_id,
+    std::optional<UInt64> validated_incarnation)
 {
     auto log = getLogger("IcebergManifestConsolidation");
 
@@ -669,7 +671,8 @@ static bool writeConsolidatedManifestFile(
         }
 
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+            object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id),
+            validated_incarnation);
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
@@ -1441,7 +1444,8 @@ void compactIcebergManifests(
                 persistent_table_components.metadata_compression_method,
                 data_lake_settings,
                 catalog,
-                table_id))
+                table_id,
+                validated_incarnation))
         {
             // Invalidate metadata cache so the next reader picks up the new state
             if (persistent_table_components.metadata_cache)
