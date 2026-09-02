@@ -1,9 +1,18 @@
+-- Tags: no-parallel-replicas
+--
 -- Pins that `optimize_redundant_comparisons` and the `notEquals` -> `notIn` merge both decline a
 -- comparison of a value that carries its own type.
 --
 -- Every arm pins `optimize_redundant_comparisons` (the setting under test) and
 -- `optimize_and_compare_chain` (randomized by the test runner, and its call site enables pruning
 -- unconditionally), so no arm depends on the randomization.
+--
+-- `no-parallel-replicas`: a `Variant` nested inside a container does not survive the query-text
+-- round trip to a secondary server. The folded `Field` prints as a bare literal, which re-parses as
+-- a different type, and the internal `_CAST` back to the `Variant` then refuses it. #111136 fixed
+-- that for a scalar `Variant` constant and records the nested case as not covered; the
+-- `Array(Variant(...))` arms here need exactly the nested form. Independent of the pass under test:
+-- it reproduces on master with `optimize_redundant_comparisons = 0`.
 
 -- The pass runs only under the analyzer, and `EXPLAIN QUERY TREE` requires it.
 SET enable_analyzer = 1;
