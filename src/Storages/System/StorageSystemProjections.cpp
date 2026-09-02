@@ -1,17 +1,24 @@
 #include <Storages/System/StorageSystemProjections.h>
+#include <Storages/System/DatabaseTablesCursor.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -22,7 +29,7 @@
 namespace DB
 {
 StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     auto projection_type_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -33,19 +40,30 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
     );
 
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription(
-        {
-            { "database", std::make_shared<DataTypeString>(), "Database name."},
-            { "table", std::make_shared<DataTypeString>(), "Table name."},
-            { "name", std::make_shared<DataTypeString>(), "Projection name."},
-            { "type", std::move(projection_type_datatype), "Projection type."},
-            { "sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key."},
-            { "query", std::make_shared<DataTypeString>(), "Projection query."},
-        }));
+    storage_metadata.setColumns(ColumnsDescription({
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
+        {"table", std::make_shared<DataTypeString>(), "Table name."},
+        {"name", std::make_shared<DataTypeString>(), "Projection name."},
+        {"type", std::move(projection_type_datatype), "Projection type."},
+        {"sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key."},
+        {"query", std::make_shared<DataTypeString>(), "Projection query."},
+        {"settings",
+         std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+         "Projection settings."},
+    }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-class ProjectionsSource : public ISource
+VirtualColumnsDescription StorageSystemProjections::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+class ProjectionsSource final : public ISource
 {
 public:
     ProjectionsSource(
@@ -57,9 +75,8 @@ public:
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
-        , databases(std::move(databases_))
+        , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
-        , database_idx(0)
     {}
 
     String getName() const override { return "Projections"; }
@@ -67,7 +84,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (database_idx >= databases->size())
+        if (!databases_cursor.advanceToNextDatabase())
             return {};
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
@@ -78,37 +95,32 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
-            if (tables_it && !tables_it->isValid())
-                ++database_idx;
-
-            while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
-            {
-                database_name = databases->getDataAt(database_idx).toString();
-                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-
-                if (database)
-                    break;
-                ++database_idx;
-            }
-
-            if (database_idx >= databases->size())
+            if (!databases_cursor.advanceToNextDatabase())
                 break;
 
-            if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator(context);
+            const String & database_name = databases_cursor.getDatabaseName();
+
+            if (!databases_cursor.hasTablesIterator())
+                databases_cursor.setTablesIterator(databases_cursor.getDatabase()->getTablesIterator(context));
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-            for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
+            auto & tables_it = databases_cursor.getTablesIterator();
+            for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
             {
-                auto table_name = tables_it->name();
+                auto table_name = tables_it.name();
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                const auto table = tables_it->table();
+                const auto table = tables_it.table();
                 if (!table)
                     continue;
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+
+                if (const auto * alias = table->as<StorageAlias>();
+                    alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
+                    continue;
+
+                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
@@ -150,6 +162,23 @@ protected:
                     {
                         res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatForLogging());
                     }
+                    // 'settings' column
+                    if (column_mask[src_index++])
+                    {
+                        Map settings_map;
+                        const auto & projection_definition = projection.definition_ast->as<ASTProjectionDeclaration &>();
+                        if (projection_definition.with_settings)
+                        {
+                            for (const auto & change : projection_definition.with_settings->changes)
+                            {
+                                Tuple pair;
+                                pair.push_back(change.name);
+                                pair.push_back(fieldToString(change.value));
+                                settings_map.push_back(std::move(pair));
+                            }
+                        }
+                        res_columns[res_index++]->insert(settings_map);
+                    }
                 }
             }
         }
@@ -159,12 +188,8 @@ protected:
 private:
     std::vector<UInt8> column_mask;
     UInt64 max_block_size;
-    ColumnPtr databases;
+    DatabaseTablesCursor databases_cursor;
     ContextPtr context;
-    size_t database_idx;
-    DatabasePtr database;
-    std::string database_name;
-    DatabaseTablesIteratorPtr tables_it;
 };
 
 class ReadFromSystemProjections : public SourceStepWithFilter
@@ -214,13 +239,13 @@ void ReadFromSystemProjections::applyFilters(ActionDAGNodes added_filter_nodes)
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
 }
 
-void StorageSystemProjections::read(
+void StorageSystemProjections::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -255,11 +280,7 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
             continue;
         if (database->isExternal())
             continue;
-
-        /// Lazy database can contain only very primitive tables, it cannot contain tables with projections.
-        /// Skip it to avoid unnecessary tables loading in the Lazy database.
-        if (database->getEngineName() != "Lazy")
-            column->insert(database_name);
+        column->insert(database_name);
     }
 
     /// Condition on "database" in a query acts like an index.
@@ -273,3 +294,6 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjections) }

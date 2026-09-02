@@ -1,10 +1,12 @@
 -- Tags: no-shared-catalog, no-parallel-replicas
 -- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will continue to merge
 -- no-parallel-replicas: the result of EXPLAIN differs with parallel replicas
+SET explain_query_plan_default = 'legacy';
 
 SET use_query_condition_cache = 0;
--- Force using skip indexes in planning to proper test `force_data_skipping_indices` setting.
-SET use_skip_indexes_on_data_read = 0;
+
+-- Statistics pruning would filter parts before skip index, affecting EXPLAIN output
+SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_lightweight_mut_3;
 

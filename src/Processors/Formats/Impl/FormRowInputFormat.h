@@ -25,7 +25,7 @@ private:
     const String & columnName(size_t i) const;
 
     /// Hash table matches field name to position in the block
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
+    using NameMap = HashMap<std::string_view, size_t, StringViewHash>;
     NameMap name_map;
 
 protected:
@@ -33,7 +33,7 @@ protected:
     std::vector<UInt8> seen_columns;
 };
 
-class FormSchemaReader : public IRowWithNamesSchemaReader
+class FormSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     FormSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

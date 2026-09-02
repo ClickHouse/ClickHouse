@@ -1,5 +1,6 @@
--- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
-SET use_skip_indexes_on_data_read = 0;
+SET explain_query_plan_default = 'legacy';
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table

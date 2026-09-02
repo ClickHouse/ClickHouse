@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
+#include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -20,7 +21,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 /** The function takes two arrays: scores and labels.
   * Label can be one of two values: positive (> 0) and negative (<= 0)
-  * Score can be arbitrary number.
+  * Score can be arbitrary number. A NaN score makes the result NaN.
   *
   * These values are considered as the output of classifier. We have some true labels for objects.
   * And classifier assigns some scores to objects that predict these labels in the following way:
@@ -124,14 +125,17 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   */
 
-template <bool is_pr>
-class FunctionArrayAUC : public IFunction
+class FunctionArrayAUC final : public IFunction
 {
 public:
-    static constexpr auto name = is_pr ? "arrayAUCPR" : "arrayROCAUC";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<is_pr>>(); }
+    FunctionArrayAUC(const char * name_, bool is_pr_) : function_name(name_), is_pr(is_pr_) {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, bool is_pr)
+    {
+        return std::make_shared<FunctionArrayAUC>(name, is_pr);
+    }
+
+    String getName() const override { return function_name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
@@ -305,8 +309,10 @@ public:
         return col_res;
     }
 private:
-    static constexpr size_t array_partial_offsets_arg_index = is_pr ? 2 : 3;
-    static constexpr size_t array_partial_offsets_size = is_pr ? 3 : 4;
+    const char * function_name;
+    const bool is_pr;
+    const size_t array_partial_offsets_arg_index = is_pr ? 2 : 3;
+    const size_t array_partial_offsets_size = is_pr ? 3 : 4;
 
     static bool isConstBoolColumn(ColumnWithTypeAndName argument)
     {
@@ -319,9 +325,9 @@ private:
         return true;
     }
 
-    static Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp)
+    Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp) const
     {
-        if constexpr (is_pr)
+        if (is_pr)
             /// PR curve plots Precision x Recall
             ///
             /// Precision = TP / (TP + FP)
@@ -339,7 +345,7 @@ private:
             /// Later we can divide it by (TP + FN) to obtain the correct AUC.
             ///
             /// This can be done because (TP + FN) is constant and equal to total positive labels.
-            return static_cast<Float64>(curr_tp) / (curr_tp + curr_fp) * (curr_tp - prev_tp);
+            return static_cast<Float64>(curr_tp) / static_cast<Float64>(curr_tp + curr_fp) * static_cast<Float64>(curr_tp - prev_tp);
         else
             /// ROC curve plots TPR x FPR
             ///
@@ -359,22 +365,22 @@ private:
             ///
             /// This can be done because both (TP + FN) and (FP + TN) are constant and
             ///   equal to total positive labels and total negative labels, respectively.
-            return (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
+            return static_cast<Float64>(curr_fp - prev_fp) * static_cast<Float64>(curr_tp + prev_tp) / 2.0;
     }
 
-    static Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels)
+    Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels) const
     {
-        if constexpr (is_pr)
+        if (is_pr)
             /// To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
             /// This scales back to Precision x Recall by dividing the area by (TP + FN).
-            return area / total_positive_labels;
+            return area / static_cast<Float64>(total_positive_labels);
         else
             /// To simplify the calculations, previously we calculated the AUC for the TP x FP curve.
             /// This scales back to TPR x FPR by dividing the area by (TP + FN) and (FP + TN).
-            return area / total_positive_labels / total_negative_labels;
+            return area / static_cast<Float64>(total_positive_labels) / static_cast<Float64>(total_negative_labels);
     }
 
-    static Float64 apply(
+    Float64 apply(
         const IColumn & scores,
         const IColumn & labels,
         ColumnArray::Offset current_offset,
@@ -383,7 +389,7 @@ private:
         size_t higher_partitions_tp = 0,
         size_t higher_partitions_fp = 0,
         size_t total_positives = 0,
-        size_t total_negatives = 0)
+        size_t total_negatives = 0) const
     {
         struct ScoreLabel
         {
@@ -403,6 +409,11 @@ private:
             sorted_labels[i].label = labels.getFloat64(current_offset + i) > 0;
             sorted_labels[i].score = scores.getFloat64(current_offset + i);
         }
+
+        /// A NaN score has no place in the order below and belongs to no threshold, so the area is undefined.
+        for (size_t i = 0; i < size; ++i)
+            if (isNaN(sorted_labels[i].score))
+                return std::numeric_limits<Float64>::quiet_NaN();
 
         /// Sorting scores in descending order to traverse the ROC / Precision-Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
@@ -455,14 +466,14 @@ private:
         return area;
     }
 
-    static void vector(
+    void vector(
         const IColumn & scores,
         const IColumn & labels,
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<Float64> & result,
         size_t input_rows_count,
         bool scale,
-        const ColumnArray * partial_auc_offsets)
+        const ColumnArray * partial_auc_offsets) const
     {
         result.resize(input_rows_count);
 
@@ -495,7 +506,8 @@ REGISTER_FUNCTION(ArrayAUC)
     FunctionDocumentation::Description description_roc = R"(
 Calculates the area under the receiver operating characteristic (ROC) curve.
 A ROC curve is created by plotting True Positive Rate (TPR) on the y-axis and False Positive Rate (FPR) on the x-axis across all thresholds.
-The resulting value ranges from zero to one, with a higher value indicating better model performance.
+With `scale` set to true, the default, the resulting value ranges from zero to one, with a higher value indicating better model performance, and the result is `NaN` when the ROC AUC is undefined, for example if there are no positive or no negative labels.
+A `NaN` score always produces a `NaN` result.
 
 The ROC AUC (also known as simply AUC) is a concept in machine learning.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
@@ -506,35 +518,35 @@ For more details, please see [here](https://developers.google.com/machine-learni
         {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample.", {"Array((U)Int*)", "Enum"}},
         {"scale", "Optional. Decides whether to return the normalized area. If false, returns the area under the TP (true positives) x FP (false positives) curve instead. Default value: true.", {"Bool"}},
         {"partial_offsets", R"(
-- An array of four non-negative integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]. [Array](/sql-reference/data-types/array) of non-negative [Integers](../data-types/int-uint.md). Optional.
+- An array of four non-negative integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]. [Array](/reference/data-types/array) of non-negative [Integers](/reference/data-types/int-uint). Optional.
     - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
     - `total_negatives`: The total number of negative samples in the entire dataset.
 
-::::note
+:::note
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-::::
+:::
 )"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve. Returns `NaN` if a score is `NaN`, and, when `scale` is true, also when the ROC AUC is undefined because there are no positive or no negative labels.", {"Float64"}};
     FunctionDocumentation::Examples examples_roc = {{"Usage example", "SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", "0.75"}};
     FunctionDocumentation::IntroducedIn introduced_in_roc = {20, 4};
     FunctionDocumentation::Category category_roc = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
+    FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, {}, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
 
-    factory.registerFunction<FunctionArrayAUC<false>>(documentation_roc);
+    factory.registerFunction("arrayROCAUC", [](ContextPtr){ return FunctionArrayAUC::create("arrayROCAUC", false); }, documentation_roc);
     factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
 
     /// PR AUC
     FunctionDocumentation::Description description_pr = R"(
 Calculates the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
-The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
+The resulting value ranges from 0 to 1, with a higher value indicating better model performance, unless a score is `NaN`, in which case the result is `NaN`.
 The PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 )";
@@ -543,21 +555,21 @@ For more details, please see [here](https://developers.google.com/machine-learni
         {"cores", "Scores prediction model gives.", {"Array((U)Int*)", "Array(Float*)"}},
         {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample.", {"Array((U)Int*)", "Array(Enum)"}},
         {"partial_offsets", R"(
-- Optional. An [`Array(T)`](/sql-reference/data-types/array) of three non-negative integers for calculating a partial area under the PR curve (equivalent to a vertical band of the PR space) instead of the whole AUC. This option is useful for distributed computation of the PR AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`].
+- Optional. An [`Array(T)`](/reference/data-types/array) of three non-negative integers for calculating a partial area under the PR curve (equivalent to a vertical band of the PR space) instead of the whole AUC. This option is useful for distributed computation of the PR AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`].
     - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
 
-::::note
+:::note
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-::::
+:::
 )"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_pr = {"Returns area under the precision-recall (PR) curve.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_pr = {"Returns area under the precision-recall (PR) curve, or `NaN` if any score is `NaN`.", {"Float64"}};
     FunctionDocumentation::Examples examples_pr = {{"Usage example", "SELECT arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", R"(
 ┌─arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                              0.8333333333333333 │
@@ -565,9 +577,9 @@ For example:
 )"}};
     FunctionDocumentation::IntroducedIn introduced_in_pr = {20, 4};
     FunctionDocumentation::Category category_pr = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
+    FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, {}, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
 
-    factory.registerFunction<FunctionArrayAUC<true>>(documentation_pr);
+    factory.registerFunction("arrayAUCPR", [](ContextPtr){ return FunctionArrayAUC::create("arrayAUCPR", true); }, documentation_pr);
     factory.registerAlias("arrayPRAUC", "arrayAUCPR");
 }
 

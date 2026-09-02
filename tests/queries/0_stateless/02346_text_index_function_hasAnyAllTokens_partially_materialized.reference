@@ -3,7 +3,7 @@ SELECT * FROM explain_indexes;
 Parts: 2/2
 Granules: 4/4
 Name: idx
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/2
 Granules: 2/4
 Ranges: 1
@@ -34,7 +34,7 @@ SELECT * FROM explain_indexes;
 Parts: 2/2
 Granules: 4/4
 Name: idx
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/2
 Granules: 2/4
 Ranges: 1

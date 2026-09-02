@@ -11,7 +11,7 @@ SELECT
 FROM b;
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
       Expression (Left Pre Join Actions)
         Expression (Change column names to column identifiers)
           ReadFromMergeTree (default.b)
@@ -33,7 +33,7 @@ SELECT
 FROM b;
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
       Expression (Left Pre Join Actions)
         Expression (Change column names to column identifiers)
           ReadFromMergeTree (default.b)

@@ -2,6 +2,7 @@
 
 #if USE_MYSQL || USE_LIBPQXX
 
+#include <Common/CurrentThread.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -26,7 +27,7 @@ namespace Setting
 
 bool needRewriteQueryWithFinalForStorage(const Names & column_names, const StoragePtr & storage)
 {
-    const StorageMetadataPtr & metadata = storage->getInMemoryMetadataPtr();
+    const auto metadata = storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     Block header = metadata->getSampleBlock();
     ColumnWithTypeAndName & version_column = header.getByPosition(header.columns() - 1);
     return std::find(column_names.begin(), column_names.end(), version_column.name) == column_names.end();
@@ -44,20 +45,20 @@ void readFinalFromNestedStorage(
 {
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
     auto lock = nested_storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    const auto & nested_metadata = nested_storage->getInMemoryMetadataPtr();
+    const auto nested_metadata = nested_storage->getInMemoryMetadataPtr(context, false);
 
     Block nested_header = nested_metadata->getSampleBlock();
     ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
 
     String filter_column_name;
     Names require_columns_name = column_names;
-    ASTPtr expressions = std::make_shared<ASTExpressionList>();
+    ASTPtr expressions = make_intrusive<ASTExpressionList>();
     if (column_names_set.empty() || !column_names_set.contains(sign_column.name))
     {
         require_columns_name.emplace_back(sign_column.name);
 
-        const auto & sign_column_name = std::make_shared<ASTIdentifier>(sign_column.name);
-        const auto & fetch_sign_value = std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1)));
+        const auto & sign_column_name = make_intrusive<ASTIdentifier>(sign_column.name);
+        const auto & fetch_sign_value = make_intrusive<ASTLiteral>(Field(static_cast<Int8>(1)));
 
         expressions->children.emplace_back(makeASTOperator("equals", sign_column_name, fetch_sign_value));
         filter_column_name = expressions->children.back()->getColumnName();

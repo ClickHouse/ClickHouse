@@ -21,8 +21,8 @@ public:
     };
     Kind kind = Kind::SET_ROLE;
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
-    std::shared_ptr<ASTRolesOrUsersSet> to_users;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> to_users;
 
     String getID(char) const override;
     ASTPtr clone() const override;

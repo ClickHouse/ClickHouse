@@ -19,7 +19,6 @@ public:
     CreatingSetStep(
         const SharedHeader & input_header_,
         SetAndKeyPtr set_and_key_,
-        StoragePtr external_table_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_);
 
@@ -30,13 +29,22 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    /// Whether the set fill also feeds an external temporary table (`GLOBAL IN`), attached either at
+    /// creation or at pipeline build time (recorded as `external_table_expected` in the latter case).
+    bool usesExternalTable() const { return set_and_key->external_table != nullptr || set_and_key->external_table_expected; }
+
+    /// Deduplicate each input stream independently before the single set-filling transform. Correct for
+    /// any input (the set deduplicates anyway); enabled when the input streams carry disjoint sets of the
+    /// key values, so per-stream deduplication is complete and the filling transform only hashes unique rows.
+    void enablePreliminaryDistinct() { preliminary_distinct = true; }
+
 private:
     void updateOutputHeader() override;
 
     SetAndKeyPtr set_and_key;
-    StoragePtr external_table;
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
+    bool preliminary_distinct = false;
 };
 
 class CreatingSetsStep : public IQueryPlanStep
@@ -67,6 +75,14 @@ public:
 
     String getName() const override { return "DelayedCreatingSets"; }
 
+    /// The step only holds shared pointers to future sets, so a shallow copy is a valid clone of the
+    /// step alone; cloning a whole plan that still holds sets is rejected, since both copies would
+    /// then claim the same single-use set source.
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<DelayedCreatingSetsStep>(getInputHeaders().front(), subqueries, network_transfer_limits, prepared_sets_cache);
+    }
+
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
     static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(
@@ -92,7 +108,7 @@ private:
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
+void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 
 QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipeline, PreparedSets::Subqueries subqueries, ContextPtr context);
 

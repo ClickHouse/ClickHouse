@@ -1,6 +1,9 @@
 #pragma once
+
+#include <future>
 #include <optional>
 #include <Common/re2.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -8,25 +11,28 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
+
 namespace DB
 {
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public ISource
+struct LazyObjectStorageFileRegistry;
+using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+
+class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
-public:
-    using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
+public:
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
     class ArchiveIterator;
 
     StorageObjectStorageSource(
+        const StorageID & storage_id_,
         String name_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
@@ -38,7 +44,8 @@ public:
         std::shared_ptr<IObjectIterator> file_iterator_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        bool need_only_count_);
+        bool need_only_count_,
+        LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr);
 
     ~StorageObjectStorageSource() override;
 
@@ -46,7 +53,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
@@ -62,14 +69,19 @@ public:
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
-        bool skip_object_metadata = false);
+        bool skip_object_metadata = false,
+        bool with_tags = false);
 
     static std::string getUniqueStoragePathIdentifier(
-        const StorageObjectStorageConfiguration & configuration,
-        const ObjectInfo & object_info,
-        bool include_connection_info = true);
+        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
+
+    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
+    /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
+    /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
+    static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
 
 protected:
+    StorageID storage_id;
     const String name;
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -88,6 +100,7 @@ protected:
     SchemaCache & schema_cache;
     bool initialized = false;
     size_t total_rows_in_file = 0;
+    size_t total_files_read = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
     struct ReaderHolder : private boost::noncopyable
@@ -110,6 +123,7 @@ protected:
 
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
         ObjectInfoPtr object_info;
@@ -123,9 +137,17 @@ protected:
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
+    /// Lazy materialization: when set, a `__global_row_index` column is appended to every chunk
+    /// (the header must contain it), and every file is registered in the registry so that the
+    /// lazy branch can find it by index. See LazilyReadFromObjectStorage.
+    LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
+    /// The registry index of the file the current `reader` reads. Assigned on the first chunk.
+    std::optional<UInt64> current_file_index;
+
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
+        const StorageID & storage_id,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
@@ -162,7 +184,10 @@ public:
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
+    ObjectInfoPtr createObjectInfoInArchive(
+        const std::string & path_to_archive,
+        const std::string & path_in_archive,
+        std::optional<size_t> read_source_index);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
@@ -188,6 +213,7 @@ public:
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
+        bool with_tags,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ~GlobIterator() override = default;
@@ -215,6 +241,7 @@ private:
     ExpressionActionsPtr filter_expr;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
+    bool match_web_paths_only{false};
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;
 
@@ -226,6 +253,10 @@ private:
     const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
+
+    size_t total_listed = 0;
+    size_t total_glob_filtered = 0;
+    size_t total_predicate_filtered = 0;
 };
 
 class StorageObjectStorageSource::KeysIterator : public IObjectIterator
@@ -238,6 +269,7 @@ public:
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
         bool skip_object_metadata_,
+        bool with_tags_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
@@ -252,8 +284,9 @@ private:
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;
     std::atomic<size_t> index = 0;
-    bool ignore_non_existent_files;
-    bool skip_object_metadata;
+    const bool ignore_non_existent_files;
+    const bool skip_object_metadata;
+    const bool with_tags;
 };
 
 /*
@@ -281,6 +314,12 @@ public:
     ObjectInfoPtr next(size_t processor) override;
 
     size_t estimatedKeysCount() override;
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        archives_iterator->setEmitProfileEvents(value);
+    }
 
     struct ObjectInfoInArchive : public ObjectInfo
     {

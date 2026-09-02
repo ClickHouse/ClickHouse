@@ -25,6 +25,7 @@ struct ServerSideEncryptionKMSConfig
 #if USE_AWS_S3
 
 #include <Common/assert_cast.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
@@ -32,6 +33,7 @@ struct ServerSideEncryptionKMSConfig
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3/ProviderType.h>
+#include <Common/HashTable/Hash.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
@@ -59,29 +61,36 @@ struct ClientCache
     void clearCache();
 
     mutable std::mutex region_cache_mutex;
-    std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
+    NameToNameMap region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
     mutable std::mutex uri_cache_mutex;
-    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
+    UnorderedMapWithMemoryTracking<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
 class ClientCacheRegistry
 {
 public:
-    static ClientCacheRegistry & instance()
-    {
-        static ClientCacheRegistry registry;
-        return registry;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static ClientCacheRegistry & instance();
 
     void registerClient(const std::shared_ptr<ClientCache> & client_cache);
     void unregisterClient(ClientCache * client);
     void clearCacheForAll();
+    std::shared_ptr<ClientCache> getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket);
+
+    /// Returns the registered refcount for `client`, or 0 if it is not registered. For tests only.
+    size_t getClientRefcountForTesting(ClientCache * client);
+
 private:
     ClientCacheRegistry() = default;
 
+    void pruneUnusedCachesLocked() TSA_REQUIRES(cache_by_key_mutex);
+
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
+    UnorderedMapWithMemoryTracking<ClientCache *, std::pair<std::weak_ptr<ClientCache>, size_t>> client_caches TSA_GUARDED_BY(clients_mutex);
+    std::mutex cache_by_key_mutex;
+    UnorderedMapWithMemoryTracking<UInt128, std::shared_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
@@ -128,7 +137,8 @@ public:
             const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
             const PocoHTTPClientConfiguration & client_configuration,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-            const ClientSettings & client_settings);
+            const ClientSettings & client_settings,
+            const std::shared_ptr<ClientCache> & shared_cache = nullptr);
 
     std::unique_ptr<Client> clone() const;
 
@@ -195,6 +205,7 @@ public:
     void setKMSHeaders(RequestType & request) const;
 
     Model::HeadObjectOutcome HeadObject(HeadObjectRequest & request) const;
+    Model::GetObjectTaggingOutcome GetObjectTagging(GetObjectTaggingRequest & request) const;
     Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;
     Model::ListObjectsOutcome ListObjects(ListObjectsRequest & request) const;
     Model::GetObjectOutcome GetObject(GetObjectRequest & request) const;
@@ -207,6 +218,7 @@ public:
 
     Model::CopyObjectOutcome CopyObject(CopyObjectRequest & request) const;
     Model::PutObjectOutcome PutObject(PutObjectRequest & request) const;
+    Model::PutObjectTaggingOutcome PutObjectTagging(PutObjectTaggingRequest & request) const;
     Model::DeleteObjectOutcome DeleteObject(DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
 
@@ -228,21 +240,18 @@ public:
     }
 
     ProviderType getProviderType() const { return provider_type; }
-    std::string getGCSOAuthToken() const
-    {
-        if (provider_type != ProviderType::GCS)
-            return "";
 
-        const auto & client = PocoHTTPClientGCPOAuth(client_configuration);
-        return client.getBearerToken();
-    }
+    std::string getGCSOAuthToken() const;
 
-    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
-    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
+    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.request_throttler.put_throttler; }
+    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.request_throttler.get_throttler; }
 
     std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
 
     const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
+
+    /// For testing purposes only
+    ClientCache * getRawCache() const { return cache.get(); }
 
 protected:
     // visible for testing
@@ -251,7 +260,8 @@ protected:
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
            const PocoHTTPClientConfiguration & client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-           const ClientSettings & client_settings_);
+           const ClientSettings & client_settings_,
+           const std::shared_ptr<ClientCache> & shared_cache = nullptr);
 
 private:
     Client(
@@ -260,6 +270,7 @@ private:
     /// Leave regular functions private so we don't accidentally use them
     /// otherwise region and endpoint redirection won't work
     using Aws::S3::S3Client::HeadObject;
+    using Aws::S3::S3Client::GetObjectTagging;
     using Aws::S3::S3Client::ListObjectsV2;
     using Aws::S3::S3Client::ListObjects;
     using Aws::S3::S3Client::GetObject;
@@ -272,22 +283,25 @@ private:
 
     using Aws::S3::S3Client::CopyObject;
     using Aws::S3::S3Client::PutObject;
+    using Aws::S3::S3Client::PutObjectTagging;
     using Aws::S3::S3Client::DeleteObject;
     using Aws::S3::S3Client::DeleteObjects;
 
     ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     template <typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequest(RequestType & request, RequestFn request_fn) const;
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
+
+    Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
@@ -348,7 +362,8 @@ public:
         ServerSideEncryptionKMSConfig sse_kms_config,
         HTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration,
-        const String & session_token = "");
+        const String & session_token = "",
+        const std::shared_ptr<ClientCache> & shared_cache = nullptr);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,
@@ -360,8 +375,7 @@ public:
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         std::optional<std::string> opt_disk_name,
-        const ThrottlerPtr & get_request_throttler,
-        const ThrottlerPtr & put_request_throttler,
+        const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https");
 
 private:

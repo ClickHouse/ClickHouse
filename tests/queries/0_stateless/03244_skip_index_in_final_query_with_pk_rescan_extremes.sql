@@ -3,8 +3,6 @@
 SET use_skip_indexes = 1;
 SET use_skip_indexes_if_final = 1;
 SET use_skip_indexes_if_final_exact_mode = 1;
--- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
-SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab1;
 

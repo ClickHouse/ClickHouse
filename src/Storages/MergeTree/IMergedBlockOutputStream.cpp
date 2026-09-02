@@ -9,27 +9,35 @@ namespace DB
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
+    extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    const MergeTreeSettingsPtr & storage_settings_,
+    MergeTreeSettingsPtr storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
-    : storage_settings(storage_settings_)
+    : storage_settings(std::move(storage_settings_))
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage(data_part_storage_)
+    , data_part_storage(std::move(data_part_storage_))
     , reset_columns(reset_columns_)
     , info_settings
     {
-        (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
+        (*storage_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*storage_settings)[MergeTreeSetting::serialization_info_version],
         (*storage_settings)[MergeTreeSetting::string_serialization_version],
+        (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
+        (*storage_settings)[MergeTreeSetting::map_serialization_version],
+        (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     }
     , new_serialization_infos(info_settings)
 {
@@ -40,17 +48,29 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
+    const NameSet & empty_columns,
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
-    const NameSet & empty_columns = data_part->expired_columns;
-
     /// For compact part we have to override whole file with data, it's not
     /// worth it
     if (empty_columns.empty() || isCompactPart(data_part))
         return {};
 
-    for (const auto & column : empty_columns)
+    /// A part must keep at least one physical column: `loadColumns` and `loadIndexGranularity`
+    /// throw NO_FILE_IN_DATA_PART "No columns in part" for a zero-column part.
+    NameSet columns_to_remove = empty_columns;
+    size_t columns_kept = 0;
+    for (const auto & column : columns)
+        columns_kept += !columns_to_remove.contains(column.name);
+
+    if (columns_kept == 0 && !columns.empty())
+        columns_to_remove.erase(columns.back().name);
+
+    if (columns_to_remove.empty())
+        return {};
+
+    for (const auto & column : columns_to_remove)
         LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
@@ -60,7 +80,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->storage.getSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             });
@@ -68,7 +88,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
     NameSet remove_files;
     const String mrk_extension = data_part->getMarksFileExtension();
-    for (const auto & column_name : empty_columns)
+    for (const auto & column_name : columns_to_remove)
     {
         auto serialization = data_part->tryGetSerialization(column_name);
         if (!serialization)
@@ -76,7 +96,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
 
             /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)
@@ -106,7 +126,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     }
 
     /// Remove columns from columns array
-    for (const String & empty_column_name : empty_columns)
+    for (const String & empty_column_name : columns_to_remove)
     {
         auto find_func = [&empty_column_name](const auto & pair) -> bool
         {

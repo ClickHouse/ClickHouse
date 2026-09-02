@@ -25,15 +25,15 @@ Checks whether a string ends with the provided suffix.
         "Usage example",
         "SELECT endsWith('ClickHouse', 'House');",
         R"(
-┌─endsWith('Cl⋯', 'House')─┐
-│                        1 │
-└──────────────────────────┘
+┌─endsWith('ClickHouse', 'House')─┐
+│                               1 │
+└─────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEndsWith>(documentation);
 }
@@ -54,15 +54,15 @@ Checks whether a string ends with the provided case-insensitive suffix.
         "Usage example",
         "SELECT endsWithCaseInsensitive('ClickHouse', 'HOUSE');",
         R"(
-┌─endsWithCaseInsensitive('Cl⋯', 'HOUSE')─┐
-│                                       1 │
-└─────────────────────────────────────────┘
+┌─endsWithCaseInsensitive('ClickHouse', 'HOUSE')─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEndsWithCaseInsensitive>(documentation);
 }

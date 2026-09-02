@@ -24,6 +24,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
@@ -39,14 +40,14 @@ namespace
 {
 
 // map(x, y, ...) is a function that allows you to make key-value pair
-class FunctionMap : public IFunction
+class FunctionMap final : public IFunction
 {
 public:
     static constexpr auto name = "map";
 
-    explicit FunctionMap(ContextPtr context_)
-        : context(context_)
-        , use_variant_as_common_type(context->getSettingsRef()[Setting::use_variant_as_common_type])
+    explicit FunctionMap(ContextPtr context)
+        : use_variant_as_common_type(context->getSettingsRef()[Setting::use_variant_as_common_type])
+        , allow_lossy_numeric_supertype(context->getSettingsRef()[Setting::allow_lossy_numeric_supertype])
         , function_array(FunctionFactory::instance().get("array", context))
         , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
     {
@@ -102,13 +103,13 @@ public:
         DataTypes tmp;
         if (use_variant_as_common_type)
         {
-            tmp.emplace_back(getLeastSupertypeOrVariant(keys));
-            tmp.emplace_back(getLeastSupertypeOrVariant(values));
+            tmp.emplace_back(getLeastSupertypeOrVariant(keys, allow_lossy_numeric_supertype));
+            tmp.emplace_back(getLeastSupertypeOrVariant(values, allow_lossy_numeric_supertype));
         }
         else
         {
-            tmp.emplace_back(getLeastSupertype(keys));
-            tmp.emplace_back(getLeastSupertype(values));
+            tmp.emplace_back(getLeastSupertype(keys, allow_lossy_numeric_supertype));
+            tmp.emplace_back(getLeastSupertype(values, allow_lossy_numeric_supertype));
         }
         return std::make_shared<DataTypeMap>(tmp);
     }
@@ -144,14 +145,14 @@ public:
     }
 
 private:
-    ContextPtr context;
     bool use_variant_as_common_type = false;
+    bool allow_lossy_numeric_supertype = false;
     FunctionOverloadResolverPtr function_array;
     FunctionOverloadResolverPtr function_map_from_arrays;
 };
 
 /// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays or maps
-class FunctionMapFromArrays : public IFunction
+class FunctionMapFromArrays final : public IFunction
 {
 public:
     static constexpr auto name = "mapFromArrays";
@@ -261,7 +262,7 @@ public:
     }
 };
 
-class FunctionMapUpdate : public IFunction
+class FunctionMapUpdate final : public IFunction
 {
 public:
     static constexpr auto name = "mapUpdate";
@@ -337,7 +338,7 @@ public:
         auto result_offsets = ColumnVector<IColumn::Offset>::create(input_rows_count);
         auto & result_offsets_data = result_offsets->getData();
 
-        using Set = HashSetWithStackMemory<StringRef, StringRefHash, 4>;
+        using Set = HashSetWithStackMemory<std::string_view, StringViewHash, 4>;
 
         Set right_keys_const;
         if (is_right_const)
@@ -415,7 +416,7 @@ Creates a value of type `Map(key, value)` from key-value pairs.
     };
     FunctionDocumentation::IntroducedIn introduced_in_map = {21, 1};
     FunctionDocumentation::Category category_map = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_map = {description_map, syntax_map, arguments_map, returned_value_map, examples_map, introduced_in_map, category_map};
+    FunctionDocumentation documentation_map = {description_map, syntax_map, arguments_map, {}, returned_value_map, examples_map, introduced_in_map, category_map};
     factory.registerFunction<FunctionMap>(documentation_map);
 
     /// mapFromArrays function documentation
@@ -431,11 +432,11 @@ The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, v
     FunctionDocumentation::ReturnedValue returned_value_mapFromArrays = {"Returns a map with keys and values constructed from the key array and value array/map.", {"Map"}};
     FunctionDocumentation::Examples examples_mapFromArrays = {
         {"Basic usage", "SELECT mapFromArrays(['a', 'b', 'c'], [1, 2, 3])", "{'a':1,'b':2,'c':3}"},
-        {"With map inputs", "SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))", "{1:('a', 1), 2:('b', 2), 3:('c', 3)}"}
+        {"With map inputs", "SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))", "{1:('a',1),2:('b',2),3:('c',3)}"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapFromArrays = {23, 3};
     FunctionDocumentation::Category category_mapFromArrays = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapFromArrays = {description_mapFromArrays, syntax_mapFromArrays, arguments_mapFromArrays, returned_value_mapFromArrays, examples_mapFromArrays, introduced_in_mapFromArrays, category_mapFromArrays};
+    FunctionDocumentation documentation_mapFromArrays = {description_mapFromArrays, syntax_mapFromArrays, arguments_mapFromArrays, {}, returned_value_mapFromArrays, examples_mapFromArrays, introduced_in_mapFromArrays, category_mapFromArrays};
     factory.registerFunction<FunctionMapFromArrays>(documentation_mapFromArrays);
     factory.registerAlias("MAP_FROM_ARRAYS", "mapFromArrays");
 
@@ -454,7 +455,7 @@ For two maps, returns the first map with values updated on the values for the co
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapUpdate = {22, 3};
     FunctionDocumentation::Category category_mapUpdate = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapUpdate = {description_mapUpdate, syntax_mapUpdate, arguments_mapUpdate, returned_value_mapUpdate, examples_mapUpdate, introduced_in_mapUpdate, category_mapUpdate};
+    FunctionDocumentation documentation_mapUpdate = {description_mapUpdate, syntax_mapUpdate, arguments_mapUpdate, {}, returned_value_mapUpdate, examples_mapUpdate, introduced_in_mapUpdate, category_mapUpdate};
     factory.registerFunction<FunctionMapUpdate>(documentation_mapUpdate);
 }
 

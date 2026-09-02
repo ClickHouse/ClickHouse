@@ -33,24 +33,24 @@ REGISTER_FUNCTION(CountSubstringsCaseInsensitive)
         "Usage example",
         "SELECT countSubstringsCaseInsensitive('AAAA', 'aa');",
         R"(
-┌─countSubstri⋯AAA', 'aa')─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
         )"
     },
     {
         "With start_pos argument",
         "SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);",
         R"(
-┌─countSubstri⋯, 'abc', 4)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCountSubstringsCaseInsensitive>(documentation);
 }

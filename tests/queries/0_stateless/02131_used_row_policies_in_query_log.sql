@@ -55,4 +55,4 @@ DROP TABLE 02131_rqtable;
 
 SELECT 'Check system.query_log';
 SYSTEM FLUSH LOGS query_log;
-SELECT query, used_row_policies FROM system.query_log WHERE current_database == currentDatabase() AND type == 'QueryStart' AND query_kind == 'Select' ORDER BY event_time_microseconds;
+SELECT query, used_row_policies FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database == currentDatabase() AND type == 'QueryStart' AND query_kind == 'Select' ORDER BY event_time_microseconds;

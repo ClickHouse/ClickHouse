@@ -122,6 +122,8 @@ public:
         std::chrono::seconds search_timeout{20};
         UInt32 search_limit = 256; /// An arbitrary number, no particular motivation for this value.
 
+        bool follow_referrals = false; /// Whether to follow LDAP referrals for server.
+
         void updateHash(SipHash & hash) const;
     };
 

@@ -11,6 +11,7 @@ $CLICKHOUSE_CLIENT --query "CREATE USER user_test_02184 IDENTIFIED WITH plaintex
 ${CLICKHOUSE_CLIENT} -q "REVOKE ALL ON *.* FROM user_test_02184"
 
 $CLICKHOUSE_CLIENT --query "GRANT CREATE ON *.* TO user_test_02184;"
+$CLICKHOUSE_CLIENT --query "GRANT SHOW COLUMNS ON *.* TO user_test_02184;"
 
 $CLICKHOUSE_CLIENT --query "CREATE TABLE url ENGINE=URL('https://clickhouse.com', LineAsString)"
 

@@ -1,11 +1,11 @@
 #include <Common/Exception.h>
-#include <IO/WriteBufferFromTrackedString.h>
+#include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
 namespace DB
 {
 
 /// It is safe to make them autofinalizable.
-WriteBufferFromTrackedString::~WriteBufferFromTrackedString()
+WriteBufferFromStringWithMemoryTracking::~WriteBufferFromStringWithMemoryTracking()
 {
     try
     {

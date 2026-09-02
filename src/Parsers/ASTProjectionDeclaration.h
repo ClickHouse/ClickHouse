@@ -2,25 +2,36 @@
 
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
-/** name (subquery)
-  */
+
+class ASTFunction;
+class ASTSetQuery;
+
 class ASTProjectionDeclaration : public IAST
 {
 public:
     String name;
-    IAST * query;
+    IAST * query = nullptr;
+    IAST * index = nullptr;
+    ASTFunction * type = nullptr;
+    ASTSetQuery * with_settings = nullptr;
 
-    /** Get the text that identifies this element. */
     String getID(char) const override { return "Projection"; }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&query));
+        f(&query, nullptr);
+        f(&index, nullptr);
+        f(reinterpret_cast<IAST **>(&type), nullptr);
+        f(reinterpret_cast<IAST **>(&with_settings), nullptr);
     }
 
 protected:

@@ -1,13 +1,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
-#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/PerformanceAdaptors.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/TargetSpecific.h>
 #include <cmath>
+#include <memory>
 #include <numbers>
 
 
@@ -84,7 +84,7 @@ struct Impl
 
         for (size_t i = 0; i <= METRIC_LUT_SIZE; ++i)
         {
-            double latitude = i * (PI / METRIC_LUT_SIZE) - PI * 0.5; // [-pi / 2, pi / 2] -> [0, METRIC_LUT_SIZE]
+            double latitude = static_cast<double>(i) * (PI / static_cast<double>(METRIC_LUT_SIZE)) - PI * 0.5; // [-pi / 2, pi / 2] -> [0, METRIC_LUT_SIZE]
 
             /// Squared metric coefficients (for the distance in meters) on a tangent plane, for latitude and longitude (in degrees),
             /// depending on the latitude (in radians).
@@ -116,7 +116,7 @@ struct Impl
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
-        y -= i;
+        y -= static_cast<T>(i);
         i &= (COS_LUT_SIZE - 1);
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
@@ -125,7 +125,7 @@ struct Impl
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
-        y -= i;
+        y -= static_cast<T>(i);
         i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
@@ -145,7 +145,7 @@ struct Impl
             // distance under 17083 km, 512-entry LUT error under 0.00072%
             x *= ASIN_SQRT_LUT_SIZE;
             size_t i = toIndex(x);
-            return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
+            return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - static_cast<T>(i));
         }
         return std::asin(std::sqrt(x)); /// distance is over 17083 km, just compute exact
     }
@@ -187,22 +187,22 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
             k_lat = 1;
 
             k_lon = impl<T>.sphere_metric_lut[latitude_midpoint_index]
-                + (impl<T>.sphere_metric_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
+                + (impl<T>.sphere_metric_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
             k_lat = sqr(T(EARTH_DIAMETER) * T(PI) / T(360.0));
 
             k_lon = impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]
-                + (impl<T>.sphere_metric_meters_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
+                + (impl<T>.sphere_metric_meters_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
         else if constexpr (method == Method::WGS84_METERS)
         {
             k_lat = impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]
-                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - latitude_midpoint_index);
+                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
 
             k_lon = impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
-                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - latitude_midpoint_index);
+                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
 
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
@@ -333,29 +333,28 @@ private:
 
 ) // DECLARE_MULTITARGET_CODE
 
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <Method method>
 class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
 {
 public:
     explicit FunctionGeoDistance(ContextPtr context)
-        : TargetSpecific::Default::FunctionGeoDistance<method>(context), selector(context)
+        : TargetSpecific::Default::FunctionGeoDistance<method>(context)
     {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionGeoDistance<method>>(context);
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX,
-            TargetSpecific::AVX::FunctionGeoDistance<method>>(context);
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionGeoDistance<method>>(context);
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionGeoDistance<method>>(context);
-    #endif
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
+            return;
+        }
+#endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionGeoDistance<method>>(context);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -364,7 +363,7 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 }
@@ -389,15 +388,15 @@ This function returns the angle in degrees between two points on a sphere.
                 "Basic usage",
                 "SELECT greatCircleAngle(0, 0, 45, 0) AS angle",
                 R"(
-┌─angle─┐
-│    45 │
-└───────┘
+┌────angle─┐
+│ 44.99998 │
+└──────────┘
                 )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction("greatCircleAngle", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_DEGREES>>(std::move(context));}, documentation);
     }
     {
@@ -418,14 +417,14 @@ Calculates the distance between two points on the Earth's surface using [the gre
                 "SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance",
                 R"(
 ┌─greatCircleDistance─┐
-│            14128352 │
+│  14128352.575065022 │
 └─────────────────────┘
                 )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction("greatCircleDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context));}, documentation);
     }
     {
@@ -448,15 +447,15 @@ Technical note: for close enough points it calculates the distance using planar 
                 "Basic usage",
                 "SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance",
                 R"(
-┌─geoDistance─┐
-│   212458.73 │
-└─────────────┘
+┌────────geoDistance─┐
+│ 212458.82819586992 │
+└────────────────────┘
                 )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction("geoDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::WGS84_METERS>>(std::move(context));}, documentation);
     }
 }

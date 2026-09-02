@@ -5,13 +5,13 @@ if(NOT USE_MONGODB)
 endif()
 
 set(libbson_VERSION_MAJOR 2)
-set(libbson_VERSION_MINOR 1)
-set(libbson_VERSION_PATCH 2)
-set(libbson_VERSION 2.1.2)
+set(libbson_VERSION_MINOR 3)
+set(libbson_VERSION_PATCH 0)
+set(libbson_VERSION 2.3.0)
 set(libmongoc_VERSION_MAJOR 2)
-set(libmongoc_VERSION_MINOR 1)
-set(libmongoc_VERSION_PATCH 2)
-set(libmongoc_VERSION 2.1.2)
+set(libmongoc_VERSION_MINOR 3)
+set(libmongoc_VERSION_PATCH 0)
+set(libmongoc_VERSION 2.3.0)
 
 set(LIBBSON_SOURCES_ROOT "${ClickHouse_SOURCE_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libbson/src")
@@ -20,11 +20,14 @@ file(GLOB_RECURSE LIBBSON_SOURCES "${LIBBSON_SOURCE_DIR}/*.c")
 set(LIBBSON_BINARY_ROOT "${ClickHouse_BINARY_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_BINARY_DIR "${LIBBSON_BINARY_ROOT}/libbson/src")
 
-include(TestBigEndian)
-test_big_endian(BSON_BIG_ENDIAN)
-if(BSON_BIG_ENDIAN)
+# Hard-code endianness based on the target architecture (set in cmake/arch.cmake) instead
+# of probing the compiler. Of ClickHouse's supported architectures, only s390x is
+# big-endian; everything else is little-endian.
+if (ARCH_S390X)
+    set(BSON_BIG_ENDIAN 1)
     set(BSON_BYTE_ORDER 4321)
 else()
+    set(BSON_BIG_ENDIAN 0)
     set(BSON_BYTE_ORDER 1234)
 endif()
 
@@ -136,6 +139,8 @@ set(UTF8PROC_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/utf8proc-2.8.0")
 set(UTF8PROC_SOURCES "${UTF8PROC_SOURCE_DIR}/utf8proc.c")
 set(UTHASH_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/uthash")
 
+set(MONGOC_CXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
+set(MONGOC_CXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config.h.in
         ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config.h
@@ -143,6 +148,10 @@ configure_file(
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-version.h.in
         ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-version.h
+)
+configure_file(
+        ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config-private.h.in
+        ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config-private.h
 )
 add_library(_libmongoc ${LIBMONGOC_SOURCES} ${COMMON_SOURCES} ${UTF8PROC_SOURCES})
 add_library(ch_contrib::libmongoc ALIAS _libmongoc)

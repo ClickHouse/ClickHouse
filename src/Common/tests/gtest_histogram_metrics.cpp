@@ -6,12 +6,12 @@ using namespace HistogramMetrics;
 const Buckets test_buckets = {1, 5, 10};
 
 MetricFamily & family = Factory::instance().registerMetric(
-    "keeper_response_time",
-    "Keeper response time",
+    "my_metrics",
+    "My description",
     test_buckets,
-    {"operation"}
+    {"my_label"}
 );
-Metric & metric = family.withLabels({"create"});
+Metric & metric = family.withLabels({"my_label_value"});
 
 /// (-Inf,1] bucket is index 0
 TEST(HistogramMetricsTest, ObserveBelowFirstBucket)

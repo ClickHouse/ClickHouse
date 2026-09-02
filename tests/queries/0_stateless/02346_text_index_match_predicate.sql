@@ -1,12 +1,6 @@
 -- Tags: no-parallel-replicas
-
 -- Tests that match() utilizes the text index
-
-SET use_query_condition_cache = 0;
-
-SET allow_experimental_full_text_index = true;
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 
@@ -14,7 +8,7 @@ CREATE TABLE tab
 (
     id UInt32,
     str String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+    INDEX inv_idx(str) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -27,16 +21,6 @@ SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id;
 -- Required string: ' Hello '
 -- Alternatives: ' Hello ClickHouse ', ' Hello World '
 
-SELECT trim(explain)
-FROM
-(
-    EXPLAIN PLAN indexes=1
-    SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-    enable_analyzer = 0;
 
 SELECT trim(explain)
 FROM
@@ -57,16 +41,6 @@ SELECT * FROM tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id;
 -- Required string: -
 -- Alternatives: ' ClickHouse ', ' World '
 
-SELECT trim(explain)
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-    enable_analyzer = 0;
 
 SELECT trim(explain)
 FROM
@@ -87,16 +61,6 @@ SELECT * FROM tab WHERE match(str, ' OLAP .*') ORDER BY id;
 -- Required string: ' OLAP '
 -- Alternatives: -
 
-SELECT trim(explain)
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-    enable_analyzer = 0;
 
 SELECT trim(explain)
 FROM

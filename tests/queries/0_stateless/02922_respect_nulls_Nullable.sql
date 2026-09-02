@@ -35,8 +35,8 @@ WHERE
    OR toTypeName(last_nullable_ignore) != toTypeName(last_nullable_respect);
 
 -- { echoOn }
-Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10));
+Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10));
 
 SELECT
     any(tp) AS default,

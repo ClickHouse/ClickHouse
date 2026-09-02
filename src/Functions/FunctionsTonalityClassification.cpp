@@ -6,8 +6,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
-#include <unordered_map>
-
 namespace DB
 {
 
@@ -55,8 +53,8 @@ struct FunctionDetectTonalityImpl
         /// Calculate average value of tonality.
         /// Convert values -12..6 to -1..1
         if (weight > 0)
-            return static_cast<Float32>(weight / count_words / 6);
-        return static_cast<Float32>(weight / count_words / 12);
+            return static_cast<Float32>(weight / static_cast<Float64>(count_words) / 6);
+        return static_cast<Float32>(weight / static_cast<Float64>(count_words) / 12);
     }
 
     static void vector(
@@ -86,11 +84,18 @@ using FunctionDetectTonality = FunctionTextClassificationFloat<FunctionDetectTon
 REGISTER_FUNCTION(DetectTonality)
 {
     FunctionDocumentation::Description description = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+:::
+
 Determines the sentiment of the provided text data.
 
-:::note Limitation
-This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
-:::
+The function makes use of an embedded emotional dictionary and only works for the Russian language at the moment.
+
 )";
     FunctionDocumentation::Syntax syntax = "detectTonality(s)";
     FunctionDocumentation::Arguments arguments = {
@@ -101,17 +106,19 @@ This function is limited in its current form in that it makes use of the embedde
     {
         "Russian sentiment analysis",
         R"(
+SET allow_experimental_nlp_functions = 1;
+
 SELECT
     detectTonality('Шарик - хороший пёс'),
     detectTonality('Шарик - пёс'),
     detectTonality('Шарик - плохой пёс')
         )",
-        "0.44445, 0, -0.3"
+        "0.44445\t0\t-0.3"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDetectTonality>(documentation);
 }

@@ -23,6 +23,8 @@ public:
 
     bool supportsNesting() const override { return true; }
 
+    bool transformsArgumentTypes() const override { return true; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
@@ -53,9 +55,13 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorArray>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorArray>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArray`), it makes the function take array arguments and aggregate over all of their elements.",
+        .syntax = "<aggregate_function>Array",
+        .related = {"ForEach", "Map"}});
 }
 
 }

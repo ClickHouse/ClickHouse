@@ -24,7 +24,7 @@ ASTs splitTuple(const ASTPtr & node)
         ASTs result;
         const auto & tuple = literal->value.safeGet<Tuple>();
         for (const auto & child : tuple)
-            result.emplace_back(std::make_shared<ASTLiteral>(child));
+            result.emplace_back(make_intrusive<ASTLiteral>(child));
         return result;
     }
 

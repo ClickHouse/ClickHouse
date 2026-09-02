@@ -26,15 +26,15 @@ Returns the query string of a URL without the initial question mark, `#` and eve
 SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
         )",
         R"(
-┌─queryString(⋯3#section')─┐
-│ query=value&param=123    │
-└──────────────────────────┘
+┌─queryString('https://clickhouse.com/docs?query=value&param=123#section')─┐
+│ query=value&param=123                                                    │
+└──────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_queryString = {1, 1};
     FunctionDocumentation::Category category_queryString = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_queryString = {description_queryString, syntax_queryString, arguments_queryString, returned_value_queryString, examples_queryString, introduced_in_queryString, category_queryString};
+    FunctionDocumentation documentation_queryString = {description_queryString, syntax_queryString, arguments_queryString, {}, returned_value_queryString, examples_queryString, introduced_in_queryString, category_queryString};
 
     factory.registerFunction<FunctionQueryString>(documentation_queryString);
 }

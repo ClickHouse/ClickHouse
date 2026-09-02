@@ -131,7 +131,7 @@ Returns the [Soundex code](https://en.wikipedia.org/wiki/Soundex) of a string.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionStringToString<SoundexImpl, NameSoundex>>(documentation, FunctionFactory::Case::Insensitive);
 }

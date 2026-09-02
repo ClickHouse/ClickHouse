@@ -34,24 +34,24 @@ Like [`countSubstrings`](#countSubstrings) but counts case-insensitively and ass
         "Usage example",
         "SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА');",
         R"(
-┌─countSubstri⋯шка', 'КА')─┐
-│                        4 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "With start_pos argument",
         "SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13);",
         R"(
-┌─countSubstri⋯, 'КА', 13)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCountSubstringsCaseInsensitiveUTF8>(documentation);
 }

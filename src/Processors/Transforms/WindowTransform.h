@@ -99,40 +99,41 @@ public:
     void advanceFrameEndUnbounded();
     void advanceFrameEnd();
     void advanceFrameEndRangeOffset();
+    void advanceFrameStartGroupsOffset();
+    void advanceFrameEndGroupsOffset();
+
+    // Returns the exclusive end of the peer group containing `start` -- the first row of the next
+    // peer group, or `partition_end` if the group is the last one in the partition.
+    //
+    // `scan_frontier` makes the scan resumable when the group's end cannot be determined yet: it is the
+    // last row already proven to be a peer of `start`, so a retry after more input arrives continues
+    // from there instead of rescanning the group from its first row (which would make a peer group
+    // spanning many blocks quadratic).
+    RowNumber findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const;
+
+    // Advances `pointer` forward, peer group by peer group, until it reaches the first row of the
+    // `target_group`-th peer group (1-based) or the partition end.
+    bool advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
 
     void updateAggregationState();
     void writeOutCurrentRow();
 
-    Columns & inputAt(const RowNumber & x)
-    {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
-        return blocks[x.block - first_block_number].input_columns;
-    }
-
+    Columns & inputAt(const RowNumber & x);
     const Columns & inputAt(const RowNumber & x) const
     {
         return const_cast<WindowTransform *>(this)->inputAt(x);
     }
 
-    auto & blockAt(const UInt64 block_number)
-    {
-        assert(block_number >= first_block_number);
-        assert(block_number - first_block_number < blocks.size());
-        return blocks[block_number - first_block_number];
-    }
-
-    const auto & blockAt(const UInt64 block_number) const
+    WindowTransformBlock & blockAt(UInt64 block_number);
+    const WindowTransformBlock & blockAt(UInt64 block_number) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(block_number);
     }
-
-    auto & blockAt(const RowNumber & x)
+    WindowTransformBlock & blockAt(const RowNumber & x)
     {
         return blockAt(x.block);
     }
-
-    const auto & blockAt(const RowNumber & x) const
+    const WindowTransformBlock & blockAt(const RowNumber & x) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(x);
     }
@@ -141,21 +142,15 @@ public:
     {
         return blockAt(x).rows;
     }
-
-    MutableColumns & outputAt(const RowNumber & x)
-    {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
-        return blocks[x.block - first_block_number].output_columns;
-    }
+    MutableColumns & outputAt(const RowNumber & x);
 
     void advanceRowNumber(RowNumber & x) const
     {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
+        chassert(x.block >= first_block_number);
+        chassert(x.block - first_block_number < blocks.size());
 
         const auto block_rows = blockAt(x).rows;
-        assert(x.row < block_rows);
+        chassert(x.row < block_rows);
 
         ++x.row;
         if (x.row < block_rows)
@@ -166,7 +161,6 @@ public:
         x.row = 0;
         ++x.block;
     }
-
     RowNumber nextRowNumber(const RowNumber & x) const
     {
         RowNumber result = x;
@@ -187,18 +181,17 @@ public:
         }
 
         --x.block;
-        assert(x.block >= first_block_number);
-        assert(x.block < first_block_number + blocks.size());
-        assert(blockAt(x).rows > 0);
+        chassert(x.block >= first_block_number);
+        chassert(x.block < first_block_number + blocks.size());
+        chassert(blockAt(x).rows > 0);
         x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
         auto advanced_retreated_x = x;
         advanceRowNumber(advanced_retreated_x);
-        assert(advanced_retreated_x == original_x);
+        chassert(advanced_retreated_x == original_x);
 #endif
     }
-
     RowNumber prevRowNumber(const RowNumber & x) const
     {
         RowNumber result = x;
@@ -211,18 +204,16 @@ public:
 
     void assertValid(const RowNumber & x) const
     {
-        assert(x.block >= first_block_number);
+        chassert(x.block >= first_block_number);
         if (x.block == first_block_number + blocks.size())
-            assert(x.row == 0);
+            chassert(x.row == 0);
         else
-            assert(x.row < blockRowsNumber(x));
+            chassert(x.row < blockRowsNumber(x));
     }
-
     RowNumber blocksEnd() const
     {
         return RowNumber{first_block_number + blocks.size(), 0};
     }
-
     RowNumber blocksBegin() const
     {
         return RowNumber{first_block_number, 0};
@@ -250,6 +241,10 @@ public:
     std::vector<size_t> partition_by_indices;
     // Indices of the ORDER BY columns in block;
     std::vector<size_t> order_by_indices;
+
+    // Which input columns we actually read while computing the window functions: the PARTITION BY
+    // and ORDER BY keys and the function arguments.
+    std::vector<UInt8> should_materialize;
 
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
@@ -292,6 +287,19 @@ public:
     UInt64 current_row_number = 1;
     UInt64 peer_group_start_row_number = 1;
     UInt64 peer_group_number = 1;
+
+    // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
+    // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
+    // with the frame boundaries when a new partition starts.
+    UInt64 frame_start_group_number = 1;
+    UInt64 frame_end_group_number = 1;
+
+    // Resume positions for the peer-group scans of the corresponding boundaries (see
+    // `findPeerGroupEnd`). Unlike the RANGE offset frames, which resume by advancing the boundary
+    // itself, the scan progress must be kept separately: a GROUPS boundary always points at the first
+    // row of a peer group.
+    RowNumber frame_start_group_scan_frontier;
+    RowNumber frame_end_group_scan_frontier;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the

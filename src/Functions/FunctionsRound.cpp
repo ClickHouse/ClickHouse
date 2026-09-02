@@ -44,7 +44,7 @@ If rounding causes an overflow (for example, `floor(-128, -1)`), the result is u
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionFloor>(documentation, FunctionFactory::Case::Insensitive);
     }
 
@@ -81,7 +81,7 @@ If rounding causes an overflow (for example, `ceiling(255, -1)`), the result is 
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionCeil>(documentation, FunctionFactory::Case::Insensitive);
     }
 
@@ -100,7 +100,7 @@ Like [`floor`](#floor) but returns the rounded number with the largest absolute 
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionTrunc>(documentation, FunctionFactory::Case::Insensitive);
     }
 
@@ -149,7 +149,7 @@ If rounding causes an overflow (for example, `round(255, -1)`), the result is un
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionRound>(documentation, FunctionFactory::Case::Insensitive);
     }
 
@@ -190,7 +190,7 @@ For example, sum numbers `1.5, 2.5, 3.5, 4.5` with different rounding:
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionRoundBankers>(documentation, FunctionFactory::Case::Sensitive);
     }
 
@@ -223,7 +223,7 @@ If the value is less than the lower bound, the lower bound is returned.
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionRoundDown>(documentation);
     }
 

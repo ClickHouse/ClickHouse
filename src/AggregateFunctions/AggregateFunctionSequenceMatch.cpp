@@ -9,9 +9,11 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/array/length.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <bitset>
@@ -36,6 +38,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -113,8 +116,15 @@ struct AggregateFunctionSequenceMatchData final
     {
         readBinary(sorted, buf);
 
-        size_t size;
+        size_t size = 0;
         readBinary(size, buf);
+
+        /// Guard against allocation bombs (mirrors windowFunnel): a crafted state
+        /// can declare a huge size and make reserve allocate gigabytes before any
+        /// event is read.
+        if (size > 100'000'000)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large size ({}) of the state of sequenceMatch/sequenceCount", size);
 
         /// If we lose these flags, functionality is broken
         /// If we serialize/deserialize these flags, we have compatibility issues
@@ -129,7 +139,7 @@ struct AggregateFunctionSequenceMatchData final
             Timestamp timestamp;
             readBinary(timestamp, buf);
 
-            UInt64 events;
+            UInt64 events = 0;
             readBinary(events, buf);
 
             events_list.emplace_back(timestamp, Events{events});
@@ -168,7 +178,7 @@ public:
         this->data(place).add(timestamp, events);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -204,7 +214,7 @@ private:
     struct PatternAction final
     {
         PatternActionType type;
-        std::uint64_t extra;
+        std::uint64_t extra{};
 
         PatternAction() = default;
         explicit PatternAction(const PatternActionType type_, const std::uint64_t extra_ = 0) : type{type_}, extra{extra_} {}
@@ -250,7 +260,7 @@ private:
             {
                 if (match("t"))
                 {
-                    PatternActionType type;
+                    PatternActionType type = {};
 
                     if (match("<="))
                         type = PatternActionType::TimeLessOrEqual;
@@ -267,8 +277,12 @@ private:
 
                     UInt64 duration = 0;
                     const auto * prev_pos = pos;
-                    pos = tryReadIntText(duration, pos, end);
-                    if (pos == prev_pos)
+                    ReadBufferFromMemory duration_buf(pos, end - pos);
+                    /// Both checks are load-bearing: a lone sign is consumed and then rejected,
+                    /// while a leading non-digit is rejected without consuming anything.
+                    const bool parsed_duration = tryReadIntText(duration, duration_buf);
+                    pos += duration_buf.count();
+                    if (pos == prev_pos || !parsed_duration)
                         throw_exception("Could not parse number");
 
                     if (actions.back().type != PatternActionType::SpecificEvent &&
@@ -287,7 +301,7 @@ private:
                     if (pos == prev_pos)
                         throw_exception("Could not parse number");
 
-                    if (event_number > arg_count - 1)
+                    if (event_number == 0 || event_number > arg_count - 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Event number {} is out of range", event_number);
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
@@ -329,7 +343,7 @@ protected:
     template <typename EventEntry>
     bool dfaMatch(EventEntry & events_it, const EventEntry events_end) const
     {
-        using ActiveStates = std::vector<bool>;
+        using ActiveStates = VectorWithMemoryTracking<bool>;
 
         /// Those two vectors keep track of which states should be considered for the current
         /// event as well as the states which should be considered for the next event.
@@ -383,7 +397,7 @@ protected:
     }
 
     template <typename EventEntry, bool remember_matched_events = false>
-    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, std::vector<T> * best_matched_events = nullptr) const
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -396,8 +410,8 @@ protected:
         using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
         std::stack<backtrack_info> back_stack;
 
-        std::vector<T> current_matched_events;
-        std::vector<decltype(action_it)> current_matched_actions;
+        VectorWithMemoryTracking<T> current_matched_events;
+        VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
 
         const auto do_push_event = [&]
         {
@@ -553,10 +567,10 @@ protected:
     }
 
     template <typename EventEntry>
-    std::vector<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
+    VectorWithMemoryTracking<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
     {
 
-        std::vector<T> best_matched_events;
+        VectorWithMemoryTracking<T> best_matched_events;
         backtrackingMatch<EventEntry, true>(events_it, events_end, &best_matched_events);
 
         return best_matched_events;
@@ -655,11 +669,11 @@ private:
         DFATransition transition;
     };
 
-    using DFAStates = std::vector<DFAState>;
+    using DFAStates = VectorWithMemoryTracking<DFAState>;
 
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
-    bool pattern_has_time;
+    bool pattern_has_time{};
     /// sequenceMatch conditions met at least once in the pattern
     std::bitset<max_events> conditions_in_pattern;
 
@@ -742,9 +756,9 @@ public:
     }
 
 private:
-    std::vector<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    VectorWithMemoryTracking<T> getEvents(ConstAggregateDataPtr __restrict place) const
     {
-        std::vector<T> res;
+        VectorWithMemoryTracking<T> res;
         const auto & data_ref = this->data(place);
 
         const auto events_begin = std::begin(data_ref.events_list);
@@ -851,11 +865,12 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 
 }
 
+void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sequenceMatch", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>);
-    factory.registerFunction("sequenceCount", createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>);
-    factory.registerFunction("sequenceMatchEvents", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>);
+    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Checks whether the sequence of events, ordered by the timestamp argument, contains a chain of events matching the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Counts the number of non-overlapping chains of events, ordered by the timestamp argument, that match the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns information about the events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

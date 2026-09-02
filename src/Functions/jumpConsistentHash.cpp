@@ -16,7 +16,7 @@ inline int32_t JumpConsistentHash(uint64_t key, int32_t num_buckets)
     {
         b = j;
         key = key * 2862933555777941757ULL + 1;
-        j = static_cast<int64_t>((b + 1) * (static_cast<double>(1LL << 31) / static_cast<double>((key >> 33) + 1)));
+        j = static_cast<int64_t>(static_cast<double>(b + 1) * (static_cast<double>(1LL << 31) / static_cast<double>((key >> 33) + 1)));
     }
     return static_cast<int32_t>(b);
 }
@@ -64,7 +64,7 @@ Calculates the [jump consistent hash](https://arxiv.org/pdf/1406.2294.pdf) for a
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionJumpConsistentHash>(documentation);
 }
 

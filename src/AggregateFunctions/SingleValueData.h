@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <base/AlignedUnion.h>
-#include <base/StringRef.h>
 
 namespace DB
 {
@@ -282,16 +281,16 @@ private:
 
     union
     {
-        char * large_data; /// Always allocated in arena
+        char * large_data{}; /// Always allocated in arena
         char small_data[MAX_SMALL_STRING_SIZE];
     };
 
     bool isSmall() const { return capacity == 0; }
     char * getDataMutable();
     const char * getData() const;
-    StringRef getStringRef() const;
+    std::string_view getStringView() const;
     void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena);
-    void changeImpl(StringRef value, Arena * arena);
+    void changeImpl(std::string_view value, Arena * arena);
 
 public:
     static constexpr bool is_compilable = false;
@@ -387,7 +386,7 @@ struct SingleValueReference final : public SingleValueDataBase
     using Self = SingleValueReference;
 
     ColumnPtr column_ref;
-    size_t row_number;
+    size_t row_number{};
 
     bool has() const override { return column_ref != nullptr; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;

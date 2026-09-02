@@ -170,11 +170,17 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
         if (sort_node_typed.withFill())
         {
             FillColumnDescription fill_description = extractWithFillDescription(sort_node_typed);
-            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
+            if (sort_node_typed.getColumnName().empty())
+                sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
+            else
+                sort_column_description.emplace_back(sort_node_typed.getColumnName(), column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
         }
         else
         {
-            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator);
+            if (sort_node_typed.getColumnName().empty())
+                sort_column_description.emplace_back(column_name, direction, nulls_direction, collator);
+            else
+                sort_column_description.emplace_back(sort_node_typed.getColumnName(), column_name, direction, nulls_direction, collator);
         }
     }
 

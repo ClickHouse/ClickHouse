@@ -68,14 +68,11 @@ int HTTPFixedLengthStreamBuf::readFromDevice(char* buffer, std::streamsize lengt
 
 int HTTPFixedLengthStreamBuf::writeToDevice(const char* buffer, std::streamsize length)
 {
-	int n = 0;
-	if (_count < _length)
-	{
-		if (_count + length > _length)
-			length = static_cast<std::streamsize>(_length - _count);
-		n = _session.write(buffer, length);
-		if (n > 0) _count += n;
-	}
+	if (_count + length > _length)
+		throw MessageException("Write past Content-Length");
+
+	int n = _session.write(buffer, length);
+	if (n > 0) _count += n;
 	return n;
 }
 
@@ -119,6 +116,7 @@ HTTPFixedLengthInputStream::HTTPFixedLengthInputStream(HTTPSession& session, HTT
 	HTTPFixedLengthIOS(session, length, std::ios::in),
 	std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -135,6 +133,7 @@ HTTPFixedLengthOutputStream::HTTPFixedLengthOutputStream(HTTPSession& session, H
 	HTTPFixedLengthIOS(session, length, std::ios::out),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

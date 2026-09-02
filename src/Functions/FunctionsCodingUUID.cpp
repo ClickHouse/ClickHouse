@@ -16,6 +16,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <span>
+#include <Core/UUID.h>
 
 
 namespace DB::ErrorCodes
@@ -146,7 +147,7 @@ namespace DB
 constexpr size_t uuid_bytes_length = 16;
 constexpr size_t uuid_text_length = 36;
 
-class FunctionUUIDNumToString : public IFunction
+class FunctionUUIDNumToString final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDNumToString";
@@ -222,7 +223,7 @@ public:
 };
 
 
-class FunctionUUIDStringToNum : public IFunction
+class FunctionUUIDStringToNum final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDStringToNum";
@@ -328,7 +329,7 @@ public:
 };
 
 
-class FunctionUUIDToNum : public IFunction
+class FunctionUUIDToNum final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDToNum";
@@ -402,7 +403,7 @@ public:
     }
 };
 
-class FunctionUUIDv7ToDateTime : public IFunction
+class FunctionUUIDv7ToDateTime final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDv7ToDateTime";
@@ -517,13 +518,13 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_UUIDNumToString = {1, 1};
     FunctionDocumentation::Category category_UUIDNumToString = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_UUIDNumToString = {description_UUIDNumToString, syntax_UUIDNumToString, arguments_UUIDNumToString, returned_value_UUIDNumToString, examples_UUIDNumToString, introduced_in_UUIDNumToString, category_UUIDNumToString};
+    FunctionDocumentation documentation_UUIDNumToString = {description_UUIDNumToString, syntax_UUIDNumToString, arguments_UUIDNumToString, {}, returned_value_UUIDNumToString, examples_UUIDNumToString, introduced_in_UUIDNumToString, category_UUIDNumToString};
 
     factory.registerFunction<FunctionUUIDNumToString>(documentation_UUIDNumToString);
 
     /// UUIDStringToNum documentation
     FunctionDocumentation::Description description_UUIDStringToNum = R"(
-Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](../data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](/reference/data-types/fixedstring) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
     )";
     FunctionDocumentation::Syntax syntax_UUIDStringToNum = "UUIDStringToNum(string[, variant = 1])";
     FunctionDocumentation::Arguments arguments_UUIDStringToNum = {
@@ -561,13 +562,13 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_UUIDStringToNum = {1, 1};
     FunctionDocumentation::Category category_UUIDStringToNum = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_UUIDStringToNum = {description_UUIDStringToNum, syntax_UUIDStringToNum, arguments_UUIDStringToNum, returned_value_UUIDStringToNum, examples_UUIDStringToNum, introduced_in_UUIDStringToNum, category_UUIDStringToNum};
+    FunctionDocumentation documentation_UUIDStringToNum = {description_UUIDStringToNum, syntax_UUIDStringToNum, arguments_UUIDStringToNum, {}, returned_value_UUIDStringToNum, examples_UUIDStringToNum, introduced_in_UUIDStringToNum, category_UUIDStringToNum};
 
     factory.registerFunction<FunctionUUIDStringToNum>(documentation_UUIDStringToNum);
 
     /// UUIDToNum documentation
     FunctionDocumentation::Description description_UUIDToNum = R"(
-Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../data-types/fixedstring.md), with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a [UUID](/reference/data-types/uuid) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
 This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
     )";
     FunctionDocumentation::Syntax syntax_UUIDToNum = "UUIDToNum(uuid[, variant = 1])";
@@ -606,7 +607,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_UUIDToNum = {24, 5};
     FunctionDocumentation::Category category_UUIDToNum = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_UUIDToNum = {description_UUIDToNum, syntax_UUIDToNum, arguments_UUIDToNum, returned_value_UUIDToNum, examples_UUIDToNum, introduced_in_UUIDToNum, category_UUIDToNum};
+    FunctionDocumentation documentation_UUIDToNum = {description_UUIDToNum, syntax_UUIDToNum, arguments_UUIDToNum, {}, returned_value_UUIDToNum, examples_UUIDToNum, introduced_in_UUIDToNum, category_UUIDToNum};
 
     factory.registerFunction<FunctionUUIDToNum>(documentation_UUIDToNum);
 
@@ -617,7 +618,7 @@ Returns the timestamp component of a UUID version 7.
     FunctionDocumentation::Syntax syntax_UUIDv7ToDateTime = "UUIDv7ToDateTime(uuid[, timezone])";
     FunctionDocumentation::Arguments arguments_UUIDv7ToDateTime = {
         {"uuid", "A UUID version 7.", {"String"}},
-        {"timezone", "Optional. [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value.", {"String"}}
+        {"timezone", "Optional. [Timezone name](/reference/settings/server-settings/settings/other#timezone) for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = {"Returns a timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns `1970-01-01 00:00:00.000`.", {"DateTime64(3)"}};
     FunctionDocumentation::Examples examples_UUIDv7ToDateTime = {
@@ -628,7 +629,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
         )",
         R"(
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 15:30:29.048 │
+│                                          2024-04-22 12:30:29.048 │
 └──────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -639,14 +640,14 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
         )",
         R"(
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_UUIDv7ToDateTime = {24, 5};
     FunctionDocumentation::Category category_UUIDv7ToDateTime = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_UUIDv7ToDateTime = {description_UUIDv7ToDateTime, syntax_UUIDv7ToDateTime, arguments_UUIDv7ToDateTime, returned_value_UUIDv7ToDateTime, examples_UUIDv7ToDateTime, introduced_in_UUIDv7ToDateTime, category_UUIDv7ToDateTime};
+    FunctionDocumentation documentation_UUIDv7ToDateTime = {description_UUIDv7ToDateTime, syntax_UUIDv7ToDateTime, arguments_UUIDv7ToDateTime, {}, returned_value_UUIDv7ToDateTime, examples_UUIDv7ToDateTime, introduced_in_UUIDv7ToDateTime, category_UUIDv7ToDateTime};
 
     factory.registerFunction<FunctionUUIDv7ToDateTime>(documentation_UUIDv7ToDateTime);
 }

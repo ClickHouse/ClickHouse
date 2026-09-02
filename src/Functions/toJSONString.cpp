@@ -10,7 +10,7 @@ namespace DB
 {
 namespace
 {
-    class FunctionToJSONString : public IFunction
+    class FunctionToJSONString final : public IFunction
     {
     public:
         static constexpr auto name = "toJSONString";
@@ -62,22 +62,22 @@ namespace
 REGISTER_FUNCTION(ToJSONString)
 {
     /// toJSONString documentation
-    FunctionDocumentation::Description description_toJSONString = R"(
+    FunctionDocumentation::Description description = R"(
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
-64-bit [integers](../data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers) controls this behavior.
-Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals) setting to show them.
-When serializing an [Enum](../data-types/enum.md) value, the function outputs its name.
+64-bit [integers](/reference/data-types/int-uint) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) controls this behavior.
+Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals) setting to show them.
+When serializing an [Enum](/reference/data-types/enum) value, the function outputs its name.
 
 See also:
-- [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers)
-- [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals)
+- [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+- [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals)
     )";
-    FunctionDocumentation::Syntax syntax_toJSONString = "toJSONString(value)";
-    FunctionDocumentation::Arguments arguments_toJSONString = {
+    FunctionDocumentation::Syntax syntax = "toJSONString(value)";
+    FunctionDocumentation::Arguments arguments = {
         {"value", "Value to serialize. Value may be of any data type.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toJSONString = {"Returns the JSON representation of the value.", {"String"}};
-    FunctionDocumentation::Examples examples_toJSONString = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the JSON representation of the value.", {"String"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Map serialization",
         R"(
@@ -95,17 +95,17 @@ SELECT toJSONString(map('key1', 1, 'key2', 2));
 SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_format_json_quote_denormals = 1;
         )",
         R"(
-┌─toJSONString(tuple(1.25, NULL, NaN, plus(inf), minus(inf), []))─┐
-│ [1.25,null,"nan","inf","-inf",[]]                               │
-└─────────────────────────────────────────────────────────────────┘
+┌─toJSONString((1.25, NULL, nan, inf, -inf, []))─┐
+│ [1.25,null,"nan","inf","-inf",[]]              │
+└────────────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toJSONString = {21, 7};
-    FunctionDocumentation::Category category_toJSONString = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation_toJSONString = {description_toJSONString, syntax_toJSONString, arguments_toJSONString, returned_value_toJSONString, examples_toJSONString, introduced_in_toJSONString, category_toJSONString};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToJSONString>(documentation_toJSONString);
+    factory.registerFunction<FunctionToJSONString>(documentation);
 }
 
 }

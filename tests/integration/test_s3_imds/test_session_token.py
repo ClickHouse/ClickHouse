@@ -1,6 +1,7 @@
 import os
 
 import pytest
+import random
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
@@ -14,6 +15,7 @@ node = cluster.add_instance(
     "node",
     with_minio=True,
     main_configs=["configs/use_environment_credentials.xml"],
+    user_configs=["configs/allow_server_credentials.xml"],
     env_variables={
         "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",
     },
@@ -46,14 +48,15 @@ def start_cluster():
 
 
 def test_credentials_from_metadata():
+    file_index = random.randint(0, 1000000000)
     node.query(
-        f"INSERT INTO FUNCTION s3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/test1.jsonl') SELECT * FROM numbers(100)"
+        f"INSERT INTO FUNCTION s3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/test{file_index}.jsonl') SELECT * FROM numbers(100)"
     )
 
     assert (
         "100"
         == node.query(
-            f"SELECT count() FROM s3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/test1.jsonl')"
+            f"SELECT count() FROM s3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/test{file_index}.jsonl')"
         ).strip()
     )
 

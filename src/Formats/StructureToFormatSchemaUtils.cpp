@@ -47,7 +47,7 @@ String getSchemaFieldName(const String & column_name)
     {
         if (islower(symbol))
             break;
-        symbol = tolower(symbol);
+        symbol = static_cast<char>(tolower(symbol));
     }
     return result;
 }
@@ -56,7 +56,7 @@ String getSchemaMessageName(const String & column_name)
 {
     String result = column_name;
     if (!column_name.empty() && isalpha(column_name[0]))
-        result[0] = toupper(column_name[0]);
+        result[0] = static_cast<char>(toupper(column_name[0]));
     return result;
 }
 

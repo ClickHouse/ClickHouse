@@ -4,19 +4,22 @@
 
 #if USE_SSL
 
-#include <openssl/ssl.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
 #include <Common/Crypto/KeyPair.h>
+#include <Common/Crypto/X509Certificate.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Crypto/X509Certificate.h>
+#include <openssl/x509v3.h>
+#include <openssl/ssl.h>
 
+#include <chrono>
 #include <string>
 #include <filesystem>
 #include <list>
+#include <optional>
 #include <unordered_map>
 #include <mutex>
 
@@ -40,7 +43,10 @@ public:
         X509Certificate::List certs_chain;
         KeyPair key;
 
+        const std::string hash;
+
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
+        Data(KeyPair pkey, X509Certificate::List certs_chain, std::string hash);
     };
 
     struct File
@@ -58,7 +64,7 @@ public:
     {
         SSL_CTX * ctx = nullptr;
         MultiVersion<Data> data;
-        bool init_was_not_made = true;
+        bool initialized = false;
 
         File cert_file{"certificate"};
         File key_file{"key"};
@@ -69,11 +75,9 @@ public:
     /// Singleton
     CertificateReloader(CertificateReloader const &) = delete;
     void operator=(CertificateReloader const &) = delete;
-    static CertificateReloader & instance()
-    {
-        static CertificateReloader instance;
-        return instance;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static CertificateReloader & instance();
 
     /// Handle configuration reload for default path
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
@@ -84,11 +88,19 @@ public:
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 
+    /// Register an additional SSL_CTX to share certificates with the primary context
+    bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix);
+
     /// Handle configuration reload for all contexts
     void tryReloadAll(const Poco::Util::AbstractConfiguration & config);
 
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
+
+    /// The leaf certificate that is currently served for `prefix` connections, if there is one.
+    /// It is not necessarily the certificate of the corresponding `SSL_CTX`: certificates are installed
+    /// per connection, and with `<acme>` the context itself never gets a certificate at all.
+    std::optional<X509Certificate> getCertificate(const std::string & prefix) const;
 
 private:
     CertificateReloader() = default;
@@ -98,6 +110,7 @@ private:
 
     /// Unsafe implementation
     void tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
+    void tryLoadACMECertificate(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 
     std::list<MultiData>::iterator findOrInsert(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 

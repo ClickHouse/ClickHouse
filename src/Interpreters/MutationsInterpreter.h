@@ -2,6 +2,7 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
@@ -11,6 +12,8 @@
 namespace DB
 {
 
+class ASTAlterCommand;
+class ActionsChain;
 class Context;
 class QueryPlan;
 
@@ -23,6 +26,15 @@ struct IsStorageTouched
     bool all_rows_affected = false;
 };
 
+ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
+
+/// Returns whether the analyzer should be used for mutations.
+/// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
+bool shouldUseAnalyzerForMutations(const ContextPtr & context);
+
+/// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
+size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
+
 /// Return false if the data isn't going to be changed by mutations.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
@@ -33,11 +45,21 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
+/// Build the WHERE-style filter for a mutation command. The parsed
+/// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
+/// other accesses; the function does not call `MutationCommand::ast` itself.
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const MutationCommand & command,
+    const ASTAlterCommand * alter,
     const StoragePtr & storage,
     ContextPtr context
 );
+
+/// Re-run set-operation normalization (`UNION`/`INTERSECT`/`EXCEPT`) on an AST that was re-parsed from a
+/// serialized mutation command, mirroring what `executeQuery` does for top-level queries. Re-parsing loses
+/// this normalization, so any consumer that feeds a re-parsed mutation predicate or `UPDATE` assignment
+/// into the analyzer (`buildQueryTree`) must call this first; otherwise the analyzer rejects such
+/// subqueries with "UNION mode UNION_DEFAULT must be normalized".
+void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -60,6 +82,9 @@ public:
         bool apply_deleted_mask = true;
         /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
         bool recalculate_dependencies_of_updated_columns = true;
+        /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
+        /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
+        bool apply_on_fly_for_read = false;
         /// Number of threads for resulting pipeline.
         size_t max_threads = 1;
     };
@@ -70,6 +95,15 @@ public:
         StoragePtr storage_,
         StorageMetadataPtr metadata_snapshot_,
         MutationCommands commands_,
+        ContextPtr context_,
+        Settings settings_);
+
+    /// Same but with explicit list of available columns
+    MutationsInterpreter(
+        StoragePtr storage_,
+        StorageMetadataPtr metadata_snapshot_,
+        MutationCommands commands_,
+        Names available_columns_,
         ContextPtr context_,
         Settings settings_);
 
@@ -85,7 +119,15 @@ public:
         Settings settings_);
 
     void validate();
-    size_t evaluateCommandsSize();
+
+    /// Throws if the mutation contains non-deterministic functions or subqueries on a Replicated*
+    /// storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
+    /// without constructing a full `MutationsInterpreter` (which would require the predicate
+    /// to be analyzable — see `validate_mutation_query`).
+    static void validateNonDeterministicMutationsForStorage(
+        const StoragePtr & storage,
+        const MutationCommands & commands,
+        ContextPtr context);
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
@@ -99,6 +141,8 @@ public:
     bool isAffectingAllColumns() const;
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
+
+    NameSet grabDroppedIndices() { return std::move(dropped_indices); }
 
     NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
 
@@ -138,7 +182,7 @@ public:
 
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
-        bool hasSecondaryIndex(const String & name) const;
+        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
         bool hasProjection(const String & name) const;
         bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
@@ -177,10 +221,10 @@ private:
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+    static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
+    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
 
     Source source;
     StorageMetadataPtr metadata_snapshot;
@@ -194,6 +238,7 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
+    bool use_analyzer = false;
 
     LoggerPtr logger;
 
@@ -215,7 +260,10 @@ private:
 
     struct Stage
     {
-        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
+        explicit Stage(ContextPtr context_);
+        ~Stage();
+        Stage(Stage &&) noexcept;
+        Stage & operator=(Stage &&) noexcept;
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -224,12 +272,19 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
+        /// --- Old analyzer path (populated when analyzer is not enabled) ---
         std::unique_ptr<ExpressionAnalyzer> analyzer;
 
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
+
+        /// --- Analyzer path (populated when analyzer is enabled) ---
+        std::unique_ptr<ActionsChain> new_actions_chain;
+        PreparedSetsPtr new_prepared_sets;
+
+        /// --- Common ---
         Names filter_column_names;
 
         bool affects_all_columns = false;
@@ -251,6 +306,7 @@ private:
     NameSet materialized_indices;
     NameSet materialized_projections;
     NameSet materialized_statistics;
+    NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

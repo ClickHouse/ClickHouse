@@ -134,7 +134,7 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in)
     files.clear();
 
     assertString("checksums format version: ", in);
-    size_t format_version;
+    size_t format_version = 0;
     readText(format_version, in);
     assertChar('\n', in);
 
@@ -144,7 +144,7 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in)
 
 bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
 {
-    size_t count;
+    size_t count = 0;
 
     readText(count, in);
     assertString(" files:\n", in);
@@ -182,7 +182,7 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
 
 bool MergeTreeDataPartChecksums::readV3(ReadBuffer & in)
 {
-    size_t count;
+    size_t count = 0;
 
     readVarUInt(count, in);
 
@@ -242,6 +242,11 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)
 {
     files[file_name] = Checksum(file_size, file_hash);
+}
+
+void MergeTreeDataPartChecksums::addFile(const String & file_name, const Checksum & checksum)
+{
+    files[file_name] = checksum;
 }
 
 void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
@@ -352,7 +357,7 @@ String MinimalisticDataPartChecksums::getSerializedString() const
 bool MinimalisticDataPartChecksums::deserialize(ReadBuffer & in)
 {
     assertString("checksums format version: ", in);
-    size_t format_version;
+    size_t format_version = 0;
     readText(format_version, in);
     assertChar('\n', in);
 

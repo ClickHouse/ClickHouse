@@ -10,6 +10,9 @@
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SharedMutex.h>
+
+#include <Parsers/IAST.h>
 
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
@@ -37,6 +40,14 @@ enum class VirtualsKind : UInt8
     All = Ephemeral | Persistent,
 };
 
+enum class VirtualsMaterializationPlace : UInt8
+{
+    Reader = 1,
+    Plan = 2,
+    Streaming = 4,
+    All = Reader | Plan | Streaming,
+};
+
 struct GetColumnsOptions
 {
     enum Kind : UInt8
@@ -57,26 +68,29 @@ struct GetColumnsOptions
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
         with_subcolumns = value;
+        with_dynamic_subcolumns = value;
         return *this;
     }
 
-    GetColumnsOptions & withVirtuals(VirtualsKind value = VirtualsKind::All)
+    GetColumnsOptions & withRegularSubcolumns(bool value = true)
+    {
+        with_subcolumns = value;
+        return *this;
+    }
+
+    GetColumnsOptions & withVirtuals(VirtualsKind value, VirtualsMaterializationPlace place)
     {
         virtuals_kind = value;
-        return *this;
-    }
-
-    GetColumnsOptions & withExtendedObjects(bool value = true)
-    {
-        with_extended_objects = value;
+        virtuals_place = place;
         return *this;
     }
 
     Kind kind;
     VirtualsKind virtuals_kind = VirtualsKind::None;
+    VirtualsMaterializationPlace virtuals_place = VirtualsMaterializationPlace::All;
 
     bool with_subcolumns = false;
-    bool with_extended_objects = false;
+    bool with_dynamic_subcolumns = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -94,8 +108,9 @@ struct ColumnDescription
     ColumnDescription() = default;
     ColumnDescription(const ColumnDescription & other) { *this = other; }
     ColumnDescription & operator=(const ColumnDescription & other);
-    ColumnDescription(ColumnDescription && other) noexcept { *this = std::move(other); }
-    ColumnDescription & operator=(ColumnDescription && other) noexcept;
+    /// Not noexcept: the move-assignment clones the codec/TTL ASTs, which allocates and can throw.
+    ColumnDescription(ColumnDescription && other) { *this = std::move(other); } /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    ColumnDescription & operator=(ColumnDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     ColumnDescription(String name_, DataTypePtr type_);
     ColumnDescription(String name_, DataTypePtr type_, String comment_);
@@ -115,9 +130,18 @@ class ColumnsDescription : public IHints<>
 public:
     ColumnsDescription() = default;
 
+    /// Mutable cache members (`get_cache_mutex`, `get_cache`) are non-copyable; define
+    /// explicit copy / move. Copy discards the cache (it's reproducible); move steals it,
+    /// because the cache content is consistent with the columns being transferred.
+    ColumnsDescription(const ColumnsDescription & other) : IHints<>(other), columns(other.columns), subcolumns(other.subcolumns) {}
+    ColumnsDescription(ColumnsDescription && other) noexcept
+        : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)), get_cache(std::move(other.get_cache)) {}
+    ColumnsDescription & operator=(const ColumnsDescription & other);
+    ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
+
     static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
-    explicit ColumnsDescription(NamesAndTypesList ordinary);
+    explicit ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns = true);
 
     ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 
@@ -127,6 +151,8 @@ public:
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
+    /// Adds a column at the end if a column with the same name doesn't exist.
+    void addIfNotExists(ColumnDescription column);
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 
@@ -164,7 +190,7 @@ public:
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
-    bool hasSubcolumn(const String & column_name) const;
+    bool hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
     const ColumnDescription * tryGet(const String & column_name) const;
 
@@ -234,7 +260,7 @@ public:
         return columns.empty();
     }
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     /// Keep the sequence of columns and allow to lookup by name.
     using ColumnsContainer = boost::multi_index_container<
@@ -266,6 +292,32 @@ private:
 
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
+
+    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const;
+
+    /// `NamesAndTypesList get(const GetColumnsOptions &) const` is called repeatedly with
+    /// the same options across analyzer and planner of every query, and rebuilding the
+    /// result iterates the columns multi-index plus runs `addSubcolumnsToList` on every row.
+    /// The cache lives on `ColumnsDescription` (which is owned by an immutable
+    /// `StorageInMemoryMetadata` snapshot) so the result is reused across queries on the
+    /// same metadata version. Any method that alters `columns` or `subcolumns` calls
+    /// `invalidateGetCache`.
+    struct GetCacheKey
+    {
+        UInt8 kind;
+        UInt8 virtuals_kind;
+        UInt8 virtuals_place;
+        UInt8 flags; /// bit 0: with_subcolumns, bit 1: with_dynamic_subcolumns
+        bool operator==(const GetCacheKey & other) const = default;
+    };
+    static GetCacheKey makeGetCacheKey(const GetColumnsOptions & options);
+    void invalidateGetCache() const;
+
+    mutable SharedMutex get_cache_mutex;
+    /// `vector` rather than `unordered_map`: distinct `GetCacheKey`s per `ColumnsDescription`
+    /// are bounded by a handful in practice, and a contiguous linear scan over a 4-byte
+    /// trivially-comparable key beats hashing + bucket indirection at this size.
+    mutable std::vector<std::pair<GetCacheKey, std::shared_ptr<const NamesAndTypesList>>> get_cache;
 };
 
 class ASTColumnDeclaration;
@@ -274,7 +326,13 @@ struct DefaultExpressionsInfo
 {
     ASTPtr expr_list = nullptr;
     bool has_columns_with_default_without_type = false;
+    /// Names of columns whose stored value is computed from a default expression (DEFAULT,
+    /// MATERIALIZED). ALIAS (read-time) and EPHEMERAL (a non-stored insert input) are not included.
+    NameSet insert_time_default_columns;
 };
+
+/// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
+void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 
@@ -282,7 +340,17 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 /// default expression result can be cast to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
-void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
+/// insert_time_default_columns lists the DEFAULT/MATERIALIZED columns whose stored value is computed
+/// from the expression; their expressions must not reference virtual columns.
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
+
+/// Whether a PREWHERE contract (`IStorage::supportedPrewhereColumns`, a set of top-level names)
+/// admits `column_name`: directly, or - when `include_subcolumns` is set
+/// (`IStorage::supportedPrewhereColumnsIncludeSubcolumns`) - as a subcolumn riding its origin
+/// column: a read of `json.a` is delegated exactly like a read of `json`, and subcolumn sets
+/// (JSON paths) are open-ended, so the contract can only ever enumerate origins.
+bool prewhereSupportedColumnsContain(
+    const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name);
 
 }

@@ -1,4 +1,4 @@
-Test direct read optimization from text log
+- Test direct read optimization from text log
 Test hasToken:	1
 Test hasAllTokens:	1
 Test hasAnyTokens:	1
@@ -7,11 +7,22 @@ Test select text + hasAnyTokens:	Alick a01
 Test hasToken and hasToken:	0
 Test hasAnyTokens or hasToken:	2
 Test NOT hasAllTokens:	1
-Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_e7a7ab2df53846f18ae5a86c4ce452e9], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f], Removed: [text]
-Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8]
-Added: [__text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f]
-Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8, __text_index_idx_hasToken_c59a18d8fad9a55578502d88319e8999], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_d6702e45d9f4e5e38c13ef8e3a93dd13, __text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_c9d410e7a461849da4abf4ffd733029b], Removed: [text]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_5fa51b2c623f1a486d9249d7757ec915], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899], Removed: [text]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a]
+Added: [__text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a, __text_index_idx_hasToken_d0c9a08c3b0871a03e9eec9b8f2d9b10], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_0c8fc52ed37da16d57305d1bb45c0abb, __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_062af83dff7b50ae332d4792a157bd19], Removed: [text]
+- Test direct read optimization with EXPLAIN
+Actions: INPUT : 0 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasAllTokens_5fa51b2c623f1a486d9249d7757ec915 UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899 UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 2
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899 UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_d0c9a08c3b0871a03e9eec9b8f2d9b10 UInt8 : 1
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_0c8fc52ed37da16d57305d1bb45c0abb UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 1
+Actions: INPUT : 0 -> __text_index_idx_hasAllTokens_062af83dff7b50ae332d4792a157bd19 UInt8 : 0

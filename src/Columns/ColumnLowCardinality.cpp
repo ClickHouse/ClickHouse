@@ -2,10 +2,11 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <base/types.h>
 #include <base/sort.h>
@@ -20,6 +21,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+}
+
+void throwUnexpectedLowCardinalityIndexType(size_t size)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column: {}", size);
 }
 
 namespace
@@ -143,7 +149,7 @@ bool ColumnLowCardinality::tryInsert(const Field & x)
 {
     compactIfSharedDictionary();
 
-    size_t index;
+    size_t index = 0;
     if (!dictionary.getColumnUnique().tryUniqueInsert(x, index))
         return false;
 
@@ -182,6 +188,36 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     }
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnLowCardinality::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    if (length == 0)
+        return;
+
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+
+    if (!low_cardinality_src)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
+    const size_t source_index = low_cardinality_src->getIndexes().getUInt(position);
+
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
+    {
+        /// Dictionary is shared with src column. Insert only indexes.
+        idx.insertManyIndexes(source_index, length);
+    }
+    else
+    {
+        compactIfSharedDictionary();
+        const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
+        const size_t destination_index = getDictionary().uniqueInsertFrom(nested, source_index);
+        idx.insertManyIndexes(destination_index, length);
+    }
+}
+
 void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 {
     compactIfSharedDictionary();
@@ -198,6 +234,20 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
+    if (length == 0)
+        return;
+
+    /// An already shared, structurally compatible source dictionary is immutable. Reuse it when initializing
+    /// an empty column to avoid rebuilding it and keep its indexes unchanged through generic range insertions.
+    /// A private source dictionary can still be mutated in place, while an incompatible dictionary must be
+    /// rebuilt to perform conversions such as nullable promotion.
+    if (
+        empty()
+        && low_cardinality_src->isSharedDictionary()
+        && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
+        && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
+        setSharedDictionary(low_cardinality_src->getDictionaryPtr());
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
@@ -240,6 +290,8 @@ static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
 
         const auto & data = column_ptr->getData();
         size_t num_rows = data.size();
+        if (num_rows == 0)
+            return true;
         UInt64 max_position = 0;
         for (size_t i = 0; i < num_rows; ++i)
             max_position = std::max<UInt64>(max_position, data[i]);
@@ -274,22 +326,23 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertIndex(getDictionary().uniqueInsertData(pos, length));
 }
 
-StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnLowCardinality::serializeValueIntoArena(
+    size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
+    return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin, settings);
 }
 
-StringRef ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeAggregationStateValueIntoArena(getIndexes().getUInt(n), arena, begin);
+    return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
-char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory);
+    return getDictionary().getSerializedValueSize(getIndexes().getUInt(n), settings);
 }
 
-void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     /// nullable is handled internally.
     chassert(is_null == nullptr);
@@ -303,39 +356,31 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
 
     PaddedPODArray<UInt64> dict_sizes;
-    getDictionary().collectSerializedValueSizes(dict_sizes, nullptr);
+    getDictionary().collectSerializedValueSizes(dict_sizes, nullptr, settings);
     idx.collectSerializedValueSizes(sizes, dict_sizes);
 }
 
-const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * pos)
+void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     compactIfSharedDictionary();
-
-    const char * new_pos;
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(pos, new_pos));
-
-    return new_pos;
+    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in, settings));
 }
 
-const char * ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
 {
-    compactIfSharedDictionary();
-
-    const char * new_pos;
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(pos, new_pos));
-
-    return new_pos;
+    getDictionary().skipSerializedInArena(in);
 }
 
-const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
+void ColumnLowCardinality::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    return getDictionary().skipSerializedInArena(pos);
-}
+    const auto & nested = getDictionary().getNestedColumn();
+    const size_t dict_size = nested->size();
 
-WeakHash32 ColumnLowCardinality::getWeakHash32() const
-{
-    WeakHash32 dict_hash = getDictionary().getNestedColumn()->getWeakHash32();
-    return idx.getWeakHash(dict_hash);
+    PaddedPODArray<UInt32> dict_hash(dict_size);
+    if (dict_size)
+        nested->computeHashInto(0, dict_size, dict_hash.data(), true);
+
+    idx.computeHashInto(dict_hash, row_begin, row_end, hash_out, initial);
 }
 
 void ColumnLowCardinality::updateHashFast(SipHash & hash) const
@@ -355,13 +400,11 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 {
+    if (nestedIsNullable())
+        return cloneFinalized();
+
     auto res = cloneFinalized();
-    /* Compact required not to share dictionary.
-     * If `shared` flag is not set `cloneFinalized` will return shallow copy
-     * and `nestedToNullable` will mutate source column.
-     */
-    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
-    assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
+    assert_cast<ColumnLowCardinality &>(*res).compactInplaceToNullable();
     return res;
 }
 
@@ -389,6 +432,23 @@ int ColumnLowCardinality::compareAtWithCollation(size_t n, size_t m, const IColu
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
+size_t ColumnLowCardinality::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    /// The fast path searches over dictionary indexes rather than values: in a sorted column a run of equal
+    /// values maps to a run of equal indexes, so equal indexes are contiguous. This holds only when distinct
+    /// dictionary entries always have distinct values. Floating-point types break that invariant: -0.0 and
+    /// +0.0, as well as the different NaN bit patterns, have distinct bit patterns yet compare equal. A
+    /// dictionary built from deserialized data is not canonicalized (insert-time canonicalization unifies the
+    /// NaNs of freshly inserted data, but does not apply when reading back, and -0.0 is not unified at all), so
+    /// it can hold such value-equal entries separately. So for a floating-point inner type we compare values.
+    if (WhichDataType(getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat())
+        return IColumn::getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
+
+    /// We only require equal values to be contiguous. If the column is sorted, then equal values are contiguous.
+    /// If equal values are contiguous, then equal indexes are also contiguous.
+    return getIndexes().getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
+}
+
 bool ColumnLowCardinality::hasEqualValues() const
 {
     if (getDictionary().size() <= 1)
@@ -412,7 +472,7 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     /// TODO: optimize with sse.
 
     /// Get indexes per row in column_unique.
-    std::vector<std::vector<size_t>> indexes_per_row(getDictionary().size());
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> indexes_per_row(getDictionary().size());
     size_t indexes_size = getIndexes().size();
     for (size_t row = 0; row < indexes_size; ++row)
         indexes_per_row[getIndexes().getUInt(row)].push_back(row);
@@ -454,7 +514,7 @@ struct LowCardinalityComparator
 
     inline bool operator () (size_t lhs, size_t rhs) const
     {
-        int ret;
+        int ret = 0;
 
         const UInt64 lhs_index = real_indexes.getUInt(lhs);
         const UInt64 rhs_index = real_indexes.getUInt(rhs);
@@ -578,7 +638,7 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
     return elements.size();
 }
 
-std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
 {
     auto columns = getIndexes().scatter(num_columns, selector);
     ColumnPtr global_unique_ptr = IColumn::mutate(dictionary.getColumnUniquePtr());
@@ -615,6 +675,13 @@ void ColumnLowCardinality::compactInplace()
     idx.attachIndexes(std::move(indexes));
 }
 
+void ColumnLowCardinality::compactInplaceToNullable()
+{
+    auto indexes = idx.detachIndexes();
+    dictionary.compactToNullable(indexes);
+    idx.attachIndexes(std::move(indexes));
+}
+
 void ColumnLowCardinality::compactIfSharedDictionary()
 {
     if (dictionary.isShared())
@@ -632,6 +699,37 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
     return {std::move(sub_keys), std::move(sub_indexes)};
 }
 
+PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const
+{
+    /// Work and memory are O(limit), not O(dictionary): MergeTreeIndexAggregatorBloomFilter
+    /// calls this once per granule over the same (possibly large) block dictionary. Result
+    /// order is arbitrary.
+    HashSet<UInt64> seen;
+
+    const IColumn & indexes = getIndexes();
+    auto populate = [&](const auto & positions)
+    {
+        for (size_t i = 0; i < limit; ++i)
+            seen.insert(positions[offset + i]);
+    };
+
+    switch (idx.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): populate(assert_cast<const ColumnUInt8 &>(indexes).getData()); break;
+        case sizeof(UInt16): populate(assert_cast<const ColumnUInt16 &>(indexes).getData()); break;
+        case sizeof(UInt32): populate(assert_cast<const ColumnUInt32 &>(indexes).getData()); break;
+        case sizeof(UInt64): populate(assert_cast<const ColumnUInt64 &>(indexes).getData()); break;
+        default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
+    }
+
+    PaddedPODArray<UInt64> distinct;
+    distinct.reserve(seen.size());
+    for (const auto & cell : seen)
+        distinct.push_back(cell.getKey());
+
+    return distinct;
+}
+
 ColumnPtr ColumnLowCardinality::countKeys() const
 {
     const auto & nested_column = getDictionary().getNestedColumn();
@@ -645,6 +743,20 @@ ColumnPtr ColumnLowCardinality::countKeys() const
 bool ColumnLowCardinality::containsNull() const
 {
     return getDictionary().nestedColumnIsNullable() && idx.containsDefault();
+}
+
+void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map, size_t offset)
+{
+    if (!nestedIsNullable())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot apply a null map to {} with a non-nullable dictionary", getName());
+
+    if (offset + map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map of size {} at offset {} does not match {} of size {}",
+            map.size(), offset, getName(), size());
+
+    idx.setIndexesWhereMaskZero(map, getDictionary().getNullValueIndex(), offset);
 }
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
@@ -672,9 +784,28 @@ void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & indexes)
     shared = false;
 }
 
+void ColumnLowCardinality::Dictionary::compactToNullable(MutableColumnPtr & indexes)
+{
+    column_unique = compactToNullable(getColumnUnique(), indexes);
+    shared = false;
+}
+
 MutableColumnPtr ColumnLowCardinality::Dictionary::compact(const IColumnUnique & unique, MutableColumnPtr & indexes)
 {
     auto new_column_unique = unique.cloneEmpty();
+    auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
+
+    auto unique_indexes = mapUniqueIndex(*indexes);
+    auto sub_keys = unique.getNestedColumn()->index(*unique_indexes, 0);
+    auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
+
+    indexes = IColumn::mutate(new_indexes->index(*indexes, 0));
+    return new_column_unique;
+}
+
+MutableColumnPtr ColumnLowCardinality::Dictionary::compactToNullable(const IColumnUnique & unique, MutableColumnPtr & indexes)
+{
+    auto new_column_unique = unique.cloneEmptyNullable();
     auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
 
     auto unique_indexes = mapUniqueIndex(*indexes);

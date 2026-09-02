@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -6,18 +6,15 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
-#include <constants.h>
-#include <h3api.h>
-
-
 static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
-
 
 namespace DB
 {
@@ -32,12 +29,16 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToChildren : public IFunction
+class FunctionH3ToChildren final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToChildren";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToChildren>(); }
+    H3Validator validator;
+
+    explicit FunctionH3ToChildren(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToChildren>(context); }
 
     std::string getName() const override { return name; }
 
@@ -93,11 +94,17 @@ public:
         const auto & data_resolution = col_resolution->getData();
 
 
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = dst->getData();
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto dst_data_column = ColumnUInt64::create();
+        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & dst_data = *dst_data_column;
+        auto & dst_offsets = dst_offsets_column->getData();
         auto current_offset = 0;
+
+        /// The whole block is expanded inside this one call and the size of each row's result is driven by the
+        /// arguments rather than by the input size, so the executor's between-blocks cancellation check cannot
+        /// bound it: a cancelled query would keep a thread busy until the last row was done.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -110,18 +117,29 @@ public:
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(child_resolution), getName(), toString(MAX_H3_RES));
 
-            const size_t vec_size = cellToChildrenSize(parent_hindex, child_resolution);
+            if (!validator.validateCell(parent_hindex))
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
+
+            int64_t children_size = 0;
+            cellToChildrenSize(parent_hindex, child_resolution, &children_size);
+            const size_t vec_size = static_cast<size_t>(children_size);
             if (vec_size > MAX_ARRAY_SIZE)
                 throw Exception(
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), vec_size, toString(child_resolution));
 
-            std::vector<H3Index> hindex_vec;
+            budget.charge(vec_size * sizeof(H3Index));
+
+            VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
 
-            dst_data.reserve(dst_data.size() + vec_size);
+            /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
+            dst_data.getData().reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)
             {
                 if (hindex != 0)
@@ -133,7 +151,7 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        return dst;
+        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
 };
 
@@ -166,7 +184,7 @@ Returns an array of child indexes for the given [H3](#h3-index) index at the spe
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToChildren>(documentation);
 }
 

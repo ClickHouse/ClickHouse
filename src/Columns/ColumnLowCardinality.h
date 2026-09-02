@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
 #include <Columns/ColumnIndex.h>
@@ -11,10 +12,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+[[noreturn]] void throwUnexpectedLowCardinalityIndexType(size_t size);
 
 /**
  * How data is stored (in a nutshell):
@@ -23,7 +21,7 @@ namespace ErrorCodes
  * To obtain the value's index, call #getOrFindIndex.
  * To operate on the data (so called indices column), call #getIndexes.
  *
- * @note The indices column always contains the default value (empty StringRef) with the first index.
+ * @note The indices column always contains the default value (empty std::string_view) with the first index.
  */
 class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>
 {
@@ -59,12 +57,12 @@ public:
 
     Field operator[](size_t n) const override { return getDictionary()[getIndexes().getUInt(n)]; }
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
     {
-        return getDictionary().getValueNameAndType(getIndexes().getUInt(n));
+        getDictionary().getValueNameImpl(name_buf, getIndexes().getUInt(n), options);
     }
 
-    StringRef getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
+    std::string_view getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
 
     bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
@@ -88,6 +86,11 @@ public:
 #else
     void doInsertFrom(const IColumn & src, size_t n) override;
 #endif
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#else
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -102,23 +105,23 @@ public:
 
     void popBack(size_t n) override { idx.popBack(n); }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash &) const override;
 
@@ -126,6 +129,11 @@ public:
     {
         return ColumnLowCardinality::create(
             dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
+    }
+
+    void filter(const Filter & filt) override
+    {
+        idx.getIndexesPtr()->filter(filt);
     }
 
     void expand(const Filter & mask, bool inverted) override
@@ -151,6 +159,8 @@ public:
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
+
     bool hasEqualValues() const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -172,11 +182,13 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
     }
 
-    std::vector<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        /// TODO: optimize to avoid materializing the full indexed column
+        auto indexed = dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0);
+        indexed->getExtremes(min, max, start, end);
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
@@ -275,10 +287,20 @@ public:
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
+
+    /// When `offset` is given, only the rows in `[offset, offset + map.size())` are affected and `map`
+    /// covers just that range; otherwise it must cover the whole column.
+    void applyNegatedNullMap(const NullMap & map, size_t offset = 0);
     bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
     MutableColumnPtr cloneNullable() const;
+
+    /// Promote a non-nullable dictionary to `Nullable(T)` in place, rebuilding it with a NULL placeholder
+    /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
+    void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
+
+    void compactDictionaryInplace() { compactInplace(); }
 
     ColumnPtr cloneWithDefaultOnNull() const;
 
@@ -304,9 +326,13 @@ public:
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
-            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+            default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
         }
     }
+
+    /// The distinct dictionary positions used by rows [offset, offset + limit) of
+    /// getIndexes(), in unspecified order. Requires offset + limit <= getIndexes().size().
+    PaddedPODArray<UInt64> getDistinctIndexes(size_t offset, size_t limit) const;
 
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 
@@ -351,8 +377,11 @@ private:
 
         /// Create new dictionary with only keys that are mentioned in indexes.
         void compact(MutableColumnPtr & indexes);
+        /// Create nullable dictionary with only keys that are mentioned in indexes.
+        void compactToNullable(MutableColumnPtr & indexes);
 
         static MutableColumnPtr compact(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
+        static MutableColumnPtr compactToNullable(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
 
     private:
         WrappedPtr column_unique;
@@ -363,6 +392,7 @@ private:
     ColumnIndex idx;
 
     void compactInplace();
+    void compactInplaceToNullable();
     void compactIfSharedDictionary();
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;

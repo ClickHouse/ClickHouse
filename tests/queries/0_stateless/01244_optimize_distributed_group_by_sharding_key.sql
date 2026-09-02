@@ -7,6 +7,7 @@ set optimize_distributed_group_by_sharding_key=1;
 -- Some queries in this test require sorting after aggregation.
 set max_bytes_before_external_group_by = 0;
 set max_bytes_ratio_before_external_group_by = 0;
+set count_distinct_optimization = 0;
 
 drop table if exists dist_01247;
 drop table if exists data_01247;
@@ -68,7 +69,7 @@ select count(), * from dist_01247 group by number limit 1;
 select 'LIMIT OFFSET';
 select count(), * from dist_01247 group by number limit 1 offset 1;
 select 'OFFSET distributed_push_down_limit=0';
-select count(), * from dist_01247 group by number offset 1 settings distributed_push_down_limit=0;
+select count(), * from dist_01247 group by number order by count(), number offset 1 settings distributed_push_down_limit=0;
 select 'OFFSET distributed_push_down_limit=1';
 select count(), * from dist_01247 group by number order by count(), number offset 1 settings distributed_push_down_limit=1;
 -- this will emulate different data on for different shards

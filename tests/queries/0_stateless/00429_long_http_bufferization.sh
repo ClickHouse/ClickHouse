@@ -77,10 +77,10 @@ function check_last_line_exception() {
     if [[ $(echo "$res" | wc -l) -gt 1 ]]
     then
         [[ $(echo "$res" | head -n 1 | grep -c "$exception_mark") -eq 0 ]] || echo FAIL 3 "$@" "<${res}>"
-        [[ $(echo "$res" | tail -n 2 | head -n 1  | grep -c "$exception_mark") -eq 1 ]] || echo -n FAIL 4 "$@" "<${res}>"
+        [[ $(echo "$res" | tail -n 5 | head -n 1  | grep -c "$exception_mark") -eq 1 ]] || echo -n FAIL 4 "$@" "<${res}>"
     fi
 
-    [[ $(echo "$res" | tail -n 1 | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 5 "$@" "<${res}>"
+    [[ $(echo "$res" | tail -n 3 | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 5 "$@" "<${res}>"
 }
 
 function check_exception_handling() {

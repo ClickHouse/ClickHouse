@@ -34,7 +34,7 @@ SELECT cutQueryStringAndFragment('http://example.com/path?query=value&param=123#
     };
     FunctionDocumentation::IntroducedIn introduced_in_cutQueryStringAndFragment = {1, 1};
     FunctionDocumentation::Category category_cutQueryStringAndFragment = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_cutQueryStringAndFragment = {description_cutQueryStringAndFragment, syntax_cutQueryStringAndFragment, arguments_cutQueryStringAndFragment, returned_value_cutQueryStringAndFragment, examples_cutQueryStringAndFragment, introduced_in_cutQueryStringAndFragment, category_cutQueryStringAndFragment};
+    FunctionDocumentation documentation_cutQueryStringAndFragment = {description_cutQueryStringAndFragment, syntax_cutQueryStringAndFragment, arguments_cutQueryStringAndFragment, {}, returned_value_cutQueryStringAndFragment, examples_cutQueryStringAndFragment, introduced_in_cutQueryStringAndFragment, category_cutQueryStringAndFragment};
 
     factory.registerFunction<FunctionCutQueryStringAndFragment>(documentation_cutQueryStringAndFragment);
 }

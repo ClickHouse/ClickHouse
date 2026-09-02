@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 
-import time
 import pytest
 from multiprocessing.dummy import Pool
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -27,7 +25,7 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
-        cluster.shutdown()
+        cluster.shutdown(ignore_fatal=True)
 
 
 def wait_nodes():

@@ -33,13 +33,14 @@ String dumpQueryPlan(const QueryPlan & query_plan);
 String dumpQueryPipeline(const QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode);
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type);
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    SharedHeaders & query_plans_headers);
+    SharedHeaders & query_plans_headers,
+    ContextPtr context);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
@@ -85,7 +86,7 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+    const TableExpressionNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
@@ -93,12 +94,12 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 
 /// Build filter for specific table_expression
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});
 

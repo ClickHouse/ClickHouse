@@ -26,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3HexAreaM2 : public IFunction
+class FunctionH3HexAreaM2 final : public IFunction
 {
 public:
     static constexpr auto name = "h3HexAreaM2";
@@ -88,7 +88,8 @@ public:
                     getName(),
                     MAX_H3_RES);
 
-            Float64 res = getHexagonAreaAvgM2(resolution);
+            double res = 0;
+            getHexagonAreaAvgM2(resolution, &res);
 
             dst_data[row] = res;
         }
@@ -117,15 +118,15 @@ Returns average hexagon area in square meters at the given [H3](#h3-index) resol
             "Get hexagon area at resolution 13",
             "SELECT h3HexAreaM2(13) AS area",
             R"(
-┌─area─┐
-│ 43.9 │
-└──────┘
+┌──────────────area─┐
+│ 43.87026794728301 │
+└───────────────────┘
             )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3HexAreaM2>(documentation);
 }
 

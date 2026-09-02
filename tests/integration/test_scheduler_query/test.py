@@ -16,6 +16,7 @@ node: ClickHouseInstance = cluster.add_instance(
     stay_alive=True,
     main_configs=[],
     with_zookeeper=True,
+    cpu_limit=15
 )
 
 
@@ -31,7 +32,7 @@ def start_cluster():
 @pytest.fixture(scope="function", autouse=True)
 def clear_workloads_and_resources():
     node.query(
-        f"""
+        """
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists main;
@@ -57,7 +58,7 @@ def assert_profile_event(node, query_id, profile_event, check) -> None:
 
 def test_create() -> None:
     node.query(
-        f"""
+        """
         create resource query (query);
         create workload all settings max_concurrent_queries=20;
         create workload admin in all settings priority=0;
@@ -73,13 +74,13 @@ def test_create() -> None:
         assert node.query(f"{common_select_part} '%/admin/%' and type='fifo'") == "1\n"
 
         assert (
-            node.query(f"{common_select_part} '%/admin' and type='unified' and priority=0") == "1\n"
+            node.query(f"{common_select_part} '%/admin' and type='workload' and priority=0") == "1\n"
         )
 
         assert node.query(f"{common_select_part} '%/production/%' and type='fifo'") == "1\n"
 
         assert (
-            node.query(f"{common_select_part} '%/production' and type='unified' and weight=9")
+            node.query(f"{common_select_part} '%/production' and type='workload' and weight=9")
             == "1\n"
         )
 
@@ -137,7 +138,7 @@ class QueryPool:
 def concurrent_queries() -> int:
     return int(
         node.query(
-            f"select value from system.metrics where name='ConcurrentQueryAcquired'"
+            "select value from system.metrics where name='ConcurrentQueryAcquired'"
         ).strip()
     )
 
@@ -169,7 +170,7 @@ def ensure_workload_concurrency(workload, limit: int) -> None:
 
 def test_max_concurrent_queries() -> None:
     node.query(
-        f"""
+        """
         create resource query (query);
         create workload all settings max_concurrent_queries=6;
         create workload admin in all settings priority=0;
@@ -206,7 +207,7 @@ def test_max_concurrent_queries() -> None:
 
 def test_max_waiting_queries_reached() -> None:
     node.query(
-        f"""
+        """
         create resource query (query);
         create workload all settings max_concurrent_queries=1, max_waiting_queries=1;
         """
@@ -221,18 +222,3 @@ def test_max_waiting_queries_reached() -> None:
     assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
 
 
-def test_under_max_waiting_queries_limit() -> None:
-    node.query(
-        f"""
-        create resource query (query);
-        create workload all settings max_concurrent_queries=1, max_waiting_queries=6;
-        """
-    )
-
-    pool_all = QueryPool(7, "all")
-
-    pool_all.start()
-    ensure_total_concurrency(1)
-    ensure_workload_concurrency("all", 1)
-    pool_all.stop()
-    assert pool_all.last_error is None

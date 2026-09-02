@@ -6,6 +6,8 @@
 #include <Common/RemoteHostFilter.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -16,6 +18,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+void registerDictionarySourceCassandra(DictionarySourceFactory & factory);
 void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=]([[maybe_unused]] const String & name,
@@ -39,7 +42,84 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
         "Dictionary source of type `cassandra` is disabled because ClickHouse was built without cassandra support.");
 #endif
     };
-    factory.registerSource("cassandra", create_table_source);
+    factory.registerSource("cassandra", create_table_source, Documentation{
+        .description = R"DOCS_MD(
+# Cassandra dictionary source
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+SOURCE(CASSANDRA(
+    host 'localhost'
+    port 9042
+    user 'username'
+    password 'qwerty123'
+    keyspace 'database_name'
+    column_family 'table_name'
+    allow_filtering 1
+    partition_key_prefix 1
+    consistency 'One'
+    where '"SomeColumn" = 42'
+    max_threads 8
+    query 'SELECT id, value_1, value_2 FROM database_name.table_name'
+))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<source>
+    <cassandra>
+        <host>localhost</host>
+        <port>9042</port>
+        <user>username</user>
+        <password>qwerty123</password>
+        <keyspase>database_name</keyspase>
+        <column_family>table_name</column_family>
+        <allow_filtering>1</allow_filtering>
+        <partition_key_prefix>1</partition_key_prefix>
+        <consistency>One</consistency>
+        <where>"SomeColumn" = 42</where>
+        <max_threads>8</max_threads>
+        <query>SELECT id, value_1, value_2 FROM database_name.table_name</query>
+    </cassandra>
+</source>
+```
+
+</Tab>
+</Tabs>
+
+Setting fields:
+
+| Setting | Description |
+|---------|-------------|
+| `host` | The Cassandra host or comma-separated list of hosts. |
+| `port` | The port on the Cassandra servers. If not specified, default port `9042` is used. |
+| `user` | Name of the Cassandra user. |
+| `password` | Password of the Cassandra user. |
+| `keyspace` | Name of the keyspace (database). |
+| `column_family` | Name of the column family (table). |
+| `allow_filtering` | Flag to allow or not potentially expensive conditions on clustering key columns. Default value is `1`. |
+| `partition_key_prefix` | Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is `1` (the first key column is a partition key and other key columns are clustering key). |
+| `consistency` | Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`. |
+| `where` | Optional selection criteria. |
+| `max_threads` | The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries. |
+| `query` | The custom query. Optional. |
+
+<Note>
+The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
+</Note>
+)DOCS_MD"
+#if !USE_CASSANDRA
+            "\n\nCurrently unavailable, because this ClickHouse build does not include Cassandra support."
+#endif
+        ,
+        .syntax = "SOURCE(CASSANDRA(host 'host' port 9042 keyspace 'keyspace' column_family 'table'))",
+        .related = {}});
 }
 
 }
@@ -48,7 +128,6 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
-#include <IO/WriteHelpers.h>
 #include <Dictionaries/CassandraSource.h>
 
 namespace DB
@@ -63,7 +142,7 @@ CassandraDictionarySource::Configuration::Configuration(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : host(config.getString(config_prefix + ".host"))
-    , port(config.getUInt(config_prefix + ".port", 0))
+    , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", 0)))
     , user(config.getString(config_prefix + ".user", ""))
     , password(config.getString(config_prefix + ".password", ""))
     , db(config.getString(config_prefix + ".keyspace"))
@@ -141,12 +220,14 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
     query += " ALLOW FILTERING;";
 }
 
-QueryPipeline CassandraDictionarySource::loadAll()
+BlockIO CassandraDictionarySource::loadAll()
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading all using query: {}", query);
-    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    return io;
 }
 
 std::string CassandraDictionarySource::toString() const
@@ -154,21 +235,24 @@ std::string CassandraDictionarySource::toString() const
     return "Cassandra: " + configuration.db + '.' + configuration.table;
 }
 
-QueryPipeline CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO CassandraDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     String query = query_builder.composeLoadIdsQuery(ids);
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading ids using query: {}", query);
-    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    return io;
 }
 
-QueryPipeline CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
 
     /// TODO is there a better way to load data by complex keys?
-    std::unordered_map<UInt64, std::vector<size_t>> partitions;
+    UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<size_t>> partitions;
     for (const auto & row : requested_rows)
     {
         SipHash partition_key;
@@ -186,10 +270,12 @@ QueryPipeline CassandraDictionarySource::loadKeys(const Columns & key_columns, c
         pipes.push_back(Pipe(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size)));
     }
 
-    return QueryPipeline(Pipe::unitePipes(std::move(pipes)));
+    BlockIO io;
+    io.pipeline = QueryPipeline(Pipe::unitePipes(std::move(pipes)));
+    return io;
 }
 
-QueryPipeline CassandraDictionarySource::loadUpdatedAll()
+BlockIO CassandraDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }

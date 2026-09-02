@@ -1,6 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunctionFileLike.h>
+#include <Storages/StorageFile.h>
 
 
 namespace DB
@@ -24,7 +25,8 @@ public:
 
 protected:
     int fd = -1;
-    String path_to_archive;
+    std::optional<StorageFile::FileSource> file_source;
+
     void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;
     std::optional<String> tryGetFormatFromFirstArgument() override;
 

@@ -33,15 +33,15 @@ REGISTER_FUNCTION(MultiFuzzyMatchAnyIndex)
         "Usage example",
         "SELECT multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse']);",
         R"(
-┌─multiFuzzyMa⋯ickHouse'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse'])─┐
+│                                                                                  2 │
+└────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiFuzzyMatchAnyIndex>(documentation);
 }

@@ -19,14 +19,18 @@ def start_cluster():
     try:
         cluster.start()
         for node in nodes:
-            node.query("CREATE DATABASE IF NOT EXISTS test")
+            node.query("DROP DATABASE IF EXISTS test")
+            node.query("CREATE DATABASE test")
             # Different internal dictionary name with Atomic
+            node.query("DROP DATABASE IF EXISTS test_ordinary")
             node.query(
-                "CREATE DATABASE IF NOT EXISTS test_ordinary ENGINE=Ordinary",
+                "CREATE DATABASE test_ordinary ENGINE=Ordinary",
                 settings={"allow_deprecated_database_ordinary": 1},
             )
-            node.query("CREATE DATABASE IF NOT EXISTS atest")
-            node.query("CREATE DATABASE IF NOT EXISTS ztest")
+            node.query("DROP DATABASE IF EXISTS atest")
+            node.query("CREATE DATABASE atest")
+            node.query("DROP DATABASE IF EXISTS ztest")
+            node.query("CREATE DATABASE ztest")
             node.query("CREATE TABLE test.source(x UInt64, y UInt64) ENGINE=Log")
             node.query("INSERT INTO test.source VALUES (5,6)")
 

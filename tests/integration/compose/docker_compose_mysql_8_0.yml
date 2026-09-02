@@ -1,6 +1,6 @@
 services:
     mysql80:
-        image: mysql:8.0
+        image: clickhouse/test-mysql80:${DOCKER_TEST_MYSQL80_TAG:-latest}
         stop_grace_period: 5s
         restart: always
         environment:
@@ -20,9 +20,19 @@ services:
             --ssl-ca=/etc/mysql/certs/ca.pem
             --ssl-cert=/etc/mysql/certs/server-cert.pem
             --ssl-key=/etc/mysql/certs/server-key.pem
+            --sha256_password_auto_generate_rsa_keys=OFF
+            --caching_sha2_password_auto_generate_rsa_keys=OFF
+            --sha256_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --sha256_password_public_key_path=/etc/mysql/certs/public_key.pem
+            --caching_sha2_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --caching_sha2_password_public_key_path=/etc/mysql/certs/public_key.pem
         volumes:
             - type: ${MYSQL8_LOGS_FS:-tmpfs}
               source: ${MYSQL8_LOGS:-}
               target: /var/log/mysql/
             - ../helpers/mysql_cert:/etc/mysql/certs
         user: ${MYSQL8_DOCKER_USER}
+        cap_add:
+          - NET_ADMIN
+        privileged: true
+        cpus: 3

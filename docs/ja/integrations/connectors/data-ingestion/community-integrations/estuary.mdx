@@ -1,0 +1,46 @@
+---
+sidebar_label: 'Estuary'
+sidebar_position: 2
+sidebarTitle: 'Estuary'
+slug: /integrations/estuary
+description: 'Estuary インテグレーションを使用して、SaaS、データベース、その他のソースから ClickHouse にデータをストリーミング'
+title: 'Estuary を ClickHouse に接続'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'データインジェスト', 'etl', 'パイプライン', 'データインテグレーション']
+---
+
+import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Estuary](https://estuary.dev/) は、リアルタイムデータとバッチデータを、導入しやすい ETL パイプラインで柔軟に組み合わせられる、タイムリーなデータプラットフォームです。エンタープライズ向けのセキュリティとデプロイオプションを備え、Estuary は SaaS、データベース、ストリーミングソースから、ClickHouse を含むさまざまな宛先への信頼性の高いデータフローを実現します。
+
+Estuary を ClickHouse と統合する主な方法は 2 つあります。
+
+* [ClickHouse データベースに直接接続する](/ja/integrations/connectors/data-ingestion/community-integrations/estuary-native)。
+* [Kafka ClickPipes 経由で接続する](/ja/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes)。
+
+いずれの場合も、Estuary がデータのキャプチャと移動を処理します。独自の Kafka エコシステムやその他のインフラストラクチャを運用する必要はありません。
+
+<div id="choose-integration-type">
+  ## 各インテグレーションの選び方
+</div>
+
+ほとんどのユースケースでは、Estuary の [ClickHouse への直接マテリアライゼーション](/ja/integrations/connectors/data-ingestion/community-integrations/estuary-native)を推奨します。これは ClickHouse のネイティブプロトコルとのインテグレーション向けに特別に設計されており、セルフホストのデプロイメントと ClickHouse Cloud インスタンスの両方をサポートします。
+
+パイプラインを ClickPipes 経由で管理したい場合は、代わりに [ClickPipe インテグレーション](/ja/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes)を選択してください。これにより、Kafka メッセージと同様に受信データを扱えます。
+
+<div id="additional-resources">
+  ## 追加リソース
+</div>
+
+Estuary とのインテグレーションの設定について詳しくは、Estuary のドキュメントを参照してください。
+
+* [Estuary の機能を確認する](https://docs.estuary.dev/)。
+* Estuary の [ClickHouse への直接マテリアライゼーション コネクタ](https://docs.estuary.dev/reference/Connectors/materialization-connectors/ClickHouse/)のリファレンス ドキュメントを参照してください。
+* Estuary の [Kafka ClickPipe インテグレーション](https://docs.estuary.dev/reference/Connectors/materialization-connectors/Dekaf/clickhouse/)のリファレンス ドキュメントを参照してください。
+* Estuary を使って ClickHouse にストリーミングできるソースの一覧を確認するには、[Estuary の capture コネクタ](https://docs.estuary.dev/reference/Connectors/capture-connectors/) を参照してください。

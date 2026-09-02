@@ -23,13 +23,13 @@ python -m ci.praktika run "<JOB_NAME>"
 ### Run a Specific Test Within a CI Job
 ```bash
 python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
-  --test "test_named_collections/"
+  --test "test_named_collections"
 ```
 - With `--test`, the batch index in the job name (e.g., `4/5`) is irrelevant locally, but the job name must match an actual CI job to select the right configuration.
 - You can pass multiple test selectors:
   ```bash
   python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
-    --test "test_named_collections/test.py::test_default_access" "test_multiple_disks/"
+    --test "test_named_collections/test.py::test_default_access" "test_multiple_disks"
   ```
 - Tip: For local runs with `--test`, the batch index and build flavor are not required. You can use the alias `integration`:
   ```bash
@@ -43,6 +43,7 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 - `--path PATH` custom ClickHouse server binary location (if not in default locations).
 - `--path_1 PATH` custom path to the ClickHouse server config directory (if not in `./programs/server/config/`).
 - `--workers N` to override automatic calculation of the recommended maximum number of parallel pytest workers. The value is passed to pytest-xdist as `-n N`. Use a lower number on resource-constrained machines or increase it to utilize more CPU cores.
+- `--param KEY=VALUE[,KEY=VALUE...]` to inject custom environment variables for pytest. Pass comma-separated KEY=VALUE pairs (e.g., `--param PYTEST_ADDOPTS=-vv,CUSTOM_FLAG=1`).
 ## Running Natively
 
 ### Prerequisites
@@ -60,7 +61,7 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 - [docker compose](https://docs.docker.com/compose/) and additional Python libraries:
   ```bash
   sudo -H pip install \
-      PyMySQL avro cassandra-driver confluent-kafka dicttoxml docker grpcio grpcio-tools kafka-python kazoo minio lz4 protobuf psycopg2-binary pymongo pytz pytest pytest-timeout redis tzlocal==2.1 urllib3 requests-kerberos dict2xml hypothesis pika nats-py pandas numpy jinja2 pytest-xdist==2.4.0 pyspark azure-storage-blob delta paramiko psycopg pyarrow boto3 deltalake snappy pyiceberg python-snappy thrift
+      PyMySQL avro cassandra-driver confluent-kafka dicttoxml docker grpcio grpcio-tools kafka-python kazoo minio lz4 protobuf psycopg2-binary pymongo pytz pytest pytest-timeout redis tzlocal==2.1 urllib3 requests-kerberos dict2xml hypothesis pika nats-py pandas numpy jinja2 pytest-xdist==2.4.0 pyspark azure-storage-blob delta paramiko psycopg pyarrow boto3 deltalake snappy pyiceberg python-snappy thrift pyhdfs
   ```
 - For Spark tests, install Spark and add its `bin` directory to your `PATH`. See `ci/docker/integration/runner/Dockerfile` for details. Set `JAVA_PATH` to the Java binary path.
 - To run tests as a non-privileged user, add the user to the `docker` group:
@@ -186,9 +187,10 @@ export ZOO_SECURE_CLIENT_PORT=2281
 export RABBITMQ_COOKIE_FILE=/tmp/stub
 export MONGO_SECURE_CONFIG_DIR=/tmp/stub
 export PROMETHEUS_WRITER_PORT=8080
-export PROMETHEUS_REMOTE_WRITE_HANDLER=/stub
-export PROMETHEUS_REMOTE_READ_HANDLER=/stub
+export PROMETHEUS_REMOTE_WRITE_HANDLERS=/stub
+export PROMETHEUS_REMOTE_READ_HANDLERS=/stub
 export PROMETHEUS_READER_PORT=8080
+export PROMETHEUS_RECEIVER_PORT=8080
 docker compose $(find ${HOME}/ClickHouse/tests/integration -name '*compose*yml' -exec echo --file {} ' ' \; ) pull
 ```
 
@@ -201,4 +203,10 @@ sudo vim /etc/docker/daemon.json
 {
   "ipv6": false
 }
+```
+
+### "Permission denied" errors in ClickHouse repository after running integration tests
+Sometimes after running integration tests natively docker seems to change the permissions of the ClickHouse code repository and running normal `clickhouse-test` tests fails due to these permission errors. To fix it, chown back to your user and group:
+```bash
+sudo chown -R <user>:<group> ClickHouse/
 ```

@@ -6,6 +6,7 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Common/SipHash.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
@@ -13,6 +14,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -27,7 +29,10 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+
+#include <Access/ContextAccess.h>
 
 #include <Backups/BackupFactory.h>
 
@@ -55,6 +60,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -78,27 +85,32 @@ public:
     {}
 };
 
-String buildDataPath(const String & database_name)
+/// The name is the cache key of the storage policy, so it must cover every input the policy's disk
+/// depends on, including the local database name. Fields are length-prefixed to keep their
+/// boundaries unambiguous, and the name stays a pure function of them because it has to come out
+/// identical on every open of the same database.
+String buildStoragePolicyName(const String & local_database_name, const DatabaseBackup::Configuration & config)
 {
-    return std::filesystem::path("data") / escapeForFileName(database_name) / "";
+    const auto backup_info_string = config.backup_info.toString();
+
+    SipHash hash;
+    hash.update(local_database_name.size());
+    hash.update(local_database_name);
+    hash.update(config.database_name.size());
+    hash.update(config.database_name);
+    hash.update(backup_info_string.size());
+    hash.update(backup_info_string);
+
+    return fmt::format("__database_backup_config_{}", getSipHash128AsHexString(hash));
 }
 
-String buildReplacementRelativePath(const DatabaseBackup::Configuration & config)
-{
-    return buildDataPath(config.database_name);
-}
-
-String buildStoragePolicyName(const DatabaseBackup::Configuration & config)
-{
-    return fmt::format("__database_backup_config_{}_{})", config.database_name, config.backup_info.toString());
-}
-
-void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_query, const DatabaseBackup::Configuration & config, ContextPtr)
+void updateCreateQueryWithDatabaseBackupStoragePolicy(
+    ASTCreateQuery * create_query, const String & local_database_name, const DatabaseBackup::Configuration & config)
 {
     auto * storage = create_query->storage;
 
     bool is_replicated_or_shared_engine = false;
-    auto engine = std::make_shared<ASTFunction>();
+    auto engine = make_intrusive<ASTFunction>();
 
     static constexpr std::string_view replicated_engine_prefix = "Replicated";
 
@@ -120,7 +132,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     /// Add old engine's arguments
-    auto args = std::make_shared<ASTExpressionList>();
+    auto args = make_intrusive<ASTExpressionList>();
 
     if (storage->engine->arguments)
     {
@@ -131,6 +143,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     engine->arguments = std::move(args);
+    engine->setNoEmptyArgs(true);
 
     /// Set new engine for the old query
     create_query->storage->set(create_query->storage->engine, engine->clone());
@@ -148,19 +161,24 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         storage->set(storage->settings, settings_ast);
         settings = storage->settings;
     }
 
-    auto storage_policy_name = buildStoragePolicyName(config);
+    auto storage_policy_name = buildStoragePolicyName(local_database_name, config);
     settings->changes.setSetting("storage_policy", Field(storage_policy_name));
 }
 
 }
 
 DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_path_, const Configuration & config_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, buildDataPath(name_), "DatabaseBackup(" + name_ + ")", context_)
+    : DatabaseOrdinary(
+        name_,
+        metadata_path_,
+        DatabaseCatalog::getDataDirPath(name_) / "",
+        "DatabaseBackup(" + name_ + ")",
+        context_)
     , config(config_)
 {
 }
@@ -217,15 +235,33 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     backup_open_params.context = getContext();
     backup_open_params.backup_info = config.backup_info;
 
-    backup = BackupFactory::instance().createBackup(backup_open_params);
+    try
+    {
+        backup = BackupFactory::instance().createBackup(backup_open_params);
+    }
+    catch (...)
+    {
+        if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+            throw;
 
-    auto storage_policy_name = buildStoragePolicyName(config);
+        /// It's server startup: do not prevent the server from starting if the backup is
+        /// unavailable (e.g. the backup files were removed or the underlying storage is
+        /// inaccessible). The database is loaded without any tables; restart the server once
+        /// the backup becomes available again to access its tables.
+        tryLogCurrentException(
+            log,
+            fmt::format("Cannot open backup for database {}, it will be loaded without tables", backQuoteIfNeed(getDatabaseName())));
+        backup = nullptr;
+        return;
+    }
+
+    auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config);
 
     getContext()->getOrCreateStoragePolicy(storage_policy_name, [&](const StoragePoliciesMap &)
     {
         DiskBackup::PathPrefixReplacement path_prefix_replacement;
         path_prefix_replacement.from = data_path;
-        path_prefix_replacement.to = buildReplacementRelativePath(config);
+        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name) / "";
 
         DiskBackupConfiguration disk_backup_config;
 
@@ -237,10 +273,17 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     });
 }
 
-void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool)
+void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
     if (!backup)
+    {
+        /// The backup could not be opened on server startup (see beforeLoadingMetadata).
+        /// Load the database without any tables instead of failing the whole server.
+        if (is_startup)
+            return;
+
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not initialized");
+    }
 
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
@@ -330,10 +373,16 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
                 return;
             }
 
-            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
+            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, current_database_name, config);
 
-            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            {
+                SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
+                SelectIntersectExceptQueryVisitor{data}.visit(ast);
+            }
+            {
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            }
 
             QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
 
@@ -360,22 +409,26 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseBackupThreads, CurrentMetrics::DatabaseBackupThreadsActive, CurrentMetrics::DatabaseBackupThreadsScheduled);
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DatabaseBackup");
 
-    const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
-
-    for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
-        std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        runner([batch, &process_metadata_file]() mutable
-            {
-                for (const auto & file : batch)
-                    process_metadata_file(file);
-            },
-            Priority{},
-            getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+        /// Note that we pass batch by value (always fine) and process_metadata_file by reference
+        /// process_metadata_file is ok since a) it outlives runner and b) it captures by reference only things that outlive runner
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
+        const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
+
+        for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
+        {
+            std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
+            runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
+                {
+                    for (const auto & file : batch)
+                        process_metadata_file(file);
+                },
+                Priority{},
+                getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
@@ -407,15 +460,12 @@ ASTPtr DatabaseBackup::getCreateQueryFromMetadata(const String & table_name, boo
     return create_query;
 }
 
-ASTPtr DatabaseBackup::getCreateDatabaseQuery() const
+ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
-    std::string creation_args;
-    creation_args += fmt::format("'{}'", config.database_name);
-    creation_args += fmt::format(", '{}'", config.backup_info.toString());
-
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({})", backQuoteIfNeed(getDatabaseName()), creation_args);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
+        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -426,10 +476,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQuery() const
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;
@@ -459,6 +509,17 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
 }
 
+void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
+{
+    /// A locator we cannot parse opens nothing: creation rejects it, so there is nothing to authorize.
+    if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>())
+        return;
+
+    auto config = parseArguments(engine_args, query_context);
+    BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
+}
+
+void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -471,10 +532,118 @@ void registerDatabaseBackup(DatabaseFactory & factory)
             engine_args = engine->arguments->children;
 
         auto config = parseArguments(engine_args, args.context);
+
+        /// Authorize only a newly introduced definition: one read back from this server's metadata was
+        /// already validated, and a context with no user cannot be checked per user.
+        const bool has_real_user = args.context->getAccess()->getUserID().has_value();
+        const bool from_existing_metadata
+            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax;
+        if (has_real_user && !from_existing_metadata)
+            BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
+
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true}, Documentation{
+        .description = R"DOCS_MD(
+Database backup allows to instantly attach table/database from [backups](/concepts/features/backup-restore/overview) in read-only mode.
+
+Database backup works with both incremental and non-incremental backups.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE backup_database
+ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
+```
+
+The backup destination can be any valid backup [destination](/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
+
+**Engine Parameters**
+
+- `database_name_inside_backup` — Name of the database inside the backup.
+- `backup_destination` — Backup destination.
+
+## Usage example {#usage-example}
+
+Let's make an example with a `Disk` backup destination. Let's first setup backups disk in `storage.xml`:
+
+```xml
+<storage_configuration>
+    <disks>
+        <backups>
+            <type>local</type>
+            <path>/home/ubuntu/ClickHouseWorkDir/backups/</path>
+        </backups>
+    </disks>
+</storage_configuration>
+<backups>
+    <allowed_disk>backups</allowed_disk>
+    <allowed_path>/home/ubuntu/ClickHouseWorkDir/backups/</allowed_path>
+</backups>
+```
+
+Example of usage. Let's create test database, tables, insert some data and then create a backup:
+
+```sql
+CREATE DATABASE test_database;
+
+CREATE TABLE test_database.test_table_1 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_1 VALUES (0, 'test_database.test_table_1');
+
+CREATE TABLE test_database.test_table_2 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_2 VALUES (0, 'test_database.test_table_2');
+
+CREATE TABLE test_database.test_table_3 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_3 VALUES (0, 'test_database.test_table_3');
+
+BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
+```
+
+So now we have `test_database_backup` backup, let's create database Backup:
+
+```sql
+CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
+```
+
+Now we can query any table from database:
+
+```sql
+SELECT id, value FROM test_database_backup.test_table_1;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_1 │
+└────┴────────────────────────────┘
+
+SELECT id, value FROM test_database_backup.test_table_2;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_2 │
+└────┴────────────────────────────┘
+
+SELECT id, value FROM test_database_backup.test_table_3;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_3 │
+└────┴────────────────────────────┘
+```
+
+It is also possible to work with this database Backup as with any ordinary database. For example query tables in it:
+
+```sql
+SELECT database, name FROM system.tables WHERE database = 'test_database_backup';
+```
+
+```text
+┌─database─────────────┬─name─────────┐
+│ test_database_backup │ test_table_1 │
+│ test_database_backup │ test_table_2 │
+│ test_database_backup │ test_table_3 │
+└──────────────────────┴──────────────┘
+```
+)DOCS_MD",
+        .syntax = "ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))",
+        .related = {}});
 }
 
 }

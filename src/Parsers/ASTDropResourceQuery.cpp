@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTDropResourceQuery::clone() const
 {
-    return std::make_shared<ASTDropResourceQuery>(*this);
+    return make_intrusive<ASTDropResourceQuery>(*this);
 }
 
 void ASTDropResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const

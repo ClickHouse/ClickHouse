@@ -1,8 +1,8 @@
 #include <Disks/registerDisks.h>
 
 #include <Disks/DiskFactory.h>
-#include <Disks/ObjectStorages/ObjectStorageFactory.h>
-#include <Disks/ObjectStorages/MetadataStorageFactory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
 
 #include "config.h"
 

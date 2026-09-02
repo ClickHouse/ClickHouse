@@ -24,7 +24,7 @@ SELECT
   arrayDistinct(groupArray(if (read_bytes >= peak_memory_usage, [1], [read_bytes, peak_memory_usage])))
 FROM
     system.part_log
-WHERE event_type = 'MutatePart' AND table = 'table_with_single_pk' AND database = currentDatabase();
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_type = 'MutatePart' AND table = 'table_with_single_pk' AND database = currentDatabase();
 
 DROP TABLE IF EXISTS table_with_single_pk;
 
@@ -53,7 +53,7 @@ SELECT
   arrayDistinct(groupArray(if (read_bytes >= peak_memory_usage, [1], [read_bytes, peak_memory_usage])))
   FROM
       system.part_log
- WHERE event_type = 'MutatePart' AND table = 'table_with_multi_pk' AND database = currentDatabase();
+ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_type = 'MutatePart' AND table = 'table_with_multi_pk' AND database = currentDatabase();
 
 DROP TABLE IF EXISTS table_with_multi_pk;
 
@@ -84,7 +84,7 @@ SELECT
   arrayDistinct(groupArray(if (read_bytes >= peak_memory_usage, [1], [read_bytes, peak_memory_usage])))
   FROM
       system.part_log
- WHERE event_type = 'MutatePart' AND table = 'table_with_function_pk' AND database = currentDatabase();
+ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_type = 'MutatePart' AND table = 'table_with_function_pk' AND database = currentDatabase();
 
 DROP TABLE IF EXISTS table_with_function_pk;
 
@@ -113,6 +113,6 @@ SELECT
   arrayDistinct(groupArray(if (read_bytes >= peak_memory_usage, [1], [read_bytes, peak_memory_usage])))
   FROM
       system.part_log
- WHERE event_type = 'MutatePart' AND table = 'table_without_pk' AND database = currentDatabase();
+ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_type = 'MutatePart' AND table = 'table_without_pk' AND database = currentDatabase();
 
 DROP TABLE IF EXISTS table_without_pk;

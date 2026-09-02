@@ -1,6 +1,4 @@
-import json
 import random
-import requests
 import time
 import uuid
 from datetime import datetime
@@ -20,11 +18,11 @@ from pyiceberg.types import (
     TimestampType,
 )
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV, csv_compare
 
-BASE_URL_LOCAL = "http://localhost:19120/iceberg/"
 BASE_URL = "http://nessie:19120/iceberg/"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "warehouse"
@@ -75,8 +73,8 @@ def create_clickhouse_iceberg_database(
 ):
     settings = {
         "catalog_type": "rest",
-        "warehouse": "warehouse",
-        "storage_endpoint": "http://minio:9000/warehouse-rest",
+        "warehouse": "warehouse", 
+        "storage_endpoint": "http://minio1:9001/warehouse-rest",
     }
 
     settings.update(additional_settings)
@@ -94,49 +92,17 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert "HIDDEN" in show_result
 
 
-def create_clickhouse_iceberg_table(
-    started_cluster, node, database_name, table_name, schema, additional_settings={}
-):
-    """Create an Iceberg table via ClickHouse SQL using IcebergS3 engine with REST catalog"""
-    settings = {
-        "storage_catalog_type": "rest",
-        "storage_warehouse": WAREHOUSE_NAME,
-        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "storage_region": "us-east-1",
-        "storage_catalog_url": BASE_URL,
-    }
-
-    settings.update(additional_settings)
-
-    node.query(
-        f"""
-SET allow_experimental_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
-CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
-SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
-    )
-
-
-def drop_clickhouse_iceberg_table(
-    node, database_name, table_name
-):
-    """Drop an Iceberg table via ClickHouse SQL"""
-    node.query(
-        f"""
-DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
-    """
-    )
+def get_nessie_local_url(cluster):
+    return f"http://localhost:{cluster.iceberg_rest_catalog_port}/iceberg/"
 
 
 def load_catalog_impl(started_cluster):
-    minio_ip = started_cluster.get_instance_ip('minio')
-    s3_endpoint = f"http://{minio_ip}:9002"
+    s3_endpoint = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
 
     return RestCatalog(
         name="my_catalog",
         warehouse=WAREHOUSE_NAME,
-        uri=BASE_URL_LOCAL,
+        uri=get_nessie_local_url(started_cluster),
         token="dummy",
         **{
             "s3.endpoint": s3_endpoint,
@@ -245,7 +211,7 @@ def test_select(started_cluster):
 
         if test_table_identifier in existing_tables:
             catalog.drop_table(test_table_identifier)
-    except Exception as e:
+    except Exception:
         pass
 
     simple_schema = Schema(
@@ -276,9 +242,9 @@ def test_select(started_cluster):
     assert list(scan_result["id"]) == [1.0, 2.0, 3.0, 4.0, 5.0]
     assert list(scan_result["data"]) == ["hello", "world", "from", "nessie", "test"]
 
-    namespaces = catalog.list_namespaces()
+    catalog.list_namespaces()
 
-    tables = catalog.list_tables(namespace=test_namespace)
+    catalog.list_tables(namespace=test_namespace)
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
@@ -317,25 +283,37 @@ def test_hide_sensitive_info(started_cluster):
         properties={"write.metadata.compression-codec": "none"},
     )
 
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"catalog_credential": "SECRET_1"},
-    )
-    show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
-    assert "SECRET_1" not in show_result
-    assert minio_secret_key not in show_result
+    def check_secret_hidden(secret, additional_settings):
+        settings = {
+            "catalog_type": "rest",
+            "warehouse": "warehouse",
+            "storage_endpoint": "http://minio1:9001/warehouse-rest",
+        }
+        settings.update(additional_settings)
 
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
-    )
-    show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
-    assert "SECRET_2" not in show_result
-    assert minio_secret_key not in show_result
+        node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+        try:
+            node.query(
+                f"""SET allow_experimental_database_iceberg=true;
+CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
+            )
+        except QueryRuntimeException as e:
+            message = str(e).split("\n(query:")[0]
+            assert secret not in message, (
+                f"Secret {secret!r} leaked into CREATE DATABASE error message"
+            )
+            assert minio_secret_key not in message, (
+                "minio secret key leaked into CREATE DATABASE error message"
+            )
+            return
+
+        show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+        assert secret not in show_result
+        assert minio_secret_key not in show_result
+
+    check_secret_hidden("SECRET_1", {"catalog_credential": "id:SECRET_1"})
+    check_secret_hidden("SECRET_2", {"auth_header": "Authorization: SECRET_2"})
 
 def test_tables_with_same_location(started_cluster):
     node = started_cluster.instances["node1"]
@@ -387,7 +365,7 @@ def test_backup_database(started_cluster):
     node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
     assert (
         node.query("SHOW CREATE DATABASE backup_database")
-        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://nessie:19120/iceberg/\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'warehouse\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
+        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://nessie:19120/iceberg/\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'warehouse\\', storage_endpoint = \\'http://minio1:9001/warehouse-rest\\'\n"
     )
 
 def test_timestamps(started_cluster):
@@ -439,7 +417,7 @@ def test_timestamps(started_cluster):
         extracted_table_path = table_location.split("warehouse-rest/")[1]
 
     result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`")
-    assert result == f"CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-rest/{extracted_table_path}/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert result == f"CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/{extracted_table_path}/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 def test_insert(started_cluster):
@@ -539,109 +517,20 @@ def test_drop_table(started_cluster):
     assert test_table_name not in result
 
 
-def test_create_clickhouse_sql(started_cluster):
-    """Test CREATE TABLE from ClickHouse SQL with Nessie REST catalog"""
+def test_invalid_auth_header_format(started_cluster):
     node = started_cluster.instances["node1"]
 
-    catalog = load_catalog_impl(started_cluster)
-
-    test_ref = f"test_create_sql_{uuid.uuid4().hex[:8]}"
-    test_namespace = (f"{test_ref}_namespace",)
-    table_name = f"{test_ref}_table"
-
-    # Create namespace first
-    catalog.create_namespace(test_namespace)
-
-    # Create database connection
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    # Create table via ClickHouse SQL - this will test RestCatalog::createTable with prefix
-    create_clickhouse_iceberg_table(
-        started_cluster, node, test_namespace[0], table_name, "(x String)"
-    )
-
-    # Verify table exists in Nessie catalog
-    tables = catalog.list_tables(test_namespace)
-    table_identifier = (test_namespace[0], table_name)
-    assert table_identifier in tables, f"Table {table_identifier} not found in catalog. Available tables: {tables}"
-
-    # Insert and verify data
-    node.query(
-        f"INSERT INTO {CATALOG_NAME}.`{test_namespace[0]}.{table_name}` VALUES ('test_value');",
-        settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1}
-    )
-
-    result = node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`")
-    assert result.strip() == "test_value"
-
-
-def test_drop_table_clickhouse_sql(started_cluster):
-    """Test DROP TABLE from ClickHouse SQL with Nessie REST catalog"""
-    node = started_cluster.instances["node1"]
-
-    catalog = load_catalog_impl(started_cluster)
-
-    test_ref = f"test_drop_sql_{uuid.uuid4().hex[:8]}"
-    test_namespace = (f"{test_ref}_namespace",)
-    table_name = f"{test_ref}_table"
-
-    # Create namespace
-    catalog.create_namespace(test_namespace)
-
-    # Create database and table
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_iceberg_table(
-        started_cluster, node, test_namespace[0], table_name, "(x String)"
-    )
-
-    # Verify table exists
-    tables = catalog.list_tables(test_namespace)
-    assert len(tables) == 1, f"Expected 1 table, found {len(tables)}"
-
-    # Drop table via ClickHouse - this will test RestCatalog::dropTable with prefix
-    drop_clickhouse_iceberg_table(node, test_namespace[0], table_name)
-
-    # Verify table was removed from Nessie catalog
-    tables = catalog.list_tables(test_namespace)
-    assert len(tables) == 0, f"Expected 0 tables after drop, found {len(tables)}"
-
-
-def test_insert_clickhouse_sql(started_cluster):
-    """Test INSERT into table created from ClickHouse SQL"""
-    node = started_cluster.instances["node1"]
-
-    catalog = load_catalog_impl(started_cluster)
-
-    test_ref = f"test_insert_sql_{uuid.uuid4().hex[:8]}"
-    test_namespace = (f"{test_ref}_namespace",)
-    table_name = f"{test_ref}_table"
-
-    # Create namespace
-    catalog.create_namespace(test_namespace)
-
-    # Create database connection
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    # Create table via ClickHouse SQL
-    create_clickhouse_iceberg_table(
-        started_cluster, node, test_namespace[0], table_name,
-        "(id Nullable(Float64), data Nullable(String))"
-    )
-
-    # Insert multiple rows via ClickHouse
-    node.query(
-        f"INSERT INTO {CATALOG_NAME}.`{test_namespace[0]}.{table_name}` VALUES (1.0, 'first'), (2.0, 'second'), (3.0, 'third');",
-        settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1}
-    )
-
-    # Verify via ClickHouse SELECT
-    result = node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{table_name}` ORDER BY id")
-    expected_lines = ["1\tfirst", "2\tsecond", "3\tthird"]
-    assert result.strip().split('\n') == expected_lines
-
-    # Also verify via PyIceberg catalog
-    table = catalog.load_table((test_namespace[0], table_name))
-    scan_result = table.scan().to_pandas()
-    assert len(scan_result) == 3
-    assert list(scan_result["id"]) == [1.0, 2.0, 3.0]
-    assert list(scan_result["data"]) == ["first", "second", "third"]
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_experimental_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'warehouse',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)

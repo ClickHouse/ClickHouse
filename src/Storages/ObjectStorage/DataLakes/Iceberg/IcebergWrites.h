@@ -1,16 +1,20 @@
 #pragma once
 
 #include <unordered_map>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <unordered_set>
+#include <Core/Range.h>
+#include <Core/SortDescription.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
+#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
+#include <Processors/Chunk.h>
+#include <Storages/KeyDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Core/Range.h>
-#include <Columns/IColumn.h>
-#include <IO/CompressionMethod.h>
-#include <Databases/DataLake/ICatalog.h>
 
 #if USE_AVRO
 
@@ -19,6 +23,10 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
+
 #include <Common/randomSeed.h>
 
 #include <Poco/JSON/Array.h>
@@ -30,7 +38,6 @@
 #include <Generic.hh>
 #include <Stream.hh>
 #include <ValidSchema.hh>
-#include <new>
 
 
 namespace DB
@@ -38,138 +45,34 @@ namespace DB
 
 String removeEscapedSlashes(const String & json_str);
 
-class FileNamesGenerator
+String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
+
+/// Per-file column statistics carried over verbatim from a source manifest entry during a manifest-only rewrite.
+struct DataFileColumnStatistics
 {
-public:
-    struct Result
-    {
-        /// Path recorded in the Iceberg metadata files.
-        /// If `write_full_path_in_iceberg_metadata` is disabled, it will be a simple relative path (e.g., /a/b/c.avro).
-        /// Otherwise, it will include a prefix indicating the file system type (e.g., s3://a/b/c.avro).
-        String path_in_metadata;
-
-        /// Actual path to the object in the storage (e.g., /a/b/c.avro).
-        String path_in_storage;
-    };
-
-    FileNamesGenerator() = default;
-    explicit FileNamesGenerator(
-        const String & table_dir_,
-        const String & storage_dir_,
-        bool use_uuid_in_metadata_,
-        CompressionMethod compression_method_,
-        const String & format_name_);
-
-    FileNamesGenerator(const FileNamesGenerator & other);
-    FileNamesGenerator & operator=(const FileNamesGenerator & other);
-
-    Result generateDataFileName();
-    Result generateManifestEntryName();
-    Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
-    Result generateMetadataName();
-    Result generateVersionHint();
-    Result generatePositionDeleteFile();
-
-    String convertMetadataPathToStoragePath(const String & metadata_path) const;
-
-    void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
-    void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
-
-private:
-    Poco::UUIDGenerator uuid_generator;
-    String table_dir;
-    String storage_dir;
-
-    String data_dir;
-    String metadata_dir;
-    String storage_data_dir;
-    String storage_metadata_dir;
-    bool use_uuid_in_metadata;
-    CompressionMethod compression_method;
-    String format_name;
-
-    Int32 initial_version = 0;
+    std::vector<std::pair<Int32, Int64>> column_sizes;
+    std::vector<std::pair<Int32, Int64>> value_counts;
+    std::vector<std::pair<Int32, Int64>> null_value_counts;
+    std::vector<std::pair<Int32, String>> lower_bounds;
+    std::vector<std::pair<Int32, String>> upper_bounds;
 };
 
-class DataFileStatistics
+/// Per-file manifest-entry lineage (`added_snapshot_id`, data `sequence_number` and `file_sequence_number`) carried over for a manifest-only rewrite.
+struct DataFileEntryLineage
 {
-public:
-    explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
-
-    void update(const Chunk & chunk);
-
-    std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
-    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
-    std::vector<std::pair<size_t, Field>> getLowerBounds() const;
-    std::vector<std::pair<size_t, Field>> getUpperBounds() const;
-
-    const std::vector<Int64> & getFieldIds() const { return field_ids; }
-private:
-    static Range uniteRanges(const Range & left, const Range & right);
-
-    std::vector<Int64> field_ids;
-    std::vector<Int64> column_sizes;
-    std::vector<Int64> null_counts;
-    std::vector<Range> ranges;
+    std::optional<Int64> added_snapshot_id;
+    std::optional<Int64> sequence_number;
+    std::optional<Int64> file_sequence_number;
 };
-
-class MultipleFileWriter
-{
-public:
-    explicit MultipleFileWriter(
-        UInt64 max_data_file_num_rows_,
-        UInt64 max_data_file_num_bytes_,
-        Poco::JSON::Array::Ptr schema,
-        FileNamesGenerator & filename_generator_,
-        ObjectStoragePtr object_storage_,
-        ContextPtr context_,
-        const std::optional<FormatSettings> & format_settings_,
-        StorageObjectStorageConfigurationPtr configuration_,
-        SharedHeader sample_block_);
-
-    void consume(const Chunk & chunk);
-    void finalize();
-    void release();
-    void cancel();
-    void clearAllDataFiles() const;
-
-    UInt64 getResultBytes() const;
-
-    const std::vector<String> & getDataFiles() const
-    {
-        return data_file_names;
-    }
-
-    const DataFileStatistics & getResultStatistics() const
-    {
-        return stats;
-    }
-
-private:
-    UInt64 max_data_file_num_rows;
-    UInt64 max_data_file_num_bytes;
-    DataFileStatistics stats;
-    std::optional<size_t> current_file_num_rows = std::nullopt;
-    std::optional<size_t> current_file_num_bytes = std::nullopt;
-    std::vector<String> data_file_names;
-    std::unique_ptr<WriteBufferFromFileBase> buffer;
-    OutputFormatPtr output_format;
-    FileNamesGenerator & filename_generator;
-    ObjectStoragePtr object_storage;
-    ContextPtr context;
-    std::optional<FormatSettings> format_settings;
-    StorageObjectStorageConfigurationPtr configuration;
-    SharedHeader sample_block;
-    UInt64 total_bytes = 0;
-};
-
 
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const std::vector<DataTypePtr> & partition_types,
-    const std::vector<String> & data_file_names,
+    const DataTypes & partition_types,
+    const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
+    const std::vector<UInt64> & data_file_row_counts,
+    const std::vector<UInt64> & data_file_byte_counts,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -177,89 +80,64 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
     WriteBuffer & buf,
-    Iceberg::FileContentType content_type);
+    Iceberg::FileContentType content_type,
+    std::optional<Int64> user_defined_sequence_number = std::nullopt,
+    /// Optional snapshot-id override for ADDED entries; used when regenerating a manifest whose
+    /// adding snapshot is known from the source manifest-list entry (and may already be expired
+    /// from table metadata), so rewritten entries keep the original lineage instead of being
+    /// re-attributed to a later snapshot.
+    std::optional<Int64> user_defined_snapshot_id = std::nullopt,
+    /// Optional per-file formats parallel to `data_file_names`; when non-empty each entry's original `file_format` is preserved, else `format` is used.
+    const std::vector<String> & data_file_formats = {},
+    /// Optional per-file column statistics parallel to `data_file_names`; when non-empty each entry's stats come from the matching element, else `data_file_statistics` is used.
+    const std::vector<DataFileColumnStatistics> & per_file_statistics = {},
+    /// Optional per-file `sort_order_id` parallel to `data_file_names`; when set it is written back to preserve sortedness, else the field is left null.
+    const std::vector<std::optional<Int32>> & data_file_sort_order_ids = {},
+    /// Optional per-file manifest-entry lineage parallel to `data_file_names`; when non-empty entries are written as EXISTING keeping their original snapshot-id and sequence number, else as ADDED by the new snapshot.
+    const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
+    /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
+    Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
+    /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
+    /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
+
+/// Per manifest-list entry file/row counts and lineage for rewritten manifests.
+struct ManifestListEntryCounts
+{
+    Int64 files_count = 0;
+    Int64 rows_count = 0;
+    /// Minimum data sequence number across the entries in this manifest, used as the manifest-list `min_sequence_number`.
+    Int64 min_sequence_number = 0;
+    /// True when the manifest's entries are ADDED in the snapshot whose manifest list is being
+    /// written, so its counts are reported as added_*. False when the manifest is carried
+    /// forward from an earlier snapshot or contains only pre-existing files (metadata-only
+    /// rewrite), so its counts are reported as existing_*.
+    bool counts_are_added = false;
+    /// When set, override the entry's `added_snapshot_id` / `sequence_number`, preserving the
+    /// lineage of a manifest that was first added by an earlier snapshot and is carried
+    /// forward into this manifest list.
+    std::optional<Int64> added_snapshot_id;
+    std::optional<Int64> added_sequence_number;
+};
 
 void generateManifestList(
-    const FileNamesGenerator & filename_generator,
+    const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
-    const Strings & manifest_entry_names,
+    const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
-    Int32 manifest_length,
+    const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots = true);
+    bool use_previous_snapshots = true,
+    const std::vector<Iceberg::FileContentType> & per_entry_content_types = {},
+    const std::vector<ManifestListEntryCounts> & entry_counts = {},
+    const std::unordered_set<String> & carry_forward_manifest_paths = {},
+    const std::vector<Int64> & entry_partition_spec_ids = {},
+    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {});
 
-class MetadataGenerator
-{
-public:
-    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
-
-    struct NextMetadataResult
-    {
-        Poco::JSON::Object::Ptr snapshot = nullptr;
-        String metadata_path;
-        String storage_metadata_path;
-    };
-
-    NextMetadataResult generateNextMetadata(
-        FileNamesGenerator & generator,
-        const String & metadata_filename,
-        Int64 parent_snapshot_id,
-        Int32 added_files,
-        Int32 added_records,
-        Int32 added_files_size,
-        Int32 num_partitions,
-        Int32 added_delete_files,
-        Int32 num_deleted_rows,
-        std::optional<Int64> user_defined_snapshot_id = std::nullopt,
-        std::optional<Int64> user_defined_timestamp = std::nullopt);
-
-    void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
-    void generateDropColumnMetadata(const String & column_name);
-    void generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
-
-private:
-    Poco::JSON::Object::Ptr metadata_object;
-
-    pcg64_fast gen;
-    std::uniform_int_distribution<Int32> dis;
-
-    Int64 getMaxSequenceNumber();
-    Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);
-};
-
-class ChunkPartitioner
-{
-public:
-    explicit ChunkPartitioner(
-        Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, SharedHeader sample_block_);
-
-    using PartitionKey = Row;
-    struct PartitionKeyHasher
-    {
-        size_t operator()(const PartitionKey & key) const;
-
-        mutable std::hash<String> hasher;
-    };
-
-    std::vector<std::pair<PartitionKey, Chunk>> partitionChunk(const Chunk & chunk);
-
-    const std::vector<String> & getColumns() const { return columns_to_apply; }
-
-    const std::vector<DataTypePtr> & getResultTypes() const { return result_data_types; }
-
-private:
-    SharedHeader sample_block;
-
-    std::vector<FunctionOverloadResolverPtr> functions;
-    std::vector<std::optional<size_t>> function_params;
-    std::vector<String> columns_to_apply;
-    std::vector<DataTypePtr> result_data_types;
-};
-
-class IcebergStorageSink : public SinkToStorage
+class IcebergStorageSink final : public SinkToStorage
 {
 public:
     IcebergStorageSink(
@@ -269,29 +147,34 @@ public:
         SharedHeader sample_block_,
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
+        const Iceberg::PersistentTableComponents & persistent_table_components_,
         const StorageID & table_id_);
 
-    ~IcebergStorageSink() override = default;
+    ~IcebergStorageSink() override;
+
 
     String getName() const override { return "IcebergStorageSink"; }
 
     void consume(Chunk & chunk) override;
 
     void onFinish() override;
+    void onException(std::exception_ptr exception) override;
 
 private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
+    std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     Int64 current_schema_id;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
-    StorageObjectStorageConfigurationPtr configuration;
     std::optional<FormatSettings> format_settings;
-    Int32 total_rows = 0;
-    Int32 total_chunks_size = 0;
+    KeyDescription sort_description;
+    Int64 total_rows = 0;
+    Int64 total_chunks_size = 0;
 
     void finalizeBuffers();
     void releaseBuffers();
@@ -306,6 +189,10 @@ private:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
+    Iceberg::PersistentTableComponents persistent_table_components;
+    const DataLakeStorageSettings & data_lake_settings;
+    const String write_format;
+
 };
 
 }

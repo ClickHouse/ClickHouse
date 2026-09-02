@@ -1,12 +1,13 @@
 #include <Client/ClientApplicationBase.h>
 #include <Client/ClientApplicationBaseParser.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <utility>
 
-#include <boost/program_options.hpp>
 
 namespace po = boost::program_options;
 
@@ -28,6 +29,52 @@ namespace ErrorCodes
 
 void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
+    /// boost::program_options rejects an empty value written adjacent to '=' (e.g. `--opt=`)
+    /// with "the argument for option should follow immediately after the equal sign". Rewrite
+    /// such a token for a known option into the equivalent space-separated form (`--opt` and an
+    /// empty value), which boost accepts, so that `--opt=` behaves like `--opt ""` and `set opt=''`.
+    {
+        /// Fast path: only build the option-name set and rewrite `arguments` when some token
+        /// actually looks like `--opt=` (an empty value written adjacent to '='). This keeps
+        /// the common startup path cheap, which matters because this file is compiled separately
+        /// specifically to avoid slow option parsing affecting `.sh` test timeouts.
+        const bool has_empty_adjacent_value = std::any_of(
+            arguments.begin(), arguments.end(),
+            [](const auto & argument)
+            { return argument.starts_with("--") && argument.size() > 3 && argument.back() == '='; });
+
+        if (has_empty_adjacent_value)
+        {
+            /// Only options that take a value may accept `--opt=` as an empty value; zero-token
+            /// switches (e.g. `--no-system-tables`) must keep rejecting `--switch=`.
+            std::unordered_set<std::string> value_option_names;
+            for (const auto & option : options_description.main_description.value().options())
+                if (option->semantic() && option->semantic()->max_tokens() > 0)
+                    value_option_names.insert(option->long_name());
+
+            Arguments rewritten;
+            rewritten.reserve(arguments.size());
+            for (const auto & argument : arguments)
+            {
+                const auto pos_eq = argument.find('=');
+                if (argument.starts_with("--") && pos_eq != std::string::npos && pos_eq + 1 == argument.size())
+                {
+                    std::string key = argument.substr(2, pos_eq - 2);
+                    std::string normalized_key = key;
+                    std::replace(normalized_key.begin(), normalized_key.end(), '-', '_');
+                    if (!key.empty() && (value_option_names.contains(key) || value_option_names.contains(normalized_key)))
+                    {
+                        rewritten.push_back(argument.substr(0, pos_eq));
+                        rewritten.emplace_back();
+                        continue;
+                    }
+                }
+                rewritten.push_back(argument);
+            }
+            arguments = std::move(rewritten);
+        }
+    }
+
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments)
                       .options(options_description.main_description.value())
@@ -66,12 +113,19 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
             const auto & token = op.original_tokens[0];
             po::variable_value value(boost::any(op.value), false);
 
-            const char * option;
+            const char * option = nullptr;
             std::error_code ec;
             if (token.contains(' '))
                 option = "query";
             else if (std::filesystem::is_regular_file(std::filesystem::path{token}, ec))
                 option = "queries-file";
+            else if (token.contains('/') || token.contains('.'))
+                /// The argument looks like a file path (contains `/` or `.`) but doesn't exist on disk.
+                /// Give a clear "no such file" error rather than the generic "positional option is not supported"
+                /// which is confusing when the user meant to pass a file, e.g.:
+                ///     $ clickhouse local /tmp/aaa.rep
+                ///     Positional option `/tmp/aaa.rep` is not supported.
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such file: {}", token);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
 

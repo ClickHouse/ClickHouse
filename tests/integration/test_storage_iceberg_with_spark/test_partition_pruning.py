@@ -9,7 +9,7 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize(
     "storage_type, run_on_cluster",
-    [("s3", False), ("s3", True), ("azure", False), ("local", False)],
+    [("s3", False), ("s3", True), ("azure", False), ("local", False), ("local", True)],
 )
 def test_partition_pruning(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -23,6 +23,7 @@ def test_partition_pruning(started_cluster_iceberg_with_spark, storage_type, run
             storage_type,
             TABLE_NAME,
             query,
+            additional_nodes=["node2", "node3"] if storage_type=="local" else [],
         )
 
     execute_spark_query(

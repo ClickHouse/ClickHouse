@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -9,7 +10,7 @@
 namespace DB
 {
 
-class FunctionFQDN : public IFunction
+class FunctionFQDN final : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";
@@ -24,6 +25,9 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -50,7 +54,7 @@ REGISTER_FUNCTION(FQDN)
     FunctionDocumentation::Description description = R"(
 Returns the fully qualified domain name of the ClickHouse server.
     )";
-    FunctionDocumentation::Syntax syntax = "fqdn()";
+    FunctionDocumentation::Syntax syntax = "FQDN()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the fully qualified domain name of the ClickHouse server.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -60,15 +64,15 @@ Returns the fully qualified domain name of the ClickHouse server.
 SELECT fqdn()
         )",
         R"(
-┌─FQDN()──────────────────────────┐
+┌─FQDN()────────────────────────┐
 │ clickhouse.us-east-2.internal │
-└─────────────────────────────────┘
+└───────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFQDN>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("fullHostName", "FQDN");

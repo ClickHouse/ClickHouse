@@ -44,15 +44,15 @@ The performance depends on the edit distance value and patterns used, but it's a
         "Usage example",
         "SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose']);",
         R"(
-┌─multiFuzzyMa⋯lickHose'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiFuzzyMatchAny>(documentation);
 }

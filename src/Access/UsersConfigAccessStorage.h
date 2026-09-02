@@ -17,6 +17,8 @@ class AccessControl;
 class ConfigReloader;
 
 /// Implementation of IAccessStorage which loads all from users.xml periodically.
+/// Should be initialized after disk storage was added to AccessControl so that roles can be
+/// referenced in users.xml grants.
 class UsersConfigAccessStorage : public IAccessStorage
 {
 public:

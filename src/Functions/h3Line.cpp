@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -6,14 +6,11 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
 
 
 namespace DB
@@ -28,12 +25,16 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Line : public IFunction
+class FunctionH3Line final : public IFunction
 {
 public:
     static constexpr auto name = "h3Line";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3Line>(); }
+    H3Validator validator;
+
+    explicit FunctionH3Line(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3Line>(context); }
 
     std::string getName() const override { return name; }
 
@@ -89,10 +90,17 @@ public:
         const auto & data_end_index = col_end_index->getData();
 
 
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = typeid_cast<ColumnUInt64 &>(dst->getData());
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto dst_data_column = ColumnUInt64::create();
+        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & dst_data = *dst_data_column;
+        auto & dst_offsets = dst_offsets_column->getData();
+
+        /// The whole block is expanded inside this one call and the length of each row's line is driven by the
+        /// arguments rather than by the input size, so the executor's between-blocks cancellation check cannot
+        /// bound it. Both loops carry a checkpoint: `gridPathCellsSize` walks the grid, so the sizing pass below
+        /// is expensive on its own rather than being mere arithmetic.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
 
         /// First calculate array sizes for all rows and save them in Offsets
         UInt64 current_offset = 0;
@@ -100,13 +108,23 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
+            const bool start_valid = validator.validateCell(start);
+            const bool end_valid = validator.validateCell(end);
+            if (!start_valid || !end_valid)
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
 
-            auto size = gridPathCellsSize(start, end);
-            if (size < 0)
+            int64_t size = 0;
+            H3Error err = gridPathCellsSize(start, end, &size);
+            if (err)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Line cannot be computed between start H3 index {} and end H3 index {}",
-                    start, end);
+                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
+                    start, end, err);
+
+            budget.charge(static_cast<size_t>(size) * sizeof(H3Index));
 
             current_offset += size;
             dst_offsets[row] = current_offset;
@@ -123,11 +141,24 @@ public:
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
             const auto size = dst_offsets[row] - current_offset;
-            gridPathCells(start, end, ptr + current_offset);
+            if (size == 0)
+            {
+                continue;
+            }
+            budget.charge(size * sizeof(H3Index));
+            /// The sizing pass above validates only the two endpoints, so this call can still fail on
+            /// an intermediate cell in pentagon distortion, leaving the rest of the row's slots unwritten.
+            H3Error err = gridPathCells(start, end, ptr + current_offset);
+            if (err)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
+                    start, end, err);
+
             current_offset += size;
         }
 
-        return dst;
+        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
 };
 
@@ -160,7 +191,7 @@ Returns the line of [H3](#h3-index) indices between the two provided indices.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3Line>(documentation);
 }
 

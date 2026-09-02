@@ -25,9 +25,14 @@ using FunctionHasTokenOrNull
 REGISTER_FUNCTION(HasToken)
 {
     FunctionDocumentation::Description description = R"(
+:::note
+`hasToken` has certain pitfalls when used for lookups in text indexes with non-`splitByNonAlpha` tokenizers and/or preprocessor/postprocessor expressions.
+We recommend using `hasAnyTokens` and `hasAllTokens` instead.
+:::
+
 Checks if the given token is present in the haystack.
 
-A token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]`, i.e. numbers, ASCII letters and underscore.
+Uses [splitByNonAlpha](/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha) as tokenizer, i.e. a token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]` (numbers, ASCII characters and underscore).
     )";
     FunctionDocumentation::Syntax syntax = "hasToken(haystack, token)";
     FunctionDocumentation::Arguments arguments = {
@@ -48,7 +53,7 @@ A token is defined as the longest possible sub-sequence of consecutive character
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_or_null = R"(
 Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
@@ -64,15 +69,15 @@ Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
         "Usage example",
         "SELECT hasTokenOrNull('apple banana cherry', 'ban ana');",
         R"(
-┌─hasTokenOrNu⋯ 'ban ana')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
+│                                             ᴺᵁᴸᴸ │
+└──────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_or_null = {20, 1};
     FunctionDocumentation::Category category_or_null = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_or_null = {description_or_null, syntax_or_null, arguments_or_null, returned_value_or_null, examples_or_null, introduced_in_or_null, category_or_null};
+    FunctionDocumentation documentation_or_null = {description_or_null, syntax_or_null, arguments_or_null, {}, returned_value_or_null, examples_or_null, introduced_in_or_null, category_or_null};
 
     factory.registerFunction<FunctionHasToken>(documentation);
     factory.registerFunction<FunctionHasTokenOrNull>(documentation_or_null);

@@ -6,9 +6,13 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/geometryConverters.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <boost/geometry/core/tags.hpp>
 
+#include <cctype>
 #include <string>
 #include <memory>
+#include <type_traits>
 
 namespace DB
 {
@@ -17,13 +21,59 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 namespace
 {
 
+/// "POINT EMPTY" is valid WKT, but a ClickHouse Point is a fixed Tuple(Float64, Float64)
+/// with no empty representation. boost::geometry::read_wkt accepts it without writing the
+/// coordinates or throwing, so we detect the empty form here and reject it.
+bool isEmptyPointWKT(const String & str)
+{
+    auto normalized = boost::to_lower_copy(str);
+    boost::trim(normalized);
+    if (!normalized.starts_with("point"))
+        return false;
+    auto rest = normalized.substr(strlen("point"));
+    boost::trim(rest);
+    /// Strip an optional WKT dimension tag (Z, M or ZM), matched only as a whole space-separated token.
+    for (std::string_view tag : {"zm", "z", "m"})
+    {
+        if (rest.starts_with(tag) && rest.size() > tag.size()
+            && isspace(static_cast<unsigned char>(rest[tag.size()])))
+        {
+            rest.erase(0, tag.size());
+            boost::trim(rest);
+            break;
+        }
+    }
+    return rest == "empty";
+}
+
+template <typename T>
+void readWKT(const String & str, T & out)
+{
+    try
+    {
+        boost::geometry::read_wkt(str, out);
+    }
+    catch (std::exception & e)
+    {
+        /// Rethrow a more convenient exception type.
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse WKT string: {}", e.what());
+    }
+
+    if constexpr (std::is_same_v<typename boost::geometry::traits::tag<T>::type, boost::geometry::point_tag>)
+    {
+        if (isEmptyPointWKT(str))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Empty points are not supported: {}", str);
+    }
+}
+
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWKT : public IFunction
+class FunctionReadWKT final : public IFunction
 {
 public:
     explicit FunctionReadWKT() = default;
@@ -57,12 +107,13 @@ public:
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
         Serializer serializer;
-        Geometry geometry;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & str = column_string.getDataAt(i).toString();
-            boost::geometry::read_wkt(str, geometry);
+            const std::string str{column_string.getDataAt(i)};
+            /// Declared inside the loop so a row that read_wkt leaves untouched cannot carry over prior-row contents.
+            Geometry geometry;
+            readWKT(str, geometry);
             serializer.add(geometry);
         }
 
@@ -80,9 +131,10 @@ public:
     }
 };
 
-class FunctionReadWKTCommon : public IFunction
+class FunctionReadWKTCommon final : public IFunction
 {
 public:
+    /// Must match the global discriminators of the Geometry Variant type.
     enum class WKTTypes
     {
         LineString,
@@ -91,11 +143,12 @@ public:
         Point,
         Polygon,
         Ring,
+        MultiPoint,
     };
 
     explicit FunctionReadWKTCommon() = default;
 
-    static constexpr const char * name = "readWkt";
+    static constexpr const char * name = "readWKT";
 
     String getName() const override { return name; }
 
@@ -118,6 +171,7 @@ public:
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
         PointSerializer<CartesianPoint> point_serializer;
+        MultiPointSerializer<CartesianPoint> multipoint_serializer;
         LineStringSerializer<CartesianPoint> linestring_serializer;
         PolygonSerializer<CartesianPoint> polygon_serializer;
         MultiLineStringSerializer<CartesianPoint> multilinestring_serializer;
@@ -128,7 +182,10 @@ public:
 
         auto try_deserialize_type = [&] (const std::function<void()> & deserialize_func, const String & data, const String & target_prefix, WKTTypes type) -> bool
         {
+            /// The type prefix may be preceded by whitespace, which the WKT grammar (and the typed
+            /// readWKT* readers) accept; strip it before matching so readWKT stays consistent.
             auto lower_data = boost::to_lower_copy(data);
+            boost::trim_left(lower_data);
             if (lower_data.starts_with(target_prefix))
             {
                 deserialize_func();
@@ -140,12 +197,12 @@ public:
         };
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & str = column_string.getDataAt(i).toString();
+            const std::string str{column_string.getDataAt(i)};
             if (try_deserialize_type(
                     [&]
                     {
                         CartesianPoint point;
-                        boost::geometry::read_wkt(str, point);
+                        readWKT(str, point);
                         point_serializer.add(point);
                     },
                     str, "point", WKTTypes::Point))
@@ -155,7 +212,7 @@ public:
                     [&]
                     {
                         LineString<CartesianPoint> linestring;
-                        boost::geometry::read_wkt(str, linestring);
+                        readWKT(str, linestring);
                         linestring_serializer.add(linestring);
                     },
                     str, "linestring", WKTTypes::LineString))
@@ -165,7 +222,7 @@ public:
                     [&]
                     {
                         Polygon<CartesianPoint> polygon;
-                        boost::geometry::read_wkt(str, polygon);
+                        readWKT(str, polygon);
                         polygon_serializer.add(polygon);
                     },
                     str, "polygon", WKTTypes::Polygon))
@@ -175,7 +232,7 @@ public:
                     [&]
                     {
                         MultiLineString<CartesianPoint> multilinestring;
-                        boost::geometry::read_wkt(str, multilinestring);
+                        readWKT(str, multilinestring);
                         multilinestring_serializer.add(multilinestring);
                     },
                     str, "multilinestring", WKTTypes::MultiLineString))
@@ -185,7 +242,7 @@ public:
                     [&]
                     {
                         MultiPolygon<CartesianPoint> multipolygon;
-                        boost::geometry::read_wkt(str, multipolygon);
+                        readWKT(str, multipolygon);
                         multipolygon_serializer.add(multipolygon);
                     },
                     str, "multipolygon", WKTTypes::MultiPolygon))
@@ -195,10 +252,20 @@ public:
                     [&]
                     {
                         Ring<CartesianPoint> ring;
-                        boost::geometry::read_wkt(str, ring);
+                        readWKT(str, ring);
                         ring_serializer.add(ring);
                     },
                     str, "ring", WKTTypes::Ring))
+                continue;
+
+            if (try_deserialize_type(
+                    [&]
+                    {
+                        MultiPoint<CartesianPoint> multipoint;
+                        readWKT(str, multipoint);
+                        multipoint_serializer.add(multipoint);
+                    },
+                    str, "multipoint", WKTTypes::MultiPoint))
                 continue;
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKT format value: {}", str);
@@ -211,6 +278,7 @@ public:
         result_columns.push_back(point_serializer.finalize());
         result_columns.push_back(polygon_serializer.finalize());
         result_columns.push_back(ring_serializer.finalize());
+        result_columns.push_back(multipoint_serializer.finalize());
 
         return ColumnVariant::create(std::move(discriminators_column), result_columns);
     }
@@ -228,6 +296,11 @@ struct ReadWKTPointNameHolder
 struct ReadWKTLineStringNameHolder
 {
     static constexpr const char * name = "readWKTLineString";
+};
+
+struct ReadWKTMultiPointNameHolder
+{
+    static constexpr const char * name = "readWKTMultiPoint";
 };
 
 struct ReadWKTMultiLineStringNameHolder
@@ -254,76 +327,214 @@ struct ReadWKTMultiPolygonNameHolder
 
 REGISTER_FUNCTION(ReadWKT)
 {
-    factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
-    factory.registerFunction<FunctionReadWKT<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKTLineStringNameHolder>>(FunctionDocumentation
-    {
-        .description=R"(
+    FunctionDocumentation::Description description_point = R"(
+The `readWKTPoint` function in ClickHouse parses a Well-Known Text (WKT) representation of a Point geometry and returns a point in the internal ClickHouse format.
+    )";
+    FunctionDocumentation::Syntax syntax_point = "readWKTPoint(wkt_string)";
+    FunctionDocumentation::Arguments arguments_point = {{"wkt_string", "The input WKT string representing a Point geometry.", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value_point = {"Returns a ClickHouse internal representation of the Point geometry.", {"Geo"}};
+    FunctionDocumentation::Examples examples_point = {{"Usage example", "SELECT readWKTPoint('POINT (1.2 3.4)');", "(1.2,3.4)"}};
+    FunctionDocumentation::IntroducedIn introduced_in_point = {21, 4};
+    FunctionDocumentation::Category category_point = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_point = {description_point, syntax_point, arguments_point, {}, returned_value_point, examples_point, introduced_in_point, category_point};
+
+    factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>(function_documentation_point);
+
+    FunctionDocumentation::Description description_linestring = R"(
 Parses a Well-Known Text (WKT) representation of a LineString geometry and returns it in the internal ClickHouse format.
-)",
-        .syntax = "readWKTLineString(wkt_string)",
-        .arguments{
-            {"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}
-        },
-        .returned_value = {"The function returns a ClickHouse internal representation of the linestring geometry."},
-        .examples{
-            {"first call", "SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
+    )";
+    FunctionDocumentation::Syntax syntax_linestring = "readWKTLineString(wkt_string)";
+    FunctionDocumentation::Arguments arguments_linestring = {
+        {"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_linestring = {"Returns a ClickHouse internal representation of the linestring geometry.", {"Geo"}};
+    FunctionDocumentation::Examples examples_linestring =
+    {
+    {
+        "Usage example",
+        "SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');",
+        R"(
 ┌─readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
 │ [(1,1),(2,2),(3,3),(1,1)]                            │
 └──────────────────────────────────────────────────────┘
-            )"},
-            {"second call", "SELECT toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'));", R"(
+        )"
+    },
+    {
+        "LineString example",
+        "SELECT toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'));",
+        R"(
 ┌─toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'))─┐
 │ LineString                                                       │
 └──────────────────────────────────────────────────────────────────┘
-            )"},
-        },
-        .category = FunctionDocumentation::Category::UUID
-    });
-    factory.registerFunction<FunctionReadWKT<DataTypeMultiLineStringName, CartesianMultiLineString, MultiLineStringSerializer<CartesianPoint>, ReadWKTMultiLineStringNameHolder>>(FunctionDocumentation
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_linestring = {21, 4};
+    FunctionDocumentation::Category category_linestring = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_linestring = {description_linestring, syntax_linestring, arguments_linestring, {}, returned_value_linestring, examples_linestring, introduced_in_linestring, category_linestring};
+
+    factory.registerFunction<FunctionReadWKT<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKTLineStringNameHolder>>(function_documentation_linestring);
+
+    FunctionDocumentation::Description description_multipoint = R"(
+Parses a Well-Known Text (WKT) representation of a MultiPoint geometry and returns it in the internal ClickHouse format.
+    )";
+    FunctionDocumentation::Syntax syntax_multipoint = "readWKTMultiPoint(wkt_string)";
+    FunctionDocumentation::Arguments arguments_multipoint = {
+        {"wkt_string", "The input WKT string representing a MultiPoint geometry.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_multipoint = {"Returns a ClickHouse internal representation of the multipoint geometry.", {"Geo"}};
+    FunctionDocumentation::Examples examples_multipoint = {
     {
-        .description=R"(
+        "Usage example",
+        "SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)');",
+        R"(
+┌─readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)')─┐
+│ [(1,1),(2,2),(3,3)]                             │
+└─────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "MultiPoint example",
+        "SELECT toTypeName(readWKTMultiPoint('MULTIPOINT (1 1, 2 2)'));",
+        R"(
+┌─toTypeName(readWKTMultiPoint('MULTIPOINT (1 1, 2 2)'))─┐
+│ MultiPoint                                             │
+└────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_multipoint = {26, 7};
+    FunctionDocumentation::Category category_multipoint = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_multipoint = {description_multipoint, syntax_multipoint, arguments_multipoint, {}, returned_value_multipoint, examples_multipoint, introduced_in_multipoint, category_multipoint};
+
+    factory.registerFunction<FunctionReadWKT<DataTypeMultiPointName, CartesianMultiPoint, MultiPointSerializer<CartesianPoint>, ReadWKTMultiPointNameHolder>>(function_documentation_multipoint);
+
+    FunctionDocumentation::Description description_multilinestring = R"(
 Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
-)",
-        .syntax = "readWKTMultiLineString(wkt_string)",
-        .arguments{
-            {"wkt_string", "The input WKT string representing a MultiLineString geometry.", {"String"}}
-        },
-        .returned_value = {"The function returns a ClickHouse internal representation of the multilinestring geometry."},
-        .examples{
-            {"first call", "SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');", R"(
+    )";
+    FunctionDocumentation::Syntax syntax_multilinestring = "readWKTMultiLineString(wkt_string)";
+    FunctionDocumentation::Arguments arguments_multilinestring = {
+        {"wkt_string", "The input WKT string representing a MultiLineString geometry.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_multilinestring = {"Returns the function returns a ClickHouse internal representation of the multilinestring geometry.", {"Geo"}};
+    FunctionDocumentation::Examples examples_multilinestring = {
+    {
+        "Usage example",
+        "SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');",
+        R"(
 ┌─readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))')─┐
 │ [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]                                    │
 └──────────────────────────────────────────────────────────────────────────────┘
 
-            )"},
-            {"second call", "SELECT toTypeName(readWKTLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'));", R"(
-┌─toTypeName(readWKTLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'))─┐
-│ MultiLineString                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-            )"},
-        },
-        .category = FunctionDocumentation::Category::Geo
-    });
-    factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();
-    factory.registerFunction<FunctionReadWKT<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKTPolygonNameHolder>>();
-    factory.registerFunction<FunctionReadWKT<DataTypeMultiPolygonName, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWKTMultiPolygonNameHolder>>();
+        )"
+    },
+    {
+        "MultiLineString example",
+        "SELECT toTypeName(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'));",
+        R"(
+┌─toTypeName(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'))─┐
+│ MultiLineString                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_multilinestring = {21, 4};
+    FunctionDocumentation::Category category_multilinestring = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_multilinestring = {description_multilinestring, syntax_multilinestring, arguments_multilinestring, {}, returned_value_multilinestring, examples_multilinestring, introduced_in_multilinestring, category_multilinestring};
 
-    factory.registerFunction<FunctionReadWKTCommon>(FunctionDocumentation{
-        .description = R"(
+    factory.registerFunction<FunctionReadWKT<DataTypeMultiLineStringName, CartesianMultiLineString, MultiLineStringSerializer<CartesianPoint>, ReadWKTMultiLineStringNameHolder>>(function_documentation_multilinestring);
+
+    FunctionDocumentation::Description description_ring = R"(
+Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns a ring (closed linestring) in the internal ClickHouse format.
+    )";
+    FunctionDocumentation::Syntax syntax_ring = "readWKTRing(wkt_string)";
+    FunctionDocumentation::Arguments arguments_ring = {{"wkt_string", "The input WKT string representing a Polygon geometry.", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value_ring = {"Returns a ClickHouse internal representation of the ring (closed linestring) geometry.", {"Geo"}};
+    FunctionDocumentation::Examples examples_ring = {{"Usage example", "SELECT readWKTRing('POLYGON ((1 1, 2 2, 3 3, 1 1))');", "[(1,1),(2,2),(3,3),(1,1)]"}};
+    FunctionDocumentation::IntroducedIn introduced_in_ring = {21, 4};
+    FunctionDocumentation::Category category_ring = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_ring = {description_ring, syntax_ring, arguments_ring, {}, returned_value_ring, examples_ring, introduced_in_ring, category_ring};
+
+    factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>(function_documentation_ring);
+
+    FunctionDocumentation::Description description_polygon = R"(
+Converts a WKT (Well Known Text) MultiPolygon into a Polygon type.
+    )";
+    FunctionDocumentation::Syntax syntax_polygon = "readWKTPolygon(wkt_string)";
+    FunctionDocumentation::Arguments arguments_polygon = {{"wkt_string", "String starting with `POLYGON`", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value_polygon = {"Returns a Polygon", {"Polygon"}};
+    FunctionDocumentation::Examples examples_polygon =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toTypeName(readWKTPolygon('POLYGON((2 0,10 0,10 10,0 10,2 0))')) AS type,
+    readWKTPolygon('POLYGON((2 0,10 0,10 10,0 10,2 0))') AS output
+        )",
+        R"DOCS_MD(
+Polygon	[[(2,0),(10,0),(10,10),(0,10),(2,0)]]
+        )DOCS_MD"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_polygon = {21, 4};
+    FunctionDocumentation::Category category_polygon = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_polygon = {description_polygon, syntax_polygon, arguments_polygon, {}, returned_value_polygon, examples_polygon, introduced_in_polygon, category_polygon};
+
+    factory.registerFunction<FunctionReadWKT<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKTPolygonNameHolder>>(function_documentation_polygon);
+
+    FunctionDocumentation::Description description_multipolygon = R"(
+Converts a WKT (Well Known Text) MultiPolygon into a MultiPolygon type.
+    )";
+    FunctionDocumentation::Syntax syntax_multipolygon = "readWKTMultiPolygon(wkt_string)";
+    FunctionDocumentation::Arguments arguments_multipolygon = {{"wkt_string", "String starting with `MULTIPOLYGON`", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value_multipolygon = {"Returns a MultiPolygon", {"MultiPolygon"}};
+    FunctionDocumentation::Examples examples_multipolygon =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toTypeName(readWKTMultiPolygon('MULTIPOLYGON(((2 0,10 0,10 10,0 10,2 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))')) AS type,
+    readWKTMultiPolygon('MULTIPOLYGON(((2 0,10 0,10 10,0 10,2 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))') AS output
+        )",
+        R"DOCS_MD(
+MultiPolygon	[[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]]
+        )DOCS_MD"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_multipolygon = {21, 4};
+    FunctionDocumentation::Category category_multipolygon = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_multipolygon = {description_multipolygon, syntax_multipolygon, arguments_multipolygon, {}, returned_value_multipolygon, examples_multipolygon, introduced_in_multipolygon, category_multipolygon};
+
+    factory.registerFunction<FunctionReadWKT<DataTypeMultiPolygonName, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWKTMultiPolygonNameHolder>>(function_documentation_multipolygon);
+
+    FunctionDocumentation::Description description_common = R"(
 Parses a Well-Known Text (WKT) representation of Geometry and returns it in the internal ClickHouse format.
-)",
-        .syntax = "readWkt(wkt_string)",
-        .arguments{{"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}},
-        .returned_value = {"The function returns a ClickHouse internal representation of the Geometry."},
-        .examples{
-            {"first call", "SELECT readWkt('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
-┌─readWkt('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
+    )";
+    FunctionDocumentation::Syntax syntax_common = "readWKT(wkt_string)";
+    FunctionDocumentation::Arguments arguments_common = {{"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value_common = {"Returns a ClickHouse internal representation of the Geometry."};
+    FunctionDocumentation::Examples examples_common =
+    {
+    {
+        "Usage example",
+        "SELECT readWKT('LINESTRING (1 1, 2 2, 3 3, 1 1)');",
+        R"(
+┌─readWKT('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
 │ [(1,1),(2,2),(3,3),(1,1)]                  │
 └────────────────────────────────────────────┘
-            )"},
-        },
-        .introduced_in = {25, 7},
-        .category = FunctionDocumentation::Category::Geo});
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_common = {25, 12};
+    FunctionDocumentation::Category category_common = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation function_documentation_common = {description_common, syntax_common, arguments_common, {}, returned_value_common, examples_common, introduced_in_common, category_common};
+
+    factory.registerFunction<FunctionReadWKTCommon>(function_documentation_common);
+
+    /// This was initially added by mistake, but we have to keep it:
+    factory.registerAlias("readWkt", "readWKT");
 }
 
 }

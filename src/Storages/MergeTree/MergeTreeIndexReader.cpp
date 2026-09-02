@@ -1,70 +1,9 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
-#include <Compression/CachedCompressedReadBuffer.h>
-
-namespace
-{
-
-using namespace DB;
-
-MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream)
-{
-    using enum MergeTreeIndexSubstream::Type;
-
-    /// Adjust read buffer sizes for text index dictionaries and postings
-    /// because usually we read relatively small amounts of data from random places of
-    /// these substreams. So, it doesn't make sense to read more data in the buffer.
-    if (substream == TextIndexDictionary || substream == TextIndexPostings)
-    {
-        settings.read_settings.local_fs_buffer_size = 16 * 1024;
-        settings.read_settings.remote_fs_buffer_size = 16 * 1024;
-    }
-
-    return settings;
-}
-
-std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
-    const String & stream_name,
-    const String & extension,
-    MergeTreeData::DataPartPtr part,
-    size_t marks_count,
-    const MarkRanges & all_mark_ranges,
-    MarkCache * mark_cache,
-    UncompressedCache * uncompressed_cache,
-    MergeTreeReaderSettings settings)
-{
-    auto context = part->storage.getContext();
-    auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-
-    auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
-        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
-        mark_cache,
-        part->index_granularity_info.getMarksFilePath(stream_name),
-        marks_count,
-        part->index_granularity_info,
-        settings.save_marks_in_cache,
-        settings.read_settings,
-        load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1);
-
-    marks_loader->startAsyncLoad();
-
-    return std::make_unique<MergeTreeReaderStreamSingleColumn>(
-        part->getDataPartStoragePtr(),
-        stream_name,
-        extension, marks_count,
-        all_mark_ranges,
-        std::move(settings),
-        uncompressed_cache,
-        part->getFileSizeOrZero(stream_name + extension),
-        std::move(marks_loader),
-        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
-}
-
-}
 
 namespace DB
 {
@@ -74,9 +13,65 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
+    const String & stream_name,
+    const String & extension,
+    const MergeTreeDataPartInfoForReaderPtr & data_part_info,
+    size_t marks_count,
+    const MarkRanges & all_mark_ranges,
+    MarkCache * mark_cache,
+    UncompressedCache * uncompressed_cache,
+    MergeTreeReaderSettings settings)
+{
+    auto context = data_part_info->getContext();
+    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+
+    const auto & index_granularity_info = data_part_info->getIndexGranularityInfo();
+    auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
+        data_part_info,
+        mark_cache,
+        index_granularity_info.getMarksFilePath(stream_name),
+        marks_count,
+        index_granularity_info,
+        settings.save_marks_in_cache,
+        settings.read_settings,
+        load_marks_threadpool,
+        /*num_columns_in_mark=*/ 1,
+        settings.use_streaming_marks_compression);
+
+    marks_loader->startAsyncLoad();
+
+    /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
+    /// comes from checksums, and a stream with no checksums entry is sized via the storage.
+    const auto & part_storage = *data_part_info->getDataPartStorage();
+    size_t data_file_size = 0;
+    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info->getChecksums()))
+    {
+        data_file_size = data_part_info->getFileSizeOrZero(*actual + extension);
+    }
+    else
+    {
+        const String file_name = stream_name + extension;
+        data_file_size = part_storage.existsFile(file_name) ? part_storage.getFileSize(file_name) : 0;
+    }
+
+    return std::make_unique<MergeTreeReaderStreamSingleColumn>(
+        data_part_info->getDataPartStorage(),
+        stream_name,
+        extension,
+        marks_count,
+        all_mark_ranges,
+        std::move(settings),
+        uncompressed_cache,
+        data_file_size,
+        std::move(marks_loader),
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
+}
+
 MergeTreeIndexReader::MergeTreeIndexReader(
     MergeTreeIndexPtr index_,
-    MergeTreeData::DataPartPtr part_,
+    MergeTreeDataPartInfoForReaderPtr data_part_info_,
     size_t marks_count_,
     const MarkRanges & all_mark_ranges_,
     MarkCache * mark_cache_,
@@ -84,7 +79,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     VectorSimilarityIndexCache * vector_similarity_index_cache_,
     MergeTreeReaderSettings settings_)
     : index(index_)
-    , part(std::move(part_))
+    , data_part_info(std::move(data_part_info_))
     , marks_count(marks_count_)
     , all_mark_ranges(all_mark_ranges_)
     , mark_cache(mark_cache_)
@@ -101,18 +96,25 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     if (!streams.empty())
         return;
 
-    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName());
+    const auto & checksums = data_part_info->getChecksums();
+    auto index_format = index->getDeserializedFormat(*data_part_info, index->getFileName());
     auto index_name = index->getFileName();
     auto last_mark = getLastMark(all_mark_ranges);
 
     for (const auto & substream : index_format.substreams)
     {
-        auto stream_name = index_name + substream.suffix;
+        auto full_stream_name = index_name + substream.suffix;
+        auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
+
+        /// If the stream doesn't exist (neither original nor hashed name), use the full name
+        /// and let it fail later when trying to open the file. This preserves the original error
+        /// behavior and compatibility - the error message will indicate the missing file path.
+        auto stream_name = stream_name_opt.value_or(full_stream_name);
 
         auto stream = makeIndexReaderStream(
             stream_name,
             substream.extension,
-            part,
+            data_part_info,
             marks_count,
             all_mark_ranges,
             mark_cache,
@@ -129,9 +131,9 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     version = index_format.version;
 }
 
-void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule)
+void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
 {
-    auto load_func = [this, mark, condition](auto & res)
+    auto load_func = [this, mark, condition, readable_ranges](auto & res)
     {
         initStreamIfNeeded();
 
@@ -147,7 +149,11 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         MergeTreeIndexDeserializationState state
         {
             .version = version,
-            .condition = condition
+            .condition = condition,
+            .part_info = *data_part_info,
+            .index = *index,
+            .readable_ranges = readable_ranges,
+            .skip_postings_deserialization = false,
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);
@@ -160,18 +166,23 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     ///
     /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
     /// would create too much lock contention in the cache (this was learned the hard way).
-    if (!index->isVectorSimilarityIndex())
+    /// Don't populate the cache for parts which are not Active (e.g. Outdated after a mutation).
+    /// Such parts will be removed soon and caching them is wasteful.
+    /// Also note that the cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
+    /// the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache`.
+    /// The cache key needs the part itself; without one the granule is loaded directly.
+    auto concrete_part = data_part_info->getDataPart();
+    if (index->isVectorSimilarityIndex() && concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
     {
-        load_func(granule);
+        VectorSimilarityIndexCacheKey key{concrete_part->getDataPartStorage().getDiskName() + ":" + concrete_part->getRelativePathOfActivePart(),
+                                          index->getFileName(),
+                                          mark};
+
+        granule = vector_similarity_index_cache->getOrSet(key, load_func);
     }
     else
     {
-        UInt128 key = VectorSimilarityIndexCache::hash(
-            part->getDataPartStorage().getFullPath(),
-            index->getFileName(),
-            mark);
-
-        granule = vector_similarity_index_cache->getOrSet(key, load_func);
+        load_func(granule);
     }
 }
 
@@ -198,17 +209,21 @@ void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
         stream->adjustRightMark(right_mark);
 }
 
-void MergeTreeIndexReader::prefetchBeginOfRange(size_t from_mark, Priority priority)
+MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream)
 {
-    initStreamIfNeeded();
+    using enum MergeTreeIndexSubstream::Type;
+    settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream);
 
-    for (const auto & stream : stream_holders)
+    /// Adjust read buffer sizes for text index dictionaries and postings
+    /// because usually we read relatively small amounts of data from random places of
+    /// these substreams. So, it doesn't make sense to read more data in the buffer.
+    if (substream == TextIndexDictionary || substream == TextIndexPostings)
     {
-        stream->seekToMark(from_mark);
-        stream->getDataBuffer()->prefetch(priority);
+        settings.read_settings.local_fs_settings.buffer_size = 16 * 1024;
+        settings.read_settings.remote_fs_settings.buffer_size = 16 * 1024;
     }
 
-    stream_mark = from_mark;
+    return settings;
 }
 
 }

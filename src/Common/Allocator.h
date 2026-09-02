@@ -19,7 +19,7 @@
 
 extern const size_t POPULATE_THRESHOLD;
 
-static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
+static constexpr size_t MALLOC_MIN_ALIGNMENT = alignof(std::max_align_t);
 
 /** Previously there was a code which tried to use manual mmap and mremap (clickhouse_mremap.h) for large allocations/reallocations (64MB+).
   * Most modern allocators (including jemalloc) don't use mremap, so the idea was to take advantage from mremap system call for large reallocs.
@@ -46,7 +46,7 @@ public:
     void * alloc(size_t size, size_t alignment = 0);
 
     /// Free memory range.
-    void free(void * buf, size_t size);
+    void free(void * buf, size_t size, size_t alignment = 0);
 
     /** Enlarge memory range.
       * Data from old range is moved to the beginning of new range.
@@ -69,7 +69,7 @@ private:
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
 template <typename Base, size_t _initial_bytes, size_t Alignment>
-class AllocatorWithStackMemory : private Base
+class AllocatorWithStackMemory : private Base /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - stack_memory is cleared in alloc() when needed
 {
 private:
     alignas(Alignment) char stack_memory[_initial_bytes];
@@ -97,10 +97,10 @@ public:
         return Base::alloc(size, Alignment);
     }
 
-    void free(void * buf, size_t size)
+    void free(void * buf, size_t size, size_t alignment = 0)
     {
         if (size > initial_bytes)
-            Base::free(buf, size);
+            Base::free(buf, size, alignment);
     }
 
     void * realloc(void * buf, size_t old_size, size_t new_size)

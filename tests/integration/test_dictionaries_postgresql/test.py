@@ -2,17 +2,14 @@ import logging
 import time
 import socket
 from contextlib import contextmanager
-from multiprocessing.dummy import Pool
 
-import psycopg2
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
-from helpers.network import PartitionManager
 from helpers.postgres_utility import get_postgres_conn
 from helpers.port_forward import PortForward
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -67,7 +64,8 @@ def create_dict(table_name, index=0):
 def started_cluster():
     try:
         cluster.start()
-        node1.query("CREATE DATABASE IF NOT EXISTS test")
+        node1.query("DROP DATABASE IF EXISTS test")
+        node1.query("CREATE DATABASE test")
 
         postgres_conn = get_postgres_conn(
             ip=cluster.postgres_ip, port=cluster.postgres_port
@@ -272,6 +270,71 @@ def test_postgres_dictionaries_custom_query_partial_load_complex_key(started_clu
     cursor.execute("DROP TABLE test_table_1;")
 
 
+def test_postgres_dict_complex_key_with_single_quote(started_cluster):
+    """Regression test: string keys containing single quotes must not cause SQL injection.
+
+    ExternalQueryBuilder previously used backslash escaping (\\') which PostgreSQL
+    (standard_conforming_strings=on by default since 9.1) treats as a literal backslash,
+    breaking out of the string literal and allowing injection.
+    The fix switches to SQL-standard quote doubling ('').
+    """
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        database=True,
+        port=started_cluster.postgres_port,
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS test_single_quote (key Text PRIMARY KEY, value Text);"
+    )
+    cursor.execute("INSERT INTO test_single_quote VALUES ('it''s a key', 'found it');")
+    cursor.execute(
+        "INSERT INTO test_single_quote VALUES ('normal', 'normal value');"
+    )
+
+    query = node1.query
+    query(
+        f"""
+    CREATE DICTIONARY test_dict_single_quote
+    (
+        key String,
+        value String DEFAULT ''
+    )
+    PRIMARY KEY key
+    LAYOUT(COMPLEX_KEY_DIRECT())
+    SOURCE(PostgreSQL(
+        DB 'postgres_database'
+        HOST '{started_cluster.postgres_ip}'
+        PORT {started_cluster.postgres_port}
+        USER 'postgres'
+        PASSWORD '{pg_pass}'
+        TABLE 'test_single_quote'))
+    """
+    )
+
+    # Key containing a single quote: must return the correct value, not an error.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('it''s a key'))"
+    )
+    assert result == "found it\n", f"Unexpected result: {result!r}"
+
+    # Key without a quote: must still work after the escaping change.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('normal'))"
+    )
+    assert result == "normal value\n", f"Unexpected result: {result!r}"
+
+    # Missing key must return the default, not raise an exception.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('no such key'))"
+    )
+    assert result == "\n", f"Unexpected result: {result!r}"
+
+    query("DROP DICTIONARY test_dict_single_quote;")
+    cursor.execute("DROP TABLE test_single_quote;")
+
+
 def test_invalidate_query(started_cluster):
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
@@ -290,52 +353,63 @@ def test_invalidate_query(started_cluster):
     # invalidate query: SELECT value FROM test0 WHERE id = 0
     dict_name = "dict0"
     create_dict(table_name)
+
+    def last_update():
+        # 1970-01-01 00:00:00 means the dictionary was never updated yet.
+        return node1.query(
+            "SELECT toTimeZone(last_successful_update_time, 'UTC') "
+            f"FROM system.dictionaries WHERE name = '{dict_name}'"
+        ).strip()
+
+    def wait_baseline_settled():
+        # SYSTEM RELOAD does a forced full reload but does not run the invalidate
+        # query, so the stored invalidate response is left empty. The first
+        # periodic check then always sees a "modified" source and reloads once
+        # more. Wait until the invalidate baseline settles, i.e.
+        # last_successful_update_time stops advancing across a full check period,
+        # so subsequent "no update" checks are reliable.
+        prev = last_update()
+        while True:
+            time.sleep(7)  # dict lifetime is 1s and the periodic check runs every 5s
+            cur = last_update()
+            if cur == prev:
+                return cur
+            prev = cur
+
+    def dict_get(key):
+        return node1.query(
+            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64({key}))"
+        ).strip()
+
     node1.query(f"SYSTEM RELOAD DICTIONARY {dict_name}")
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
-        == "0\n"
-    )
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
-        == "1\n"
-    )
+    wait_baseline_settled()
+    assert dict_get(0) == "0"
+    assert dict_get(1) == "1"
 
-    # update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value+1 WHERE id = 0")
-    while True:
-        result = node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))"
-        )
-        if result != "0\n":
-            break
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
-        == "1\n"
+    # update should happen: the invalidate query result (value at id = 0) changes
+    cursor.execute(f"UPDATE {table_name} SET value = value + 1 WHERE id = 0")
+    assert_eq_with_retry(
+        node1, f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))", "1"
     )
+    settled = wait_baseline_settled()
+    assert dict_get(0) == "1"
 
-    # no update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value*2 WHERE id != 0")
-    time.sleep(5)
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
-        == "1\n"
-    )
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
-        == "1\n"
-    )
+    # no update should happen: the invalidate query result (value at id = 0) is
+    # unchanged, so the dictionary must not reload and pick up the change to
+    # other rows. Verify directly that no reload was triggered.
+    cursor.execute(f"UPDATE {table_name} SET value = value * 2 WHERE id != 0")
+    time.sleep(7)  # more than one periodic check period
+    assert last_update() == settled
+    assert dict_get(0) == "1"
+    assert dict_get(1) == "1"
 
-    # update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value+1 WHERE id = 0")
-    time.sleep(5)
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
-        == "2\n"
+    # update should happen: the invalidate query result (value at id = 0) changes
+    cursor.execute(f"UPDATE {table_name} SET value = value + 1 WHERE id = 0")
+    assert_eq_with_retry(
+        node1, f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))", "2"
     )
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
-        == "2\n"
-    )
+    assert dict_get(0) == "2"
+    assert dict_get(1) == "2"
 
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
     node1.query(f"DROP DICTIONARY IF EXISTS {dict_name}")
@@ -607,7 +681,7 @@ def test_background_dictionary_reconnect(started_cluster):
 
     postgres_conn.cursor().execute("DROP TABLE IF EXISTS dict")
     postgres_conn.cursor().execute(
-        f"""
+        """
     CREATE TABLE dict (
     id integer NOT NULL, value text NOT NULL, PRIMARY KEY (id))
     """
@@ -666,7 +740,7 @@ def test_background_dictionary_reconnect(started_cluster):
         for _ in range(5):
             try:
                 result = query("SELECT value FROM dict WHERE id = 1")
-            except Exception as e:
+            except Exception:
                 pass
 
         time.sleep(5)

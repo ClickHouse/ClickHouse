@@ -28,7 +28,7 @@ ORDER BY ()
 SETTINGS
     disk='s3_cache',
     min_bytes_for_wide_part = {{ min_bytes_for_wide_part }},
-    serialization_info_version = 'default',
+    serialization_info_version = 'basic',
     min_bytes_for_full_part_storage=0;
 
 INSERT INTO {{ table }} SELECT * FROM generateRandom() LIMIT 400;
@@ -42,5 +42,5 @@ SELECT * FROM {{ table }} FORMAT Null SETTINGS allow_prefetched_read_pool_for_re
 
 SYSTEM FLUSH LOGS query_log;
 SELECT normalizeQuery(query), Settings['allow_prefetched_read_pool_for_remote_filesystem'], Settings['filesystem_prefetches_limit'], ProfileEvents['RemoteFSPrefetches'] FROM system.query_log
-WHERE current_database = currentDatabase() AND type != 'QueryStart' AND query_kind = 'Select'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type != 'QueryStart' AND query_kind = 'Select'
 ORDER BY event_time_microseconds;

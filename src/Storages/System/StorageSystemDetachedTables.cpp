@@ -1,7 +1,10 @@
 #include <Storages/System/StorageSystemDetachedTables.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/Exception.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -24,10 +27,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace
 {
 
-class DetachedTablesBlockSource : public ISource
+class DetachedTablesBlockSource final : public ISource
 {
 public:
     DetachedTablesBlockSource(
@@ -47,7 +55,7 @@ public:
         detached_tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
         {
-            detached_tables.insert(detached_tables_->getDataAt(idx).toString());
+            detached_tables.insert(std::string{detached_tables_->getDataAt(idx)});
         }
     }
 
@@ -67,7 +75,7 @@ protected:
         size_t rows_count = 0;
         for (; database_idx < databases->size(); ++database_idx)
         {
-            database_name = databases->getDataAt(database_idx).toString();
+            database_name = databases->getDataAt(database_idx);
             database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
             if (!database)
@@ -77,7 +85,18 @@ protected:
                 = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!detached_tables_it || !detached_tables_it->isValid())
-                detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
+            {
+                try
+                {
+                    detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                        continue;
+                    throw;
+                }
+            }
 
             for (; rows_count < max_block_size && detached_tables_it->isValid(); detached_tables_it->next())
             {
@@ -170,7 +189,7 @@ private:
     ColumnPtr filtered_tables_column;
 };
 
-StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table_id_) : IStorage(table_id_)
+StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table_id_) : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -184,10 +203,19 @@ StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table
 
     storage_metadata.setColumns(std::move(description));
 
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemDetachedTables::read(
+VirtualColumnsDescription StorageSystemDetachedTables::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemDetachedTables::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -246,3 +274,6 @@ void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pip
     pipeline.init(std::move(pipe));
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedTables) }

@@ -134,7 +134,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::stopAndWait()
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 {
-    setThreadName("UpdQueue");
+    setThreadName(ThreadName::CACHE_DICTIONARY_UPDATE_QUEUE);
 
     while (!update_queue.isFinished())
     {

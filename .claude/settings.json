@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr status:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh search:*)",
+      "Bash(gh run view:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git status)",
+      "Bash(git rev-parse:*)",
+      "Bash(git remote -v)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(jq:*)",
+      "Bash(which:*)",
+      "Bash(strings:*)",
+      "Bash(nm:*)",
+      "Bash(pwd)",
+      "WebFetch(domain:github.com)",
+      "WebSearch(*)"
+    ]
+  }
+}

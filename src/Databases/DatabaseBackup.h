@@ -28,6 +28,12 @@ public:
 
     DatabaseBackup(const String & name, const String & metadata_path, const Configuration & config, ContextPtr context);
 
+    /// Authorizes reading this engine's backup destination against `context`'s SOURCES grants, and
+    /// does nothing for a destination that cannot decode (creation rejects it anyway). Performs no
+    /// I/O, so it also serves as a preflight before an `ON CLUSTER` query is distributed or a
+    /// definition found in a backup is created.
+    static void parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context);
+
     String getEngineName() const override { return "Backup"; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
@@ -65,9 +71,10 @@ public:
 
     ASTPtr getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
+
+protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 
 private:
     const Configuration config;

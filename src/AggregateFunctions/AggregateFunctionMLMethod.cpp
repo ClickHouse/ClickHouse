@@ -4,7 +4,6 @@
 #include <Columns/ColumnArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/castColumn.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -17,6 +16,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -102,6 +102,7 @@ namespace
     }
 }
 
+void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
     // stochasticLinearRegression documentation
@@ -129,10 +130,14 @@ For fitting a query like this can be used:
 ```sql
 CREATE TABLE IF NOT EXISTS train_data
 (
-    param1 Float64,
-    param2 Float64,
-    target Float64
+    target Float64,
+    x1 Float64,
+    x2 Float64
 ) ENGINE = Memory;
+
+INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
+
+DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model ENGINE = Memory AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
@@ -149,6 +154,14 @@ Note that the column with target value (which we would like to learn to predict)
 After saving a state into the table, we may use it multiple times for prediction or even merge with other states and create new, even better models.
 
 ```sql
+CREATE TABLE IF NOT EXISTS test_data
+(
+    x1 Float64,
+    x2 Float64
+) ENGINE = Memory;
+
+INSERT INTO test_data VALUES (10, 0), (20, 0);
+
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, x1, x2) FROM test_data
 ```
@@ -172,7 +185,7 @@ This query will return a new `AggregateFunctionState` object.
 2. You may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
 
 ```sql
-SELECT stochasticLinearRegression(0.01)(target, param1, param2)
+SELECT stochasticLinearRegression(0.01)(target, x1, x2)
 FROM train_data
 ```
 
@@ -193,38 +206,75 @@ So in the example above the query will return a column with 3 values.
     {
         "Training a model",
         R"(
+DROP TABLE IF EXISTS train_data;
+
+CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
+
+DROP TABLE IF EXISTS your_model;
+
 CREATE TABLE your_model
 ENGINE = Memory
 AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
-AS state FROM train_data
+AS state FROM train_data;
+
+SELECT count() FROM your_model
         )",
-        "Saves trained model state to table"
+        "1"
     },
     {
         "Making predictions",
          R"(
+DROP TABLE IF EXISTS train_data;
+
+CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
+
+DROP TABLE IF EXISTS your_model;
+
+CREATE TABLE your_model
+ENGINE = Memory
+AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
+AS state FROM train_data;
+
+DROP TABLE IF EXISTS test_data;
+
+CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO test_data VALUES (10, 0), (20, 0);
+
 WITH (SELECT state FROM your_model) AS model SELECT
-evalMLMethod(model, x1, x2) FROM test_data
+evalMLMethod(model, x1, x2) > 0 FROM test_data
         )",
-        "Returns predicted values for test data"
+        R"(
+1
+1
+        )"
     },
     {
         "Getting model weights",
-        "SELECT stochasticLinearRegression(0.01)(target, x1, x2) FROM train_data",
-        "Returns model weights without saving state"
+        R"(
+DROP TABLE IF EXISTS train_data;
+
+CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
+
+SELECT length(stochasticLinearRegression(0.01)(target, x1, x2)) FROM train_data
+        )",
+        "3"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_linear = {20, 1};
     FunctionDocumentation::Category category_linear = FunctionDocumentation::Category::MachineLearning;
-    FunctionDocumentation documentation_linear = {description_linear, syntax_linear, arguments_linear, returned_value_linear, examples_linear, introduced_in_linear, category_linear};
+    FunctionDocumentation documentation_linear = {description_linear, syntax_linear, arguments_linear, {}, returned_value_linear, examples_linear, introduced_in_linear, category_linear};
 
-    factory.registerFunction("stochasticLinearRegression", {createAggregateFunctionMLMethod<FuncLinearRegression>, {}, documentation_linear});
+    factory.registerFunction("stochasticLinearRegression", {createAggregateFunctionMLMethod<FuncLinearRegression>, documentation_linear, {}});
 
     // stochasticLogisticRegression documentation
     FunctionDocumentation::Description description_logistic = R"(
 This function implements stochastic logistic regression.
-It can be used for binary classification problem, supports the same custom parameters as [`stochasticLinearRegression`](/sql-reference/aggregate-functions/reference/stochasticlinearregression) and works the same way.
+It can be used for binary classification problem, supports the same custom parameters as [`stochasticLinearRegression`](/reference/functions/aggregate-functions/stochasticLinearRegression) and works the same way.
 
 **Usage**
 
@@ -237,13 +287,17 @@ For fitting a query like this can be used:
 ```sql
 CREATE TABLE IF NOT EXISTS train_data
 (
-    param1 Float64,
-    param2 Float64,
-    target Float64
+    target Float64,
+    x1 Float64,
+    x2 Float64
 ) ENGINE = Memory;
 
+INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
+
+DROP TABLE IF EXISTS your_model;
+
 CREATE TABLE your_model ENGINE = Memory AS SELECT
-stochasticLogisticRegression(0.1, 0.0, 5, 'SGD')(target, x1, x2)
+stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
 AS state FROM train_data;
 ```
 
@@ -259,8 +313,16 @@ Predicted labels have to be in [-1, 1].
 Using saved state we can predict the probability of an object having label `1`.
 
 ```sql
+CREATE TABLE IF NOT EXISTS test_data
+(
+    x1 Float64,
+    x2 Float64
+) ENGINE = Memory;
+
+INSERT INTO test_data VALUES (1, 1), (9, 9);
+
 WITH (SELECT state FROM your_model) AS model SELECT
-evalMLMethod(model, param1, param2) FROM test_data
+evalMLMethod(model, x1, x2) FROM test_data
 ```
 
 The query will return a column of probabilities.
@@ -271,7 +333,7 @@ We can also set a bound of probability, which assigns elements to different labe
 ```sql
 SELECT result < 1.1 AND result > 0.5 FROM
 (WITH (SELECT state FROM your_model) AS model SELECT
-evalMLMethod(model, param1, param2) AS result FROM test_data)
+evalMLMethod(model, x1, x2) AS result FROM test_data)
 ```
 
 Then the result will be labels.
@@ -292,41 +354,94 @@ Then the result will be labels.
     {
         "Training a model",
         R"(
+DROP TABLE IF EXISTS train_data;
+
+CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
+
+DROP TABLE IF EXISTS your_model;
+
 CREATE TABLE your_model
 ENGINE = MergeTree
 ORDER BY tuple()
 AS SELECT
 stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
-AS state FROM train_data
+AS state FROM train_data;
+
+SELECT count() FROM your_model
         )",
-        "Saves trained model state to table"
+        "1"
     },
     {
         "Making predictions",
         R"(
+DROP TABLE IF EXISTS train_data;
+
+CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
+
+DROP TABLE IF EXISTS your_model;
+
+CREATE TABLE your_model
+ENGINE = MergeTree
+ORDER BY tuple()
+AS SELECT
+stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
+AS state FROM train_data;
+
+DROP TABLE IF EXISTS test_data;
+
+CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO test_data VALUES (1, 1), (9, 9);
+
 WITH (SELECT state FROM your_model) AS model
 SELECT
-evalMLMethod(model, x1, x2)
+evalMLMethod(model, x1, x2) BETWEEN 0 AND 1
 FROM test_data
         )",
-        "Returns probability values for test data"
+        R"(
+1
+1
+        )"
     },
     {
         "Classification with threshold",
         R"(
+DROP TABLE IF EXISTS train_data;
+
+CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
+
+DROP TABLE IF EXISTS your_model;
+
+CREATE TABLE your_model
+ENGINE = MergeTree
+ORDER BY tuple()
+AS SELECT
+stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
+AS state FROM train_data;
+
+DROP TABLE IF EXISTS test_data;
+
+CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
+INSERT INTO test_data VALUES (1, 1), (9, 9);
+
 SELECT result < 1.1 AND result > 0.5
 FROM (
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, x1, x2) AS result FROM test_data)
         )",
-        "Returns binary classification labels using probability threshold"
+        R"(
+0
+0
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_logistic = {20, 1};
     FunctionDocumentation::Category category_logistic = FunctionDocumentation::Category::MachineLearning;
-    FunctionDocumentation documentation_logistic = {description_logistic, syntax_logistic, arguments_logistic, returned_value_logistic, examples_logistic, introduced_in_logistic, category_logistic};
+    FunctionDocumentation documentation_logistic = {description_logistic, syntax_logistic, arguments_logistic, {}, returned_value_logistic, examples_logistic, introduced_in_logistic, category_logistic};
 
-    factory.registerFunction("stochasticLogisticRegression", {createAggregateFunctionMLMethod<FuncLogisticRegression>, {}, documentation_logistic});
+    factory.registerFunction("stochasticLogisticRegression", {createAggregateFunctionMLMethod<FuncLogisticRegression>, documentation_logistic, {}});
 }
 
 LinearModelData::LinearModelData(
@@ -388,14 +503,32 @@ void LinearModelData::returnWeights(IColumn & to) const
     val_to.push_back(bias);
 }
 
-void LinearModelData::read(ReadBuffer & buf)
+void LinearModelData::read(ReadBuffer & buf, UInt64 expected_param_num)
 {
     readBinary(bias, buf);
     readBinary(weights, buf);
     readBinary(iter_num, buf);
     readBinary(gradient_batch, buf);
     readBinary(batch_size, buf);
-    weights_updater->read(buf);
+
+    if (weights.size() != expected_param_num)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed state of a machine learning aggregate function: it has {} weights, "
+            "while the type declares {} features",
+            weights.size(), expected_param_num);
+
+    /// The gradient holds one value per weight plus one for the bias. The weights updaters rely on
+    /// that, so a state where the two disagree would make them read past the end of the gradient.
+    if (gradient_batch.size() != weights.size() + 1)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed state of a machine learning aggregate function: it has {} weights and a gradient of {} values",
+            weights.size(), gradient_batch.size());
+
+    /// The updaters keep their own vectors of the gradient size and index them by the weight
+    /// number as well, so they check the deserialized vectors against the same size.
+    weights_updater->read(buf, weights.size() + 1);
 }
 
 void LinearModelData::write(WriteBuffer & buf) const
@@ -417,7 +550,9 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
     /// can't update rhs state because it's constant
 
     /// squared mean is more stable (in sense of quality of prediction) when two states with quietly different number of learning steps are merged
-    Float64 frac = (static_cast<Float64>(iter_num) * iter_num) / (iter_num * iter_num + rhs.iter_num * rhs.iter_num);
+    Float64 iter_num_double = static_cast<Float64>(iter_num);
+    Float64 rhs_iter_num_double = static_cast<Float64>(rhs.iter_num);
+    Float64 frac = (iter_num_double * iter_num_double) / (iter_num_double * iter_num_double + rhs_iter_num_double * rhs_iter_num_double);
 
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -445,6 +580,22 @@ void LinearModelData::add(const IColumn ** columns, size_t row_num)
     }
 }
 
+namespace
+{
+    /// The updater vectors hold one value per weight plus one for the bias, like the gradient.
+    /// An empty vector is also valid: versions before 23.2 serialized the vectors empty until
+    /// the first update, and the updaters treat an empty vector as "no accumulated data".
+    void checkUpdaterVectorSize(size_t size, UInt64 expected_size)
+    {
+        if (size != 0 && size != expected_size)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Malformed state of a machine learning aggregate function: the weights updater holds "
+                "a vector of {} values, while {} are expected",
+                size, expected_size);
+    }
+}
+
 /// Weights updaters
 
 void Adam::write(WriteBuffer & buf) const
@@ -453,10 +604,20 @@ void Adam::write(WriteBuffer & buf) const
     writeBinary(average_squared_gradient, buf);
 }
 
-void Adam::read(ReadBuffer & buf)
+void Adam::read(ReadBuffer & buf, UInt64 expected_size)
 {
     readBinary(average_gradient, buf);
     readBinary(average_squared_gradient, buf);
+    checkUpdaterVectorSize(average_gradient.size(), expected_size);
+    checkUpdaterVectorSize(average_squared_gradient.size(), expected_size);
+
+    /// The two vectors are read and written together, so they must agree with each other as well.
+    if (average_gradient.size() != average_squared_gradient.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed state of a machine learning aggregate function: the weights updater holds "
+            "an average gradient of {} values and an average squared gradient of {} values",
+            average_gradient.size(), average_squared_gradient.size());
 }
 
 void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
@@ -478,14 +639,15 @@ void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
     beta2_powered *= adam_rhs.beta2_powered;
 }
 
-void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
+void Adam::update(
+    UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & batch_gradient)
 {
     average_gradient.resize(batch_gradient.size(), Float64{0.0});
     average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i != average_gradient.size(); ++i)
     {
-        Float64 normed_gradient = batch_gradient[i] / batch_size;
+        Float64 normed_gradient = batch_gradient[i] / static_cast<Float64>(batch_size);
         average_gradient[i] = beta1 * average_gradient[i] + (1 - beta1) * normed_gradient;
         average_squared_gradient[i] = beta2 * average_squared_gradient[i] +
                 (1 - beta2) * normed_gradient * normed_gradient;
@@ -504,14 +666,14 @@ void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & b
 }
 
 void Adam::addToBatch(
-        std::vector<Float64> & batch_gradient,
-        IGradientComputer & gradient_computer,
-        const std::vector<Float64> & weights,
-        Float64 bias,
-        Float64 l2_reg_coef,
-        Float64 target,
-        const IColumn ** columns,
-        size_t row_num)
+    VectorWithMemoryTracking<Float64> & batch_gradient,
+    IGradientComputer & gradient_computer,
+    const VectorWithMemoryTracking<Float64> & weights,
+    Float64 bias,
+    Float64 l2_reg_coef,
+    Float64 target,
+    const IColumn ** columns,
+    size_t row_num)
 {
     if (average_gradient.empty())
     {
@@ -521,9 +683,10 @@ void Adam::addToBatch(
     gradient_computer.compute(batch_gradient, weights, bias, l2_reg_coef, target, columns, row_num);
 }
 
-void Nesterov::read(ReadBuffer & buf)
+void Nesterov::read(ReadBuffer & buf, UInt64 expected_size)
 {
     readBinary(accumulated_gradient, buf);
+    checkUpdaterVectorSize(accumulated_gradient.size(), expected_size);
 }
 
 void Nesterov::write(WriteBuffer & buf) const
@@ -534,6 +697,10 @@ void Nesterov::write(WriteBuffer & buf) const
 void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     const auto & nesterov_rhs = static_cast<const Nesterov &>(rhs);
+
+    if (nesterov_rhs.accumulated_gradient.empty())
+        return;
+
     accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
@@ -542,13 +709,14 @@ void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
     }
 }
 
-void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
+void Nesterov::update(
+    UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & batch_gradient)
 {
     accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
-        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / batch_size;
+        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / static_cast<Float64>(batch_size);
     }
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -558,9 +726,9 @@ void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64
 }
 
 void Nesterov::addToBatch(
-    std::vector<Float64> & batch_gradient,
+    VectorWithMemoryTracking<Float64> & batch_gradient,
     IGradientComputer & gradient_computer,
-    const std::vector<Float64> & weights,
+    const VectorWithMemoryTracking<Float64> & weights,
     Float64 bias,
     Float64 l2_reg_coef,
     Float64 target,
@@ -572,7 +740,7 @@ void Nesterov::addToBatch(
         accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
     }
 
-    std::vector<Float64> shifted_weights(weights.size());
+    VectorWithMemoryTracking<Float64> shifted_weights(weights.size());
     for (size_t i = 0; i != shifted_weights.size(); ++i)
     {
         shifted_weights[i] = weights[i] + accumulated_gradient[i] * alpha;
@@ -582,9 +750,10 @@ void Nesterov::addToBatch(
     gradient_computer.compute(batch_gradient, shifted_weights, shifted_bias, l2_reg_coef, target, columns, row_num);
 }
 
-void Momentum::read(ReadBuffer & buf)
+void Momentum::read(ReadBuffer & buf, UInt64 expected_size)
 {
     readBinary(accumulated_gradient, buf);
+    checkUpdaterVectorSize(accumulated_gradient.size(), expected_size);
 }
 
 void Momentum::write(WriteBuffer & buf) const
@@ -595,20 +764,26 @@ void Momentum::write(WriteBuffer & buf) const
 void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     const auto & momentum_rhs = static_cast<const Momentum &>(rhs);
+
+    if (momentum_rhs.accumulated_gradient.empty())
+        return;
+
+    accumulated_gradient.resize(momentum_rhs.accumulated_gradient.size(), Float64{0.0});
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
     {
         accumulated_gradient[i] = accumulated_gradient[i] * frac + momentum_rhs.accumulated_gradient[i] * rhs_frac;
     }
 }
 
-void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
+void Momentum::update(
+    UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than 0
     accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
-        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / batch_size;
+        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / static_cast<Float64>(batch_size);
     }
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -618,20 +793,20 @@ void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64
 }
 
 void StochasticGradientDescent::update(
-    UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
+    UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than  0
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        weights[i] += (learning_rate * batch_gradient[i]) / batch_size;
+        weights[i] += (learning_rate * batch_gradient[i]) / static_cast<Float64>(batch_size);
     }
-    bias += (learning_rate * batch_gradient[weights.size()]) / batch_size;
+    bias += (learning_rate * batch_gradient[weights.size()]) / static_cast<Float64>(batch_size);
 }
 
 void IWeightsUpdater::addToBatch(
-    std::vector<Float64> & batch_gradient,
+    VectorWithMemoryTracking<Float64> & batch_gradient,
     IGradientComputer & gradient_computer,
-    const std::vector<Float64> & weights,
+    const VectorWithMemoryTracking<Float64> & weights,
     Float64 bias,
     Float64 l2_reg_coef,
     Float64 target,
@@ -648,10 +823,13 @@ void LogisticRegression::predict(
     const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const std::vector<Float64> & weights,
+    const VectorWithMemoryTracking<Float64> & weights,
     Float64 bias,
     ContextPtr /*context*/) const
 {
+    if (weights.size() + 1 != arguments.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "In predict function number of arguments differs from the size of weights vector");
+
     size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
@@ -659,7 +837,7 @@ void LogisticRegression::predict(
                         "Block has {} rows, but offset is {} and limit is {}",
                         rows_num, offset, toString(limit));
 
-    std::vector<Float64> results(limit, bias);
+    VectorWithMemoryTracking<Float64> results(limit, bias);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
@@ -680,8 +858,8 @@ void LogisticRegression::predict(
 }
 
 void LogisticRegression::compute(
-    std::vector<Float64> & batch_gradient,
-    const std::vector<Float64> & weights,
+    VectorWithMemoryTracking<Float64> & batch_gradient,
+    const VectorWithMemoryTracking<Float64> & weights,
     Float64 bias,
     Float64 l2_reg_coef,
     Float64 target,
@@ -690,7 +868,7 @@ void LogisticRegression::compute(
 {
     Float64 derivative = bias;
 
-    std::vector<Float64> values(weights.size());
+    VectorWithMemoryTracking<Float64> values(weights.size());
 
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -716,13 +894,13 @@ void LinearRegression::predict(
     const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const std::vector<Float64> & weights,
+    const VectorWithMemoryTracking<Float64> & weights,
     Float64 bias,
     ContextPtr /*context*/) const
 {
     if (weights.size() + 1 != arguments.size())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "In predict function number of arguments differs from the size of weights vector");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "In predict function number of arguments differs from the size of weights vector");
     }
 
     size_t rows_num = arguments.front().column->size();
@@ -732,7 +910,7 @@ void LinearRegression::predict(
                         "Block has {} rows, but offset is {} and limit is {}",
                         rows_num, offset, toString(limit));
 
-    std::vector<Float64> results(limit, bias);
+    VectorWithMemoryTracking<Float64> results(limit, bias);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
@@ -756,8 +934,8 @@ void LinearRegression::predict(
 }
 
 void LinearRegression::compute(
-    std::vector<Float64> & batch_gradient,
-    const std::vector<Float64> & weights,
+    VectorWithMemoryTracking<Float64> & batch_gradient,
+    const VectorWithMemoryTracking<Float64> & weights,
     Float64 bias,
     Float64 l2_reg_coef,
     Float64 target,
@@ -766,7 +944,7 @@ void LinearRegression::compute(
 {
     Float64 derivative = (target - bias);
 
-    std::vector<Float64> values(weights.size());
+    VectorWithMemoryTracking<Float64> values(weights.size());
 
 
     for (size_t i = 0; i < weights.size(); ++i)

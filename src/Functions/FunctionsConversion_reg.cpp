@@ -7,7 +7,7 @@ REGISTER_FUNCTION(Conversion)
 {
     /// toUInt8 documentation
     FunctionDocumentation::Description toUInt8_description = R"(
-Converts an input value to a value of type [`UInt8`](../data-types/int-uint.md).
+Converts an input value to a value of type [`UInt8`](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -19,7 +19,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [UInt8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toUInt8(256) == 0;`.
 :::
@@ -59,11 +59,11 @@ toUInt8('8'): 8
     };
     FunctionDocumentation::IntroducedIn toUInt8_introduced_in = {1, 1};
     FunctionDocumentation::Category toUInt8_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toUInt8_documentation = {toUInt8_description, toUInt8_syntax, toUInt8_arguments, toUInt8_returned_value, toUInt8_examples, toUInt8_introduced_in, toUInt8_category};
+    FunctionDocumentation toUInt8_documentation = {toUInt8_description, toUInt8_syntax, toUInt8_arguments, {}, toUInt8_returned_value, toUInt8_examples, toUInt8_introduced_in, toUInt8_category};
 
     /// toUInt16 documentation
     FunctionDocumentation::Description toUInt16_description = R"(
-Converts an input value to a value of type [`UInt16`](../data-types/int-uint.md).
+Converts an input value to a value of type [`UInt16`](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -75,7 +75,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt16`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toUInt16(65536) == 0;`.
 :::
@@ -115,14 +115,14 @@ toUInt16('16'):  16
     };
     FunctionDocumentation::IntroducedIn toUInt16_introduced_in = {1, 1};
     FunctionDocumentation::Category toUInt16_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toUInt16_documentation = {toUInt16_description, toUInt16_syntax, toUInt16_arguments, toUInt16_returned_value, toUInt16_examples, toUInt16_introduced_in, toUInt16_category};
+    FunctionDocumentation toUInt16_documentation = {toUInt16_description, toUInt16_syntax, toUInt16_arguments, {}, toUInt16_returned_value, toUInt16_examples, toUInt16_introduced_in, toUInt16_category};
 
     factory.registerFunction<detail::FunctionToUInt8>(toUInt8_documentation);
     factory.registerFunction<detail::FunctionToUInt16>(toUInt16_documentation);
 
     /// toUInt32 documentation
     FunctionDocumentation::Description toUInt32_description = R"(
-Converts an input value to a value of type [`UInt32`](../data-types/int-uint.md).
+Converts an input value to a value of type [`UInt32`](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -134,7 +134,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt32`](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toUInt32(4294967296) == 0;`
 :::
@@ -174,13 +174,13 @@ toUInt32('32'):  32
     };
     FunctionDocumentation::IntroducedIn toUInt32_introduced_in = {1, 1};
     FunctionDocumentation::Category toUInt32_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toUInt32_documentation = {toUInt32_description, toUInt32_syntax, toUInt32_arguments, toUInt32_returned_value, toUInt32_examples, toUInt32_introduced_in, toUInt32_category};
+    FunctionDocumentation toUInt32_documentation = {toUInt32_description, toUInt32_syntax, toUInt32_arguments, {}, toUInt32_returned_value, toUInt32_examples, toUInt32_introduced_in, toUInt32_category};
 
     factory.registerFunction<detail::FunctionToUInt32>(toUInt32_documentation);
 
     /// toUInt64 documentation
     FunctionDocumentation::Description toUInt64_description = R"(
-Converts an input value to a value of type [`UInt64`](../data-types/int-uint.md).
+Converts an input value to a value of type [`UInt64`](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -192,7 +192,7 @@ Unsupported types:
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt64`](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toUInt64(18446744073709551616) == 0;`
 :::
@@ -232,13 +232,13 @@ toUInt64('64'):  64
     };
     FunctionDocumentation::IntroducedIn toUInt64_introduced_in = {1, 1};
     FunctionDocumentation::Category toUInt64_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toUInt64_documentation = {toUInt64_description, toUInt64_syntax, toUInt64_arguments, toUInt64_returned_value, toUInt64_examples, toUInt64_introduced_in, toUInt64_category};
+    FunctionDocumentation toUInt64_documentation = {toUInt64_description, toUInt64_syntax, toUInt64_arguments, {}, toUInt64_returned_value, toUInt64_examples, toUInt64_introduced_in, toUInt64_category};
 
     factory.registerFunction<detail::FunctionToUInt64>(toUInt64_documentation);
 
     /// toUInt128 documentation
     FunctionDocumentation::Description toUInt128_description = R"(
-Converts an input value to a value of type [`UInt128`](/sql-reference/functions/type-conversion-functions#touint128).
+Converts an input value to a value of type [`UInt128`](/reference/functions/regular-functions/type-conversion-functions#toUInt128).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -286,7 +286,7 @@ toUInt128('128'): 128
     };
     FunctionDocumentation::IntroducedIn toUInt128_introduced_in = {1, 1};
     FunctionDocumentation::Category toUInt128_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toUInt128_documentation = {toUInt128_description, toUInt128_syntax, toUInt128_arguments, toUInt128_returned_value, toUInt128_examples, toUInt128_introduced_in, toUInt128_category};
+    FunctionDocumentation toUInt128_documentation = {toUInt128_description, toUInt128_syntax, toUInt128_arguments, {}, toUInt128_returned_value, toUInt128_examples, toUInt128_introduced_in, toUInt128_category};
 
     factory.registerFunction<detail::FunctionToUInt128>(toUInt128_documentation);
     FunctionDocumentation::Description toUInt256_description = R"(
@@ -338,13 +338,13 @@ toUInt256('256'):   256
     };
     FunctionDocumentation::IntroducedIn toUInt256_introduced_in = {1, 1};
     FunctionDocumentation::Category toUInt256_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toUInt256_documentation = {toUInt256_description, toUInt256_syntax, toUInt256_arguments, toUInt256_returned_value, toUInt256_examples, toUInt256_introduced_in, toUInt256_category};
+    FunctionDocumentation toUInt256_documentation = {toUInt256_description, toUInt256_syntax, toUInt256_arguments, {}, toUInt256_returned_value, toUInt256_examples, toUInt256_introduced_in, toUInt256_category};
 
     factory.registerFunction<detail::FunctionToUInt256>(toUInt256_documentation);
 
     /// toInt8 documentation
     FunctionDocumentation::Description toInt8_description = R"(
-Converts an input value to a value of type [`Int8`](../data-types/int-uint.md).
+Converts an input value to a value of type [`Int8`](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -356,7 +356,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toInt8(128) == -128;`.
 :::
@@ -396,13 +396,13 @@ toInt8('-8'): -8
     };
     FunctionDocumentation::IntroducedIn toInt8_introduced_in = {1, 1};
     FunctionDocumentation::Category toInt8_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toInt8_documentation = {toInt8_description, toInt8_syntax, toInt8_arguments, toInt8_returned_value, toInt8_examples, toInt8_introduced_in, toInt8_category};
+    FunctionDocumentation toInt8_documentation = {toInt8_description, toInt8_syntax, toInt8_arguments, {}, toInt8_returned_value, toInt8_examples, toInt8_introduced_in, toInt8_category};
 
     factory.registerFunction<detail::FunctionToInt8>(toInt8_documentation);
 
     /// toInt16 documentation
     FunctionDocumentation::Description toInt16_description = R"(
-Converts an input value to a value of type [`Int16`](../data-types/int-uint.md).
+Converts an input value to a value of type [`Int16`](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -414,7 +414,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toInt16(32768) == -32768;`.
 :::
@@ -454,13 +454,13 @@ toInt16('-16'):  -16
     };
     FunctionDocumentation::IntroducedIn toInt16_introduced_in = {1, 1};
     FunctionDocumentation::Category toInt16_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toInt16_documentation = {toInt16_description, toInt16_syntax, toInt16_arguments, toInt16_returned_value, toInt16_examples, toInt16_introduced_in, toInt16_category};
+    FunctionDocumentation toInt16_documentation = {toInt16_description, toInt16_syntax, toInt16_arguments, {}, toInt16_returned_value, toInt16_examples, toInt16_introduced_in, toInt16_category};
 
     factory.registerFunction<detail::FunctionToInt16>(toInt16_documentation);
 
     /// toInt32 documentation
     FunctionDocumentation::Description toInt32_description = R"(
-Converts an input value to a value of type [`Int32`](../data-types/int-uint.md).
+Converts an input value to a value of type [`Int32`](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -472,7 +472,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toInt32(2147483648) == -2147483648;`
 :::
@@ -512,13 +512,13 @@ toInt32('-32'):  -32
     };
     FunctionDocumentation::IntroducedIn toInt32_introduced_in = {1, 1};
     FunctionDocumentation::Category toInt32_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toInt32_documentation = {toInt32_description, toInt32_syntax, toInt32_arguments, toInt32_returned_value, toInt32_examples, toInt32_introduced_in, toInt32_category};
+    FunctionDocumentation toInt32_documentation = {toInt32_description, toInt32_syntax, toInt32_arguments, {}, toInt32_returned_value, toInt32_examples, toInt32_introduced_in, toInt32_category};
 
     factory.registerFunction<detail::FunctionToInt32>(toInt32_documentation);
 
     /// toInt64 documentation
     FunctionDocumentation::Description toInt64_description = R"(
-Converts an input value to a value of type [`Int64`](../data-types/int-uint.md).
+Converts an input value to a value of type [`Int64`](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -530,7 +530,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [Int64](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
 :::
@@ -570,13 +570,13 @@ toInt64('-64'):  -64
     };
     FunctionDocumentation::IntroducedIn toInt64_introduced_in = {1, 1};
     FunctionDocumentation::Category toInt64_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toInt64_documentation = {toInt64_description, toInt64_syntax, toInt64_arguments, toInt64_returned_value, toInt64_examples, toInt64_introduced_in, toInt64_category};
+    FunctionDocumentation toInt64_documentation = {toInt64_description, toInt64_syntax, toInt64_arguments, {}, toInt64_returned_value, toInt64_examples, toInt64_introduced_in, toInt64_category};
 
     factory.registerFunction<detail::FunctionToInt64>(toInt64_documentation);
 
     /// toInt128 documentation
     FunctionDocumentation::Description toInt128_description = R"(
-Converts an input value to a value of type [Int128](/sql-reference/data-types/int-uint).
+Converts an input value to a value of type [Int128](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -624,13 +624,13 @@ toInt128('-128'): -128
     };
     FunctionDocumentation::IntroducedIn toInt128_introduced_in = {1, 1};
     FunctionDocumentation::Category toInt128_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toInt128_documentation = {toInt128_description, toInt128_syntax, toInt128_arguments, toInt128_returned_value, toInt128_examples, toInt128_introduced_in, toInt128_category};
+    FunctionDocumentation toInt128_documentation = {toInt128_description, toInt128_syntax, toInt128_arguments, {}, toInt128_returned_value, toInt128_examples, toInt128_introduced_in, toInt128_category};
 
     factory.registerFunction<detail::FunctionToInt128>(toInt128_documentation);
 
     /// toInt256 documentation
     FunctionDocumentation::Description toInt256_description = R"(
-Converts an input value to a value of type [Int256](/sql-reference/data-types/int-uint).
+Converts an input value to a value of type [Int256](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -678,7 +678,7 @@ toInt256('-256'):   -256
     };
     FunctionDocumentation::IntroducedIn toInt256_introduced_in = {1, 1};
     FunctionDocumentation::Category toInt256_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toInt256_documentation = {toInt256_description, toInt256_syntax, toInt256_arguments, toInt256_returned_value, toInt256_examples, toInt256_introduced_in, toInt256_category};
+    FunctionDocumentation toInt256_documentation = {toInt256_description, toInt256_syntax, toInt256_arguments, {}, toInt256_returned_value, toInt256_examples, toInt256_introduced_in, toInt256_category};
 
     factory.registerFunction<detail::FunctionToInt256>(toInt256_documentation);
 
@@ -707,21 +707,23 @@ toBFloat16('42.7')
 FORMAT Vertical;
         )",
         R"(
-toBFloat16(toFloat32(42.7)): 42.5
-toBFloat16(t⋯32('42.7')):    42.5
-toBFloat16('42.7'):          42.5
+Row 1:
+──────
+toBFloat16(toFloat32(42.7)):   42.5
+toBFloat16(toFloat32('42.7')): 42.5
+toBFloat16('42.7'):            42.5
         )"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16_introduced_in = {1, 1};
     FunctionDocumentation::Category toBFloat16_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toBFloat16_documentation = {toBFloat16_description, toBFloat16_syntax, toBFloat16_arguments, toBFloat16_returned_value, toBFloat16_examples, toBFloat16_introduced_in, toBFloat16_category};
+    FunctionDocumentation toBFloat16_documentation = {toBFloat16_description, toBFloat16_syntax, toBFloat16_arguments, {}, toBFloat16_returned_value, toBFloat16_examples, toBFloat16_introduced_in, toBFloat16_category};
 
     factory.registerFunction<detail::FunctionToBFloat16>(toBFloat16_documentation);
 
     /// toFloat32 documentation
     FunctionDocumentation::Description toFloat32_description = R"(
-Converts an input value to a value of type [Float32](/sql-reference/data-types/float).
+Converts an input value to a value of type [Float32](/reference/data-types/float).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -764,13 +766,13 @@ toFloat32('NaN'):  nan
     };
     FunctionDocumentation::IntroducedIn toFloat32_introduced_in = {1, 1};
     FunctionDocumentation::Category toFloat32_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toFloat32_documentation = {toFloat32_description, toFloat32_syntax, toFloat32_arguments, toFloat32_returned_value, toFloat32_examples, toFloat32_introduced_in, toFloat32_category};
+    FunctionDocumentation toFloat32_documentation = {toFloat32_description, toFloat32_syntax, toFloat32_arguments, {}, toFloat32_returned_value, toFloat32_examples, toFloat32_introduced_in, toFloat32_category};
 
     factory.registerFunction<detail::FunctionToFloat32>(toFloat32_documentation);
 
     /// toFloat64 documentation
     FunctionDocumentation::Description toFloat64_description = R"(
-Converts an input value to a value of type [`Float64`](../data-types/float.md).
+Converts an input value to a value of type [`Float64`](/reference/data-types/float).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -813,13 +815,13 @@ toFloat64('NaN'):  nan
     };
     FunctionDocumentation::IntroducedIn toFloat64_introduced_in = {1, 1};
     FunctionDocumentation::Category toFloat64_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toFloat64_documentation = {toFloat64_description, toFloat64_syntax, toFloat64_arguments, toFloat64_returned_value, toFloat64_examples, toFloat64_introduced_in, toFloat64_category};
+    FunctionDocumentation toFloat64_documentation = {toFloat64_description, toFloat64_syntax, toFloat64_arguments, {}, toFloat64_returned_value, toFloat64_examples, toFloat64_introduced_in, toFloat64_category};
 
     factory.registerFunction<detail::FunctionToFloat64>(toFloat64_documentation);
 
     /// toDecimal64 documentation
     FunctionDocumentation::Description description_toDecimal64 = R"(
-Converts an input value to a value of type [`Decimal(18, S)`](../data-types/decimal.md) with scale of `S`.
+Converts an input value to a value of type [`Decimal(18, S)`](/reference/data-types/decimal) with scale of `S`.
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -861,22 +863,22 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-a:      2.0
+a:      2
 type_a: Decimal(18, 1)
-b:      4.20
+b:      4.2
 type_b: Decimal(18, 2)
-c:      4.200
+c:      4.2
 type_c: Decimal(18, 3)
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal64 = {18, 12};
     FunctionDocumentation::Category category_toDecimal64 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal64 = {description_toDecimal64, syntax_toDecimal64, arguments_toDecimal64, returned_value_toDecimal64, examples_toDecimal64, introduced_in_toDecimal64, category_toDecimal64};
+    FunctionDocumentation documentation_toDecimal64 = {description_toDecimal64, syntax_toDecimal64, arguments_toDecimal64, {}, returned_value_toDecimal64, examples_toDecimal64, introduced_in_toDecimal64, category_toDecimal64};
 
     /// toDecimal32 documentation
     FunctionDocumentation::Description description_toDecimal32 = R"(
-Converts an input value to a value of type [`Decimal(9, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
+Converts an input value to a value of type [`Decimal(9, S)`](/reference/data-types/decimal) with scale of `S`. Throws an exception in case of an error.
 
 Supported arguments:
 - Values or string representations of type (U)Int*.
@@ -928,11 +930,11 @@ type_c: Decimal(9, 3)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {18, 12};
     FunctionDocumentation::Category category_toDecimal32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal32 = {description_toDecimal32, syntax_toDecimal32, arguments_toDecimal32, returned_value_toDecimal32, examples_toDecimal32, introduced_in, category_toDecimal32};
+    FunctionDocumentation documentation_toDecimal32 = {description_toDecimal32, syntax_toDecimal32, arguments_toDecimal32, {}, returned_value_toDecimal32, examples_toDecimal32, introduced_in, category_toDecimal32};
 
     /// toDecimal128 documentation
     FunctionDocumentation::Description description_toDecimal128 = R"(
-Converts an input value to a value of type [`Decimal(38, S)`](../data-types/decimal.md) with scale of `S`.
+Converts an input value to a value of type [`Decimal(38, S)`](/reference/data-types/decimal) with scale of `S`.
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -985,11 +987,11 @@ type_c: Decimal(38, 3)
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal128 = {18, 12};
     FunctionDocumentation::Category category_toDecimal128 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal128 = {description_toDecimal128, syntax_toDecimal128, arguments_toDecimal128, returned_value_toDecimal128, examples_toDecimal128, introduced_in_toDecimal128, category_toDecimal128};
+    FunctionDocumentation documentation_toDecimal128 = {description_toDecimal128, syntax_toDecimal128, arguments_toDecimal128, {}, returned_value_toDecimal128, examples_toDecimal128, introduced_in_toDecimal128, category_toDecimal128};
 
     /// toDecimal256 documentation
     FunctionDocumentation::Description description_toDecimal256 = R"(
-Converts an input value to a value of type [`Decimal(76, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
+Converts an input value to a value of type [`Decimal(76, S)`](/reference/data-types/decimal) with scale of `S`. Throws an exception in case of an error.
 
 Supported arguments:
 - Values or string representations of type (U)Int*.
@@ -1041,7 +1043,7 @@ type_c: Decimal(76, 3)
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal256 = {20, 8};
     FunctionDocumentation::Category category_toDecimal256 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal256 = {description_toDecimal256, syntax_toDecimal256, arguments_toDecimal256, returned_value_toDecimal256, examples_toDecimal256, introduced_in_toDecimal256, category_toDecimal256};
+    FunctionDocumentation documentation_toDecimal256 = {description_toDecimal256, syntax_toDecimal256, arguments_toDecimal256, {}, returned_value_toDecimal256, examples_toDecimal256, introduced_in_toDecimal256, category_toDecimal256};
 
     factory.registerFunction<detail::FunctionToDecimal32>(documentation_toDecimal32);
     factory.registerFunction<detail::FunctionToDecimal64>(documentation_toDecimal64);
@@ -1050,7 +1052,7 @@ type_c: Decimal(76, 3)
 
     /// toDate documentation
     FunctionDocumentation::Description description_toDate = R"(
-Converts an input value to type [`Date`](/sql-reference/data-types/date).
+Converts an input value to type [`Date`](/reference/data-types/date).
 Supports conversion from String, FixedString, DateTime, or numeric types.
     )";
     FunctionDocumentation::Syntax syntax_toDate = "toDate(x)";
@@ -1089,20 +1091,33 @@ SELECT toDate(20297)
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDate = {1, 1};
     FunctionDocumentation::Category category_toDate = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDate = {description_toDate, syntax_toDate, arguments_toDate, returned_value_toDate, examples_toDate, introduced_in_toDate, category_toDate};
+    FunctionDocumentation documentation_toDate = {description_toDate, syntax_toDate, arguments_toDate, {}, returned_value_toDate, examples_toDate, introduced_in_toDate, category_toDate};
 
     factory.registerFunction<detail::FunctionToDate>(documentation_toDate);
 
     /// MySQL compatibility alias. Cannot be registered as alias,
     /// because we don't want it to be normalized to toDate in queries,
     /// otherwise CREATE DICTIONARY query breaks.
-    factory.registerFunction("DATE", &detail::FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_date = R"(
+Converts the argument to the Date data type. This is a MySQL compatibility alias for `toDate`. It behaves the same as `toDate`.
+    )";
+    FunctionDocumentation::Syntax syntax_date = "DATE(expr)";
+    FunctionDocumentation::Arguments arguments_date = {
+        {"expr", "The value to convert.", {"String", "UInt32", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_date = {"Returns a Date value.", {"Date"}};
+    FunctionDocumentation::Examples examples_date = {{"Basic usage", "SELECT DATE('2023-01-01')", "2023-01-01"}};
+    FunctionDocumentation::Category category_date = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::IntroducedIn introduced_in_date = {21, 2};
+    FunctionDocumentation documentation_date = {description_date, syntax_date, arguments_date, {}, returned_value_date, examples_date, introduced_in_date, category_date};
+
+    factory.registerFunction("DATE", &detail::FunctionToDate::create, documentation_date, FunctionFactory::Case::Insensitive);
 
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(
-Converts the argument to the [Date32](../data-types/date32.md) data type.
-If the value is outside the range, `toDate32` returns the border values supported by [Date32](../data-types/date32.md).
-If the argument is of type [`Date`](../data-types/date.md), it's bounds are taken into account.
+Converts the argument to the [Date32](/reference/data-types/date32) data type.
+If the value is outside the `[0000-01-01, 9999-12-31]` range, `toDate32` returns the border values supported by [Date32](/reference/data-types/date32).
+If the argument is of type [`Date`](/reference/data-types/date), it's bounds are taken into account.
     )";
     FunctionDocumentation::Syntax syntax_toDate32 = "toDate32(expr)";
     FunctionDocumentation::Arguments arguments_toDate32 = {
@@ -1119,12 +1134,12 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:           2025-01-01
+value:             2025-01-01
 toTypeName(value): Date32
         )"
     },
     {
-        "Outside range",
+        "Before 1900",
         R"(
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
 FORMAT Vertical
@@ -1132,32 +1147,45 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:           1900-01-01
+value:             1899-01-01
 toTypeName(value): Date32
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDate32 = {21, 9};
     FunctionDocumentation::Category category_toDate32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDate32 = {description_toDate32, syntax_toDate32, arguments_toDate32, returned_value_toDate32, examples_toDate32, introduced_in_toDate32, category_toDate32};
+    FunctionDocumentation documentation_toDate32 = {description_toDate32, syntax_toDate32, arguments_toDate32, {}, returned_value_toDate32, examples_toDate32, introduced_in_toDate32, category_toDate32};
 
     factory.registerFunction<detail::FunctionToDate32>(documentation_toDate32);
 
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
-Converts an input value to type [Time](/sql-reference/data-types/time).
-Supports conversion from String, FixedString, DateTime, or numeric types representing seconds since midnight.
+Converts an input value to type [Time](/reference/data-types/time).
+Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+
+:::note Legacy `toTime`
+Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
+time component. That function is still available under the name [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+
+Setting [`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_to_time) to `1` also keeps the name `toTime` bound to the legacy
+function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
+While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
+The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
+:::
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "BFloat16", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
     {
-        "String to Time conversion",
+        "DateTime64 to Time conversion",
         R"(
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
         )",
         R"(
 14:30:25
@@ -1166,6 +1194,8 @@ SELECT toTime('14:30:25')
     {
         "DateTime to Time conversion",
         R"(
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )",
         R"(
@@ -1173,36 +1203,40 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )"
     },
     {
-        "Integer to Time conversion",
+        "Integer (seconds since epoch) to Time conversion",
         R"(
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
         )",
         R"(
 14:30:25
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTime = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTime = {25, 5};
     FunctionDocumentation::Category category_toTime = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, returned_value_toTime, examples_toTime, introduced_in_toTime, category_toTime};
+    FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, {}, returned_value_toTime, examples_toTime, introduced_in_toTime, category_toTime};
 
     factory.registerFunction<detail::FunctionToTime>(documentation_toTime);
 
     FunctionDocumentation::Description description_toTime64 = R"(
-Converts an input value to type [Time64](/sql-reference/data-types/time64).
-Supports conversion from String, FixedString, DateTime64, or numeric types representing microseconds since midnight.
-Provides microsecond precision for time values.
+Converts an input value to type [Time64](/reference/data-types/time64).
+Supports conversion from String, FixedString, DateTime64, or numeric types representing seconds since midnight.
+Provides sub-second precision for time values, up to `scale` fractional digits.
     )";
-    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x)";
+    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x, scale)";
     FunctionDocumentation::Arguments arguments_toTime64 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}},
+        {"scale", "Precision (number of fractional digits, `0`–`9`) of the resulting `Time64`.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted input value with microsecond precision.", {"Time64(6)"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted value with the requested `scale`.", {"Time64"}};
     FunctionDocumentation::Examples examples_toTime64 = {
     {
         "String to Time64 conversion",
         R"(
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
         )",
         R"(
 14:30:25.123456
@@ -1211,16 +1245,18 @@ SELECT toTime64('14:30:25.123456')
     {
         "DateTime64 to Time64 conversion",
         R"(
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
         )",
         R"(
 14:30:25.123456
         )"
     },
     {
-        "Integer to Time64 conversion",
+        "Float (seconds since midnight) to Time64 conversion",
         R"(
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
         )",
         R"(
 14:30:25.123456
@@ -1229,17 +1265,17 @@ SELECT toTime64(52225123456)
     };
     FunctionDocumentation::IntroducedIn introduced_in_toTime64 = {25, 6};
     FunctionDocumentation::Category category_toTime64 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTime64 = {description_toTime64, syntax_toTime64, arguments_toTime64, returned_value_toTime64, examples_toTime64, introduced_in_toTime64, category_toTime64};
+    FunctionDocumentation documentation_toTime64 = {description_toTime64, syntax_toTime64, arguments_toTime64, {}, returned_value_toTime64, examples_toTime64, introduced_in_toTime64, category_toTime64};
 
     factory.registerFunction<detail::FunctionToTime64>(documentation_toTime64);
 
     /// toDateTime documentation
     FunctionDocumentation::Description description_toDateTime = R"(
-Converts an input value to type [DateTime](../data-types/datetime.md).
+Converts an input value to type [DateTime](/reference/data-types/datetime).
 
 :::note
 If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
-If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
+If `expr` is a [String](/reference/data-types/string), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
 :::
     )";
@@ -1266,71 +1302,68 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTime = {1, 1};
     FunctionDocumentation::Category category_toDateTime = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime = {description_toDateTime, syntax_toDateTime, arguments_toDateTime, returned_value_toDateTime, examples_toDateTime, introduced_in_toDateTime, category_toDateTime};
+    FunctionDocumentation documentation_toDateTime = {description_toDateTime, syntax_toDateTime, arguments_toDateTime, {}, returned_value_toDateTime, examples_toDateTime, introduced_in_toDateTime, category_toDateTime};
 
     factory.registerFunction<detail::FunctionToDateTime>(documentation_toDateTime);
 
     /// toDateTime32 documentation
     FunctionDocumentation::Description description_toDateTime32 = R"(
 Converts an input value to type `DateTime`.
-Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `DateTime`, or numeric types (`(U)Int*`, `Float*`, `Decimal`).
-DateTime32 provides extended range compared to `DateTime`, supporting dates from `1900-01-01` to `2299-12-31`.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; the `Time` type and wide integer types such as `(U)Int128`/`(U)Int256` wrap around instead of saturating.
+`DateTime32` is an alias of `DateTime` and supports dates from `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
+When converting from a string or from one of the saturating numeric types listed above, values outside of this range are saturated to the range boundaries. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+Conversions from other date and time types such as `Date32` or `DateTime64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime32 = "toDateTime32(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime32 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "UInt*", "Float*", "Date", "DateTime", "DateTime64"}},
+        {"x", "Input value to convert.", {"String", "FixedString", "(U)Int*", "Float*", "BFloat16", "Date", "Date32", "Time", "DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone for the returned `DateTime` value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Returns the converted input value.", {"DateTime"}};
     FunctionDocumentation::Examples examples_toDateTime32 = {
     {
-        "The value is within the range",
+        "From a string",
         R"(
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
         )"
     },
     {
-        "As a decimal with precision",
+        "From a Unix timestamp",
         R"(
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
-└─────────────────────────┴──────────────────────────────────────────┘
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
         )"
     },
     {
         "With a timezone",
         R"(
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTime32 = {20, 9};
     FunctionDocumentation::Category category_toDateTime32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime32 = {description_toDateTime32, syntax_toDateTime32, arguments_toDateTime32, returned_value_toDateTime32, examples_toDateTime32, introduced_in_toDateTime32, category_toDateTime32};
+    FunctionDocumentation documentation_toDateTime32 = {description_toDateTime32, syntax_toDateTime32, arguments_toDateTime32, {}, returned_value_toDateTime32, examples_toDateTime32, introduced_in_toDateTime32, category_toDateTime32};
 
     factory.registerFunction<detail::FunctionToDateTime32>(documentation_toDateTime32);
 
     /// toDateTime64 documentation
     FunctionDocumentation::Description description_toDateTime64 = R"(
-Converts an input value to a value of type [`DateTime64`](../data-types/datetime64.md).
+Converts an input value to a value of type [`DateTime64`](/reference/data-types/datetime64).
     )";
     FunctionDocumentation::Syntax syntax_toDateTime64 = "toDateTime64(expr, scale[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime64 = {
@@ -1346,9 +1379,9 @@ Converts an input value to a value of type [`DateTime64`](../data-types/datetime
 SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
         )"
     },
     {
@@ -1359,9 +1392,12 @@ SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
         )"
     },
     {
@@ -1370,15 +1406,15 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)──────────────┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTime64 = {20, 1};
     FunctionDocumentation::Category category_toDateTime64 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime64 = {description_toDateTime64, syntax_toDateTime64, arguments_toDateTime64, returned_value_toDateTime64, examples_toDateTime64, introduced_in_toDateTime64, category_toDateTime64};
+    FunctionDocumentation documentation_toDateTime64 = {description_toDateTime64, syntax_toDateTime64, arguments_toDateTime64, {}, returned_value_toDateTime64, examples_toDateTime64, introduced_in_toDateTime64, category_toDateTime64};
 
     factory.registerFunction<detail::FunctionToDateTime64>(documentation_toDateTime64);
 
@@ -1398,7 +1434,7 @@ Converts a String value to a UUID value.
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
         )",
         R"(
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
         )"
@@ -1406,14 +1442,14 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUUID = {1, 1};
     FunctionDocumentation::Category category_toUUID = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUUID = {description_toUUID, syntax_toUUID, arguments_toUUID, returned_value_toUUID, examples_toUUID, introduced_in_toUUID, category_toUUID};
+    FunctionDocumentation documentation_toUUID = {description_toUUID, syntax_toUUID, arguments_toUUID, {}, returned_value_toUUID, examples_toUUID, introduced_in_toUUID, category_toUUID};
 
     factory.registerFunction<detail::FunctionToUUID>(documentation_toUUID);
 
     /// toIPv4 documentation
     FunctionDocumentation::Description description_toIPv4 = R"(
 Converts a string or a UInt32 form of IPv4 address to type IPv4.
-It is similar to [`IPv4StringToNum`](/sql-reference/functions/ip-address-functions#IPv4StringToNum) and [`IPv4NumToString`](/sql-reference/functions/ip-address-functions#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
+It is similar to [`IPv4StringToNum`](/reference/functions/regular-functions/ip-address-functions#IPv4StringToNum) and [`IPv4NumToString`](/reference/functions/regular-functions/ip-address-functions#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
 )";
     FunctionDocumentation::Syntax syntax_toIPv4 = "toIPv4(x)";
     FunctionDocumentation::Arguments arguments_toIPv4 = {
@@ -1461,15 +1497,15 @@ SELECT toIPv4(2130706433);
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv4 = {20, 1};
     FunctionDocumentation::Category category_toIPv4 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toIPv4 = {description_toIPv4, syntax_toIPv4, arguments_toIPv4, returned_value_toIPv4, examples_toIPv4, introduced_in_toIPv4, category_toIPv4};
+    FunctionDocumentation documentation_toIPv4 = {description_toIPv4, syntax_toIPv4, arguments_toIPv4, {}, returned_value_toIPv4, examples_toIPv4, introduced_in_toIPv4, category_toIPv4};
 
     factory.registerFunction<detail::FunctionToIPv4>(documentation_toIPv4);
 
     /// toIPv6 documentation
     FunctionDocumentation::Description description_toIPv6 = R"(
-onverts a string or a `UInt128` form of IPv6 address to [`IPv6`](../data-types/ipv6.md) type.
+onverts a string or a `UInt128` form of IPv6 address to [`IPv6`](/reference/data-types/ipv6) type.
 For strings, if the IPv6 address has an invalid format, returns an empty value.
-Similar to [`IPv6StringToNum`](/sql-reference/functions/ip-address-functions#IPv6StringToNum) and [`IPv6NumToString`](/sql-reference/functions/ip-address-functions#IPv6NumToString) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
+Similar to [`IPv6StringToNum`](/reference/functions/regular-functions/ip-address-functions#IPv6StringToNum) and [`IPv6NumToString`](/reference/functions/regular-functions/ip-address-functions#IPv6NumToString) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 )";
@@ -1507,7 +1543,7 @@ SELECT toIPv6('127.0.0.1');
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv6 = {20, 1};
     FunctionDocumentation::Category category_toIPv6 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toIPv6 = {description_toIPv6, syntax_toIPv6, arguments_toIPv6, returned_value_toIPv6, examples_toIPv6, introduced_in_toIPv6, category_toIPv6};
+    FunctionDocumentation documentation_toIPv6 = {description_toIPv6, syntax_toIPv6, arguments_toIPv6, {}, returned_value_toIPv6, examples_toIPv6, introduced_in_toIPv6, category_toIPv6};
 
     factory.registerFunction<detail::FunctionToIPv6>(documentation_toIPv6);
 
@@ -1546,7 +1582,7 @@ LIMIT 10
     };
     FunctionDocumentation::IntroducedIn toString_introduced_in = {1, 1};
     FunctionDocumentation::Category toString_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toString_documentation = {toString_description, toString_syntax, toString_arguments, toString_returned_value, toString_examples, toString_introduced_in, toString_category};
+    FunctionDocumentation toString_documentation = {toString_description, toString_syntax, toString_arguments, {}, toString_returned_value, toString_examples, toString_introduced_in, toString_category};
 
     factory.registerFunction<detail::FunctionToString>(toString_documentation);
 
@@ -1555,7 +1591,7 @@ LIMIT 10
 Converts a `String`, `Date`, or `DateTime` to a Unix timestamp (seconds since `1970-01-01 00:00:00 UTC`) as `UInt32`.
     )";
     FunctionDocumentation::Syntax syntax_to_unix_timestamp = R"(
-toUnixTimestamp(date, [timezone])
+toUnixTimestamp(date[, timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_unix_timestamp = {
         {"date", "Value to convert.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
@@ -1591,13 +1627,13 @@ from_date32:     1509840000
     };
     FunctionDocumentation::IntroducedIn introduced_in_to_unix_timestamp = {1, 1};
     FunctionDocumentation::Category category_to_unix_timestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_unix_timestamp = {description_to_unix_timestamp, syntax_to_unix_timestamp, arguments_to_unix_timestamp, returned_value_to_unix_timestamp, examples_to_unix_timestamp, introduced_in_to_unix_timestamp, category_to_unix_timestamp};
+    FunctionDocumentation documentation_to_unix_timestamp = {description_to_unix_timestamp, syntax_to_unix_timestamp, arguments_to_unix_timestamp, {}, returned_value_to_unix_timestamp, examples_to_unix_timestamp, introduced_in_to_unix_timestamp, category_to_unix_timestamp};
 
     factory.registerFunction<detail::FunctionToUnixTimestamp>(documentation_to_unix_timestamp);
 
     /// toUInt8OrZero documentation
     FunctionDocumentation::Description description_toUInt8OrZero = R"(
-Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -1607,7 +1643,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt8`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt8`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -1640,13 +1676,13 @@ toUInt8OrZero('abc'): 0
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt8OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt8OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt8OrZero = {description_toUInt8OrZero, syntax_toUInt8OrZero, arguments_toUInt8OrZero, returned_value_toUInt8OrZero, examples_toUInt8OrZero, introduced_in_toUInt8OrZero, category_toUInt8OrZero};
+    FunctionDocumentation documentation_toUInt8OrZero = {description_toUInt8OrZero, syntax_toUInt8OrZero, arguments_toUInt8OrZero, {}, returned_value_toUInt8OrZero, examples_toUInt8OrZero, introduced_in_toUInt8OrZero, category_toUInt8OrZero};
 
     factory.registerFunction<detail::FunctionToUInt8OrZero>(documentation_toUInt8OrZero);
 
     /// toUInt16OrZero documentation
     FunctionDocumentation::Description description_toUInt16OrZero = R"(
-Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [`UInt16`](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [`UInt16`](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -1656,7 +1692,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt16`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -1689,13 +1725,13 @@ toUInt16OrZero('abc'): 0
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt16OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt16OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt16OrZero = {description_toUInt16OrZero, syntax_toUInt16OrZero, arguments_toUInt16OrZero, returned_value_toUInt16OrZero, examples_toUInt16OrZero, introduced_in_toUInt16OrZero, category_toUInt16OrZero};
+    FunctionDocumentation documentation_toUInt16OrZero = {description_toUInt16OrZero, syntax_toUInt16OrZero, arguments_toUInt16OrZero, {}, returned_value_toUInt16OrZero, examples_toUInt16OrZero, introduced_in_toUInt16OrZero, category_toUInt16OrZero};
 
     factory.registerFunction<detail::FunctionToUInt16OrZero>(documentation_toUInt16OrZero);
 
     /// toUInt32OrZero documentation
     FunctionDocumentation::Description description_toUInt32OrZero = R"(
-Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [`UInt32`](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [`UInt32`](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -1705,7 +1741,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt32`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -1738,13 +1774,13 @@ toUInt32OrZero('abc'): 0
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt32OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt32OrZero = {description_toUInt32OrZero, syntax_toUInt32OrZero, arguments_toUInt32OrZero, returned_value_toUInt32OrZero, examples_toUInt32OrZero, introduced_in_toUInt32OrZero, category_toUInt32OrZero};
+    FunctionDocumentation documentation_toUInt32OrZero = {description_toUInt32OrZero, syntax_toUInt32OrZero, arguments_toUInt32OrZero, {}, returned_value_toUInt32OrZero, examples_toUInt32OrZero, introduced_in_toUInt32OrZero, category_toUInt32OrZero};
 
     factory.registerFunction<detail::FunctionToUInt32OrZero>(documentation_toUInt32OrZero);
 
     /// toUInt64OrZero documentation
     FunctionDocumentation::Description description_toUInt64OrZero = R"(
-Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [`UInt64`](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [`UInt64`](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -1754,7 +1790,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt64`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -1787,13 +1823,13 @@ toUInt64OrZero('abc'): 0
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt64OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt64OrZero = {description_toUInt64OrZero, syntax_toUInt64OrZero, arguments_toUInt64OrZero, returned_value_toUInt64OrZero, examples_toUInt64OrZero, introduced_in_toUInt64OrZero, category_toUInt64OrZero};
+    FunctionDocumentation documentation_toUInt64OrZero = {description_toUInt64OrZero, syntax_toUInt64OrZero, arguments_toUInt64OrZero, {}, returned_value_toUInt64OrZero, examples_toUInt64OrZero, introduced_in_toUInt64OrZero, category_toUInt64OrZero};
 
     factory.registerFunction<detail::FunctionToUInt64OrZero>(documentation_toUInt64OrZero);
 
     /// toUInt128OrZero documentation
     FunctionDocumentation::Description description_toUInt128OrZero = R"(
-Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -1803,7 +1839,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt128`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt128`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -1836,13 +1872,13 @@ toUInt128OrZero('abc'): 0
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt128OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt128OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt128OrZero = {description_toUInt128OrZero, syntax_toUInt128OrZero, arguments_toUInt128OrZero, returned_value_toUInt128OrZero, examples_toUInt128OrZero, introduced_in_toUInt128OrZero, category_toUInt128OrZero};
+    FunctionDocumentation documentation_toUInt128OrZero = {description_toUInt128OrZero, syntax_toUInt128OrZero, arguments_toUInt128OrZero, {}, returned_value_toUInt128OrZero, examples_toUInt128OrZero, introduced_in_toUInt128OrZero, category_toUInt128OrZero};
 
     factory.registerFunction<detail::FunctionToUInt128OrZero>(documentation_toUInt128OrZero);
 
     /// toUInt256OrZero documentation
     FunctionDocumentation::Description description_toUInt256OrZero = R"(
-Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [`UInt256`](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [`UInt256`](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -1852,7 +1888,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt256`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt256`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -1885,13 +1921,13 @@ toUInt256OrZero('abc'): 0
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt256OrZero = {20, 8};
     FunctionDocumentation::Category category_toUInt256OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt256OrZero = {description_toUInt256OrZero, syntax_toUInt256OrZero, arguments_toUInt256OrZero, returned_value_toUInt256OrZero, examples_toUInt256OrZero, introduced_in_toUInt256OrZero, category_toUInt256OrZero};
+    FunctionDocumentation documentation_toUInt256OrZero = {description_toUInt256OrZero, syntax_toUInt256OrZero, arguments_toUInt256OrZero, {}, returned_value_toUInt256OrZero, examples_toUInt256OrZero, introduced_in_toUInt256OrZero, category_toUInt256OrZero};
 
     factory.registerFunction<detail::FunctionToUInt256OrZero>(documentation_toUInt256OrZero);
 
     /// toInt8OrZero documentation
     FunctionDocumentation::Description description_toInt8OrZero = R"(
-Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -1901,7 +1937,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -1927,20 +1963,20 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt8OrZero('8'): 8
+toInt8OrZero('8'):   8
 toInt8OrZero('abc'): 0
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt8OrZero = {1, 1};
     FunctionDocumentation::Category category_toInt8OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt8OrZero = {description_toInt8OrZero, syntax_toInt8OrZero, arguments_toInt8OrZero, returned_value_toInt8OrZero, examples_toInt8OrZero, introduced_in_toInt8OrZero, category_toInt8OrZero};
+    FunctionDocumentation documentation_toInt8OrZero = {description_toInt8OrZero, syntax_toInt8OrZero, arguments_toInt8OrZero, {}, returned_value_toInt8OrZero, examples_toInt8OrZero, introduced_in_toInt8OrZero, category_toInt8OrZero};
 
     factory.registerFunction<detail::FunctionToInt8OrZero>(documentation_toInt8OrZero);
 
     /// toInt16OrZero documentation
     FunctionDocumentation::Description description_toInt16OrZero = R"(
-Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -1950,7 +1986,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -1976,20 +2012,20 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt16OrZero('16'): 16
+toInt16OrZero('16'):  16
 toInt16OrZero('abc'): 0
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt16OrZero = {1, 1};
     FunctionDocumentation::Category category_toInt16OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt16OrZero = {description_toInt16OrZero, syntax_toInt16OrZero, arguments_toInt16OrZero, returned_value_toInt16OrZero, examples_toInt16OrZero, introduced_in_toInt16OrZero, category_toInt16OrZero};
+    FunctionDocumentation documentation_toInt16OrZero = {description_toInt16OrZero, syntax_toInt16OrZero, arguments_toInt16OrZero, {}, returned_value_toInt16OrZero, examples_toInt16OrZero, introduced_in_toInt16OrZero, category_toInt16OrZero};
 
     factory.registerFunction<detail::FunctionToInt16OrZero>(documentation_toInt16OrZero);
 
     /// toInt32OrZero documentation
     FunctionDocumentation::Description description_toInt32OrZero = R"(
-Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](/reference/data-types/int-uint) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -1999,7 +2035,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -2025,20 +2061,20 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt32OrZero('32'): 32
+toInt32OrZero('32'):  32
 toInt32OrZero('abc'): 0
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt32OrZero = {1, 1};
     FunctionDocumentation::Category category_toInt32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt32OrZero = {description_toInt32OrZero, syntax_toInt32OrZero, arguments_toInt32OrZero, returned_value_toInt32OrZero, examples_toInt32OrZero, introduced_in_toInt32OrZero, category_toInt32OrZero};
+    FunctionDocumentation documentation_toInt32OrZero = {description_toInt32OrZero, syntax_toInt32OrZero, arguments_toInt32OrZero, {}, returned_value_toInt32OrZero, examples_toInt32OrZero, introduced_in_toInt32OrZero, category_toInt32OrZero};
 
     factory.registerFunction<detail::FunctionToInt32OrZero>(documentation_toInt32OrZero);
 
     FunctionDocumentation::Description description_toInt64OrZero = R"(
-Converts an input value to type [Int64](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
-Like [`toInt64`](#toint64) but returns `0` instead of throwing an exception.
+Converts an input value to type [Int64](/reference/data-types/int-uint) but returns `0` in case of an error.
+Like [`toInt64`](#toInt64) but returns `0` instead of throwing an exception.
 
 See also:
 - [`toInt64`](#toInt64).
@@ -2072,13 +2108,13 @@ SELECT toInt64OrZero('abc')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt64OrZero = {1, 1};
     FunctionDocumentation::Category category_toInt64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt64OrZero = {description_toInt64OrZero, syntax_toInt64OrZero, arguments_toInt64OrZero, returned_value_toInt64OrZero, examples_toInt64OrZero, introduced_in_toInt64OrZero, category_toInt64OrZero};
+    FunctionDocumentation documentation_toInt64OrZero = {description_toInt64OrZero, syntax_toInt64OrZero, arguments_toInt64OrZero, {}, returned_value_toInt64OrZero, examples_toInt64OrZero, introduced_in_toInt64OrZero, category_toInt64OrZero};
 
     factory.registerFunction<detail::FunctionToInt64OrZero>(documentation_toInt64OrZero);
 
     FunctionDocumentation::Description description_toInt128OrZero = R"(
-Converts an input value to type [Int128](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
-Like [`toInt128`](#toint128) but returns `0` instead of throwing an exception.
+Converts an input value to type [Int128](/reference/data-types/int-uint) but returns `0` in case of an error.
+Like [`toInt128`](#toInt128) but returns `0` instead of throwing an exception.
 
 See also:
 - [`toInt128`](#toInt128).
@@ -2112,13 +2148,13 @@ SELECT toInt128OrZero('abc')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt128OrZero = {20, 8};
     FunctionDocumentation::Category category_toInt128OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt128OrZero = {description_toInt128OrZero, syntax_toInt128OrZero, arguments_toInt128OrZero, returned_value_toInt128OrZero, examples_toInt128OrZero, introduced_in_toInt128OrZero, category_toInt128OrZero};
+    FunctionDocumentation documentation_toInt128OrZero = {description_toInt128OrZero, syntax_toInt128OrZero, arguments_toInt128OrZero, {}, returned_value_toInt128OrZero, examples_toInt128OrZero, introduced_in_toInt128OrZero, category_toInt128OrZero};
 
     factory.registerFunction<detail::FunctionToInt128OrZero>(documentation_toInt128OrZero);
 
     FunctionDocumentation::Description description_toInt256OrZero = R"(
-Converts an input value to type [Int256](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
-Like [`toInt256`](#toint256) but returns `0` instead of throwing an exception.
+Converts an input value to type [Int256](/reference/data-types/int-uint) but returns `0` in case of an error.
+Like [`toInt256`](#toInt256) but returns `0` instead of throwing an exception.
 
 See also:
 - [`toInt256`](#toInt256).
@@ -2152,7 +2188,7 @@ SELECT toInt256OrZero('abc')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt256OrZero = {20, 8};
     FunctionDocumentation::Category category_toInt256OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt256OrZero = {description_toInt256OrZero, syntax_toInt256OrZero, arguments_toInt256OrZero, returned_value_toInt256OrZero, examples_toInt256OrZero, introduced_in_toInt256OrZero, category_toInt256OrZero};
+    FunctionDocumentation documentation_toInt256OrZero = {description_toInt256OrZero, syntax_toInt256OrZero, arguments_toInt256OrZero, {}, returned_value_toInt256OrZero, examples_toInt256OrZero, introduced_in_toInt256OrZero, category_toInt256OrZero};
 
     factory.registerFunction<detail::FunctionToInt256OrZero>(documentation_toInt256OrZero);
 
@@ -2189,23 +2225,21 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
        toBFloat16OrZero('12.3'), -- typical use
        toBFloat16OrZero('12.3456789') -- silent loss of precision
         )",
-        R"(
-0
-12.25
-12.3125
-        )"
+        R"DOCS_MD(
+0	12.25	12.3125
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrZero_introduced_in = {1, 1};
     FunctionDocumentation::Category toBFloat16OrZero_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toBFloat16OrZero_documentation = {toBFloat16OrZero_description, toBFloat16OrZero_syntax, toBFloat16OrZero_arguments, toBFloat16OrZero_returned_value, toBFloat16OrZero_examples, toBFloat16OrZero_introduced_in, toBFloat16OrZero_category};
+    FunctionDocumentation toBFloat16OrZero_documentation = {toBFloat16OrZero_description, toBFloat16OrZero_syntax, toBFloat16OrZero_arguments, {}, toBFloat16OrZero_returned_value, toBFloat16OrZero_examples, toBFloat16OrZero_introduced_in, toBFloat16OrZero_category};
 
     factory.registerFunction<detail::FunctionToBFloat16OrZero>(toBFloat16OrZero_documentation);
 
     /// toFloat32OrZero documentation
     FunctionDocumentation::Description description_toFloat32OrZero = R"(
-Converts an input value to a value of type [Float32](../data-types/float.md) but returns `0` in case of an error.
-Like [`toFloat32`](#tofloat32) but returns `0` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [Float32](/reference/data-types/float) but returns `0` in case of an error.
+Like [`toFloat32`](#toFloat32) but returns `0` instead of throwing an exception on conversion errors.
 
 See also:
 - [`toFloat32`](#toFloat32).
@@ -2236,13 +2270,13 @@ toFloat32OrZero('abc'):  0
     };
     FunctionDocumentation::IntroducedIn introduced_in_toFloat32OrZero = {1, 1};
     FunctionDocumentation::Category category_toFloat32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toFloat32OrZero = {description_toFloat32OrZero, syntax_toFloat32OrZero, arguments_toFloat32OrZero, returned_value_toFloat32OrZero, examples_toFloat32OrZero, introduced_in_toFloat32OrZero, category_toFloat32OrZero};
+    FunctionDocumentation documentation_toFloat32OrZero = {description_toFloat32OrZero, syntax_toFloat32OrZero, arguments_toFloat32OrZero, {}, returned_value_toFloat32OrZero, examples_toFloat32OrZero, introduced_in_toFloat32OrZero, category_toFloat32OrZero};
 
     factory.registerFunction<detail::FunctionToFloat32OrZero>(documentation_toFloat32OrZero);
 
     /// toFloat64OrZero documentation
     FunctionDocumentation::Description description_toFloat64OrZero = R"(
-Converts an input value to a value of type [Float64](../data-types/float.md) but returns `0` in case of an error.
+Converts an input value to a value of type [Float64](/reference/data-types/float) but returns `0` in case of an error.
 Like [`toFloat64`](#toFloat64) but returns `0` instead of throwing an exception on conversion errors.
 
 See also:
@@ -2274,14 +2308,14 @@ toFloat64OrZero('abc'):  0
     };
     FunctionDocumentation::IntroducedIn introduced_in_toFloat64OrZero = {1, 1};
     FunctionDocumentation::Category category_toFloat64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toFloat64OrZero = {description_toFloat64OrZero, syntax_toFloat64OrZero, arguments_toFloat64OrZero, returned_value_toFloat64OrZero, examples_toFloat64OrZero, introduced_in_toFloat64OrZero, category_toFloat64OrZero};
+    FunctionDocumentation documentation_toFloat64OrZero = {description_toFloat64OrZero, syntax_toFloat64OrZero, arguments_toFloat64OrZero, {}, returned_value_toFloat64OrZero, examples_toFloat64OrZero, introduced_in_toFloat64OrZero, category_toFloat64OrZero};
 
     factory.registerFunction<detail::FunctionToFloat64OrZero>(documentation_toFloat64OrZero);
 
     /// toDateOrZero documentation
     FunctionDocumentation::Description description_toDateOrZero = R"(
-Converts an input value to a value of type [`Date`](../data-types/date.md) but returns the lower boundary of [`Date`](../data-types/date.md) if an invalid argument is received.
-The same as [toDate](#todate) but returns lower boundary of [`Date`](../data-types/date.md) if an invalid argument is received.
+Converts an input value to a value of type [`Date`](/reference/data-types/date) but returns the lower boundary of [`Date`](/reference/data-types/date) if an invalid argument is received.
+The same as [toDate](#toDate) but returns lower boundary of [`Date`](/reference/data-types/date) if an invalid argument is received.
 
 See also:
 - [`toDate`](#toDate)
@@ -2308,14 +2342,15 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateOrZero = {1, 1};
     FunctionDocumentation::Category category_toDateOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateOrZero = {description_toDateOrZero, syntax_toDateOrZero, arguments_toDateOrZero, returned_value_toDateOrZero, examples_toDateOrZero, introduced_in_toDateOrZero, category_toDateOrZero};
+    FunctionDocumentation documentation_toDateOrZero = {description_toDateOrZero, syntax_toDateOrZero, arguments_toDateOrZero, {}, returned_value_toDateOrZero, examples_toDateOrZero, introduced_in_toDateOrZero, category_toDateOrZero};
 
     factory.registerFunction<detail::FunctionToDateOrZero>(documentation_toDateOrZero);
 
     /// toDate32OrZero documentation
     FunctionDocumentation::Description description_toDate32OrZero = R"(
-Converts an input value to a value of type [Date32](../data-types/date32.md) but returns the lower boundary of [Date32](../data-types/date32.md) if an invalid argument is received.
-The same as [toDate32](#toDate32) but returns lower boundary of [Date32](../data-types/date32.md) if an invalid argument is received.
+Converts an input value to a value of type [Date32](/reference/data-types/date32) but returns the default value `1900-01-01` if an invalid argument is received.
+The same as [toDate32](#toDate32) but returns `1900-01-01` if an invalid argument is received.
+Note that `1900-01-01` is a historical default value for invalid input, not the lower boundary of [Date32](/reference/data-types/date32), which is `0000-01-01`.
 
 See also:
 - [`toDate32`](#toDate32)
@@ -2326,7 +2361,7 @@ See also:
     FunctionDocumentation::Arguments arguments_toDate32OrZero = {
         {"x", "A string representation of a date.", {"String"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDate32OrZero = {"Returns a Date32 value if successful, otherwise the lower boundary of Date32 (`1900-01-01`).", {"Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDate32OrZero = {"Returns a Date32 value if successful, otherwise the historical default value for invalid input (`1900-01-01`).", {"Date32"}};
     FunctionDocumentation::Examples examples_toDate32OrZero = {
     {
         "Usage example",
@@ -2342,7 +2377,7 @@ SELECT toDate32OrZero('2025-01-01'), toDate32OrZero('')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDate32OrZero = {21, 9};
     FunctionDocumentation::Category category_toDate32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDate32OrZero = {description_toDate32OrZero, syntax_toDate32OrZero, arguments_toDate32OrZero, returned_value_toDate32OrZero, examples_toDate32OrZero, introduced_in_toDate32OrZero, category_toDate32OrZero};
+    FunctionDocumentation documentation_toDate32OrZero = {description_toDate32OrZero, syntax_toDate32OrZero, arguments_toDate32OrZero, {}, returned_value_toDate32OrZero, examples_toDate32OrZero, introduced_in_toDate32OrZero, category_toDate32OrZero};
 
     factory.registerFunction<detail::FunctionToDate32OrZero>(documentation_toDate32OrZero);
 
@@ -2369,22 +2404,28 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {25, 5};
     FunctionDocumentation::Category category_toTimeOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTimeOrZero = {description_toTimeOrZero, syntax_toTimeOrZero, arguments_toTimeOrZero, returned_value_toTimeOrZero, examples_toTimeOrZero, introduced_in_toTimeOrZero, category_toTimeOrZero};
+    FunctionDocumentation documentation_toTimeOrZero = {description_toTimeOrZero, syntax_toTimeOrZero, arguments_toTimeOrZero, {}, returned_value_toTimeOrZero, examples_toTimeOrZero, introduced_in_toTimeOrZero, category_toTimeOrZero};
 
     factory.registerFunction<detail::FunctionToTimeOrZero>(documentation_toTimeOrZero);
 
     /// toTime64OrZero documentation
     FunctionDocumentation::Description description_toTime64OrZero = R"(
-Converts an input value to a value of type Time64 but returns `00:00:00.000` in case of an error.
-Like [`toTime64`](#toTime54) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type `Time64` but returns the zero `Time64` value (`00:00:00`) if an invalid argument is received.
+The same as [`toTime64`](#toTime64) but returns the zero `Time64` value if an invalid argument is received.
+
+See also:
+- [`toTime64`](#toTime64).
+- [`toTime64OrNull`](#toTime64OrNull).
 )";
-    FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x)";
-    FunctionDocumentation::Arguments arguments_toTime64OrZero = {
+    FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x[, precision])";
+    FunctionDocumentation::Arguments arguments_toTime64OrZero =
+    {
         {"x", "A string representation of a time with subsecond precision.", {"String"}},
+        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64OrZero = {"Returns a Time64 value if successful, otherwise `00:00:00.000`.", {"Time64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64OrZero = {"Returns a Time64 value if successful, otherwise the zero Time64 value (`00:00:00`) at the requested precision.", {"Time64"}};
     FunctionDocumentation::Examples examples_toTime64OrZero = {
     {
     "Usage example",
@@ -2393,21 +2434,21 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
     )",
     R"(
 ┌─toTime64OrZero('12:30:45.123')─┬─toTime64OrZero('invalid')─┐
-│                   12:30:45.123 │             00:00:00.000 │
-└────────────────────────────────┴──────────────────────────┘
+│                   12:30:45.123 │              00:00:00.000 │
+└────────────────────────────────┴───────────────────────────┘
     )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toTime64OrZero = {25, 6};
     FunctionDocumentation::Category category_toTime64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTime64OrZero = {description_toTime64OrZero, syntax_toTime64OrZero, arguments_toTime64OrZero, returned_value_toTime64OrZero, examples_toTime64OrZero, introduced_in_toTime64OrZero, category_toTime64OrZero};
+    FunctionDocumentation documentation_toTime64OrZero = {description_toTime64OrZero, syntax_toTime64OrZero, arguments_toTime64OrZero, {}, returned_value_toTime64OrZero, examples_toTime64OrZero, introduced_in_toTime64OrZero, category_toTime64OrZero};
 
     factory.registerFunction<detail::FunctionToTime64OrZero>(documentation_toTime64OrZero);
 
     /// toDateTimeOrZero documentation
     FunctionDocumentation::Description description_toDateTimeOrZero = R"(
-Converts an input value to a value of type [DateTime](../data-types/datetime.md) but returns the lower boundary of [DateTime](../data-types/datetime.md) if an invalid argument is received.
-The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](../data-types/datetime.md) if an invalid argument is received.
+Converts an input value to a value of type [DateTime](/reference/data-types/datetime) but returns the lower boundary of [DateTime](/reference/data-types/datetime) if an invalid argument is received.
+The same as [toDateTime](#toDateTime) but returns lower boundary of [DateTime](/reference/data-types/datetime) if an invalid argument is received.
     )";
     FunctionDocumentation::Syntax syntax_toDateTimeOrZero = "toDateTimeOrZero(x)";
     FunctionDocumentation::Arguments arguments_toDateTimeOrZero = {
@@ -2429,25 +2470,28 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTimeOrZero = {1, 1};
     FunctionDocumentation::Category category_toDateTimeOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTimeOrZero = {description_toDateTimeOrZero, syntax_toDateTimeOrZero, arguments_toDateTimeOrZero, returned_value_toDateTimeOrZero, examples_toDateTimeOrZero, introduced_in_toDateTimeOrZero, category_toDateTimeOrZero};
+    FunctionDocumentation documentation_toDateTimeOrZero = {description_toDateTimeOrZero, syntax_toDateTimeOrZero, arguments_toDateTimeOrZero, {}, returned_value_toDateTimeOrZero, examples_toDateTimeOrZero, introduced_in_toDateTimeOrZero, category_toDateTimeOrZero};
 
     factory.registerFunction<detail::FunctionToDateTimeOrZero>(documentation_toDateTimeOrZero);
 
     /// toDateTime64OrZero documentation
     FunctionDocumentation::Description description_toDateTime64OrZero = R"(
-Converts an input value to a value of type [DateTime64](../data-types/datetime64.md) but returns the lower boundary of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
-The same as [toDateTime64](#todatetime64) but returns lower boundary of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
+Converts an input value to a value of type [DateTime64](/reference/data-types/datetime64) but returns the zero [DateTime64](/reference/data-types/datetime64) value (the Unix epoch, `1970-01-01 00:00:00`) if an invalid argument is received.
+The same as [toDateTime64](#toDateTime64) but returns the zero [DateTime64](/reference/data-types/datetime64) value if an invalid argument is received.
 
 See also:
 - [toDateTime64](#toDateTime64).
 - [toDateTime64OrNull](#toDateTime64OrNull).
 - [toDateTime64OrDefault](#toDateTime64OrDefault).
     )";
-    FunctionDocumentation::Syntax syntax_toDateTime64OrZero = "toDateTime64OrZero(x)";
-    FunctionDocumentation::Arguments arguments_toDateTime64OrZero = {
+    FunctionDocumentation::Syntax syntax_toDateTime64OrZero = "toDateTime64OrZero(x[, precision[, timezone]])";
+    FunctionDocumentation::Arguments arguments_toDateTime64OrZero =
+    {
         {"x", "A string representation of a date with time and subsecond precision.", {"String"}},
+        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
+        {"timezone", "Optional. Time zone of the returned value.", {"String"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the lower boundary of DateTime64 (`1970-01-01 00:00:00.000`).", {"DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the zero DateTime64 value (`1970-01-01 00:00:00`) at the requested precision.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_toDateTime64OrZero = {
     {
         "Usage example",
@@ -2456,21 +2500,21 @@ SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invali
         )",
         R"(
 ┌─toDateTime64OrZero('2025-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
-│                         2025-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
-└─────────────────────────────────────────────────┴─────────────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │       1970-01-01 00:00:00.000 │
+└───────────────────────────────────────────────┴───────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTime64OrZero = {20, 1};
     FunctionDocumentation::Category category_toDateTime64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime64OrZero = {description_toDateTime64OrZero, syntax_toDateTime64OrZero, arguments_toDateTime64OrZero, returned_value_toDateTime64OrZero, examples_toDateTime64OrZero, introduced_in_toDateTime64OrZero, category_toDateTime64OrZero};
+    FunctionDocumentation documentation_toDateTime64OrZero = {description_toDateTime64OrZero, syntax_toDateTime64OrZero, arguments_toDateTime64OrZero, {}, returned_value_toDateTime64OrZero, examples_toDateTime64OrZero, introduced_in_toDateTime64OrZero, category_toDateTime64OrZero};
 
     factory.registerFunction<detail::FunctionToDateTime64OrZero>(documentation_toDateTime64OrZero);
 
     /// toDecimal32OrZero documentation
     FunctionDocumentation::Description description_toDecimal32OrZero = R"(
-Converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns `0` in case of an error.
-Like [`toDecimal32`](#todecimal32) but returns `0` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [Decimal(9, S)](/reference/data-types/decimal) but returns `0` in case of an error.
+Like [`toDecimal32`](#toDecimal32) but returns `0` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - Values or string representations of type (U)Int*.
@@ -2498,21 +2542,21 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal32OrZero = {20, 1};
     FunctionDocumentation::Category category_toDecimal32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal32OrZero = {description_toDecimal32OrZero, syntax_toDecimal32OrZero, arguments_toDecimal32OrZero, returned_value_toDecimal32OrZero, examples_toDecimal32OrZero, introduced_in_toDecimal32OrZero, category_toDecimal32OrZero};
+    FunctionDocumentation documentation_toDecimal32OrZero = {description_toDecimal32OrZero, syntax_toDecimal32OrZero, arguments_toDecimal32OrZero, {}, returned_value_toDecimal32OrZero, examples_toDecimal32OrZero, introduced_in_toDecimal32OrZero, category_toDecimal32OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal32OrZero>(documentation_toDecimal32OrZero);
 
     /// toDecimal64OrZero documentation
     FunctionDocumentation::Description description_toDecimal64OrZero = R"(
-Converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns `0` in case of an error.
-Like [`toDecimal64`](#todecimal64) but returns `0` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [Decimal(18, S)](/reference/data-types/decimal) but returns `0` in case of an error.
+Like [`toDecimal64`](#toDecimal64) but returns `0` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - Values or string representations of type (U)Int*.
@@ -2545,21 +2589,21 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal64OrZero = {20, 1};
     FunctionDocumentation::Category category_toDecimal64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal64OrZero = {description_toDecimal64OrZero, syntax_toDecimal64OrZero, arguments_toDecimal64OrZero, returned_value_toDecimal64OrZero, examples_toDecimal64OrZero, introduced_in_toDecimal64OrZero, category_toDecimal64OrZero};
+    FunctionDocumentation documentation_toDecimal64OrZero = {description_toDecimal64OrZero, syntax_toDecimal64OrZero, arguments_toDecimal64OrZero, {}, returned_value_toDecimal64OrZero, examples_toDecimal64OrZero, introduced_in_toDecimal64OrZero, category_toDecimal64OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal64OrZero>(documentation_toDecimal64OrZero);
 
     /// toDecimal128OrZero documentation
     FunctionDocumentation::Description description_toDecimal128OrZero = R"(
-Converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns `0` in case of an error.
-Like [`toDecimal128`](#todecimal128) but returns `0` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [Decimal(38, S)](/reference/data-types/decimal) but returns `0` in case of an error.
+Like [`toDecimal128`](#toDecimal128) but returns `0` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - Values or string representations of type (U)Int*.
@@ -2587,21 +2631,21 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal128OrZero = {20, 1};
     FunctionDocumentation::Category category_toDecimal128OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal128OrZero = {description_toDecimal128OrZero, syntax_toDecimal128OrZero, arguments_toDecimal128OrZero, returned_value_toDecimal128OrZero, examples_toDecimal128OrZero, introduced_in_toDecimal128OrZero, category_toDecimal128OrZero};
+    FunctionDocumentation documentation_toDecimal128OrZero = {description_toDecimal128OrZero, syntax_toDecimal128OrZero, arguments_toDecimal128OrZero, {}, returned_value_toDecimal128OrZero, examples_toDecimal128OrZero, introduced_in_toDecimal128OrZero, category_toDecimal128OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal128OrZero>(documentation_toDecimal128OrZero);
 
     /// toDecimal256OrZero documentation
     FunctionDocumentation::Description description_toDecimal256OrZero = R"(
-Converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns `0` in case of an error.
-Like [`toDecimal256`](#todecimal256) but returns `0` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [Decimal(76, S)](/reference/data-types/decimal) but returns `0` in case of an error.
+Like [`toDecimal256`](#toDecimal256) but returns `0` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - Values or string representations of type (U)Int*.
@@ -2634,21 +2678,21 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal256OrZero = {20, 8};
     FunctionDocumentation::Category category_toDecimal256OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal256OrZero = {description_toDecimal256OrZero, syntax_toDecimal256OrZero, arguments_toDecimal256OrZero, returned_value_toDecimal256OrZero, examples_toDecimal256OrZero, introduced_in_toDecimal256OrZero, category_toDecimal256OrZero};
+    FunctionDocumentation documentation_toDecimal256OrZero = {description_toDecimal256OrZero, syntax_toDecimal256OrZero, arguments_toDecimal256OrZero, {}, returned_value_toDecimal256OrZero, examples_toDecimal256OrZero, introduced_in_toDecimal256OrZero, category_toDecimal256OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal256OrZero>(documentation_toDecimal256OrZero);
 
     /// toUUIDOrZero documentation
     FunctionDocumentation::Description description_toUUIDOrZero = R"(
-Converts an input value to a value of type [UUID](../data-types/uuid.md) but returns zero UUID in case of an error.
-Like [`toUUID`](#touuid) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [UUID](/reference/data-types/uuid) but returns zero UUID in case of an error.
+Like [`toUUID`](/reference/functions/regular-functions/type-conversion-functions#toUUID) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).
@@ -2681,13 +2725,13 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUUIDOrZero = {20, 12};
     FunctionDocumentation::Category category_toUUIDOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUUIDOrZero = {description_toUUIDOrZero, syntax_toUUIDOrZero, arguments_toUUIDOrZero, returned_value_toUUIDOrZero, examples_toUUIDOrZero, introduced_in_toUUIDOrZero, category_toUUIDOrZero};
+    FunctionDocumentation documentation_toUUIDOrZero = {description_toUUIDOrZero, syntax_toUUIDOrZero, arguments_toUUIDOrZero, {}, returned_value_toUUIDOrZero, examples_toUUIDOrZero, introduced_in_toUUIDOrZero, category_toUUIDOrZero};
 
     factory.registerFunction<detail::FunctionToUUIDOrZero>(documentation_toUUIDOrZero);
 
     /// toIPv4OrZero documentation
     FunctionDocumentation::Description description_toIPv4OrZero = R"(
-Converts an input value to a value of type [IPv4](../data-types/ipv4.md) but returns zero IPv4 address in case of an error.
+Converts an input value to a value of type [IPv4](/reference/data-types/ipv4) but returns zero IPv4 address in case of an error.
 Like [`toIPv4`](#toIPv4) but returns zero IPv4 address (`0.0.0.0`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
@@ -2722,13 +2766,13 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv4OrZero = {23, 1};
     FunctionDocumentation::Category category_toIPv4OrZero = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toIPv4OrZero = {description_toIPv4OrZero, syntax_toIPv4OrZero, arguments_toIPv4OrZero, returned_value_toIPv4OrZero, examples_toIPv4OrZero,introduced_in_toIPv4OrZero, category_toIPv4OrZero};
+    FunctionDocumentation documentation_toIPv4OrZero = {description_toIPv4OrZero, syntax_toIPv4OrZero, arguments_toIPv4OrZero, {}, returned_value_toIPv4OrZero, examples_toIPv4OrZero,introduced_in_toIPv4OrZero, category_toIPv4OrZero};
 
     factory.registerFunction<detail::FunctionToIPv4OrZero>(documentation_toIPv4OrZero);
 
     /// toIPv6OrZero documentation
     FunctionDocumentation::Description description_toIPv6OrZero = R"(
-Converts an input value to a value of type [IPv6](../data-types/ipv6.md) but returns zero IPv6 address in case of an error.
+Converts an input value to a value of type [IPv6](/reference/data-types/ipv6) but returns zero IPv6 address in case of an error.
 Like [`toIPv6`](#toIPv6) but returns zero IPv6 address (`::`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
@@ -2756,21 +2800,21 @@ SELECT
     toIPv6OrZero('invalid::ip') AS invalid_ipv6
         )",
         R"(
-┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334        │ ::           │
-└─────────────────────────────────────┴──────────────┘
+┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ::           │
+└──────────────────────────────┴──────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv6OrZero = {23, 1};
     FunctionDocumentation::Category category_toIPv6OrZero = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toIPv6OrZero = {description_toIPv6OrZero, syntax_toIPv6OrZero, arguments_toIPv6OrZero, returned_value_toIPv6OrZero, examples_toIPv6OrZero, introduced_in_toIPv6OrZero, category_toIPv6OrZero};
+    FunctionDocumentation documentation_toIPv6OrZero = {description_toIPv6OrZero, syntax_toIPv6OrZero, arguments_toIPv6OrZero, {}, returned_value_toIPv6OrZero, examples_toIPv6OrZero, introduced_in_toIPv6OrZero, category_toIPv6OrZero};
 
     factory.registerFunction<detail::FunctionToIPv6OrZero>(documentation_toIPv6OrZero);
 
     /// toUInt8OrNull documentation
     FunctionDocumentation::Description description_toUInt8OrNull = R"(
-Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -2780,7 +2824,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt8`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt8`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -2808,19 +2852,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): \N
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::Category category_toUInt8OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn introduced_in_toUInt8OrNull = {1, 1};
-    FunctionDocumentation documentation_toUInt8OrNull = {description_toUInt8OrNull, syntax_toUInt8OrNull, arguments_toUInt8OrNull, returned_value_toUInt8OrNull, examples_toUInt8OrNull, introduced_in_toUInt8OrNull, category_toUInt8OrNull};
+    FunctionDocumentation documentation_toUInt8OrNull = {description_toUInt8OrNull, syntax_toUInt8OrNull, arguments_toUInt8OrNull, {}, returned_value_toUInt8OrNull, examples_toUInt8OrNull, introduced_in_toUInt8OrNull, category_toUInt8OrNull};
 
     factory.registerFunction<detail::FunctionToUInt8OrNull>(documentation_toUInt8OrNull);
 
     /// toUInt16OrNull documentation
     FunctionDocumentation::Description description_toUInt16OrNull = R"(
-Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [`UInt16`](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [`UInt16`](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -2830,7 +2874,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt16`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -2858,19 +2902,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): \N
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt16OrNull = {1, 1};
     FunctionDocumentation::Category category_toUInt16OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt16OrNull = {description_toUInt16OrNull, syntax_toUInt16OrNull, arguments_toUInt16OrNull, returned_value_toUInt16OrNull, examples_toUInt16OrNull, introduced_in_toUInt16OrNull, category_toUInt16OrNull};
+    FunctionDocumentation documentation_toUInt16OrNull = {description_toUInt16OrNull, syntax_toUInt16OrNull, arguments_toUInt16OrNull, {}, returned_value_toUInt16OrNull, examples_toUInt16OrNull, introduced_in_toUInt16OrNull, category_toUInt16OrNull};
 
     factory.registerFunction<detail::FunctionToUInt16OrNull>(documentation_toUInt16OrNull);
 
     /// toUInt32OrNull documentation
     FunctionDocumentation::Description description_toUInt32OrNull = R"(
-Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [`UInt32`](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [`UInt32`](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
@@ -2880,7 +2924,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt32`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -2908,19 +2952,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): \N
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt32OrNull = {1, 1};
     FunctionDocumentation::Category category_toUInt32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt32OrNull = {description_toUInt32OrNull, syntax_toUInt32OrNull, arguments_toUInt32OrNull, returned_value_toUInt32OrNull, examples_toUInt32OrNull, introduced_in_toUInt32OrNull, category_toUInt32OrNull};
+    FunctionDocumentation documentation_toUInt32OrNull = {description_toUInt32OrNull, syntax_toUInt32OrNull, arguments_toUInt32OrNull, {}, returned_value_toUInt32OrNull, examples_toUInt32OrNull, introduced_in_toUInt32OrNull, category_toUInt32OrNull};
 
     factory.registerFunction<detail::FunctionToUInt32OrNull>(documentation_toUInt32OrNull);
 
     /// toUInt64OrNull documentation
     FunctionDocumentation::Description description_toUInt64OrNull = R"(
-Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [`UInt64`](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [`UInt64`](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -2930,7 +2974,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt64`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -2958,19 +3002,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): \N
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUint64OrNull = {1, 1};
     FunctionDocumentation::Category category_toUInt64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt64OrNull = {description_toUInt64OrNull, syntax_toUInt64OrNull, arguments_toUInt64OrNull, returned_value_toUInt64OrNull, examples_toUInt64OrNull, introduced_in_toUint64OrNull, category_toUInt64OrNull};
+    FunctionDocumentation documentation_toUInt64OrNull = {description_toUInt64OrNull, syntax_toUInt64OrNull, arguments_toUInt64OrNull, {}, returned_value_toUInt64OrNull, examples_toUInt64OrNull, introduced_in_toUint64OrNull, category_toUInt64OrNull};
 
     factory.registerFunction<detail::FunctionToUInt64OrNull>(documentation_toUInt64OrNull);
 
     /// toUInt128OrNull documentation
     FunctionDocumentation::Description description_toUInt128OrNull = R"(
-Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -2980,7 +3024,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt128`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt128`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -3008,19 +3052,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): \N
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt128OrNull = {21, 6};
     FunctionDocumentation::Category category_toUInt128OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt128OrNull = {description_toUInt128OrNull, syntax_toUInt128OrNull, arguments_toUInt128OrNull, returned_value_toUInt128OrNull, examples_toUInt128OrNull, introduced_in_toUInt128OrNull, category_toUInt128OrNull};
+    FunctionDocumentation documentation_toUInt128OrNull = {description_toUInt128OrNull, syntax_toUInt128OrNull, arguments_toUInt128OrNull, {}, returned_value_toUInt128OrNull, examples_toUInt128OrNull, introduced_in_toUInt128OrNull, category_toUInt128OrNull};
 
     factory.registerFunction<detail::FunctionToUInt128OrNull>(documentation_toUInt128OrNull);
 
     /// toUInt256OrNull documentation
     FunctionDocumentation::Description description_toUInt256OrNull = R"(
-Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [`UInt256`](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [`UInt256`](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -3030,7 +3074,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [`UInt256`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt256`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -3058,19 +3102,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): \N
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUInt256OrNull = {20, 8};
     FunctionDocumentation::Category category_toUInt256OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt256OrNull = {description_toUInt256OrNull, syntax_toUInt256OrNull, arguments_toUInt256OrNull, returned_value_toUInt256OrNull, examples_toUInt256OrNull, introduced_in_toUInt256OrNull, category_toUInt256OrNull};
+    FunctionDocumentation documentation_toUInt256OrNull = {description_toUInt256OrNull, syntax_toUInt256OrNull, arguments_toUInt256OrNull, {}, returned_value_toUInt256OrNull, examples_toUInt256OrNull, introduced_in_toUInt256OrNull, category_toUInt256OrNull};
 
     factory.registerFunction<detail::FunctionToUInt256OrNull>(documentation_toUInt256OrNull);
 
     /// toInt8OrNull documentation
     FunctionDocumentation::Description description_toInt8OrNull = R"(
-Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -3080,7 +3124,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -3108,19 +3152,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): \N
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt8OrNull = {1, 1};
     FunctionDocumentation::Category category_toInt8OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt8OrNull = {description_toInt8OrNull, syntax_toInt8OrNull, arguments_toInt8OrNull, returned_value_toInt8OrNull, examples_toInt8OrNull, introduced_in_toInt8OrNull, category_toInt8OrNull};
+    FunctionDocumentation documentation_toInt8OrNull = {description_toInt8OrNull, syntax_toInt8OrNull, arguments_toInt8OrNull, {}, returned_value_toInt8OrNull, examples_toInt8OrNull, introduced_in_toInt8OrNull, category_toInt8OrNull};
 
     factory.registerFunction<detail::FunctionToInt8OrNull>(documentation_toInt8OrNull);
 
     /// toInt16OrNull documentation
     FunctionDocumentation::Description description_toInt16OrNull = R"(
-Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -3130,7 +3174,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -3158,19 +3202,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): \N
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt16OrNull = {1, 1};
     FunctionDocumentation::Category category_toInt16OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt16OrNull = {description_toInt16OrNull, syntax_toInt16OrNull, arguments_toInt16OrNull, returned_value_toInt16OrNull, examples_toInt16OrNull, introduced_in_toInt16OrNull, category_toInt16OrNull};
+    FunctionDocumentation documentation_toInt16OrNull = {description_toInt16OrNull, syntax_toInt16OrNull, arguments_toInt16OrNull, {}, returned_value_toInt16OrNull, examples_toInt16OrNull, introduced_in_toInt16OrNull, category_toInt16OrNull};
 
     factory.registerFunction<detail::FunctionToInt16OrNull>(documentation_toInt16OrNull);
 
     /// toInt32OrNull documentation
     FunctionDocumentation::Description description_toInt32OrNull = R"(
-Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -3180,7 +3224,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -3208,19 +3252,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): \N
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt32OrNull = {1, 1};
     FunctionDocumentation::Category category_toInt32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt32OrNull = {description_toInt32OrNull, syntax_toInt32OrNull, arguments_toInt32OrNull, returned_value_toInt32OrNull, examples_toInt32OrNull, introduced_in_toInt32OrNull, category_toInt32OrNull};
+    FunctionDocumentation documentation_toInt32OrNull = {description_toInt32OrNull, syntax_toInt32OrNull, arguments_toInt32OrNull, {}, returned_value_toInt32OrNull, examples_toInt32OrNull, introduced_in_toInt32OrNull, category_toInt32OrNull};
 
     factory.registerFunction<detail::FunctionToInt32OrNull>(documentation_toInt32OrNull);
 
     /// toInt64OrNull documentation
     FunctionDocumentation::Description description_toInt64OrNull = R"(
-Like [`toInt64`](#toInt64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toInt64`](#toInt64), this function converts an input value to a value of type [Int64](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -3230,7 +3274,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int64](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -3258,19 +3302,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): \N
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt64OrNull = {1, 1};
     FunctionDocumentation::Category category_toInt64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt64OrNull = {description_toInt64OrNull, syntax_toInt64OrNull, arguments_toInt64OrNull, returned_value_toInt64OrNull, examples_toInt64OrNull, introduced_in_toInt64OrNull, category_toInt64OrNull};
+    FunctionDocumentation documentation_toInt64OrNull = {description_toInt64OrNull, syntax_toInt64OrNull, arguments_toInt64OrNull, {}, returned_value_toInt64OrNull, examples_toInt64OrNull, introduced_in_toInt64OrNull, category_toInt64OrNull};
 
     factory.registerFunction<detail::FunctionToInt64OrNull>(documentation_toInt64OrNull);
 
     /// toInt128OrNull documentation
     FunctionDocumentation::Description description_toInt128OrNull = R"(
-Like [`toInt128`](#toInt128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toInt128`](#toInt128), this function converts an input value to a value of type [Int128](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -3280,7 +3324,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int128](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -3308,19 +3352,19 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  \N
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt128OrNull = {20, 8};
     FunctionDocumentation::Category category_toInt128OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt128OrNull = {description_toInt128OrNull, syntax_toInt128OrNull, arguments_toInt128OrNull, returned_value_toInt128OrNull, examples_toInt128OrNull, introduced_in_toInt128OrNull, category_toInt128OrNull};
+    FunctionDocumentation documentation_toInt128OrNull = {description_toInt128OrNull, syntax_toInt128OrNull, arguments_toInt128OrNull, {}, returned_value_toInt128OrNull, examples_toInt128OrNull, introduced_in_toInt128OrNull, category_toInt128OrNull};
 
     factory.registerFunction<detail::FunctionToInt128OrNull>(documentation_toInt128OrNull);
 
     /// toInt256OrNull documentation
     FunctionDocumentation::Description description_toInt256OrNull = R"(
-Like [`toInt256`](#toInt256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toInt256`](#toInt256), this function converts an input value to a value of type [Int256](/reference/data-types/int-uint) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int*.
@@ -3330,7 +3374,7 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int256](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 :::
 
@@ -3358,13 +3402,13 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  \N
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt256OrNull = {20, 8};
     FunctionDocumentation::Category category_toInt256OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt256OrNull = {description_toInt256OrNull, syntax_toInt256OrNull, arguments_toInt256OrNull, returned_value_toInt256OrNull, examples_toInt256OrNull, introduced_in_toInt256OrNull, category_toInt256OrNull};
+    FunctionDocumentation documentation_toInt256OrNull = {description_toInt256OrNull, syntax_toInt256OrNull, arguments_toInt256OrNull, {}, returned_value_toInt256OrNull, examples_toInt256OrNull, introduced_in_toInt256OrNull, category_toInt256OrNull};
 
     factory.registerFunction<detail::FunctionToInt256OrNull>(documentation_toInt256OrNull);
 
@@ -3402,22 +3446,20 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
        toBFloat16OrNull('12.3'), -- typical use
        toBFloat16OrNull('12.3456789') -- silent loss of precision
         )",
-        R"(
-\N
-12.25
-12.3125
-        )"
+        R"DOCS_MD(
+\N	12.25	12.3125
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrNull_introduced_in = {1, 1};
     FunctionDocumentation::Category toBFloat16OrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toBFloat16OrNull_documentation = {toBFloat16OrNull_description, toBFloat16OrNull_syntax, toBFloat16OrNull_arguments, toBFloat16OrNull_returned_value, toBFloat16OrNull_examples, toBFloat16OrNull_introduced_in, toBFloat16OrNull_category};
+    FunctionDocumentation toBFloat16OrNull_documentation = {toBFloat16OrNull_description, toBFloat16OrNull_syntax, toBFloat16OrNull_arguments, {}, toBFloat16OrNull_returned_value, toBFloat16OrNull_examples, toBFloat16OrNull_introduced_in, toBFloat16OrNull_category};
 
     factory.registerFunction<detail::FunctionToBFloat16OrNull>(toBFloat16OrNull_documentation);
 
     /// toFloat32OrNull documentation
     FunctionDocumentation::Description description_toFloat32OrNull = R"(
-Converts an input value to a value of type [Float32](../data-types/float.md) but returns `NULL` in case of an error.
+Converts an input value to a value of type [Float32](/reference/data-types/float) but returns `NULL` in case of an error.
 Like [`toFloat32`](#toFloat32) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
@@ -3456,20 +3498,20 @@ Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  \N
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toFloat32OrNull = {1, 1};
     FunctionDocumentation::Category category_toFloat32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toFloat32OrNull = {description_toFloat32OrNull, syntax_toFloat32OrNull, arguments_toFloat32OrNull, returned_value_toFloat32OrNull, examples_toFloat32OrNull, introduced_in_toFloat32OrNull, category_toFloat32OrNull};
+    FunctionDocumentation documentation_toFloat32OrNull = {description_toFloat32OrNull, syntax_toFloat32OrNull, arguments_toFloat32OrNull, {}, returned_value_toFloat32OrNull, examples_toFloat32OrNull, introduced_in_toFloat32OrNull, category_toFloat32OrNull};
 
     factory.registerFunction<detail::FunctionToFloat32OrNull>(documentation_toFloat32OrNull);
 
     /// toFloat64OrNull documentation
     FunctionDocumentation::Description description_toFloat64OrNull = R"(
-Converts an input value to a value of type [Float64](../data-types/float.md) but returns `NULL` in case of an error.
-Like [`toFloat64`](#tofloat64) but returns `NULL` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [Float64](/reference/data-types/float) but returns `NULL` in case of an error.
+Like [`toFloat64`](#toFloat64) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - Values of type (U)Int*.
@@ -3507,13 +3549,13 @@ Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  \N
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toFloat64OrNull = {1, 1};
     FunctionDocumentation::Category category_toFloat64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toFloat64OrNull = {description_toFloat64OrNull, syntax_toFloat64OrNull, arguments_toFloat64OrNull, returned_value_toFloat64OrNull, examples_toFloat64OrNull, introduced_in_toFloat64OrNull, category_toFloat64OrNull};
+    FunctionDocumentation documentation_toFloat64OrNull = {description_toFloat64OrNull, syntax_toFloat64OrNull, arguments_toFloat64OrNull, {}, returned_value_toFloat64OrNull, examples_toFloat64OrNull, introduced_in_toFloat64OrNull, category_toFloat64OrNull};
 
     factory.registerFunction<detail::FunctionToFloat64OrNull>(documentation_toFloat64OrNull);
 
@@ -3521,11 +3563,12 @@ toFloat64OrNull('abc'):  \N
     FunctionDocumentation::Description description_toDateOrNull = R"(
 Converts an input value to a value of type `Date` but returns `NULL` if an invalid argument is received.
 The same as [`toDate`](#toDate) but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted the same way as by `toDate` (a number of days since 1970-01-01 if it does not exceed 65535, a Unix timestamp otherwise), and produces `NULL` if it is out of range of the `Date` type.
     )";
     FunctionDocumentation::Syntax syntax_toDateOrNull = "toDateOrNull(x)";
     FunctionDocumentation::Arguments arguments_toDateOrNull =
     {
-        {"x", "A string representation of a date.", {"String"}}
+        {"x", "A string representation of a date, or an integer number of days or a Unix timestamp.", {"String", "(U)Int8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateOrNull = {"Returns a Date value if successful, otherwise `NULL`.", {"Date", "NULL"}};
     FunctionDocumentation::Examples examples_toDateOrNull = {
@@ -3536,14 +3579,14 @@ SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
         )",
         R"(
 ┌─toDateOrNull('2025-12-30')─┬─toDateOrNull('invalid')─┐
-│                 2025-12-30 │                   ᴺᵁᴸᴸ │
-└────────────────────────────┴────────────────────────┘
+│                 2025-12-30 │                    ᴺᵁᴸᴸ │
+└────────────────────────────┴─────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateOrNull = {1, 1};
     FunctionDocumentation::Category category_toDateOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateOrNull = {description_toDateOrNull, syntax_toDateOrNull, arguments_toDateOrNull, returned_value_toDateOrNull, examples_toDateOrNull, introduced_in_toDateOrNull, category_toDateOrNull};
+    FunctionDocumentation documentation_toDateOrNull = {description_toDateOrNull, syntax_toDateOrNull, arguments_toDateOrNull, {}, returned_value_toDateOrNull, examples_toDateOrNull, introduced_in_toDateOrNull, category_toDateOrNull};
 
     factory.registerFunction<detail::FunctionToDateOrNull>(documentation_toDateOrNull);
 
@@ -3573,7 +3616,7 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDate32OrNull = {21, 9};
     FunctionDocumentation::Category category_toDate32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDate32OrNull = {description_toDate32OrNull, syntax_toDate32OrNull, arguments_toDate32OrNull, returned_value_toDate32OrNull, examples_toDate32OrNull, introduced_in_toDate32OrNull, category_toDate32OrNull};
+    FunctionDocumentation documentation_toDate32OrNull = {description_toDate32OrNull, syntax_toDate32OrNull, arguments_toDate32OrNull, {}, returned_value_toDate32OrNull, examples_toDate32OrNull, introduced_in_toDate32OrNull, category_toDate32OrNull};
 
     factory.registerFunction<detail::FunctionToDate32OrNull>(documentation_toDate32OrNull);
 
@@ -3605,9 +3648,9 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {25, 5};
     FunctionDocumentation::Category category_toTimeOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTimeOrNull = {description_toTimeOrNull, syntax_toTimeOrNull, arguments_toTimeOrNull, returned_value_toTimeOrNull, examples_toTimeOrNull, introduced_in_toTimeOrNull, category_toTimeOrNull};
+    FunctionDocumentation documentation_toTimeOrNull = {description_toTimeOrNull, syntax_toTimeOrNull, arguments_toTimeOrNull, {}, returned_value_toTimeOrNull, examples_toTimeOrNull, introduced_in_toTimeOrNull, category_toTimeOrNull};
 
     factory.registerFunction<detail::FunctionToTimeOrNull>(documentation_toTimeOrNull);
 
@@ -3620,10 +3663,11 @@ See also:
 - [`toTime64`](#toTime64)
 - [`toTime64OrZero`](#toTime64OrZero)
     )";
-    FunctionDocumentation::Syntax syntax_toTime64OrNull = "toTime64OrNull(x)";
+    FunctionDocumentation::Syntax syntax_toTime64OrNull = "toTime64OrNull(x[, precision])";
     FunctionDocumentation::Arguments arguments_toTime64OrNull =
     {
-        {"x", "A string representation of a time with subsecond precision.", {"String"}}
+        {"x", "A string representation of a time with subsecond precision.", {"String"}},
+        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime64OrNull = {"Returns a Time64 value if successful, otherwise `NULL`.", {"Time64", "NULL"}};
     FunctionDocumentation::Examples examples_toTime64OrNull = {
@@ -3641,7 +3685,7 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toTime64OrNull = {25, 6};
     FunctionDocumentation::Category category_toTime64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTime64OrNull = {description_toTime64OrNull, syntax_toTime64OrNull, arguments_toTime64OrNull, returned_value_toTime64OrNull, examples_toTime64OrNull, introduced_in_toTime64OrNull, category_toTime64OrNull};
+    FunctionDocumentation documentation_toTime64OrNull = {description_toTime64OrNull, syntax_toTime64OrNull, arguments_toTime64OrNull, {}, returned_value_toTime64OrNull, examples_toTime64OrNull, introduced_in_toTime64OrNull, category_toTime64OrNull};
 
     factory.registerFunction<detail::FunctionToTime64OrNull>(documentation_toTime64OrNull);
 
@@ -3649,11 +3693,13 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
     FunctionDocumentation::Description description_toDateTimeOrNull = R"(
 Converts an input value to a value of type `DateTime` but returns `NULL` if an invalid argument is received.
 The same as [`toDateTime`](#toDateTime) but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted as a Unix timestamp and produces `NULL` if it is out of range of the `DateTime` type.
     )";
-    FunctionDocumentation::Syntax syntax_toDateTimeOrNull = "toDateTimeOrNull(x)";
+    FunctionDocumentation::Syntax syntax_toDateTimeOrNull = "toDateTimeOrNull(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTimeOrNull =
     {
-        {"x", "A string representation of a date with time.", {"String"}}
+        {"x", "A string representation of a date with time, or an integer Unix timestamp.", {"String", "(U)Int8/16/32/64"}},
+        {"timezone", "Optional. Time zone of the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTimeOrNull = {"Returns a `DateTime` value if successful, otherwise `NULL`.", {"DateTime", "NULL"}};
     FunctionDocumentation::Examples examples_toDateTimeOrNull = {
@@ -3667,11 +3713,22 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
 │                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
         )"
+    },
+    {
+        "Integer argument with a time zone",
+        R"(
+SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(4294967296)
+        )",
+        R"(
+┌─toDateTimeOrNull(1583851242, 'Asia/Shanghai')─┬─toDateTimeOrNull(4294967296)─┐
+│                           2020-03-10 22:40:42 │                         ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴──────────────────────────────┘
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTimeOrNull = {1, 1};
     FunctionDocumentation::Category category_toDateTimeOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTimeOrNull = {description_toDateTimeOrNull, syntax_toDateTimeOrNull, arguments_toDateTimeOrNull, returned_value_toDateTimeOrNull, examples_toDateTimeOrNull, introduced_in_toDateTimeOrNull, category_toDateTimeOrNull};
+    FunctionDocumentation documentation_toDateTimeOrNull = {description_toDateTimeOrNull, syntax_toDateTimeOrNull, arguments_toDateTimeOrNull, {}, returned_value_toDateTimeOrNull, examples_toDateTimeOrNull, introduced_in_toDateTimeOrNull, category_toDateTimeOrNull};
 
     factory.registerFunction<detail::FunctionToDateTimeOrNull>(documentation_toDateTimeOrNull);
 
@@ -3679,11 +3736,14 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
     FunctionDocumentation::Description description_toDateTime64OrNull = R"(
 Converts an input value to a value of type `DateTime64` but returns `NULL` if an invalid argument is received.
 The same as `toDateTime64` but returns `NULL` if an invalid argument is received.
+An integer argument is interpreted as a Unix timestamp in whole seconds and produces `NULL` if it is out of range of the `DateTime64` type.
     )";
-    FunctionDocumentation::Syntax syntax_toDateTime64OrNull = "toDateTime64OrNull(x)";
+    FunctionDocumentation::Syntax syntax_toDateTime64OrNull = "toDateTime64OrNull(x[, precision[, timezone]])";
     FunctionDocumentation::Arguments arguments_toDateTime64OrNull =
     {
-        {"x", "A string representation of a date with time and subsecond precision.", {"String"}}
+        {"x", "A string representation of a date with time and subsecond precision, or an integer Unix timestamp.", {"String", "(U)Int8/16/32/64"}},
+        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
+        {"timezone", "Optional. Time zone of the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrNull = {"Returns a DateTime64 value if successful, otherwise `NULL`.", {"DateTime64", "NULL"}};
     FunctionDocumentation::Examples examples_toDateTime64OrNull = {
@@ -3694,20 +3754,20 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
         )",
         R"(
 ┌─toDateTime64OrNull('2025-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
-│                         2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
-└─────────────────────────────────────────────────┴───────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴───────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTime64OrNull = {20, 1};
     FunctionDocumentation::Category category_toDateTime64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime64OrNull = {description_toDateTime64OrNull, syntax_toDateTime64OrNull, arguments_toDateTime64OrNull, returned_value_toDateTime64OrNull, examples_toDateTime64OrNull, introduced_in_toDateTime64OrNull, category_toDateTime64OrNull};
+    FunctionDocumentation documentation_toDateTime64OrNull = {description_toDateTime64OrNull, syntax_toDateTime64OrNull, arguments_toDateTime64OrNull, {}, returned_value_toDateTime64OrNull, examples_toDateTime64OrNull, introduced_in_toDateTime64OrNull, category_toDateTime64OrNull};
 
     factory.registerFunction<detail::FunctionToDateTime64OrNull>(documentation_toDateTime64OrNull);
 
     /// toDecimal32OrNull documentation
     FunctionDocumentation::Description description_toDecimal32OrNull = R"(
-Converts an input value to a value of type [`Decimal(9, S)`](../data-types/decimal.md) but returns `NULL` in case of an error.
+Converts an input value to a value of type [`Decimal(9, S)`](/reference/data-types/decimal) but returns `NULL` in case of an error.
 Like [`toDecimal32`](#toDecimal32) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
@@ -3739,21 +3799,21 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal32OrNull = {20, 1};
     FunctionDocumentation::Category category_toDecimal32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal32OrNull = {description_toDecimal32OrNull, syntax_toDecimal32OrNull, arguments_toDecimal32OrNull, returned_value_toDecimal32OrNull, examples_toDecimal32OrNull, introduced_in_toDecimal32OrNull, category_toDecimal32OrNull};
+    FunctionDocumentation documentation_toDecimal32OrNull = {description_toDecimal32OrNull, syntax_toDecimal32OrNull, arguments_toDecimal32OrNull, {}, returned_value_toDecimal32OrNull, examples_toDecimal32OrNull, introduced_in_toDecimal32OrNull, category_toDecimal32OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal32OrNull>(documentation_toDecimal32OrNull);
 
     /// toDecimal64OrNull documentation
     FunctionDocumentation::Description description_toDecimal64OrNull = R"(
-Converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns `NULL` in case of an error.
-Like [`toDecimal64`](#todecimal64) but returns `NULL` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [Decimal(18, S)](/reference/data-types/decimal) but returns `NULL` in case of an error.
+Like [`toDecimal64`](#toDecimal64) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - Values or string representations of type (U)Int*.
@@ -3784,20 +3844,20 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal64OrNull = {20, 1};
     FunctionDocumentation::Category category_toDecimal64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal64OrNull = {description_toDecimal64OrNull, syntax_toDecimal64OrNull, arguments_toDecimal64OrNull, returned_value_toDecimal64OrNull, examples_toDecimal64OrNull, introduced_in_toDecimal64OrNull, category_toDecimal64OrNull};
+    FunctionDocumentation documentation_toDecimal64OrNull = {description_toDecimal64OrNull, syntax_toDecimal64OrNull, arguments_toDecimal64OrNull, {}, returned_value_toDecimal64OrNull, examples_toDecimal64OrNull, introduced_in_toDecimal64OrNull, category_toDecimal64OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal64OrNull>(documentation_toDecimal64OrNull);
 
     /// toDecimal128OrNull documentation
     FunctionDocumentation::Description description_toDecimal128OrNull = R"(
-Converts an input value to a value of type [`Decimal(38, S)`](../data-types/decimal.md) but returns `NULL` in case of an error.
+Converts an input value to a value of type [`Decimal(38, S)`](/reference/data-types/decimal) but returns `NULL` in case of an error.
 Like [`toDecimal128`](#toDecimal128) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
@@ -3828,20 +3888,20 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal128OrNull = {20, 1};
     FunctionDocumentation::Category category_toDecimal128OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal128OrNull = {description_toDecimal128OrNull, syntax_toDecimal128OrNull, arguments_toDecimal128OrNull, returned_value_toDecimal128OrNull, examples_toDecimal128OrNull, introduced_in_toDecimal128OrNull, category_toDecimal128OrNull};
+    FunctionDocumentation documentation_toDecimal128OrNull = {description_toDecimal128OrNull, syntax_toDecimal128OrNull, arguments_toDecimal128OrNull, {}, returned_value_toDecimal128OrNull, examples_toDecimal128OrNull, introduced_in_toDecimal128OrNull, category_toDecimal128OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal128OrNull>(documentation_toDecimal128OrNull);
 
     /// toDecimal256OrNull documentation
     FunctionDocumentation::Description description_toDecimal256OrNull = R"(
-Converts an input value to a value of type [`Decimal(76, S)`](../data-types/decimal.md) but returns `NULL` in case of an error.
+Converts an input value to a value of type [`Decimal(76, S)`](/reference/data-types/decimal) but returns `NULL` in case of an error.
 Like [`toDecimal256`](#toDecimal256) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
@@ -3873,21 +3933,22 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal256OrNull = {20, 8};
     FunctionDocumentation::Category category_toDecimal256OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal256OrNull = {description_toDecimal256OrNull, syntax_toDecimal256OrNull, arguments_toDecimal256OrNull, returned_value_toDecimal256OrNull, examples_toDecimal256OrNull, introduced_in_toDecimal256OrNull, category_toDecimal256OrNull};
+    FunctionDocumentation documentation_toDecimal256OrNull = {description_toDecimal256OrNull, syntax_toDecimal256OrNull, arguments_toDecimal256OrNull, {}, returned_value_toDecimal256OrNull, examples_toDecimal256OrNull, introduced_in_toDecimal256OrNull, category_toDecimal256OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal256OrNull>(documentation_toDecimal256OrNull);
 
     /// toUUIDOrNull documentation
     FunctionDocumentation::Description description_toUUIDOrNull = R"(
 Converts an input value to a value of type `UUID` but returns `NULL` in case of an error.
-Like [`toUUID`](#touuid) but returns `NULL` instead of throwing an exception on conversion errors.
+
+Like [`toUUID`](/reference/functions/regular-functions/type-conversion-functions#toUUID) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).
@@ -3914,14 +3975,14 @@ SELECT
         )",
         R"(
 ┌─valid_uuid───────────────────────────┬─invalid_uuid─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │         ᴺᵁᴸᴸ │
+│ 550e8400-e29b-41d4-a716-446655440000 │ ᴺᵁᴸᴸ         │
 └──────────────────────────────────────┴──────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUUIDOrNull = {20, 12};
     FunctionDocumentation::Category category_toUUIDOrNull = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_toUUIDOrNull = {description_toUUIDOrNull, syntax_toUUIDOrNull, arguments_toUUIDOrNull, returned_value_toUUIDOrNull, examples_toUUIDOrNull, introduced_in_toUUIDOrNull, category_toUUIDOrNull};
+    FunctionDocumentation documentation_toUUIDOrNull = {description_toUUIDOrNull, syntax_toUUIDOrNull, arguments_toUUIDOrNull, {}, returned_value_toUUIDOrNull, examples_toUUIDOrNull, introduced_in_toUUIDOrNull, category_toUUIDOrNull};
 
     factory.registerFunction<detail::FunctionToUUIDOrNull>(documentation_toUUIDOrNull);
 
@@ -3956,14 +4017,14 @@ SELECT
         )",
         R"(
 ┌─valid_ip────┬─invalid_ip─┐
-│ 192.168.1.1 │       ᴺᵁᴸᴸ │
+│ 192.168.1.1 │ ᴺᵁᴸᴸ       │
 └─────────────┴────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv4OrNull = {22, 3};
     FunctionDocumentation::Category category_toIPv4OrNull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toIPv4OrNull = {description_toIPv4OrNull, syntax_toIPv4OrNull, arguments_toIPv4OrNull, returned_value_toIPv4OrNull, examples_toIPv4OrNull, introduced_in_toIPv4OrNull, category_toIPv4OrNull};
+    FunctionDocumentation documentation_toIPv4OrNull = {description_toIPv4OrNull, syntax_toIPv4OrNull, arguments_toIPv4OrNull, {}, returned_value_toIPv4OrNull, examples_toIPv4OrNull, introduced_in_toIPv4OrNull, category_toIPv4OrNull};
 
     factory.registerFunction<detail::FunctionToIPv4OrNull>(documentation_toIPv4OrNull);
 
@@ -3998,15 +4059,15 @@ SELECT
     toIPv6OrNull('invalid::ip') AS invalid_ipv6
         )",
         R"(
-┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334        │         ᴺᵁᴸᴸ │
-└─────────────────────────────────────┴──────────────┘
+┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ᴺᵁᴸᴸ         │
+└──────────────────────────────┴──────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv6OrNull = {22, 3};
     FunctionDocumentation::Category category_toIPv6OrNull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toIPv6OrNull = {description_toIPv6OrNull, syntax_toIPv6OrNull, arguments_toIPv6OrNull, returned_value_toIPv6OrNull, examples_toIPv6OrNull, introduced_in_toIPv6OrNull, category_toIPv6OrNull};
+    FunctionDocumentation documentation_toIPv6OrNull = {description_toIPv6OrNull, syntax_toIPv6OrNull, arguments_toIPv6OrNull, {}, returned_value_toIPv6OrNull, examples_toIPv6OrNull, introduced_in_toIPv6OrNull, category_toIPv6OrNull};
 
     factory.registerFunction<detail::FunctionToIPv6OrNull>(documentation_toIPv6OrNull);
 
@@ -4071,7 +4132,7 @@ SELECT parseDateTimeBestEffort('1735689600') AS parseDateTimeBestEffort
     };
     FunctionDocumentation::IntroducedIn parseDateTimeBestEffort_introduced_in = {1, 1};
     FunctionDocumentation::Category parseDateTimeBestEffort_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeBestEffort_documentation = {parseDateTimeBestEffort_description, parseDateTimeBestEffort_syntax, parseDateTimeBestEffort_arguments, parseDateTimeBestEffort_returned_value, parseDateTimeBestEffort_examples, parseDateTimeBestEffort_introduced_in, parseDateTimeBestEffort_category};
+    FunctionDocumentation parseDateTimeBestEffort_documentation = {parseDateTimeBestEffort_description, parseDateTimeBestEffort_syntax, parseDateTimeBestEffort_arguments, {}, parseDateTimeBestEffort_returned_value, parseDateTimeBestEffort_examples, parseDateTimeBestEffort_introduced_in, parseDateTimeBestEffort_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffort>(parseDateTimeBestEffort_documentation);
 
@@ -4107,7 +4168,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
@@ -4115,7 +4176,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
     };
     FunctionDocumentation::IntroducedIn parseDateTimeBestEffortOrZero_introduced_in = {1, 1};
     FunctionDocumentation::Category parseDateTimeBestEffortOrZero_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeBestEffortOrZero_documentation = {parseDateTimeBestEffortOrZero_description, parseDateTimeBestEffortOrZero_syntax, parseDateTimeBestEffortOrZero_arguments, parseDateTimeBestEffortOrZero_returned_value, parseDateTimeBestEffortOrZero_examples, parseDateTimeBestEffortOrZero_introduced_in, parseDateTimeBestEffortOrZero_category};
+    FunctionDocumentation parseDateTimeBestEffortOrZero_documentation = {parseDateTimeBestEffortOrZero_description, parseDateTimeBestEffortOrZero_syntax, parseDateTimeBestEffortOrZero_arguments, {}, parseDateTimeBestEffortOrZero_returned_value, parseDateTimeBestEffortOrZero_examples, parseDateTimeBestEffortOrZero_introduced_in, parseDateTimeBestEffortOrZero_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortOrZero>(parseDateTimeBestEffortOrZero_documentation);
 
@@ -4151,7 +4212,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4159,7 +4220,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
     };
     FunctionDocumentation::IntroducedIn parseDateTimeBestEffortOrNull_introduced_in = {1, 1};
     FunctionDocumentation::Category parseDateTimeBestEffortOrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeBestEffortOrNull_documentation = {parseDateTimeBestEffortOrNull_description, parseDateTimeBestEffortOrNull_syntax, parseDateTimeBestEffortOrNull_arguments, parseDateTimeBestEffortOrNull_returned_value, parseDateTimeBestEffortOrNull_examples, parseDateTimeBestEffortOrNull_introduced_in, parseDateTimeBestEffortOrNull_category};
+    FunctionDocumentation parseDateTimeBestEffortOrNull_documentation = {parseDateTimeBestEffortOrNull_description, parseDateTimeBestEffortOrNull_syntax, parseDateTimeBestEffortOrNull_arguments, {}, parseDateTimeBestEffortOrNull_returned_value, parseDateTimeBestEffortOrNull_examples, parseDateTimeBestEffortOrNull_introduced_in, parseDateTimeBestEffortOrNull_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortOrNull>(parseDateTimeBestEffortOrNull_documentation);
 
@@ -4185,7 +4246,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
        parseDateTimeBestEffortUS('15/08/2025') AS fallback_to_standard
         )",
         R"(
-┌─us_format───────────┬─fallback_to_standard─┐
+┌───────────us_format─┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
         )"
@@ -4193,7 +4254,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
     };
     FunctionDocumentation::IntroducedIn parseDateTimeBestEffortUS_introduced_in = {1, 1};
     FunctionDocumentation::Category parseDateTimeBestEffortUS_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeBestEffortUS_documentation = {parseDateTimeBestEffortUS_description, parseDateTimeBestEffortUS_syntax, parseDateTimeBestEffortUS_arguments, parseDateTimeBestEffortUS_returned_value, parseDateTimeBestEffortUS_examples, parseDateTimeBestEffortUS_introduced_in, parseDateTimeBestEffortUS_category};
+    FunctionDocumentation parseDateTimeBestEffortUS_documentation = {parseDateTimeBestEffortUS_description, parseDateTimeBestEffortUS_syntax, parseDateTimeBestEffortUS_arguments, {}, parseDateTimeBestEffortUS_returned_value, parseDateTimeBestEffortUS_examples, parseDateTimeBestEffortUS_introduced_in, parseDateTimeBestEffortUS_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortUS>(parseDateTimeBestEffortUS_documentation);
 
@@ -4219,7 +4280,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────┬─invalid─────────────┐
+┌────────────valid_us─┬─────────────invalid─┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
@@ -4227,7 +4288,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
     };
     FunctionDocumentation::IntroducedIn parseDateTimeBestEffortUSOrZero_introduced_in = {1, 1};
     FunctionDocumentation::Category parseDateTimeBestEffortUSOrZero_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeBestEffortUSOrZero_documentation = {parseDateTimeBestEffortUSOrZero_description, parseDateTimeBestEffortUSOrZero_syntax, parseDateTimeBestEffortUSOrZero_arguments, parseDateTimeBestEffortUSOrZero_returned_value, parseDateTimeBestEffortUSOrZero_examples, parseDateTimeBestEffortUSOrZero_introduced_in, parseDateTimeBestEffortUSOrZero_category};
+    FunctionDocumentation parseDateTimeBestEffortUSOrZero_documentation = {parseDateTimeBestEffortUSOrZero_description, parseDateTimeBestEffortUSOrZero_syntax, parseDateTimeBestEffortUSOrZero_arguments, {}, parseDateTimeBestEffortUSOrZero_returned_value, parseDateTimeBestEffortUSOrZero_examples, parseDateTimeBestEffortUSOrZero_introduced_in, parseDateTimeBestEffortUSOrZero_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrZero>(parseDateTimeBestEffortUSOrZero_documentation);
 
@@ -4253,7 +4314,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────┬─invalid─┐
+┌────────────valid_us─┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4261,13 +4322,13 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
     };
     FunctionDocumentation::IntroducedIn parseDateTimeBestEffortUSOrNull_introduced_in = {1, 1};
     FunctionDocumentation::Category parseDateTimeBestEffortUSOrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeBestEffortUSOrNull_documentation = {parseDateTimeBestEffortUSOrNull_description, parseDateTimeBestEffortUSOrNull_syntax, parseDateTimeBestEffortUSOrNull_arguments, parseDateTimeBestEffortUSOrNull_returned_value, parseDateTimeBestEffortUSOrNull_examples, parseDateTimeBestEffortUSOrNull_introduced_in, parseDateTimeBestEffortUSOrNull_category};
+    FunctionDocumentation parseDateTimeBestEffortUSOrNull_documentation = {parseDateTimeBestEffortUSOrNull_description, parseDateTimeBestEffortUSOrNull_syntax, parseDateTimeBestEffortUSOrNull_arguments, {}, parseDateTimeBestEffortUSOrNull_returned_value, parseDateTimeBestEffortUSOrNull_examples, parseDateTimeBestEffortUSOrNull_introduced_in, parseDateTimeBestEffortUSOrNull_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrNull>(parseDateTimeBestEffortUSOrNull_documentation);
 
     /// parseDateTime32BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffort = R"(
-Converts a string representation of a date and time to the [`DateTime`](/sql-reference/data-types/datetime) data type.
+Converts a string representation of a date and time to the [`DateTime`](/reference/data-types/datetime) data type.
 
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
     )";
@@ -4312,14 +4373,14 @@ AS parseDateTime32BestEffort
         )",
         R"(
 ┌─parseDateTime32BestEffort─┐
-│       2015-07-07 12:04:41 │
+│       2010-09-10 06:51:25 │
 └───────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime32BestEffort = {20, 9};
     FunctionDocumentation::Category category_parseDateTime32BestEffort = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_parseDateTime32BestEffort = {description_parseDateTime32BestEffort, syntax_parseDateTime32BestEffort, arguments_parseDateTime32BestEffort, returned_value_parseDateTime32BestEffort, examples_parseDateTime32BestEffort, introduced_in_parseDateTime32BestEffort, category_parseDateTime32BestEffort};
+    FunctionDocumentation documentation_parseDateTime32BestEffort = {description_parseDateTime32BestEffort, syntax_parseDateTime32BestEffort, arguments_parseDateTime32BestEffort, {}, returned_value_parseDateTime32BestEffort, examples_parseDateTime32BestEffort, introduced_in_parseDateTime32BestEffort, category_parseDateTime32BestEffort};
 
     factory.registerFunction<detail::FunctionParseDateTime32BestEffort>(documentation_parseDateTime32BestEffort);
 
@@ -4344,7 +4405,7 @@ SELECT
     parseDateTime32BestEffortOrZero('invalid date') AS invalid
     )",
     R"(
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
     )"
@@ -4352,7 +4413,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime32BestEffortOrZero = {20, 9};
     FunctionDocumentation::Category category_parseDateTime32BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_parseDateTime32BestEffortOrZero = {description_parseDateTime32BestEffortOrZero, syntax_parseDateTime32BestEffortOrZero, arguments_parseDateTime32BestEffortOrZero, returned_value_parseDateTime32BestEffortOrZero, examples_parseDateTime32BestEffortOrZero, introduced_in_parseDateTime32BestEffortOrZero, category_parseDateTime32BestEffortOrZero};
+    FunctionDocumentation documentation_parseDateTime32BestEffortOrZero = {description_parseDateTime32BestEffortOrZero, syntax_parseDateTime32BestEffortOrZero, arguments_parseDateTime32BestEffortOrZero, {}, returned_value_parseDateTime32BestEffortOrZero, examples_parseDateTime32BestEffortOrZero, introduced_in_parseDateTime32BestEffortOrZero, category_parseDateTime32BestEffortOrZero};
 
     factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrZero>(documentation_parseDateTime32BestEffortOrZero);
 
@@ -4377,7 +4438,7 @@ SELECT
     parseDateTime32BestEffortOrNull('invalid date') AS invalid
         )",
         R"(
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4385,13 +4446,13 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime32BestEffortOrNull = {20, 9};
     FunctionDocumentation::Category category_parseDateTime32BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_parseDateTime32BestEffortOrNull = {description_parseDateTime32BestEffortOrNull, syntax_parseDateTime32BestEffortOrNull, arguments_parseDateTime32BestEffortOrNull, returned_value_parseDateTime32BestEffortOrNull, examples_parseDateTime32BestEffortOrNull, introduced_in_parseDateTime32BestEffortOrNull, category_parseDateTime32BestEffortOrNull};
+    FunctionDocumentation documentation_parseDateTime32BestEffortOrNull = {description_parseDateTime32BestEffortOrNull, syntax_parseDateTime32BestEffortOrNull, arguments_parseDateTime32BestEffortOrNull, {}, returned_value_parseDateTime32BestEffortOrNull, examples_parseDateTime32BestEffortOrNull, introduced_in_parseDateTime32BestEffortOrNull, category_parseDateTime32BestEffortOrNull};
 
     factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrNull>(documentation_parseDateTime32BestEffortOrNull);
 
     /// parseDateTime64BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffort = R"(
-Same as [`parseDateTimeBestEffort`](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns [`DateTime64`](../../sql-reference/data-types/datetime64.md) data type.
+Same as [`parseDateTimeBestEffort`](#parseDateTimeBestEffort) function but also parse milliseconds and microseconds and returns [`DateTime64`](/reference/data-types/datetime64) data type.
     )";
     FunctionDocumentation::Syntax syntax_parseDateTime64BestEffort = "parseDateTime64BestEffort(time_string[, precision[, time_zone]])";
     FunctionDocumentation::Arguments arguments_parseDateTime64BestEffort =
@@ -4400,7 +4461,7 @@ Same as [`parseDateTimeBestEffort`](#parsedatetimebesteffort) function but also 
         {"precision", "Optional. Required precision. `3` for milliseconds, `6` for microseconds. Default: `3`.", {"UInt8"}},
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffort = {"Returns `time_string` converted to the [`DateTime64`](../../sql-reference/data-types/datetime64.md) data type.", {"DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffort = {"Returns `time_string` converted to the [`DateTime64`](/reference/data-types/datetime64) data type.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_parseDateTime64BestEffort =
     {
     {
@@ -4427,13 +4488,13 @@ FORMAT PrettyCompactMonoBlock
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffort = {20, 1};
     FunctionDocumentation::Category category_parseDateTime64BestEffort = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64BestEffort_documentation = {description_parseDateTime64BestEffort, syntax_parseDateTime64BestEffort, arguments_parseDateTime64BestEffort, returned_value_parseDateTime64BestEffort, examples_parseDateTime64BestEffort, introduced_in_parseDateTime64BestEffort, category_parseDateTime64BestEffort};
+    FunctionDocumentation parseDateTime64BestEffort_documentation = {description_parseDateTime64BestEffort, syntax_parseDateTime64BestEffort, arguments_parseDateTime64BestEffort, {}, returned_value_parseDateTime64BestEffort, examples_parseDateTime64BestEffort, introduced_in_parseDateTime64BestEffort, category_parseDateTime64BestEffort};
 
     factory.registerFunction<detail::FunctionParseDateTime64BestEffort>(parseDateTime64BestEffort_documentation);
 
     /// parseDateTime64BestEffortOrZero documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortOrZero = R"(
-Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+Same as [`parseDateTime64BestEffort`](#parseDateTime64BestEffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
     )";
     FunctionDocumentation::Syntax syntax_parseDateTime64BestEffortOrZero = "parseDateTime64BestEffortOrZero(time_string[, precision[, time_zone]])";
     FunctionDocumentation::Arguments arguments_parseDateTime64BestEffortOrZero =
@@ -4442,7 +4503,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it
         {"precision", "Optional. Required precision. `3` for milliseconds, `6` for microseconds. Default: `3`.", {"UInt8"}},
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortOrZero = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md), or zero date/datetime (`1970-01-01 00:00:00.000`) if the input cannot be parsed.", {"DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortOrZero = {"Returns `time_string` converted to [`DateTime64`](/reference/data-types/datetime64), or zero date/datetime (`1970-01-01 00:00:00.000`) if the input cannot be parsed.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrZero =
     {
     {
@@ -4452,7 +4513,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid───────────────────┬─invalid─────────────────┐
+┌───────────────────valid─┬─────────────────invalid─┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4460,13 +4521,13 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortOrZero = {20, 1};
     FunctionDocumentation::Category category_parseDateTime64BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64BestEffortOrZero_documentation = {description_parseDateTime64BestEffortOrZero, syntax_parseDateTime64BestEffortOrZero, arguments_parseDateTime64BestEffortOrZero, returned_value_parseDateTime64BestEffortOrZero, examples_parseDateTime64BestEffortOrZero, introduced_in_parseDateTime64BestEffortOrZero, category_parseDateTime64BestEffortOrZero};
+    FunctionDocumentation parseDateTime64BestEffortOrZero_documentation = {description_parseDateTime64BestEffortOrZero, syntax_parseDateTime64BestEffortOrZero, arguments_parseDateTime64BestEffortOrZero, {}, returned_value_parseDateTime64BestEffortOrZero, examples_parseDateTime64BestEffortOrZero, introduced_in_parseDateTime64BestEffortOrZero, category_parseDateTime64BestEffortOrZero};
 
     factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrZero>(parseDateTime64BestEffortOrZero_documentation);
 
     /// parseDateTime64BestEffortOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortOrNull = R"(
-Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
+Same as [`parseDateTime64BestEffort`](#parseDateTime64BestEffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
     )";
     FunctionDocumentation::Syntax syntax_parseDateTime64BestEffortOrNull = "parseDateTime64BestEffortOrNull(time_string[, precision[, time_zone]])";
     FunctionDocumentation::Arguments arguments_parseDateTime64BestEffortOrNull =
@@ -4475,7 +4536,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it
         {"precision", "Optional. Required precision. `3` for milliseconds, `6` for microseconds. Default: `3`.", {"UInt8"}},
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortOrNull = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md), or `NULL` if the input cannot be parsed.", {"DateTime64", "NULL"}};
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortOrNull = {"Returns `time_string` converted to [`DateTime64`](/reference/data-types/datetime64), or `NULL` if the input cannot be parsed.", {"DateTime64", "NULL"}};
     FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrNull =
     {
     {
@@ -4485,7 +4546,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrNull('invalid') AS invalid
     )",
     R"(
-┌─valid───────────────────┬─invalid─┐
+┌───────────────────valid─┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"
@@ -4493,13 +4554,13 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortOrNull = {20, 1};
     FunctionDocumentation::Category category_parseDateTime64BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64BestEffortOrNull_documentation = {description_parseDateTime64BestEffortOrNull, syntax_parseDateTime64BestEffortOrNull, arguments_parseDateTime64BestEffortOrNull, returned_value_parseDateTime64BestEffortOrNull, examples_parseDateTime64BestEffortOrNull, introduced_in_parseDateTime64BestEffortOrNull, category_parseDateTime64BestEffortOrNull};
+    FunctionDocumentation parseDateTime64BestEffortOrNull_documentation = {description_parseDateTime64BestEffortOrNull, syntax_parseDateTime64BestEffortOrNull, arguments_parseDateTime64BestEffortOrNull, {}, returned_value_parseDateTime64BestEffortOrNull, examples_parseDateTime64BestEffortOrNull, introduced_in_parseDateTime64BestEffortOrNull, category_parseDateTime64BestEffortOrNull};
 
     factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrNull>(parseDateTime64BestEffortOrNull_documentation);
 
     /// parseDateTime64BestEffortUS documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUS = R"(
-Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
+Same as [`parseDateTime64BestEffort`](#parseDateTime64BestEffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
     )";
     FunctionDocumentation::Syntax syntax_parseDateTime64BestEffortUS = "parseDateTime64BestEffortUS(time_string [, precision [, time_zone]])";
     FunctionDocumentation::Arguments arguments_parseDateTime64BestEffortUS =
@@ -4508,7 +4569,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"precision", "Optional. Required precision. `3` for milliseconds, `6` for microseconds. Default: `3`.", {"UInt8"}},
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUS = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US date format preference for ambiguous cases.", {"DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUS = {"Returns `time_string` converted to [`DateTime64`](/reference/data-types/datetime64) using US date format preference for ambiguous cases.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_parseDateTime64BestEffortUS =
     {
     {
@@ -4518,7 +4579,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
        parseDateTime64BestEffortUS('15/08/2025 10:15:30.456') AS fallback_to_standard
         )",
         R"(
-┌─us_format───────────────┬─fallback_to_standard────┐
+┌───────────────us_format─┬────fallback_to_standard─┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4526,13 +4587,13 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortUS = {22, 8};
     FunctionDocumentation::Category category_parseDateTime64BestEffortUS = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64BestEffortUS_documentation = {description_parseDateTime64BestEffortUS, syntax_parseDateTime64BestEffortUS, arguments_parseDateTime64BestEffortUS, returned_value_parseDateTime64BestEffortUS, examples_parseDateTime64BestEffortUS, introduced_in_parseDateTime64BestEffortUS, category_parseDateTime64BestEffortUS};
+    FunctionDocumentation parseDateTime64BestEffortUS_documentation = {description_parseDateTime64BestEffortUS, syntax_parseDateTime64BestEffortUS, arguments_parseDateTime64BestEffortUS, {}, returned_value_parseDateTime64BestEffortUS, examples_parseDateTime64BestEffortUS, introduced_in_parseDateTime64BestEffortUS, category_parseDateTime64BestEffortUS};
 
     factory.registerFunction<detail::FunctionParseDateTime64BestEffortUS>(parseDateTime64BestEffortUS_documentation);
 
     /// parseDateTime64BestEffortUSOrZero documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrZero = R"(
-Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns zero date or zero date time when it encounters a date format that cannot be processed.
+Same as [`parseDateTime64BestEffort`](#parseDateTime64BestEffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns zero date or zero date time when it encounters a date format that cannot be processed.
     )";
     FunctionDocumentation::Syntax syntax_parseDateTime64BestEffortUSOrZero = "parseDateTime64BestEffortUSOrZero(time_string [, precision [, time_zone]])";
     FunctionDocumentation::Arguments arguments_parseDateTime64BestEffortUSOrZero =
@@ -4541,7 +4602,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"precision", "Optional. Required precision. `3` for milliseconds, `6` for microseconds. Default: `3`.", {"UInt8"}},
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUSOrZero = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US format preference, or zero date/datetime (`1970-01-01 00:00:00.000`) if the input cannot be parsed.", {"DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUSOrZero = {"Returns `time_string` converted to [`DateTime64`](/reference/data-types/datetime64) using US format preference, or zero date/datetime (`1970-01-01 00:00:00.000`) if the input cannot be parsed.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrZero =
     {
     {
@@ -4551,7 +4612,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────────┬─invalid─────────────────┐
+┌────────────────valid_us─┬─────────────────invalid─┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4559,13 +4620,13 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortUSOrZero = {22, 8};
     FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64BestEffortUSOrZero_documentation = {description_parseDateTime64BestEffortUSOrZero, syntax_parseDateTime64BestEffortUSOrZero, arguments_parseDateTime64BestEffortUSOrZero, returned_value_parseDateTime64BestEffortUSOrZero, examples_parseDateTime64BestEffortUSOrZero, introduced_in_parseDateTime64BestEffortUSOrZero, category_parseDateTime64BestEffortUSOrZero};
+    FunctionDocumentation parseDateTime64BestEffortUSOrZero_documentation = {description_parseDateTime64BestEffortUSOrZero, syntax_parseDateTime64BestEffortUSOrZero, arguments_parseDateTime64BestEffortUSOrZero, {}, returned_value_parseDateTime64BestEffortUSOrZero, examples_parseDateTime64BestEffortUSOrZero, introduced_in_parseDateTime64BestEffortUSOrZero, category_parseDateTime64BestEffortUSOrZero};
 
     factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrZero>(parseDateTime64BestEffortUSOrZero_documentation);
 
     /// parseDateTime64BestEffortUSOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrNull = R"(
-Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns `NULL` when it encounters a date format that cannot be processed.
+Same as [`parseDateTime64BestEffort`](#parseDateTime64BestEffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns `NULL` when it encounters a date format that cannot be processed.
     )";
     FunctionDocumentation::Syntax syntax_parseDateTime64BestEffortUSOrNull = "parseDateTime64BestEffortUSOrNull(time_string[, precision[, time_zone]])";
     FunctionDocumentation::Arguments arguments_parseDateTime64BestEffortUSOrNull =
@@ -4574,7 +4635,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"precision", "Optional. Required precision. `3` for milliseconds, `6` for microseconds. Default: `3`.", {"UInt8"}},
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUSOrNull = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US format preference, or `NULL` if the input cannot be parsed.", {"DateTime64", "NULL"}};
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUSOrNull = {"Returns `time_string` converted to [`DateTime64`](/reference/data-types/datetime64) using US format preference, or `NULL` if the input cannot be parsed.", {"DateTime64", "NULL"}};
     FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrNull =
     {
     {
@@ -4584,7 +4645,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
-┌─valid_us────────────────┬─invalid─┐
+┌────────────────valid_us─┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"
@@ -4592,13 +4653,13 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortUSOrNull = {22, 8};
     FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64BestEffortUSOrNull_documentation = {description_parseDateTime64BestEffortUSOrNull, syntax_parseDateTime64BestEffortUSOrNull, arguments_parseDateTime64BestEffortUSOrNull, returned_value_parseDateTime64BestEffortUSOrNull, examples_parseDateTime64BestEffortUSOrNull, introduced_in_parseDateTime64BestEffortUSOrNull, category_parseDateTime64BestEffortUSOrNull};
+    FunctionDocumentation parseDateTime64BestEffortUSOrNull_documentation = {description_parseDateTime64BestEffortUSOrNull, syntax_parseDateTime64BestEffortUSOrNull, arguments_parseDateTime64BestEffortUSOrNull, {}, returned_value_parseDateTime64BestEffortUSOrNull, examples_parseDateTime64BestEffortUSOrNull, introduced_in_parseDateTime64BestEffortUSOrNull, category_parseDateTime64BestEffortUSOrNull};
 
     factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrNull>(parseDateTime64BestEffortUSOrNull_documentation);
 
     /// toIntervalSecond documentation
     FunctionDocumentation::Description description_toIntervalSecond = R"(
-Returns an interval of `n` seconds of data type [`IntervalSecond`](../data-types/special-data-types/interval.md).
+Returns an interval of `n` seconds of data type [`IntervalSecond`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalSecond = "toIntervalSecond(n)";
     FunctionDocumentation::Arguments arguments_toIntervalSecond = {
@@ -4623,11 +4684,11 @@ SELECT date + interval_to_seconds AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalSecond = {1, 1};
     FunctionDocumentation::Category category_toIntervalSecond = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalSecond = {description_toIntervalSecond, syntax_toIntervalSecond, arguments_toIntervalSecond, returned_value_toIntervalSecond, examples_toIntervalSecond, introduced_in_toIntervalSecond, category_toIntervalSecond};
+    FunctionDocumentation documentation_toIntervalSecond = {description_toIntervalSecond, syntax_toIntervalSecond, arguments_toIntervalSecond, {}, returned_value_toIntervalSecond, examples_toIntervalSecond, introduced_in_toIntervalSecond, category_toIntervalSecond};
 
     /// toIntervalMinute documentation
     FunctionDocumentation::Description description_toIntervalMinute = R"(
-Returns an interval of `n` minutes of data type [`IntervalMinute`](../data-types/special-data-types/interval.md).
+Returns an interval of `n` minutes of data type [`IntervalMinute`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalMinute = "toIntervalMinute(n)";
     FunctionDocumentation::Arguments arguments_toIntervalMinute = {
@@ -4652,11 +4713,11 @@ SELECT date + interval_to_minutes AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalMinute = {1, 1};
     FunctionDocumentation::Category category_toIntervalMinute = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalMinute = {description_toIntervalMinute, syntax_toIntervalMinute, arguments_toIntervalMinute, returned_value_toIntervalMinute, examples_toIntervalMinute, introduced_in_toIntervalMinute, category_toIntervalMinute};
+    FunctionDocumentation documentation_toIntervalMinute = {description_toIntervalMinute, syntax_toIntervalMinute, arguments_toIntervalMinute, {}, returned_value_toIntervalMinute, examples_toIntervalMinute, introduced_in_toIntervalMinute, category_toIntervalMinute};
 
     /// toIntervalHour documentation
     FunctionDocumentation::Description description_toIntervalHour = R"(
-Returns an interval of `n` hours of data type [`IntervalHour`](../data-types/special-data-types/interval.md).
+Returns an interval of `n` hours of data type [`IntervalHour`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalHour = "toIntervalHour(n)";
     FunctionDocumentation::Arguments arguments_toIntervalHour = {
@@ -4681,11 +4742,11 @@ SELECT date + interval_to_hours AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalHour = {1, 1};
     FunctionDocumentation::Category category_toIntervalHour = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalHour = {description_toIntervalHour, syntax_toIntervalHour, arguments_toIntervalHour, returned_value_toIntervalHour, examples_toIntervalHour, introduced_in_toIntervalHour, category_toIntervalHour};
+    FunctionDocumentation documentation_toIntervalHour = {description_toIntervalHour, syntax_toIntervalHour, arguments_toIntervalHour, {}, returned_value_toIntervalHour, examples_toIntervalHour, introduced_in_toIntervalHour, category_toIntervalHour};
 
     /// toIntervalDay documentation
     FunctionDocumentation::Description description_toIntervalDay = R"(
-Returns an interval of `n` days of data type [`IntervalDay`](../data-types/special-data-types/interval.md).
+Returns an interval of `n` days of data type [`IntervalDay`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalDay = "toIntervalDay(n)";
     FunctionDocumentation::Arguments arguments_toIntervalDay = {
@@ -4710,11 +4771,11 @@ SELECT date + interval_to_days AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalDay = {1, 1};
     FunctionDocumentation::Category category_toIntervalDay = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalDay = {description_toIntervalDay, syntax_toIntervalDay, arguments_toIntervalDay, returned_value_toIntervalDay, examples_toIntervalDay, introduced_in_toIntervalDay, category_toIntervalDay};
+    FunctionDocumentation documentation_toIntervalDay = {description_toIntervalDay, syntax_toIntervalDay, arguments_toIntervalDay, {}, returned_value_toIntervalDay, examples_toIntervalDay, introduced_in_toIntervalDay, category_toIntervalDay};
 
     /// toIntervalNanosecond documentation
     FunctionDocumentation::Description description_toIntervalNanosecond = R"(
-Returns an interval of `n` nanoseconds of data type [`IntervalNanosecond`](../../sql-reference/data-types/special-data-types/interval.md).
+Returns an interval of `n` nanoseconds of data type [`IntervalNanosecond`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalNanosecond = "toIntervalNanosecond(n)";
     FunctionDocumentation::Arguments arguments_toIntervalNanosecond = {
@@ -4739,11 +4800,11 @@ SELECT date + interval_to_nanoseconds AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalNanosecond = {22, 6};
     FunctionDocumentation::Category category_toIntervalNanosecond = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalNanosecond = {description_toIntervalNanosecond, syntax_toIntervalNanosecond, arguments_toIntervalNanosecond, returned_value_toIntervalNanosecond, examples_toIntervalNanosecond, introduced_in_toIntervalNanosecond, category_toIntervalNanosecond};
+    FunctionDocumentation documentation_toIntervalNanosecond = {description_toIntervalNanosecond, syntax_toIntervalNanosecond, arguments_toIntervalNanosecond, {}, returned_value_toIntervalNanosecond, examples_toIntervalNanosecond, introduced_in_toIntervalNanosecond, category_toIntervalNanosecond};
 
     /// toIntervalMicrosecond documentation
     FunctionDocumentation::Description description_toIntervalMicrosecond = R"(
-Returns an interval of `n` microseconds of data type [`IntervalMicrosecond`](../../sql-reference/data-types/special-data-types/interval.md).
+Returns an interval of `n` microseconds of data type [`IntervalMicrosecond`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalMicrosecond = "toIntervalMicrosecond(n)";
     FunctionDocumentation::Arguments arguments_toIntervalMicrosecond = {
@@ -4768,11 +4829,11 @@ SELECT date + interval_to_microseconds AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalMicrosecond = {22, 6};
     FunctionDocumentation::Category category_toIntervalMicrosecond = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalMicrosecond = {description_toIntervalMicrosecond, syntax_toIntervalMicrosecond, arguments_toIntervalMicrosecond, returned_value_toIntervalMicrosecond, examples_toIntervalMicrosecond, introduced_in_toIntervalMicrosecond, category_toIntervalMicrosecond};
+    FunctionDocumentation documentation_toIntervalMicrosecond = {description_toIntervalMicrosecond, syntax_toIntervalMicrosecond, arguments_toIntervalMicrosecond, {}, returned_value_toIntervalMicrosecond, examples_toIntervalMicrosecond, introduced_in_toIntervalMicrosecond, category_toIntervalMicrosecond};
 
     /// toIntervalMillisecond documentation
     FunctionDocumentation::Description description_toIntervalMillisecond = R"(
-Returns an interval of `n` milliseconds of data type [IntervalMillisecond](../../sql-reference/data-types/special-data-types/interval.md).
+Returns an interval of `n` milliseconds of data type [IntervalMillisecond](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalMillisecond = "toIntervalMillisecond(n)";
     FunctionDocumentation::Arguments arguments_toIntervalMillisecond = {
@@ -4797,11 +4858,11 @@ SELECT date + interval_to_milliseconds AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalMillisecond = {22, 6};
     FunctionDocumentation::Category category_toIntervalMillisecond = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalMillisecond = {description_toIntervalMillisecond, syntax_toIntervalMillisecond, arguments_toIntervalMillisecond, returned_value_toIntervalMillisecond, examples_toIntervalMillisecond, introduced_in_toIntervalMillisecond, category_toIntervalMillisecond};
+    FunctionDocumentation documentation_toIntervalMillisecond = {description_toIntervalMillisecond, syntax_toIntervalMillisecond, arguments_toIntervalMillisecond, {}, returned_value_toIntervalMillisecond, examples_toIntervalMillisecond, introduced_in_toIntervalMillisecond, category_toIntervalMillisecond};
 
     /// toIntervalWeek documentation
     FunctionDocumentation::Description description_toIntervalWeek = R"(
-Returns an interval of `n` weeks of data type [`IntervalWeek`](../../sql-reference/data-types/special-data-types/interval.md).
+Returns an interval of `n` weeks of data type [`IntervalWeek`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalWeek = "toIntervalWeek(n)";
     FunctionDocumentation::Arguments arguments_toIntervalWeek = {
@@ -4826,11 +4887,11 @@ SELECT date + interval_to_week AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalWeek = {1, 1};
     FunctionDocumentation::Category category_toIntervalWeek = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalWeek = {description_toIntervalWeek, syntax_toIntervalWeek, arguments_toIntervalWeek, returned_value_toIntervalWeek, examples_toIntervalWeek, introduced_in_toIntervalWeek, category_toIntervalWeek};
+    FunctionDocumentation documentation_toIntervalWeek = {description_toIntervalWeek, syntax_toIntervalWeek, arguments_toIntervalWeek, {}, returned_value_toIntervalWeek, examples_toIntervalWeek, introduced_in_toIntervalWeek, category_toIntervalWeek};
 
     /// toIntervalMonth documentation
     FunctionDocumentation::Description description_toIntervalMonth = R"(
-Returns an interval of `n` months of data type [`IntervalMonth`](../../sql-reference/data-types/special-data-types/interval.md).
+Returns an interval of `n` months of data type [`IntervalMonth`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalMonth = "toIntervalMonth(n)";
     FunctionDocumentation::Arguments arguments_toIntervalMonth = {
@@ -4855,11 +4916,11 @@ SELECT date + interval_to_month AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalMonth = {1, 1};
     FunctionDocumentation::Category category_toIntervalMonth = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalMonth = {description_toIntervalMonth, syntax_toIntervalMonth, arguments_toIntervalMonth, returned_value_toIntervalMonth, examples_toIntervalMonth, introduced_in_toIntervalMonth, category_toIntervalMonth};
+    FunctionDocumentation documentation_toIntervalMonth = {description_toIntervalMonth, syntax_toIntervalMonth, arguments_toIntervalMonth, {}, returned_value_toIntervalMonth, examples_toIntervalMonth, introduced_in_toIntervalMonth, category_toIntervalMonth};
 
     /// toIntervalQuarter documentation
     FunctionDocumentation::Description description_toIntervalQuarter = R"(
-Returns an interval of `n` quarters of data type [`IntervalQuarter`](../../sql-reference/data-types/special-data-types/interval.md).
+Returns an interval of `n` quarters of data type [`IntervalQuarter`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalQuarter = "toIntervalQuarter(n)";
     FunctionDocumentation::Arguments arguments_toIntervalQuarter = {
@@ -4884,11 +4945,11 @@ SELECT date + interval_to_quarter AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalQuarter = {1, 1};
     FunctionDocumentation::Category category_toIntervalQuarter = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalQuarter = {description_toIntervalQuarter, syntax_toIntervalQuarter, arguments_toIntervalQuarter, returned_value_toIntervalQuarter, examples_toIntervalQuarter, introduced_in_toIntervalQuarter, category_toIntervalQuarter};
+    FunctionDocumentation documentation_toIntervalQuarter = {description_toIntervalQuarter, syntax_toIntervalQuarter, arguments_toIntervalQuarter, {}, returned_value_toIntervalQuarter, examples_toIntervalQuarter, introduced_in_toIntervalQuarter, category_toIntervalQuarter};
 
     /// toIntervalYear documentation
     FunctionDocumentation::Description description_toIntervalYear = R"(
-Returns an interval of `n` years of data type [`IntervalYear`](../../sql-reference/data-types/special-data-types/interval.md).
+Returns an interval of `n` years of data type [`IntervalYear`](/reference/data-types/special-data-types/interval).
     )";
     FunctionDocumentation::Syntax syntax_toIntervalYear = "toIntervalYear(n)";
     FunctionDocumentation::Arguments arguments_toIntervalYear = {
@@ -4913,7 +4974,7 @@ SELECT date + interval_to_year AS result
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalYear = {1, 1};
     FunctionDocumentation::Category category_toIntervalYear = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIntervalYear = {description_toIntervalYear, syntax_toIntervalYear, arguments_toIntervalYear, returned_value_toIntervalYear, examples_toIntervalYear, introduced_in_toIntervalYear, category_toIntervalYear};
+    FunctionDocumentation documentation_toIntervalYear = {description_toIntervalYear, syntax_toIntervalYear, arguments_toIntervalYear, {}, returned_value_toIntervalYear, examples_toIntervalYear, introduced_in_toIntervalYear, category_toIntervalYear};
 
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalNanosecond, detail::PositiveMonotonicity>>(documentation_toIntervalNanosecond);
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalMicrosecond, detail::PositiveMonotonicity>>(documentation_toIntervalMicrosecond);

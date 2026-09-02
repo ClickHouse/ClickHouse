@@ -5,7 +5,10 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -71,7 +74,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, "QueryPullPipeEx");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PULLING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -87,6 +90,12 @@ static void threadFunction(
     data.is_finished = true;
 }
 
+
+void PullingAsyncPipelineExecutor::setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_)
+{
+    cancel_callback = std::move(callback);
+    interactive_timeout_ms = interactive_timeout_ms_;
+}
 
 bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 {
@@ -119,7 +128,17 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         return false;
     }
 
-    chunk = lazy_format->getChunk(milliseconds);
+    /// When a cancel callback is set and no explicit timeout was requested, use the interactive timeout
+    /// to periodically poll the callback (e.g. to check for Cancel packets during scalar subquery execution).
+    uint64_t effective_timeout = milliseconds;
+    if (cancel_callback && milliseconds == 0)
+        effective_timeout = interactive_timeout_ms;
+
+    chunk = lazy_format->getChunk(effective_timeout);
+
+    if (cancel_callback)
+        cancel_callback();
+
     data->rethrowExceptionIfHas();
     return true;
 }
