@@ -699,9 +699,10 @@ constexpr size_t base58DecodeWords(size_t body)
     return (body * 733 / 1000 + 2 + sizeof(UInt32) - 1) / sizeof(UInt32);
 }
 
-/// The words live in the destination buffer, except for bodies so short that they would not fit the
-/// documented output bound (2n+1 encode, n decode) - so this choice is a correctness requirement, not
-/// an optimisation. The constants are the largest body that still fits, pinned on both sides below.
+/// The words live in the destination buffer when they fit its documented bound (2n+1 encode, n decode).
+/// The one body reaching here that does not is an 11-character decode that fell through the short path:
+/// it needs 12 word bytes where `dst` holds 11, so a separate array is required, not merely preferred.
+/// The cutoffs below are not that point; they are the largest bodies whose word count still fits 64.
 constexpr size_t BASE58_STACK_WORDS = 64;
 constexpr size_t BASE58_ENCODE_STACK_MAX_BODY = 233;
 constexpr size_t BASE58_DECODE_STACK_MAX_BODY = 347;
