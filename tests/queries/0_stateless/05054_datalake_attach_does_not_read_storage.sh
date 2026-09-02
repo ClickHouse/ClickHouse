@@ -20,7 +20,7 @@ MISSING="$CUR_DIR/data_delta_lake/${CLICKHOUSE_TEST_UNIQUE_NAME}_no_such_delta_t
 $CLICKHOUSE_LOCAL --multiquery "
 CREATE DATABASE d ENGINE = Memory;
 ATTACH TABLE d.t (x UInt64) ENGINE = DeltaLakeLocal('$MISSING');
-SELECT engine, total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE name = 't';
+SELECT engine, total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE database = 'd' AND name = 't';
 "
 
 # Reading the table still reports the failure.
