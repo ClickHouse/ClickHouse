@@ -58,6 +58,12 @@ public:
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
+    /// Rejects a `CHECK` expression that changes the number of rows. `CheckConstraintsTransform` reads the
+    /// constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked against
+    /// another row's value, or - when the column ends up shorter than the block - past the end of it.
+    /// Called from DDL only, so metadata stored before this check still loads.
+    void checkExpressionsPreserveRowCount() const;
+
     struct AtomId
     {
         size_t group_id;

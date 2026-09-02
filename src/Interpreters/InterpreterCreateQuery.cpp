@@ -789,7 +789,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
-    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context)
+    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context, bool validate)
 {
     ASTs constraints_data;
     const auto column_names_and_types = columns.getAllPhysical();
@@ -800,7 +800,13 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
             TreeRewriter(local_context).analyze(clone, column_names_and_types);
             constraints_data.push_back(constraint->clone());
         }
-    return ConstraintsDescription{constraints_data};
+
+    ConstraintsDescription result{constraints_data};
+
+    if (validate)
+        result.checkExpressionsPreserveRowCount();
+
+    return result;
 }
 
 
@@ -866,7 +872,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 properties.projections.add(std::move(projection));
             }
 
-        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+        properties.constraints = getConstraintsDescription(
+            create.columns_list->constraints, properties.columns, getContext(), /*validate=*/ mode <= LoadingStrictnessLevel::CREATE);
     }
     else if (!create.as_table.empty())
     {
@@ -1974,8 +1981,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// would be enforced with the session spelling in memory and with `toTimeWithFixedDate` after a
         /// reload, accepting and rejecting the same row on the two sides of a restart.
         if (create.columns_list)
-            properties.constraints
-                = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+            properties.constraints = getConstraintsDescription(
+                create.columns_list->constraints, properties.columns, getContext(), /*validate=*/ mode <= LoadingStrictnessLevel::CREATE);
     }
 
     DatabasePtr database;

@@ -13,6 +13,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Poco/String.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Core/Defines.h>
@@ -29,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 String ConstraintsDescription::toString() const
@@ -167,6 +169,40 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         }
     }
     return res;
+}
+
+namespace
+{
+
+/// `arrayJoin` (and its alias `unnest`) is the one function that changes the number of rows. The check is
+/// done on the AST rather than on the built expression, because a constraint that cannot be built at all
+/// (a subquery, a wrong arity) is only reported when a row is inserted, and building it here would move
+/// that report to the DDL.
+bool astContainsArrayJoin(const IAST & ast)
+{
+    if (const auto * function = ast.as<ASTFunction>())
+        if (function->name == "arrayJoin" || Poco::toLower(function->name) == "unnest")
+            return true;
+
+    for (const auto & child : ast.children)
+        if (astContainsArrayJoin(*child))
+            return true;
+
+    return false;
+}
+
+}
+
+void ConstraintsDescription::checkExpressionsPreserveRowCount() const
+{
+    for (const auto & constraint : constraints)
+    {
+        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
+        if (declaration.type == ASTConstraintDeclaration::Type::CHECK && declaration.expr
+            && astContainsArrayJoin(*declaration.expr))
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY, "CHECK constraint '{}' cannot contain array joins", declaration.name);
+    }
 }
 
 const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const
