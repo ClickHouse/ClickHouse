@@ -267,22 +267,16 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
         cast_type = removeNullable(cast_type);
     }
 
+    /// The cast above narrows without reporting loss, so `UInt64(256)` reaches the dictionary as
+    /// `UInt8(0)` and `Int8(-1)` as `UInt8(255)`, each of which can denote an element the constant is
+    /// not equal to. A constant that did not survive the cast equals no element.
+    if (!target_type->equals(*value_type_without_low_cardinality)
+        && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
+        return false;
+
     const auto & dictionary = low_cardinality_data.getDictionary();
 
-    auto find_in_dictionary = [&](std::string_view elem) -> std::optional<UInt64>
-    {
-        /// The default slot holds its value whether or not any row references it, and the cast above
-        /// narrows without reporting loss, so UInt64(256) reaches it as UInt8(0). Answering from that
-        /// slot requires the constant to have survived the cast; one that did not equals no element.
-        if (elem == dictionary.getNestedNotNullableColumn()->getDataAt(dictionary.getNestedTypeDefaultValueIndex())
-            && !target_type->equals(*value_type_without_low_cardinality)
-            && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
-            return {};
-
-        return dictionary.getOrFindValueIndex(elem);
-    };
-
-    if (auto maybe_index = find_in_dictionary(value->getDataAt(0)))
+    if (auto maybe_index = dictionary.getOrFindValueIndex(value->getDataAt(0)))
     {
         dictionary_index = *maybe_index;
         return true;
