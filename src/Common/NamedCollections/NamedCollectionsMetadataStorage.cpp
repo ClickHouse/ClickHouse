@@ -544,9 +544,11 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
             /// surface rather than dropping a collection that is present.
             if (storage->isReplicated() || storage->isEncrypted() || e.code() != ErrorCodes::SYNTAX_ERROR)
                 throw;
+            /// A parse error quotes the text it failed on, which here can be credentials, so
+            /// only the code is logged.
             LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),
-                "Skipping named collection '{}': failed to parse, {}",
-                collection_name, e.message());
+                "Skipping named collection '{}': metadata file failed to parse, error code {}",
+                collection_name, e.code());
             continue;
         }
     }
