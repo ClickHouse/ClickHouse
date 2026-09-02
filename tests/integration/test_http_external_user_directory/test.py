@@ -1,4 +1,5 @@
 import os
+import shlex
 
 import pytest
 
@@ -34,6 +35,26 @@ GOOD_PASSWORD = "good_password"
 
 def admin(query, **kwargs):
     return instance.query(query, user="admin_user", password="admin_password", **kwargs)
+
+
+def query4_local(query, user=None, password=None, nothrow=False):
+    # ADAPTATION (Task 8): node4's http directory restricts `networks` to `127.0.0.1/32`.
+    # `instance4.query` (the normal helper) runs `clickhouse-client` as a SEPARATE process
+    # on the test-runner host, connecting to node4 over the docker bridge network — node4
+    # sees that connection's address as the container's own docker-network IP, never
+    # `127.0.0.1`, so a query issued that way is always rejected by this networks policy
+    # regardless of credentials. To make a query actually originate from node4's own
+    # loopback (as the `networks` policy requires), run `clickhouse-client` INSIDE node4's
+    # container via `exec_in_container`, pointed at `--host 127.0.0.1`. stderr is
+    # redirected into stdout (`2>&1`) because `exec_in_container` with `nothrow=True`
+    # only returns stdout.
+    cmd = "/usr/bin/clickhouse client --host 127.0.0.1"
+    if user is not None:
+        cmd += f" --user {shlex.quote(user)}"
+    if password is not None:
+        cmd += f" --password {shlex.quote(password)}"
+    cmd += f" --query {shlex.quote(query)}"
+    return instance4.exec_in_container(["bash", "-c", cmd + " 2>&1"], nothrow=nothrow)
 
 
 def start_mock_server(node):
@@ -371,3 +392,187 @@ def test_role_attached_row_policy_and_profile_apply(started_cluster):
         password=GOOD_PASSWORD,
     ).strip()
     assert value == "1000"
+
+
+def test_404_falls_through_to_later_storage(started_cluster):
+    # On node3 the http directory is configured BEFORE users.xml. admin_user is unknown
+    # to the helper (404), so authentication must fall through to users.xml and succeed.
+    # Use a fresh admin credential name to make the mock-consulted assertion unambiguous.
+    assert (
+        instance3.query(
+            "SELECT currentUser()", user="admin_user", password="admin_password"
+        ).strip()
+        == "admin_user"
+    )
+    # Non-vacuity guard (Blocker 1): prove the http directory was actually consulted first
+    # and returned 404 — i.e. the mock saw admin_user. If users.xml preceded http, the mock
+    # would never see admin_user and this assertion fails.
+    seen = instance3.exec_in_container(
+        ["bash", "-c", "curl -s 'http://localhost:8000/seen?user=admin_user'"]
+    ).strip()
+    assert seen == "1", "http directory was not consulted before users.xml"
+
+
+def test_wrong_password_does_not_fall_through(started_cluster):
+    # On node3, shadowed_user is known to BOTH the helper (http directory, first) and
+    # users.xml (second, password xml_password). The helper answers 401 for xml_password,
+    # which must fail closed WITHOUT trying users.xml — the key no-fallback row of the matrix.
+    assert "Authentication failed" in instance3.query_and_get_error(
+        "SELECT 1", user="shadowed_user", password="xml_password"
+    )
+    # The helper's own password works through the http directory.
+    assert (
+        instance3.query(
+            "SELECT currentUser()", user="shadowed_user", password=GOOD_PASSWORD
+        ).strip()
+        == "shadowed_user"
+    )
+
+
+def test_default_profile_resolved_late_and_fail_closed(started_cluster):
+    admin4 = lambda q: instance4.query(q, user="admin_user", password="admin_password")
+    # node4's directory declares default_profile=sql_profile, which does not exist yet:
+    # the very first materialization must fail closed.
+    assert "Authentication failed" in query4_local(
+        "SELECT 1", user="aux_user", password=GOOD_PASSWORD, nothrow=True
+    )
+    # After the profile is created (in a SQL-driven storage, i.e. after this directory
+    # was constructed), materialization succeeds and the profile applies.
+    admin4(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS sql_profile SETTINGS max_rows_to_read = 12345"
+    )
+    value = query4_local(
+        "SELECT getSetting('max_rows_to_read')", user="aux_user", password=GOOD_PASSWORD
+    ).strip()
+    assert value == "12345"
+
+
+def test_networks_allow_localhost(started_cluster):
+    # node4's directory is restricted to `127.0.0.1/32`. `instance4.query` (the ordinary
+    # helper) issues `clickhouse-client` from the test-runner host over the docker bridge
+    # network, which node4 never sees as `127.0.0.1` — so this test must use
+    # `query4_local`, which runs `clickhouse-client` INSIDE node4's own container against
+    # its own loopback. The rejection path from a remote client is covered in Task 10
+    # (`test_networks_reject_remote_client`).
+    assert (
+        query4_local("SELECT 1", user="aux_user", password=GOOD_PASSWORD).strip() == "1"
+    )
+
+
+def test_response_settings_override_profile_value(started_cluster):
+    # ADR additional test 8: response settings are applied after profile initialization
+    # and override the profile-provided value (sql_profile sets max_rows_to_read=12345,
+    # the response returns 777). Requires sql_profile to exist — runs after
+    # test_default_profile_resolved_late_and_fail_closed created it; create it here
+    # too with IF NOT EXISTS to stay order-independent.
+    instance4.query(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS sql_profile SETTINGS max_rows_to_read = 12345",
+        user="admin_user",
+        password="admin_password",
+    )
+    value = query4_local(
+        "SELECT getSetting('max_rows_to_read')",
+        user="aux_override_user",
+        password=GOOD_PASSWORD,
+    ).strip()
+    assert value == "777"
+
+
+def test_helper_down_fails_closed(started_cluster):
+    # Infrastructure failure is fail-closed (never a fallthrough). Kill node4's mock
+    # server, authenticate, then restart the mock for later tests.
+    instance4.exec_in_container(
+        ["bash", "-c", "pkill -f http_auth_server.py"], user="root"
+    )
+    try:
+        assert "Authentication failed" in query4_local(
+            "SELECT 1", user="aux_user", password=GOOD_PASSWORD, nothrow=True
+        )
+    finally:
+        start_mock_server(instance4)
+
+
+def test_default_profile_dropped_and_recreated_for_cached_user(started_cluster):
+    # Regression for the cached-user default_profile blocker found in review: getOrCreateUser
+    # must re-resolve default_profile on every call, not just at first materialization, and
+    # fail closed for an ALREADY-CACHED user too. Sequence:
+    #   authenticate (cached, sees 12345) -> drop profile -> authenticate fails closed ->
+    #   recreate same name with a different value -> authenticate succeeds, sees the new value.
+    # This directly exercises the failure-matrix contract for a materialized user, which
+    # test_default_profile_resolved_late_and_fail_closed does not: that test only covers a
+    # missing profile before the FIRST materialization.
+    admin4 = lambda q: instance4.query(q, user="admin_user", password="admin_password")
+    admin4(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS sql_profile SETTINGS max_rows_to_read = 12345"
+    )
+    # Ensure aux_user is already cached under the current sql_profile UUID.
+    assert (
+        query4_local(
+            "SELECT getSetting('max_rows_to_read')",
+            user="aux_user",
+            password=GOOD_PASSWORD,
+        ).strip()
+        == "12345"
+    )
+
+    admin4("DROP SETTINGS PROFILE sql_profile")
+    # The cached user must fail closed, not silently keep authenticating on stale settings.
+    assert "Authentication failed" in query4_local(
+        "SELECT 1", user="aux_user", password=GOOD_PASSWORD, nothrow=True
+    )
+
+    # Recreate under the same name but a new UUID and a different value.
+    admin4("CREATE SETTINGS PROFILE sql_profile SETTINGS max_rows_to_read = 54321")
+    assert (
+        query4_local(
+            "SELECT getSetting('max_rows_to_read')",
+            user="aux_user",
+            password=GOOD_PASSWORD,
+        ).strip()
+        == "54321"
+    )
+    # This is the last test in this file that depends on sql_profile's specific value;
+    # later tests only use sql_profile's existence, not its value.
+
+
+def test_response_settings_apply(started_cluster):
+    value = instance.query(
+        "SELECT getSetting('max_threads')",
+        user="profileclash_user",
+        password=GOOD_PASSWORD,
+    ).strip()
+    assert value == "7"
+
+
+def test_local_user_shadows_helper_user(started_cluster):
+    # On node (users.xml first), local_user exists in users.xml AND in the helper.
+    # The xml password works; the helper password does not, because users.xml
+    # finds the user and fails closed on a wrong password without falling through.
+    assert (
+        instance.query(
+            "SELECT currentUser()", user="local_user", password="local_password"
+        ).strip()
+        == "local_user"
+    )
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="local_user", password=GOOD_PASSWORD
+    )
+    assert (
+        admin("SELECT storage FROM system.users WHERE name = 'local_user'").strip()
+        == "users_xml"
+    )
+
+
+def test_server_errors_fail_closed(started_cluster):
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="err500_user", password=GOOD_PASSWORD
+    )
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="err429_user", password=GOOD_PASSWORD
+    )
+
+
+def test_totally_unknown_user_fails(started_cluster):
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="ghost_user", password=GOOD_PASSWORD
+    )
