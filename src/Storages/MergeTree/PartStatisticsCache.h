@@ -25,8 +25,8 @@ struct PartStatisticsWeightFunction
 extern template class CacheBase<UInt128, ColumnsStatistics, UInt128TrivialHash, PartStatisticsWeightFunction>;
 
 /** Cache of deserialized column statistics of data parts of MergeTree tables.
-  * Statistics of a part are immutable, so entries are keyed by the part location
-  * and invalidated when the part is removed.
+  * Statistics of a part are immutable, so entries are keyed by the part location plus the
+  * checksum of its contents and invalidated when the part is removed.
   */
 class PartStatisticsCache : public CacheBase<UInt128, ColumnsStatistics, UInt128TrivialHash, PartStatisticsWeightFunction>
 {
@@ -43,8 +43,8 @@ public:
 
     PartStatisticsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Calculate key from the part path.
-    static UInt128 hash(const String & part_path);
+    /// Calculate key from the part path and the total checksum of the part's files.
+    static UInt128 hash(const String & part_path, UInt128 content_checksum);
 
     MappedPtr get(const Key & key)
     {

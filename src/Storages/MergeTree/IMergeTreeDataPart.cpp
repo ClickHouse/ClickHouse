@@ -1427,7 +1427,12 @@ UInt128 IMergeTreeDataPart::getStatisticsCacheKey() const
 {
     /// Must use `getRelativePathOfActivePart` (not the current relative path), like the other
     /// part caches, so lookup and removal address the same entry after a rename.
-    return PartStatisticsCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    /// The path alone is not enough: a part directory can be reused with different bytes (e.g.
+    /// files replaced between DETACH and ATTACH), and the entry of the old part object is only
+    /// removed when that object is destroyed, which a running query can delay past the load of
+    /// the new one. The content checksum makes such an entry unreachable, exactly like in the
+    /// selectivity estimator cache key.
+    return PartStatisticsCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart(), checksums.getTotalChecksumUInt128());
 }
 
 std::shared_ptr<const ColumnsStatistics> IMergeTreeDataPart::loadStatisticsWithCache(PartStatisticsCache * cache, const NameSet & required_columns) const
