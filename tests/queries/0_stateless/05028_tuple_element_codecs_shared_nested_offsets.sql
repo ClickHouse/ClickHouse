@@ -1,5 +1,6 @@
 -- Tags: no-random-merge-tree-settings
--- no-random-merge-tree-settings: this test fixes the part format and checks the shared offsets codec in a Wide part.
+-- no-random-merge-tree-settings: this test fixes the part format, forces a vertical Wide merge,
+-- and checks the first-writer codec of a shared offsets stream.
 
 DROP TABLE IF EXISTS t_tuple_codec_shared_nested_wide;
 DROP TABLE IF EXISTS t_tuple_codec_shared_nested_compact;
@@ -11,7 +12,11 @@ CREATE TABLE t_tuple_codec_shared_nested_wide
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    enable_vertical_merge_algorithm = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 0,
+    vertical_merge_algorithm_min_columns_to_activate = 0;
 
 -- This is legal legacy metadata: the flattened Array columns have independent codecs even
 -- though both serializations reach the same n.size0 offsets stream.
@@ -48,10 +53,12 @@ SELECT count() = 1, groupUniqArray(part_type) = ['Wide']
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_tuple_codec_shared_nested_wide' AND active;
 
--- Schema order makes n.a the canonical first owner of n.size0.
+-- The value streams retain their independent codecs, while schema order makes n.a the first
+-- owner of the shared n.size0 stream.
 SELECT DISTINCT substream, mapKeys(codec_block_counts)
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_shared_nested_wide)
-WHERE substream = 'n.size0';
+WHERE substream IN ('n.a', 'n.b', 'n.size0')
+ORDER BY substream;
 
 CREATE TABLE t_tuple_codec_shared_nested_compact
 (

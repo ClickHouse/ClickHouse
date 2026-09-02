@@ -22,12 +22,6 @@ struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 using WrittenOffsetSubstreams = std::set<std::string>;
-struct WrittenStreamInfo
-{
-    UInt64 codec_hash;
-    String full_name;
-};
-using WrittenStreamCodecs = std::unordered_map<String, WrittenStreamInfo>;
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
 
@@ -135,7 +129,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams,
-        WrittenStreamCodecs * written_stream_codecs);
+        WrittenOffsetSubstreams * written_offset_substreams);
 
 }

@@ -36,8 +36,7 @@ public:
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_,
-        WrittenOffsetSubstreams * written_offset_substreams_,
-        WrittenStreamCodecs * written_stream_codecs_);
+        WrittenOffsetSubstreams * written_offset_substreams_);
 
     void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
@@ -129,8 +128,6 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
-    std::unordered_map<String, UInt64> stream_codec_hashes;
-    NameSet shared_offset_streams;
 
     /// Some long column names may be replaced to hashes.
     /// Below are mapping from original stream name to actual

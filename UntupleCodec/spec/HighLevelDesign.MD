@@ -53,7 +53,6 @@ Validation must reject:
 - Paths that do not resolve to a tuple element.
 - Duplicate declarations for the same logical path.
 - Codec declarations incompatible with the selected element type.
-- Ambiguous or conflicting codec choices for one independent value stream; intentionally shared structural streams retain their legacy canonical owner.
 
 ## Codec Validation
 
@@ -104,7 +103,7 @@ Apply the same resolution in:
 
 Partial writers must combine `NameAndTypePair::getNameInStorage` with the serialization path so that resolution always starts from the owning top-level `ColumnDescription`.
 
-If multiple logical paths resolve to the same independent value stream, their effective codecs must agree. Intentionally shared structural streams are the compatibility exception: flattened `Nested` siblings may legally have different codecs while sharing offsets, so deterministic schema order selects the first/canonical owner as legacy writers did.
+If multiple logical paths resolve to the same physical stream, writers preserve the existing MergeTree rule: the first writer that creates the stream owns its codec and later callbacks reuse it without resolving another codec. Flattened `Nested` siblings are the important compatibility case: they may legally have different column codecs while sharing offsets, so deterministic physical-column order selects the codec for those offsets. Ordinary value streams still receive independent codecs because their physical stream names are distinct.
 
 ## Defaults and Recompression
 

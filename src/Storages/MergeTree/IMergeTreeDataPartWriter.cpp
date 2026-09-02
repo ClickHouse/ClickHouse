@@ -202,8 +202,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams,
-        WrittenStreamCodecs * written_stream_codecs);
+        WrittenOffsetSubstreams * written_offset_substreams);
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,
@@ -221,8 +220,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams,
-        WrittenStreamCodecs * written_stream_codecs)
+        WrittenOffsetSubstreams * written_offset_substreams)
 {
     if (part_type == MergeTreeDataPartType::Compact)
         return createMergeTreeDataPartCompactWriter(
@@ -255,8 +253,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             default_codec_,
             writer_settings,
             std::move(computed_index_granularity),
-            written_offset_substreams,
-            written_stream_codecs);
+            written_offset_substreams);
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
 }
 

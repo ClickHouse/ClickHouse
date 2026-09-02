@@ -62,8 +62,7 @@ public:
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_,
-        WrittenOffsetSubstreams * written_offset_substreams_,
-        WrittenStreamCodecs * written_stream_codecs_);
+        WrittenOffsetSubstreams * written_offset_substreams_);
 
     void cancel() noexcept override;
 
@@ -167,7 +166,6 @@ protected:
     /// Substreams that should be ignored by this writer, due to they had been written by other writer (as part of vertical merge)
     /// This is to correctly write Nested elements column-by-column.
     WrittenOffsetSubstreams * written_offset_substreams;
-    WrittenStreamCodecs * written_stream_codecs;
 
     /// Data is already written up to this mark.
     size_t current_mark = 0;

@@ -2747,7 +2747,6 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            static_cast<WrittenStreamCodecs *>(nullptr),
             /*try_adaptive_codec=*/ !is_explicit_recompression);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
@@ -3113,7 +3112,6 @@ private:
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
-                static_cast<WrittenStreamCodecs *>(nullptr),
                 /*try_adaptive_codec=*/ !is_explicit_recompression);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's

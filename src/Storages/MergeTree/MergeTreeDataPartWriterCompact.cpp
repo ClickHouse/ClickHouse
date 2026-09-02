@@ -48,7 +48,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, std::move(index_granularity_),
-        static_cast<WrittenOffsetSubstreams *>(nullptr), static_cast<WrittenStreamCodecs *>(nullptr))
+        static_cast<WrittenOffsetSubstreams *>(nullptr))
     , plain_file(getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
@@ -84,13 +84,9 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         chassert(!substream_path.empty());
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
-        const bool is_offsets = substream_path.back().type == ISerialization::Substream::ArraySizes;
-
-        /// Flattened Nested columns intentionally share their offsets stream. Preserve the legacy
-        /// deterministic first-owner rule before resolving the sibling's codec. Other duplicate streams,
-        /// in particular value streams, continue through the conflict check below. The dedicated set
-        /// ensures that both callbacks describe ArraySizes rather than trusting only the stream name.
-        if (is_offsets && shared_offset_streams.contains(stream_name))
+        /// Some logical columns intentionally share a physical stream. Preserve the established rule:
+        /// the first writer owns its codec, so do not resolve a second codec for an existing stream.
+        if (compressed_streams.contains(stream_name))
             return;
 
         const auto resolved = codec_policy.resolve(getCodecPathForStream(name_and_type, name_and_type.getTypeInStorage(), substream_path), default_codec_desc);
@@ -108,12 +104,6 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             compression_codec = CompressionCodecFactory::instance().get(resolved.ast, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
-        if (compressed_streams.contains(stream_name))
-        {
-            if (stream_codec_hashes.at(stream_name) != codec_id)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Conflicting codecs resolve to shared stream {}", stream_name);
-            return;
-        }
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
         /// object, so they must not be shared between streams. Make the key unique per stream so that
         /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
@@ -141,9 +131,6 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         /// lossy codec is a genuine float data stream that must keep it - in particular each element of a
         /// pure-float `Tuple`.
         compressed_streams.emplace(stream_name, it->second);
-        stream_codec_hashes.emplace(stream_name, compression_codec->getHash());
-        if (is_offsets)
-            shared_offset_streams.emplace(stream_name);
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;

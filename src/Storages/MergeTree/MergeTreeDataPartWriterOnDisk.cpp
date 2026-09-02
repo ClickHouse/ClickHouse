@@ -59,8 +59,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     MergeTreeIndexGranularityPtr index_granularity_,
-    WrittenOffsetSubstreams * written_offset_substreams_,
-    WrittenStreamCodecs * written_stream_codecs_)
+    WrittenOffsetSubstreams * written_offset_substreams_)
     : IMergeTreeDataPartWriter(
         data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
         storage_settings_, columns_list_, metadata_snapshot_, settings_, std::move(index_granularity_))
@@ -70,7 +69,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , compute_granularity(index_granularity->empty())
     , compress_primary_key(settings.compress_primary_key)
     , written_offset_substreams(written_offset_substreams_)
-    , written_stream_codecs(written_stream_codecs_)
     , execution_stats(skip_indices.size())
     , log(getLogger(logger_name_ + " (DataPartWriter)"))
 {

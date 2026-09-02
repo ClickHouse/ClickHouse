@@ -331,21 +331,20 @@ SETTINGS
 
 Create Wide and Compact `MergeTree` tables with `n Nested(a UInt64, b String)`, then use the longstanding root-only ALTER syntax to assign `CODEC(ZSTD(3))` to `n.a` and `CODEC(LZ4HC(4))` to `n.b`. These are separate flattened Array columns, but both reach the structural stream `n.size0`.
 
-For each part format, stop merges, insert two parts, verify their type and contents, restart merges, and run `OPTIMIZE FINAL`. Inserts and merges must succeed. In the Wide result, inspect `n.size0` with `mergeTreeCodecBlockCounts` and assert `ZSTD(3)`: schema order makes `n.a` the deterministic canonical first owner. Compact parts cannot attribute blocks to physical substreams, so successful creation and merge plus content checks cover that writer path.
+For each part format, stop merges, insert two parts, verify their type and contents, restart merges, and run `OPTIMIZE FINAL`. Inserts and merges must succeed. Force the Wide merge to use the vertical algorithm so the test also covers ownership across separate column writers. In the Wide result, inspect `n.size0` with `mergeTreeCodecBlockCounts` and assert `ZSTD(3)`: schema order makes `n.a` the deterministic first owner. Compact parts cannot attribute blocks to physical substreams, so successful creation and merge plus content checks cover that writer path.
 
-This compatibility exception is specific to intentionally shared structural offsets. Existing conflict coverage for duplicate independent value streams must remain effective.
+This verifies the established writer rule for duplicate physical streams: the first-created stream owns its codec and later callbacks reuse it without resolving a conflicting codec. Flattened `Nested` offsets are the concrete compatibility case; the value streams of `n.a` and `n.b` remain distinct and keep their respective codecs.
 
 ## Follow-up Coverage Outside the Initial Stateless Set
 
 The following remain required by the broader low-level design but should be added when their implementation is present and stable:
 
-- vertical merges forced by deterministic merge settings, including canonical ownership of shared offset streams;
 - `RECOMPRESS` TTL with explicit siblings and `CODEC(Default)` siblings;
 - adaptive default selection per tuple element;
 - replicated database metadata synchronization and mixed-version feature gating;
 - backup and restore;
 - path-aware `Quantized` serialization after the current `NOT_IMPLEMENTED` restriction is removed;
-- shared streams across `Dynamic` and `JSON` layouts after their structural ownership rules are classified;
+- shared streams across `Dynamic` and `JSON` layouts after tuple-element codec paths are supported there;
 - storage engines other than `MergeTree` once they support the resolver rather than rejecting the policy.
 
 These follow-ups must get separate descriptive stateless files instead of expanding the core files indefinitely.
