@@ -239,6 +239,40 @@ REQUIRED_GLOBAL_SCRIPTS = (
     "/_site/customizations/navbar-cta.js",
     "/_site/customizations/cloud-sidebar-ad.js",
 )
+HOMEPAGE_INTEGRATIONS_COPY = {
+    "ar": (
+        "التكاملات",
+        "أكثر من 100 تكامل لربط الأدوات والخدمات التي تفضّلها مع ClickHouse.",
+    ),
+    "es": (
+        "Integraciones",
+        "Más de 100 integraciones para conectar tus herramientas y servicios favoritos con ClickHouse.",
+    ),
+    "fr": (
+        "Intégrations",
+        "Plus de 100 intégrations pour connecter à ClickHouse les outils et services que vous aimez.",
+    ),
+    "ja": (
+        "インテグレーション",
+        "100 以上のインテグレーションで、お気に入りのツールやサービスを ClickHouse に接続できます。",
+    ),
+    "ko": (
+        "통합",
+        "100개 이상의 통합으로 자주 사용하는 도구와 서비스를 ClickHouse에 연결하세요.",
+    ),
+    "pt-BR": (
+        "Integrações",
+        "Mais de 100 integrações para conectar suas ferramentas e serviços favoritos ao ClickHouse.",
+    ),
+    "ru": (
+        "Интеграции",
+        "Более 100 интеграций для подключения любимых инструментов и сервисов к ClickHouse.",
+    ),
+    "zh": (
+        "集成",
+        "通过 100 多种集成，将您喜爱的工具和服务连接到 ClickHouse。",
+    ),
+}
 
 
 def build_targets(docs_root):
@@ -447,6 +481,30 @@ def check_global_script_registrations(docs_root):
     return violations
 
 
+def check_localized_homepage_integrations_copy(docs_root):
+    """Validate the localized Integrations banner heading and description."""
+    violations = []
+    for locale, (heading, description) in HOMEPAGE_INTEGRATIONS_COPY.items():
+        path = os.path.join(docs_root, locale, "index.mdx")
+        source = open(path, encoding="utf-8", errors="replace").read()
+        rel = os.path.relpath(path, docs_root)
+        markers = {
+            "heading": f">{heading}</h3>",
+            "description": f">{description}</span>",
+        }
+        for field, marker in markers.items():
+            if source.count(marker) != 1:
+                violations.append(
+                    (
+                        rel,
+                        f"{locale}.{field}",
+                        "stale-homepage-integrations-copy",
+                        heading if field == "heading" else description,
+                    )
+                )
+    return violations
+
+
 def check_sidebar_ad_localization(docs_root):
     """Validate attributed, localized sidebar advert behavior."""
     path = os.path.join(
@@ -522,6 +580,7 @@ def main(argv=None):
     violations += check_localized_explorer_copy(docs_root)
     violations += check_navbar_sign_in_labels(docs_root)
     violations += check_global_script_registrations(docs_root)
+    violations += check_localized_homepage_integrations_copy(docs_root)
     violations += check_sidebar_ad_localization(docs_root)
     # Entries are (file, path or marker, kind, suggestion).
     fixed = 0
