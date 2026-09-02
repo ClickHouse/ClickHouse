@@ -17,24 +17,6 @@ namespace DB
 ISlotLease * getCurrentCPULease();
 void setCurrentCPULease(ISlotLease * lease);
 
-/// RAII: publishes `lease` as the current thread's CPU lease for the enclosing scope and restores
-/// the previous value on exit. Installed once around a worker thread's execution loop.
-class CurrentCPULeaseScope
-{
-public:
-    explicit CurrentCPULeaseScope(ISlotLease * lease)
-        : previous(getCurrentCPULease())
-    {
-        setCurrentCPULease(lease);
-    }
-    ~CurrentCPULeaseScope() { setCurrentCPULease(previous); }
-    CurrentCPULeaseScope(const CurrentCPULeaseScope &) = delete;
-    CurrentCPULeaseScope & operator=(const CurrentCPULeaseScope &) = delete;
-
-private:
-    ISlotLease * const previous;
-};
-
 /// RAII: parks the current thread's CPU lease (if any) for a non-CPU wait — blocking I/O, or an
 /// idle worker sleeping while there is no task — and unparks it on scope exit. Nesting-safe: if
 /// several guards are active on one thread, only the outermost actually parks and unparks.

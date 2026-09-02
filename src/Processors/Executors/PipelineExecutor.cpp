@@ -61,6 +61,14 @@ struct WorkloadResources
     MemoryReservation * reservation;
     MemoryTracker * tracker;
 
+    // CurrentCPULease publication: this thread's lease is published as the current CPU lease for
+    // the lifetime of this object, so blocking I/O deep in a processor's work() and the executor's
+    // idle wait can park it via CPULeaseParkGuard. `prev_cpu_lease` restores any outer publication
+    // (a nested pipeline executor on the same thread); `publishes_lease` marks the single instance
+    // that owns the publication (transferred by the move constructor so the moved-from is inert).
+    ISlotLease * prev_cpu_lease = nullptr;
+    bool publishes_lease = false;
+
     WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status)
         : lease(dynamic_cast<ISlotLease*>(cpu_slot))
         , reservation(status ? status->getMemoryReservation() : nullptr)
@@ -68,12 +76,32 @@ struct WorkloadResources
     {
         if (lease)
         {
+            // Runs on the worker thread that will execute the pipeline (same contract as
+            // startConsumption, which must be called from that thread).
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
+            prev_cpu_lease = getCurrentCPULease();
+            setCurrentCPULease(lease);
+            publishes_lease = true;
         }
     }
 
-    WorkloadResources(WorkloadResources && other) = default;
+    WorkloadResources(WorkloadResources && other) noexcept
+        : lease(other.lease)
+        , last_renew_ns(other.last_renew_ns)
+        , reservation(other.reservation)
+        , tracker(other.tracker)
+        , prev_cpu_lease(other.prev_cpu_lease)
+        , publishes_lease(other.publishes_lease)
+    {
+        other.publishes_lease = false; // the moved-to instance now owns the publication
+    }
+
+    ~WorkloadResources()
+    {
+        if (publishes_lease)
+            setCurrentCPULease(prev_cpu_lease);
+    }
 
     bool isCPULeaseRenewNeeded()
     {
@@ -373,11 +401,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 #endif
 
     WorkloadResources resources(std::move(resources_));
-
-    /// Publish this thread's CPU lease so blocking I/O deep in a processor's `work()` and the
-    /// executor's idle wait can park it (release the CPU slot while not using CPU) via
-    /// `CPULeaseParkGuard`. No-op when there is no lease (concurrency-control / non-lease paths).
-    CurrentCPULeaseScope cpu_lease_scope(resources.lease);
 
     auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;

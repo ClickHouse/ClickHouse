@@ -40,8 +40,8 @@ namespace ProfileEvents
     extern const Event ConcurrencyControlPreemptions;
     extern const Event ConcurrencyControlUpscales;
     extern const Event ConcurrencyControlDownscales;
-    extern const Event CPULeaseParks;
-    extern const Event CPULeaseUnparks;
+    extern const Event ConcurrencyControlParks;
+    extern const Event ConcurrencyControlUnparks;
 }
 
 namespace CurrentMetrics
@@ -49,7 +49,7 @@ namespace CurrentMetrics
     extern const Metric ConcurrencyControlScheduled;
     extern const Metric ConcurrencyControlAcquired;
     extern const Metric ConcurrencyControlPreempted;
-    extern const Metric CPULeaseParked;
+    extern const Metric ConcurrencyControlParked;
 }
 
 namespace DB
@@ -217,7 +217,7 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , requests(this, max_threads, master_link_, worker_link_)
     , acquired_increment(CurrentMetrics::ConcurrencyControlAcquired, 0)
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
-    , parked_increment(CurrentMetrics::CPULeaseParked, 0)
+    , parked_increment(CurrentMetrics::ConcurrencyControlParked, 0)
     , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
 {
     // initial_max_slots_ == 0 is the eager default: request all max_threads up front.
@@ -431,7 +431,7 @@ void CPULeaseAllocation::parkLease(Lease & lease)
     if (!threads.isRunning(thread_num))
         return;
 
-    ProfileEvents::increment(ProfileEvents::CPULeaseParks);
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlParks);
     parked_increment.add(1);
     acquired_increment.sub(1); // no longer an acquired running slot (mirrors renew() preemption)
 
@@ -470,6 +470,19 @@ void CPULeaseAllocation::parkLease(Lease & lease)
     // preemption's `on_preempt`): the parked thread keeps its task and its executor slot, and the
     // freed scheduler unit is handed to whoever is waiting in the resource queue by the scheduler
     // itself. `total_slots`/finish-detection in the executor are unaffected.
+
+    // Trace the park event. Paired with the CPU_LEASE_UNPARK event by utils/trace-visualizer to
+    // show the parked interval (the CPU-scheduling view), same as PREEMPTION.
+    if (settings.trace_cpu_scheduling)
+    {
+        OpenTelemetry::SpanHolder park_span("CPU_LEASE_PARK");
+        park_span.addAttribute("workload", settings.workload);
+        park_span.addAttribute("lease_id", lease_id);
+        park_span.addAttribute("thread_number", thread_num);
+        park_span.addAttribute("allocated", allocated);
+        park_span.addAttribute("running", threads.running_count);
+        park_span.addAttribute("parked", parked_count);
+    }
     LOG_EVENT(K);
 }
 
@@ -483,7 +496,7 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
     if (!threads.parked[thread_num])
         return;
 
-    ProfileEvents::increment(ProfileEvents::CPULeaseUnparks);
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlUnparks);
     parked_increment.sub(1);
     --parked_count;
 
@@ -499,6 +512,19 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
     else
         threads.last_running = std::max(threads.last_running, thread_num);
     acquired_increment.add(1);
+
+    // Trace the unpark event (pairs with CPU_LEASE_PARK in utils/trace-visualizer). Emitted on
+    // both the normal and teardown paths so every park has a matching unpark.
+    if (settings.trace_cpu_scheduling)
+    {
+        OpenTelemetry::SpanHolder unpark_span("CPU_LEASE_UNPARK");
+        unpark_span.addAttribute("workload", settings.workload);
+        unpark_span.addAttribute("lease_id", lease_id);
+        unpark_span.addAttribute("thread_number", thread_num);
+        unpark_span.addAttribute("allocated", allocated);
+        unpark_span.addAttribute("running", threads.running_count);
+        unpark_span.addAttribute("parked", parked_count);
+    }
 
     // Tearing down: do not re-request; the thread stops at its next renew().
     if (shutdown)
