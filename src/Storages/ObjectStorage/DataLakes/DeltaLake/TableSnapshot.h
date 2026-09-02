@@ -208,6 +208,11 @@ private:
     /// snapshot load (for example, one stuck on an object store which never answers).
     static void waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log);
 
+    /// Marks a load as given up by every waiter (counted in DeltaLakeSnapshotLoadsStuck until
+    /// the worker returns). For a shared load this is called under `mutex`, together with the
+    /// waiter unregistration, so that `given_up` in initOrUpdateSnapshot never sees a half state.
+    static void markAbandoned(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log);
+
     /// Convenience for a single waiter: start, wait (interruptibly) and take the result.
     /// Every `KernelSnapshotState` construction must go through this or the two helpers
     /// above, so that no code path blocks in the kernel without a cancellation point.

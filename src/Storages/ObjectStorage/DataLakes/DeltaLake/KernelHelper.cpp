@@ -144,8 +144,13 @@ public:
         /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
         /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
         /// snapshot would keep returning the original session.
-        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
+        const auto client = object_storage->getS3StorageClient();
+        return fingerprintOf(client->getCredentials());
+    }
 
+    template <typename Credentials>
+    static DB::UInt128 fingerprintOf(const Credentials & credentials)
+    {
         SipHash hash;
         hash.update(credentials.GetAWSAccessKeyId());
         hash.update(credentials.GetAWSSecretKey());
@@ -168,10 +173,11 @@ public:
 
     ffi::EngineBuilder * createBuilder() const override
     {
-        return createBuilderWithOptions(KernelClientOptions::fromCurrentQuery());
+        DB::UInt128 credentials_fingerprint;
+        return createBuilderWithOptions(KernelClientOptions::fromCurrentQuery(), credentials_fingerprint);
     }
 
-    ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions & options) const override
+    ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions & options, DB::UInt128 & credentials_fingerprint) const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
@@ -185,8 +191,12 @@ public:
             setBuilderOption(builder, name, value);
         };
 
-        /// Read credentials from the *current* client — see `getCredentialsFingerprint`.
-        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
+        /// One snapshot of the live client for both the builder and the fingerprint: the client
+        /// may be swapped (applyNewSettings, a credentials refresh) between two reads, and the
+        /// fingerprint must describe the credentials the engine is actually built with.
+        const auto client = object_storage->getS3StorageClient();
+        const auto & credentials = client->getCredentials();
+        credentials_fingerprint = fingerprintOf(credentials);
         auto access_key_id = credentials.GetAWSAccessKeyId();
         auto secret_access_key = credentials.GetAWSSecretKey();
         auto token = credentials.GetSessionToken();

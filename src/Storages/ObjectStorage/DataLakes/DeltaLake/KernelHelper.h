@@ -64,9 +64,15 @@ public:
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
 
-    /// Same as createBuilder(), with client options captured on the query thread. The default
-    /// ignores them; helpers whose client depends on query settings override it.
-    virtual ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions &) const { return createBuilder(); }
+    /// Same as createBuilder(), with client options captured on the query thread, and reporting
+    /// the fingerprint of the very credentials the builder was filled with (a helper's client
+    /// may be swapped at any time, so the two must come from one snapshot of it). The default
+    /// ignores the options; helpers whose client depends on query settings override it.
+    virtual ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions &, DB::UInt128 & credentials_fingerprint) const
+    {
+        credentials_fingerprint = getCredentialsFingerprint();
+        return createBuilder();
+    }
 
     /// Hash of current credentials; override for providers with rotating sessions.
     virtual DB::UInt128 getCredentialsFingerprint() const { return {}; }

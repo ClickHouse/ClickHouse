@@ -1013,8 +1013,12 @@ void TableSnapshot::initOrUpdateSnapshot() const
         }
         catch (...)
         {
+            /// Unregistered — and, when this was the last waiter, marked as given up — in one
+            /// critical section with the `given_up` check above, so that neither transition can
+            /// be observed half-done by another query.
             lock.lock();
-            load->waiters.fetch_sub(1, std::memory_order_relaxed);
+            if (load->waiters.fetch_sub(1, std::memory_order_relaxed) == 1)
+                markAbandoned(*load, *helper, log);
             throw;
         }
         lock.lock();
@@ -1185,38 +1189,36 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKern
     Stopwatch watch;
     while (load.future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
     {
-        try
-        {
-            /// Throws if the query was killed or `max_execution_time` is exceeded.
-            if (process_list_element)
-                process_list_element->checkTimeLimit();
+        /// Throws if the query was killed or `max_execution_time` is exceeded. Giving up is
+        /// accounted for by the caller (see markAbandoned), under the snapshot's mutex.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
 
-            if (timeout_ms && watch.elapsedMilliseconds() >= timeout_ms)
-                throw DB::Exception(
-                    DB::ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Timeout exceeded while loading the snapshot of the Delta Lake table at {}: "
-                    "waited {} ms, delta_lake_snapshot_load_timeout_ms is {} ms",
-                    kernel_helper.getTableLocation(), watch.elapsedMilliseconds(), timeout_ms);
-        }
-        catch (...)
-        {
-            /// This waiter gives up, but the build keeps running for the other waiters (and for
-            /// later queries, which adopt it through `inflight_load`). The first waiter to give
-            /// up counts the load as stuck; the worker undoes that when the kernel call returns.
-            auto expected = InflightSnapshotLoad::State::Running;
-            if (load.state.compare_exchange_strong(expected, InflightSnapshotLoad::State::Abandoned))
-            {
-                CurrentMetrics::add(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
-                LOG_WARNING(
-                    log,
-                    "Giving up waiting for the delta-kernel snapshot load of the table at {} after {} ms; "
-                    "the worker thread keeps running until the kernel call returns "
-                    "(stuck loads: {}, snapshot-load workers are capped at {})",
-                    kernel_helper.getTableLocation(), watch.elapsedMilliseconds(),
-                    CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck), maxSnapshotLoadWorkers());
-            }
-            throw;
-        }
+        if (timeout_ms && watch.elapsedMilliseconds() >= timeout_ms)
+            throw DB::Exception(
+                DB::ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded while loading the snapshot of the Delta Lake table at {}: "
+                "waited {} ms, delta_lake_snapshot_load_timeout_ms is {} ms",
+                kernel_helper.getTableLocation(), watch.elapsedMilliseconds(), timeout_ms);
+    }
+}
+
+void TableSnapshot::markAbandoned(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log)
+{
+    /// The build keeps running: the worker delivers or drops its result when the kernel call
+    /// returns, and undoes the stuck-load count then. Callers which share the load call this
+    /// under `TableSnapshot::mutex`, in one critical section with the waiter count.
+    auto expected = InflightSnapshotLoad::State::Running;
+    if (load.state.compare_exchange_strong(expected, InflightSnapshotLoad::State::Abandoned))
+    {
+        CurrentMetrics::add(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
+        LOG_WARNING(
+            log,
+            "Giving up waiting for the delta-kernel snapshot load of the table at {}: no waiter is left; "
+            "the worker thread keeps running until the kernel call returns "
+            "(stuck loads: {}, snapshot-load workers are capped at {})",
+            kernel_helper.getTableLocation(),
+            CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck), maxSnapshotLoadWorkers());
     }
 }
 
@@ -1224,7 +1226,16 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::loadKernelSna
     KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
 {
     auto load = startKernelSnapshotLoad(kernel_helper, version_to_build, KernelClientOptions::fromCurrentQuery());
-    waitForSnapshotLoad(*load, *kernel_helper, log);
+    try
+    {
+        waitForSnapshotLoad(*load, *kernel_helper, log);
+    }
+    catch (...)
+    {
+        /// A private, unshared load: nobody else waits, so give it up right here.
+        markAbandoned(*load, *kernel_helper, log);
+        throw;
+    }
     /// Rethrows the build error, if any.
     return load->future.get();
 }
@@ -1247,9 +1258,9 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(
             "ExpiredToken: forced by delta_kernel_force_stale_token_error failpoint");
     });
 
-    /// Describes the credentials this engine is built with (the helper may rotate later).
-    credentials_fingerprint = helper_.getCredentialsFingerprint();
-    auto * engine_builder = helper_.createBuilderWithOptions(client_options_);
+    /// The fingerprint is taken inside the helper from the same client snapshot the builder is
+    /// filled with, so it describes the credentials this engine is actually built with.
+    auto * engine_builder = helper_.createBuilderWithOptions(client_options_, credentials_fingerprint);
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 
     using KernelSnapshotBuilder = KernelPointerWrapper<ffi::MutableFfiSnapshotBuilder, ffi::free_snapshot_builder>;
