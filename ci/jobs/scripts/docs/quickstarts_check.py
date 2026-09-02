@@ -64,6 +64,7 @@ ALLOWED_PRODUCTS = [
 SKIP_FILES = {"home.mdx", "README.md"}
 LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
 CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
+EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 42
 
 # The badge block the generator rewrites, same pattern as
 # update_quickstart_page in _site/scripts/update_quickstarts.py.
@@ -265,6 +266,13 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         r'<HeroCard\s+.*?galaxyEvent="docs\.home\.get-started".*?\n\s*/>',
         re.DOTALL,
     )
+    localized_link = re.compile(
+        r"localizeHref\((?P<quote>['\"])(?P<href>/[^'\"]+)"
+        r"(?P=quote)\)"
+    )
+    raw_internal_link = re.compile(
+        r"href(?:=\{?|:)\s*['\"](?P<href>/[^'\"]+)['\"]"
+    )
     cloud_link = 'localizeHref("/get-started/setup/cloud")'
     errors = []
     for locale in LOCALES:
@@ -276,6 +284,36 @@ def check_localized_homepage_links(docs_root: Path) -> list:
             errors.append(
                 f"{page.relative_to(docs_root)}: localizeHref must use "
                 f"{locale!r} as its server-rendering fallback"
+            )
+
+        localized_links = [
+            match.group("href") for match in localized_link.finditer(source)
+        ]
+        if len(localized_links) != EXPECTED_LOCALIZED_HOMEPAGE_LINKS:
+            errors.append(
+                f"{page.relative_to(docs_root)}: found {len(localized_links)} "
+                "homepage links routed through localizeHref; expected "
+                f"{EXPECTED_LOCALIZED_HOMEPAGE_LINKS}"
+            )
+        elif helper_match:
+            fallback = helper_match.group("locale")
+            invalid = [
+                href for href in localized_links
+                if not f"/{fallback}{href}".startswith(f"/{locale}/")
+            ]
+            if invalid:
+                errors.append(
+                    f"{page.relative_to(docs_root)}: server-rendered links "
+                    f"do not preserve {locale!r}: {', '.join(invalid)}"
+                )
+
+        raw_links = [
+            match.group("href") for match in raw_internal_link.finditer(source)
+        ]
+        if raw_links:
+            errors.append(
+                f"{page.relative_to(docs_root)}: raw internal homepage links "
+                "bypass localizeHref: " + ", ".join(raw_links)
             )
 
         expected = f"/{locale}/get-started/setup/cloud"
