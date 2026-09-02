@@ -1,5 +1,6 @@
 #include <Common/Base58.cpp> // NOLINT(bugprone-suspicious-include)
 
+#include <exception>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -384,7 +385,7 @@ TEST(Base58, GenericCancellationInterval)
 
     /// The callback is expected to throw once the query is cancelled or out of time, which is only
     /// useful if the throw leaves the conversion.
-    struct Cancelled
+    struct Cancelled : std::exception
     {
     };
     EXPECT_THROW(
