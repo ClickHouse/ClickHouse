@@ -148,12 +148,19 @@ public:
             /// sink before dispatching this wave; the pooled tasks account their thread-CPU time
             /// and worker identity to it.
             MergeWaveStats * wave_stats = current_merge_wave_stats;
+
+            /// The conversions go through a local runner that tracks its own tasks and waits only
+            /// for them, same as `parallelizeMergeMulti` below: prepare is called from
+            /// concurrently running bucket mergers sharing `thread_pool`, so a bare
+            /// `thread_pool.wait()` would block on unrelated jobs and steal their exceptions.
+            /// The runner switches its tasks to the enqueuer's thread group and names them, so the
+            /// manual `ThreadGroupSwitcher` of the detached-job pattern is not needed here.
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_CONVERT);
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, wave_stats, thread_group = getCurrentThreadGroup()]()
+                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, wave_stats]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
                     MergeWaveTaskTimer task_timer(wave_stats);
 
                     while (true)
@@ -169,15 +176,14 @@ public:
                     }
                 };
                 for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
-                    thread_pool.scheduleOrThrowOnError(thread_func);
-
-                thread_pool.wait();
+                    runner.enqueueAndKeepTrack(thread_func, Priority{});
             }
             catch (...)
             {
-                thread_pool.wait();
+                is_cancelled.store(true);
                 throw;
             }
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
     }
 
