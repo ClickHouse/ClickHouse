@@ -227,3 +227,147 @@ def test_two_simultaneous_sessions_keep_own_roles(started_cluster):
     assert http_roles("password_b", "sess_sim_b") == "role_b"
     # Session A still has role_a after session B was used.
     assert http_roles("password_a", "sess_sim_a") == "role_a"
+
+
+def test_prefix_delegation(started_cluster):
+    roles = instance.query(
+        "SELECT arrayJoin(currentRoles())", user="prefix_user", password=GOOD_PASSWORD
+    ).strip()
+    assert roles == "external_team1"
+
+
+def test_existing_but_disallowed_role_fails(started_cluster):
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="disallowed_role_user", password=GOOD_PASSWORD
+    )
+
+
+def test_one_allowed_plus_one_disallowed_fails_whole_attempt(started_cluster):
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="mixed_roles_user", password=GOOD_PASSWORD
+    )
+
+
+def test_unknown_role_fails(started_cluster):
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="unknown_role_user", password=GOOD_PASSWORD
+    )
+
+
+def test_malformed_response_fails(started_cluster):
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="malformed_json_user", password=GOOD_PASSWORD
+    )
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="bad_roles_type_user", password=GOOD_PASSWORD
+    )
+
+
+def test_valid_until(started_cluster):
+    # Expired (past) and malformed (negative) valid_until fail the attempt.
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="expired_user", password=GOOD_PASSWORD
+    )
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="negative_vu_user", password=GOOD_PASSWORD
+    )
+    # A future valid_until authenticates.
+    assert (
+        instance.query(
+            "SELECT 1", user="future_vu_user", password=GOOD_PASSWORD
+        ).strip()
+        == "1"
+    )
+
+
+def test_failed_auth_does_not_materialize_user(started_cluster):
+    instance.query_and_get_error(
+        "SELECT 1", user="unknown_role_user", password=GOOD_PASSWORD
+    )
+    assert (
+        admin(
+            "SELECT count() FROM system.users WHERE name = 'unknown_role_user'"
+        ).strip()
+        == "0"
+    )
+
+
+def test_ephemeral_user_cannot_get_persistent_grants(started_cluster):
+    # The entire session-scoped model rests on the storage being read-only:
+    # nobody can attach persistent grants or alter the ephemeral user.
+    instance.query(
+        "SELECT 1", user="http_user", password=GOOD_PASSWORD
+    )  # ensure materialized
+    for ddl in [
+        "GRANT reader TO http_user",
+        "GRANT SELECT ON default.protected TO http_user",
+        # DEFAULT ROLE NONE (rather than a named role) so this DDL reaches the
+        # storage's readonly write path instead of failing earlier with
+        # SET_NON_GRANTED_ROLE: InterpreterSetRoleQuery::updateUserSetDefaultRoles
+        # validates that a role is already granted to the user before any storage
+        # write is attempted, and the ephemeral http_user can never actually have
+        # a role granted (that's the very readonly behavior this test checks).
+        "ALTER USER http_user DEFAULT ROLE NONE",
+    ]:
+        error = instance.query_and_get_error(
+            ddl, user="admin_user", password="admin_password"
+        )
+        assert (
+            "readonly" in error.lower()
+            or "read-only" in error.lower()
+            or "ACCESS_STORAGE_READONLY" in error
+        )
+    assert admin("SHOW GRANTS FOR http_user").strip() == ""
+
+
+def test_empty_password_fails(started_cluster):
+    # Borrowed from the LDAP directory suite (test_authentication_fail): an empty
+    # password must fail like any wrong password, fail-closed.
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="http_user", password=""
+    )
+
+
+def test_role_dropped_and_recreated(started_cluster):
+    # Borrowed from the LDAP directory suite (test_role_mapping): roles are resolved
+    # by name at every authentication, not by a cached UUID. While the role does not
+    # exist, authentication fails closed (unlike LDAP, which skips the role); after
+    # re-creation, authentication succeeds with the new role entity.
+    admin("DROP ROLE external_team1")
+    try:
+        assert "Authentication failed" in instance.query_and_get_error(
+            "SELECT 1", user="prefix_user", password=GOOD_PASSWORD
+        )
+    finally:
+        admin("CREATE ROLE external_team1")
+    roles = instance.query(
+        "SELECT arrayJoin(currentRoles())", user="prefix_user", password=GOOD_PASSWORD
+    ).strip()
+    assert roles == "external_team1"
+
+
+def test_role_attached_row_policy_and_profile_apply(started_cluster):
+    admin(
+        "CREATE TABLE IF NOT EXISTS default.policed (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    admin("INSERT INTO default.policed VALUES (1), (2), (3)")
+    admin("GRANT SELECT ON default.policed TO policy_role")
+    admin(
+        "CREATE ROW POLICY IF NOT EXISTS p1 ON default.policed USING x < 3 TO policy_role"
+    )
+    admin(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS role_profile SETTINGS max_result_rows = 1000"
+    )
+    admin("ALTER ROLE policy_role ADD PROFILES 'role_profile'")
+    result = instance.query(
+        "SELECT count() FROM default.policed",
+        user="rowpolicy_user",
+        password=GOOD_PASSWORD,
+    ).strip()
+    assert result == "2"
+    value = instance.query(
+        "SELECT getSetting('max_result_rows')",
+        user="rowpolicy_user",
+        password=GOOD_PASSWORD,
+    ).strip()
+    assert value == "1000"
