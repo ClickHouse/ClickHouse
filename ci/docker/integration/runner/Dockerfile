@@ -73,7 +73,11 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 # kazoo 2.10.0 is broken
 # https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 COPY requirements.txt /
-RUN python3.13 -m pip install --ignore-installed --no-cache-dir -r requirements.txt
+# Upgrade pip on its own first: upgrading pip as part of the bulk install with
+# `--ignore-installed` leaves the old version's files behind, producing a broken
+# mix of two pip versions (`ImportError: cannot import name 'get_runnable_pip'`).
+RUN python3.13 -m pip install --no-cache-dir --upgrade $(grep '^pip==' requirements.txt) \
+    && python3.13 -m pip install --ignore-installed --no-cache-dir -r requirements.txt
 
 
 RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \

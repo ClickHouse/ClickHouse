@@ -18,9 +18,12 @@ set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -mcmodel=extreme")
 # PCADD scheme (https://github.com/llvm/llvm-project/issues/135521): the compiler still emits
 # the page-based initial-exec relocation `R_LARCH_TLS_IE_PC_HI20`, while `ld.lld` of the same
 # snapshot fails on it with "unknown relocation (87) against symbol thread_local_rng" and then
-# crashes. Avoid initial-exec TLS until the transition settles upstream.
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftls-model=global-dynamic")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftls-model=global-dynamic")
+# crashes. `global-dynamic` does not help: under `-fno-pie` the compiler relaxes it back to
+# initial-exec. Force `local-exec`, whose `R_LARCH_TLS_LE_*` relocations predate the PCADD
+# transition and are still handled. This is correct for the ClickHouse binary because all
+# `thread_local` variables it links live in the main executable.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftls-model=local-exec")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftls-model=local-exec")
 
 set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-loongarch64")
 
