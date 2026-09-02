@@ -308,29 +308,9 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
         return;
 
     /// A plain SELECT through the wrapper applies both; the generated read never names the wrapper.
+    /// The shard-local table's own policy and filters are each shard's to check, in the selector.
     checkNoBypassedReadRestriction(
         storage_id, context, "A prometheus query over a Distributed table", "the read is rewritten to the shard-local TimeSeries tables");
-
-    /// On a shard the plain path reads the remote table by name and applies a filter keyed to it;
-    /// the generated read goes through the selector, which has no table to bind it to.
-    const auto & remote_id = target->remote_time_series_storage_id;
-    for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
-    {
-        const auto & name_and_filter = filter_entry.safeGet<Tuple>();
-        const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
-        /// With no declared remote database each shard resolves in its own default database, unknowable
-        /// here, so any qualified spelling of the remote table may match on a shard.
-        bool matches = filtered_table == remote_id.table_name
-            || (!remote_id.database_name.empty()
-                ? filtered_table == remote_id.database_name + "." + remote_id.table_name
-                : filtered_table.ends_with("." + remote_id.table_name));
-        if (matches && isRestrictiveFilter(name_and_filter.at(1).safeGet<String>(), context))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "A prometheus query over table {} is not supported with an additional_table_filters entry for {}: on the shards "
-                "the read is rewritten to a TimeSeries selector and the filter would not be applied",
-                storage_id.getNameForLogs(), filtered_table);
-    }
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
     checkShardTargets(storage, *target, context, /* refuse_unavailable = */ false);

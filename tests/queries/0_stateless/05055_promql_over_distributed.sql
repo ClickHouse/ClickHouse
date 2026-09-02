@@ -21,6 +21,9 @@ DROP TABLE IF EXISTS ts_skip_on;
 DROP TABLE IF EXISTS ts_mode_only;
 DROP TABLE IF EXISTS ts_dead;
 DROP TABLE IF EXISTS ts_dead_skip;
+DROP ROW POLICY IF EXISTS p_05055_dist ON ts_dist;
+DROP ROW POLICY IF EXISTS p_05055_all ON ts_all;
+DROP ROW POLICY IF EXISTS p_05055_local ON shard_0.ts_local;
 DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;
 
@@ -123,20 +126,25 @@ SELECT count() FROM prometheusQuery(ts_dead_skip, 'm', 140) SETTINGS skip_unavai
 DROP TABLE ts_dead_skip;
 DROP TABLE ts_dead;
 
-SELECT '--- row policies and additional_table_filters: refused over the wrapper, unchanged on a single table ---';
--- A plain SELECT through the wrapper applies both; the rewrite to the shard-local tables would apply neither,
--- so the read is refused. On a single node PromQL reads through the selector, which applies none, as before.
+SELECT '--- row policies and additional_table_filters: refused wherever the read would leave them unapplied ---';
+-- A plain SELECT applies both; PromQL reads through the selector, which reads the inner tables and applies
+-- neither, so the read is refused: over the wrapper for the wrapper's, on a single table for its own.
 CREATE ROW POLICY p_05055_dist ON ts_dist USING metric_name = 'nothing_matches' TO ALL;
 CREATE ROW POLICY p_05055_all ON ts_all USING metric_name = 'nothing_matches' TO ALL;
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140); -- { serverError NOT_IMPLEMENTED }
-SELECT count() FROM prometheusQuery(ts_all, 'm', 140);
+SELECT count() FROM prometheusQuery(ts_all, 'm', 140); -- { serverError NOT_IMPLEMENTED }
 DROP ROW POLICY p_05055_dist ON ts_dist;
 DROP ROW POLICY p_05055_all ON ts_all;
--- Keyed to the wrapper or to the shard-local table: refused; a literal true restricts nothing, so it is not.
+-- On a shard-local table: a plain SELECT through the wrapper applies it on that shard, the selector there refuses it.
+CREATE ROW POLICY p_05055_local ON shard_0.ts_local USING metric_name = 'nothing_matches' TO ALL;
+SELECT count() FROM ts_dist;
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140); -- { serverError NOT_IMPLEMENTED }
+DROP ROW POLICY p_05055_local ON shard_0.ts_local;
+-- Keyed to the wrapper, to the shard-local table or to a single table: refused; a literal true restricts nothing, so it is not.
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM prometheusQuery(ts_all, 'm', 140) SETTINGS additional_table_filters = {'ts_all': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': '1'};
-SELECT count() FROM prometheusQuery(ts_all, 'm', 140) SETTINGS additional_table_filters = {'ts_all': 'metric_name != \'m\''};
 
 SELECT '--- the TimeSeries table functions still need a real TimeSeries table ---';
 SELECT count() FROM timeSeriesData(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }

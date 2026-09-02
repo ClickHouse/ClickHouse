@@ -37,8 +37,7 @@ b	2
 1
 4
 4
---- row policies and additional_table_filters: refused over the wrapper, unchanged on a single table ---
-4
-4
+--- row policies and additional_table_filters: refused wherever the read would leave them unapplied ---
+2
 4
 --- the TimeSeries table functions still need a real TimeSeries table ---
