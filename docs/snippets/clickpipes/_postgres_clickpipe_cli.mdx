@@ -91,10 +91,95 @@ The command validates the connection to the source before creating the pipe, so 
 
 Notes:
 
-- `--table-mapping` is required and repeatable, one `schema.table:target_table` per source table. The replicated tables land in the `default` database on the ClickHouse service, named by the mapping targets — mapping to a different target name is how you rename a table during replication
+- One of `--table-mapping` or `--table-mapping-json` is required. `--table-mapping` is repeatable, one `schema.table:target_table` per source table, and leaves every other per-table option at its default. The replicated tables land in the `default` database on the ClickHouse service, named by the mapping targets — mapping to a different target name is how you rename a table during replication
 - One command serves the whole Postgres family: pass `--postgres-type` for a managed provider (`supabase`, `neon`, `alloydb`, `planetscale`, `rdspostgres`, `aurorapostgres`, `cloudsqlpostgres`, `azurepostgres`, `crunchybridge`, `tigerdata`); the default is `postgres`
 - The publication and replication slot are created automatically, with the publication scoped to the mapped tables. Pass `--publication-name` and `--replication-slot-name` to use ones you created yourself in the prerequisites step
 - `--replication-mode` selects `cdc` (initial snapshot plus continuous replication, the default), `snapshot` (one-time copy), or `cdc_only` (skip the initial snapshot)
+
+### Shaping the destination tables {#shaping-the-destination-tables}
+
+`--table-mapping` only renames. For the per-table options that shape the destination table, pass the mapping as a JSON object with `--table-mapping-json`, which takes the API's table mapping object verbatim. `sourceSchemaName`, `sourceTable`, and `targetTable` are required; `excludedColumns`, `sortingKeys`, `useCustomSortingKey`, `partitionByExpr`, `partitionKey`, and `tableEngine` are optional. Both flags are repeatable and can be combined in one command:
+
+```bash
+clickhousectl cloud clickpipe create postgres "$CH_ID" \
+  --name orders-sync \
+  --host "$PG_HOST" \
+  --pg-database "$PG_DATABASE" \
+  --username "$PG_USERNAME" \
+  --password "$PG_PASSWORD" \
+  --table-mapping public.orders:orders \
+  --table-mapping-json '{"sourceSchemaName":"public","sourceTable":"customers","targetTable":"customers","excludedColumns":["ssn"],"sortingKeys":["created_at","customer_id"]}' \
+  --sync-interval-seconds 30 \
+  --json
+```
+
+That mapping keeps `ssn` out of the destination entirely and orders `customers` by `(created_at, customer_id)` instead of the source primary key:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SHOW CREATE TABLE customers" --format TSVRaw
+```
+
+```text
+CREATE TABLE default.customers
+(
+    `customer_id` Int32,
+    `name` String,
+    `created_at` DateTime64(6),
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` UInt8,
+    `_peerdb_version` UInt64
+)
+ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+PRIMARY KEY (created_at, customer_id)
+ORDER BY (created_at, customer_id)
+SETTINGS index_granularity = 8192
+```
+
+Notes:
+
+- `useCustomSortingKey` is set for you when `sortingKeys` is given, because the API ignores the keys without it. Unknown fields are rejected client-side with exit code 2 rather than silently dropped, so a typo like `excludeColumns` fails instead of being ignored
+- `partitionKey` partitions the initial snapshot for parallelism and is unrelated to the destination table's `PARTITION BY`, which is `partitionByExpr`
+- `tableEngine` is `MergeTree` (the default, and what the simple form sends), `ReplacingMergeTree`, or `Null`
+
+### CDC settings {#cdc-settings}
+
+The replication settings are create-time flags: `--sync-interval-seconds`, `--pull-batch-size`, `--initial-load-parallelism`, `--snapshot-rows-per-partition`, `--snapshot-parallel-tables`, `--allow-nullable-columns`, `--enable-failover-slots`, and `--delete-on-merge`. Only `syncIntervalSeconds` and `pullBatchSize` can be changed once the pipe exists; the snapshot and initial-load settings are fixed at creation, so choose them now.
+
+A Postgres CDC pipe keeps its settings on the pipe itself, so read them back with `clickpipe get`:
+
+```bash
+clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json \
+  | jq .source.postgres.settings
+```
+
+```json
+{
+  "allowNullableColumns": false,
+  "deleteOnMerge": false,
+  "enableFailoverSlots": false,
+  "initialLoadParallelism": 4,
+  "publicationName": "",
+  "pullBatchSize": 100000,
+  "replicationMode": "cdc",
+  "replicationSlotName": "",
+  "snapshotNumRowsPerPartition": 100000,
+  "snapshotNumberOfParallelTables": 1,
+  "syncIntervalSeconds": 30
+}
+```
+
+`clickhousectl cloud clickpipe settings get` is a different endpoint that covers ingestion settings for streaming and object-storage pipes only. Against a Postgres pipe it exits 1 and points you back to `clickpipe get`.
+
+### Destination permissions {#destination-permissions}
+
+ClickPipes writes to the service as its own user. By default that user gets the full-access `default_role`; `--role <ROLE>` (repeatable) selects other existing ClickHouse roles instead, the CLI equivalent of the console's permission-role step. The roles you name replace `default_role`, so between them they must grant everything the pipe does — creating and writing the destination tables. A read-only role fails the create outright:
+
+```text
+Error: BAD_REQUEST: ClickHouse validation failed: failed to create validation table peerdb_validation_tOgS: code: 497, message: clickpipe:...: Not enough privileges. To execute this query, it's necessary to have the grant CREATE TABLE ON default.peerdb_validation_tOgS
+```
+
+The names `clickpipes` and `clickpipes_system` are reserved and rejected client-side.
 
 ### Source TLS and certificate authorities {#source-tls}
 
@@ -150,7 +235,7 @@ Query the destination service directly from the CLI. The first call provisions a
 
 ```bash
 clickhousectl cloud service query --id "$CH_ID" \
-  --query "SELECT order_id, customer, amount FROM orders ORDER BY order_id"
+  --query "SELECT order_id, customer, amount FROM orders ORDER BY order_id" --json
 ```
 
 ```text
@@ -162,7 +247,7 @@ Provisioning Query API endpoint + key for service 'my-service'...
 {"order_id":5,"customer":"Eve","amount":250}
 ```
 
-Changes on the source replicate continuously at the configured sync interval (60 seconds by default). Insert a row on the source and poll until it arrives — typically within a minute or two:
+Changes on the source replicate continuously at the sync interval — 60 seconds by default, or whatever `--sync-interval-seconds` was set to at create time. Insert a row on the source and poll until it arrives:
 
 ```bash
 psql "postgres://$PG_USERNAME:$PG_PASSWORD@$PG_HOST:5432/$PG_DATABASE" \
@@ -176,7 +261,7 @@ done
 
 ## Manage the pipe {#manage-the-pipe}
 
-The pipe lifecycle is managed with `clickhousectl cloud clickpipe stop`, `clickhousectl cloud clickpipe start`, and `clickhousectl cloud clickpipe resync` (drops and re-snapshots the destination tables), each taking the same `"$CH_ID" "$PIPE_ID"` arguments. See `clickhousectl cloud clickpipe --help` for the full list of subcommands.
+The pipe lifecycle is managed with `clickhousectl cloud clickpipe stop`, `clickhousectl cloud clickpipe start`, and `clickhousectl cloud clickpipe resync` (drops and re-snapshots the destination tables), each taking the same `"$CH_ID" "$PIPE_ID"` arguments. If the source is only reachable over private networking, `clickhousectl cloud clickpipe reverse-private-endpoint` manages the AWS PrivateLink or Google Private Service Connect endpoint; pass one of the DNS names it reports as `--host` when you create the pipe. See `clickhousectl cloud clickpipe --help` for the full list of subcommands.
 
 ## Cleanup {#cleanup}
 
