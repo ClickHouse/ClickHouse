@@ -6,9 +6,63 @@
   var MCP_LINK_PATH = '/set-up-clickhouse-documentation-mcp-server';
   var SIGNUP_HREF = 'https://clickhouse.cloud/signUp?loc=docs-card-banner';
   var dismissedForPage = false;
+  var AD_COPY = {
+    en: {
+      dismissLabel: 'Dismiss ClickHouse Cloud advert permanently',
+      title: 'Try ClickHouse Cloud for FREE',
+      description: 'Separation of storage and compute, automatic scaling, built-in SQL console, and lots more. $300 in free credits when signing up.',
+      linkLabel: 'Try it for Free',
+    },
+    ar: {
+      dismissLabel: 'إخفاء إعلان ClickHouse Cloud نهائيًا',
+      title: 'جرّب ClickHouse Cloud مجانًا',
+      description: 'فصل التخزين عن الحوسبة، والتوسّع التلقائي، ووحدة تحكم SQL مضمّنة، وغير ذلك الكثير. احصل على رصيد مجاني بقيمة 300 دولار عند التسجيل.',
+      linkLabel: 'جرّبه مجانًا',
+    },
+    es: {
+      dismissLabel: 'Descartar permanentemente el anuncio de ClickHouse Cloud',
+      title: 'Prueba ClickHouse Cloud GRATIS',
+      description: 'Separación de almacenamiento y cómputo, escalado automático, consola SQL integrada y mucho más. Obtén 300 USD en créditos gratis al registrarte.',
+      linkLabel: 'Pruébalo gratis',
+    },
+    fr: {
+      dismissLabel: 'Masquer définitivement l’annonce ClickHouse Cloud',
+      title: 'Essayez ClickHouse Cloud GRATUITEMENT',
+      description: 'Séparation du stockage et du calcul, mise à l’échelle automatique, console SQL intégrée et bien plus encore. Recevez 300 $ de crédits gratuits lors de votre inscription.',
+      linkLabel: 'Essayer gratuitement',
+    },
+    ja: {
+      dismissLabel: 'ClickHouse Cloud の広告を今後表示しない',
+      title: 'ClickHouse Cloud を無料でお試しください',
+      description: 'ストレージとコンピューティングの分離、自動スケーリング、組み込み SQL コンソールなどを利用できます。登録時に 300 ドル分の無料クレジットを進呈します。',
+      linkLabel: '無料で試す',
+    },
+    ko: {
+      dismissLabel: 'ClickHouse Cloud 광고를 영구적으로 닫기',
+      title: 'ClickHouse Cloud를 무료로 사용해 보세요',
+      description: '스토리지와 컴퓨팅 분리, 자동 확장, 기본 제공 SQL 콘솔 등 다양한 기능을 제공합니다. 가입하면 300달러의 무료 크레딧을 받을 수 있습니다.',
+      linkLabel: '무료로 사용해 보기',
+    },
+    'pt-BR': {
+      dismissLabel: 'Dispensar permanentemente o anúncio do ClickHouse Cloud',
+      title: 'Experimente o ClickHouse Cloud GRÁTIS',
+      description: 'Separação de armazenamento e computação, escalonamento automático, console SQL integrado e muito mais. Receba US$ 300 em créditos grátis ao se cadastrar.',
+      linkLabel: 'Experimente grátis',
+    },
+  };
+
+  function normalizedPath() {
+    return window.location.pathname.replace(/^\/docs(?=\/|$)/, '');
+  }
+
+  function getAdCopy() {
+    var localeMatch = normalizedPath().match(/^\/(ar|es|fr|ja|ko|pt-BR)(?:\/|$)/);
+    return localeMatch ? AD_COPY[localeMatch[1]] : AD_COPY.en;
+  }
 
   function isGetStartedPage() {
-    var path = window.location.pathname.replace(/^\/docs(?=\/|$)/, '');
+    var path = normalizedPath();
+    if (/^\/(?:ru|zh)(?:\/|$)/.test(path)) return false;
     return /^\/(?:(?:ar|es|fr|ja|ko|pt-BR|ru|zh)\/)?get-started(?:\/|$)/.test(path);
   }
 
@@ -47,6 +101,7 @@
   }
 
   function createAdSlot(tagName) {
+    var copy = getAdCopy();
     var slot = document.createElement(tagName);
     slot.id = AD_SLOT_ID;
     slot.className = 'ch-cloud-sidebar-ad-slot';
@@ -58,7 +113,7 @@
     var dismissButton = document.createElement('button');
     dismissButton.className = 'ch-cloud-sidebar-ad-dismiss';
     dismissButton.type = 'button';
-    dismissButton.setAttribute('aria-label', 'Dismiss ClickHouse Cloud advert permanently');
+    dismissButton.setAttribute('aria-label', copy.dismissLabel);
     dismissButton.textContent = '\u00d7';
     dismissButton.onclick = function () {
       dismissedForPage = true;
@@ -69,18 +124,18 @@
 
     var title = document.createElement('p');
     title.className = 'ch-cloud-sidebar-ad-title';
-    title.textContent = 'Try ClickHouse Cloud for FREE';
+    title.textContent = copy.title;
 
     var description = document.createElement('p');
     description.className = 'ch-cloud-sidebar-ad-description';
-    description.textContent = 'Separation of storage and compute, automatic scaling, built-in SQL console, and lots more. $300 in free credits when signing up.';
+    description.textContent = copy.description;
 
     var link = document.createElement('a');
     link.className = 'ch-cloud-sidebar-ad-link';
     link.href = SIGNUP_HREF;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.textContent = 'Try it for Free';
+    link.textContent = copy.linkLabel;
     link.onclick = function () {
       track('docs.sidebarCloudAdvert.clickedThrough', SIGNUP_HREF);
     };
