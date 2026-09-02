@@ -63,7 +63,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         if (!object_storage_table)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
 
-        auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_table->getExternalMetadata(getContext()));
+        auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table->getExternalMetadata(getContext()));
         if (!iceberg_metadata)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
 
