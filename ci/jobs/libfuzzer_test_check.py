@@ -31,7 +31,10 @@ from ci.praktika.utils import Shell, Utils
 
 TIMEOUT_MASTER = 5 * 60 * 60  # 5 hours of fuzzing for nightly/master runs
 TIMEOUT_PR = 30 * 60  # 30 minutes for PR runs
-TIMEOUT_MINIMIZATION = 60 * 60  # corpus minimization is capped separately
+# Corpus minimization is a fixed amount of work proportional to the corpus (the
+# slowest target takes about 40 minutes), so its cap does not move with the
+# fuzzing budget.
+TIMEOUT_MINIMIZATION = 60 * 60
 NO_CHANGES_MSG = "Nothing to run"
 RUNNER_OUTPUT = "/test_output"
 
@@ -109,7 +112,7 @@ def get_run_command(
 
 
 def count_fuzzers(path: Path) -> int:
-    return max(1, len([file for file in os.listdir(path) if file.endswith("_fuzzer")]))
+    return max(1, len([f for f in os.listdir(path) if f.endswith("_fuzzer")]))
 
 
 def parse_args():
@@ -437,9 +440,11 @@ def main():
         check_name, run_by_hash_num, run_by_hash_total
     )
 
-    timeout = TIMEOUT_MASTER if is_master else TIMEOUT_PR
+    if args.minimize_only:
+        timeout = TIMEOUT_MINIMIZATION
+    else:
+        timeout = TIMEOUT_MASTER if is_master else TIMEOUT_PR
     additional_envs.append(f"TIMEOUT={timeout}")
-    additional_envs.append(f"MINIMIZATION_TIMEOUT={min(timeout, TIMEOUT_MINIMIZATION)}")
 
     # Every fuzzer holds its runner thread for the whole run, so anything above
     # this many targets would not start until another one finishes - at a 5 hour
