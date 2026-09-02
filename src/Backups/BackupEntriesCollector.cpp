@@ -376,7 +376,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     element.partitions,
                     /* all_tables= */ false,
                     /* except_table_names= */ {},
-                    /* except_data_table_names= */ {});
+                    /* except_data_table_names= */ element.except_data_tables);
                 break;
             }
 
@@ -391,7 +391,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     element.partitions,
                     /* all_tables= */ false,
                     /* except_table_names= */ {},
-                    /* except_data_table_names= */ {});
+                    /* except_data_table_names= */ element.except_data_tables);
                 break;
             }
 
@@ -518,6 +518,10 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         }
         database_info.except_table_names.emplace(*table_name);
     }
+
+    for (const auto & except_data_table_name : except_data_table_names)
+        if (except_data_table_name.first == database_name)
+            database_info.except_data_table_names.emplace(except_data_table_name.second);
 
     if (all_tables)
     {

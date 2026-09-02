@@ -166,6 +166,7 @@ namespace
                 }
 
                 parsePartitions(pos, expected, element.partitions);
+                parseExceptDataTables(pos, expected, element.database_name, element.except_data_tables);
                 return true;
             }
 
@@ -187,6 +188,7 @@ namespace
                     element.new_table_name = getIdentifierName(ast);
                 }
 
+                parseExceptDataTables(pos, expected, {}, element.except_data_tables);
                 return true;
             }
 

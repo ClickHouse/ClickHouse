@@ -595,23 +595,20 @@ namespace
         switch (e.type)
         {
             case ElementType::TABLE:
-                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions.
+                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions, except_data_tables.
                 if (e.table_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
                 reject_field("except_tables", "TABLE");
-                reject_field("except_data_tables", "TABLE");
                 reject_field("except_databases", "TABLE");
                 break;
             case ElementType::TEMPORARY_TABLE:
-                /// Valid: table_name, new_table_name. A temporary table has no database and
-                /// `formatElement` prints neither a database nor `PARTITIONS`/`EXCEPT`.
+                /// Valid: table_name, new_table_name, except_data_tables. A temporary table has no database.
                 if (e.table_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
                 reject_field("database_name", "TEMPORARY_TABLE");
                 reject_field("new_database_name", "TEMPORARY_TABLE");
                 reject_field("partitions", "TEMPORARY_TABLE");
                 reject_field("except_tables", "TEMPORARY_TABLE");
-                reject_field("except_data_tables", "TEMPORARY_TABLE");
                 reject_field("except_databases", "TEMPORARY_TABLE");
                 break;
             case ElementType::DATABASE:
