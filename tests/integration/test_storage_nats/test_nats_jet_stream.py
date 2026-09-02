@@ -1521,6 +1521,60 @@ def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats
         "{} deliveries for two messages".format(consumer_seq))
 
 
+def test_nats_jet_stream_direct_select_does_not_consume_skipped_broken_message(nats_cluster):
+    # The same reconnect recovery with `nats_commit_on_select` left at its default `0`, where a
+    # direct read must consume nothing at all: the query never commits, so the message it passed
+    # over because of `nats_skip_broken_messages` has to go back to the broker with everything else
+    # the recovery hands back, and the next query gets to see it again. Acknowledging it there would
+    # consume a message on behalf of an uncommitted read and put it out of reach for good.
+    #
+    # The ACK deadline is far beyond every wait below, so a redelivery can only come from the
+    # recovery handing the message back, which makes the broker's delivery counter the oracle.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n',
+                     nats_skip_broken_messages = 1000;
+        """
+    )
+
+    asyncio.run(publish_messages(
+        cluster, "test_stream", "test_subject", [json.dumps({"key": "not a number", "value": "neither"})]))
+
+    select = instance.get_query_request(
+        "SELECT key FROM test.consume SETTINGS stream_like_engine_allow_direct_select = 1, rabbitmq_max_wait_ms = 120000",
+        timeout = 180,
+    )
+    _wait_for_ack_pending(1)
+
+    _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", [json.dumps({"key": 42, "value": 42})]))
+    assert TSV(select.get_answer()) == TSV("42")
+
+    # Three deliveries for two messages: the skipped one was handed back and delivered again. Two
+    # would mean the uncommitted query acknowledged it.
+    deadline = time.monotonic() + 60
+    consumer_seq = 0
+    while time.monotonic() < deadline:
+        consumer_seq = asyncio.run(get_delivered_consumer_seq(cluster, "test_stream", "test_consumer"))
+        if consumer_seq >= 3:
+            break
+        time.sleep(0.2)
+
+    assert consumer_seq >= 3, (
+        "an uncommitted direct SELECT acknowledged the message it skipped: "
+        "{} deliveries for two messages".format(consumer_seq))
+
+
 def test_nats_jet_stream_keeps_buffered_backlog_across_broker_restart(nats_cluster):
     # Reconnect recovery re-subscribes the consumer, and the local queue of messages the broker had
     # already delivered used to go with the stale subscription. Those rows are in this server's

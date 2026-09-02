@@ -39,6 +39,12 @@ public:
 
     void setCommitOnSelect(bool value) { commit_on_select = value; }
 
+    /// A source that feeds the materialized views rather than a query result. It matters for the
+    /// messages `nats_skip_broken_messages` passed over: a streaming cycle never inserts them, so
+    /// their skip is final as soon as it happened, while a direct `SELECT` only consumes what it
+    /// read when `nats_commit_on_select` is set.
+    void setBackgroundStreaming(bool value) { background_streaming = value; }
+
     bool wasConsumptionAborted() const { return consumption_aborted; }
 
 private:
@@ -67,6 +73,7 @@ private:
     Poco::Timespan max_execution_time = 0;
     bool wait_for_flush_interval = false;
     bool commit_on_select = false;
+    bool background_streaming = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     NATSSource(

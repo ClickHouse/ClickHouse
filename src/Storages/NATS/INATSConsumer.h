@@ -62,7 +62,20 @@ public:
     /// gone, which it can only destroy. That tells the two apart because nothing re-subscribes
     /// without clearing the queue first, so a subscribed consumer never holds a message that
     /// arrived on an older subscription.
-    void finishAndReturnUnprocessed();
+    ///
+    /// What happens to the messages `nats_skip_broken_messages` passed over is the caller's to
+    /// decide, because only the caller knows whether that skip is already final. `Acknowledge`
+    /// keeps it: a background streaming cycle never inserts such a message, so nothing is left to
+    /// commit for it, and a direct `SELECT` with `nats_commit_on_select` consumes what it read
+    /// anyway. `ReturnToBroker` is what an uncommitted direct `SELECT` needs, which must not
+    /// consume anything at all - the redelivered message is skipped again by the next query.
+    enum class SkippedMessages
+    {
+        Acknowledge,
+        ReturnToBroker,
+    };
+
+    void finishAndReturnUnprocessed(SkippedMessages skipped_messages_action);
 
     void ackConsumed();
     void dropConsumed();

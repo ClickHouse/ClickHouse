@@ -108,7 +108,7 @@ void INATSConsumer::unsubscribe()
     LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
 }
 
-void INATSConsumer::finishAndReturnUnprocessed()
+void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_action)
 {
     /// Handing a message back needs the subscription it arrived on: `natsMsg_Nak` follows a plain
     /// pointer from the message to that subscription, and on to the JetStream context and the
@@ -129,9 +129,20 @@ void INATSConsumer::finishAndReturnUnprocessed()
     consumed_messages.clear();
 
     /// Messages that yielded no rows are not waiting to be inserted: `nats_skip_broken_messages`
-    /// passed over them on purpose. Handing them back would undo that and deliver the same
-    /// malformed input again, so they are acknowledged here instead.
-    ackMessages(skipped_messages);
+    /// passed over them on purpose. Where that skip is already final, handing them back would undo
+    /// it and deliver the same malformed input again, so they are acknowledged instead. Where it is
+    /// not - an uncommitted direct `SELECT`, which must consume nothing - they go back to the
+    /// broker like every other message this consumer has not committed.
+    if (skipped_messages_action == SkippedMessages::Acknowledge)
+    {
+        ackMessages(skipped_messages);
+    }
+    else
+    {
+        for (auto & msg : skipped_messages)
+            nackMessage(msg.get());
+        skipped_messages.clear();
+    }
 
     /// Finishing the queue before draining it is what makes this complete rather than a snapshot:
     /// the queue serializes `push` with `finish`, so a message the NATS client thread is delivering

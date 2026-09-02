@@ -408,7 +408,7 @@ void StorageNATS::resubscribeStaleConsumers()
         /// whatever the subscription still has. So the messages are returned to the broker rather
         /// than destroyed, while the subscription they arrived on is still alive, and the queue is
         /// finished first so that nothing can be appended behind that.
-        consumer->finishAndReturnUnprocessed();
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
         consumer->unsubscribe();
 
         try
@@ -432,7 +432,7 @@ void StorageNATS::unsubscribeConsumers()
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
     {
-        consumer->finishAndReturnUnprocessed();
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
         consumer->unsubscribe();
     }
 
@@ -896,6 +896,7 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
         source->setWaitForFlushInterval(
             (*nats_settings)[NATSSetting::nats_wait_for_flush_interval] && max_execution_time.totalMicroseconds() > 0);
+        source->setBackgroundStreaming(true);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));

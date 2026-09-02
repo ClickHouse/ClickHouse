@@ -189,8 +189,12 @@ Chunk NATSSource::generateImpl()
         /// before it is parsed, and `nats_skip_broken_messages` turns a message that yields no rows
         /// into an ordinary outcome. Such a message is not waiting to be inserted, so the recovery
         /// does not have to wait for it: `markLastConsumedSkipped` moves it aside as soon as it
-        /// turns out to have produced nothing, and it is acknowledged rather than handed back, which
-        /// keeps the skip instead of showing the same malformed input again. What the guard below
+        /// turns out to have produced nothing. Where the skip is already final - a background
+        /// streaming cycle, which never inserts such a message, or a direct `SELECT` that commits
+        /// what it reads - it is acknowledged rather than handed back, which keeps the skip instead
+        /// of showing the same malformed input again. An uncommitted direct `SELECT` must consume
+        /// nothing at all, so there it goes back to the broker like the rest, and the next query
+        /// skips it again. What the guard below
         /// waits for is a message that still owes rows to this query.
         /// `unsubscribe_on_destroy` keeps its previous value: a background streaming consumer must
         /// stay subscribed when this source is destroyed, so the next streaming cycle keeps
@@ -199,7 +203,9 @@ Chunk NATSSource::generateImpl()
         if (total_rows == 0 && !consumer->hasConsumedMessages() && consumer->queueEmpty() && consumer->needsResubscribe())
         {
             LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing within a running query");
-            consumer->finishAndReturnUnprocessed();
+            consumer->finishAndReturnUnprocessed(
+                background_streaming || commit_on_select ? INATSConsumer::SkippedMessages::Acknowledge
+                                                         : INATSConsumer::SkippedMessages::ReturnToBroker);
             consumer->unsubscribe();
             consumer->subscribe();
         }
