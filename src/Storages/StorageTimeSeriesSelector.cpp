@@ -35,6 +35,7 @@
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -134,6 +135,8 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     /// Grant before existence and before the cast's engine error.
     context->checkAccess(AccessType::SELECT, time_series_storage_id);
+    /// A plain SELECT from the table applies its row policy and filters; the read of its inner tables cannot.
+    checkNoBypassedReadRestriction(time_series_storage_id, context, "A PromQL selector", "it reads the inner tables directly");
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(

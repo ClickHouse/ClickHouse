@@ -32,8 +32,9 @@ void checkNoBypassedReadRestriction(
     const StorageID & storage_id, const ContextPtr & context, std::string_view operation, std::string_view rewrite);
 
 /// The wrapper's SELECT grant (table functions are exempt from the planner's check), then what a plain SELECT through
-/// it would apply and the rewrite cannot (its row policy, filters keyed to it or to the shard-local table), then every
-/// replica's shard-local target: a TimeSeries table declaring the wrapper's `time_series` type, or the read is refused.
+/// it would apply and the rewrite cannot (its row policy, filters keyed to it; the shard-local table's are checked by
+/// the selector on each shard), then every replica's shard-local target: a TimeSeries table declaring the wrapper's
+/// `time_series` type, or the read is refused.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
 /// The same targets for a write, refused while any replica is unreachable or has no such table (samples queued for it
