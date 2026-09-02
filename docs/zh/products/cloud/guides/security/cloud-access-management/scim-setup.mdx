@@ -8,15 +8,12 @@ keywords: ['ClickHouse Cloud', 'SCIM', '预配', 'Okta', 'SSO', 'SAML', '身份�
 ---
 
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-
-<PrivatePreviewBadge />
 
 <EnterprisePlanFeatureBadge feature="SCIM" />
 
 ClickHouse Cloud 支持 SCIM 2.0 (System for Cross-domain Identity Management，跨域身份管理) ，用于自动化管理用户和组的生命周期。连接到您的身份提供商后，您分配给 ClickHouse Cloud 应用的每位用户都会自动在您的组织中创建，并获得相应的角色；profile 更新也会自动同步；而从您的 IdP 中移除某位用户时，其访问权限也会一并移除——无需手动邀请，也不会留下孤立账户。
 
-本指南将逐步介绍如何使用 **Okta** 端到端设置 SCIM 预配。ClickHouse Cloud 的 SCIM 端点遵循 SCIM 2.0 (RFC 7644) ，但仅支持通过 Basic Auth 进行身份验证，并且 Okta 是我们唯一测试过的身份提供商。其他 SCIM 2.0 IdP 如果支持使用 Basic Auth 进行身份验证，也可能可以正常工作，但目前尚未获得官方支持。
+本指南将逐步介绍如何使用 **Okta** 端到端设置 SCIM 预配。ClickHouse Cloud 的 SCIM 端点遵循 SCIM 2.0 (RFC 7644)。Okta 使用 Basic Auth 进行身份验证，本指南也采用该方式。如果您的身份提供商是 Microsoft Entra ID，请改为参阅[通过 Entra ID 进行 SCIM 预配](/zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra)指南。
 
 <div id="before-you-begin">
   ## 开始之前
@@ -316,7 +313,7 @@ Okta 会重试失败的预配调用，但最终会将它们放入 **Tasks** 队�
   </Accordion>
 
   <Accordion title="SCIM 能否与 Microsoft Entra ID、OneLogin 或其他 SCIM 2.0 IdP 配合使用？">
-    官方来说，不能——目前我们只测试并支持 Okta 这一种 IdP。该端点遵循 SCIM 2.0 (RFC 7644) ，但身份验证仅支持 Basic Auth，因此任何无法通过 Basic Auth 进行身份验证的 IdP 都无法使用。其他支持 Basic Auth 的 SCIM 2.0 IdP 在实际使用中可能可行，但我们不作任何保证。
+    Microsoft Entra ID 也受支持——请参阅[通过 Entra ID 进行 SCIM 预配](/zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra)。该端点遵循 SCIM 2.0 (RFC 7644)，并接受 Basic Auth (由 Okta 使用) 或 Bearer 令牌 (由 Entra ID 使用) 。如果其他 SCIM 2.0 IdP 能够通过其中一种方式进行身份验证，则在实际使用中可能也可行，但目前我们已测试并支持的 IdP 是 Okta 和 Entra ID。
   </Accordion>
 
   <Accordion title="Okta 中的更改多久会显示在 ClickHouse Cloud 中？">

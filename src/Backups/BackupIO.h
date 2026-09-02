@@ -10,6 +10,7 @@ namespace DB
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+class ReadBuffer;
 class SeekableReadBuffer;
 class ReadBufferFromFileBase;
 class WriteBuffer;
@@ -62,8 +63,11 @@ public:
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
     virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents) = 0;
+    virtual std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) = 0;
 
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
+    /// Object-storage writers override this to create a file atomically without replacing an existing one.
+    virtual std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name);
 
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;

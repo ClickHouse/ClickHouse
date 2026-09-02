@@ -1,0 +1,4 @@
+unpruned warm cache hit: 1
+pruned query bypasses cache: 1
+│  d[10000] ⋈ f[1000]
+unpruned cache hit preserved: 1

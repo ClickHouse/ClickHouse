@@ -15,8 +15,10 @@ Introduit dans : v25.6.0
 
 Fonction d&#39;agrégation qui prend en entrée des données de séries temporelles sous forme de paires horodatage-valeur et calcule une [dérivée de type PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) à partir de ces données sur une grille temporelle régulière définie par l&#39;horodatage de début, l&#39;horodatage de fin et le pas. Pour chaque point de la grille, les échantillons utilisés pour calculer `deriv` sont pris en compte dans la fenêtre temporelle spécifiée.
 
+Si plusieurs échantillons ont le même horodatage, un seul est utilisé : l’échantillon ayant la plus grande valeur. Une valeur NaN est inférieure à toute autre valeur, donc une valeur NaN n’est utilisée que si tous les échantillons à cet horodatage sont NaN.
+
 <Note>
-  Cette fonction est expérimentale ; activez-la en définissant `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Cette fonction est expérimentale ; activez-la en définissant `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
 
 **Syntaxe**
@@ -27,7 +29,10 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **Paramètres**
 
-* `start_timestamp` — Spécifie le début de la grille. - `end_timestamp` — Spécifie la fin de la grille. - `grid_step` — Spécifie le pas de la grille, en secondes. - `staleness` — Spécifie l’« ancienneté » maximale, en secondes, des échantillons pris en compte. La fenêtre d’ancienneté est un intervalle ouvert à gauche et fermé à droite.
+* `start_timestamp` — Spécifie le début de la grille. Avec un argument d’horodatage `DateTime64`, il peut également s’agir d’un nombre fractionnaire ou d’une chaîne contenant un nombre ou du texte de date-heure. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `end_timestamp` — Spécifie la fin de la grille. Avec un argument d’horodatage `DateTime64`, il peut également s’agir d’un nombre fractionnaire ou d’une chaîne contenant un nombre ou du texte de date-heure. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `grid_step` — Spécifie le pas de la grille, en secondes. Avec un argument d’horodatage `DateTime64`, il peut également s’agir d’un nombre fractionnaire ou d’une chaîne contenant un nombre ou une durée telle que &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `staleness` — Spécifie l’« ancienneté » maximale, en secondes, des échantillons pris en compte. La fenêtre d’ancienneté est un intervalle ouvert à gauche et fermé à droite. Avec un argument d’horodatage `DateTime64`, il peut également s’agir d’un nombre fractionnaire ou d’une chaîne contenant un nombre ou une durée telle que &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
 
 **Arguments**
 
@@ -35,11 +40,11 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **Valeur renvoyée**
 
-Valeurs `deriv` sur la grille spécifiée, sous la forme d’un `Array(Nullable(Float64))`. Le tableau renvoyé contient une valeur pour chaque point de la grille temporelle. La valeur est NULL s’il n’y a pas suffisamment d’échantillons dans la fenêtre pour calculer la dérivée pour un point donné de la grille.
+Valeurs `deriv` sur la grille spécifiée, sous la forme d’un `Array(Nullable(Float64))`. Le tableau renvoyé contient une valeur pour chaque point de la grille temporelle. La valeur est NULL s’il n’y a pas suffisamment d’échantillons dans la fenêtre pour calculer la valeur de la dérivée pour un point donné de la grille.
 
 **Exemples**
 
-**Calculer les valeurs de dérivée sur la grille [90, 105, 120, 135, 150, 165, 180, 195, 210]**
+**Calculer les valeurs de la dérivée sur la grille [90, 105, 120, 135, 150, 165, 180, 195, 210]**
 
 ```sql title=Query
 SET allow_experimental_time_series_aggregate_functions = 1;
@@ -64,7 +69,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                               │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -84,7 +89,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                                 │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
