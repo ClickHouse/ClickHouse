@@ -206,3 +206,41 @@ def test_normal_backup_includes_data():
     assert instance.query("SELECT count() FROM test.t") == "3\n"
 
     instance.query("DROP TABLE IF EXISTS test.t")
+
+
+def test_except_data_rejects_inner_table_name():
+    """Test that directly specifying an inner table name in EXCEPT DATA FROM TABLE is rejected"""
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.mv, test.src")
+    instance.query("CREATE TABLE test.src (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.mv ENGINE = MergeTree ORDER BY id "
+        "AS SELECT id FROM test.src"
+    )
+    instance.query("INSERT INTO test.src VALUES (1), (2), (3)")
+
+    # Get the inner table name
+    inner_table = instance.query(
+        "SELECT name FROM system.tables WHERE database='test' AND name LIKE '.inner_id.%'"
+    ).strip()
+
+    assert inner_table, "Inner table not found"
+
+    backup_name = new_backup_name()
+    # Should throw error when trying to use inner table name directly
+    # The error can be either:
+    # 1. SYNTAX_ERROR (62) - parser rejects dot-prefixed identifier
+    # 2. INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION (666) - our validation
+    try:
+        # Try with backticks to bypass parser's identifier check
+        instance.query(f"BACKUP DATABASE test EXCEPT DATA FROM TABLE `{inner_table}` TO {backup_name}")
+        assert False, "Expected exception when using inner table name, but query succeeded"
+    except Exception as e:
+        error_message = str(e)
+        # Backtick-quoting bypasses the parser, so this must be rejected by our
+        # explicit validation layer specifically - not by parser SYNTAX_ERROR.
+        assert ("INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in error_message or
+                "666" in error_message), \
+            f"Expected INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION (666), got: {error_message}"
+
+    instance.query("DROP DATABASE test")

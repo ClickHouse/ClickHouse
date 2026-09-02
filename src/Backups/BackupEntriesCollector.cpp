@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int CANNOT_BACKUP_TABLE;
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION;
 }
 
 
@@ -520,8 +521,22 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
     }
 
     for (const auto & except_data_table_name : except_data_table_names)
+    {
         if (except_data_table_name.first == database_name)
+        {
+            /// Validate that no inner table names were provided in EXCEPT DATA FROM TABLE
+            if (BackupUtils::isInnerTable(except_data_table_name.first, except_data_table_name.second))
+            {
+                throw Exception(
+                    ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
+                    "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
+                    "Table: {}.{}. Use the outer table name instead.",
+                    backQuoteIfNeed(except_data_table_name.first),
+                    backQuoteIfNeed(except_data_table_name.second));
+            }
             database_info.except_data_table_names.emplace(except_data_table_name.second);
+        }
+    }
 
     if (all_tables)
     {
@@ -530,8 +545,22 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
             if (except_table_name.first == database_name)
                 database_info.except_table_names.emplace(except_table_name.second);
         for (const auto & except_data_table_name : except_data_table_names)
+        {
             if (except_data_table_name.first == database_name)
+            {
+                /// Validate that no inner table names were provided in EXCEPT DATA FROM TABLE
+                if (BackupUtils::isInnerTable(except_data_table_name.first, except_data_table_name.second))
+                {
+                    throw Exception(
+                        ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
+                        "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
+                        "Table: {}.{}. Use the outer table name instead.",
+                        backQuoteIfNeed(except_data_table_name.first),
+                        backQuoteIfNeed(except_data_table_name.second));
+                }
                 database_info.except_data_table_names.emplace(except_data_table_name.second);
+            }
+        }
     }
 }
 
