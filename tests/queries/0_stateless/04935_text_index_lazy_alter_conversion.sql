@@ -29,11 +29,11 @@ INSERT INTO t_text_lazy_alter SELECT number + 500000, '{"a":{"id":"actor' || toS
 
 SELECT '-- exact equals via text-index direct read (computed on the no-granule part from data)';
 SELECT count() FROM t_text_lazy_alter WHERE doc.a.id = 'actor3'
-    SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+    SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1;
 
 SELECT '-- LIKE via the text-index fallback path';
 SELECT count() FROM t_text_lazy_alter WHERE doc.a.id LIKE '%actor3%'
-    SETTINGS use_skip_indexes = 1, text_index_like_min_pattern_length = 1, text_index_like_max_postings_to_read = 1;
+    SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, text_index_like_min_pattern_length = 1, text_index_like_max_postings_to_read = 1;
 
 SELECT '-- control: the same answer without the skip index';
 SELECT count() FROM t_text_lazy_alter WHERE doc.a.id = 'actor3' SETTINGS use_skip_indexes = 0;
@@ -55,6 +55,6 @@ INSERT INTO t_text_regular_alter SELECT number + 500000, 'actor' || toString(num
 
 SELECT '-- regular ALTER MODIFY with an interrupted mutation, read via text index';
 SELECT count() FROM t_text_regular_alter WHERE s = 'actor3'
-    SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+    SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE t_text_regular_alter;
