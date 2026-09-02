@@ -412,10 +412,9 @@ DECLARE_MD5_TARGET_CODE(
     /// only near-optimal. It is scored against column order below, so the cap can forfeit a gain but
     /// cannot cause a loss.
     constexpr size_t MD5_GROUP_MAX_KEY = 64;
-    /// Reordering costs a fixed amount of integer work per row, so it pays only above a saving per row.
-    /// Measured break-even is around 69 saved batch-iterations per 1024 rows; this is set at twice that,
-    /// because nearer the break-even the modelled saving stops predicting the measured one.
-    constexpr size_t MD5_GROUP_MIN_SAVED_ITERS_PER_1K_ROWS = 128;
+    /// Reordering costs a fixed amount of integer work per row, so what decides whether it pays is
+    /// the saving per row, not the saving relative to the batch cost.
+    constexpr size_t MD5_GROUP_MIN_SAVED_ITERS_PER_1K_ROWS = 64;
 
     static_assert(MD5_GROUP_WINDOW <= 65536, "row indices within a window are stored as uint16_t");
 
@@ -445,7 +444,9 @@ DECLARE_MD5_TARGET_CODE(
         if (input_rows_count < sample_rows * 8)
             return false;
 
-        const size_t batch_stride = input_rows_count / sample_batches;
+        /// Stride in batches, not rows: a driver batch starts at a multiple of N2 from row 0, so a
+        /// row-strided draw would model batches that straddle two real ones.
+        const size_t batch_step = input_rows_count / (N2 * sample_batches);
 
         uint32_t histogram[MD5_GROUP_MAX_KEY + 2] = {};
         size_t work_in_order = 0;
@@ -455,7 +456,7 @@ DECLARE_MD5_TARGET_CODE(
             size_t batch_max = 0;
             for (size_t j = 0; j < N2; ++j)
             {
-                const size_t row = b * batch_stride + j;
+                const size_t row = b * batch_step * N2 + j;
                 const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
                 const size_t key = std::min(numMD5Blocks(offsets[row] - begin), MD5_GROUP_MAX_KEY);
                 ++histogram[key];
@@ -531,30 +532,39 @@ DECLARE_MD5_TARGET_CODE(
         /// boundaries the in-order path uses and work_in_order below would not model its cost.
         static_assert(MD5_GROUP_WINDOW % N2 == 0);
 
+        const uint8_t * window_inputs[MD5_GROUP_WINDOW];
+        size_t window_lengths[MD5_GROUP_WINDOW];
         size_t window_blocks[MD5_GROUP_WINDOW];
         uint16_t grouped_rows[MD5_GROUP_WINDOW];
         uint32_t histogram[MD5_GROUP_MAX_KEY + 2];
+        /// Each grouped batch's largest true block count, accumulated as rows are placed.
+        size_t batch_max_grouped[MD5_GROUP_WINDOW / N2];
 
         for (size_t window_base = 0; window_base < input_rows_count; window_base += MD5_GROUP_WINDOW)
         {
             const size_t window_rows = std::min(MD5_GROUP_WINDOW, input_rows_count - window_base);
+            const size_t window_batches = (window_rows + N2 - 1) / N2;
 
             std::memset(histogram, 0, sizeof(histogram));
             size_t work_in_order = 0;
-            size_t batch_max = 0;
-            for (size_t i = 0; i < window_rows; ++i)
+            ColumnString::Offset current_offset = offsets[static_cast<ssize_t>(window_base) - 1];
+            for (size_t off = 0; off < window_rows; off += N2)
             {
-                const size_t row = window_base + i;
-                const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
-                const size_t blocks = numMD5Blocks(offsets[row] - begin);
-                window_blocks[i] = blocks;
-                ++histogram[std::min(blocks, MD5_GROUP_MAX_KEY)];
-                batch_max = std::max(batch_max, blocks);
-                if ((i + 1) % N2 == 0 || i + 1 == window_rows)
+                const size_t batch = std::min(N2, window_rows - off);
+                size_t batch_max = 0;
+                for (size_t j = 0; j < batch; ++j)
                 {
-                    work_in_order += batch_max;
-                    batch_max = 0;
+                    const size_t len = offsets[window_base + off + j] - current_offset;
+                    window_inputs[off + j] = reinterpret_cast<const uint8_t *>(&data[current_offset]);
+                    window_lengths[off + j] = len;
+                    current_offset += len;
+
+                    const size_t blocks = numMD5Blocks(len);
+                    window_blocks[off + j] = blocks;
+                    ++histogram[std::min(blocks, MD5_GROUP_MAX_KEY)];
+                    batch_max = std::max(batch_max, blocks);
                 }
+                work_in_order += batch_max;
             }
 
             /// Counting sort by capped key; the histogram becomes the per-key placement cursor.
@@ -565,22 +575,20 @@ DECLARE_MD5_TARGET_CODE(
                 histogram[key] = placed;
                 placed += count;
             }
+            std::memset(batch_max_grouped, 0, sizeof(size_t) * window_batches);
             for (size_t i = 0; i < window_rows; ++i)
-                grouped_rows[histogram[std::min(window_blocks[i], MD5_GROUP_MAX_KEY)]++] = static_cast<uint16_t>(i);
+            {
+                const uint32_t dest = histogram[std::min(window_blocks[i], MD5_GROUP_MAX_KEY)]++;
+                grouped_rows[dest] = static_cast<uint16_t>(i);
+                size_t & slot = batch_max_grouped[dest / N2];
+                slot = std::max(slot, window_blocks[i]);
+            }
 
             /// Both candidate orders are scored on true block counts, so the order actually chosen is
             /// never one the model rates worse than column order.
             size_t work_grouped = 0;
-            batch_max = 0;
-            for (size_t i = 0; i < window_rows; ++i)
-            {
-                batch_max = std::max(batch_max, window_blocks[grouped_rows[i]]);
-                if ((i + 1) % N2 == 0 || i + 1 == window_rows)
-                {
-                    work_grouped += batch_max;
-                    batch_max = 0;
-                }
-            }
+            for (size_t b = 0; b < window_batches; ++b)
+                work_grouped += batch_max_grouped[b];
 
             if (!md5GroupingWorthIt(work_in_order, work_grouped, window_rows))
             {
@@ -597,10 +605,9 @@ DECLARE_MD5_TARGET_CODE(
 
                 for (size_t j = 0; j < batch; ++j)
                 {
-                    const size_t row = window_base + grouped_rows[off + j];
-                    const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
-                    inputs[j] = reinterpret_cast<const uint8_t *>(&data[begin]);
-                    lengths[j] = offsets[row] - begin;
+                    const size_t idx = grouped_rows[off + j];
+                    inputs[j] = window_inputs[idx];
+                    lengths[j] = window_lengths[idx];
                 }
                 for (size_t j = batch; j < N2; ++j)
                 {
