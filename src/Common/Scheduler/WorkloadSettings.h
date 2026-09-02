@@ -42,6 +42,13 @@ struct WorkloadSettings
     /// Changing it on an existing workload swaps the algorithm in place.
     String scheduler = "fifo";
 
+    /// Runtime-resolved (NOT a workload DDL setting): the value of the `cpu_slot_preemption` server
+    /// setting captured when this node was built. Non-preemptive CPU slots (`= false`) charge a
+    /// fixed cost per acquired slot rather than real CPU time, so per-query scheduling has no
+    /// meaningful signal; that mode is deprecated, so a CPU leaf falls back to `fifo` while it is
+    /// off (see `WorkloadNodeTraits::schedulerFor`). Ignored for non-CPU resources.
+    bool cpu_slot_preemption = true;
+
     /// Limits total number of concurrent resource requests that are allowed to consume
     Int64 max_io_requests = unlimited;
 

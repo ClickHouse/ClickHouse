@@ -217,13 +217,15 @@ CREATE WORKLOAD all SETTINGS scheduler = 'fair'
 
 The `scheduler` is time-shared only (CPU and IO) and can be set per resource with the `FOR <resource>` clause; targeting it at a non-CPU/IO resource (a `QUERY` or `MEMORY RESERVATION` resource) is rejected at DDL time rather than silently ignored. Changing it on an existing workload swaps the algorithm in place, without interrupting other resources.
 
+For CPU resources, the `scheduler` and the per-query settings below require CPU slot preemption (`cpu_slot_preemption = 1`, the default). With preemption disabled, CPU slots are non-preemptive (a fixed cost is charged once per acquired slot), which carries no meaningful per-query CPU signal, so the CPU leaf runs `fifo` and these settings are ignored. IO scheduling is unaffected.
+
 Under the `fair` scheduler, a query's effective weight can be **lowered as it runs**, so shorter or newer queries get a larger share. This is controlled by per-query settings (all default to disabled):
 
 | Query setting | Effect |
 |---|---|
 | `weight` | Base fair-scheduling weight of the query (default `1.0`; a non-positive value is treated as `1.0`). |
 | `weight_lowering_age_seconds` | Once the query's wall-clock age exceeds this, its weight is lowered. `0` or a negative value disables it. |
-| `weight_lowering_cpu_seconds` | Once the query has attained this many CPU-seconds, its weight is lowered (CPU resources). Attained CPU is granted scheduler service (charged at grant, not as CPU is spent): with `cpu_slot_preemption = 1` (the default) it tracks granted CPU, leading actual consumption by at most one quantum (`cpu_slot_quantum_ns`) per active slot; without preemption it counts acquired slots (as noted above), not CPU-seconds. Use `weight_lowering_age_seconds` for a preemption-independent threshold. |
+| `weight_lowering_cpu_seconds` | Once the query has attained this many CPU-seconds, its weight is lowered (CPU resources). Attained CPU is granted scheduler service (charged at grant, not as CPU is spent), leading actual consumption by at most one quantum (`cpu_slot_quantum_ns`) per active slot. Requires `cpu_slot_preemption = 1` (the default); with preemption off, CPU scheduling falls back to `fifo` and this setting has no effect. |
 | `weight_lowering_io_bytes` | Once the query has attained this many IO bytes, its weight is lowered (IO resources). `0` or a negative value disables it. |
 | `weight_lowering_factor` | The factor the weight is multiplied by when a threshold is crossed (e.g. `0.25`). The first threshold to trip applies the full lowering; thresholds do not combine. `1.0` disables lowering. Clamped to `[0, 1]`, so it can only lower a query's weight, never raise it. |
 

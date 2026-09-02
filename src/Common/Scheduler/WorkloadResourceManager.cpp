@@ -13,6 +13,8 @@
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 
+#include <Interpreters/Context.h>
+
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -56,6 +58,13 @@ WorkloadResourceManager::NodeInfo::NodeInfo(CostUnit unit_, const ASTPtr & ast, 
     // We ignore unknown settings here for forward-compatibility.
     // There is no way to report error at this point other than stop server.
     settings.initFromChanges(create->changes, resource_name, /*throw_on_unknown_setting=*/ false);
+    // Capture the server-wide `cpu_slot_preemption` at node-build time. When it is off, a CPU leaf
+    // falls back to `fifo` (see `WorkloadNodeTraits::schedulerFor`) because non-preemptive slots
+    // carry no meaningful per-query CPU signal. `setCPUSlotPreemption` runs before workloads are
+    // built (Server.cpp config handler), so this reads the applied value; the global context can be
+    // absent only in early/edge contexts, where the default (preemption on) preserves scheduling.
+    if (auto global = Context::getGlobalContextInstance())
+        settings.cpu_slot_preemption = global->getCPUSlotPreemption();
 }
 
 WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)

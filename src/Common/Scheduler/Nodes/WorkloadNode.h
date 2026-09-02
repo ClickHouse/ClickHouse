@@ -49,6 +49,13 @@ struct WorkloadNodeTraits<ITimeSharedNode>
     // matching the documented CPU/IO-only scope, instead of silently degrading to anonymous FIFO.
     static SchedulerAlgorithm schedulerFor(const WorkloadSettings & settings_, CostUnit unit)
     {
+        // Non-preemptive CPU slots (`cpu_slot_preemption = 0`) charge a fixed cost per acquired slot
+        // rather than real CPU time, so per-query scheduling has no meaningful signal. That mode is
+        // deprecated and being removed, so a CPU leaf falls back to `fifo` and ignores the workload
+        // scheduling settings while preemption is off. (Resolved at node-build time; a live toggle
+        // takes effect on the next workload update — acceptable for a mode that is going away.)
+        if (unit == CostUnit::CPUNanosecond && !settings_.cpu_slot_preemption)
+            return SchedulerAlgorithm::Fifo;
         if (unit == CostUnit::IOByte || unit == CostUnit::CPUNanosecond)
             return parseSchedulerAlgorithm(settings_.scheduler);
         return SchedulerAlgorithm::Fifo;

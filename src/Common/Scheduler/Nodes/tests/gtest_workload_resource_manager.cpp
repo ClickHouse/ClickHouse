@@ -24,6 +24,7 @@
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/WorkloadResourceManager.h>
 #include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
 #include <base/getMemoryAmount.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/ProfileEvents.h>
@@ -3586,6 +3587,30 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsPerResourceScheduler)
         ws.initFromChanges(none);
         EXPECT_EQ(ws.scheduler, "fifo"); // default when unset
     }
+}
+
+TEST(SchedulerWorkloadResourceManager, CpuFallsBackToFifoWithoutPreemption)
+{
+    // Non-preemptive CPU slots (`cpu_slot_preemption = false`) carry no meaningful per-query CPU
+    // signal, so a CPU leaf ignores the workload `scheduler` setting and runs `fifo`. With
+    // preemption on, the configured algorithm applies. IO is unaffected by preemption.
+    using Traits = WorkloadNodeTraits<ITimeSharedNode>;
+
+    WorkloadSettings cpu_preempt;
+    cpu_preempt.scheduler = "fair";
+    cpu_preempt.cpu_slot_preemption = true;
+    EXPECT_EQ(Traits::schedulerFor(cpu_preempt, CostUnit::CPUNanosecond), SchedulerAlgorithm::Fair);
+
+    WorkloadSettings cpu_no_preempt;
+    cpu_no_preempt.scheduler = "fair";
+    cpu_no_preempt.cpu_slot_preemption = false;
+    EXPECT_EQ(Traits::schedulerFor(cpu_no_preempt, CostUnit::CPUNanosecond), SchedulerAlgorithm::Fifo);
+
+    // IO leaves are unaffected by CPU slot preemption.
+    WorkloadSettings io_no_preempt;
+    io_no_preempt.scheduler = "fair";
+    io_no_preempt.cpu_slot_preemption = false;
+    EXPECT_EQ(Traits::schedulerFor(io_no_preempt, CostUnit::IOByte), SchedulerAlgorithm::Fair);
 }
 
 TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
