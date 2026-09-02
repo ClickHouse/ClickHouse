@@ -47,8 +47,10 @@ ClickHouse의 `s3` 테이블 함수와 `S3` 디스크 유형은 S3 호환 게이
 docker run -d --name seaweedfs -p 8333:8333 \
   -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
   chrislusf/seaweedfs:latest \
-  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse -admin.port=12646
 ```
+
+`-admin.port=12646`은 SeaweedFS가 여기서 파생하는 관리자 gRPC 포트가 Linux 임시 포트 범위보다 낮게 유지되도록 하여, 시작 시 연결이 해당 포트를 먼저 점유하지 못하게 합니다.
 
 S3 엔드포인트가 포트 8333에서 응답할 때까지 기다린 후 계속하십시오:
 
