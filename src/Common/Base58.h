@@ -14,10 +14,8 @@ namespace DB
 /// time, so they accept an optional `check_cancellation` callback that is invoked periodically;
 /// it is expected to throw if the query has been cancelled or exceeded its time limit.
 ///
-/// `dst` also holds the conversion's intermediate state, so it must have room for
-/// `2 * src_length + 1` bytes to encode and `src_length` bytes to decode - the sizes
-/// `Base58EncodeTraits::getBufferSize` / `Base58DecodeTraits::getBufferSize` already provide. Only
-/// decode's intermediate state can outgrow its own output, by up to three bytes.
+/// `dst` also holds the conversion's intermediate state: it must have room for
+/// `2 * src_length + 1` bytes to encode and `src_length` bytes to decode.
 size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {});
 std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {});
 
