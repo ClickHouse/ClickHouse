@@ -1925,9 +1925,10 @@ void TCPHandler::sendPreviewData(QueryState & state, const Block & block)
     writeStringBinary("", *out);
 
     state.block_out->write(block);
-    state.maybe_compressed_out->next();
+    if (state.maybe_compressed_out != out)
+        state.maybe_compressed_out->next();
     out->finishChunk();
-    out->next();
+    /// The caller synchronizes `out` after the packet, the same way as for `Data` packets.
 }
 
 
