@@ -142,6 +142,10 @@ starts with an empty cache.
 | `networks` | any host | ClickHouse-side network restrictions (`ip`, `host`, `host_regexp`) for users of this directory. |
 | `max_cached_users` | `10000` | Bound on materialized users; `0` means unlimited. New usernames are rejected once the observed cache size is at or above the bound; already-materialized users keep authenticating. The bound is approximate under concurrent authentication. |
 
+Unknown parameters are rejected at startup, and so is a repeated parameter: only
+`allowed_role_prefix` (and the `role` and network entries inside `allowed_roles` and
+`networks`) may appear more than once.
+
 At most one `<http>` user directory is permitted: a second `<http>` entry is rejected at
 startup. (On distributed queries the receiving node materializes the user internally by
 username alone and could not determine which of several HTTP directories owns it.)

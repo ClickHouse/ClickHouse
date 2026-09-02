@@ -99,12 +99,15 @@ void HTTPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
             /// <default_profle> or <max_cached_user> would silently weaken policy if ignored.
             /// (LDAP is permissive about unknown directory keys; we deliberately are not.)
             static const std::unordered_set<String> known_keys{
-                "server", "allowed_roles", "allowed_role_prefix",
-                "default_profile", "networks", "max_cached_users", "name"};
-            String base_key = key;
-            if (size_t bracket = base_key.find('['); bracket != String::npos)
-                base_key.resize(bracket);
-            if (!known_keys.contains(base_key))
+                "server", "allowed_roles", "default_profile", "networks", "max_cached_users", "name"};
+            /// Poco exposes a repeated element as `key[n]`. Only `allowed_role_prefix` (handled
+            /// above) is repeatable; every other key is read once through its plain name, so a
+            /// repeated copy would be silently ignored - reject it instead of accepting an
+            /// ambiguous policy.
+            if (key.contains('['))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Repeated key '{}' in HTTP user directory configuration: only 'allowed_role_prefix' may be repeated", key);
+            if (!known_keys.contains(key))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Unknown key '{}' in HTTP user directory configuration", key);
         }

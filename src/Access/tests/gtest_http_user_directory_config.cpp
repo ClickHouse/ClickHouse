@@ -67,6 +67,47 @@ TEST(HTTPUserDirectoryConfig, SingleHTTPDirectoryAccepted)
 namespace
 {
 
+std::string directoryXML(const std::string & body)
+{
+    return "<clickhouse><user_directories><http><server>s1</server>" + body + "</http></user_directories></clickhouse>";
+}
+
+void registerDirectory(const std::string & xml)
+{
+    auto config = configFromString(xml);
+    AccessControl access_control;
+    access_control.addStoragesFromUserDirectoriesConfig(*config, "user_directories", ".", ".", "", {});
+}
+
+}
+
+TEST(HTTPUserDirectoryConfig, RepeatedSingletonKeysRejected)
+{
+    /// Every key except allowed_role_prefix is read once through its plain name; a repeated
+    /// copy (exposed by Poco as `key[1]`) would be silently ignored, so it must be rejected.
+    for (const auto & body : {
+        "<server>s2</server>",
+        "<default_profile>p1</default_profile><default_profile>p2</default_profile>",
+        "<max_cached_users>1</max_cached_users><max_cached_users>2</max_cached_users>",
+        "<networks><ip>::/0</ip></networks><networks><ip>::/0</ip></networks>",
+        "<allowed_roles><role>a</role></allowed_roles><allowed_roles><role>b</role></allowed_roles>",
+    })
+    {
+        EXPECT_THROW(registerDirectory(directoryXML(body)), Exception) << body;
+    }
+}
+
+TEST(HTTPUserDirectoryConfig, RepeatableKeysAccepted)
+{
+    EXPECT_NO_THROW(registerDirectory(directoryXML(
+        "<allowed_role_prefix>a_</allowed_role_prefix><allowed_role_prefix>b_</allowed_role_prefix>"
+        "<allowed_roles><role>a</role><role>b</role></allowed_roles>"
+        "<networks><ip>::/0</ip><ip>127.0.0.1</ip><host>localhost</host></networks>")));
+}
+
+namespace
+{
+
 /// A directory whose <networks> policy rejects everything outside 10.0.0.0/8, so an
 /// address outside that subnet is guaranteed to be disallowed by THIS directory.
 const std::string RESTRICTIVE_NETWORKS_XML = R"(<clickhouse>
