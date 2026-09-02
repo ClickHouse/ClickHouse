@@ -83,6 +83,23 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const std::optional<String> & table_uuid);
 
 
+/// The last word before publishing new metadata.
+///
+/// Publishing wins by version number: `getLatestOrExplicitMetadataFileAndVersion` prefers the
+/// highest version, and the version-hint CAS only detects another writer of the same table racing
+/// for the same version. A table dropped and recreated at the same root restarts its numbering, so
+/// a statement validated for the previous table would publish over the replacement instead of
+/// losing to it, and the incarnation counter alone cannot see that: it only moves when a
+/// replacement is observed through `IcebergMetadata::update`. Re-read the metadata that is in
+/// storage right now and refuse to publish when its own `table-uuid` describes another table.
+void checkStorageStillHoldsValidatedTable(
+    const PersistentTableComponents & persistent_table_components,
+    const ObjectStoragePtr & object_storage,
+    const DataLakeStorageSettings & data_lake_settings,
+    const ContextPtr & context,
+    std::optional<UInt64> validated_incarnation,
+    std::string_view operation);
+
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
 

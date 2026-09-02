@@ -1483,6 +1483,11 @@ bool IcebergStorageSink::initializeMetadata()
         {
             std::string json_representation = stringifyJSON(metadata, 4);
 
+            /// The version-hint CAS only guards against another writer of *this* table claiming
+            /// the same version; it does not notice that the table itself was replaced.
+            Iceberg::checkStorageStillHoldsValidatedTable(
+                persistent_table_components, object_storage, data_lake_settings, context, pinned_incarnation, "the write");
+
             fiu_do_on(FailPoints::iceberg_writes_cleanup,
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");

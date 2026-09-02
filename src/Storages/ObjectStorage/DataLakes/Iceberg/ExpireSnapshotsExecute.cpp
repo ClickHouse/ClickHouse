@@ -790,6 +790,9 @@ ExpireSnapshotsResult expireSnapshots(
         /// The commit below rewrites the metadata and the deletion that follows it removes the
         /// expired files for good, so this is the last point at which a replacement can be caught.
         persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE expire_snapshots");
+        Iceberg::checkStorageStillHoldsValidatedTable(
+            persistent_table_components, object_storage, data_lake_settings, context, validated_incarnation,
+            "EXECUTE expire_snapshots");
 
         std::string json_representation = stringifyJSON(metadata, 4);
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();

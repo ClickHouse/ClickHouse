@@ -434,52 +434,6 @@ static void writeDataFiles(
     }
 }
 
-/// The last word before publishing new metadata.
-///
-/// Publishing wins by version number: `getLatestOrExplicitMetadataFileAndVersion` prefers the
-/// highest version, and the version-hint CAS only detects another writer racing for the same
-/// version. A table dropped and recreated at the same root restarts its numbering, so a statement
-/// validated for the previous table would publish over the replacement instead of losing to it,
-/// and the incarnation counter alone cannot see that: it only moves when a replacement is observed
-/// through `IcebergMetadata::update`. Re-read the metadata that is in storage right now and refuse
-/// to publish when it describes another table.
-static void checkStorageStillHoldsValidatedTable(
-    const PersistentTableComponents & persistent_table_components,
-    ObjectStoragePtr object_storage,
-    const DataLakeStorageSettings & data_lake_settings,
-    ContextPtr context,
-    std::optional<UInt64> validated_incarnation,
-    std::string_view operation)
-{
-    if (!validated_incarnation.has_value())
-        return;
-
-    auto log = getLogger("IcebergCompaction");
-
-    const auto [_version, current_metadata_path, _compression, _identity] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage,
-        persistent_table_components.table_path,
-        data_lake_settings,
-        persistent_table_components.metadata_cache,
-        context,
-        log.get(),
-        persistent_table_components.getTableUuid(),
-        persistent_table_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ true);
-
-    auto current_metadata_object = getMetadataJSONObject(
-        current_metadata_path,
-        object_storage,
-        persistent_table_components.metadata_cache,
-        context,
-        log,
-        getCompressionMethodFromMetadataFile(current_metadata_path),
-        persistent_table_components.getTableUuid());
-
-    persistent_table_components.checkMetadataBelongsToValidatedTable(current_metadata_object, validated_incarnation, operation);
-}
-
 static bool writeConsolidatedManifestFile(
     int metadata_version,
     Poco::JSON::Object::Ptr metadata_object,
@@ -977,7 +931,7 @@ static bool writeConsolidatedManifestFile(
 
         /// The version-hint CAS only guards against another writer of *this* table claiming the
         /// same version; it does not notice that the table itself was replaced. Fail close here.
-        checkStorageStillHoldsValidatedTable(
+        Iceberg::checkStorageStillHoldsValidatedTable(
             persistent_table_components, object_storage, data_lake_settings, context, validated_incarnation,
             "OPTIMIZE TABLE ... MANIFEST");
 
@@ -1568,7 +1522,7 @@ void compactIcebergTable(
         persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE");
         /// `writeMetadataFiles` publishes unconditionally, and the new metadata wins by version
         /// number, so this is the last point at which publishing over a replacement can be refused.
-        checkStorageStillHoldsValidatedTable(
+        Iceberg::checkStorageStillHoldsValidatedTable(
             persistent_table_components, object_storage_, data_lake_settings, context_, validated_incarnation, "OPTIMIZE");
         writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);

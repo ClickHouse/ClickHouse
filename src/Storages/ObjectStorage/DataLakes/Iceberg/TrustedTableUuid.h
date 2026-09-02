@@ -86,6 +86,16 @@ public:
     {
         std::lock_guard lock(mutex);
         bool changed = uuid != new_uuid;
+        /// A table with no `table-uuid` - possible only in format-version 1 - carries no identity
+        /// of its own, so a replacement can only be seen in the metadata file. A recreated table
+        /// restarts the version numbering and rewrites `metadata.json`, so a version that does not
+        /// advance past the last validated one, reached through a different file or through the
+        /// same path with a different identity, is the replacement token for these tables.
+        /// A storage that cannot report the identity of an unchanged path leaves nothing to
+        /// compare, and the replacement is only seen once the version moves.
+        if (!changed && !uuid.has_value() && !new_uuid.has_value() && last_validated.has_value())
+            changed = metadata_version <= last_validated->version
+                && (metadata_file_path != last_validated->path || identity != last_validated->identity);
         uuid = std::move(new_uuid);
         if (changed)
         {
@@ -122,14 +132,13 @@ public:
     /// was last confirmed, whatever its version, so that a stable lower-version state stays
     /// cacheable after its first revalidation instead of paying for an uncached read forever.
     ///
-    /// A table with no `table-uuid` at all is never content-cached under a UUID key, so there is
-    /// nothing to revalidate.
+    /// A table with no `table-uuid` at all is never content-cached under a UUID key, but it is
+    /// still revalidated: `commitValidated` detects its replacement from the metadata file that
+    /// comes back, and it can only do so when the file is actually re-read.
     bool needsRevalidation(
         Int32 metadata_version, const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity) const
     {
         SharedLockGuard lock(mutex);
-        if (!uuid.has_value())
-            return false;
         if (!last_validated.has_value() || !highest_validated_version.has_value())
             return true;
         if (metadata_version > *highest_validated_version)

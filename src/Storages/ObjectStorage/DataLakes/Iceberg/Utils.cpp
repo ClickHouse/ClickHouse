@@ -1661,6 +1661,43 @@ PartitionColumnValues getIdentityPartitionColumnValues(
     return result;
 }
 
+void checkStorageStillHoldsValidatedTable(
+    const PersistentTableComponents & persistent_table_components,
+    const ObjectStoragePtr & object_storage,
+    const DataLakeStorageSettings & data_lake_settings,
+    const ContextPtr & context,
+    std::optional<UInt64> validated_incarnation,
+    std::string_view operation)
+{
+    if (!validated_incarnation.has_value())
+        return;
+
+    auto log = getLogger("IcebergValidatedTableCheck");
+
+    const auto [_version, current_metadata_path, _compression, _identity] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_table_components.table_path,
+        data_lake_settings,
+        persistent_table_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_table_components.getTableUuid(),
+        persistent_table_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_explicit_metadata_file_path */ true);
+
+    auto current_metadata_object = getMetadataJSONObject(
+        current_metadata_path,
+        object_storage,
+        persistent_table_components.metadata_cache,
+        context,
+        log,
+        getCompressionMethodFromMetadataFile(current_metadata_path),
+        persistent_table_components.getTableUuid());
+
+    persistent_table_components.checkMetadataBelongsToValidatedTable(current_metadata_object, validated_incarnation, operation);
+}
+
 }
 
 #endif

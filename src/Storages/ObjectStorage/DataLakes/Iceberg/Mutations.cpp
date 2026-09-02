@@ -373,7 +373,9 @@ static bool writeMetadataFiles(
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
-    SharedHeader data_sample_block)
+    SharedHeader data_sample_block,
+    const PersistentTableComponents & persistent_table_components,
+    std::optional<UInt64> validated_incarnation)
 {
     auto delete_sample_block = std::make_shared<const Block>(getPositionDeleteFileSampleBlock());
 
@@ -526,6 +528,12 @@ static bool writeMetadataFiles(
         }
 
         std::string json_representation = stringifyJSON(metadata, 4);
+
+        /// The version-hint CAS only guards against another writer of *this* table claiming the
+        /// same version; it does not notice that the table itself was replaced. Fail close here.
+        Iceberg::checkStorageStillHoldsValidatedTable(
+            persistent_table_components, object_storage, data_lake_settings, context, validated_incarnation,
+            "the mutation");
 
         fiu_do_on(FailPoints::iceberg_writes_cleanup,
         {
@@ -823,7 +831,9 @@ void mutate(
                     partititon_spec,
                     static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
-                    sample_block))
+                    sample_block,
+                    persistent_table_components,
+                    validated_incarnation))
                 continue;
         }
         break;
@@ -920,6 +930,10 @@ void alter(
         /// A replacement landing while the new metadata was being built would make the rewrite
         /// below overwrite another table's metadata with this one's schema.
         persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "ALTER");
+        /// The incarnation only moves when some query observed the replacement; the metadata in
+        /// storage is the authority on which table this `ALTER` would publish over.
+        Iceberg::checkStorageStillHoldsValidatedTable(
+            persistent_table_components, object_storage, data_lake_settings, context, validated_incarnation, "ALTER");
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
