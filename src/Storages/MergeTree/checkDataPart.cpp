@@ -19,6 +19,9 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ErrnoException.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/credentials/credentials.hpp>
+#endif
 #include <Poco/Net/NetException.h>
 
 
@@ -83,6 +86,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     catch (const Azure::Core::RequestFailedException & e)
     {
         return isRetryableAzureException(e);
+    }
+    catch (const Azure::Core::Credentials::AuthenticationException &)
+    {
+        /// AuthenticationException (token/RBAC not ready) is transient; separate catch — it isn't a RequestFailedException.
+        return true;
     }
 #endif
     catch (const ErrnoException & e)

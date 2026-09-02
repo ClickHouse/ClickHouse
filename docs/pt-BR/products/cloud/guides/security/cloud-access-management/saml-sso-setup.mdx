@@ -15,7 +15,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/Enterpris
 
 O ClickHouse Cloud oferece suporte a single sign-on (SSO) via Security Assertion Markup Language (SAML). Isso permite que você faça login com segurança na sua organização do ClickHouse Cloud autenticando-se com seu provedor de identidade (IdP).
 
-Oferecemos suporte a SSO iniciado pelo provedor de serviço, várias organizações usando conexões separadas e provisionamento just-in-time. Também oferecemos suporte ao [provisionamento SCIM](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup) em prévia privada, com suporte para Okta. Ainda não oferecemos suporte a mapeamento de atributos.
+Oferecemos suporte a SSO iniciado pelo provedor de serviço, várias organizações usando conexões separadas e provisionamento just-in-time. Também oferecemos suporte ao provisionamento SCIM com [Okta](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup) e [Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup-entra). Ainda não oferecemos suporte a mapeamento de atributos.
 
 Os clientes que habilitam integrações SAML também podem definir a função padrão que será atribuída a novos usuários e ajustar as configurações de tempo limite da sessão.
 
@@ -351,7 +351,13 @@ O restante deste guia aborda a configuração única.
   </Accordion>
 
   <Accordion title="Como usar SAML SSO com várias organizações?">
-    O ClickHouse Cloud oferece suporte a SSO com várias organizações, com uma conexão separada para cada organização. Use o link direto (`https://console.clickhouse.cloud/?connection={organizationid}`) para fazer login em cada uma delas e saia de uma organização antes de entrar em outra. Se você não quiser que os usuários do seu domínio sejam encaminhados automaticamente para uma organização ao informarem o e-mail em `https://console.clickhouse.cloud`, abra um ticket de suporte para desativar esse comportamento.
+    O ClickHouse Cloud oferece suporte a SSO com várias organizações, com uma conexão separada para cada organização.
+
+    Seu primeiro login em cada organização deve usar o link direto correspondente (`https://console.clickhouse.cloud/?connection={organizationId}`). Esse primeiro login provisiona sua conta nessa organização. Se sua organização tiver SCIM habilitado, você poderá pular esta etapa, pois sua conta já estará provisionada.
+
+    Nos logins subsequentes, faça login em qualquer uma das suas organizações SAML. Suas outras organizações SAML ficam disponíveis no seletor de organizações na barra lateral do console, e selecionar uma delas faz login nessa organização por meio do SSO dela.
+
+    Se você não quiser que os usuários do seu domínio sejam encaminhados automaticamente para uma organização ao informarem o e-mail em `https://console.clickhouse.cloud`, abra um ticket de suporte para desativar esse comportamento.
   </Accordion>
 
   <Accordion title="Por que vejo várias contas para o mesmo usuário?">
@@ -364,5 +370,5 @@ O restante deste guia aborda a configuração única.
 </div>
 
 * [Manage cloud users](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — gerencie permissões e restrinja o acesso apenas a conexões SAML.
-* [Provisionamento SCIM](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup) — automatize o provisionamento de usuários e grupos (prévia privada).
+* Provisionamento SCIM — automatize o provisionamento de usuários e grupos com [Okta](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup) ou [Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup-entra).
 * [Console roles and permissions](/pt-BR/products/cloud/reference/security/console-roles) — os funções que você pode atribuir como função SAML padrão.

@@ -245,6 +245,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
         auto mutation_steps
             = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
+        read_task_info.has_on_fly_mutation_steps = !mutation_steps.empty();
         std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
     }
 
@@ -424,7 +425,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     else
     {
         task_readers = previous_task->releaseReaders();
-        task_readers.updateAllMarkRanges(ranges);
+        task_readers.updateAllMarkRanges(ranges, patches_ranges);
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);

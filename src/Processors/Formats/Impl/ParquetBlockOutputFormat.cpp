@@ -46,6 +46,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
     options.output_string_as_string = format_settings.parquet.output_string_as_string;
     options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
+    options.output_wide_integer_as_decimal = format_settings.parquet.output_wide_integer_as_decimal;
     options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
     options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
     options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
@@ -383,6 +384,7 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
             /// otherwise it may deadlock.
             if (!pool->trySchedule(job))
                 break;
+            ++threads_running;
         }
     }
 }

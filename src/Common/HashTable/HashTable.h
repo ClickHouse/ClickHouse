@@ -1102,9 +1102,14 @@ public:
         return buf[place].isZero(*this);
     }
 
+    /// A reservation of zero must be a no-op: the parameterless `resize` below is the
+    /// grow-one-step primitive, so forwarding zero would double the buffer instead. Repeated
+    /// zero reservations (e.g. `reserve(size() + additional)` with both terms zero) would then
+    /// grow an empty table without bound.
     void reserve(size_t num_elements)
     {
-        resize(num_elements);
+        if (num_elements)
+            resize(num_elements);
     }
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
