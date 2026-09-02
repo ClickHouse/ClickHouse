@@ -1099,7 +1099,8 @@ struct TestQuery {
             if (!park_requested || query_is_finished)
                 return;
         }
-        cpu_lease->park(); // free the CPU slot (the give-back happens here)
+        if (!cpu_lease->park()) // free the CPU slot (the give-back happens here)
+            return;             // no-op (e.g. shutting down) -> do not unpark
         {
             std::unique_lock lock{mutex};
             ++parked_threads;

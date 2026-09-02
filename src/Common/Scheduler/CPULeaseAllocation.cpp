@@ -104,10 +104,9 @@ bool CPULeaseAllocation::Lease::renew()
         return false;
 }
 
-void CPULeaseAllocation::Lease::park()
+bool CPULeaseAllocation::Lease::park()
 {
-    if (parent)
-        parent->parkLease(*this);
+    return parent ? parent->parkLease(*this) : false;
 }
 
 void CPULeaseAllocation::Lease::unpark()
@@ -414,31 +413,14 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
     LOG_EVENT(R);
 }
 
-void CPULeaseAllocation::parkLease(Lease & lease)
+void CPULeaseAllocation::setParked(size_t thread_num)
 {
-    std::unique_lock lock{mutex};
-
-    // Shutting down: free() has already finished all requests and the thread will stop at its
-    // next renew(). Leave the accounting alone — park is a no-op during teardown.
-    if (shutdown)
-        return;
-
-    const size_t thread_num = lease.slot_id;
-
-    // Only a running thread parks. renew() (the only place a thread is preempted/downscaled) runs
-    // at step boundaries, while park() runs inside a step, so a thread cannot be both preempted
-    // and parking. The guard is defensive; a matching unpark() then no-ops on `!parked`.
-    if (!threads.isRunning(thread_num))
-        return;
-
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlParks);
-    parked_increment.add(1);
-    acquired_increment.sub(1); // no longer an acquired running slot (mirrors renew() preemption)
-
-    // (1) Move running -> parked. Mirrors setPreempted's bookkeeping, but a distinct state and
-    //     lighter: no clock read, no waitForGrant. The freed slot becomes granted (unacquired).
+    // Move a running thread to parked (a non-CPU wait: I/O or idle). Mirrors setPreempted, but a
+    // distinct state and lighter (no clock read, no waitForGrant). The freed slot becomes granted.
+    chassert(threads.isRunning(thread_num));
     threads.parked.set(thread_num);
     ++threads.parked_count;
+
     --threads.running_count;
     if (threads.last_running == thread_num)
     {
@@ -448,11 +430,49 @@ void CPULeaseAllocation::parkLease(Lease & lease)
                 break;
         }
     }
+
     ++granted;
     if (granted > 0 && !shutdown)
         acquirable.store(true, std::memory_order_relaxed);
+    LOG_EVENT(K);
+}
 
-    // (2) Active clockless give-back. Parking dropped the query's slot demand by one
+void CPULeaseAllocation::resetParked(size_t thread_num)
+{
+    // Borrow a slot back for a resuming thread (may drive granted negative; the next renew()
+    // reconciles). Mirrors resetPreempted minus the cv wake (the thread resumes itself).
+    --granted;
+    if (granted <= 0 && !exception)
+        acquirable.store(false, std::memory_order_relaxed);
+
+    chassert(threads.parked[thread_num]);
+    threads.parked.reset(thread_num);
+    --threads.parked_count;
+
+    if (++threads.running_count == 1)
+        threads.last_running = thread_num;
+    else
+        threads.last_running = std::max(threads.last_running, thread_num);
+    LOG_EVENT(W);
+}
+
+bool CPULeaseAllocation::parkLease(Lease & lease)
+{
+    std::unique_lock lock{mutex};
+
+    // Shutting down: free() has already finished all requests and the thread will stop at its next
+    // renew(). Park is a no-op during teardown; the caller must not unpark (park returns false).
+    if (shutdown)
+        return false;
+
+    const size_t thread_num = lease.slot_id;
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlParks);
+    parked_increment.add(1);
+    acquired_increment.sub(1); // no longer an acquired running slot (mirrors renew() preemption)
+
+    setParked(thread_num);
+
+    // Active clockless give-back. Parking dropped the query's slot demand by one
     //     (effectiveMaxSlots() shrank). If we still hold more quanta than that, finish one now so
     //     its scheduler semaphore unit is freed immediately for other queries — no clock read, no
     //     waiting ~10 ms for another thread's consume(). A parker that was only borrowing holds no
@@ -466,13 +486,10 @@ void CPULeaseAllocation::parkLease(Lease & lease)
         requests.finish();
     }
 
-    // NOTE: park is purely scheduler-side. There is no executor/task-layer callback (unlike
-    // preemption's `on_preempt`): the parked thread keeps its task and its executor slot, and the
-    // freed scheduler unit is handed to whoever is waiting in the resource queue by the scheduler
-    // itself. `total_slots`/finish-detection in the executor are unaffected.
-
-    // Trace the park event. Paired with the CPU_LEASE_UNPARK event by utils/trace-visualizer to
-    // show the parked interval (the CPU-scheduling view), same as PREEMPTION.
+    // park is purely scheduler-side: no executor/task-layer callback (unlike preemption's
+    // on_preempt). The parked thread keeps its task and executor slot; the freed scheduler unit is
+    // handed to a waiter by the scheduler, so total_slots/finish-detection are unaffected. Trace the
+    // event (paired with CPU_LEASE_UNPARK by utils/trace-visualizer to show the parked interval).
     if (settings.trace_cpu_scheduling)
     {
         OpenTelemetry::SpanHolder park_span("CPU_LEASE_PARK");
@@ -483,7 +500,7 @@ void CPULeaseAllocation::parkLease(Lease & lease)
         park_span.addAttribute("running", threads.running_count);
         park_span.addAttribute("parked", threads.parked_count);
     }
-    LOG_EVENT(K);
+    return true;
 }
 
 void CPULeaseAllocation::unparkLease(Lease & lease)
@@ -491,27 +508,11 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
     std::unique_lock lock{mutex};
 
     const size_t thread_num = lease.slot_id;
-
-    // Not parked (e.g. park() no-oped because we were shutting down when it ran) -> nothing to do.
-    if (!threads.parked[thread_num])
-        return;
-
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlUnparks);
     parked_increment.sub(1);
-    --threads.parked_count;
-
-    // Restore parked -> running, borrowing a slot immediately (never block). Mirrors
-    // resetPreempted minus the cv wake (this very thread is the one resuming). `--granted` may go
-    // negative = borrow; the next renew() reconciles by preempting the current last_running.
-    --granted;
-    if (granted <= 0 && !exception)
-        acquirable.store(false, std::memory_order_relaxed);
-    threads.parked.reset(thread_num);
-    if (++threads.running_count == 1)
-        threads.last_running = thread_num;
-    else
-        threads.last_running = std::max(threads.last_running, thread_num);
     acquired_increment.add(1);
+
+    resetParked(thread_num);
 
     // Trace the unpark event (pairs with CPU_LEASE_PARK in utils/trace-visualizer). Emitted on
     // both the normal and teardown paths so every park has a matching unpark.
@@ -526,21 +527,13 @@ void CPULeaseAllocation::unparkLease(Lease & lease)
         unpark_span.addAttribute("parked", threads.parked_count);
     }
 
-    // Tearing down: do not re-request; the thread stops at its next renew().
-    if (shutdown)
-    {
-        LOG_EVENT(W);
-        return;
-    }
-
     // Demand rose by one (effectiveMaxSlots() grew): kick one re-request so the borrowed slot is
-    // backed by a real quantum again. The grant chain fills the rest.
+    // backed by a real quantum again (unless shutting down). The grant chain fills the rest.
     if (!shutdown && allocated < effectiveMaxSlots() && !requests.hasEnqueued())
     {
         if (!schedule(lock))
             grantImpl(lock);
     }
-    LOG_EVENT(W);
 }
 
 void CPULeaseAllocation::failed(const std::exception_ptr & ptr)

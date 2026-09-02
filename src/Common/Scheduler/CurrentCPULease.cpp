@@ -27,11 +27,10 @@ CPULeaseParkGuard::CPULeaseParkGuard()
 {
     if (lease)
     {
+        // Only the outermost guard on this thread parks; it unparks iff park() actually parked
+        // (park() returns false if it was a no-op, e.g. the allocation is shutting down).
         if (cpu_park_depth == 0)
-        {
-            parked = true;
-            lease->park();
-        }
+            parked = lease->park();
         ++cpu_park_depth;
     }
 }

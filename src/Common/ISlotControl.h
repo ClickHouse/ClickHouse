@@ -75,13 +75,14 @@ public:
     /// worker sleeping while there is no task). The holder keeps the lease object but stops
     /// counting against the CPU concurrency limit, so another thread can use the freed CPU.
     /// Lightweight: no CPU-time accounting is done here; CPU consumed during the wait is
-    /// reported by the next `renew`. Does not block. Must be paired with a later `unpark`.
-    /// Default is a no-op (for slot kinds without preemptive leasing).
-    virtual void park() {}
+    /// reported by the next `renew`. Does not block. Returns true if the slot was actually
+    /// parked (then `unpark` must be called once); false if parking was a no-op (e.g. the
+    /// allocation is shutting down) and `unpark` must NOT be called. Default is a no-op.
+    [[nodiscard]] virtual bool park() { return false; }
 
     /// Re-acquire the slot after a parked wait. Borrows a slot immediately and never blocks;
-    /// if the allocation is over budget again, the next `renew` corrects it. Must follow `park`.
-    /// Default is a no-op.
+    /// if the allocation is over budget again, the next `renew` corrects it. Call only after a
+    /// `park` that returned true. Default is a no-op.
     virtual void unpark() {}
 };
 

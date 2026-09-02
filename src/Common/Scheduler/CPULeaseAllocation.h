@@ -110,7 +110,7 @@ private:
         ~Lease() override;
         void startConsumption() override;
         bool renew() override;
-        void park() override;
+        bool park() override;
         void unpark() override;
         void reset();
 
@@ -205,12 +205,18 @@ private:
     void resetPreempted(size_t thread_num);
 
     /// Park/unpark a thread that voluntarily stops using CPU for a non-CPU wait (I/O or idle).
-    /// `parkLease` moves the thread running -> parked (like `setPreempted`, but a distinct state
-    /// and lighter: no clock read) and, since a parked thread lowers the query's slot demand,
+    /// `parkLease` moves the thread running -> parked (via `setParked`, mirroring `setPreempted`
+    /// but lighter: no clock read) and, since a parked thread lowers the query's slot demand,
     /// actively gives one held quantum back to the scheduler so its semaphore unit frees at once.
-    /// `unparkLease` restores the thread (borrowing a slot, never blocking) and kicks a re-request.
-    void parkLease(Lease & lease);
+    /// Returns false (a no-op) if shutting down. `unparkLease` restores the thread (via
+    /// `resetParked`, borrowing a slot, never blocking) and kicks a re-request.
+    bool parkLease(Lease & lease);
     void unparkLease(Lease & lease);
+
+    /// Parked thread set management (mirrors setPreempted/resetPreempted). `setParked` moves a
+    /// running thread to parked; `resetParked` borrows a slot back to make it running again.
+    void setParked(size_t thread_num);
+    void resetParked(size_t thread_num);
 
     /// Max slots we should currently request from the scheduler: the pipeline ceiling
     /// `current_max_slots` minus the number of parked threads (whose demand is temporarily gone).
