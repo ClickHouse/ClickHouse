@@ -47,13 +47,17 @@ doc_type: 'reference'
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
 * اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على `1`.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 addressToLine(address_of_binary_instruction)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `address_of_binary_instruction` — عنوان التعليمة في عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -67,7 +71,7 @@ addressToLine(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -87,7 +91,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -106,7 +110,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -136,13 +140,17 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
 * اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على `1`.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 addressToLineWithInlines(address_of_binary_instruction)
 ```
 
-**الوسيطات**
+**وسيطة الدالة**
 
 * `address_of_binary_instruction` — عنوان تعليمة في عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -228,17 +236,21 @@ WHERE
   ## addressToSymbol
 </div>
 
-استُحدث في: v20.1.0
+أُضيف في: v20.1.0
 
 يحوّل عنوانًا في الذاكرة الافتراضية داخل عملية خادم ClickHouse إلى رمز من ملفات الكائنات الخاصة بـ ClickHouse.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطة نفسها.
+</Note>
+
+**البنية**
 
 ```sql
 addressToSymbol(address_of_binary_instruction)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `address_of_binary_instruction` — عنوان التعليمة ضمن عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -252,7 +264,7 @@ addressToSymbol(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -272,7 +284,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -293,7 +305,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -335,20 +347,20 @@ clone
 demangle(symbol)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `symbol` — رمز من ملف كائن. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-يُعيد اسم دالة C++، أو سلسلة نصية فارغة إذا لم يكن الرمز صالحًا. [`String`](/ar/reference/data-types/string)
+يُعيد اسم دالة C++، أو سلسلة فارغة إذا لم يكن الرمز صالحًا. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
 **استرجاع أول سلسلة نصية من جدول النظام `trace_log`**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -368,7 +380,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -389,7 +401,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
