@@ -1,0 +1,406 @@
+---
+slug: /optimize/diagnose-slow-queries
+sidebarTitle: 'تشخيص الاستعلامات البطيئة'
+title: 'تشخيص الاستعلامات البطيئة'
+description: 'تعرّف على كيفية تحديد استعلامات ClickHouse البطيئة وفحص استخدامها للموارد وخطط تنفيذها'
+doc_type: 'guide'
+keywords: ['تحسين الاستعلامات', 'سجل الاستعلامات', 'الاستعلامات البطيئة', 'EXPLAIN', 'الأداء']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ar/_nyc_taxi_example_dataset.mdx';
+
+يبدأ تشخيص الاستعلام البطيء بالرجوع إلى سجل الاستعلامات الخاص به. يوضح هذا الدليل كيفية استخدام `system.query_log` للعثور على أنماط متكررة للاستعلامات البطيئة، واختيار تنفيذ ممثل، ومراجعة استخدامه للموارد. بعد ذلك، ستستخدم `EXPLAIN` لفحص خطة تنفيذ الاستعلام وصياغة فرضية بشأن عنق الزجاجة قبل تعديل الاستعلام أو مخطط البيانات.
+
+<div id="before-you-begin">
+  ## قبل البدء
+</div>
+
+تستخدم الأمثلة الواردة في هذا الدليل جدول `nyc_taxi.trips_small_inferred`. لتنفيذها كما هي، أنشئ الجدول وحمّله إذا لم تكن قد فعلت ذلك مسبقًا:
+
+<Accordion title="إعداد مجموعة البيانات النموذجية">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+لإعادة إنتاج نتائج سجل الاستعلامات في هذا الدليل، نفّذ [استعلامات حمل العمل النموذجية](/ar/guides/clickhouse/performance-and-monitoring/query-optimization-example#define-the-baseline-workload) الثلاثة جميعها مرتين على الأقل بعد تحميل مجموعة البيانات. ثم أفرغ سجل الاستعلامات لتصبح عمليات التنفيذ المكتملة متاحة للأمثلة أدناه:
+
+```sql
+SYSTEM FLUSH LOGS;
+```
+
+إذا لم تتمكن من تنفيذ `SYSTEM FLUSH LOGS`، فانتظر حتى يُفرَّغ سجل الاستعلامات تلقائيًا، ثم أعد محاولة البحث الأول. عند تشخيص حمل العمل لديك، تأكد من أن `system.query_log` يحتوي على عمليات تنفيذ مكتملة ضمن النطاق الزمني الذي تنوي فحصه.
+
+<div id="how-it-works">
+  ## آلية العمل
+</div>
+
+افتراضيًا، يسجّل ClickHouse معلومات عن الاستعلامات المكتملة في جدول [`system.query_log`](/ar/reference/system-tables/query_log). وقد يتضمن كل سجل مدة الاستعلام، وعدد الصفوف المقروءة، واستخدام CPU والذاكرة، ونشاط ذاكرة التخزين المؤقت لنظام الملفات.
+
+تساعدك هذه القياسات على تحديد أنماط الاستعلامات البطيئة وفهم كيفية استخدام هذه الاستعلامات للموارد. بعد اختيار تنفيذ ممثل، يمكنك فحص خطة تنفيذ الاستعلام للتحقق من المواضع التي قد يستغرق فيها الاستعلام وقتًا.
+
+في عنقود، تظل بيانات سجل الاستعلامات محلية على كل عقدة. تستخدم الأمثلة في هذا الدليل [`clusterAllReplicas`](/ar/reference/functions/table-functions/cluster) للاستعلام من كل نسخة متماثلة، و[`merge`](/ar/reference/functions/table-functions/merge) لتضمين جدول `system.query_log` الحالي وأي جداول `query_log_N` مُرقّمة بالإصدار ومحتفَظ بها بعد تغييرات مخطط جداول النظام.
+
+يتضمن كل مثال لسجل الاستعلامات علامات تبويب لعمليات النشر على عنقود وعلى عقدة واحدة. يوفر ClickHouse Cloud عنقود `default` المستخدم في أمثلة العنقود. في عملية نشر ذاتية الإدارة، استبدل `default` بعنقود مدرج في [`system.clusters`](/ar/reference/system-tables/clusters).
+
+<Note>
+  تضبط الأمثلة [`skip_unavailable_shards`](/ar/reference/settings/session-settings#skip_unavailable_shards) بحيث لا تتسبب نسخة متماثلة غير متاحة مؤقتًا في فشل استعلام التشخيص. ويكون ذلك مفيدًا بشكل خاص أثناء التحجيم التلقائي. لا تُضمَّن السجلات من النسخة المتماثلة التي تم تخطيها، لذا قد تكون النتائج غير مكتملة.
+</Note>
+
+<div id="diagnose-a-slow-query">
+  ## تشخيص استعلام بطيء
+</div>
+
+بعد اكتمال عمليات التنفيذ في سجل الاستعلامات، اتبع هذه الخطوات الثلاث بالترتيب. ستحدّد نمطًا متكررًا لاستعلام بطيء، وتختار عملية تنفيذ ممثّلة، وتفحص خطة تنفيذ الاستعلام.
+
+<Steps titleSize="h3">
+  <Step title="تحديد الاستعلامات المُرشَّحة" id="identify-candidate-queries">
+    ابدأ بتجميع الاستعلامات الأولية المكتملة حسب `normalized_query_hash`. يميّز ذلك أنماط الاستعلامات المتكررة عن عمليات التنفيذ البطيئة المنفردة. ويرتّب الاستعلام التالي الأنماط وفقًا للوسيط لمدتها، مع تضمين استعلام كمثال لكل نمط:
+
+    <Tabs>
+      <Tab title="العنقود">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1
+        ```
+      </Tab>
+
+      <Tab title="عقدة واحدة">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        ```
+      </Tab>
+    </Tabs>
+
+    استخدم `executions` للتمييز بين الحِمل (workload) المتكرر والاستعلامات المنفردة. فالنمط (pattern) ذو وسيط المدة (Duration) المرتفع، أو التنفيذات المتكررة، أو الاستهلاك المرتفع للموارد، يُعد مرشحًا (candidate) للتقصّي (investigation) أقوى من عملية تنفيذ بطيئة واحدة.
+
+    كجردٍ سريع، يسرد الاستعلام التالي أبطأ عملية تنفيذ مكتملة لما يصل إلى خمسة أنماط استعلام مختلفة على NYC Taxi dataset. وهو يستثني عبارات تحميل مجموعة البيانات وعمليات التنفيذ المتكررة للنمط نفسه. وفي الخطوة التالية، ستحصر سجل الاستعلامات في عمليات التنفيذ التي تحمل قيمة `normalized_query_hash` التي اخترتها أعلاه.
+
+    <Tabs>
+      <Tab title="عنقود">
+        ```sql
+        -- اعثر على أطول 5 استعلامات تشغيلًا من قاعدة البيانات nyc_taxi خلال الساعة الماضية
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        SETTINGS skip_unavailable_shards = 1
+        FORMAT VERTICAL
+        ```
+      </Tab>
+
+      <Tab title="عقدة واحدة">
+        ```sql
+        -- اعثر على أطول 5 استعلامات تشغيلًا من قاعدة البيانات nyc_taxi خلال الساعة الماضية
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM merge('system', '^query_log')
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        FORMAT VERTICAL
+        ```
+      </Tab>
+    </Tabs>
+
+    ```response
+    Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+    Row 1:
+    ──────
+    normalized_query_hash: 11000678248135956062
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:36
+    query_duration_ms: 2967
+    query:             WITH
+      dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+      trip_distance / trip_time * 3600 AS speed_mph
+    SELECT
+      quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM
+      nyc_taxi.trips_small_inferred
+    WHERE
+      speed_mph > 30
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 2:
+    ──────
+    normalized_query_hash: 4194765292165295011
+    type:              QueryFinish
+    event_time:        2024-11-27 11:11:33
+    query_duration_ms: 2026
+    query:             SELECT
+        payment_type,
+        COUNT() AS trip_count,
+        formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+        AVG(total_amount) AS total_amount_avg,
+        AVG(tip_amount) AS tip_amount_avg
+    FROM
+        nyc_taxi.trips_small_inferred
+    WHERE
+        pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+    GROUP BY
+        payment_type
+    ORDER BY
+        trip_count DESC;
+
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 3:
+    ──────
+    normalized_query_hash: 1891814463795712754
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:17
+    query_duration_ms: 1860
+    query:             SELECT
+      avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+    FROM nyc_taxi.trips_small_inferred
+    WHERE passenger_count = 1 or passenger_count = 2
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+    ```
+
+    يحتوي الحقل `query_duration_ms` على مدة تنفيذ الاستعلام بالمللي ثانية. وفي هذه النتائج، استغرق الاستعلام الأطول تنفيذًا 2,967 مللي ثانية.
+
+    يمكنك أيضًا تحديد الاستعلامات المرشحة استنادًا إلى استهلاك الموارد بدلًا من مدة الاستعلام:
+
+    <Accordion title="العثور على الاستعلامات كثيفة الاستهلاك للموارد">
+      يصنّف هذا الاستعلام الاستعلامات الأخيرة حسب استخدام الذاكرة، ويعرض استخدام وحدة المعالجة المركزية (CPU) لكلٍّ منها. تختلف النتائج بحسب عبء العمل وطريقة النشر:
+
+      <Tabs>
+        <Tab title="المجموعة">
+          ```sql
+          -- أهم الاستعلامات حسب استخدام الذاكرة
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM clusterAllReplicas('default', merge('system', '^query_log'))
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          SETTINGS skip_unavailable_shards = 1
+          ```
+        </Tab>
+
+        <Tab title="عقدة واحدة">
+          ```sql
+          -- أهم الاستعلامات حسب استخدام الذاكرة
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM merge('system', '^query_log')
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          ```
+        </Tab>
+      </Tabs>
+    </Accordion>
+  </Step>
+
+  <Step title="اختر تشغيلًا ممثلًا للاستعلام" id="choose-a-representative-query-run">
+    قد يكون التشغيل البطيء الوحيد حالةً شاذةً ناتجة عن استعلام مخصص أو حمل مؤقت على النظام. قبل فحص خطة الاستعلام، راجع عدة عمليات تشغيل مكتملة لها [`normalized_query_hash`](/ar/reference/system-tables/query_log#columns) نفسه، إذ يكون متطابقًا للاستعلامات التي لا تختلف إلا في القيم الحرفية. اختر عملية تشغيل تمثل المدة المعتادة للنمط واستخدام الموارد فيه.
+
+    استبدل القيمة المعيّنة لـ `selected_hash` بـ `normalized_query_hash` للنمط الذي تريد التحقيق فيه:
+
+    <Tabs>
+      <Tab title="المجموعة">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1;
+        ```
+      </Tab>
+
+      <Tab title="عقدة واحدة">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10;
+        ```
+      </Tab>
+    </Tabs>
+
+    1. ابحث عن عمليات تشغيل ذات قيم `read_rows` و`read_bytes` متشابهة.
+    2. قارن `query_duration_ms` و`memory_usage` لعمليات التشغيل تلك.
+    3. اختر `query_id` الذي تكون قيمة `query_duration_ms` له الأقرب إلى الوسيط.
+
+    <Note>
+      قد تختلف نتائج سجل الاستعلامات التاريخية بحسب حالة ذاكرة التخزين المؤقت وحمل النظام، لذا استخدمها لاختيار استعلام للتحقيق فيه، لا لمقارنة تغييرات التحسين. إذا لم يحتوِ سجل الاستعلامات على عدد كافٍ من عمليات التشغيل المكتملة، فشغّل الاستعلام عدة مرات في ظروف متشابهة. يشرح الدليل التالي، [عزل اختناقات الاستعلام](/ar/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)، كيفية جمع قياسات مضبوطة لمقارنة التغييرات.
+    </Note>
+
+    تُظهر نتائج سجل الاستعلامات في المثال أن كل مرشح قرأ نحو 329.04 مليون صف. وللتأكد من ذلك، تحقق من عدد الصفوف في جدول المثال:
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    ```
+
+    ```response
+    Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+       ┌───count()─┐
+    1. │ 329044175 │ -- 329.04 million
+       └───────────┘
+    ```
+
+    يحتوي الجدول على 329.04 مليون صف، وهو عدد يقترب مما أُبلِغ عنه في `read_rows` لكل مرشح. يشير ذلك إلى أن الاستعلامات فحصت معظم الجدول أو الجدول بأكمله، لكنه لا يوضح سبب قراءة هذه الصفوف أو ما إذا كان هذا العدد مناسبًا للاستعلام. افحص خطة الاستعلام بعد ذلك لمعرفة كيفية اختيار ClickHouse للبيانات ومعالجتها.
+  </Step>
+
+  <Step title="افحص خطة التنفيذ" id="explain-statement">
+    بعد اختيار تنفيذٍ ممثّل، استخدم [`EXPLAIN`](/ar/reference/statements/explain) لفحص كيفية تخطيط ClickHouse للاستعلام دون تنفيذه. يوضّح الإخراج العمليات التي يتوقع ClickHouse تنفيذها وكيفية انتقال البيانات بينها، مما يوفر سياقًا إضافيًا للقياسات في سجل الاستعلامات.
+
+    للاطلاع على مقدمة تفصيلية عن تنسيقات الإخراج المتاحة، راجع [فهم تنفيذ الاستعلام باستخدام المحلل](/ar/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). في هذا المثال، يوضح `EXPLAIN` كيف يخطط ClickHouse لقراءة البيانات وتصفيتها، وما إذا كان بإمكانه تجاوز أي جزء منها.
+
+    الإخراج عبارة عن شجرة عمليات توضّح كيف يتوقع ClickHouse قراءة البيانات وتصفيتها ومعالجتها. تظهر العمليات الفرعية أسفل عملياتها الأصلية. ابدأ بأعمق عملية قراءة، ثم اتبع الخطة صعودًا لمعرفة كيف يحوّل ClickHouse البيانات إلى النتيجة النهائية.
+
+    في هذا المثال، افحص استعلام السرعة المحسوبة من نتائج سجل الاستعلامات:
+
+    ```sql
+    EXPLAIN actions = 1, compact = 1, pretty = 1, indexes = 1
+    WITH
+        dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+        (trip_distance / trip_time) * 3600 AS speed_mph
+    SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM nyc_taxi.trips_small_inferred
+    WHERE speed_mph > 30
+    ```
+
+    يتضمن الناتج العمليات التالية. وتعتمد تفاصيل، مثل عدد الأجزاء والحبيبات، على كيفية تخزين البيانات:
+
+    ```response
+    Output: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+
+    Aggregating
+    │  Aggregates: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    └──Filter
+       │  Filter column: trip_distance / dateDiff('s', pickup_datetime, dropoff_datetime) * 3600 > 30
+       └──ReadFromMergeTree (nyc_taxi.trips_small_inferred)
+    ```
+
+    من الأسفل إلى الأعلى، تتطابق الخطة مع الاستعلام على النحو التالي:
+
+    1. يقرأ `ReadFromMergeTree` من `nyc_taxi.trips_small_inferred`. يشير غياب قسم `Indexes`، إلى جانب تطابق `read_rows` مع عدد صفوف الجدول، إلى أن ClickHouse يقرأ الجدول بالكامل.
+    2. يعرض `Filter` التعبير الموسّع لـ `speed_mph > 30`. لكل صف يُقرأ، يحسب ClickHouse مدة الرحلة وسرعتها، ثم لا يحتفظ إلا بالصفوف التي تزيد سرعتها على 30 ميلاً في الساعة.
+    3. يحسب `Aggregating` القيم الكمية من قيم `trip_distance` المُرشَّحة.
+
+    تحدد هذه الخطة ثلاثة جوانب من العمل ينبغي اختبارها: قراءة كل صف، وحساب `speed_mph` أثناء التصفية، وحساب القيم الكمية.
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+بعد ذلك، استخدم [عزل اختناقات الاستعلامات](/ar/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) للتعرّف على كيفية اختبار مصادر الحمل المشتبه بها في ظروف مضبوطة. يقارن هذا الدليل بين أشكال استعلامات تزداد بساطةً تدريجيًا لتحديد العمليات التي تستدعي مزيدًا من التحليل.
