@@ -251,3 +251,10 @@ authentication server.
   unset if you do not want this coupling.
 - Users found in an earlier configured access storage (for example `users.xml`) are handled
   by that storage and never reach this directory.
+- On the internal already-authenticated path (distributed/interserver queries and
+  config-embedded credentials), this directory never falls through to a later storage: it
+  always returns the cached user, or materializes a grant-less baseline user, regardless of
+  whether the username is actually defined elsewhere. So if `<http>` is configured BEFORE
+  `users.xml`/`local_directory` in `user_directories`, a username that also exists locally
+  gets materialized here first as a grant-less ephemeral HTTP user on remote nodes, shadowing
+  its real, locally defined grants. Configure `<http>` AFTER the local storages to avoid this.
