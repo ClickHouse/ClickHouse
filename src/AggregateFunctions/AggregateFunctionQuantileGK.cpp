@@ -289,8 +289,12 @@ public:
             readBinaryLittleEndian(stats.value, buf);
             readBinaryLittleEndian(stats.g, buf);
             readBinaryLittleEndian(stats.delta, buf);
+            if (sampled.size() == sampled.capacity())
+                sampled.reserve_exact(std::min(sampled_len, std::max<size_t>(2 * sampled.capacity(), 1)));
             sampled.push_back(stats);
         }
+        /// A valid state holds the capacity it serialized, whatever the payload arrived in.
+        chassert(sampled.capacity() <= sampled_len);
     }
 
 private:
