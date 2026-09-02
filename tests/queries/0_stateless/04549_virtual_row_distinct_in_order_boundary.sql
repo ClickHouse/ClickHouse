@@ -1,6 +1,6 @@
 -- Tags: long
--- ^ Every fixture needs several unmerged parts of small granules, so the file is dominated by mark
--- reads and costs tens of seconds in sanitizer lanes.
+-- ^ Every fixture reads multiple parts at `index_granularity = 8`, so the file is dominated by
+-- mark reads and still costs tens of seconds in the heaviest sanitizer lanes.
 
 -- Regression test for the "Virtual row boundary violated in MergingSortedAlgorithm" logical error
 -- (STID 2651-3359). ORDER BY builds a read-in-order virtual row for the sort-key prefix it needs
