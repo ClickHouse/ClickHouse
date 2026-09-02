@@ -141,6 +141,16 @@ LOCALIZED_QUICKSTART_GROUPS = {
         "可观测性",
     ],
 }
+LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES = {
+    "ar": "البدء السريع عبر Cloud",
+    "es": "Inicio rápido en Cloud",
+    "fr": "Démarrage rapide Cloud",
+    "ja": "Cloud クイックスタート",
+    "ko": "Cloud 빠른 시작",
+    "pt-BR": "Início rápido na Cloud",
+    "ru": "Быстрый старт в Cloud",
+    "zh": "Cloud 快速入门",
+}
 
 # The badge block the generator rewrites, same pattern as
 # update_quickstart_page in _site/scripts/update_quickstarts.py.
@@ -312,16 +322,24 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
             + ", ".join(LOCALES)
         )
 
-    unsupported_frontmatter = "---\ntitle: 'Example'\ndescription: >\n  Folded\n---\n"
-    try:
-        generator.parse_frontmatter(unsupported_frontmatter)
-    except ValueError:
-        pass
-    else:
-        errors.append(
-            "the quickstart generator must reject multiline YAML scalars "
-            "that its line-oriented frontmatter parser cannot represent"
-        )
+    unsupported_frontmatter = {
+        "multiline YAML scalars": (
+            "---\ntitle: 'Example'\ndescription: >\n  Folded\n---\n"
+        ),
+        "unsupported double-quoted YAML escapes": (
+            '---\ntitle: "Line\\nBreak"\ndescription: "Example"\n---\n'
+        ),
+    }
+    for description, sample in unsupported_frontmatter.items():
+        try:
+            generator.parse_frontmatter(sample)
+        except ValueError:
+            pass
+        else:
+            errors.append(
+                f"the quickstart generator must reject {description} that "
+                "its limited frontmatter parser cannot represent"
+            )
 
     redirects_path = docs_root / "_site" / "redirects.json"
     redirects = json.loads(redirects_path.read_text(encoding="utf-8"))
@@ -457,12 +475,17 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
                         f"expected {expected_shipped.get(field)!r}"
                     )
 
-        if locale:
-            if frontmatter.get("sidebarTitle") in (None, "Cloud"):
-                errors.append(
-                    f"{setup_page.relative_to(docs_root)}: sidebarTitle must "
-                    "be the localized equivalent of `Cloud quickstart`"
-                )
+        expected_sidebar_title = (
+            LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES[locale]
+            if locale
+            else "Cloud quickstart"
+        )
+        if frontmatter.get("sidebarTitle") != expected_sidebar_title:
+            errors.append(
+                f"{setup_page.relative_to(docs_root)}: sidebarTitle is "
+                f"{frontmatter.get('sidebarTitle')!r}; expected "
+                f"{expected_sidebar_title!r}"
+            )
     return errors
 
 

@@ -99,11 +99,11 @@ def unquote_scalar(value: str) -> str:
     actually uses.
 
     Inside a single-quoted scalar a doubled '' is the one literal apostrophe
-    YAML allows ('l''immobilier' -> l'immobilier); inside a double-quoted scalar
-    a backslash escapes the next character. The previous code stripped the outer
-    quotes and emitted the rest verbatim, so escaped apostrophes leaked into the
-    generated card data. A real YAML parser would be ideal, but PyYAML is not
-    available in the docs CI image, so unescape the two quoting styles by hand.
+    YAML allows ('l''immobilier' -> l'immobilier). For double-quoted scalars,
+    support the quote and backslash escapes used by the existing frontmatter and
+    reject every other escape rather than diverging from Mintlify's YAML parser.
+    A real YAML parser would be ideal, but PyYAML is not available in the docs CI
+    image, so handle this deliberately limited subset by hand.
     """
     value = value.strip()
     if value.startswith(("'", '"')):
@@ -114,9 +114,25 @@ def unquote_scalar(value: str) -> str:
             )
         if value[0] == "'":
             return value[1:-1].replace("''", "'")
-        # Unescape \" and \\ left-to-right (re.sub matches non-overlapping).
-        return re.sub(r'\\(["\\])', r'\1', value[1:-1])
+        inner = value[1:-1]
+        decoded = []
+        index = 0
+        while index < len(inner):
+            if inner[index] != '\\':
+                decoded.append(inner[index])
+                index += 1
+                continue
+            if index + 1 >= len(inner) or inner[index + 1] not in ('"', '\\'):
+                escape = inner[index:index + 2]
+                raise ValueError(
+                    f"unsupported YAML escape {escape!r}; only escaped quotes "
+                    "and backslashes are supported"
+                )
+            decoded.append(inner[index + 1])
+            index += 2
+        return ''.join(decoded)
     return value
+
 
 def parse_frontmatter(content: str) -> Dict[str, Any]:
     """
