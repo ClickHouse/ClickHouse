@@ -380,12 +380,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {cats.map((cat, i) => (
-              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explore ${cat.title} datasets`}>
+              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explorar conjuntos de datos de ${cat.title}`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
                     <span className="sde-count">
-                      {cat.datasets.length} dataset{cat.datasets.length === 1 ? "" : "s"}
+                      {cat.datasets.length} conjunto{cat.datasets.length === 1 ? "" : "s"} de datos
                     </span>
                     <span className="sde-explore">
                       Explorar

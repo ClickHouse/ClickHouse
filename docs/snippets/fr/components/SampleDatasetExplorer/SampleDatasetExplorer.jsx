@@ -380,7 +380,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {cats.map((cat, i) => (
-              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explore ${cat.title} datasets`}>
+              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explorer les jeux de données de ${cat.title}`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
@@ -388,7 +388,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
                       {cat.datasets.length} jeu{cat.datasets.length === 1 ? "" : "x"} de données
                     </span>
                     <span className="sde-explore">
-                      Explore
+                      Explorer
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>

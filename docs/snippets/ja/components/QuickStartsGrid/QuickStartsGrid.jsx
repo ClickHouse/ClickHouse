@@ -345,7 +345,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                         onClick={resetFilters}
                         className="w-full text-sm font-medium px-4 py-2 rounded-lg transition-all cursor-pointer border border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-black dark:text-white"
                       >
-                        Reset filters
+                        フィルターをリセット
                       </button>
                     )}
                   </div>
@@ -355,7 +355,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
 
             {/* Right content area */}
             <div className="flex-1 min-w-0">
-              <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">Explore quickstarts</h2>
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">クイックスタートを探す</h2>
 
               {filteredQuickStarts.length > 0 ? (
                 <>

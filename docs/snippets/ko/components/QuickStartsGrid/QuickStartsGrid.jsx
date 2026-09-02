@@ -268,8 +268,8 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {/* Toggle button, centered on the divider line */}
                 <button
                   onClick={() => setShowFilters((prev) => !prev)}
-                  aria-label={showFilters ? "Hide filters" : "Show filters"}
-                  title={showFilters ? "Hide filters" : "Show filters"}
+                  aria-label={showFilters ? "필터 숨기기" : "필터 표시"}
+                  title={showFilters ? "필터 숨기기" : "필터 표시"}
                   className="flex items-center justify-center absolute z-20 cursor-pointer rounded-full border transition-colors border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-[#FAFF69] shadow-sm"
                   style={
                     isDesktop

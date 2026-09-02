@@ -380,12 +380,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {cats.map((cat, i) => (
-              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explore ${cat.title} datasets`}>
+              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`${cat.title} のデータセットを探索`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
                     <span className="sde-count">
-                      {cat.datasets.length} dataset{cat.datasets.length === 1 ? "" : "s"}
+                      {cat.datasets.length} 件のデータセット
                     </span>
                     <span className="sde-explore">
                       詳細を見る
@@ -407,7 +407,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              All categories
+              すべてのカテゴリ
             </button>
           </div>
 

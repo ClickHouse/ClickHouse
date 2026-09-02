@@ -56,6 +56,9 @@ EXPLICIT_ANCHOR = re.compile(r"""\{#([^}\s]+)\}|\bid\s*=\s*['"]([^'"]+)['"]""")
 SAMPLE_EXPLORER = os.path.join(
     "components", "SampleDatasetExplorer", "SampleDatasetExplorer.jsx"
 )
+QUICKSTARTS_GRID = os.path.join(
+    "components", "QuickStartsGrid", "QuickStartsGrid.jsx"
+)
 SAMPLE_EXPLORER_IMAGE = re.compile(
     r"\bimg(?:Light|Dark)\s*:\s*(['\"])(/images/sample-datasets-grid/[^'\"]+\.jpg)\1"
 )
@@ -74,6 +77,66 @@ THEME_IMAGE_FORBIDDEN = (
     "isDark",
     "imageForTheme",
 )
+QUICKSTARTS_EXPLORE_HEADINGS = {
+    "ar": "استكشاف البدايات السريعة",
+    "es": "Explorar guías de inicio rápido",
+    "fr": "Explorer les guides de démarrage rapide",
+    "ja": "クイックスタートを探す",
+    "ko": "빠른 시작 탐색",
+    "pt-BR": "Explorar guias de início rápido",
+    "ru": "Изучить руководства по быстрому старту",
+    "zh": "探索快速入门",
+}
+SAMPLE_EXPLORER_COPY = {
+    "ar": {
+        "aria": "aria-label={`استكشاف مجموعات بيانات ${cat.title}`}",
+        "count": '{cat.datasets.length} {cat.datasets.length === 1 ? "مجموعة بيانات" : "مجموعات بيانات"}',
+        "explore": "استكشاف",
+        "back": "جميع الفئات",
+    },
+    "es": {
+        "aria": "aria-label={`Explorar conjuntos de datos de ${cat.title}`}",
+        "count": '{cat.datasets.length} conjunto{cat.datasets.length === 1 ? "" : "s"} de datos',
+        "explore": "Explorar",
+        "back": "Todas las categorías",
+    },
+    "fr": {
+        "aria": "aria-label={`Explorer les jeux de données de ${cat.title}`}",
+        "count": '{cat.datasets.length} jeu{cat.datasets.length === 1 ? "" : "x"} de données',
+        "explore": "Explorer",
+        "back": "Toutes les catégories",
+    },
+    "ja": {
+        "aria": "aria-label={`${cat.title} のデータセットを探索`}",
+        "count": "{cat.datasets.length} 件のデータセット",
+        "explore": "詳細を見る",
+        "back": "すべてのカテゴリ",
+    },
+    "ko": {
+        "aria": "aria-label={`${cat.title} 데이터세트 탐색`}",
+        "count": "{cat.datasets.length}개 데이터세트",
+        "explore": "탐색",
+        "back": "모든 카테고리",
+    },
+    "pt-BR": {
+        "aria": "aria-label={`Explorar conjuntos de dados de ${cat.title}`}",
+        "count": '{cat.datasets.length} conjunto{cat.datasets.length === 1 ? "" : "s"} de dados',
+        "explore": "Explorar",
+        "back": "Todas as categorias",
+    },
+    "ru": {
+        "aria": "aria-label={`Изучить наборы данных категории ${cat.title}`}",
+        "count": '{cat.datasets.length} датасет{cat.datasets.length === 1 ? "" : cat.datasets.length >= 2 && cat.datasets.length <= 4 ? "а" : "ов"}',
+        "explore": "Изучить",
+        "back": "Все категории",
+    },
+    "zh": {
+        "aria": "aria-label={`探索${cat.title}数据集`}",
+        "count": "{cat.datasets.length} 个数据集",
+        "explore": "探索",
+        "back": "所有类别",
+    },
+}
 NAVBAR_SIGN_IN_LABELS = {
     "ar": "تسجيل الدخول",
     "es": "Iniciar sesión",
@@ -245,6 +308,58 @@ def check_sample_explorer_theme_images(docs_root):
     return violations
 
 
+def check_localized_explorer_copy(docs_root):
+    """Validate visible and accessible explorer UI in every locale copy."""
+    violations = []
+    for locale in LOCALE_DIRS:
+        quickstarts = os.path.join(
+            docs_root, "snippets", locale, QUICKSTARTS_GRID
+        )
+        quickstarts_source = open(
+            quickstarts, encoding="utf-8", errors="replace"
+        ).read()
+        quickstarts_rel = os.path.relpath(quickstarts, docs_root)
+        heading = QUICKSTARTS_EXPLORE_HEADINGS[locale]
+        heading_marker = f">{heading}</h2>"
+        if quickstarts_source.count(heading_marker) != 1:
+            violations.append(
+                (quickstarts_rel, heading, "stale-quickstarts-heading", None)
+            )
+
+        sample_explorer = os.path.join(
+            docs_root, "snippets", locale, SAMPLE_EXPLORER
+        )
+        sample_source = open(
+            sample_explorer, encoding="utf-8", errors="replace"
+        ).read()
+        sample_rel = os.path.relpath(sample_explorer, docs_root)
+        copy = SAMPLE_EXPLORER_COPY[locale]
+        markers = {
+            "aria": copy["aria"],
+            "count": copy["count"],
+            "explore": (
+                '<span className="sde-explore">\n'
+                f'                      {copy["explore"]}\n'
+                '                      <svg'
+            ),
+            "back": (
+                f'              {copy["back"]}\n'
+                '            </button>'
+            ),
+        }
+        for field, marker in markers.items():
+            if sample_source.count(marker) != 1:
+                violations.append(
+                    (
+                        sample_rel,
+                        f"{locale}.{field}",
+                        "stale-sample-explorer-copy",
+                        copy[field],
+                    )
+                )
+    return violations
+
+
 def check_navbar_sign_in_labels(docs_root):
     """Validate localized labels rendered by the global navbar script."""
     path = os.path.join(docs_root, "_site", "customizations", "navbar-cta.js")
@@ -381,6 +496,7 @@ def main(argv=None):
         )
 
     violations = check_sample_explorer_theme_images(docs_root)
+    violations += check_localized_explorer_copy(docs_root)
     violations += check_navbar_sign_in_labels(docs_root)
     violations += check_sidebar_ad_localization(docs_root)
     # Entries are (file, path or marker, kind, suggestion).

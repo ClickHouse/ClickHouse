@@ -268,8 +268,8 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {/* Toggle button, centered on the divider line */}
                 <button
                   onClick={() => setShowFilters((prev) => !prev)}
-                  aria-label={showFilters ? "Hide filters" : "Show filters"}
-                  title={showFilters ? "Hide filters" : "Show filters"}
+                  aria-label={showFilters ? "Скрыть фильтры" : "Показать фильтры"}
+                  title={showFilters ? "Скрыть фильтры" : "Показать фильтры"}
                   className="flex items-center justify-center absolute z-20 cursor-pointer rounded-full border transition-colors border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-[#FAFF69] shadow-sm"
                   style={
                     isDesktop
@@ -309,7 +309,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                   <div className="space-y-6">
                     {/* Search input */}
                     <div>
-                      <label className="block text-sm font-semibold text-gray-900 dark:text-zinc-50 mb-3">Search</label>
+                      <label className="block text-sm font-semibold text-gray-900 dark:text-zinc-50 mb-3">Поиск</label>
                       <div className="relative w-full">
                         <svg
                           className="absolute pointer-events-none z-10"
@@ -322,7 +322,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                         </svg>
                         <input
                           type="text"
-                          placeholder="Search quickstarts..."
+                          placeholder="Поиск по руководствам быстрого старта..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           className="w-full text-sm border rounded-xl focus:outline-none bg-white dark:bg-[#1B1B18] text-black dark:text-white border-gray-300 dark:border-gray-600 focus:border-black dark:focus:border-[#FAFF69]"
@@ -345,7 +345,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                         onClick={resetFilters}
                         className="w-full text-sm font-medium px-4 py-2 rounded-lg transition-all cursor-pointer border border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-black dark:text-white"
                       >
-                        Reset filters
+                        Сбросить фильтры
                       </button>
                     )}
                   </div>
@@ -355,7 +355,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
 
             {/* Right content area */}
             <div className="flex-1 min-w-0">
-              <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">Explore quickstarts</h2>
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">Изучить руководства по быстрому старту</h2>
 
               {filteredQuickStarts.length > 0 ? (
                 <>
