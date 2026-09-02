@@ -40,7 +40,8 @@ public:
     struct MemoryPressurePolicy
     {
         bool protect_from_eviction = false;
-        UInt64 suction_reservation_bytes = 0;
+        UInt64 suction_max_allocation_bytes = 0;
+        UInt64 suction_reserved_bytes = 0;
         SuctionQueuePolicy suction_queue_policy = SuctionQueuePolicy::Fifo;
     };
 
@@ -85,11 +86,19 @@ public:
     bool isIncreaseSuspended() const { return memory_growth_suspended; }
     bool isSuctioned() const { return memory_growth_suction_priority; }
     bool isProtectedFromEviction() const { return memory_pressure_policy.protect_from_eviction; }
-    bool canReserveForSuction(ResourceCost size) const
+    bool canEnterSuction(ResourceCost increase_size) const
     {
-        return memory_pressure_policy.suction_reservation_bytes == 0
-            || static_cast<UInt64>(size) <= memory_pressure_policy.suction_reservation_bytes;
+        const UInt64 limit = memory_pressure_policy.suction_max_allocation_bytes;
+        if (limit == 0)
+            return true;
+
+        chassert(allocated >= 0);
+        chassert(increase_size >= 0);
+        const UInt64 current_allocation = static_cast<UInt64>(allocated);
+        const UInt64 pending_increase = static_cast<UInt64>(increase_size);
+        return current_allocation <= limit && pending_increase <= limit - current_allocation;
     }
+    UInt64 getSuctionReservedBytes() const { return memory_pressure_policy.suction_reserved_bytes; }
     SuctionQueuePolicy getSuctionQueuePolicy() const { return memory_pressure_policy.suction_queue_policy; }
 
 private:

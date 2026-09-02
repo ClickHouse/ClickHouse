@@ -336,7 +336,8 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     IncreaseRequest * old_increase = increase;
     if (new_increase)
     {
-        if (allocated + new_increase->size > max_allocated)
+        const ResourceCost effective_limit = getEffectiveLimit(*new_increase);
+        if (allocated + new_increase->size > effective_limit)
         {
             // Limit would be violated, so we have to reclaim resource.
             // Do not select a victim while a decrease is pending below: `allocated` still contains
@@ -357,7 +358,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                 if (!suspended_growth && new_increase->kind == IncreaseRequest::Kind::Regular)
                 {
                     String nomination_details;
-                    if (!selectAllocationToKill(*new_increase, max_allocated, nomination_details))
+                    if (!selectAllocationToKill(*new_increase, effective_limit, nomination_details))
                     {
                         increase = nullptr;
                         return increase != old_increase;
@@ -399,7 +400,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     suspended_growth_retry_pending = !retrying_suspended_owner;
 
                     SCHED_DBG("{} -- suspending increase(allocated={}, increase_size={}, max={}, allocation={})",
-                        getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id);
+                        getPath(), allocated, new_increase->size, effective_limit, new_increase->allocation.id);
 
                 }
                 else if (!suspended_growth)
@@ -480,19 +481,42 @@ void AllocationLimit::processSuction()
     selectAndKill(*suction_growth);
 }
 
+bool AllocationLimit::isTopLevelLimit() const
+{
+    for (ISchedulerNode * node = parent; node; node = node->parent)
+    {
+        if (node->getTypeName() == "allocation_limit")
+            return false;
+    }
+    return true;
+}
+
+ResourceCost AllocationLimit::getEffectiveLimit(const IncreaseRequest & request) const
+{
+    if (!isTopLevelLimit() || request.allocation.isSuctioned())
+        return max_allocated;
+
+    const UInt64 reserved = request.allocation.getSuctionReservedBytes();
+    if (reserved == 0)
+        return max_allocated;
+    if (reserved >= static_cast<UInt64>(max_allocated))
+        return 0;
+    return max_allocated - static_cast<ResourceCost>(reserved);
+}
+
 
 void AllocationLimit::selectAndKill(IncreaseRequest & killer)
 {
     String details;
-    if (killer.allocation.isSuctioned() && !killer.allocation.canReserveForSuction(killer.size))
+    if (killer.allocation.isSuctioned() && !killer.allocation.canEnterSuction(killer.size))
     {
         if (killer.allocation.kill_requested)
             return;
         allocation_to_kill = &killer.allocation;
-        details = "Suction reservation is smaller than the blocked growth request.";
+        details = "The allocation remains above the suction eligibility ceiling after spilling.";
     }
     else
-        allocation_to_kill = selectAllocationToKill(killer, max_allocated, details);
+        allocation_to_kill = selectAllocationToKill(killer, getEffectiveLimit(killer), details);
     if (!allocation_to_kill)
         return;
 

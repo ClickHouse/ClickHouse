@@ -37,6 +37,8 @@ public:
 private:
     bool setIncrease(IncreaseRequest * new_increase, bool reapply_constraint);
     bool setDecrease(DecreaseRequest * new_decrease);
+    bool isTopLevelLimit() const;
+    ResourceCost getEffectiveLimit(const IncreaseRequest & request) const;
     void selectAndKill(IncreaseRequest & killer);
     void processSuction();
     void clearMemoryGrowthSuspension();

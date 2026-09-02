@@ -44,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"memory_reservation_protect_from_eviction", false, false, "New setting for soft query-level protection from memory-reservation eviction."},
-            {"memory_reservation_force_spill_before_suction", true, true, "New setting controlling the forced spill pass before memory-reservation suction."},
+            {"memory_reservation_force_spill_before_eviction", true, true, "New setting controlling the forced spill pass before memory-reservation eviction."},
             {"memory_reservation_suction_queue_timeout_ms", 0, 0, "New setting bounding the forced-spill phase before memory-reservation suction."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},

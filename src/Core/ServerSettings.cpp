@@ -386,8 +386,11 @@ The maximum memory consumption of the server is further restricted by setting `m
 
 As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
 )", 0) \
-    DECLARE(UInt64, memory_reservation_suction_reservation_bytes, 0, R"(
-Maximum pending query growth protected by a memory-reservation suction slot. The request must still fit completely in real scheduler headroom; this setting does not create or overcommit capacity. A value of `0` means unlimited.
+    DECLARE(UInt64, memory_reservation_suction_max_allocation_bytes, 0, R"(
+Maximum total query allocation, including its pending increase, that is eligible for memory-reservation suction. A query above this ceiling is spilled when `memory_reservation_force_spill_before_eviction` is enabled. It enters suction if spilling reduces the total allocation to this value; otherwise it proceeds to eviction after spilling completes. A value of `0` means unlimited.
+)", 0) \
+    DECLARE(UInt64, memory_reservation_suction_reserved_bytes, 0, R"(
+Memory withheld from ordinary allocations at the top memory-reservation limit. The capacity becomes available to the top-level parent while its selected descendant is in suction, giving that scope a final opportunity to approve growth before eviction. A value of `0` disables the reserve.
 )", 0) \
     DECLARE(String, memory_reservation_suction_queue_policy, "fifo", R"(
 Policy used to select the next completed-spill query for memory-reservation suction. Supported values are `fifo` and `largest_memory_first`.
@@ -1967,6 +1970,18 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
             e.addMessage("while parsing setting '{}' value", name);
             throw;
         }
+    }
+
+    const UInt64 suction_max_allocation = get("memory_reservation_suction_max_allocation_bytes").safeGet<UInt64>();
+    const UInt64 suction_reserved = get("memory_reservation_suction_reserved_bytes").safeGet<UInt64>();
+    if (suction_max_allocation != 0 && suction_max_allocation < suction_reserved)
+    {
+        LOG_WARNING(
+            getLogger("ServerSettings"),
+            "`memory_reservation_suction_max_allocation_bytes` ({}) is smaller than "
+            "`memory_reservation_suction_reserved_bytes` ({}); part of the suction reserve cannot be used by one eligible allocation",
+            suction_max_allocation,
+            suction_reserved);
     }
 }
 

@@ -147,9 +147,11 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
     allocation.memory_growth_suspension_attempted = true;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
-        /// Entering the eviction queue starts one exhaustive spill pass. A query without a spill
-        /// controller has already exhausted that pass and is immediately ready for suction.
-        if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
+        /// A query already below the suction ceiling does not pay for a forced spill. A query above
+        /// it stays in the eviction queue until its spill pass finishes or releases enough memory
+        /// to become eligible.
+        if (allocation.canEnterSuction(allocation.increase.size)
+            || allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
             allocation.memory_growth_recovery_pending = true;
         allocation.memory_growth_eviction_order = ++last_eviction_order;
         if (!suspended_growth)
@@ -663,6 +665,18 @@ void AllocationQueue::processActivation()
                         clearMemoryGrowthSuspension();
                         recovering.increaseCancelled();
                     }
+                    memory_growth_suspension_changed = true;
+                }
+
+                /// Stop waiting for the rest of the spill pass once the reconciled total allocation
+                /// is eligible for suction. An in-flight processor spill may finish, but no later
+                /// processor is forced to spill for this pressure epoch.
+                if (recovering.increasing_hook.is_linked()
+                    && recovering.isGrowthRecoveryActive()
+                    && recovering.canEnterSuction(recovering.increase.size))
+                {
+                    recovering.memory_growth_recovery_pending = true;
+                    recovering.onGrowthPressureResolved();
                     memory_growth_suspension_changed = true;
                 }
             }

@@ -223,7 +223,7 @@ void MemoryReservation::setMemorySpillScheduler(const std::shared_ptr<MemorySpil
 
 ResourceAllocation::GrowthPressureAction MemoryReservation::onGrowthPressure()
 {
-    if (!settings.force_spill_before_suction)
+    if (!settings.force_spill_before_eviction)
         return GrowthPressureAction::Protect;
 
     std::shared_ptr<MemorySpillScheduler> scheduler;
