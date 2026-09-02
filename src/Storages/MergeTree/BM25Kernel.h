@@ -17,17 +17,6 @@ struct BM25Params
     Float64 b = 0.75;
 };
 
-struct BM25CollectionStats
-{
-    UInt64 num_docs = 0;
-    UInt64 sum_doc_length = 0;
-
-    ALWAYS_INLINE Float64 avgDocLength() const
-    {
-        return num_docs ? static_cast<Float64>(sum_doc_length) / static_cast<Float64>(num_docs) : 0.0;
-    }
-};
-
 /// Okapi BM25 smoothed IDF: idf(t) = ln((N − df + 0.5) / (df + 0.5) + 1).
 inline Float64 calculateIDF(UInt64 num_docs, UInt64 doc_freq)
 {

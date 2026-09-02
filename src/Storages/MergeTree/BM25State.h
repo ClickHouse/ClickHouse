@@ -21,8 +21,6 @@ class MergeTreeIndexConditionText;
 /// Query-global BM25 state shared by all read tasks and threads of one query.
 struct BM25State
 {
-    BM25Params params;
-    BM25CollectionStats stats;
     std::shared_ptr<const BM25LengthNormCache> length_norm_cache;
     std::vector<BM25ScoringToken> tokens;
 };

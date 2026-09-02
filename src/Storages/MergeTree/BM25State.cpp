@@ -165,20 +165,20 @@ void BM25GlobalStatsBuilder::addPart(const DataPartPtr & part, const MergeTreeRe
 
 BM25StatePtr BM25GlobalStatsBuilder::build() const
 {
-    const auto & token_names = scoring_token_names;
+    const BM25Params params;
+    const UInt64 total_docs = num_docs.load(std::memory_order_relaxed);
+    const UInt64 total_doc_length = sum_doc_length.load(std::memory_order_relaxed);
+    const Float64 avg_doc_length = total_docs ? static_cast<Float64>(total_doc_length) / static_cast<Float64>(total_docs) : 0.0;
 
     auto state = std::make_shared<BM25State>();
-    state->params = BM25Params{};
-    state->stats.num_docs = num_docs.load(std::memory_order_relaxed);
-    state->stats.sum_doc_length = sum_doc_length.load(std::memory_order_relaxed);
-    state->length_norm_cache = std::make_shared<const BM25LengthNormCache>(state->stats.avgDocLength(), state->params);
-    state->tokens.reserve(token_names.size());
+    state->length_norm_cache = std::make_shared<const BM25LengthNormCache>(avg_doc_length, params);
+    state->tokens.reserve(scoring_token_names.size());
 
-    for (size_t i = 0; i < token_names.size(); ++i)
+    for (size_t i = 0; i < scoring_token_names.size(); ++i)
     {
-        auto idf = calculateIDF(state->stats.num_docs, document_frequencies[i].load(std::memory_order_relaxed));
-        BM25Weight weight(idf, state->params, state->length_norm_cache.get());
-        state->tokens.push_back(BM25ScoringToken{.token = token_names[i], .weight = weight});
+        auto idf = calculateIDF(total_docs, document_frequencies[i].load(std::memory_order_relaxed));
+        BM25Weight weight(idf, params, state->length_norm_cache.get());
+        state->tokens.push_back(BM25ScoringToken{.token = scoring_token_names[i], .weight = weight});
     }
 
     return state;
