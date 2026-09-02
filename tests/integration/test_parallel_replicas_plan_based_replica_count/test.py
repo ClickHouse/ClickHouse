@@ -58,7 +58,9 @@ def test_plan_based_workers_use_the_initiator_replica_count(start_cluster):
                 # leave the assertions below with nothing to match.
                 "enable_parallel_replicas": 2,
                 "parallel_replicas_plan_based": 1,
-                "parallel_replicas_local_plan": 1,
+                # No local plan: every replica that reads is a worker, so the assertions below observe the
+                # count the workers were given, not the initiator's own local read.
+                "parallel_replicas_local_plan": 0,
                 # Keep the cost decision out of the picture: the plan-based split must engage.
                 "automatic_parallel_replicas_mode": 0,
                 # Above the initiator's replica count, so its cap (3) and a worker's local recomputation (4)
@@ -74,13 +76,13 @@ def test_plan_based_workers_use_the_initiator_replica_count(start_cluster):
     assert initiator.contains_in_log(
         "Creating parallel replicas coordinator with replicas_count=3"
     )
-    # `number_of_replicas` is logged by `chooseSegmentSize` (see `MergeTreeReadPoolParallelReplicas`).
-    assert initiator.contains_in_log("number_of_replicas=3,")
-
     # Every worker that read data must have been sized by the propagated count (3), not by its own
     # 4-replica cluster definition. The negative assertion is the actual regression guard: dropping the
     # propagation in `createParallelReplicasPlan` makes a worker log `number_of_replicas=4,` here.
-    assert any(node.contains_in_log("number_of_replicas=3,") for node in workers[:2])
+    # `number_of_replicas` is logged by `chooseSegmentSize` (see `MergeTreeReadPoolParallelReplicas`).
+    assert any(node.contains_in_log("number_of_replicas=3,") for node in workers[:2]), {
+        node.name: node.grep_in_log("number_of_replicas") for node in workers[:2]
+    }
     for node in data_nodes:
         assert not node.contains_in_log("number_of_replicas=4,"), node.grep_in_log(
             "number_of_replicas"
