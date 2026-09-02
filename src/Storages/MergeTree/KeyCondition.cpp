@@ -71,6 +71,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int QUERY_WAS_CANCELLED;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -1638,7 +1639,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         /// and a placeholder entry with a null column left behind by a throw would be found by the
         /// lookup above on the next call for the same (function, column) pair and dereferenced.
         auto result_column = func->execute(args, func->getResultType(), args.front().column->size(), /* dry_run = */ false);
-        field.columns->emplace_back(ColumnWithTypeAndName{std::move(result_column), func->getResultType(), result_name});
+        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), result_name});
     }
 
     return {field.columns, field.row_idx, result_idx};
@@ -5239,11 +5240,15 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             }
             catch (const Exception & e)
             {
-                /// A broken invariant, a memory limit or a cancellation is not something the analysis
-                /// may decide to ignore.
+                /// A broken invariant, a memory limit, a deadline or a cancellation is not something
+                /// the analysis may decide to ignore: these are the outer guards of the query, and
+                /// `applyFunction` runs the function on a whole boundary column, so a conversion with a
+                /// cancellation budget can hit `max_execution_time` here. Swallowing that would let the
+                /// query proceed to a full scan instead of aborting.
                 if (e.code() == ErrorCodes::LOGICAL_ERROR
                     || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-                    || e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+                    || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+                    || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
                     throw;
 
                 return {};
