@@ -282,8 +282,23 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     }
 
     /// Enable more inputs if needed.
+    /// `disabled_input_ports` is a lazy queue as well: an input may finish while it is sitting in
+    /// the queue, because an upstream output is allowed to `finish` even when the peer input is not
+    /// needed. The loop over `updated_inputs` above flips such an input to `Finished` but cannot
+    /// remove it from the middle of the queue, so stale entries are skipped here. Pairing an output
+    /// with an already finished input would strand the output forever and could deadlock the
+    /// processor, and it would also let the input be counted as finished twice.
     while (!disabled_input_ports.empty() && !waiting_outputs.empty())
     {
+        auto * input_port = disabled_input_ports.front();
+        auto & input_state = input_port_state.at(input_port);
+
+        if (input_state.status == InputStatus::Finished)
+        {
+            disabled_input_ports.pop();
+            continue;
+        }
+
         auto * waiting_output = waiting_outputs.front();
         auto & output_state = output_port_state.at(waiting_output);
         waiting_outputs.pop();
@@ -292,8 +307,6 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         if (output_state.status != OutputStatus::NeedData)
             continue;
 
-        auto * input_port = disabled_input_ports.front();
-        auto & input_state = input_port_state.at(input_port);
         disabled_input_ports.pop();
 
         input_port->setNeeded();
