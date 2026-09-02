@@ -233,6 +233,7 @@ void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
         {
             if (auto set = future_set.detachSetAndKey())
                 sets_map[future_set.getHash()] = std::move(set);
+            return true;
         });
 
     // Now transplant the sets
@@ -246,6 +247,10 @@ void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
                     ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
 
             future_set.replaceSetAndKey(it->second);
+            /// The set is built now, so this plan will not run and the sets nested in it will never be
+            /// created. The single-replica plan has no counterparts for them either - its own nested
+            /// sources are long gone by this point - so descending would only fail the lookup above.
+            return false;
         });
 }
 }

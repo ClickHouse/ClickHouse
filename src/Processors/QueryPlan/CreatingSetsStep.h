@@ -109,7 +109,11 @@ private:
 /// keeps its set), and the parallel-replicas local branch hangs off `ReadFromLocalParallelReplicaStep`
 /// rather than being a child node. Both have to be followed or a walk misses exactly the sets that
 /// get rebuilt. Plans owned through `getChildPlans` are deliberately left out - see the walk itself.
-void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureSetFromSubquery &)> & visit);
+///
+/// `visit` returns whether to descend into that set's own source plan. A caller that has just adopted a
+/// built set for it says no: the source plan is then dead - `makePlansForSets` skips a set that is
+/// already built - so the sets nested in it are never created and must not be treated as live.
+void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureSetFromSubquery &)> & visit);
 
 /// Collect every set in `plan` that is already filled, keyed by `FutureSet::getHash`.
 BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan);

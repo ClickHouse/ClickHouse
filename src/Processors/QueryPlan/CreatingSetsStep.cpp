@@ -330,7 +330,7 @@ QueryPipelineBuilderPtr DelayedCreatingSetsStep::updatePipeline(QueryPipelineBui
         "Cannot build pipeline in DelayedCreatingSets. This step should be optimized out.");
 }
 
-void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureSetFromSubquery &)> & visit)
+void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureSetFromSubquery &)> & visit)
 {
     if (!root || !root->getRootNode())
         return;
@@ -347,8 +347,8 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureS
             {
                 if (!future_set)
                     continue;
-                visit(*future_set);
-                forEachSubquerySet(future_set->getQueryPlan(), visit);
+                if (visit(*future_set))
+                    forEachSubquerySet(future_set->getQueryPlan(), visit);
             }
         }
         else if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(node->step.get()))
@@ -393,6 +393,7 @@ BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan)
             /// `moveSetsFromLocalPlanToReplicasPlan`.
             if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
                 built->sets.emplace(future_set.getHash(), set_and_key);
+            return true;
         });
     return built;
 }
@@ -408,10 +409,17 @@ void reuseBuiltSets(QueryPlan & plan, const BuiltSetsByHashPtr & built)
         {
             const auto & set_and_key = future_set.getSetAndKey();
             if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
-                return;
+                return false;
 
             if (auto it = built->sets.find(future_set.getHash()); it != built->sets.end())
+            {
                 future_set.replaceSetAndKey(it->second);
+                return false;
+            }
+
+            /// Not adopted, so this set still builds from its own source plan, and the sets nested in
+            /// that plan are live too.
+            return true;
         });
 }
 
