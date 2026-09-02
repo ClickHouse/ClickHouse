@@ -1,8 +1,8 @@
 -- The plan simplicity check for automatic parallel replicas looks only at the query's own plan. The
 -- plan that builds an `IN` set is not part of it, so a step in there that cannot collect dataflow
--- statistics - `ReadFromSystemNumbers` for a set over `numbers`, a prepared source for a dictionary
--- or a system table - must not disqualify the query. Widening the check to walk set source plans
--- would do exactly that, which is why it does not.
+-- statistics - `ReadFromSystemNumbers` for a set over `numbers`, a `UnionStep` for a set over a
+-- union, a prepared source for a dictionary or a system table - must not disqualify the query.
+-- Widening the check to walk set source plans would do exactly that, which is why it does not.
 --
 -- Such a walk would also find nothing to reject: by the time the check runs, the set no longer holds
 -- its source plan. That was measured across both values of `use_index_for_in_with_subqueries`, with
@@ -26,17 +26,25 @@ SET enable_analyzer = 1;
 -- condition - it is only ever a filter, which is the shape that leaves the set source plan otherwise
 -- uninteresting to the optimization.
 SELECT key, pad FROM t_autopr_set_source WHERE non_key IN (SELECT number FROM numbers(1000))
-FORMAT Null SETTINGS log_comment = '05043_autopr_set_source_leaf_steps';
+FORMAT Null SETTINGS log_comment = '05043_autopr_set_source_leaf_steps_1_leaf';
+
+-- A union inside the set is the same question one step further: `UnionStep` does not collect dataflow
+-- statistics either, and a check that walked the set source plan would reject this too.
+SELECT key, pad FROM t_autopr_set_source
+WHERE non_key IN (SELECT number FROM numbers(500) UNION ALL SELECT number FROM numbers(500, 500))
+FORMAT Null SETTINGS log_comment = '05043_autopr_set_source_leaf_steps_2_union';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS still_a_candidate
+SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS still_a_candidate
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15)))
     AND (current_database = currentDatabase())
-    AND (log_comment = '05043_autopr_set_source_leaf_steps')
-    AND (type = 'QueryFinish') AND is_initial_query;
+    AND (log_comment IN ('05043_autopr_set_source_leaf_steps_1_leaf', '05043_autopr_set_source_leaf_steps_2_union'))
+    AND (type = 'QueryFinish') AND is_initial_query
+ORDER BY log_comment
+FORMAT TSVWithNames;
 
 DROP TABLE t_autopr_set_source;
