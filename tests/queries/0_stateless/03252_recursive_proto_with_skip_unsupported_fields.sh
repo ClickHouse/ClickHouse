@@ -7,4 +7,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 SCHEMADIR="$CUR_DIR/format_schemas"
 $CLICKHOUSE_LOCAL -q "DESCRIBE TABLE file('nonexist', 'Protobuf') FORMAT Vertical SETTINGS format_schema='$SCHEMADIR/03252_recursive_type.proto:Struct', input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference=0" |& grep -c BAD_ARGUMENTS
-$CLICKHOUSE_LOCAL -q "DESCRIBE TABLE file('nonexist', 'Protobuf') FORMAT Vertical SETTINGS format_schema='$SCHEMADIR/03252_recursive_type.proto:Struct', input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference=1"
+$CLICKHOUSE_LOCAL -q "DESCRIBE TABLE file('nonexist', 'Protobuf') FORMAT Vertical SETTINGS format_schema='$SCHEMADIR/03252_recursive_type.proto:Struct', input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference=1, output_format_vertical_display_control_characters=0"

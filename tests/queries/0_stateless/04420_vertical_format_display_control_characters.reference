@@ -1,0 +1,34 @@
+Row 1:
+──────
+value: hello␀world
+Row 1:
+──────
+value: ␁␂␃
+Row 1:
+──────
+value: tab␉here
+Row 1:
+──────
+value: line␊break
+Row 1:
+──────
+value: carriage␍return
+Row 1:
+──────
+value: null␀and␁mixed␛text
+Row 1:
+──────
+value: delete␡char
+Row 1:
+──────
+value: normal text
+Row 1:
+──────
+value: literal\0backslash
+Row 1:
+──────
+value: snowman ☃ and é
+Row 1:
+──────
+value: tab	and
+newline

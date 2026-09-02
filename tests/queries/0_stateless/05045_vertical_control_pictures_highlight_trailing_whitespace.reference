@@ -1,0 +1,14 @@
+Row 1:
+──────
+[1mno_whitespace:[0m                plain
+[1mtrailing_spaces:[0m              spaces[31m[4m  [0m
+[1mtrailing_tab:[0m                 tab[31m[4m␉[0m
+[1mtrailing_newline:[0m             newline[31m[4m␊[0m
+[1mtrailing_mixed:[0m               mixed[31m[4m  ␉␊[0m
+[1minner_control_trailing_space:[0m inner␉tab[31m[4m [0m
+[1monly_whitespace:[0m              [31m[4m  [0m
+[1mempty:[0m                        
+Row 1:
+──────
+[1mtrailing_spaces:[0m spaces  
+[1mtrailing_mixed:[0m  mixed  ␉␊
