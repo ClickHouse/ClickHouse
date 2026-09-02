@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -146,7 +147,7 @@ namespace
         });
     }
 
-    bool parseElement(IParser::Pos & pos, Expected & expected, Element & element)
+    bool parseElement(IParser::Pos & pos, Expected & expected, Element & element, Kind kind)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -166,7 +167,17 @@ namespace
                 }
 
                 parsePartitions(pos, expected, element.partitions);
-                parseExceptDataTables(pos, expected, element.database_name, element.except_data_tables);
+
+                if (kind == Kind::BACKUP)
+                {
+                    parseExceptDataTables(pos, expected, element.database_name, element.except_data_tables);
+                }
+                else if (ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).checkWithoutMoving(pos, expected) ||
+                         ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).checkWithoutMoving(pos, expected))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXCEPT DATA FROM TABLE/TABLES clause is only valid for BACKUP queries, not RESTORE");
+                }
                 return true;
             }
 
@@ -188,7 +199,16 @@ namespace
                     element.new_table_name = getIdentifierName(ast);
                 }
 
-                parseExceptDataTables(pos, expected, {}, element.except_data_tables);
+                if (kind == Kind::BACKUP)
+                {
+                    parseExceptDataTables(pos, expected, {}, element.except_data_tables);
+                }
+                else if (ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).checkWithoutMoving(pos, expected) ||
+                         ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).checkWithoutMoving(pos, expected))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXCEPT DATA FROM TABLE/TABLES clause is only valid for BACKUP queries, not RESTORE");
+                }
                 return true;
             }
 
@@ -211,7 +231,17 @@ namespace
                 }
 
                 parseExceptTables(pos, expected, element.database_name, element.except_tables);
-                parseExceptDataTables(pos, expected, element.database_name, element.except_data_tables);
+
+                if (kind == Kind::BACKUP)
+                {
+                    parseExceptDataTables(pos, expected, element.database_name, element.except_data_tables);
+                }
+                else if (ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).checkWithoutMoving(pos, expected) ||
+                         ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).checkWithoutMoving(pos, expected))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXCEPT DATA FROM TABLE/TABLES clause is only valid for BACKUP queries, not RESTORE");
+                }
                 return true;
             }
 
@@ -220,7 +250,17 @@ namespace
                 element.type = ElementType::ALL;
                 parseExceptDatabases(pos, expected, element.except_databases);
                 parseExceptTables(pos, expected, {}, element.except_tables);
-                parseExceptDataTables(pos, expected, {}, element.except_data_tables);
+
+                if (kind == Kind::BACKUP)
+                {
+                    parseExceptDataTables(pos, expected, {}, element.except_data_tables);
+                }
+                else if (ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).checkWithoutMoving(pos, expected) ||
+                         ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).checkWithoutMoving(pos, expected))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXCEPT DATA FROM TABLE/TABLES clause is only valid for BACKUP queries, not RESTORE");
+                }
                 return true;
             }
 
@@ -228,7 +268,7 @@ namespace
         });
     }
 
-    bool parseElements(IParser::Pos & pos, Expected & expected, std::vector<Element> & elements)
+    bool parseElements(IParser::Pos & pos, Expected & expected, std::vector<Element> & elements, Kind kind)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -237,7 +277,7 @@ namespace
             auto parse_element = [&]
             {
                 Element element;
-                if (parseElement(pos, expected, element))
+                if (parseElement(pos, expected, element, kind))
                 {
                     result.emplace_back(std::move(element));
                     return true;
@@ -401,7 +441,7 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parseBackupName(pos, expected, base_snapshot_name))
             return false;
     }
-    else if (!parseElements(pos, expected, elements))
+    else if (!parseElements(pos, expected, elements, kind))
         return false;
 
     String cluster;

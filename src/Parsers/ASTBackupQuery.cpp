@@ -769,6 +769,19 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
             elements.push_back(readElementJSON(*elem_obj, i));
         }
     }
+
+    /// Validate BACKUP-only fields are not present in RESTORE queries
+    if (kind == Kind::RESTORE)
+    {
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (!elements[i].except_data_tables.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'except_data_tables' (EXCEPT DATA FROM TABLE/TABLES) is only valid for BACKUP, not RESTORE, "
+                    "at element index {} during AST JSON deserialization", i);
+        }
+    }
+
     readOutputOptionsJSON(r);
 }
 
