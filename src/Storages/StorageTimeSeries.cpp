@@ -41,10 +41,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_time_series_table;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool exclude_data_from_backup;
-}
 
 namespace ErrorCodes
 {
@@ -621,17 +617,6 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
         if (isInnerTable(target_kind))
         {
             auto table = getTargetTable(target_kind, backup_entries_collector.getContext());
-            /// Inner tables bypass the normal shouldBackupTableData() snapshot-based check (they are
-            /// not enumerated by findTablesInDatabase). For these delegated tables, we must check
-            /// exclude_data_from_backup here using live settings, as no Keeper-snapshotted state is
-            /// available. This is a known limitation: replicated-lag race is theoretically possible
-            /// for inner tables, but resolving it requires broader architectural changes (snapshotting
-            /// delegated table metadata) that are out of scope.
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
-            {
-                if ((*merge_tree->getSettings())[MergeTreeSetting::exclude_data_from_backup])
-                    continue;
-            }
             String kind_str{magic_enum::enum_name(target_kind)};
             boost::algorithm::to_lower(kind_str);
             table->backupData(backup_entries_collector, fs::path{data_path_in_backup} / kind_str, {});

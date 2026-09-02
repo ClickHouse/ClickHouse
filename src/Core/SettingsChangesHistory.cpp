@@ -1422,7 +1422,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
-            {"exclude_data_from_backup", false, false, "New setting: when enabled, BACKUP includes this table's DDL but skips backing up its data. On RESTORE the table is recreated empty. Useful for tables whose data can be regenerated from a source table."},
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
         });
 

@@ -59,10 +59,6 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool exclude_data_from_backup;
-}
 
 namespace ErrorCodes
 {
@@ -420,18 +416,6 @@ void StorageMaterializedPostgreSQL::backupData(
             "finished its initial synchronization from PostgreSQL yet). Failing closed instead of producing a "
             "backup with table metadata but no data.",
             getStorageID().getNameForLogs());
-
-    /// Nested tables bypass the normal shouldBackupTableData() snapshot-based check (they are not
-    /// enumerated by findTablesInDatabase). For these delegated tables, we must check
-    /// exclude_data_from_backup here using live settings, as no Keeper-snapshotted state is available.
-    /// This is a known limitation: replicated-lag race is theoretically possible for nested tables,
-    /// but resolving it requires broader architectural changes (snapshotting delegated table metadata)
-    /// that are out of scope.
-    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(nested.get()))
-    {
-        if ((*merge_tree->getSettings())[MergeTreeSetting::exclude_data_from_backup])
-            return;
-    }
 
     nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
 }

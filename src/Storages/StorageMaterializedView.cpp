@@ -73,10 +73,6 @@ namespace RefreshSetting
     extern const RefreshSettingsBool all_replicas;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool exclude_data_from_backup;
-}
 
 namespace ErrorCodes
 {
@@ -996,17 +992,6 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
     {
         if (auto table = tryGetTargetTable())
         {
-            /// Inner tables (.inner.*, .inner_id.*) are filtered out by findTablesInDatabase(),
-            /// so they bypass the normal shouldBackupTableData() snapshot-based check. For these
-            /// delegated tables, we must check exclude_data_from_backup here using live settings,
-            /// as no Keeper-snapshotted state is available. This is a known limitation: replicated-lag
-            /// race is theoretically possible for inner tables, but resolving it requires broader
-            /// architectural changes (snapshotting delegated table metadata) that are out of scope.
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
-            {
-                if ((*merge_tree->getSettings())[MergeTreeSetting::exclude_data_from_backup])
-                    return;
-            }
             table->backupData(backup_entries_collector, data_path_in_backup, partitions);
         }
         else

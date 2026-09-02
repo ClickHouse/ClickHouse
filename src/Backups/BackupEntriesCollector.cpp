@@ -57,10 +57,6 @@ namespace Setting
     /// Cloud only
     extern const SettingsBool cloud_mode;
 }
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool exclude_data_from_backup;
-}
 
 namespace ErrorCodes
 {
@@ -896,30 +892,11 @@ bool BackupEntriesCollector::shouldBackupTableData(
     const QualifiedTableName & table_name,
     /// Used in the Cloud build.
     [[maybe_unused]] const StoragePtr & storage,
-    const ASTPtr & create_table_query,
+    [[maybe_unused]] const ASTPtr & create_table_query,
     const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
     if (backup_settings.structure_only)
         return false;
-    /// Read exclude_data_from_backup from the already-gathered CREATE TABLE metadata
-    /// (which for DatabaseReplicated is a consistent snapshot taken from Keeper), not
-    /// from the live storage object, since a lagging replica's local storage settings
-    /// can disagree with the DDL actually being written into the backup.
-    if (create_table_query)
-    {
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        if (create.storage && create.storage->settings)
-        {
-            for (const auto & change : create.storage->settings->changes)
-            {
-                if (change.name == "exclude_data_from_backup" && change.value.safeGet<bool>())
-                {
-                    LOG_TRACE(log, "Skipping table data for {} (exclude_data_from_backup is enabled)", table_name.getFullName());
-                    return false;
-                }
-            }
-        }
-    }
 
     if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
         && rmv_replace_target_ids.contains(StorageID{table_name.database, table_name.table}))

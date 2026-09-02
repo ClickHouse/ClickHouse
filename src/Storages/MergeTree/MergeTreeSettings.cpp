@@ -2387,9 +2387,6 @@ Merges still only combine parts that share the same set of projections. To backf
 use an explicit [MATERIALIZE PROJECTION](/reference/statements/alter/projection#materialize-projection). Projections
 are also created during INSERTs with [materialize_projections_on_insert](/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_insert).
 )", 0) \
-    DECLARE(Bool, exclude_data_from_backup, false, R"(
-When enabled, BACKUP includes this table's DDL (CREATE TABLE statement) but skips backing up its data. On RESTORE the table is recreated empty. Useful for tables (for example, materialized-view targets) whose data can be regenerated from a source table, to reduce backup size.
-)", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
