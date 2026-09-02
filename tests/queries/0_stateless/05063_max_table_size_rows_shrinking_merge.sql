@@ -25,8 +25,14 @@ SELECT count() FROM t_max_table_size_rows;
 -- An insert into the over-limit table is still rejected.
 INSERT INTO t_max_table_size_rows SELECT 1, number + 1000, 'f' FROM numbers(20); -- { serverError TABLE_SIZE_LIMIT_EXCEEDED }
 
--- A mutation that deletes rows brings the table back under the limit.
 SET mutations_sync = 2;
+
+-- A mutation that deletes only some of the rows is allowed as well, even though the table is still
+-- far above the limit afterwards: the mutated part holds fewer rows than the part it replaces.
+ALTER TABLE t_max_table_size_rows DELETE WHERE p = 0 AND id < 2000;
+SELECT count() FROM t_max_table_size_rows;
+
+-- A mutation that deletes the rest brings the table back under the limit.
 ALTER TABLE t_max_table_size_rows DELETE WHERE p = 0;
 SELECT count() FROM t_max_table_size_rows;
 
