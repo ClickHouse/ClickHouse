@@ -16,7 +16,7 @@ En ClickHouse Cloud, hay varias formas de crear y administrar funciones definida
 1. Mediante SQL
 2. Mediante la UI y su propio código (beta pública)
 3. Mediante la [Cloud API](#manage-udfs-with-the-cloud-api) (beta)
-4. Mediante [Terraform](#manage-udfs-with-terraform) (alpha)
+4. Mediante [Terraform](#manage-udfs-with-terraform) (beta)
 
 <div id="sql-udfs">
   ## Funciones definidas por el usuario en SQL
@@ -231,13 +231,15 @@ Consulte la [referencia de la API de UDF](/es/products/cloud/api-reference/udf/u
   ## Administrar UDFs con Terraform
 </div>
 
+<BetaBadge />
+
 El [proveedor de Terraform de ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) oficial incluye dos recursos para administrar UDFs como infraestructura como código:
 
 * [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) administra la función propiamente dicha. Recibe un archivo ZIP con el código fuente de la función y publica una nueva versión cada vez que cambia el hash del archivo, esperando a que finalice la compilación.
-* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) vincula una versión de una UDF a un servicio. Un servicio puede tener como máximo una versión de una función a la vez. Puede fijar un número de versión o hacer referencia a `clickhouse_udf.<name>.version` para actualizar automáticamente los servicios a la versión más reciente.
+* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) adjunta una versión de una UDF a un servicio. Un servicio puede tener como máximo una versión de una función a la vez. Puede fijar un número de versión o hacer referencia a `clickhouse_udf.<name>.version` para actualizar automáticamente los servicios a la versión más reciente.
 
 <Note>
-  Estos recursos están disponibles en la versión 3.24.0 y posteriores del proveedor. Se encuentran en estado alpha y su comportamiento puede cambiar en futuras versiones del proveedor.
+  Estos recursos están disponibles en la versión 3.24.0 y posteriores del proveedor. Se encuentran en beta y su comportamiento puede cambiar en futuras versiones del proveedor.
 </Note>
 
 Por ejemplo, para desplegar con Terraform la UDF `isBusinessHours` del ejemplo anterior:
