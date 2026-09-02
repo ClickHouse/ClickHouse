@@ -170,7 +170,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
 
-    QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding), getInputHeaders());
+    QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
 
     if (!use_sharding)
     {
@@ -484,7 +484,7 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    QueryExecutionCounters::addExecutedJoin(*join, getInputHeaders());
+    QueryExecutionCounters::addExecutedJoin(*join);
 
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())

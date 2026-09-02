@@ -1,11 +1,8 @@
 #include <Interpreters/QueryExecutionCounters.h>
 
-#include <Core/Block.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/CurrentThread.h>
 
 #include <utility>
@@ -20,44 +17,44 @@ namespace
 /// same query, empty otherwise, which is the usual case. See `RepeatedPipelineBuildScope`.
 thread_local String repeated_pipeline_build_scope;
 
-/// The key of a join inside a `RepeatedPipelineBuildScope`: the scope, and the shape of the join, i.e. the
-/// columns and the types of its sides. The shape is the same every time the same pipeline is built, and it
-/// differs between the joins of one pipeline, because the analyzer qualifies the columns of every table
-/// expression of a query with a name of its own.
-String makeJoinKey(std::string_view scope, const SharedHeaders & input_headers)
-{
-    WriteBufferFromOwnString key;
-    key << scope;
-    for (const auto & header : input_headers)
-        key << '\n' << header->dumpStructure();
-    return key.str();
-}
+/// How many joins the build of that pipeline that is running on this thread has registered so far. The
+/// ordinal it hands out identifies a join inside the scope: the pipeline is assembled by walking the query
+/// plan in a fixed order, and the plan is the same one every time the same `SELECT` is planned again, so
+/// the n-th join a build registers is the same physical join of the same query as the n-th join of every
+/// other build of that pipeline.
+///
+/// The ordinal is what tells two joins apart, and not the shape of their inputs: two joins of one query
+/// can have exactly the same input columns and types, for instance the joins of two identical `UNION ALL`
+/// branches, or two `Join`-engine or dictionary joins over the same stream, whose `FilledJoinStep` sees
+/// only the left side.
+thread_local size_t joins_registered_by_current_build = 0;
 
 }
 
 QueryExecutionCounters::RepeatedPipelineBuildScope::RepeatedPipelineBuildScope(String scope)
     : scope_to_restore(std::exchange(repeated_pipeline_build_scope, std::move(scope)))
+    , registered_joins_to_restore(std::exchange(joins_registered_by_current_build, 0))
 {
 }
 
 QueryExecutionCounters::RepeatedPipelineBuildScope::~RepeatedPipelineBuildScope()
 {
     repeated_pipeline_build_scope = std::move(scope_to_restore);
+    joins_registered_by_current_build = registered_joins_to_restore;
 }
 
-void QueryExecutionCounters::addExecutedJoin(const IJoin & join, const SharedHeaders & input_headers)
+void QueryExecutionCounters::addExecutedJoin(const IJoin & join)
 {
-    addExecutedJoin(join, join.getAlgorithm(), input_headers);
+    addExecutedJoin(join, join.getAlgorithm());
 }
 
-void QueryExecutionCounters::addExecutedJoin(const IJoin & join, std::string_view algorithm, const SharedHeaders & input_headers)
+void QueryExecutionCounters::addExecutedJoin(const IJoin & join, std::string_view algorithm)
 {
     const auto & table_join = join.getTableJoin();
-    addExecutedJoin(table_join.kind(), table_join.strictness(), algorithm, input_headers);
+    addExecutedJoin(table_join.kind(), table_join.strictness(), algorithm);
 }
 
-void QueryExecutionCounters::addExecutedJoin(
-    JoinKind kind, JoinStrictness strictness, std::string_view algorithm, const SharedHeaders & input_headers)
+void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm)
 {
     auto counters = getForCurrentQuery();
     if (!counters)
@@ -70,7 +67,7 @@ void QueryExecutionCounters::addExecutedJoin(
     /// in which case both of them were used.
     counters->used_join_algorithms.emplace(algorithm);
 
-    if (counters->isCountedByAnEarlierBuild(input_headers))
+    if (counters->isCountedByAnEarlierBuild())
         return;
 
     counters->used_joins.emplace(
@@ -78,12 +75,13 @@ void QueryExecutionCounters::addExecutedJoin(
         toString(strictness));
 }
 
-bool QueryExecutionCounters::isCountedByAnEarlierBuild(const SharedHeaders & input_headers)
+bool QueryExecutionCounters::isCountedByAnEarlierBuild()
 {
     if (repeated_pipeline_build_scope.empty())
         return false;
 
-    return !joins_of_repeated_builds.emplace(makeJoinKey(repeated_pipeline_build_scope, input_headers)).second;
+    const size_t ordinal = joins_registered_by_current_build++;
+    return !joins_of_repeated_builds.emplace(repeated_pipeline_build_scope, ordinal).second;
 }
 
 QueryExecutionCounters::Snapshot QueryExecutionCounters::getSnapshot() const

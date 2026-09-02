@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
 #include <Core/Joins.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -11,7 +10,6 @@
 #include <mutex>
 #include <set>
 #include <string_view>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -25,18 +23,18 @@ class IJoin;
 struct QueryExecutionCounters
 {
     /// Records one physical join, taking its kind, strictness and algorithm from the join itself.
-    /// `input_headers` are the headers of the sides of the join, which tell it apart from the other joins
-    /// of the same pipeline, see `RepeatedPipelineBuildScope`.
-    static void addExecutedJoin(const IJoin & join, const SharedHeaders & input_headers);
+    /// Must be called while the pipeline is being assembled, so that a join inside a
+    /// `RepeatedPipelineBuildScope` gets the same ordinal in every build of that pipeline.
+    static void addExecutedJoin(const IJoin & join);
 
     /// For a join whose algorithm the `IJoin` alone cannot name, because it is decided while
     /// the pipeline is assembled, e.g. `full_sorting_merge` and `parallel_full_sorting_merge` build the same
     /// `FullSortingMergeJoin`.
-    static void addExecutedJoin(const IJoin & join, std::string_view algorithm, const SharedHeaders & input_headers);
+    static void addExecutedJoin(const IJoin & join, std::string_view algorithm);
 
     /// For a join that has no `IJoin` at all because the whole algorithm lives in a query plan step,
     /// like `ie_join`. `kind` and `strictness` must be the ones the query asked for.
-    static void addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm, const SharedHeaders & input_headers);
+    static void addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm);
 
     /// Records an algorithm a join switched to while the query was already running, so that both the
     /// original one and this one are reported.
@@ -64,6 +62,7 @@ struct QueryExecutionCounters
 
     private:
         String scope_to_restore;
+        size_t registered_joins_to_restore;
     };
 
     /// A consistent copy of all the counters. `join_kinds` and `join_strictness` are positionally aligned
@@ -105,14 +104,15 @@ private:
     /// Operators that wrote temporary data to disk
     std::set<String> spilled_to_disk TSA_GUARDED_BY(mutex);
 
-    /// The joins that were registered inside a `RepeatedPipelineBuildScope`, by the scope and the shape of
-    /// the join, so that another build of the same pipeline does not count them once more.
-    std::unordered_set<String> joins_of_repeated_builds TSA_GUARDED_BY(mutex);
+    /// The joins that were registered inside a `RepeatedPipelineBuildScope`, by the scope and the ordinal
+    /// of the join inside the build, so that another build of the same pipeline does not count them once
+    /// more.
+    std::set<std::pair<String, size_t>> joins_of_repeated_builds TSA_GUARDED_BY(mutex);
 
     /// Registers a join in `joins_of_repeated_builds` and tells whether an earlier build of the same
     /// pipeline already counted it. Outside a `RepeatedPipelineBuildScope` there is nothing to
     /// deduplicate and the answer is always false.
-    bool isCountedByAnEarlierBuild(const SharedHeaders & input_headers) TSA_REQUIRES(mutex);
+    bool isCountedByAnEarlierBuild() TSA_REQUIRES(mutex);
 };
 
 using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
