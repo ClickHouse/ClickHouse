@@ -134,6 +134,7 @@ def test_schema_inference(started_cluster):
     )
     assert result == expected_result
 
+
     result = node.query(
         "select * from fileCluster('my_cluster', 'file*.csv', auto) ORDER BY (c1, c2)"
     )
@@ -163,6 +164,78 @@ def test_schema_inference(started_cluster):
         "select * from fileCluster('my_cluster', 'file*.csv', CSV, auto, auto) ORDER BY (c1, c2)"
     )
     assert result == expected_result
+
+
+def test_parquet_field_ids_are_validated_on_cluster_after_schema_inference(started_cluster):
+    node_names = ("s0_0_0", "s0_0_1", "s0_1_0")
+    file_name = "parquet_field_ids_on_cluster.parquet"
+
+    started_cluster.instances[node_names[0]].query(
+        f"INSERT INTO FUNCTION file('{file_name}', Parquet) SELECT 1::Int64 AS x"
+    )
+    for node_name in node_names[1:]:
+        started_cluster.instances[node_name].query(
+            f"INSERT INTO FUNCTION file('{file_name}', Parquet) SELECT 1::Int64 AS y"
+        )
+
+    error = started_cluster.instances[node_names[0]].query_and_get_error(
+        f"""
+        CREATE TABLE parquet_field_ids_on_cluster ON CLUSTER my_cluster
+        ENGINE = File(Parquet, '{file_name}')
+        SETTINGS output_format_parquet_column_field_ids = {{'x': '1'}}
+        """
+    )
+    assert "BAD_ARGUMENTS" in error
+
+
+def test_parquet_field_ids_are_validated_on_cluster_for_wildcard_url(started_cluster):
+    """
+    The wildcard `URL` engine resolves a node-local URL against each DDL worker's own
+    endpoint, so a definition-supplied `field_id` map that is valid for the initiator's
+    inferred schema may be invalid for a worker's. Every worker must validate its own
+    resolved header (`validate_secondary_create`), not skip under `SECONDARY_CREATE`.
+    """
+    node_names = ("s0_0_0", "s0_0_1", "s0_1_0")
+    port = 8880
+
+    for index, node_name in enumerate(node_names):
+        node = started_cluster.instances[node_name]
+        column = "x" if index == 0 else "y"
+        node.query(
+            f"INSERT INTO FUNCTION file('url_field_ids/part1.parquet', Parquet) SELECT 1::Int64 AS {column}"
+        )
+        # `http.server` generates directory index pages, which is what the wildcard
+        # expansion lists; every node serves its own `user_files` directory, so the
+        # node-local URL below resolves to a different schema on the first node.
+        node.exec_in_container(
+            [
+                "python3",
+                "-m",
+                "http.server",
+                str(port),
+                "--directory",
+                "/var/lib/clickhouse/user_files",
+            ],
+            detach=True,
+        )
+    for node_name in node_names:
+        started_cluster.instances[node_name].exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"for _ in {{1..100}}; do curl -sf http://127.0.0.1:{port}/url_field_ids/ > /dev/null && exit 0; sleep 0.2; done; exit 1",
+            ]
+        )
+
+    error = started_cluster.instances[node_names[0]].query_and_get_error(
+        f"""
+        CREATE TABLE parquet_field_ids_on_cluster_url ON CLUSTER my_cluster
+        ENGINE = URL('http://127.0.0.1:{port}/url_field_ids/part*.parquet', Parquet)
+        SETTINGS output_format_parquet_column_field_ids = {{'x': '1'}}
+        """,
+        settings={"allow_experimental_url_wildcard_from_index_pages": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
 
 
 def test_format_detection(started_cluster):

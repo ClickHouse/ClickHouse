@@ -64,6 +64,37 @@ using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
 
+/** Resets the Parquet `field_id` settings (`output_format_parquet_column_field_ids` and
+  * `output_format_parquet_auto_assign_field_ids`) to their defaults.
+  *
+  * A datalake table that carries its own column-id mapping (Iceberg) is the authoritative source of
+  * `field_id`s, so ambient (server/profile/session) values of these settings are ignored for such
+  * tables. They are reset before the `FormatSettings` are built, so that an ambient value never
+  * reaches the `FormatSettings` of an Iceberg table at all.
+  *
+  * The two flags allow resetting each setting independently: a table definition may name one of the
+  * settings explicitly, in which case only the other one carries an ambient value to ignore.
+  */
+void resetParquetFieldIdSettings(Settings & settings, bool reset_column_field_ids = true, bool reset_auto_assign_field_ids = true);
+
+/// Same as `getFormatSettings(context)`, but with the Parquet `field_id` settings reset first.
+FormatSettings getFormatSettingsIgnoringParquetFieldIds(const ContextPtr & context);
+
+/** Builds the `FormatSettings` that a file-writing table engine (`File`, `URL`, `S3` and the other
+  * object-storage engines) freezes at definition time: the settings of `context` plus the changes
+  * from the `SETTINGS` clause of the definition, passed as `definition_changes` (`nullptr` when the
+  * definition has no `SETTINGS` clause).
+  *
+  * The ambient (server, profile or session) values of the Parquet `field_id` settings are dropped:
+  * only a value written in the definition itself expresses an intent to give this table its own
+  * `field_id`s. An ambient value frozen onto a table it was never meant for makes the table
+  * unwritable — for Iceberg because the table metadata provides the mapping instead, and for a plain
+  * table because such a map was never validated against the table's columns, so every `INSERT` fails
+  * in `ParquetBlockOutputFormat`. Each of the two settings is tracked separately: naming one of them
+  * in the definition must not keep the other one's ambient value.
+  */
+FormatSettings getFormatSettingsForTableDefinition(const ContextPtr & context, const SettingsChanges * definition_changes);
+
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
   */

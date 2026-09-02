@@ -1,5 +1,6 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
@@ -3125,22 +3126,34 @@ void registerStorageFile(StorageFactory & factory)
             // Use format settings from global server context + settings from
             // the SETTINGS clause of the create query. Settings from current
             // session and user are ignored.
-            if (factory_args.storage_def->settings)
-            {
-                Settings settings = factory_args.getContext()->getSettingsCopy();
+            storage_args.format_settings = getFormatSettingsForTableDefinition(
+                factory_args.getContext(),
+                factory_args.storage_def->settings ? &factory_args.storage_def->settings->changes : nullptr);
 
-                // Apply changes from SETTINGS clause, with validation.
-                settings.applyChanges(factory_args.storage_def->settings->changes);
-
-                storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);
-            }
-            else
+            /// The frozen format settings make an invalid definition-supplied Parquet `field_id`
+            /// map fail every later `INSERT` — validate a fresh definition up front instead.
+            /// When the definition relies on schema or format inference, the header-dependent
+            /// checks rerun after the storage has resolved them in `setStorageMetadata`.
+            validateParquetFieldIdSettingsInDefinition(factory_args, storage_args.format_name, *storage_args.format_settings);
+            const bool validate_field_ids_after_inference
+                = factory_args.columns.empty() || storage_args.format_name == "auto";
+            const auto finalize = [&](std::shared_ptr<StorageFile> storage) -> StoragePtr
             {
-                storage_args.format_settings = getFormatSettings(factory_args.getContext());
-            }
+                if (validate_field_ids_after_inference)
+                {
+                    const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+                    validateParquetFieldIdSettingsWithResolvedHeader(
+                        factory_args,
+                        storage->getFormatName(),
+                        metadata->getColumns().getAllPhysical(),
+                        *storage_args.format_settings,
+                        /* validate_secondary_create */ true);
+                }
+                return storage;
+            };
 
             if (engine_args_ast.size() == 1) /// Table in database
-                return std::make_shared<StorageFile>(factory_args.relative_data_path, storage_args);
+                return finalize(std::make_shared<StorageFile>(factory_args.relative_data_path, storage_args));
 
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
             int source_fd = -1;
@@ -3180,13 +3193,13 @@ void registerStorageFile(StorageFactory & factory)
                 storage_args.compression_method = "auto";
 
             if (0 <= source_fd) /// File descriptor
-                return std::make_shared<StorageFile>(source_fd, storage_args);
+                return finalize(std::make_shared<StorageFile>(source_fd, storage_args));
 
             if (!file_source)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
 
             /// User's file
-            return std::make_shared<StorageFile>(*file_source, storage_args);
+            return finalize(std::make_shared<StorageFile>(*file_source, storage_args));
         },
         storage_features,
         Documentation{

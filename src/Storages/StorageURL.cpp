@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -1640,22 +1641,8 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
     // session and user are ignored.
-    FormatSettings format_settings;
-    if (args.storage_def->settings)
-    {
-        Settings settings = args.getContext()->getSettingsCopy();
-
-        // Apply changes from SETTINGS clause, with validation.
-        settings.applyChanges(args.storage_def->settings->changes);
-
-        format_settings = getFormatSettings(args.getContext(), settings);
-    }
-    else
-    {
-        format_settings = getFormatSettings(args.getContext());
-    }
-
-    return format_settings;
+    return getFormatSettingsForTableDefinition(
+        args.getContext(), args.storage_def->settings ? &args.storage_def->settings->changes : nullptr);
 }
 
 size_t StorageURL::evalArgsAndCollectHeaders(
@@ -2583,13 +2570,30 @@ void registerStorageURL(StorageFactory & factory)
                 partition_by = args.storage_def->partition_by->clone();
 
             auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+
             const bool use_object_storage
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
 
+            /// The frozen format settings make an invalid definition-supplied Parquet `field_id`
+            /// map fail every later `INSERT` — validate a fresh definition up front instead.
+            /// When the definition relies on schema or format inference, the header-dependent
+            /// checks rerun after the storage has resolved them. The object-storage path defers
+            /// them for a partitioned table as well: its partition strategy may keep the
+            /// partition columns out of the data file, so the declared column list is not the
+            /// header the Parquet writer will receive. (The plain `StorageURL` path partitions
+            /// only through a `{_partition_id}` placeholder in the URL, which never drops columns
+            /// from the written file.)
+            const bool partitioned_object_storage = use_object_storage && partition_by != nullptr;
+            validateParquetFieldIdSettingsInDefinition(
+                args, config.format, format_settings,
+                /* definition_columns_match_writer_header */ !partitioned_object_storage);
+            const bool validate_field_ids_with_resolved_header
+                = args.columns.empty() || config.format == "auto" || partitioned_object_storage;
+
             if (!use_object_storage)
             {
-                return std::make_shared<StorageURL>(
+                auto storage = std::make_shared<StorageURL>(
                     config.url,
                     args.table_id,
                     config.format,
@@ -2603,6 +2607,19 @@ void registerStorageURL(StorageFactory & factory)
                     config.http_method,
                     partition_by,
                     /* distributed_processing */ false);
+
+                if (validate_field_ids_with_resolved_header)
+                {
+                    const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+                    validateParquetFieldIdSettingsWithResolvedHeader(
+                        args,
+                        storage->getFormatName(),
+                        metadata->getColumns().getAllPhysical(),
+                        format_settings,
+                        /* validate_secondary_create */ true);
+                }
+
+                return storage;
             }
 
             if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -2640,7 +2657,7 @@ void registerStorageURL(StorageFactory & factory)
             Settings settings_copy = args.getLocalContext()->getSettingsCopy();
             context_copy->setSettings(settings_copy);
 
-            return std::make_shared<StorageObjectStorage>(
+            auto storage = std::make_shared<StorageObjectStorage>(
                 configuration,
                 configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
                 context_copy,
@@ -2658,6 +2675,26 @@ void registerStorageURL(StorageFactory & factory)
                 /* order_by */ nullptr,
                 /* is_table_function */ false,
                 /* lazy_init */ false);
+
+            if (validate_field_ids_with_resolved_header)
+            {
+                /// Validate against the very header the sink hands to the Parquet writer: the
+                /// partition strategy's format header for a partitioned table (see
+                /// `StorageObjectStorageSink`), the resolved physical columns otherwise.
+                NamesAndTypesList writer_header_columns;
+                if (configuration->partition_strategy)
+                    writer_header_columns = configuration->partition_strategy->getFormatHeader().getNamesAndTypesList();
+                else
+                {
+                    const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+                    writer_header_columns = metadata->getColumns().getAllPhysical();
+                }
+                validateParquetFieldIdSettingsWithResolvedHeader(
+                    args, storage->getFormatName(), writer_header_columns, format_settings,
+                    /* validate_secondary_create */ true);
+            }
+
+            return storage;
         },
         {
             .supports_settings = true,

@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/ParallelReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -19,13 +20,18 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/MemoryTracker.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Field.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Common/SettingsChanges.h>
 #include <Core/SettingsQuirks.h>
+
+#include <algorithm>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -102,6 +108,46 @@ FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name
 FormatSettings getFormatSettings(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
+
+    return getFormatSettings(context, settings);
+}
+
+void resetParquetFieldIdSettings(Settings & settings, bool reset_column_field_ids, bool reset_auto_assign_field_ids)
+{
+    if (reset_column_field_ids)
+        settings[Setting::output_format_parquet_column_field_ids] = Map{};
+    if (reset_auto_assign_field_ids)
+        settings[Setting::output_format_parquet_auto_assign_field_ids] = false;
+}
+
+FormatSettings getFormatSettingsIgnoringParquetFieldIds(const ContextPtr & context)
+{
+    Settings settings = context->getSettingsCopy();
+    resetParquetFieldIdSettings(settings);
+
+    return getFormatSettings(context, settings);
+}
+
+FormatSettings getFormatSettingsForTableDefinition(const ContextPtr & context, const SettingsChanges * definition_changes)
+{
+    Settings settings = context->getSettingsCopy();
+
+    /// Apply changes from the SETTINGS clause of the definition, with validation.
+    if (definition_changes)
+        settings.applyChanges(*definition_changes);
+
+    const auto is_set_in_definition = [&](std::string_view name)
+    {
+        return definition_changes
+            && std::ranges::any_of(*definition_changes, [&](const auto & change) { return change.name == name; });
+    };
+
+    /// An ambient value of these settings must not be frozen onto the table: it was not written for
+    /// this table, and it would make the table unwritable (see the declaration).
+    resetParquetFieldIdSettings(
+        settings,
+        !is_set_in_definition("output_format_parquet_column_field_ids"),
+        !is_set_in_definition("output_format_parquet_auto_assign_field_ids"));
 
     return getFormatSettings(context, settings);
 }
@@ -272,6 +318,37 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
+    {
+        /// `output_format_parquet_column_field_ids` is a `Map(String, Int32)`. Only the raw entries
+        /// are collected here: `FormatSettings` are built for every input and output format of every
+        /// query, while these overrides are used by the Parquet output format only. Converting the
+        /// value to an `Int32` here would make a malformed value break unrelated queries — every
+        /// query, for a user who has such a value in their profile — and would also defeat the rule
+        /// that ambient values of this setting are ignored for Iceberg tables. So the conversion, and
+        /// the rest of the validation, happen in `ParquetBlockOutputFormat`, at the point of use.
+        const auto & raw = settings[Setting::output_format_parquet_column_field_ids].value;
+        format_settings.parquet.column_field_ids.clear();
+        format_settings.parquet.column_field_ids.reserve(raw.size());
+        for (const auto & entry : raw)
+        {
+            /// A `Map` field is always a list of two-element tuples.
+            const Tuple & tuple = entry.safeGet<Tuple>();
+            chassert(tuple.size() == 2);
+
+            /// A quoted value (e.g. `{'a': '1'}`) is kept as is, so that the setting can be set from
+            /// contexts that quote everything; anything else is dumped, to be reported as a
+            /// non-integer by the Parquet output format.
+            auto to_string = [](const Field & field)
+            {
+                return field.getType() == Field::Types::String
+                    ? field.safeGet<String>()
+                    : applyVisitor(FieldVisitorToString(), field);
+            };
+
+            format_settings.parquet.column_field_ids.emplace_back(to_string(tuple.at(0)), to_string(tuple.at(1)));
+        }
+    }
+    format_settings.parquet.auto_assign_field_ids = settings[Setting::output_format_parquet_auto_assign_field_ids];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {
         /// Use 90% of the hard limit as the budget for computing caps. This ensures the pipeline's

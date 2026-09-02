@@ -19,6 +19,13 @@ namespace DB::Parquet
 /// A good resource for learning how Parquet format works is
 /// contrib/arrow/cpp/src/parquet/parquet.thrift
 
+/// Iceberg reserves `field_id`s above `Integer.MAX_VALUE - 200` for metadata columns such as the
+/// v3 row-lineage fields `_row_id` (2147483540) and `_last_updated_sequence_number` (2147483539);
+/// see https://iceberg.apache.org/spec/#reserved-field-ids. A reader must ignore reserved ids it
+/// does not recognize, which is what `SchemaConverter::useColumnMapperIfNeeded` does, so a *data*
+/// column written with such an id silently disappears when the file is read back through Iceberg.
+constexpr Int64 iceberg_max_user_field_id = 2147483447;
+
 struct WriteOptions
 {
     bool output_string_as_string = false;
@@ -186,6 +193,13 @@ using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
 SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const IcebergOptionality & iceberg_optionality = {});
+
+/// Mirrors prepareGeoColumn: with GeoParquet output enabled, a recognized top-level geo custom type
+/// (Point, MultiPoint, LineString, Polygon, MultiLineString, MultiPolygon, Geometry) collapses into a single WKB
+/// String field, so only the top-level field carries a field_id. Shared between the field_id builder
+/// (ParquetBlockOutputFormat) and the Iceberg field_id validator (convertSchema) so they agree on the
+/// shape of the emitted schema.
+bool isGeoColumnWrittenAsWKBScalar(const DataTypePtr & type);
 
 /// `iceberg_optionality` must be passed identically on the schema and the data path: the reader
 /// derives its max definition level from the schema while the writer derives the level bit width

@@ -78,6 +78,10 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
+    /// The concrete format after construction (a `format = 'auto'` definition is resolved
+    /// by the constructor together with the schema).
+    const String & getFormatName() const { return format_name; }
+
     static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,

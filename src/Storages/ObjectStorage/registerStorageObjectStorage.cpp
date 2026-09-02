@@ -1,5 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <algorithm>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -16,7 +17,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/IPartitionStrategy.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
 
@@ -52,23 +55,60 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     const auto context = args.getLocalContext();
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Use format settings from global server context + settings from
-    // the SETTINGS clause of the create query. Settings from current
-    // session and user are ignored.
-    std::optional<FormatSettings> format_settings;
-    if (args.storage_def->settings)
+    /// An Iceberg table's metadata is the authoritative source of Parquet `field_id`s: every write
+    /// receives the table's own column-id mapping, and `ParquetBlockOutputFormat` rejects the user
+    /// `field_id` settings at write time in that case. The format settings are frozen here at table
+    /// definition time, so accepting these settings would produce a table whose every `INSERT` fails.
+    ///
+    /// The frozen format settings also carry the ambient server/profile/session values, not only what
+    /// the definition says, so `getFormatSettingsForTableDefinition` drops the ambient `field_id`
+    /// values — early enough that they are not even parsed. Whether the definition itself named them
+    /// is what the checks below act on.
+    const auto is_set_in_definition = [&](std::string_view name)
     {
-        Settings settings = context->getSettingsCopy();
+        return args.storage_def->settings
+            && std::ranges::any_of(
+                   args.storage_def->settings->changes, [&](const auto & change) { return change.name == name; });
+    };
+    const bool column_field_ids_in_definition = is_set_in_definition("output_format_parquet_column_field_ids");
+    const bool auto_assign_field_ids_in_definition = is_set_in_definition("output_format_parquet_auto_assign_field_ids");
 
-        // Apply changes from SETTINGS clause, with validation.
-        settings.applyChanges(args.storage_def->settings->changes);
+    // Freeze the format settings of the query context plus the settings from the SETTINGS clause of
+    // the create query, minus the ambient Parquet `field_id` values.
+    std::optional<FormatSettings> format_settings = getFormatSettingsForTableDefinition(
+        context, args.storage_def->settings ? &args.storage_def->settings->changes : nullptr);
 
-        format_settings = getFormatSettings(context, settings);
-    }
-    else
-    {
-        format_settings = getFormatSettings(context);
-    }
+    /// Reject the definition up front when the settings are freshly supplied by the user: a `CREATE`
+    /// query, or a full-definition `ATTACH TABLE t (...) ENGINE = ...` query, which introduces a new
+    /// definition just like `CREATE` does. Replaying a definition that was already accepted once —
+    /// server startup (`FORCE_ATTACH` / `FORCE_RESTORE`), replicated or `ON CLUSTER` DDL replay and
+    /// `RESTORE` from backup (`SECONDARY_CREATE`), a short `ATTACH TABLE t`, the tables attached by
+    /// `ATTACH DATABASE` (`attach_short_syntax`) — is exempt, so existing tables always load; the
+    /// write-time guard in `ParquetBlockOutputFormat` still protects such legacy tables.
+    if (configuration->isIcebergConfiguration()
+        && ((column_field_ids_in_definition && !format_settings->parquet.column_field_ids.empty())
+            || (auto_assign_field_ids_in_definition && format_settings->parquet.auto_assign_field_ids))
+        && (args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax)))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
+            "cannot be used in the definition of an Iceberg table: the table metadata provides its own "
+            "column-id mapping, so every write to such a table would fail");
+
+    /// A plain (non-Iceberg) table freezes these settings the same way, so an invalid
+    /// definition-supplied `field_id` map would be accepted here and then fail every `INSERT` —
+    /// validate a fresh definition up front instead. When the definition relies on schema or
+    /// format inference, the header-dependent checks rerun after the storage has resolved them.
+    /// A `PARTITION BY` clause defers them the same way: the partition strategy may reshape the
+    /// written file — the `hive` strategy keeps the partition columns out of the data file unless
+    /// `partition_columns_in_data_file` is enabled — so the declared column list is not the header
+    /// the Parquet writer will receive.
+    const bool has_partition_by = args.storage_def->partition_by != nullptr;
+    validateParquetFieldIdSettingsInDefinition(
+        args, configuration->format, *format_settings, /* definition_columns_match_writer_header */ !has_partition_by);
+    const bool validate_field_ids_with_resolved_header
+        = args.columns.empty() || configuration->format == "auto" || has_partition_by;
 
     ASTPtr partition_by;
     if (args.storage_def->partition_by)
@@ -105,7 +145,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -123,6 +163,24 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* distributed_processing */ false,
         partition_by,
         order_by);
+
+    if (validate_field_ids_with_resolved_header)
+    {
+        /// Validate against the very header the sink hands to the Parquet writer: the partition
+        /// strategy's format header for a partitioned table (see `StorageObjectStorageSink`), the
+        /// resolved physical columns otherwise.
+        NamesAndTypesList writer_header_columns;
+        if (configuration->partition_strategy)
+            writer_header_columns = configuration->partition_strategy->getFormatHeader().getNamesAndTypesList();
+        else
+        {
+            const auto metadata = storage->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            writer_header_columns = metadata->getColumns().getAllPhysical();
+        }
+        validateParquetFieldIdSettingsWithResolvedHeader(args, storage->getFormatName(), writer_header_columns, *format_settings);
+    }
+
+    return storage;
 }
 
 #endif

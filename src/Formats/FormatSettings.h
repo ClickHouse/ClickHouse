@@ -409,6 +409,17 @@ struct FormatSettings
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
+        /// Explicit per-column Parquet `field_id` overrides (column name -> field_id), as the raw
+        /// entries of the `Map(String, Int32)` setting: `FormatSettings` are built for every input
+        /// and output format of every query, while these overrides are used by the Parquet output
+        /// format only, so both the conversion of the value to an `Int32` and all the semantic
+        /// checks (unknown columns, duplicate ids, coverage vs. auto-assign) happen at the point of
+        /// use, in `ParquetBlockOutputFormat::buildColumnFieldIds`.
+        std::vector<std::pair<String, String>> column_field_ids;
+        /// When true, every output column is assigned a unique, sequential Parquet
+        /// `field_id` starting from 1 (Iceberg-style). Entries from
+        /// `column_field_ids` take precedence; remaining columns fill in around them.
+        bool auto_assign_field_ids = false;
     } parquet{};
 
     struct Pretty
