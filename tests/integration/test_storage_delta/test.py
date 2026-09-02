@@ -6086,6 +6086,57 @@ def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
     )
 
 
+def test_delta_kernel_rebuild_on_credentials_rotation_read_path(started_cluster):
+    """Same rotation as above, but through the read path (`TableSnapshot::iterate()`) instead
+    of the trivial-count statistics path: the rebuild must happen before the scan iterator is
+    built, the iterator must scan with the rebuilt engine, and the rows must still come back.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_rebuild_on_rotation_read")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # `sum(a)` cannot be answered from statistics, so it goes through the scan iterator.
+    read_query = f"SELECT sum(a) FROM {TABLE_NAME}"
+    expected_sum = sum(range(100))
+
+    baseline_query_id = f"{TABLE_NAME}_baseline"
+    assert int(instance.query(read_query, query_id=baseline_query_id)) == expected_sum
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits_pre = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state%'"
+    ).strip())
+    assert rebuild_hits_pre == 0, "First read should NOT trigger the credentials-rotation rebuild"
+
+    rotated_query_id = f"{TABLE_NAME}_rotated"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    try:
+        assert int(instance.query(read_query, query_id=rotated_query_id)) == expected_sum
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{rotated_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state (credentials rotated)%'"
+    ).strip())
+    assert rebuild_hits >= 1, (
+        f"Expected the credentials-rotation rebuild to fire on the read path for query {rotated_query_id}, "
+        f"found {rebuild_hits} hits"
+    )
+
+
 def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster):
     """Simulate delta-kernel reporting an `ExpiredToken` during snapshot init. The
     `delta_kernel_force_stale_token_error` failpoint throws the kernel error exactly
