@@ -30,6 +30,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -206,8 +207,15 @@ void FormatSchemaInfo::handleSchemaSourceQuery(
 String FormatSchemaInfo::querySchema(const String & query)
 {
     auto current_query_context = CurrentThread::get().tryGetQueryContext();
-    if (!current_query_context)
-        current_query_context = Context::getGlobalContextInstance();
+
+    /// The query comes from the user-controlled `format_schema` setting, and a context without a user
+    /// has full access, so falling back to the global context would run an arbitrary SELECT with all
+    /// privileges. Background tasks have no user, hence the check is on the user, not on the context.
+    if (!current_query_context || !current_query_context->getUserID())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "format_schema_source='query' can only be used in a query running on behalf of a user; "
+            "it is not allowed in background tasks such as streaming engine consumers");
 
     ParserSelectQuery parser;
     ASTPtr select_ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
