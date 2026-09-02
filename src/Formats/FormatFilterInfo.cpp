@@ -74,7 +74,10 @@ FormatFilterInfo::FormatFilterInfo(
     {
         const auto & outputs = filter_actions_dag->getOutputs();
         if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
-            condition_hash = filter_actions_dag->getHash();
+        {
+            const auto * condition_node = outputs[0];
+            condition_hash = condition_node->getHash(true /* skip_aliases */);
+        }
     }
 }
 

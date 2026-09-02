@@ -3561,7 +3561,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
             {
                 condition_node = &ActionsDAG::resolveAliases(*outputs.front());
-                size_t hash = condition_node->getHash();
+                size_t hash = condition_node->getHash(true /* skip_aliases */);
                 if (top_k_filter_info)
                     boost::hash_combine(hash, top_k_filter_info->condition_hash);
                 condition_hash = hash;

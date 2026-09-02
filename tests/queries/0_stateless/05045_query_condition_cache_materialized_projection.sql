@@ -207,6 +207,50 @@ SETTINGS max_threads = 1, max_block_size = 8192, optimize_use_projections = 0,
     log_comment = '05045_assert_alias_plain_reuse';
 
 
+SELECT '--- one entry per predicate, however the plan spells the renames inside it';
+
+-- The section above varies the rename in the query text; this one varies it in the plan.
+-- `query_plan_merge_expressions` decides whether the column renames sitting above the read are
+-- folded into the filter, which leaves them as nodes inside the condition instead of collapsing them
+-- away. A rename computes nothing, so both plans carry the same predicate over the same projection
+-- part and must share a single cache entry. If the key depends on those renames, each plan primes an
+-- entry of its own and neither run can reuse the other's, which is a silent loss: the query is
+-- unchanged and still reads every mark.
+--
+-- The middle query of each triple is the control. It repeats the priming plan exactly, so if it does
+-- not reuse, the fixture cached nothing and the cross-plan assertion after it proves nothing.
+SYSTEM DROP QUERY CONDITION CACHE;
+
+SELECT count() FROM t_qcc_proj WHERE b = 19999
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
+    query_plan_merge_expressions = 0, force_optimize_projection_name = 'p',
+    log_comment = '05045_assert_rename_prime';
+SELECT count() FROM t_qcc_proj WHERE b = 19999
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
+    query_plan_merge_expressions = 0, force_optimize_projection_name = 'p',
+    log_comment = '05045_assert_rename_same_reuse';
+SELECT count() FROM t_qcc_proj WHERE b = 19999
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
+    force_optimize_projection_name = 'p',
+    log_comment = '05045_assert_rename_cross_reuse';
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- ... and the same in the other direction.
+SELECT count() FROM t_qcc_proj WHERE b = 19999
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
+    force_optimize_projection_name = 'p',
+    log_comment = '05045_assert_rename_reverse_prime';
+SELECT count() FROM t_qcc_proj WHERE b = 19999
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
+    force_optimize_projection_name = 'p',
+    log_comment = '05045_assert_rename_reverse_same_reuse';
+SELECT count() FROM t_qcc_proj WHERE b = 19999
+SETTINGS max_threads = 1, max_block_size = 8192, optimize_aggregation_in_order = 0,
+    query_plan_merge_expressions = 0, force_optimize_projection_name = 'p',
+    log_comment = '05045_assert_rename_reverse_cross_reuse';
+
+
 -- All assertions are collected here, behind a single `SYSTEM FLUSH LOGS`. Reading `system.query_log`
 -- costs the whole time window, not just this test's rows - and `ProfileEvents` is a `Map` column - so
 -- a scan per section makes the test's runtime scale with how busy the server has been rather than

@@ -115,7 +115,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             const auto & condition_output = ActionsDAG::resolveAliases(*filter_actions_dag->getOutputs()[0]);
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-            size_t condition_hash = condition_output.getHash();
+            size_t condition_hash = condition_output.getHash(true /* skip_aliases */);
 
             /// `ORDER BY ... LIMIT N` may drop granules during reading, so the result of the WHERE
             /// filter is no longer "applies to every granule of every part" — it applies only to

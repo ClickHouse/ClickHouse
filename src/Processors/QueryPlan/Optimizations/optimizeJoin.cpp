@@ -234,7 +234,7 @@ struct RuntimeHashStatisticsContext
         {
             if (condition.isFunction(JoinConditionOperator::Equals) || condition.isFunction(JoinConditionOperator::NullSafeEquals))
                 continue;
-            condition.getNode()->updateHash(output_hash);
+            condition.getNode()->updateHash(output_hash, false /* skip_aliases */);
         }
 
         return {right_key, output_hash.get64()};

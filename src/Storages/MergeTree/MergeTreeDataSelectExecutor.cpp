@@ -1541,13 +1541,13 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
         /// `and(a, b, ...)` node, which we do not have here).
         if (where_children.size() != 1)
             return std::nullopt;
-        return where_children.front()->getHash();
+        return where_children.front()->getHash(true /* skip_aliases */);
     }
 
     if (isTopKFilterFunction(node))
         return std::nullopt;
 
-    return node->getHash();
+    return node->getHash(true /* skip_aliases */);
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
@@ -1616,7 +1616,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = condition_node.getHash();
+        size_t condition_hash = condition_node.getHash(true /* skip_aliases */);
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
         if (apply_top_k_salt && top_k_filter_info && top_k_filter_info->where_clause)

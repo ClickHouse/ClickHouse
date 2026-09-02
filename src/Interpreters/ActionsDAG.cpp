@@ -258,14 +258,23 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
-UInt64 ActionsDAG::Node::getHash() const
+UInt64 ActionsDAG::Node::getHash(bool skip_aliases) const
 {
     SipHash hash_state;
-    updateHash(hash_state);
+    updateHash(hash_state, skip_aliases);
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool skip_aliases) const
+{
+    if (!(type == ActionType::ALIAS && skip_aliases))
+        updateOwnHash(hash_state);
+
+    for (const auto & child : children)
+        child->updateHash(hash_state, skip_aliases);
+}
+
+void ActionsDAG::Node::updateOwnHash(SipHash & hash_state) const
 {
     hash_state.update(type);
 
@@ -302,9 +311,6 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         if (!is_runtime_filter_id)
             column->updateHashWithValue(0, hash_state);
     }
-
-    for (const auto & child : children)
-        child->updateHash(hash_state);
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -331,7 +337,7 @@ void ActionsDAG::updateHash(SipHash & hash_state) const
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state);
+            frame.node->updateHash(hash_state, false /* skip_aliases */);
             stack.pop();
         }
         else

@@ -19,6 +19,13 @@
 0
 0
 0
+--- one entry per predicate, however the plan spells the renames inside it
+0
+0
+0
+0
+0
+0
 05045_assert_base_prime	0	0	0
 05045_assert_base_reuse	1	1	0
 05045_assert_proj_prime	0	0	1
@@ -34,4 +41,10 @@
 05045_assert_alias_aliased_reuse	1	1	0
 05045_assert_alias_aliased_prime	0	0	0
 05045_assert_alias_plain_reuse	1	1	0
+05045_assert_rename_prime	0	0	1
+05045_assert_rename_same_reuse	1	1	1
+05045_assert_rename_cross_reuse	1	1	1
+05045_assert_rename_reverse_prime	0	0	1
+05045_assert_rename_reverse_same_reuse	1	1	1
+05045_assert_rename_reverse_cross_reuse	1	1	1
 1	1
