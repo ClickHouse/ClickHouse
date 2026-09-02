@@ -911,6 +911,13 @@ static AddComparisonFilterResult addComparisonFilter(
     bool enable_pruning,
     const ContextPtr & context)
 {
+    /// The order this analysis puts such a value in is not the order the comparison applies to it, so
+    /// the condition's position relative to the others carries no information. Either operand decides:
+    /// a comparison is evaluated at the least common supertype, which is self-typed iff an operand is.
+    new_filter.orders_type_before_value
+        = comparisonOrdersTypeBeforeValue(expression->getResultType())
+        || comparisonOrdersTypeBeforeValue(new_filter.constant_node->getResultType());
+
     /// Pruning disabled — just store the filter without analysis.
     if (!enable_pruning)
     {
@@ -931,13 +938,8 @@ static AddComparisonFilterResult addComparisonFilter(
     const auto & raw_type = expression->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
 
-    /// The order this analysis puts such a value in is not the order the comparison applies to it, so
-    /// the condition's position relative to the others carries no information. Either operand decides:
-    /// a comparison is evaluated at the least common supertype, which is self-typed iff an operand is.
-    if (comparisonOrdersTypeBeforeValue(raw_type)
-        || comparisonOrdersTypeBeforeValue(new_filter.constant_node->getResultType()))
+    if (new_filter.orders_type_before_value)
     {
-        new_filter.orders_type_before_value = true;
         filter_map[expression].opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
     }

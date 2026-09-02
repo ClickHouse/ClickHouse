@@ -1,7 +1,5 @@
--- `optimize_redundant_comparisons` ordered an `AND` chain's constants by their `Field` type tag, while
--- a `Variant`, `Dynamic` or `JSON` value is compared by its own type's place in the name-sorted
--- alternative list first, so pruning the bound the pass judged looser dropped the one that excludes
--- the row.
+-- Pins that `optimize_redundant_comparisons` and the `notEquals` -> `notIn` merge both decline a
+-- comparison of a value that carries its own type.
 --
 -- Every arm pins `optimize_redundant_comparisons` (the setting under test) and
 -- `optimize_and_compare_chain` (randomized by the test runner, and its call site enables pruning
@@ -15,6 +13,7 @@ DROP TABLE IF EXISTS t_redundant_array_dynamic;
 DROP TABLE IF EXISTS t_redundant_array_variant;
 DROP TABLE IF EXISTS t_redundant_variant_shared_field;
 DROP TABLE IF EXISTS t_redundant_plain;
+DROP TABLE IF EXISTS t_redundant_variant_top;
 
 -- A top-level `JSON` comparison resolves to a plain `UInt8`, so the nullable-result screen does not
 -- hold it aside; a top-level `Variant` or `Dynamic` resolves to `Nullable(UInt8)` and is held aside.
@@ -94,6 +93,19 @@ SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, opt
 SELECT 'shared field 3-chain, excluding constant second', count() FROM t_redundant_variant_shared_field
 WHERE a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64))
 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
+-- The merge is not gated by `optimize_redundant_comparisons`, so the chain reaches it with pruning off.
+SELECT 'shared field 3-chain, merge armed with pruning off', count() FROM t_redundant_variant_shared_field
+WHERE a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64))
+SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
+
+-- With `use_variant_default_implementation_for_comparisons = 0` a top-level `Variant` comparison
+-- resolves to plain `UInt8`, so the nullable-result screen does not hold it aside. Every `Float64`
+-- alternative sorts before every `Int64` one whatever the values are, so the two orders disagree here.
+CREATE TABLE t_redundant_variant_top (id UInt32, b Variant(Float64, Int64), f Float64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_redundant_variant_top VALUES (1, 9e9::Float64, 9e9);
+SELECT 'top-level variant, chain pruned', count() FROM t_redundant_variant_top
+WHERE b >= 5.0::Float64::Variant(Float64, Int64) AND b >= 2::Int64::Variant(Float64, Int64)
+SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, use_variant_default_implementation_for_comparisons = 0;
 
 -- Plan oracles. The counts above are all `0`, so they alone cannot tell a working guard from a pass
 -- that never ran; each assertion below is paired with the same shape on an ordinary type, which is
@@ -118,9 +130,30 @@ SELECT 'plan, ordinary notIn merges', count() FROM
      WHERE a != [1::UInt64] AND a != [2::UInt64] AND a != [3::UInt64]
      SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3)
 WHERE explain ILIKE '%function_name: notIn,%';
+SELECT 'plan, self-typed notIn skipped with pruning off', count() FROM
+    (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_variant_shared_field
+     WHERE a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64))
+     SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3)
+WHERE explain ILIKE '%function_name: notIn,%';
+SELECT 'plan, ordinary notIn merges with pruning off', count() FROM
+    (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_plain
+     WHERE a != [1::UInt64] AND a != [2::UInt64] AND a != [3::UInt64]
+     SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3)
+WHERE explain ILIKE '%function_name: notIn,%';
+SELECT 'plan, top-level variant range conjuncts kept', count() FROM
+    (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_variant_top
+     WHERE b >= 5.0::Float64::Variant(Float64, Int64) AND b >= 2::Int64::Variant(Float64, Int64)
+     SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, use_variant_default_implementation_for_comparisons = 0)
+WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+SELECT 'plan, ordinary scalar range conjuncts pruned', count() FROM
+    (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_variant_top
+     WHERE f >= 5.0 AND f >= 2
+     SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1)
+WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 
 DROP TABLE t_redundant_json;
 DROP TABLE t_redundant_array_dynamic;
 DROP TABLE t_redundant_array_variant;
 DROP TABLE t_redundant_variant_shared_field;
 DROP TABLE t_redundant_plain;
+DROP TABLE t_redundant_variant_top;
