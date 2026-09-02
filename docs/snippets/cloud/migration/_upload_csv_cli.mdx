@@ -94,13 +94,19 @@ The command prints `OK`.
 <Warning>
 **Pipe the query and the data together**
 
-Passing the `INSERT` via `--query` and redirecting the file into stdin (`--query "INSERT ..." < data.csv`) does not work: `--query` takes precedence over stdin, so the data is ignored and zero rows are inserted — without an error. Always send the query and the data through stdin as one stream, as shown above.
+Passing the `INSERT` via `--query` and redirecting or piping the file into stdin (`--query "INSERT ..." < data.csv`) does not work: `--query` never reads stdin, so the data would go nowhere. The CLI refuses the combination outright rather than inserting nothing silently — it exits `1`, inserts no rows, and prints:
+
+```text
+Error: --query cannot be combined with SQL or data on stdin. The Query API sends one request body, so redirected data is never read. Pipe the statement and its data together on stdin instead: printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <id>. Or read a whole statement from stdin with --queries-file -.
+```
+
+Always send the query and the data through stdin as one stream, as shown above. Only stdin that actually carries data conflicts with `--query`, so `--query` on its own still works in scripts and pipelines where stdin is not a terminal.
 </Warning>
 
 Verify the rows landed:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT count() FROM default.website_visits"
 ```
 
