@@ -1,11 +1,14 @@
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Client/ConnectionPool.h>
 #include <Columns/ColumnBLOB.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Core/Field.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -13,7 +16,10 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <Parsers/parseQuery.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/IStorage.h>
@@ -34,8 +40,12 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
 }
 
 namespace DistributedSetting
@@ -48,6 +58,7 @@ namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_TABLE_ENGINE;
 }
@@ -112,6 +123,20 @@ namespace
     std::mutex validated_shard_targets_mutex;
     std::unordered_map<String, std::chrono::steady_clock::time_point> validated_shard_targets
         TSA_GUARDED_BY(validated_shard_targets_mutex);
+
+    /// Parsed as the planner parses it: a literal true, which isAlwaysTrue() exempts for a row policy, restricts nothing.
+    bool isRestrictiveFilter(const String & filter, const ContextPtr & context)
+    {
+        if (filter.empty())
+            return false;
+        const auto & settings = context->getSettingsRef();
+        ParserExpression parser;
+        const auto ast = parseQuery(
+            parser, filter.data(), filter.data() + filter.size(), "additional filter",
+            settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        bool value = false;
+        return !(tryGetLiteralBool(ast.get(), value) && value);
+    }
 
     /// Asks every replica itself, not one per shard as cluster() would: load balancing, failover or the sink may
     /// reach any of them later. A replica unreachable or without the table is skipped or refused as the caller says.
@@ -228,7 +253,38 @@ namespace
         }
 
         std::lock_guard lock(validated_shard_targets_mutex);
-        validated_shard_targets[key] = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
+        /// Expired verdicts go when a new one is stored, so the map holds at most one entry per key probed within a period.
+        std::erase_if(
+            validated_shard_targets, [&](const auto & entry) { return now - entry.second >= shard_targets_revalidation_period; });
+        validated_shard_targets[key] = now;
+    }
+}
+
+void checkNoBypassedReadRestriction(
+    const StorageID & storage_id, const ContextPtr & context, std::string_view operation, std::string_view rewrite)
+{
+    auto row_policy_filter
+        = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "{} is not supported on table {} while a row policy applies to it: {} and the policy would not be applied",
+            operation, storage_id.getNameForLogs(), rewrite);
+
+    /// Matched the way the planner matches filter keys: the short name only from the same current
+    /// database, the full unquoted name from anywhere.
+    for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+    {
+        const auto & name_and_filter = filter_entry.safeGet<Tuple>();
+        const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
+        bool matches = (filtered_table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
+            || filtered_table == storage_id.getFullNameNotQuoted();
+        if (matches && isRestrictiveFilter(name_and_filter.at(1).safeGet<String>(), context))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "{} is not supported on table {} with an additional_table_filters entry for it: {} and the filter would not be applied",
+                operation, storage_id.getNameForLogs(), rewrite);
     }
 }
 
@@ -236,10 +292,39 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
 {
     /// The planner never sees the wrapper (the rewrite hands it a cluster() call), so its SELECT grant
     /// is checked explicitly: again here, before a probe that runs on the server's own context.
-    context->checkAccess(AccessType::SELECT, storage.getStorageID());
+    const auto storage_id = storage.getStorageID();
+    context->checkAccess(AccessType::SELECT, storage_id);
+    const auto target = resolvePrometheusQueryTarget(storage);
+    if (!target)
+        return;
+
+    /// A plain SELECT through the wrapper applies both; the generated read never names the wrapper.
+    checkNoBypassedReadRestriction(
+        storage_id, context, "A prometheus query over a Distributed table", "the read is rewritten to the shard-local TimeSeries tables");
+
+    /// On a shard the plain path reads the remote table by name and applies a filter keyed to it;
+    /// the generated read goes through the selector, which has no table to bind it to.
+    const auto & remote_id = target->remote_time_series_storage_id;
+    for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+    {
+        const auto & name_and_filter = filter_entry.safeGet<Tuple>();
+        const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
+        /// With no declared remote database each shard resolves in its own default database, unknowable
+        /// here, so any qualified spelling of the remote table may match on a shard.
+        bool matches = filtered_table == remote_id.table_name
+            || (!remote_id.database_name.empty()
+                ? filtered_table == remote_id.database_name + "." + remote_id.table_name
+                : filtered_table.ends_with("." + remote_id.table_name));
+        if (matches && isRestrictiveFilter(name_and_filter.at(1).safeGet<String>(), context))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "A prometheus query over table {} is not supported with an additional_table_filters entry for {}: on the shards "
+                "the read is rewritten to a TimeSeries selector and the filter would not be applied",
+                storage_id.getNameForLogs(), filtered_table);
+    }
+
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
-    if (const auto target = resolvePrometheusQueryTarget(storage))
-        checkShardTargets(storage, *target, context, /* refuse_unavailable = */ false);
+    checkShardTargets(storage, *target, context, /* refuse_unavailable = */ false);
 }
 
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context)
