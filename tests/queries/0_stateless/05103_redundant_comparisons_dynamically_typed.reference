@@ -9,3 +9,13 @@ array(variant), chain pruned	0
 array(variant), chain kept	0
 shared field, chain pruned	0
 shared field, chain kept	0
+self-typed constant, excluding bound alone	0
+self-typed constant, chain pruned	0
+self-typed constant, chain kept	0
+shared field 3-chain, chain kept	0
+shared field 3-chain, excluding constant first	0
+shared field 3-chain, excluding constant second	0
+plan, self-typed range conjuncts kept	2
+plan, ordinary range conjuncts pruned	1
+plan, self-typed notIn merges	0
+plan, ordinary notIn merges	1

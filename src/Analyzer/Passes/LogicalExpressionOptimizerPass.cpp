@@ -394,6 +394,9 @@ struct ComparisonFilterInfo
     /// Set when folding changed `function` or the constant: the node must be rebuilt on emission,
     /// so that the tightened predicate reaches downstream analysis.
     bool modified = false;
+    /// A merge into `notIn` rebuilds the constant from a `Field`, which carries no discriminator, so a
+    /// comparison whose operand order comes from the discriminator stays a plain comparison.
+    bool orders_type_before_value = false;
 };
 
 /// A `Bool` column constant may be stored as `Types::Bool` (strict conversion) or as an integer
@@ -934,6 +937,7 @@ static AddComparisonFilterResult addComparisonFilter(
     if (comparisonOrdersTypeBeforeValue(raw_type)
         || comparisonOrdersTypeBeforeValue(new_filter.constant_node->getResultType()))
     {
+        new_filter.orders_type_before_value = true;
         filter_map[expression].opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
     }
@@ -2072,7 +2076,7 @@ private:
 
             for (auto & filter : filters.opaque_filters)
             {
-                if (filter.function == ComparisonFunction::NOT_EQUALS)
+                if (filter.function == ComparisonFunction::NOT_EQUALS && !filter.orders_type_before_value)
                     not_equals_infos.push_back(&filter);
                 else
                     all_operands.emplace_back(filter.original_index, std::move(filter.original_node));

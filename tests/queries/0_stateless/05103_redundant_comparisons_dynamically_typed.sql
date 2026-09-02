@@ -1,18 +1,20 @@
--- `optimize_redundant_comparisons` prunes the conditions of an `AND` chain by ordering the two
--- constants' `Field` values by their own type tag. A `Variant`, `Dynamic` or `JSON` value carries its
--- own type, and `IColumn::compareAt` orders such a value by that type's place in the name-sorted
--- alternative list before it looks at the value. For `Variant(Float64, Int64)` the two orders are
--- reversed, so the bound the analysis judged looser is the one that actually excludes the row, and
--- pruning it returned a row the `WHERE` clause excludes.
+-- `optimize_redundant_comparisons` ordered an `AND` chain's constants by their `Field` type tag, while
+-- a `Variant`, `Dynamic` or `JSON` value is compared by its own type's place in the name-sorted
+-- alternative list first, so pruning the bound the pass judged looser dropped the one that excludes
+-- the row.
 --
 -- Every arm pins `optimize_redundant_comparisons` (the setting under test) and
 -- `optimize_and_compare_chain` (randomized by the test runner, and its call site enables pruning
 -- unconditionally), so no arm depends on the randomization.
 
+-- The pass runs only under the analyzer, and `EXPLAIN QUERY TREE` requires it.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_redundant_json;
 DROP TABLE IF EXISTS t_redundant_array_dynamic;
 DROP TABLE IF EXISTS t_redundant_array_variant;
 DROP TABLE IF EXISTS t_redundant_variant_shared_field;
+DROP TABLE IF EXISTS t_redundant_plain;
 
 -- A top-level `JSON` comparison resolves to a plain `UInt8`, so the nullable-result screen does not
 -- hold it aside; a top-level `Variant` or `Dynamic` resolves to `Nullable(UInt8)` and is held aside.
@@ -66,7 +68,59 @@ SELECT 'shared field, chain kept', count() FROM t_redundant_variant_shared_field
 WHERE a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [1::UInt64]::Array(Variant(Date, UInt64))
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
+-- Only the constant carries its own type here: `Array(UInt64)` is an ordinary type, and the
+-- comparison is evaluated at the self-typed supertype, where `UInt64` sorts before `UInt8` by name.
+CREATE TABLE t_redundant_plain (id UInt32, a Array(UInt64)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_redundant_plain VALUES (1, [1]);
+SELECT 'self-typed constant, excluding bound alone', count() FROM t_redundant_plain
+WHERE a >= [1::UInt8]::Array(Dynamic)
+SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+SELECT 'self-typed constant, chain pruned', count() FROM t_redundant_plain
+WHERE a >= [toDate(5)]::Array(Dynamic) AND a >= [1::UInt8]::Array(Dynamic)
+SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+SELECT 'self-typed constant, chain kept', count() FROM t_redundant_plain
+WHERE a >= [toDate(5)]::Array(Dynamic) AND a >= [1::UInt8]::Array(Dynamic)
+SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+
+-- A chain long enough to be merged into `notIn`, which rebuilds its constant from a `Field` and so
+-- cannot carry a discriminator. Both constant orders are pinned: which of the two the duplicate-key
+-- map happens to keep decides the answer without the guard.
+SELECT 'shared field 3-chain, chain kept', count() FROM t_redundant_variant_shared_field
+WHERE a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64))
+SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 100;
+SELECT 'shared field 3-chain, excluding constant first', count() FROM t_redundant_variant_shared_field
+WHERE a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64))
+SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
+SELECT 'shared field 3-chain, excluding constant second', count() FROM t_redundant_variant_shared_field
+WHERE a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64))
+SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3;
+
+-- Plan oracles. The counts above are all `0`, so they alone cannot tell a working guard from a pass
+-- that never ran; each assertion below is paired with the same shape on an ordinary type, which is
+-- what fails if the optimization stops firing altogether.
+SELECT 'plan, self-typed range conjuncts kept', count() FROM
+    (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_array_dynamic
+     WHERE a >= [1.0::Float64]::Array(Dynamic) AND a >= [2::Int64]::Array(Dynamic)
+     SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1)
+WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+SELECT 'plan, ordinary range conjuncts pruned', count() FROM
+    (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_plain
+     WHERE a >= [1::UInt64] AND a >= [2::UInt64]
+     SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1)
+WHERE explain ILIKE '%function_name: greaterOrEquals,%';
+SELECT 'plan, self-typed notIn merges', count() FROM
+    (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_variant_shared_field
+     WHERE a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64))
+     SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3)
+WHERE explain ILIKE '%function_name: notIn,%';
+SELECT 'plan, ordinary notIn merges', count() FROM
+    (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_plain
+     WHERE a != [1::UInt64] AND a != [2::UInt64] AND a != [3::UInt64]
+     SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3)
+WHERE explain ILIKE '%function_name: notIn,%';
+
 DROP TABLE t_redundant_json;
 DROP TABLE t_redundant_array_dynamic;
 DROP TABLE t_redundant_array_variant;
 DROP TABLE t_redundant_variant_shared_field;
+DROP TABLE t_redundant_plain;
