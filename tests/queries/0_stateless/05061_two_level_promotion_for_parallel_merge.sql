@@ -17,7 +17,7 @@ SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 -- Disable the automatic two-level conversion (both thresholds off) so every per-thread table
 -- stays single-level during execution: the promotion is then the only route to the per-bucket
--- merge path, making the on/off contrast deterministic (mirror of 05043 forcing two-level with
+-- merge path, making the on/off contrast deterministic (mirror of 05060 forcing two-level with
 -- group_by_two_level_threshold = 1).
 SET group_by_two_level_threshold = 0;
 SET group_by_two_level_threshold_bytes = 0;

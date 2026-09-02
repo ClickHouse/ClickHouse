@@ -10,6 +10,10 @@ SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 
 SET enable_multi_way_keyed_merge = 1;
+-- Pinned off explicitly (it defaults to on) so the test exercises exactly one variable: the
+-- promotion is irrelevant here anyway, because group_by_two_level_threshold = 1 already makes
+-- every per-thread table two-level during execution.
+SET enable_two_level_promotion_for_parallel_merge = 0;
 
 -- Skewed uniqExact states: group 42 collects a million distinct values (every even number), so
 -- each merging thread carries a two-level state for it, while every other group stays tiny and

@@ -8551,12 +8551,12 @@ Log one line per merged bucket of the final merge of two-level aggregation, with
 `PerBucketMergeTiming: bucket=<N> actual_us=<U> instance=<I>`, where `instance` is the index of the merging source that processed the bucket.
 Purely an instrument for analyzing the skew between bucket merge costs; it does not change the execution in any way.
 )", 0) \
-    DECLARE(Bool, enable_multi_way_keyed_merge, false, R"(
+    DECLARE(Bool, enable_multi_way_keyed_merge, true, R"(
 In the final merge of two-level aggregation, merge each destination key's aggregate states from all source threads in one multi-way wave instead of folding the sources in pairwise, one source at a time.
 The routing of the source hash tables into the destination table runs first and only records which source states collide on which destination state. Then, for aggregate functions that support parallel merge (currently `uniqExact`) and destination keys with at least 3 collided source states, all of the key's states are merged in a single bucket-parallel wave (`parallelizeMergeMulti`, with `parallelizeMergePrepare` converting the participants to two-level sets in parallel when worthwhile), and the merged source states are freed immediately, key by key. Aggregate functions without parallel merge support (including combinator-wrapped forms such as `-If` and `-State`) and keys with fewer collided sources keep the existing pairwise merge.
 The per-key merge order is unchanged, so the result is identical with the setting on and off.
 )", 0) \
-    DECLARE(Bool, enable_two_level_promotion_for_parallel_merge, false, R"(
+    DECLARE(Bool, enable_two_level_promotion_for_parallel_merge, true, R"(
 At the start of the final merge of aggregation, when no per-thread hash table crossed the two-level conversion thresholds during execution, convert all of them to two-level anyway if the multi-way keyed merge could engage.
 A query sitting at the single-level/two-level conversion boundary otherwise alternates run to run between the per-bucket merge, where the multi-way waves of `enable_multi_way_keyed_merge` parallelize the heavy `uniqExact` states, and the single-level merge, where they never engage. The promotion applies only when `enable_multi_way_keyed_merge` is on, at least one aggregate function supports parallel merge (currently `uniqExact`), there are at least 3 non-empty per-thread hash tables, and they hold at least 1024 groups in total.
 The promotion changes only the layout of the data being merged, never the per-key merge order, so the result is identical with the setting on and off.
