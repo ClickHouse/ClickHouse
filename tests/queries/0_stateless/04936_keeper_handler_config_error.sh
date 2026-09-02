@@ -64,11 +64,19 @@ function keeper_is_gone()
 }
 
 # Everything the process said, wherever it said it. Output from before the logger is configured only
-# exists on the captured stream, so a failure there is invisible in the error log alone. The tail is
-# enough to name a startup failure and keeps a trace log out of the test output.
+# exists on the captured stream, so a failure there is invisible in the error log alone. This is what
+# an assertion has to look at: a message the keeper wrote early is still there.
+function keeper_said_all()
+{
+    cat "${TMP_DIR}/keeper.stdouterr" "${TMP_DIR}/keeper.err.log" 2>/dev/null
+}
+
+# The same output, trimmed for the test's own diagnostics: the tail is enough to name a startup
+# failure and keeps a trace log out of the test output. Never assert on it - what it does not show
+# is not absent, it is only out of the window.
 function keeper_said()
 {
-    cat "${TMP_DIR}/keeper.stdouterr" "${TMP_DIR}/keeper.err.log" 2>/dev/null | tail -n 40
+    keeper_said_all | tail -n 40
 }
 
 # Every attempt starts from a clean slate: the storage a previous attempt left behind, and the
@@ -178,7 +186,7 @@ for _ in $(seq 1 20); do
 done
 
 [ "$READY" = 1 ] && echo 'starts anyway' || echo 'FAIL: kept down without a listener'
-keeper_said | grep -qF 'Unknown type no_such_prometheus_type' \
+keeper_said_all | grep -qF 'Unknown type no_such_prometheus_type' \
     && echo 'FAIL: the handler section was read' || echo 'handler section not read'
 kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
@@ -306,7 +314,7 @@ for _ in $(seq 1 20); do
 done
 
 [ "$READY" = 1 ] && echo 'starts anyway' || echo 'FAIL: kept down without a listener'
-keeper_said | grep -qF "Unknown handler type 'no_such_control_type'" \
+keeper_said_all | grep -qF "Unknown handler type 'no_such_control_type'" \
     && echo 'FAIL: the handler section was read' || echo 'handler section not read'
 kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
