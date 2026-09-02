@@ -97,6 +97,7 @@ Internal coordination settings are located in the `<keeper_server>.<coordination
 | `disk_move_retries_wait_ms`        | How long to wait between retries after a failure which happened while a file was being moved between disks                                                                                                               | `1000`                                                                                                       |
 | `disk_move_retries_during_init`    | The amount of retries after a failure which happened while a file was being moved between disks during initialization                                                                                                    | `100`                                                                                                        |
 | `experimental_use_rocksdb`         | Use rocksdb as backend storage                                                                                                    | `0`                                                                                                        |
+| `slow_member_backpressure_max_uncommitted_log_entries` | The value `nuraft_max_uncommitted_log_entries` takes while the slow member backpressure is switched on with [`bpon`](#four-letter-word-commands). Holding the commit index back does not stop the leader appending, so without a tighter limit the log runs further ahead and the replica falls further behind instead of catching up. Tightening it makes the leader refuse new requests with a retriable error until the replica closes the gap. `0` leaves the limit unchanged. | `0` |
 
 Quorum configuration is located in the `<keeper_server>.<raft_configuration>` section and contain servers description.
 
@@ -200,6 +201,7 @@ zk_packets_sent 68
 zk_num_alive_connections        1
 zk_outstanding_requests 0
 zk_server_state leader
+zk_slow_member_backpressure      0
 zk_znode_count  4
 zk_watch_count  1
 zk_ephemerals_count     0
@@ -396,6 +398,26 @@ Sent leadership request to leader.
 filtered_list   1
 multi_read  1
 check_not_exists    0
+```
+
+- `bpon`: Ask the leader to wait for replicas that cannot keep up. While it is on, the leader does not advance the commit index past any replica it can reach, so a replica that has fallen behind can close the gap instead of drifting until it needs a snapshot. Writes then commit at the speed of the slowest reachable replica, so switch it on deliberately, watch the replicas catch up, and switch it off again with `bpof`.
+
+  There is no threshold and no time limit: every replica the leader can reach is waited for, however far behind it is, including one that is receiving a snapshot. A replica is left out only when the leader cannot reach it at all - its last request failed, it has not answered within four heartbeat intervals, or it has not answered at all yet on a new connection - because waiting cannot help such a replica and would freeze the commit index for nothing.
+
+  Set `slow_member_backpressure_max_uncommitted_log_entries` as well. Holding the commit index back does not stop the leader appending, so without it the log keeps growing while the replica is being waited for.
+
+  The command can be sent to any node: a follower forwards it to the current leader, which applies it and propagates it to all peers. Only the leader's copy has any effect; every node reports its own in `mntr` as `slow_member_backpressure`, so verify there and re-issue if a node did not receive it. The setting lasts for one leadership - a new leader switches it off - and is not persisted, so a restarted server starts with it off.
+
+```bash
+$ echo bpon | nc localhost 9181
+Sent slow member backpressure ON request to leader. Writes now commit at the speed of the slowest reachable replica. A new leader switches it off, so send this again after a leader change.
+```
+
+- `bpof`: Ask the leader to stop waiting for replicas that cannot keep up. The same propagation and verification caveats as for `bpon` apply.
+
+```bash
+$ echo bpof | nc localhost 9181
+Sent slow member backpressure OFF request to leader.
 ```
 
 - `ydld`: Request to yield leadership and become follower. If the server receiving the request is leader, it will pause write operations first, wait until the successor (current leader can never be successor) finishes the catch-up of the latest log, and then resign. The successor will be chosen automatically. Return `Sent yield leadership request to leader.` if request sent or `Failed to send yield leadership request to leader.` if request not sent. If the node is already a follower the outcome is the same as when the request is sent.

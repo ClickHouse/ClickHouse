@@ -295,6 +295,12 @@ public:
         server->yieldLeadership();
     }
 
+    /// Ask the leader to start, or stop, waiting for replicas that cannot keep up.
+    bool requestSlowMemberBackpressure(bool enable)
+    {
+        return server->requestSlowMemberBackpressure(enable);
+    }
+
     void recalculateStorageStats()
     {
         server->recalculateStorageStats();

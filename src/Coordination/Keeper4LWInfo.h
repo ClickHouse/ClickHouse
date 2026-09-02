@@ -24,6 +24,11 @@ struct Keeper4LWInfo
     bool has_leader;
     bool is_exceeding_mem_soft_limit;
 
+    /// Whether the leader waits for replicas that cannot keep up, according to
+    /// the local Raft parameters. Only the leader's copy has any effect, but
+    /// every node reports its own.
+    bool is_slow_member_backpressure;
+
     uint64_t alive_connections_count;
     uint64_t outstanding_requests_count;
 
