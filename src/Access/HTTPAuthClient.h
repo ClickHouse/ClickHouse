@@ -1,5 +1,6 @@
 #pragma once
 
+#include <istream>
 #include <set>
 
 #include <base/sleep.h>
@@ -48,11 +49,16 @@ public:
         for (size_t attempt = 0; attempt < max_tries; ++attempt)
         {
             bool last_attempt = attempt + 1 >= max_tries;
+            std::istream * body_stream = nullptr;
+            /// Only the transport is retried. A received HTTP response is parsed exactly once,
+            /// outside this try: the parser's own exceptions (`DB::Exception` derives from
+            /// `Poco::Exception`) must not re-send a rejected authentication to the server, and
+            /// an unread response body would otherwise be left on the connection for the next
+            /// attempt to misparse.
             try
             {
                 session->sendRequest(request);
-                auto & body_stream = session->receiveResponse(response);
-                return parser.parse(response, &body_stream);
+                body_stream = &session->receiveResponse(response);
             }
             catch (const Poco::Exception &) // TODO: make retries smarter
             {
@@ -61,7 +67,9 @@ public:
 
                 sleepForMilliseconds(milliseconds_to_wait);
                 milliseconds_to_wait = std::min(milliseconds_to_wait * 2, retry_max_backoff_ms);
+                continue;
             }
+            return parser.parse(response, body_stream);
         }
         UNREACHABLE();
     }

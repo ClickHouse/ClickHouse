@@ -109,8 +109,8 @@ HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response,
     }
     catch (...)
     {
-        /// Poco JSON exceptions derive from Poco::Exception, which would trigger retries
-        /// in HTTPAuthClient; convert to a DB exception so a malformed body fails immediately.
+        /// Report the failure with the authentication error code, without the Poco JSON
+        /// parser's diagnostics about the body content.
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "HTTP authentication server returned a malformed response body");
     }

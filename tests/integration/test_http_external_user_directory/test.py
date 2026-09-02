@@ -64,6 +64,14 @@ def query4_local(query, user=None, password=None, nothrow=False):
     return instance4.exec_in_container(["bash", "-c", cmd + " 2>&1"], nothrow=nothrow)
 
 
+def helper_request_count(node, user):
+    return int(
+        node.exec_in_container(
+            ["curl", "-s", f"http://localhost:8000/count?user={user}"]
+        ).strip()
+    )
+
+
 def start_mock_server(node):
     node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "http_auth_server.py"), "/http_auth_server.py"
@@ -1295,3 +1303,39 @@ def test_custom_settings_follow_prefix_policy(started_cluster):
             "SELECT 1", user=user, password=GOOD_PASSWORD
         )
         assert "Authentication failed" in error, (user, error)
+
+
+def test_helper_request_counts(started_cluster):
+    # Any HTTP response the helper returns is final: it is parsed exactly once and never
+    # re-sent to the helper, so a rejected password, a rate limit, a server error or a
+    # malformed body each cost the helper exactly one request. Only transport failures
+    # (no HTTP response at all) are retried, up to max_tries (3 in config_main.xml).
+    for user, password in [
+        ("http_user", "wrong_password"),
+        ("err429_user", GOOD_PASSWORD),
+        ("err500_user", GOOD_PASSWORD),
+        ("malformed_json_user", GOOD_PASSWORD),
+        ("bad_roles_type_user", GOOD_PASSWORD),
+    ]:
+        before = helper_request_count(instance, user)
+        error = instance.query_and_get_error("SELECT 1", user=user, password=password)
+        assert error, (user, error)
+        assert (
+            helper_request_count(instance, user) - before == 1
+        ), f"a parsed HTTP response must not be retried for user {user}"
+
+    # The 401 case matches the wording other tests in this file assert on.
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="http_user", password="wrong_password"
+    )
+
+    # A transport failure (connection closed without any HTTP response) is retried up to
+    # max_tries.
+    before = helper_request_count(instance, "conn_reset_user")
+    error = instance.query_and_get_error(
+        "SELECT 1", user="conn_reset_user", password=GOOD_PASSWORD
+    )
+    assert error
+    assert (
+        helper_request_count(instance, "conn_reset_user") - before == 3
+    ), "a transport failure must be retried exactly max_tries times"

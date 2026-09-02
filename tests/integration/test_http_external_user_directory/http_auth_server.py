@@ -1,6 +1,8 @@
 import base64
+import collections
 import http.server
 import json
+import socket
 import threading
 
 GOOD_PASSWORD = "good_password"
@@ -16,6 +18,12 @@ CONCURRENT_BARRIER = threading.Barrier(BARRIER_PARTIES, timeout=10)
 # prove the http directory actually reached the server (rather than being bypassed by a
 # higher-precedence users.xml). Shared across threads; set operations are atomic enough here.
 SEEN_USERS = set()
+
+# Per-user count of authentication requests that reached this server. Used by
+# `test_helper_request_counts` to prove that a received HTTP response is parsed exactly
+# once (never retried), while a transport failure (no HTTP response at all) is retried
+# up to `max_tries`.
+REQUEST_COUNTS = collections.Counter()
 
 # user -> dict describing the response for a correct password.
 # "status" overrides the HTTP status (default 200); "body" is sent verbatim
@@ -149,6 +157,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def _auth_against(self, users):
         user, password = self._decode_basic_auth()
         SEEN_USERS.add(user)  # record that the directory actually consulted this server
+        REQUEST_COUNTS[user] += 1
         if user == "expiry_user" and users is MAIN_USERS:
             # password format: "until_<absolute_epoch>"; returns that valid_until and the
             # reader role. Absolute, so a repeated auth returns the SAME deadline.
@@ -177,6 +186,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             if password in LIMIT_USER_PASSWORDS:
                 return self._reply(200, LIMIT_USER_PASSWORDS[password])
             return self._reply(401)
+        if user == "conn_reset_user" and users is MAIN_USERS:
+            # Simulate a transport failure (connection closed without any HTTP response)
+            # so the client sees this as a retryable failure, unlike a parsed response.
+            self.close_connection = True
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+            return
         if user not in users:
             return self._reply(404)
         if password != GOOD_PASSWORD:
@@ -199,6 +215,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
             wanted = parse_qs(urlparse(self.path).query).get("user", [""])[0]
             return self._reply(200, "1" if wanted in SEEN_USERS else "0")
+        # Debug endpoint: how many authentication requests has this server received for
+        # a username? Used to prove that a parsed HTTP response is never retried, while a
+        # transport failure is retried up to max_tries.
+        if self.path.startswith("/count?"):
+            from urllib.parse import parse_qs, urlparse
+
+            wanted = parse_qs(urlparse(self.path).query).get("user", [""])[0]
+            return self._reply(200, str(REQUEST_COUNTS[wanted]))
         if self.path == "/main":
             return self._auth_against(MAIN_USERS)
         if self.path == "/aux":
