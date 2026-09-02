@@ -1,0 +1,60 @@
+---
+description: 'ローカルのプロセス内 ClickHouse Keeper ノードに保存されているデータツリーの各ノードに対して 1 行を含みます。'
+keywords: ['システムテーブル', 'keeper_storage']
+sidebarTitle: 'keeper_storage'
+slug: /operations/system-tables/keeper_storage
+title: 'system.keeper_storage'
+doc_type: 'reference'
+---
+
+import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
+
+<SystemTableCloud />
+
+<div id="description">
+  ## 説明
+</div>
+
+このテーブルは、`clickhouse keeper` プロセスではなく `clickhouse server` プロセスを使用する ClickHouse Keeper のデプロイメントにのみ存在します。`/keeper` のシステムノードを含め、ローカル Keeper ノードに保存されているデータツリー内のノードごとに1行を格納します。
+
+`system.zookeeper` とは異なり、このテーブルは Keeper クラスターにリクエストを送信しません。リクエスト処理に影響を与えることなく、一貫性のあるロックフリーのビューからローカル Keeper のコミット済み状態を直接読み取ります。このテーブルの読み取りにはパス条件は不要で、ツリー全体を返すため、最も多くの子ノードを持つノードや最大のデータを持つノードを探すなど、すべてのノードをスキャンするクエリに適しています。
+
+<div id="columns">
+  ## カラム
+</div>
+
+* `path` ([String](/ja/reference/data-types/string)) — ノードの絶対パス。
+* `data` ([String](/ja/reference/data-types/string)) — ノードに格納されたデータ。
+* `czxid` ([Int64](/ja/reference/data-types/int-uint)) — ノードを作成したトランザクションのID。
+* `mzxid` ([Int64](/ja/reference/data-types/int-uint)) — 最後にノードを変更したトランザクションのID。
+* `ctime` ([DateTime64(3)](/ja/reference/data-types/datetime64)) — ノードの作成時刻。
+* `mtime` ([DateTime64(3)](/ja/reference/data-types/datetime64)) — ノードが最後に変更された時刻。
+* `version` ([Int32](/ja/reference/data-types/int-uint)) — ノードデータの変更回数。
+* `cversion` ([Int32](/ja/reference/data-types/int-uint)) — ノードの子ノードの変更回数。
+* `aversion` ([Int32](/ja/reference/data-types/int-uint)) — ノードのACLの変更回数。
+* `ephemeral_owner` ([Int64](/ja/reference/data-types/int-uint)) — ノードがエフェメラルの場合はその所有セッションのID、それ以外の場合は`0`。
+* `data_length` ([UInt32](/ja/reference/data-types/int-uint)) — ノードデータのサイズ (バイト単位) 。
+* `num_children` ([Int32](/ja/reference/data-types/int-uint)) — ノードの子ノードの数。
+* `pzxid` ([Int64](/ja/reference/data-types/int-uint)) — 最後にノードの子ノードを追加または削除したトランザクションのID。
+* `seq_num` ([Int64](/ja/reference/data-types/int-uint)) — ノードの連番付き子ノードの名前の生成に使用するカウンター。
+* `ttl` ([Int64](/ja/reference/data-types/int-uint)) — ノードがTTLノードの場合の有効期限 (TTL) (ミリ秒単位) 。それ以外の場合は`0`。
+* `acl_id` ([UInt32](/ja/reference/data-types/int-uint)) — ノードACLの内部ID。ノードにACLがない場合は`0`。
+
+<div id="example">
+  ## 例
+</div>
+
+```sql
+SELECT path, num_children, data_length
+FROM system.keeper_storage
+ORDER BY num_children DESC
+LIMIT 3;
+```
+
+```text
+┌─path──────────────┬─num_children─┬─data_length─┐
+│ /                 │            3 │           0 │
+│ /clickhouse/tasks │            2 │           0 │
+│ /keeper           │            1 │           0 │
+└───────────────────┴──────────────┴─────────────┘
+```

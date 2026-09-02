@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SystemLogParameters from '/snippets/ar/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 تضبط هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
@@ -23,13 +24,15 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## allowed_disks_for_table_engines
 </div>
 
-قائمة الأقراص المسموح بها للاستخدام مع Iceberg
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />قائمة الأقراص المسموح بها للاستخدام مع Iceberg
 
 <div id="auth_use_forwarded_address">
   ## auth_use_forwarded_address
 </div>
 
 استخدم العنوان الأصلي للمصادقة للعملاء المتصلين عبر وكيل.
+
+* **الافتراضي:** `false`
 
 <Note>
   يجب استخدام هذا الإعداد بحذر شديد، إذ يمكن انتحال العناوين المُعاد توجيهها بسهولة، لذلك لا ينبغي الوصول مباشرةً إلى الخوادم التي تقبل هذا النوع من المصادقة، بل يجب أن يقتصر الوصول إليها على المرور عبر وكيل موثوق.
@@ -41,6 +44,8 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 معامل العمل لنوع المصادقة `bcrypt_password` الذي يستخدم [خوارزمية Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 ويحدّد معامل العمل مقدار القدرة الحاسوبية والوقت اللازمين لحساب قيمة التجزئة والتحقق من كلمة المرور.
+
+* **الافتراضي:** `12`
 
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
@@ -137,7 +142,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * `min_part_size` – الحد الأدنى لحجم جزء البيانات.
 * `min_part_size_ratio` – نسبة حجم جزء البيانات إلى حجم الجدول.
 * `method` – طريقة الضغط. القيم المقبولة: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-* `level` – مستوى الضغط. راجع [Codecs](/ar/reference/statements/create/table#general-purpose-codecs).
+* `level` – مستوى الضغط. راجع [Codecs](/ar/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
   يمكنك تهيئة عدة أقسام `<case>`.
@@ -165,6 +170,12 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 </compression>
 ```
 
+<div id="config-file">
+  ## ملف الإعدادات
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />يشير إلى ملف إعدادات الخادم.
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -172,12 +183,6 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="نعم" />
 
 مدى تكرار إعادة تحميل ClickHouse للإعدادات والتحقق من وجود تغييرات جديدة
-
-<div id="config-file">
-  ## ملف الإعدادات
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />يشير إلى ملف إعدادات الخادم.
 
 <div id="core_dump">
   ## core_dump
@@ -236,6 +241,36 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 </crash_log>
 ```
 
+<div id="create_union_system_log_tables">
+  ## create_union_system_log_tables
+</div>
+
+يطلب إنشاء جداول `all_...` إلى جانب جداول سجل النظام (`system.all_query_log` لـ `system.query_log`، و`system.all_text_log` لـ `system.text_log`، وهكذا). يمثل هذا الجدول اتحادًا لجدول السجل المقابل وإصداراته المُدوَّرة (`query_log_0`، `query_log_1`، ...) و/أو للجداول نفسها عبر جميع النسخ المتماثلة في مجموعة، ويتيح الاستعلام عنها جميعًا دفعةً واحدة دون الحاجة إلى تذكّر تعبيرات مثل `clusterAllReplicas(default, merge(system, '^query_log'))`.
+
+هذا القسم اختياري. وإذا وُجد، فيجب تحديد إعداد واحد على الأقل من الإعدادات التالية:
+
+| الإعداد                | الوصف                                                                                                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merge_rotated_tables` | إذا كانت القيمة `true`، فإن جدول `all_...` يستعلم من جدول السجل وإصداراته المُدوَّرة باستخدام دالة الجدول `merge`.                                                                                                                    |
+| `cluster`              | إذا تم تحديده، فإن جدول `all_...` يستعلم من جميع النسخ المتماثلة في هذه المجموعة باستخدام دالة الجدول `clusterAllReplicas` (مع `SETTINGS skip_unavailable_shards = 1`، بحيث لا تؤدي النسخ المتماثلة غير المتاحة إلى فشل الاستعلامات). |
+
+إذا حُدِّد كلا الإعدادين، يكون الجدول اتحادًا للجداول المُدوَّرة عبر جميع النسخ المتماثلة في المجموعة.
+
+ينطبق هذا الخيار على جميع جداول سجل النظام، ولا يتيح إعدادًا مختلفًا لكل سجل نظام. تُنشأ الجداول في قاعدة البيانات نفسها التي توجد فيها جداول سجل النظام عند أول عملية flush لكل سجل، ويُعاد إنشاؤها تلقائيًا عند تغيّر بنية جدول السجل (عند التدوير). وليس لها حالة، لذا يمكن حذفها بأمان في أي وقت. يُدعم الإنشاء فقط لمحركات قواعد البيانات `Atomic` و`Replicated` و`Shared`.
+
+<Note>
+  عند استخدام إعداد `cluster`، يشير تعريف الجدول إلى المجموعة، ويجب أن تكون المجموعة موجودة لكي يُحمَّل الجدول. إذا أزلت المجموعة من الإعدادات، فاحذف أيضًا جداول `all_...` (سيُعاد إنشاؤها وفقًا للإعدادات الجديدة عند عملية flush التالية).
+</Note>
+
+**مثال**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
+```
+
 <div id="database_atomic_delay_before_drop_table_sec">
   ## database_atomic_delay_before_drop_table_sec
 </div>
@@ -288,7 +323,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 يمكّن أو يعطّل عرض الأسرار في استعلامات `SHOW` و`SELECT` للجداول وقواعد البيانات ودوال الجداول والقواميس.
 
 ويجب أيضًا أن يكون لدى المستخدم الذي يرغب في رؤية الأسرار
-إعداد التنسيق [`format_display_secrets_in_show_and_select` format setting](/ar/reference/settings/formats#format_display_secrets_in_show_and_select)
+إعداد التنسيق [`format_display_secrets_in_show_and_select` format setting](/ar/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 مفعّلًا، وأن يمتلك صلاحية
 [`displaySecretsInShowAndSelect`](/ar/reference/statements/grant#displaysecretsinshowandselect).
 
@@ -328,13 +363,13 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## التشفير
 </div>
 
-يُهيِّئ أمرًا للحصول على مفتاح لاستخدامه مع [ترميزات التشفير](/ar/reference/statements/create/table#encryption-codecs). يجب كتابة المفتاح (أو المفاتيح) في متغيرات البيئة أو تعيينه في ملف الإعدادات.
+يُهيِّئ أمرًا للحصول على مفتاح لاستخدامه مع [ترميزات التشفير](/ar/reference/statements/create/table/codec#encryption-codecs). يجب كتابة المفتاح (أو المفاتيح) في متغيرات البيئة أو تعيينه في ملف الإعدادات.
 
 يمكن أن تكون المفاتيح بصيغة hex أو string بطول 16 بايت.
 
 **مثال**
 
-التحميل من config:
+التحميل من إعدادات:
 
 ```xml
 <encryption_codecs>
@@ -457,7 +492,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## filesystem_caches_path
 </div>
 
-يحدّد هذا الإعداد مسار التخزين المؤقت.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
+
+يحدّد هذا الإعداد مسار ذاكرة التخزين المؤقت.
 
 **مثال**
 
@@ -489,7 +526,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## hdfs.libhdfs3_conf
 </div>
 
-يوجّه libhdfs3 إلى المسار الصحيح لملف config الخاص به.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />يوجّه libhdfs3 إلى المسار الصحيح لملف إعدادات الخاص به.
 
 <div id="hsts_max_age">
   ## hsts_max_age
@@ -519,26 +556,33 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-إذا كانت القيمة true، فلن يكتب ClickHouse القيم الافتراضية لعبارة SQL security إذا كانت فارغة في استعلامات `CREATE VIEW`.
+إذا كانت القيمة true، يُخزَّن استعلام `CREATE VIEW` أو `CREATE MATERIALIZED VIEW` الذي لا يحدد `DEFINER` ولا `SQL SECURITY` كما كُتب، ويُعيَّن للعرض نوع أمان SQL فارغ. ويُعد تحديد `DEFINER` وحده بمثابة `SQL SECURITY DEFINER`، لذا لا يتأثر هذا الاستعلام بهذا الإعداد. يُنفَّذ العرض العادي ذي نوع أمان SQL الفارغ باستخدام أذونات المستدعي. أما العرض المادي الذي يحدد جدولًا هدفًا صراحةً، فتُتجاوز عمليات التحقق من الوصول إلى الجدول الهدف: إذ لا يتطلب إدراج البيانات في الجدول المصدر امتياز `INSERT` على الجدول الهدف، كما لا تتطلب القراءة من العرض امتياز `SELECT` عليه.
+
+إذا كانت القيمة false، تُكتب القيم الافتراضية لإعدادات [`default_normal_view_sql_security`](/ar/reference/settings/session-settings#default_normal_view_sql_security) و[`default_materialized_view_sql_security`](/ar/reference/settings/session-settings#default_materialized_view_sql_security) و[`default_view_definer`](/ar/reference/settings/session-settings#default_view_definer) في تعريف العرض عند إنشائه. ومع القيم الافتراضية لهذه الإعدادات، يسجل العرض المادي المنشأ من دون أي من العبارتين المستخدم الذي أنشأه بوصفه معرِّفه، ويُنفَّذ باستخدام أذونات ذلك المستخدم.
+
+تتلقى العروض المادية القابلة للتحديث القيم الافتراضية دائمًا، بغض النظر عن هذا الإعداد.
 
 <Note>
-  لا يلزم هذا الإعداد إلا خلال فترة الترحيل، وسيصبح متقادماً في الإصدار 24.4
+  لا يؤثر تغيير هذا الإعداد إلا في العروض التي تُنشأ لاحقًا؛ أما التعريفات المخزنة للعروض الحالية فتبقى دون تغيير.
 </Note>
 
 <div id="include_from">
   ## include_from
 </div>
 
-<SettingsInfoBlock type="String" default_value="/etc/metrika.xml" changeable_without_restart="No" />
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
-مسار الملف الذي يحتوي على عمليات الاستبدال. يدعم كلا التنسيقين XML وYAML.
+مسار ملف الاستبدالات. يدعم كلاً من تنسيقي XML وYAML.
 
-لمزيد من المعلومات، راجع قسم [ملفات التهيئة](/ar/concepts/features/configuration/server-config/configuration-files).
+لمزيد من المعلومات، راجع قسم [ملفات الإعدادات](/ar/concepts/features/configuration/server-config/configuration-files).
+يكون فارغًا افتراضيًا، ما يعني عدم استخدام أي ملف استبدالات. قبل الإصدار 26.8، كان الملف `/etc/metrika.xml` يُستخدم ضمنيًا متى وُجد؛ إذا كنت تعتمد عليه، فحدّد مساره صراحةً.
+
+لاحظ أن ملفات الإعدادات التي تُحمَّل بشكل منفصل عن إعدادات الخادم الرئيسية — إعدادات المستخدمين (مثل `users.xml` عندما لا يكون مُضمّنًا في الملف الرئيسي) وإعدادات القواميس بتنسيق XML — تقرأ العنصر `include_from` من محتواها الخاص، لا من إعدادات الخادم. ويحتاج كل ملف من هذا النوع يعتمد على الاستبدالات إلى عنصر `include_from` خاص به.
 
 **مثال**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
 <div id="insert_deduplication_version">
@@ -847,7 +891,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## logger.errorlog
 </div>
 
-مسار ملف سجل الأخطاء.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار ملف سجل الأخطاء.
 
 <div id="logger.formatting.type">
   ## logger.formatting.type
@@ -865,7 +909,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## logger.log
 </div>
 
-مسار ملف السجل.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار ملف السجل.
 
 <div id="logger.rotation">
   ## logger.rotation
@@ -877,7 +921,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## logger.shutdown_level
 </div>
 
-يُستخدم مستوى الإيقاف لتعيين مستوى المُسجِّل الجذر عند إيقاف تشغيل الخادم.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />يُستخدم مستوى الإيقاف لتعيين مستوى المُسجِّل الجذر عند إيقاف تشغيل الخادم.
 
 <div id="logger.size">
   ## logger.size
@@ -889,7 +933,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## logger.startup_level
 </div>
 
-يُستخدم مستوى بدء التشغيل لضبط مستوى المُسجِّل الجذر عند بدء تشغيل الخادم. وبعد اكتمال بدء التشغيل، يُعاد مستوى التسجيل إلى الإعداد `<level>`.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />يُستخدم مستوى بدء التشغيل لضبط مستوى المُسجِّل الجذر عند بدء تشغيل الخادم. وبعد اكتمال بدء التشغيل، يُعاد مستوى التسجيل إلى الإعداد `<level>`.
 
 <div id="logger.stream_compress">
   ## logger.stream_compress
@@ -929,7 +973,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## message_queue_disable_insertion
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />تعطيل الإدراج من محركات قوائم انتظار الرسائل (Kafka وRabbitMQ وNATS) في العروض المادية المرفقة
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />تعطيل الإدراج من محركات قوائم انتظار الرسائل (Kafka وRabbitMQ وNATS) في العروض المادية المرفقة
 
 <div id="metric_log">
   ## metric_log
@@ -998,6 +1042,16 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 **انظر أيضًا**
 
 * [جدولة أعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
+
+<div id="named_collections_storage.type">
+  ## named_collections_storage.type
+</div>
+
+<SettingsInfoBlock type="String" default_value="local" changeable_without_restart="No" />
+
+نوع تخزين المجموعات المُسمّاة. القيم الممكنة هي `local` و`local_encrypted` و`keeper`،
+و`keeper_encrypted` و`zookeeper` و`zookeeper_encrypted`.
+يُضبط باستخدام `named_collections_storage.type` ‏(`<named_collections_storage><type>` في XML).
 
 <div id="oom_score">
   ## oom_score
@@ -1072,7 +1126,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## openSSL.client.caConfig
 </div>
 
-المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوق بها. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. ويُبحث عن أسماء الملفات باستخدام قيمة تجزئة اسم الـ subject الخاص بـ CA. يمكن العثور على التفاصيل في صفحة man الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوق بها. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. ويُبحث عن أسماء الملفات باستخدام قيمة تجزئة اسم الـ subject الخاص بـ CA. يمكن العثور على التفاصيل في صفحة man الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
 
 <div id="openssl.client.cachesessions">
   ## openSSL.client.cacheSessions
@@ -1084,7 +1138,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## openSSL.client.certificateFile
 </div>
 
-مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك تركه إذا كان `<privateKeyFile>` يتضمن الشهادة.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك تركه إذا كان `<privateKeyFile>` يتضمن الشهادة.
 
 <div id="openssl.client.cipherlist">
   ## openSSL.client.cipherList
@@ -1096,7 +1150,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## openSSL.client.disableProtocols
 </div>
 
-البروتوكولات التي لا يُسمح باستخدامها.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />البروتوكولات التي لا يُسمح باستخدامها.
 
 <div id="openssl.client.extendedverification">
   ## openSSL.client.extendedVerification
@@ -1132,7 +1186,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## openSSL.client.privateKeyFile
 </div>
 
-مسار الملف الذي يحتوي على المفتاح الخاص لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار الملف الذي يحتوي على المفتاح الخاص لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.
 
 <div id="openssl.client.privatekeypassphrasehandler.name">
   ## openSSL.client.privateKeyPassphraseHandler.name
@@ -1156,7 +1210,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## openSSL.server.caConfig
 </div>
 
-المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوقة. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. يُبحث عن أسماء الملفات باستخدام قيمة تجزئة اسم موضوع CA. ويمكن العثور على التفاصيل في صفحة man الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوقة. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. يُبحث عن أسماء الملفات باستخدام قيمة تجزئة اسم موضوع CA. ويمكن العثور على التفاصيل في صفحة man الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
 
 <div id="openssl.server.cachesessions">
   ## openSSL.server.cacheSessions
@@ -1168,7 +1222,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## openSSL.server.certificateFile
 </div>
 
-مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك عدم تحديده إذا كان `<privateKeyFile>` يحتوي على الشهادة.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك عدم تحديده إذا كان `<privateKeyFile>` يحتوي على الشهادة.
 
 <div id="openssl.server.cipherlist">
   ## openSSL.server.cipherList
@@ -1180,7 +1234,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## openSSL.server.disableProtocols
 </div>
 
-البروتوكولات التي لا يُسمح باستخدامها.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />البروتوكولات التي لا يُسمح باستخدامها.
 
 <div id="openssl.server.extendedverification">
   ## openSSL.server.extendedVerification
@@ -1216,7 +1270,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## openSSL.server.privateKeyFile
 </div>
 
-مسار الملف الذي يحتوي على المفتاح الخاص لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار الملف الذي يحتوي على المفتاح الخاص لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.
 
 <div id="openssl.server.privatekeypassphrasehandler.name">
   ## openSSL.server.privateKeyPassphraseHandler.name
@@ -1419,10 +1473,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * `events` – إتاحة المقاييس من جدول [system.events](/ar/reference/system-tables/events).
 * `asynchronous_metrics` – إتاحة قيم المقاييس الحالية من جدول [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics).
 * `errors` - إتاحة عدد الأخطاء حسب رموز الخطأ التي حدثت منذ آخر إعادة تشغيل للخادم. ويمكن أيضًا الحصول على هذه المعلومات من [system.errors](/ar/reference/system-tables/errors).
+* `labels` – تسميات ثابتة تُضاف إلى كل مقياس مُتاح. يعرّف كل عنصر تابع تسمية واحدة: اسم العنصر هو اسم التسمية (ويجب أن يطابق `[a-zA-Z_][a-zA-Z0-9_]*`) وقيمة العنصر هي قيمة التسمية. تدعم قيم التسميات استبدالات الإعدادات القياسية، مثل السمة `from_env`. يُرفض اسم التسمية إذا كان يبدأ بـ `__` (المحجوزة في Prometheus)، أو إذا كان سيتعارض مع تسمية تكتبها نقطة النهاية هذه بالفعل لأحد أقسامها المُمكّنة، وإلا فستحمل العينة اسم التسمية نفسه مرتين. لذا تتبع مجموعة الأسماء المحجوزة واجهة التصدير النشطة لنقطة النهاية: `le` عند تمكين `histograms`؛ وتسميات `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) عند تمكين `info`؛ وأي تسمية تستخدمها عائلة مقاييس مُدرَّج تكراري مكشوفة أو عائلة مقاييس ذات أبعاد مكشوفة (مثل `group` أو `direction` أو `operation_type`) عند تمكين `histograms`/`dimensional_metrics`. ولأن ذلك يعتمد على ما تكشفه نقطة النهاية فعليًا، فقد يكون الاسم صالحًا في نقطة نهاية ويُرفض في أخرى — فعلى سبيل المثال، تكشف نقطة نهاية Keeper `keeper_metrics_only` عائلات `keeper_*` فقط، لذا تُقبل فيها التسميات التي تستخدمها عائلات الخادم فقط.
 
 **مثال**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1434,6 +1489,10 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1617,7 +1676,7 @@ curl 127.0.0.1:9363/metrics
 سيتكوّن العنقود الذي تُنشئه قاعدة البيانات Replicated من نسخ متماثلة ضمن المجموعة نفسها.
 لن تنتظر استعلامات DDL سوى النسخ المتماثلة الموجودة في المجموعة نفسها.
 
-تكون فارغة افتراضيًا.
+* **القيمة الافتراضية:** `""`
 
 **مثال**
 
@@ -1703,7 +1762,11 @@ curl 127.0.0.1:9363/metrics
   ## table_engines_require_grant
 </div>
 
+<CloudNotSupportedBadge />
+
 إذا ضُبطت القيمة على `true`، فسيحتاج المستخدمون إلى امتياز grant لإنشاء جدول باستخدام engine محدد، مثل `GRANT TABLE ENGINE ON TinyLog to user`.
+
+* **القيمة الافتراضية:** `false`
 
 <Note>
   افتراضيًا، ولأغراض التوافق مع الإصدارات السابقة، يتجاهل إنشاء جدول باستخدام table engine محدد امتياز grant، ولكن يمكنك تغيير هذا السلوك بضبط هذه القيمة على `true`.
@@ -1811,7 +1874,7 @@ curl 127.0.0.1:9363/metrics
 
 **انظر أيضًا**
 
-* [session&#95;timezone](/ar/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ar/reference/settings/session-settings/other#session_timezone)
 
 <div id="trace_log">
   ## trace_log
@@ -1833,7 +1896,7 @@ curl 127.0.0.1:9363/metrics
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1905,6 +1968,6 @@ curl 127.0.0.1:9363/metrics
   ## webterminal_allowed_origins
 </div>
 
-قائمة مفصولة بفواصل لقيم Origin الكاملة (المخطط + المضيف + المنفذ الاختياري) المسموح لها بفتح جلسات WebSocket الخاصة بـ `/webterminal`. عند تركها فارغة، تُطبَّق سياسة نفس الأصل بصرامة (يجب أن تتطابق قيمة Origin مع مخطط الطلب ومضيفه ومنفذه). اضبط هذا لعمليات النشر الموجودة خلف وكيل عكسي يُنهي TLS، حيث تكون `request.isSecure()` مساوية لـ `false` رغم أن المتصفح يستخدم `https`. مثال: `https://example.com,https://app.example.com:8443`.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />قائمة مفصولة بفواصل لقيم Origin الكاملة (المخطط + المضيف + المنفذ الاختياري) المسموح لها بفتح جلسات WebSocket الخاصة بـ `/webterminal`. عند تركها فارغة، تُطبَّق سياسة نفس الأصل بصرامة (يجب أن تتطابق قيمة Origin مع مخطط الطلب ومضيفه ومنفذه). اضبط هذا لعمليات النشر الموجودة خلف وكيل عكسي يُنهي TLS، حيث تكون `request.isSecure()` مساوية لـ `false` رغم أن المتصفح يستخدم `https`. مثال: `https://example.com,https://app.example.com:8443`.
 
 {/*AUTOGENERATED_END*/}

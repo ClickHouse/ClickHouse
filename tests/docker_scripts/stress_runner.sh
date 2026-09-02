@@ -14,7 +14,7 @@ ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 source /repo/tests/docker_scripts/stress_tests.lib
 
 
-install_packages package_folder
+install_binary /package_folder/clickhouse
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
@@ -47,10 +47,10 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-# run before start_minio to have valid aws creds
+# run before start_seaweedfs to have valid aws creds
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || { echo "Failed to start seaweedfs"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 
 # Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
