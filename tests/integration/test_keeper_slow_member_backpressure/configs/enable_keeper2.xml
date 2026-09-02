@@ -13,6 +13,7 @@
             <session_timeout_ms>30000</session_timeout_ms>
             <raft_logs_level>information</raft_logs_level>
             <slow_member_backpressure_max_uncommitted_log_entries>200</slow_member_backpressure_max_uncommitted_log_entries>
+            <slow_member_backpressure_no_progress_timeout_ms>5000</slow_member_backpressure_no_progress_timeout_ms>
         </coordination_settings>
 
         <raft_configuration>

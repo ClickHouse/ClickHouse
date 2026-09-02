@@ -96,6 +96,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
+    extern const CoordinationSettingsMilliseconds slow_member_backpressure_no_progress_timeout_ms;
     extern const CoordinationSettingsUInt64 slow_member_backpressure_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
@@ -618,6 +619,10 @@ nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_se
     params.max_bytes_in_flight_in_stream_
         = static_cast<int64_t>(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
     params.max_uncommitted_log_entries_ = coordination_settings[CoordinationSetting::nuraft_max_uncommitted_log_entries];
+    params.slow_member_backpressure_no_progress_timeout_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::slow_member_backpressure_no_progress_timeout_ms].totalMilliseconds(),
+        "slow_member_backpressure_no_progress_timeout_ms",
+        log);
     params.slow_member_backpressure_max_uncommitted_
         = coordination_settings[CoordinationSetting::slow_member_backpressure_max_uncommitted_log_entries];
 
