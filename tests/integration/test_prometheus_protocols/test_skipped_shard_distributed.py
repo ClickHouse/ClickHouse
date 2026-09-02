@@ -1,5 +1,6 @@
-"""The shard-target check asks every replica and keeps a passing verdict for a minute, never one that missed a
-replica (down or without its table): a read passes, a write is refused, not queued."""
+"""The shard-target check asks every replica afresh on every request, so a table swapped under the name is
+caught by the next one; a replica it cannot reach, or without its table, passes a read and refuses a write,
+not queued."""
 
 import json
 
@@ -52,7 +53,7 @@ def start_cluster():
             "ENGINE = Distributed(two_nodes_dist, default, ts_local, cityHash64(tags['host'])) "
             "SETTINGS skip_unavailable_shards = 1"
         )
-        # Its own shard tables, so the tests below never share a cached verdict.
+        # Its own shard tables, so the tests below never see each other's swaps.
         node1.query("CREATE TABLE ts_queue ENGINE = TimeSeries")
         node2.query("CREATE TABLE ts_queue ENGINE = TimeSeries")
         node2.query(
@@ -104,25 +105,21 @@ def series_count(metric_name, table="ts_local"):
     return f"SELECT count() FROM timeSeriesTags({table}) WHERE metric_name = '{metric_name}'"
 
 
-def test_a_verdict_that_skipped_a_shard_is_not_kept():
-    with PartitionManager() as pm:
-        pm.partition_instances(
-            node1, node2, port=9000, action="REJECT --reject-with tcp-reset"
-        )
-        # Served by node1 alone, as skip_unavailable_shards = 1 promises: the check behind it
-        # passed without seeing node2.
-        answer = json.loads(
-            execute_query_via_http_api(
-                node1.ip_address, 9093, "/api/v1/query", "m", START_TIME
-            )
-        )
-        assert len(answer["result"]) == 1, answer
-        node2.query("EXCHANGE TABLES ts_local AND mt_local")
+def test_a_shard_table_swapped_after_a_passing_check_is_refused_by_the_next_write():
+    # A write the check passed, delivered to node2's TimeSeries table.
+    assert write("before_swap").status_code == 204
+    assert_eq_with_retry(node2, series_count("before_swap"), "1")
 
-    # node2 is reachable again, and its `ts_local` is a MergeTree table now.
-    response = write("after_outage")
+    # The same name, the same outer schema, a MergeTree table: the very next write is refused
+    # on its own check, not accepted on the strength of the one that just passed.
+    node2.query("EXCHANGE TABLES ts_local AND mt_local")
+    response = write("after_swap")
     assert response.status_code >= 400, response.text
     assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    error = node1.query_and_get_error(
+        f"SELECT * FROM prometheusQuery(prom_dist, 'm', {START_TIME})"
+    )
+    assert "UNEXPECTED_TABLE_ENGINE" in error
 
     # Back as a TimeSeries table, the very next write is accepted and lands on node2.
     node2.query("EXCHANGE TABLES ts_local AND mt_local")
@@ -130,8 +127,37 @@ def test_a_verdict_that_skipped_a_shard_is_not_kept():
     assert_eq_with_retry(node2, series_count("after_restore"), "1")
     # The refused write reached nothing: not the MergeTree table, not a TimeSeries table.
     assert node2.query("SELECT count() FROM mt_local").strip() == "0"
-    assert node1.query(series_count("after_outage")).strip() == "0"
-    assert node2.query(series_count("after_outage")).strip() == "0"
+    assert node1.query(series_count("after_swap")).strip() == "0"
+    assert node2.query(series_count("after_swap")).strip() == "0"
+
+
+def test_a_declared_skip_covers_a_read_not_a_write():
+    with PartitionManager() as pm:
+        pm.partition_instances(
+            node1, node2, port=9000, action="REJECT --reject-with tcp-reset"
+        )
+        # Served by node1 alone, as skip_unavailable_shards = 1 promises.
+        answer = json.loads(
+            execute_query_via_http_api(
+                node1.ip_address, 9093, "/api/v1/query", "m", START_TIME
+            )
+        )
+        assert len(answer["result"]) == 1, answer
+        # The sink would queue the samples for node2 whatever the table declares: refused instead,
+        # with an error Prometheus retries.
+        response = write("during_outage")
+        assert response.status_code >= 500, response.text
+        assert "ALL_CONNECTION_TRIES_FAILED" in response.text
+        pending = node1.query(
+            "SELECT sum(data_files) FROM system.distribution_queue WHERE table = 'prom_dist'"
+        )
+        assert pending.strip() == "0", pending
+
+    # node2 is reachable again: the very next write is accepted and lands there.
+    assert write("after_outage").status_code == 204
+    assert_eq_with_retry(node2, series_count("after_outage"), "1")
+    assert node1.query(series_count("during_outage")).strip() == "0"
+    assert node2.query(series_count("during_outage")).strip() == "0"
 
 
 def test_a_write_over_an_unreachable_shard_is_refused_not_queued():
@@ -202,13 +228,13 @@ def test_a_missing_shard_table_is_refused_for_a_write_and_never_validated():
         "SELECT sum(data_files) FROM system.distribution_queue WHERE table = 'prom_missing'"
     )
     assert pending.strip() == "0", pending
-    # A read told to skip the shard passes, served by node1 alone, and keeps no verdict either.
+    # A read told to skip the shard passes, served by node1 alone.
     node1.query(
         f"SELECT count() FROM prometheusQuery(prom_missing, 'm', {START_TIME}) "
         "SETTINGS skip_unavailable_shards = 1"
     )
 
-    # A MergeTree table answers to the name now, well within the minute a kept verdict would cover.
+    # A MergeTree table answers to the name now: refused by the next write's own check.
     node2.query("RENAME TABLE mt_missing TO ts_missing")
     response = write("into_mergetree", "/missing/write")
     assert response.status_code >= 400, response.text
