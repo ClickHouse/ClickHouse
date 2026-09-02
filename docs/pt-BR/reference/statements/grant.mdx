@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSuppo
 
 Para revogar privilégios, use a instrução [REVOKE](/pt-BR/reference/statements/revoke). Você também pode listar os privilégios concedidos com a instrução [SHOW GRANTS](/pt-BR/reference/statements/show#show-grants).
 
-<div id="granting-privilege-syntax">
-  ## Sintaxe de concessão de privilégios
-</div>
+## Sintaxe de concessão de privilégios {#granting-privilege-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -30,9 +28,7 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 A cláusula `WITH GRANT OPTION` concede a `user` ou `role` a permissão para executar a consulta `GRANT`. Os usuários podem conceder privilégios no mesmo escopo que já possuem ou em escopos menores.
 A cláusula `WITH REPLACE OPTION` substitui os privilégios antigos por novos privilégios para o `user` ou `role`; se não for especificada, ela acrescenta privilégios.
 
-<div id="assigning-role-syntax">
-  ## Sintaxe para atribuir Função
-</div>
+## Sintaxe para atribuir Função {#assigning-role-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
@@ -44,9 +40,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 A cláusula `WITH ADMIN OPTION` concede o privilégio [ADMIN OPTION](#admin-option) a `user` ou `função`.
 A cláusula `WITH REPLACE OPTION` substitui as funções antigas pela nova função de `user` ou `função`; se não for especificada, acrescenta funções.
 
-<div id="grant-current-grants-syntax">
-  ## Sintaxe de GRANT CURRENT GRANTS
-</div>
+## Sintaxe de GRANT CURRENT GRANTS {#grant-current-grants-syntax}
 
 ```sql
 GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -59,9 +53,7 @@ GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*
 A instrução `CURRENT GRANTS` permite conceder todos os privilégios especificados ao usuário ou função informado.
 Se nenhum privilégio for especificado, o usuário ou função informado receberá todos os privilégios disponíveis para `CURRENT_USER`.
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 Para usar `GRANT`, sua conta deve ter o privilégio `GRANT OPTION`. Você pode conceder privilégios apenas dentro do escopo dos privilégios da sua conta.
 
@@ -90,9 +82,7 @@ O acesso ao banco de dados `system` é sempre permitido (já que esse banco de d
 
 Você pode conceder vários privilégios a várias contas em uma única consulta. A consulta `GRANT SELECT, INSERT ON *.* TO john, robin` permite que as contas `john` e `robin` executem as consultas `INSERT` e `SELECT` em todas as tabelas de todos os bancos de dados no servidor.
 
-<div id="wildcard-grants">
-  ## Concessões com curingas
-</div>
+## Concessões com curingas {#wildcard-grants}
 
 Ao especificar privilégios, você pode usar um asterisco (`*`) em vez do nome de uma tabela ou de um banco de dados. Por exemplo, a consulta `GRANT SELECT ON db.* TO john` permite que `john` execute a consulta `SELECT` em todas as tabelas do banco de dados `db`.
 Além disso, você pode omitir o nome do banco de dados. Nesse caso, os privilégios são concedidos ao banco de dados atual.
@@ -143,9 +133,7 @@ GRANT SELECT ON *suffix TO john -- incorreto
 GRANT SELECT(foo) ON db.table* TO john -- incorreto
 ```
 
-<div id="privileges">
-  ## Privilégios
-</div>
+## Privilégios {#privileges}
 
 Um privilégio é uma permissão concedida a um usuário para executar tipos específicos de consultas.
 
@@ -271,6 +259,7 @@ A hierarquia de privilégios no ClickHouse é mostrada abaixo:
   * [`SOURCES`](#sources)
     * `AZURE`
     * `BIGQUERY`
+    * `DISK`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -389,9 +378,7 @@ Se um usuário ou uma função não tiver privilégios, isso será exibido como 
 
 Algumas consultas, por sua implementação, exigem um conjunto de privilégios. Por exemplo, para executar a consulta [RENAME](/pt-BR/reference/statements/optimize), você precisa dos seguintes privilégios: `SELECT`, `CREATE TABLE`, `INSERT` e `DROP TABLE`.
 
-<div id="select">
-  ### SELECT
-</div>
+### SELECT {#select}
 
 Permite executar consultas [SELECT](/pt-BR/reference/statements/select/index).
 
@@ -409,9 +396,7 @@ GRANT SELECT(x,y) ON db.table TO john
 
 Esse privilégio permite que `john` execute qualquer consulta `SELECT` que envolva dados das colunas `x` e/ou `y` em `db.table`, por exemplo, `SELECT x FROM db.table`. `john` não pode executar `SELECT z FROM db.table`. `SELECT * FROM db.table` também não pode ser executada. Ao processar essa consulta, o ClickHouse não retorna dado algum, nem mesmo `x` e `y`. A única exceção é quando a tabela contém apenas as colunas `x` e `y`; nesse caso, o ClickHouse retorna todos os dados.
 
-<div id="insert">
-  ### INSERT
-</div>
+### INSERT {#insert}
 
 Permite executar consultas [INSERT](/pt-BR/reference/statements/insert-into).
 
@@ -429,9 +414,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 O privilégio concedido permite que `john` insira dados nas colunas `x` e/ou `y` de `db.table`.
 
-<div id="alter">
-  ### ALTER
-</div>
+### ALTER {#alter}
 
 Permite executar consultas [ALTER](/pt-BR/reference/statements/alter/index) de acordo com a seguinte hierarquia de privilégios:
 
@@ -481,15 +464,11 @@ Exemplos de como essa hierarquia funciona:
 * A operação `DETACH` requer o privilégio [DROP](#drop).
 * Para interromper uma mutação com a consulta [KILL MUTATION](/pt-BR/reference/statements/kill#kill-mutation), você precisa ter um privilégio para iniciar essa mutação. Por exemplo, se quiser interromper a consulta `ALTER UPDATE`, precisará do privilégio `ALTER UPDATE`, `ALTER TABLE` ou `ALTER`.
 
-<div id="backup">
-  ### BACKUP
-</div>
+### BACKUP {#backup}
 
 Permite executar [`BACKUP`] em consultas. Para mais informações sobre backups, consulte [&quot;Backup e restauração&quot;](/pt-BR/concepts/features/backup-restore/overview).
 
-<div id="create">
-  ### CREATE
-</div>
+### CREATE {#create}
 
 Permite executar instruções DDL [CREATE](/pt-BR/reference/statements/create/index) e [ATTACH](/pt-BR/reference/statements/attach) de acordo com a seguinte hierarquia de privilégios:
 
@@ -505,9 +484,7 @@ Permite executar instruções DDL [CREATE](/pt-BR/reference/statements/create/in
 
 * Para remover a tabela criada, o usuário precisa de [DROP](#drop).
 
-<div id="cluster">
-  ### CLUSTER
-</div>
+### CLUSTER {#cluster}
 
 Permite executar consultas com `ON CLUSTER`.
 
@@ -531,9 +508,7 @@ localizada na seção `access_control_improvements` de `config.xml` (veja abaixo
 </access_control_improvements>
 ```
 
-<div id="drop">
-  ### DROP
-</div>
+### DROP {#drop}
 
 Permite executar as consultas [DROP](/pt-BR/reference/statements/drop) e [DETACH](/pt-BR/reference/statements/detach) de acordo com a seguinte hierarquia de privilégios:
 
@@ -543,25 +518,19 @@ Permite executar as consultas [DROP](/pt-BR/reference/statements/drop) e [DETACH
   * `DROP VIEW`. Nível: `VIEW`
   * `DROP DICTIONARY`. Nível: `DICTIONARY`
 
-<div id="truncate">
-  ### TRUNCATE
-</div>
+### TRUNCATE {#truncate}
 
 Permite executar consultas [TRUNCATE](/pt-BR/reference/statements/truncate).
 
 Nível de privilégio: `TABLE`.
 
-<div id="optimize">
-  ### OPTIMIZE
-</div>
+### OPTIMIZE {#optimize}
 
 Permite executar instruções [OPTIMIZE TABLE](/pt-BR/reference/statements/optimize).
 
 Nível de privilégio: `TABLE`.
 
-<div id="show">
-  ### SHOW
-</div>
+### SHOW {#show}
 
 Permite executar consultas `SHOW`, `DESCRIBE`, `USE` e `EXISTS` de acordo com a seguinte hierarquia de privilégios:
 
@@ -575,9 +544,7 @@ Permite executar consultas `SHOW`, `DESCRIBE`, `USE` e `EXISTS` de acordo com a 
 
 Um usuário tem o privilégio `SHOW` se tiver qualquer outro privilégio referente à tabela, ao dicionário ou ao banco de dados especificado.
 
-<div id="kill-query">
-  ### KILL QUERY
-</div>
+### KILL QUERY {#kill-query}
 
 Permite executar consultas [KILL](/pt-BR/reference/statements/kill#kill-query) de acordo com a seguinte hierarquia de privilégios:
 
@@ -587,9 +554,7 @@ Nível de privilégio: `GLOBAL`.
 
 O privilégio `KILL QUERY` permite que um usuário encerre as consultas de outros usuários.
 
-<div id="access-management">
-  ### GERENCIAMENTO DE ACESSO
-</div>
+### GERENCIAMENTO DE ACESSO {#access-management}
 
 Permite que um usuário execute consultas que gerenciem usuários, funções e políticas de linha.
 
@@ -620,9 +585,7 @@ Permite que um usuário execute consultas que gerenciem usuários, funções e p
 
 O privilégio `ROLE ADMIN` permite que um usuário conceda e revogue quaisquer funções, incluindo aqueles que não foram atribuídos ao usuário com a opção admin.
 
-<div id="system">
-  ### SYSTEM
-</div>
+### SYSTEM {#system}
 
 Permite que um usuário execute consultas [SYSTEM](/pt-BR/reference/statements/system) de acordo com a seguinte hierarquia de privilégios.
 
@@ -657,9 +620,7 @@ Os comandos `SYSTEM UNLOAD DICTIONARY` e `SYSTEM UNLOAD DICTIONARIES` reutilizam
 
 O privilégio `SYSTEM RELOAD EMBEDDED DICTIONARIES` é concedido implicitamente pelo privilégio `SYSTEM RELOAD DICTIONARY ON *.*`.
 
-<div id="introspection">
-  ### INTROSPECTION
-</div>
+### INTROSPECTION {#introspection}
 
 Permite o uso de funções de [introspecção](/pt-BR/concepts/features/performance/troubleshoot/sampling-query-profiler).
 
@@ -669,11 +630,10 @@ Permite o uso de funções de [introspecção](/pt-BR/concepts/features/performa
   * `addressToSymbol`. Nível: `GLOBAL`
   * `demangle`. Nível: `GLOBAL`
 
-<div id="sources">
-  ### FONTES
-</div>
+### FONTES {#sources}
 
 Permite usar fontes de dados externas. Aplica-se a [motores de tabela](/pt-BR/reference/engines/table-engines/index) e [funções de tabela](/pt-BR/reference/functions/table-functions/index).
+Também é necessário para locais de backup: `BACKUP`/`RESTORE` e `ENGINE = Backup` autorizam seus locais por meio dessas concessões.
 
 * `READ`. Nível: `GLOBAL_WITH_PARAMETER`
 * `WRITE`. Nível: `GLOBAL_WITH_PARAMETER`
@@ -682,6 +642,7 @@ Parâmetros possíveis:
 
 * `AZURE`
 * `BIGQUERY`
+* `DISK`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -711,9 +672,7 @@ Exemplos:
 * Para criar uma tabela com o [motor de tabela MySQL](/pt-BR/reference/engines/table-engines/integrations/mysql), você precisa dos privilégios `CREATE TABLE (ON db.table_name)` e `MYSQL`.
 * Para usar a [função de tabela mysql](/pt-BR/reference/functions/table-functions/mysql), você precisa dos privilégios `CREATE TEMPORARY TABLE` e `MYSQL`.
 
-<div id="source-filter-grants">
-  ### Concessões de filtro por origem
-</div>
+### Concessões de filtro por origem {#source-filter-grants}
 
 <Note>
   Este recurso está disponível a partir da versão 25.8 e apenas com a configuração de servidor
@@ -782,9 +741,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * **Revogações parciais não são permitidas:** Não é possível revogar um subconjunto de um padrão de filtro concedido. É necessário revogar toda a concessão e concedê-la novamente com novos padrões, se necessário.
 * **Concessões com curinga não são permitidas:** Não é possível usar `GRANT READ ON *('regexp')` nem padrões semelhantes compostos apenas por curingas. É necessário especificar uma source.
 
-<div id="dictget">
-  ### dictGet
-</div>
+### dictGet {#dictget}
 
 * `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
@@ -797,9 +754,7 @@ Nível de privilégio: `DICTIONARY`.
 * `GRANT dictGet ON mydb.mydictionary TO john`
 * `GRANT dictGet ON mydictionary TO john`
 
-<div id="displaysecretsinshowandselect">
-  ### displaySecretsInShowAndSelect
-</div>
+### displaySecretsInShowAndSelect {#displaysecretsinshowandselect}
 
 Permite que um usuário visualize segredos em consultas `SHOW` e `SELECT` se tanto a
 [`configuração do servidor` `display_secrets_in_show_and_select`](/pt-BR/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
@@ -807,9 +762,7 @@ quanto a
 [`configuração de formato` `format_display_secrets_in_show_and_select`](/pt-BR/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 estiverem ativadas.
 
-<div id="named-collection-admin">
-  ### NAMED COLLECTION ADMIN
-</div>
+### NAMED COLLECTION ADMIN {#named-collection-admin}
 
 Permite uma determinada operação em uma coleção nomeada especificada. Antes da versão 23.7, chamava-se NAMED COLLECTION CONTROL; a partir da 23.7, NAMED COLLECTION ADMIN foi adicionada, e NAMED COLLECTION CONTROL foi mantida como alias.
 
@@ -829,9 +782,7 @@ Supondo que uma coleção nomeada se chame abc, concedemos o privilégio CREATE 
 
 * `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
-<div id="table-engine">
-  ### TABLE ENGINE
-</div>
+### TABLE ENGINE {#table-engine}
 
 <CloudNotSupportedBadge />
 
@@ -854,9 +805,7 @@ Por exemplo, para o motor de tabela AzureBlobStorage, a concessão a seguir pode
 
 * `GRANT READ, WRITE ON AZURE TO john`
 
-<div id="all">
-  ### ALL
-</div>
+### ALL {#all}
 
 <CloudNotSupportedBadge />
 
@@ -867,15 +816,11 @@ Concede todos os privilégios sobre a entidade regulada a uma conta de usuário 
   Os usuários também podem usar `GRANT CURRENT GRANTS` como usuário `default` para obter um efeito semelhante ao de `ALL`.
 </Note>
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 Não concede privilégio algum.
 
-<div id="admin-option">
-  ### ADMIN OPTION
-</div>
+### ADMIN OPTION {#admin-option}
 
 O privilégio `ADMIN OPTION` permite que um usuário conceda sua função a outro usuário.
 

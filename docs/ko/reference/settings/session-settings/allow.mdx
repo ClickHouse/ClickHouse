@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 사용할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)로부터 자동으로 생성됩니다.
 
-<div id="allow_aggregate_partitions_independently">
-  ## allow_aggregate_partitions_independently
-</div>
+## allow_aggregate_partitions_independently {#allow_aggregate_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 파티션 키가 GROUP BY 키에 적합할 때 각 파티션을 별도 스레드에서 독립적으로 집계하도록 활성화합니다. 파티션 수가 코어 수에 가깝고 파티션 크기가 대체로 비슷할 때 유리합니다. `ReadFromMergeTree`의 휴리스틱은 레이아웃이 바람직하지 않은 경우(파티션이 너무 적거나, 너무 많거나, 파티션 크기 편차가 큰 경우) 이 최적화를 자동으로 비활성화합니다. 이러한 검사를 우회하려면 `force_aggregate_partitions_independently`를 참조하십시오.
 
-<div id="allow_archive_path_syntax">
-  ## allow_archive_path_syntax
-</div>
+## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,17 +31,13 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 File/S3 엔진/테이블 함수는 아카이브에 올바른 확장자가 있으면 &#39;::&#39;가 포함된 경로를 `<archive> :: <file>`로 해석합니다.
 
-<div id="allow_asynchronous_read_from_io_pool_for_merge_tree">
-  ## allow_asynchronous_read_from_io_pool_for_merge_tree
-</div>
+## allow_asynchronous_read_from_io_pool_for_merge_tree {#allow_asynchronous_read_from_io_pool_for_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 백그라운드 I/O 풀을 사용해 MergeTree 테이블에서 읽습니다. 이 설정을 사용하면 I/O 병목이 있는 쿼리의 성능이 향상될 수 있습니다.
 
-<div id="allow_calculating_subcolumns_sizes_for_merge_tree_reading">
-  ## allow_calculating_subcolumns_sizes_for_merge_tree_reading
-</div>
+## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,26 +45,20 @@ File/S3 엔진/테이블 함수는 아카이브에 올바른 확장자가 있으
 
 활성화하면 ClickHouse는 작업 및 블록 크기를 더 적절하게 계산할 수 있도록 각 서브컬럼을 읽는 데 필요한 파일 크기를 계산합니다.
 
-<div id="allow_changing_replica_until_first_data_packet">
-  ## allow_changing_replica_until_first_data_packet
-</div>
+## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 활성화하면 hedged request에서 이미 일부 Progress가 있었더라도 첫 번째 데이터 패킷을 받을 때까지 새 연결을 시작할 수 있습니다
 (단, `receive_data_timeout` timeout 동안 Progress가 갱신되지 않은 경우). 그렇지 않으면 처음 Progress가 발생한 이후에는 레플리카 변경을 비활성화합니다.
 
-<div id="allow_create_index_without_type">
-  ## allow_create_index_without_type
-</div>
+## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 TYPE 없이 CREATE INDEX 쿼리를 허용합니다. 이 쿼리는 무시됩니다. SQL compatibility 테스트용으로 만들어졌습니다.
 
-<div id="allow_creating_set_partitions_independently">
-  ## allow_creating_set_partitions_independently
-</div>
+## allow_creating_set_partitions_independently {#allow_creating_set_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,25 +66,19 @@ TYPE 없이 CREATE INDEX 쿼리를 허용합니다. 이 쿼리는 무시됩니�
 
 서브쿼리의 `MergeTree` 테이블 파티션 표현식이 서브쿼리 출력 컬럼의 결정론적 함수인 경우, `IN (subquery)`용 Set을 생성할 때 서브쿼리 결과를 파티션별로 병렬 사전 중복 제거하도록 활성화합니다. 각 파티션은 별도의 스트림으로 읽고 독립적으로 중복 제거하므로, 단일 Set 채우기 변환에서는 고유한 행만 해시합니다. `FINAL`, 병렬 레플리카 또는 `GLOBAL IN`에서는 적용되지 않습니다. 데이터에 파티션이 2개 이상 있고 가장 큰 파티션의 행 수가 평균 파티션 행 수의 2배 이하일 때만 최적화가 파티션별 읽기를 요청합니다(편향 검사를 건너뛰려면 [force&#95;creating&#95;set&#95;partitions&#95;independently](/ko/reference/settings/session-settings/force#force_creating_set_partitions_independently)를 참조하십시오). 다른 파티션별 기능이 스트림을 분할하여 이미 파티션 간에 겹치지 않는 경우(예: 파티션별 `LIMIT BY`)에는 읽기 레이아웃이 이미 고정되어 있으므로, 사전 중복 제거는 이 조건과 관계없이 적용됩니다. Set을 생성하는 동안 스트림별 중복 제거 테이블은 합쳐서 고유 키의 복사본을 약 1개 더 보유합니다.
 
-<div id="allow_custom_error_code_in_throwif">
-  ## allow_custom_error_code_in_throwif
-</div>
+## allow_custom_error_code_in_throwif {#allow_custom_error_code_in_throwif}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 함수 throwIf()에서 사용자 지정 오류 코드를 사용할 수 있도록 합니다. true이면 발생하는 예외에 예상치 못한 오류 코드가 사용될 수 있습니다.
 
-<div id="allow_ddl">
-  ## allow_ddl
-</div>
+## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 true로 설정하면 사용자가 DDL 쿼리를 실행할 수 있습니다.
 
-<div id="allow_delta_kernel_rs">
-  ## allow_delta_kernel_rs
-</div>
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
 
 <BetaBadge />
 
@@ -110,9 +90,7 @@ true로 설정하면 사용자가 DDL 쿼리를 실행할 수 있습니다.
 
 Delta Lake 테이블을 읽기 위한 `delta-kernel-rs` 구현을 허용합니다.
 
-<div id="allow_distinct_partitions_independently">
-  ## allow_distinct_partitions_independently
-</div>
+## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,25 +100,19 @@ Delta Lake 테이블을 읽기 위한 `delta-kernel-rs` 구현을 허용합니�
 
 [max&#95;rows&#95;in&#95;distinct](/ko/reference/settings/session-settings/max-rows#max_rows_in_distinct) 또는 [max&#95;bytes&#95;in&#95;distinct](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_distinct)가 설정된 경우에도 적용되지 않습니다. 이러한 제한은 전체 머지 결과를 확인하는 단일 `DISTINCT` 변환에서 적용되므로, 제한의 전역적 의미를 유지하기 위해 스트림 간 머지를 유지합니다.
 
-<div id="allow_distributed_ddl">
-  ## allow_distributed_ddl
-</div>
+## allow_distributed_ddl {#allow_distributed_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 true로 설정하면 사용자가 분산 DDL 쿼리를 실행할 수 있도록 허용됩니다.
 
-<div id="allow_drop_detached">
-  ## allow_drop_detached
-</div>
+## allow_drop_detached {#allow_drop_detached}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ALTER TABLE ... DROP DETACHED PART[ITION] ... 쿼리 실행을 허용합니다
 
-<div id="allow_dynamic_type_in_join_keys">
-  ## allow_dynamic_type_in_join_keys
-</div>
+## allow_dynamic_type_in_join_keys {#allow_dynamic_type_in_join_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -148,17 +120,13 @@ ALTER TABLE ... DROP DETACHED PART[ITION] ... 쿼리 실행을 허용합니다
 
 JOIN 키에서 Dynamic 타입을 사용할 수 있습니다. 호환성을 위해 추가되었습니다. 다른 타입과 비교할 때 예기치 않은 결과가 발생할 수 있으므로 JOIN 키에서 Dynamic 타입을 사용하는 것은 권장되지 않습니다.
 
-<div id="allow_execute_multiif_columnar">
-  ## allow_execute_multiif_columnar
-</div>
+## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 multiIf 함수를 열 지향으로 실행할 수 있도록 허용합니다
 
-<div id="allow_fuzz_query_functions">
-  ## allow_fuzz_query_functions
-</div>
+## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
 <ExperimentalBadge />
 
@@ -168,9 +136,7 @@ multiIf 함수를 열 지향으로 실행할 수 있도록 허용합니다
 
 쿼리 문자열에 무작위 AST 뮤테이션을 적용하는 `fuzzQuery` 함수를 활성화합니다.
 
-<div id="allow_general_join_planning">
-  ## allow_general_join_planning
-</div>
+## allow_general_join_planning {#allow_general_join_planning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -178,9 +144,7 @@ multiIf 함수를 열 지향으로 실행할 수 있도록 허용합니다
 
 더 복잡한 조건을 처리할 수 있는 더 범용적인 조인 계획 알고리즘을 사용할 수 있도록 허용하지만, 해시 조인에서만 동작합니다. 해시 조인이 활성화되지 않은 경우에는 이 설정값과 관계없이 기본 조인 계획 알고리즘이 사용됩니다.
 
-<div id="allow_get_client_http_header">
-  ## allow_get_client_http_header
-</div>
+## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -188,17 +152,13 @@ multiIf 함수를 열 지향으로 실행할 수 있도록 허용합니다
 
 현재 HTTP request의 header 값을 가져오는 `getClientHTTPHeader` 함수를 사용할 수 있도록 허용합니다. `Cookie`와 같은 일부 header에는 민감한 정보가 포함될 수 있으므로, 보안상의 이유로 기본적으로는 활성화되어 있지 않습니다. `X-ClickHouse-*`, `Authentication`, `Authorization` headers는 항상 제한되므로 이 함수로 가져올 수 없습니다.
 
-<div id="allow_hyperscan">
-  ## allow_hyperscan
-</div>
+## allow_hyperscan {#allow_hyperscan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Hyperscan library를 사용하는 함수를 허용합니다. 컴파일 시간이 지나치게 길어지거나 리소스를 과도하게 사용하는 것을 방지하려면 비활성화하십시오.
 
-<div id="allow_iceberg_remove_orphan_files">
-  ## allow_iceberg_remove_orphan_files
-</div>
+## allow_iceberg_remove_orphan_files {#allow_iceberg_remove_orphan_files}
 
 <ExperimentalBadge />
 
@@ -208,9 +168,7 @@ Hyperscan library를 사용하는 함수를 허용합니다. 컴파일 시간이
 
 Iceberg 테이블에서 &#39;ALTER TABLE ... EXECUTE remove&#95;orphan&#95;files()&#39;를 사용할 수 있도록 허용합니다.
 
-<div id="allow_insert_into_iceberg">
-  ## allow_insert_into_iceberg
-</div>
+## allow_insert_into_iceberg {#allow_insert_into_iceberg}
 
 <BetaBadge />
 
@@ -222,9 +180,7 @@ Iceberg 테이블에서 &#39;ALTER TABLE ... EXECUTE remove&#95;orphan&#95;files
 
 Iceberg에 `insert` 쿼리를 실행할 수 있도록 허용합니다.
 
-<div id="allow_introspection_functions">
-  ## allow_introspection_functions
-</div>
+## allow_introspection_functions {#allow_introspection_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -240,9 +196,7 @@ Iceberg에 `insert` 쿼리를 실행할 수 있도록 허용합니다.
 * [샘플링 쿼리 프로파일러](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * 시스템 테이블 [trace&#95;log](/ko/reference/system-tables/trace_log)
 
-<div id="allow_key_condition_coalesce_rewrite">
-  ## allow_key_condition_coalesce_rewrite
-</div>
+## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -251,9 +205,7 @@ Iceberg에 `insert` 쿼리를 실행할 수 있도록 허용합니다.
 `coalesce(a_1, ..., a_N) <op> const` 형태의 프레디케이트(및 이에 해당하는 `ifNull`, 또는 상수가 왼쪽에 있는 동일한 형태)를 인덱스 분석 전에 `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` 논리합으로 재작성하여 각 `a_i`의 컬럼별 프라이머리 키와 스킵 인덱스를 사용할 수 있도록 합니다. `coalesce(a, 42, b)` 및 `coalesce(a, b, 42)`와 같은 일부 상수 형태도 처리합니다. 인수 목록은 `coalesce` 자체와 마찬가지로 정규화됩니다(`NULL` 리터럴은 제거되고, 첫 번째 비`Nullable` 인수 뒤의 인수는 제거됩니다). 후행 비`NULL` 상수가 있으면 최종 분기로 생성됩니다. 이 재작성은 인덱스 프루닝에만 추가로 적용되며, 런타임 필터링은 계속 원래 프레디케이트를 사용합니다.
 또한 `nullIf(key, sentinel) = const` 형태의 정확한 동등 프레디케이트(`sentinel != const`이고 타입이 정확히 일치하는 경우)는 `key = const`로 재작성되어 `key`의 프라이머리 키, 파티션 및 스킵 인덱스가 그래뉼을 직접 프루닝할 수 있습니다. 범위 조건 및 논리합 형태의 `nullIf` 프루닝은 지원되지 않습니다.
 
-<div id="allow_limit_by_partitions_independently">
-  ## allow_limit_by_partitions_independently
-</div>
+## allow_limit_by_partitions_independently {#allow_limit_by_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -261,9 +213,7 @@ Iceberg에 `insert` 쿼리를 실행할 수 있도록 허용합니다.
 
 파티션 표현식이 `LIMIT BY` 컬럼의 결정론적 함수인 경우, 별도 스레드에서 파티션별로 `LIMIT BY`를 독립적으로 평가할 수 있게 합니다.
 
-<div id="allow_lossy_numeric_supertype">
-  ## allow_lossy_numeric_supertype
-</div>
+## allow_lossy_numeric_supertype {#allow_lossy_numeric_supertype}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -271,9 +221,7 @@ Iceberg에 `insert` 쿼리를 실행할 수 있도록 허용합니다.
 
 활성화하면 손실 없는 공통 유형이 없는 숫자 인수 집합(예: `Decimal`과 `Float64`, 또는 `Int64`와 `Float64`)에 대해 `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map`가 실패하는 대신 정밀도 손실 가능성이 있는 숫자 슈퍼타입(`Float64`)으로 해석됩니다. 따라서 결과를 `sum`, `avg`, `min`, `max`와 같은 값을 결합하는 집계 함수에 직접 사용할 수 있습니다. 이는 `use_variant_as_common_type`와 독립적으로 작동합니다. `use_variant_as_common_type`의 활성화 여부와 관계없이 숫자 슈퍼타입이 생성됩니다. 비활성화된 경우(기본값) 이러한 인수 집합에는 공통 유형이 없으므로 `use_variant_as_common_type`가 활성화되어 있으면 `Variant`가 되고, 그렇지 않으면 `NO_COMMON_TYPE`가 발생합니다.
 
-<div id="allow_materialized_view_with_bad_select">
-  ## allow_materialized_view_with_bad_select
-</div>
+## allow_materialized_view_with_bad_select {#allow_materialized_view_with_bad_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -281,9 +229,7 @@ Iceberg에 `insert` 쿼리를 실행할 수 있도록 허용합니다.
 
 존재하지 않는 테이블이나 컬럼을 참조하는 SELECT 쿼리가 있는 CREATE MATERIALIZED VIEW를 허용합니다. 다만 구문적으로는 여전히 유효해야 합니다. 갱신 가능한 MV에는 적용되지 않습니다. 또한 SELECT 쿼리에서 MV 스키마를 추론해야 하는 경우에는 적용되지 않습니다(즉, CREATE에 컬럼 목록이 없고 TO 테이블도 없는 경우). 원본 테이블보다 먼저 MV를 생성할 때 사용할 수 있습니다.
 
-<div id="allow_metadata_only_named_tuple_alter">
-  ## allow_metadata_only_named_tuple_alter
-</div>
+## allow_metadata_only_named_tuple_alter {#allow_metadata_only_named_tuple_alter}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -292,9 +238,7 @@ Iceberg에 `insert` 쿼리를 실행할 수 있도록 허용합니다.
 true로 설정하면 새 하위 필드만 추가하는 named Tuple에 대한 ALTER MODIFY COLUMN이 메타데이터 전용으로 처리됩니다(데이터 뮤테이션 없음).
 기존의 전체 뮤테이션 동작을 강제하려면 false로 설정하십시오.
 
-<div id="allow_minmax_index_for_json">
-  ## allow_minmax_index_for_json
-</div>
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -303,25 +247,19 @@ true로 설정하면 새 하위 필드만 추가하는 named Tuple에 대한 ALT
 JSON (Object) 컬럼에 minmax 스킵 인덱스를 생성할 수 있도록 허용합니다. JSON 컬럼에는 이기종 Field 값이 포함될 수 있는데, minmax
 인덱스 직렬화 경로가 이를 처리할 수 없기 때문에 기본적으로 비활성화되어 있습니다.
 
-<div id="allow_named_collection_override_by_default">
-  ## allow_named_collection_override_by_default
-</div>
+## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 기본적으로 이름이 지정된 컬렉션의 필드를 재정의할 수 있도록 허용합니다.
 
-<div id="allow_non_metadata_alters">
-  ## allow_non_metadata_alters
-</div>
+## allow_non_metadata_alters {#allow_non_metadata_alters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 테이블 메타데이터뿐만 아니라 디스크의 데이터에도 영향을 미치는 alter의 실행을 허용합니다
 
-<div id="allow_nonconst_timezone_arguments">
-  ## allow_nonconst_timezone_arguments
-</div>
+## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -332,9 +270,7 @@ toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*()와 같은 특정 �
 이 설정을 활성화하면 하나의 컬럼 안에서 서로 다른 값이 서로 다른 시간대를 가질 수 있다는 잘못된 인상을 줄 수 있습니다.
 따라서 이 설정은 활성화하지 마십시오.
 
-<div id="allow_nullable_tuple_in_extracted_subcolumns">
-  ## allow_nullable_tuple_in_extracted_subcolumns
-</div>
+## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -352,9 +288,15 @@ ClickHouse는 서버 시작 시 로드된 이 설정 값을 사용합니다.
 `SET` 또는 쿼리 수준 `SETTINGS`로 변경해도 추출된 서브컬럼의 동작은 바뀌지 않습니다.
 추출된 서브컬럼의 동작을 변경하려면 시작 프로필 구성(예: users.xml)에서 `allow_nullable_tuple_in_extracted_subcolumns` 값을 수정한 뒤 서버를 재시작하십시오.
 
-<div id="allow_rank_dense_rank_arguments">
-  ## allow_rank_dense_rank_arguments
-</div>
+## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "최종 `DISTINCT`가 출력을 다시 중복 제거하므로, 예비 `DISTINCT`가 대부분 고유한 입력에 대해 중복 제거를 포기할 수 있게 하는 새로운 설정입니다."}]}]} />
+
+예비(스트림별) `DISTINCT`가 대부분 고유한 입력에 대한 중복 제거를 포기하고 해시 테이블을 해제한 뒤 남은 행을 그대로 통과시키도록 합니다. 예비 `DISTINCT`는 설계상 최선 노력(best-effort) 방식이어서 중복 제거를 수행하더라도 서로 다른 스트림에서 온 중복은 그대로 통과하며, 최종 `DISTINCT`가 그 출력을 다시 중복 제거합니다. 따라서 중복 제거를 포기하더라도 실제로 제거되지 않는 행은 거의 없으면서, 고유 키의 두 번째 복사본에 드는 메모리와 해싱 비용을 절약할 수 있습니다. 예비 `DISTINCT`가 limit hint(이후 정렬이 없는 단순 `LIMIT`)를 가지고 있을 때는 적용되지 않습니다.
+
+## allow_rank_dense_rank_arguments {#allow_rank_dense_rank_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -371,9 +313,7 @@ SQL 표준에 따르면 `RANK` 및 `DENSE_RANK`는 인수를 받지 않으며, �
 `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`를 발생시킵니다. `true`로 설정하면 기존의 느슨한 동작이
 복원되며, 인수는 조용히 무시되어 26.5 이전 동작과 동일하게 처리됩니다.
 
-<div id="allow_reorder_prewhere_conditions">
-  ## allow_reorder_prewhere_conditions
-</div>
+## allow_reorder_prewhere_conditions {#allow_reorder_prewhere_conditions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -381,9 +321,7 @@ SQL 표준에 따르면 `RANK` 및 `DENSE_RANK`는 인수를 받지 않으며, �
 
 WHERE에서 PREWHERE로 조건을 이동할 때 필터링을 최적화할 수 있도록 조건 순서 재정렬을 허용합니다
 
-<div id="allow_replace_partition_from_empty_source">
-  ## allow_replace_partition_from_empty_source
-</div>
+## allow_replace_partition_from_empty_source {#allow_replace_partition_from_empty_source}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -395,9 +333,7 @@ WHERE에서 PREWHERE로 조건을 이동할 때 필터링을 최적화할 수 �
 
 예를 들어 비어 있는 원본 파티션을 의도적으로 사용해 대상의 데이터를 비우려는 경우, 이전 동작을 복원하려면 이 설정을 활성화하십시오. 무조건 삭제하려면 대신 `ALTER TABLE ... DROP PARTITION ...`을 사용하는 것이 좋습니다.
 
-<div id="allow_settings_after_format_in_insert">
-  ## allow_settings_after_format_in_insert
-</div>
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -427,17 +363,13 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
   사용 사례가 이전 구문에 의존하는 경우에만 이전 버전과의 호환성을 위해 이 설정을 사용하십시오.
 </Note>
 
-<div id="allow_simdjson">
-  ## allow_simdjson
-</div>
+## allow_simdjson {#allow_simdjson}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 AVX2 명령어를 사용할 수 있으면 &#39;JSON*&#39; 함수에서 simdjson 라이브러리를 사용할 수 있도록 허용합니다. 비활성화하면 rapidjson이 사용됩니다.
 
-<div id="allow_special_serialization_kinds_in_output_formats">
-  ## allow_special_serialization_kinds_in_output_formats
-</div>
+## allow_special_serialization_kinds_in_output_formats {#allow_special_serialization_kinds_in_output_formats}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -446,17 +378,13 @@ AVX2 명령어를 사용할 수 있으면 &#39;JSON*&#39; 함수에서 simdjson 
 Sparse 및 Replicated와 같은 특수 serialization kind를 사용하는 컬럼을 full column 표현으로 변환하지 않고 출력할 수 있습니다.
 포맷팅 중 불필요한 데이터 복사를 줄이는 데 도움이 됩니다.
 
-<div id="allow_unrestricted_reads_from_keeper">
-  ## allow_unrestricted_reads_from_keeper
-</div>
+## allow_unrestricted_reads_from_keeper {#allow_unrestricted_reads_from_keeper}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 system.zookeeper 테이블에서 제한 없이(경로 조건 없이) 읽을 수 있도록 허용합니다. 편리할 수는 있지만 ZooKeeper에는 안전하지 않습니다.
 
-<div id="allow_window_partitions_independently">
-  ## allow_window_partitions_independently
-</div>
+## allow_window_partitions_independently {#allow_window_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

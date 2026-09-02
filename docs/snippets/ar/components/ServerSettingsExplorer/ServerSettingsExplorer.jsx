@@ -74,10 +74,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "asynchronous_metrics_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "asynchronous_metrics_enable_heavy_metrics", path: "/asynchronous-metrics#asynchronous_metrics_enable_heavy_metrics", default: "0" },
         { name: "asynchronous_metrics_keeper_metrics_only", path: "/asynchronous-metrics#asynchronous_metrics_keeper_metrics_only", default: "0" },
+        { name: "asynchronous_metrics_key_values_mode", path: "/asynchronous-metrics#asynchronous_metrics_key_values_mode", default: "key_values" },
         { name: "asynchronous_metrics_update_period_s", path: "/asynchronous-metrics#asynchronous_metrics_update_period_s", default: "1" }
       ],
       children: []

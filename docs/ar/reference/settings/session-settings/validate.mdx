@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُنشأة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="validate_enum_literals_in_operators">
-  ## validate_enum_literals_in_operators
-</div>
+## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,21 +21,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 عند تمكين هذا الإعداد، يتم التحقق من القيم الحرفية للتعداد في عوامل التشغيل مثل `IN` و`NOT IN` و`==` و`!=` مقابل نوع التعداد، ويتم طرح استثناء إذا لم تكن القيمة الحرفية إحدى قيم التعداد الصالحة.
 
-<div id="validate_mutation_query">
-  ## validate_mutation_query
-</div>
+## validate_mutation_query {#validate_mutation_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "إعداد جديد للتحقق من استعلامات التعديل افتراضيًا."}]}]} />
 
-تحقّق من استعلامات التعديل قبل قبولها. تُنفَّذ عمليات التعديل في الخلفية، وقد يؤدي تشغيل استعلام غير صالح إلى تعلّق عمليات التعديل، مما يستلزم تدخّلًا يدويًا.
+تحقّق من استعلامات التعديل قبل قبولها. تُنفَّذ عمليات التعديل في الخلفية، وقد يتسبب تشغيل استعلام غير صالح في تعلّق عمليات التعديل، مما يستلزم تدخّلًا يدويًا.
 
 لا تغيّر هذا الإعداد إلا إذا واجهت خللًا يسبّب عدم توافق مع الإصدارات السابقة.
 
-<div id="validate_polygons">
-  ## validate_polygons
-</div>
+## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

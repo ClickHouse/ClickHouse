@@ -23,14 +23,16 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 この機能は、[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルエンジンファミリーでのみ利用できます。
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
 ```
 
 `filter_expr` は `UInt8` 型である必要があります。このクエリは、`filter_expr` が非ゼロ値となる行について、指定したカラムの値を、それぞれ対応する式の値に更新します。
 値は `CAST` 演算子を使用してカラムの型にキャストされます。プライマリキーまたはパーティションキーの計算に使用されるカラムの更新はサポートされていません。
 
+`IN PARTITION` 句は、更新対象を指定したパーティションに限定します。これを指定しない場合、`ReplicatedMergeTree` ファミリーのテーブルでは、[optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ja/reference/settings/session-settings/optimize) 設定が有効 (デフォルト) であれば、ClickHouse は `filter_expr` 内のパーティションキー条件を自動的に検出し、影響を受けるパーティションのみを更新します。非レプリケートの `MergeTree` テーブルでは、更新対象を特定のパーティションに限定するために、明示的な `IN PARTITION` 句を使用してください。
+
 <div id="examples">
-  ## 例
+  ## 例 {#examples}
 </div>
 
 ```sql
@@ -40,7 +42,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
 <div id="lightweight-update-does-not-update-data-immediately">
-  ## 論理更新ではデータは即座に更新されません
+  ## 論理更新ではデータは即座に更新されません {#lightweight-update-does-not-update-data-immediately}
 </div>
 
 論理更新 `UPDATE` は、**パッチパート** (更新されたカラムと行のみを含む特殊なデータパート) を使用して実装されています。
@@ -53,22 +55,18 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * **物理的に実体化**されるのは、後続のマージやミューテーションの実行時のみ
 * アクティブなすべてのパーツでパッチが実体化されると、**自動的にクリーンアップ**される
 
-<div id="lightweight-update-requirements">
-  ## 論理更新の要件
-</div>
+## 論理更新の要件 {#lightweight-update-requirements}
 
 論理更新は、[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree)、[`ReplacingMergeTree`](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree)、[`CollapsingMergeTree`](/ja/reference/engines/table-engines/mergetree-family/collapsingmergetree)、[`VersionedCollapsingMergeTree`](/ja/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) エンジンと、それらの [`Replicated`](/ja/reference/engines/table-engines/mergetree-family/replication) および [`Shared`](/ja/products/cloud/features/infrastructure/shared-merge-tree) バージョンでサポートされています。
 
 論理更新を使用するには、テーブル設定 [`enable_block_number_column`](/ja/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) と [`enable_block_offset_column`](/ja/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column) を使用して、`_block_number` および `_block_offset` カラムの実体化を有効にする必要があります。
 
-<div id="lightweight-delete">
-  ## 論理削除
-</div>
+## 論理削除 {#lightweight-delete}
 
 [論理削除 `DELETE`](/ja/reference/statements/delete) クエリは、`ALTER UPDATE` ミューテーションではなく、論理更新 `UPDATE` として実行できます。論理削除 `DELETE` の実装は、[`lightweight_delete_mode`](/ja/reference/settings/session-settings/lightweight#lightweight_delete_mode) 設定によって制御されます。
 
 <div id="performance-considerations">
-  ## パフォーマンスに関する考慮事項
+  ## パフォーマンスに関する考慮事項 {#performance-considerations}
 </div>
 
 **論理更新の利点:**
@@ -86,14 +84,14 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * 論理更新は、少量の行 (テーブルの約 10% まで) を更新するように設計されています。より多くの行を更新する必要がある場合は、[`ALTER TABLE ... UPDATE`](/ja/reference/statements/alter/update) ミューテーションを使用することを推奨します
 
 <div id="concurrent-operations">
-  ## 同時実行操作
+  ## 同時実行操作 {#concurrent-operations}
 </div>
 
 論理更新は、重い ミューテーション とは異なり、現在実行中の マージ や ミューテーション の完了を待ちません。
 同時実行される論理更新の整合性は、設定 [`update_sequential_consistency`](/ja/reference/settings/session-settings/update#update_sequential_consistency) と [`update_parallel_mode`](/ja/reference/settings/session-settings/update#update_parallel_mode) によって制御されます。
 
 <div id="update-permissions">
-  ## `UPDATE` の権限
+  ## `UPDATE` の権限 {#update-permissions}
 </div>
 
 `UPDATE` には `ALTER UPDATE` 権限が必要です。特定のテーブルで特定のユーザーに `UPDATE` ステートメントを許可するには、次を実行します。
@@ -103,7 +101,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## 実装の詳細
+  ## 実装の詳細 {#details-of-the-implementation}
 </div>
 
 パッチパートは通常のパーツと同じですが、更新されたカラムと、いくつかのシステムカラムのみを含みます。
@@ -142,9 +140,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 join モードはマージモードより低速で、より多くのメモリを必要としますが、使用頻度は低めです。
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * [`ALTER UPDATE`](/ja/reference/statements/alter/update) - 負荷の高い `UPDATE` 操作
 * [論理削除 `DELETE`](/ja/reference/statements/delete) - 論理削除 `DELETE` 操作

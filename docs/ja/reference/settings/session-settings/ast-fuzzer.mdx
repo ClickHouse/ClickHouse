@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="ast_fuzzer_any_query">
-  ## ast_fuzzer_any_query
-</div>
+## ast_fuzzer_any_query {#ast_fuzzer_any_query}
 
 <ExperimentalBadge />
 
@@ -26,9 +24,17 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 false (デフォルト) の場合、サーバー側の AST fuzzer (`ast_fuzzer_runs` で制御) は、読み取り専用クエリ (SELECT、EXPLAIN、SHOW、DESCRIBE、EXISTS) のみをファジングします。true の場合は、DDL や INSERT を含むすべてのクエリタイプがファジングされます。
 
-<div id="ast_fuzzer_runs">
-  ## ast_fuzzer_runs
-</div>
+## ast_fuzzer_oracle {#ast_fuzzer_oracle}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "サーバー側の AST fuzzer で correctness oracle チェックを有効にするための新しい設定。"}]}]} />
+
+`ast_fuzzer_runs` と併せて有効にすると、正常に実行されたファズ化 SELECT クエリに対して、一連の correctness oracle チェックを適用します。具体的には、TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate、NoREC、DQP (個々の optimizer 設定の切り替え) 、Identity WHERE、Subquery wrap です。不一致が検出された場合は `AST_FUZZER_ORACLE_MISMATCH` 例外がスローされます。
+
+## ast_fuzzer_runs {#ast_fuzzer_runs}
 
 <ExperimentalBadge />
 

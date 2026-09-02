@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 يوفر هذا المحرك تكاملًا مع [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-<div id="create-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#create-table}
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -21,9 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-<div id="engine-parameters">
-  ### معلمات المحرّك
-</div>
+### معلمات المحرّك {#engine-parameters}
 
 * `endpoint` — عنوان URL لنقطة نهاية AzureBlobStorage مع الحاوية والبادئة. ويمكن أن يتضمن اختياريًا account&#95;name إذا كانت طريقة المصادقة المستخدمة تتطلب ذلك. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) أو يمكن توفير هذه المعلمات بشكل منفصل باستخدام storage&#95;account&#95;url و account&#95;name و container. ولتحديد البادئة، يجب استخدام endpoint.
 * `endpoint_contains_account_name` - يُستخدم هذا العلَم لتحديد ما إذا كان endpoint يتضمن account&#95;name، لأنه لا يلزم إلا لبعض طرق المصادقة. (القيمة الافتراضية: true)
@@ -33,7 +29,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_name` - إذا استُخدم storage&#95;account&#95;url، فيمكن تحديد اسم الحساب هنا
 * `account_key` - إذا استُخدم storage&#95;account&#95;url، فيمكن تحديد مفتاح الحساب هنا
 * `format` — [تنسيق](/ar/reference/formats/index) الملف.
-* `compression` — القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف. (وهو ما يعادل ضبطه على `auto`).
+* `compression` — القيم المدعومة: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف. (وهو ما يعادل ضبطه على `auto`). بالنسبة إلى `snappy`، يُحدد التنسيق السلكي بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (القيمة الافتراضية هي `basic`).
 * `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. أما `hive` فلا يسمح بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. في حال عدم تحديد استراتيجية صراحةً، يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard`. والمسار الذي يحتوي على glob آخر لا يستخدم أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. أما المسار الذي لا يحتوي على glob فيستخدم `hive` عندما يكون `file_like_engine_default_partition_strategy` هو `hive`؛ وبخلاف ذلك لا يستخدم أي استراتيجية تقسيم.
 * `partition_columns_in_data_file` - يُستخدم فقط مع استراتيجية التقسيم `hive`. ويُخبر ClickHouse ما إذا كان ينبغي توقّع كتابة أعمدة التقسيم في ملف البيانات. والقيمة الافتراضية `false`.
 * `extra_credentials` - استخدم `client_id` و `tenant_id` للمصادقة. إذا جرى توفير extra&#95;credentials، فستُعطى أولوية على `account_name` و `account_key`.
@@ -59,18 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
 * `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، تكون القيمة `NULL`.
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 
-<div id="authentication">
-  ## المصادقة
-</div>
+## المصادقة {#authentication}
 
 توجد حاليًا 3 طرق للمصادقة:
 
@@ -78,9 +70,7 @@ SELECT * FROM test_table;
 * `SAS Token` - يمكن استخدامها عبر توفير `endpoint` أو `connection_string` أو `storage_account_url`. ويُستدلّ عليها بوجود &#39;?&#39; في عنوان URL. راجع [azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) للاطلاع على أمثلة.
 * `Workload Identity` - يمكن استخدامها عبر توفير `endpoint` أو `storage_account_url`. إذا تم تعيين المعلَمة `use_workload_identity` في `config`، فستُستخدم [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications) للمصادقة.
 
-<div id="data-cache">
-  ### التخزين المؤقت للبيانات
-</div>
+### التخزين المؤقت للبيانات {#data-cache}
 
 يدعم محرك الجدول `Azure` التخزين المؤقت للبيانات على القرص المحلي.
 راجع خيارات تهيئة ذاكرة التخزين المؤقت لنظام الملفات وطريقة استخدامها في هذا [القسم](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -109,17 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. إعادة استخدام إعدادات ذاكرة التخزين المؤقت (وبالتالي مساحة تخزينها) من قسم `storage_configuration` في ClickHouse، [كما هو موضح هنا](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — اختياري. في معظم الحالات، لا تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إليه، فغالبًا لا تحتاج إلى مفتاح تقسيم أكثر تفصيلًا من التقسيم حسب الشهر. لا يؤدي التقسيم إلى تسريع الاستعلامات (على عكس تعبير `ORDER BY`). يجب ألّا تستخدم أبدًا تقسيمًا مفرط الدقة. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (واجعل بدلًا من ذلك معرّف العميل أو اسمه هو العمود الأول في تعبير `ORDER BY`).
 
 للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` هو عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). وتكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
 
-<div id="partition-strategy">
-  #### استراتيجية التقسيم
-</div>
+#### استراتيجية التقسيم {#partition-strategy}
 
 `wildcard`: يستبدل حرف البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد افتراضيًا عندما يحتوي المسار على `{_partition_id}`.
 
@@ -146,9 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-<div id="see-also">
-  ## انظر أيضًا
-</div>
+## انظر أيضًا {#see-also}
 
 [دالة الجدول Azure Blob Storage](/ar/reference/functions/table-functions/azureBlobStorage)
 

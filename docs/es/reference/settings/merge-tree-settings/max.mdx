@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se autogeneran a partir del código fuente de ClickHouse.
 
-<div id="max_avg_part_size_for_too_many_parts">
-  ## max_avg_part_size_for_too_many_parts
-</div>
+## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -27,9 +25,7 @@ cientos de terabytes en una sola tabla en un solo servidor si las partes se
 fusionan correctamente en partes más grandes. Esto no afecta a los umbrales de
 las partes inactivas ni al número total de partes.
 
-<div id="max_buckets_in_map">
-  ## max_buckets_in_map
-</div>
+## max_buckets_in_map {#max_buckets_in_map}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -39,17 +35,13 @@ El número máximo de buckets para la serialización de `Map`. Funciona con la s
 El número real de buckets se determina mediante [map&#95;buckets&#95;strategy](/es/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
 El valor máximo permitido es 256.
 
-<div id="max_cleanup_delay_period">
-  ## max_cleanup_delay_period
-</div>
+## max_cleanup_delay_period {#max_cleanup_delay_period}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 Período máximo para limpiar registros antiguos de la cola, hash de bloques y partes.
 
-<div id="max_compress_block_size">
-  ## max_compress_block_size
-</div>
+## max_compress_block_size {#max_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -59,9 +51,7 @@ en una tabla. También puede especificar esta configuración en la configuració
 ). El valor especificado al crear la tabla sobrescribe el valor global
 de esta configuración.
 
-<div id="max_concurrent_queries">
-  ## max_concurrent_queries
-</div>
+## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -81,9 +71,7 @@ Valor predeterminado: `0` (sin límite).
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-<div id="max_digestion_size_per_segment">
-  ## max_digestion_size_per_segment
-</div>
+## max_digestion_size_per_segment {#max_digestion_size_per_segment}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -91,9 +79,7 @@ Valor predeterminado: `0` (sin límite).
 
 Configuración obsoleta; no tiene ningún efecto.
 
-<div id="max_file_name_length">
-  ## max_file_name_length
-</div>
+## max_file_name_length {#max_file_name_length}
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -103,9 +89,7 @@ El valor de esta configuración no incluye la longitud de la extensión del arch
 se recomienda establecerlo por debajo de la longitud máxima del nombre de archivo (normalmente 255
 bytes), dejando cierto margen para evitar errores del sistema de archivos.
 
-<div id="max_partitions_to_read">
-  ## max_partitions_to_read
-</div>
+## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -121,17 +105,83 @@ Posibles valores:
 También puede especificar una configuración de complejidad de consulta [max&#95;partitions&#95;to&#95;read](/es/reference/settings/session-settings/max-partitions#max_partitions_to_read)
 a nivel de consulta / sesión / perfil.
 
-<div id="max_projections">
-  ## max_projections
-</div>
+## max_projections {#max_projections}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 El número máximo de proyecciones de MergeTree.
 
-<div id="max_uncompressed_bytes_in_patches">
-  ## max_uncompressed_bytes_in_patches
-</div>
+## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para limitar el número total de bytes comprimidos en todas las partes de datos activas e inactivas de la tabla."}]}]} />
+
+Si el número total de bytes comprimidos (el tamaño en disco) de todas las partes
+de datos activas e inactivas de la tabla supera este valor, el `INSERT` se
+interrumpe con la excepción `Table size limit exceeded`. Las partes inactivas
+también se contabilizan, ya que el propósito de esta configuración es limitar el uso
+de disco. Tenga en cuenta que las partes inactivas se eliminan en segundo plano (consulte
+la configuración `old_parts_lifetime`), por lo que el tamaño observado puede disminuir con el tiempo.
+El límite se comprueba al inicio del `INSERT` y cuando se hace commit de
+nuevas partes de datos en el conjunto de trabajo, incluidos los resultados de las fusiones
+en segundo plano y las mutaciones. También se comprueban las inserciones realizadas por vistas materializadas. El
+límite no se comprueba en los fetches replicados, lo que da lugar a una condición de carrera
+cuando inserciones paralelas en varias réplicas sobrepasan el límite. Siempre se permite hacer commit de
+partes de datos vacías, de modo que los datos puedan eliminarse de una tabla
+que supere el límite, por ejemplo, con `TRUNCATE` o `ALTER TABLE ... DROP
+PARTITION`.
+
+Valores posibles:
+
+* Cualquier número entero positivo.
+* 0 — sin límite.
+
+Resulta útil para servicios multi-tenant, temporales y de demostración.
+
+## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para limitar el número total de bytes sin comprimir en todas las partes de datos activas e inactivas de la tabla."}]}]} />
+
+Igual que `max_table_size_bytes_compressed`, pero el límite se aplica al
+número total de bytes sin comprimir en todas las partes de datos activas e
+inactivas de la tabla.
+
+Valores posibles:
+
+* Cualquier número entero positivo.
+* 0 — sin límite.
+
+Resulta útil para servicios multi-tenant, temporales y de demostración.
+
+## max_table_size_rows {#max_table_size_rows}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para limitar el número total de filas en las partes de datos activas de la tabla."}]}]} />
+
+Si el número total de filas en las partes de datos activas de la tabla supera este
+valor, el `INSERT` se interrumpe con la excepción `Table size limit exceeded`.
+El límite se comprueba al inicio del `INSERT` y cuando se hace commit de nuevas
+partes de datos en el conjunto de trabajo, incluidos los resultados de las
+fusiones y mutaciones en segundo plano (de modo que una mutación que haga crecer la tabla
+por encima del límite se reintentará sin llegar a completarse). También se comprueban las inserciones realizadas por
+vistas materializadas. El límite no se comprueba en los fetch replicados,
+lo que da lugar a una posible condición de carrera cuando inserciones paralelas en varias
+réplicas superan el límite. Siempre se permite hacer commit de partes de datos vacías,
+de modo que se pueden eliminar datos de una tabla que supere el límite, por ejemplo con
+`TRUNCATE` o `ALTER TABLE ... DROP PARTITION`.
+
+Valores posibles:
+
+* Cualquier entero positivo.
+* 0 — sin límite.
+
+Resulta útil para servicios multi-tenant, temporales y de demostración.
+
+## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

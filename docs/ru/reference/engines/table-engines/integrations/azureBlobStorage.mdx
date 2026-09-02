@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Этот движок обеспечивает интеграцию с экосистемой [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-<div id="create-table">
-  ## CREATE TABLE
-</div>
+## CREATE TABLE {#create-table}
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -21,9 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-<div id="engine-parameters">
-  ### Параметры движка
-</div>
+### Параметры движка {#engine-parameters}
 
 * `endpoint` — URL конечной точки AzureBlobStorage с контейнером и префиксом. При необходимости также может содержать account&#95;name, если этого требует используемый метод аутентификации. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) Либо эти параметры можно передать отдельно через storage&#95;account&#95;url, account&#95;name и container. Для указания префикса следует использовать endpoint.
 * `endpoint_contains_account_name` - Этот флаг указывает, содержит ли endpoint account&#95;name, так как он нужен только для некоторых методов аутентификации. (По умолчанию: true)
@@ -33,7 +29,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_name` - если используется storage&#95;account&#95;url, здесь можно указать имя учётной записи
 * `account_key` - если используется storage&#95;account&#95;url, здесь можно указать ключ учётной записи
 * `format` — [Формат](/ru/reference/formats/index) файла.
-* `compression` — Поддерживаемые значения: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить `auto`).
+* `compression` — Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить `auto`). Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (`basic` по умолчанию).
 * `partition_strategy` – Варианты: `wildcard` или `hive`. Для `wildcard` требуется `{_partition_id}` в пути, который заменяется ключом партиционирования. `hive` не допускает подстановочных шаблонов, предполагает, что путь является корнем таблицы, и создаёт каталоги партиций в стиле Hive, где в качестве имён файлов используются Snowflake ID, а в качестве расширения — формат файла. Без явного указания стратегии для пути с `{_partition_id}` используется `wildcard`. Для пути с другим глоб-шаблоном стратегия партиционирования не используется, а `PARTITION BY` игнорируется. Для пути без глоб-шаблона используется `hive`, если значение `file_like_engine_default_partition_strategy` равно `hive`; в противном случае стратегия партиционирования не используется.
 * `partition_columns_in_data_file` - Используется только со стратегией партиционирования `hive`. Указывает ClickHouse, следует ли ожидать, что столбцы партиции будут записаны в файл данных. По умолчанию `false`.
 * `extra_credentials` - Используйте `client_id` и `tenant_id` для аутентификации. Если указаны extra&#95;credentials, они имеют приоритет над `account_name` и `account_key`.
@@ -59,18 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-<div id="virtual-columns">
-  ## Виртуальные столбцы
-</div>
+## Виртуальные столбцы {#virtual-columns}
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
 * `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер неизвестен, значение — `NULL`.
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 
-<div id="authentication">
-  ## Аутентификация
-</div>
+## Аутентификация {#authentication}
 
 Сейчас доступны 3 способа аутентификации:
 
@@ -78,9 +70,7 @@ SELECT * FROM test_table;
 * `SAS Token` — можно использовать, указав `endpoint`, `connection_string` или `storage_account_url`. Определяется по наличию символа `?` в URL. Примеры см. в [azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens).
 * `Workload Identity` — можно использовать, указав `endpoint` или `storage_account_url`. Если в конфигурации задан параметр `use_workload_identity`, для аутентификации используется [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications).
 
-<div id="data-cache">
-  ### Кэш данных
-</div>
+### Кэш данных {#data-cache}
 
 Движок таблицы `Azure` поддерживает кэширование данных на локальном диске.
 Параметры конфигурации файлового кэша и примеры его использования см. в этом [разделе](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -109,17 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. повторно использовать конфигурацию кэша (и, следовательно, хранилище кэша) из раздела `storage_configuration` ClickHouse, [описанного здесь](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — необязателен. В большинстве случаев ключ партиционирования не нужен, а если он всё же нужен, то обычно не стоит делать его детальнее, чем по месяцам. Партиционирование не ускоряет запросы (в отличие от выражения ORDER BY). Никогда не используйте слишком мелкое партиционирование. Не разбивайте данные на партиции по идентификаторам или именам клиентов (вместо этого сделайте идентификатор или имя клиента первым столбцом в выражении ORDER BY).
 
 Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](/ru/reference/data-types/date). Имена партиций в этом случае имеют формат `"YYYYMM"`.
 
-<div id="partition-strategy">
-  #### Стратегия партиционирования
-</div>
+#### Стратегия партиционирования {#partition-strategy}
 
 `wildcard`: заменяет подстановку `{_partition_id}` в пути к файлу фактическим ключом партиционирования. Чтение не поддерживается. По умолчанию выбирается, когда путь содержит `{_partition_id}`.
 
@@ -146,9 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-<div id="see-also">
-  ## См. также
-</div>
+## См. также {#see-also}
 
 [Табличная функция Azure Blob Storage](/ru/reference/functions/table-functions/azureBlobStorage)
 

@@ -101,15 +101,11 @@ INSERT INTO t FORMAT TabSeparated
   ```
 </Note>
 
-<div id="constraints">
-  ## 제약 조건
-</div>
+## 제약 조건 {#constraints}
 
 테이블에 [제약 조건](/ko/reference/statements/create/table#constraints)이 있으면, 삽입되는 데이터의 각 행에 대해 해당 표현식을 검사합니다. 이 제약 조건 중 하나라도 충족되지 않으면 서버에서 제약 조건 이름과 표현식이 포함된 예외를 발생시키고 쿼리를 중단합니다.
 
-<div id="data-type-validation">
-  ## 데이터 타입 검증
-</div>
+## 데이터 타입 검증 {#data-type-validation}
 
 ClickHouse는 허용된 데이터 타입(`enable_time_time64_type`, `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types` 등의 설정으로 제어됨)을 테이블 생성(`CREATE TABLE`) 및 스키마 수정(`ALTER TABLE`) 시에만 검증하며, `INSERT` 시에는 검증하지 않습니다.
 
@@ -148,9 +144,7 @@ ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
   따라서 최신 버전의 클라이언트(설정이 기본적으로 활성화된 상태)는 대상 테이블에 해당 컬럼 타입이 이미 있는 경우, 더 오래된 버전의 서버(설정이 비활성화된 상태)에 허용되지 않는 데이터 타입의 데이터를 삽입할 수 있습니다. 검증은 DML 수준이 아니라 DDL 수준에서 수행됩니다.
 </Note>
 
-<div id="inserting-the-results-of-select">
-  ## SELECT 결과 삽입
-</div>
+## SELECT 결과 삽입 {#inserting-the-results-of-select}
 
 **구문**
 
@@ -176,9 +170,7 @@ INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
 
-<div id="inserting-data-from-a-file">
-  ## 파일에서 데이터 삽입하기
-</div>
+## 파일에서 데이터 삽입하기 {#inserting-data-from-a-file}
 
 **구문**
 
@@ -188,15 +180,13 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION
 
 위 구문을 사용하면 **클라이언트** 측에 저장된 파일 하나 또는 여러 파일에서 데이터를 삽입할 수 있습니다. `file_name`과 `type`은 문자열 리터럴입니다. 입력 파일 [포맷](/ko/reference/formats/index)은 `FORMAT` 절에서 지정해야 합니다.
 
-압축 파일도 지원됩니다. 압축 유형은 파일 이름의 확장자를 기준으로 감지됩니다. 또는 `COMPRESSION` 절에서 명시적으로 지정할 수도 있습니다. 지원되는 유형은 다음과 같습니다: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+압축 파일도 지원됩니다. 압축 유형은 파일 이름의 확장자를 기준으로 감지됩니다. 또는 `COMPRESSION` 절에서 명시적으로 지정할 수도 있습니다. 지원되는 유형은 다음과 같습니다: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. `snappy`의 경우 wire 형식은 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정으로 선택됩니다(기본값은 `basic`).
 
 이 기능은 [command-line client](/ko/concepts/features/interfaces/client) 및 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)에서 사용할 수 있습니다.
 
 **예시**
 
-<div id="single-file-with-from-infile">
-  ### FROM INFILE을 사용한 단일 파일
-</div>
+### FROM INFILE을 사용한 단일 파일 {#single-file-with-from-infile}
 
 [command-line client](/ko/concepts/features/interfaces/client)를 사용해 다음 쿼리를 실행하십시오:
 
@@ -214,9 +204,7 @@ clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
 └────┴──────┘
 ```
 
-<div id="multiple-files-with-from-infile-using-globs">
-  ### 글롭 패턴을 사용해 FROM INFILE로 여러 파일 처리하기
-</div>
+### 글롭 패턴을 사용해 FROM INFILE로 여러 파일 처리하기 {#multiple-files-with-from-infile-using-globs}
 
 이 예시는 이전 예시와 매우 유사하지만, `FROM INFILE 'input_*.csv'`를 사용해 여러 파일에서 삽입을 수행합니다.
 
@@ -237,9 +225,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
   ```
 </Tip>
 
-<div id="inserting-using-a-table-function">
-  ## 테이블 함수를 사용한 삽입
-</div>
+## 테이블 함수를 사용한 삽입 {#inserting-using-a-table-function}
 
 데이터는 [테이블 함수](/ko/reference/functions/table-functions/index)로 참조되는 테이블에 삽입할 수 있습니다.
 
@@ -266,9 +252,7 @@ SELECT * FROM simple_table;
 └─────┴───────────────────────┘
 ```
 
-<div id="inserting-into-clickhouse-cloud">
-  ## ClickHouse Cloud에 삽입하기
-</div>
+## ClickHouse Cloud에 삽입하기 {#inserting-into-clickhouse-cloud}
 
 기본적으로 ClickHouse Cloud의 서비스는 고가용성을 위해 여러 레플리카를 제공합니다. 서비스에 연결하면 이러한 레플리카 중 하나에 연결됩니다.
 
@@ -282,17 +266,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 
 `select_sequential_consistency`를 사용하면 ClickHouse Keeper(ClickHouse Cloud에서 내부적으로 사용됨)에 가해지는 부하가 증가하며, 서비스 부하에 따라 성능이 저하될 수 있습니다. 꼭 필요한 경우가 아니라면 이 설정은 활성화하지 않는 것이 좋습니다. 권장되는 방법은 동일한 session에서 읽기/쓰기를 수행하거나, 네이티브 프로토콜을 사용하는 클라이언트 드라이버(즉, 고정 연결을 지원하는 드라이버)를 사용하는 것입니다.
 
-<div id="inserting-into-a-replicated-setup">
-  ## 복제된 구성에 데이터 삽입
-</div>
+## 복제된 구성에 데이터 삽입 {#inserting-into-a-replicated-setup}
 
 복제된 구성에서는 데이터가 복제된 뒤 다른 레플리카에 표시됩니다. 데이터 복제는 `INSERT` 직후 바로 시작되며(즉, 다른 레플리카에서 다운로드됨), 이 동작은 ClickHouse Cloud와 다릅니다. ClickHouse Cloud에서는 데이터가 즉시 공유 스토리지에 기록되고, 레플리카는 메타데이터 변경 사항을 구독합니다.
 
 복제된 구성에서는 분산 합의를 위해 ClickHouse Keeper에 커밋해야 하므로 `INSERTs`에 상당한 시간(약 1초)이 걸릴 수 있다는 점에 유의하십시오. 또한 스토리지로 S3를 사용하면 지연 시간이 추가로 늘어납니다.
 
-<div id="performance-considerations">
-  ## 성능 고려 사항
-</div>
+## 성능 고려 사항 {#performance-considerations}
 
 `INSERT`는 입력 데이터를 기본 키(primary key)로 정렬하고, 파티션 키(partition key)를 기준으로 파티션으로 나눕니다. 여러 파티션에 데이터를 한 번에 삽입하면 `INSERT` 쿼리 성능이 크게 저하될 수 있습니다. 이를 방지하려면 다음을 수행하세요:
 
@@ -304,17 +284,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 * 데이터가 실시간으로 추가되는 경우
 * 일반적으로 시간순으로 정렬된 데이터를 업로드하는 경우
 
-<div id="asynchronous-inserts">
-  ### 비동기 삽입
-</div>
+### 비동기 삽입 {#asynchronous-inserts}
 
 작지만 빈번한 삽입 작업에서도 데이터를 비동기적으로 삽입할 수 있습니다. 이렇게 삽입된 데이터는 배치로 묶인 다음 안전하게 테이블에 삽입됩니다. 비동기 삽입을 사용하려면 [`async_insert`](/ko/reference/settings/session-settings/async-insert#async_insert) 설정을 활성화하십시오.
 
 `async_insert` 또는 [`Buffer` 테이블 엔진](/ko/reference/engines/table-engines/special/buffer)을 사용하면 추가 버퍼링이 발생합니다.
 
-<div id="large-or-long-running-inserts">
-  ### 대용량 또는 장시간 실행되는 삽입
-</div>
+### 대용량 또는 장시간 실행되는 삽입 {#large-or-long-running-inserts}
 
 대량의 데이터를 삽입할 때 ClickHouse는 &quot;squashing&quot;이라는 과정을 통해 쓰기 성능을 최적화합니다. 메모리에 있는 작은 데이터 블록은 디스크에 기록되기 전에 머지되어 더 큰 블록으로 합쳐집니다. squashing은 각 쓰기 작업에 수반되는 오버헤드를 줄여줍니다. 이 과정에서 삽입된 데이터는 ClickHouse가 각 [`max_insert_block_size`](/ko/reference/settings/session-settings/max-insert#max_insert_block_size)개의 행을 기록한 후 쿼리할 수 있습니다.
 

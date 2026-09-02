@@ -15,17 +15,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-<div id="adaptive_write_buffer_initial_size">
-  ## adaptive_write_buffer_initial_size
-</div>
+## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
 自适应写入缓冲区的初始大小
 
-<div id="add_implicit_sign_column_constraint_for_collapsing_engine">
-  ## add_implicit_sign_column_constraint_for_collapsing_engine
-</div>
+## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 或 VersionedCollapsingMergeTree 表的 `sign` 列添加隐式约束，
 仅允许使用有效值 (`1` 和 `-1`) 。
 
-<div id="alter_column_secondary_index_mode">
-  ## alter_column_secondary_index_mode
-</div>
+## alter_column_secondary_index_mode {#alter_column_secondary_index_mode}
 
 <SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
 
@@ -51,17 +45,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * `compatibility`：与原始行为一致：对 `ALTER ... MODIFY COLUMN` 使用 `throw`，对 `ALTER ... UPDATE/DELETE` 使用 `rebuild`。
 * `ignore`：仅供高级用户使用。它会使索引保持不一致状态，从而可能导致错误的查询结果。
 
-<div id="always_use_copy_instead_of_hardlinks">
-  ## always_use_copy_instead_of_hardlinks
-</div>
+## always_use_copy_instead_of_hardlinks {#always_use_copy_instead_of_hardlinks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 在变更、替换、分离等操作期间，始终复制数据而不创建硬链接。
 
-<div id="apply_patches_on_merge">
-  ## apply_patches_on_merge
-</div>
+## apply_patches_on_merge {#apply_patches_on_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -69,18 +59,14 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 如果为 true，则在合并过程中应用补丁parts
 
-<div id="assign_part_uuids">
-  ## assign_part_uuids
-</div>
+## assign_part_uuids {#assign_part_uuids}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 启用后，每个新的数据分片都会被分配一个唯一的分片标识符。
 启用前，请检查所有副本都支持 UUID v4。
 
-<div id="auto_statistics_types">
-  ## auto_statistics_types
-</div>
+## auto_statistics_types {#auto_statistics_types}
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
@@ -90,26 +76,20 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 支持的统计类型：basic、tdigest、countmin、uniq、uniq&#95;v2。
 `minmax` 统计类型已弃用：它是 `basic` 的子集，应改用 `basic`。
 
-<div id="background_task_preferred_step_execution_time_ms">
-  ## background_task_preferred_step_execution_time_ms
-</div>
+## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="50" />
 
 合并或变更中单个步骤的目标执行时间。如果
 某个步骤耗时更长，则可能会超过该时间
 
-<div id="clean_deleted_rows">
-  ## clean_deleted_rows
-</div>
+## clean_deleted_rows {#clean_deleted_rows}
 
 <SettingsInfoBlock type="CleanDeletedRows" default_value="Never" />
 
 已废弃设置，无任何作用。
 
-<div id="clone_replica_zookeeper_create_get_part_batch_size">
-  ## clone_replica_zookeeper_create_get_part_batch_size
-</div>
+## clone_replica_zookeeper_create_get_part_batch_size {#clone_replica_zookeeper_create_get_part_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -117,17 +97,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 用于克隆副本时的 ZooKeeper multi-create get-part 请求批次大小。
 
-<div id="compatibility_allow_sampling_expression_not_in_primary_key">
-  ## compatibility_allow_sampling_expression_not_in_primary_key
-</div>
+## compatibility_allow_sampling_expression_not_in_primary_key {#compatibility_allow_sampling_expression_not_in_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许创建抽样表达式不在主键中的表。只有为了向后兼容，在临时允许服务器使用不正确的表运行时，才需要启用此设置。
 
-<div id="compute_exact_num_defaults_for_sparse_columns">
-  ## compute_exact_num_defaults_for_sparse_columns
-</div>
+## compute_exact_num_defaults_for_sparse_columns {#compute_exact_num_defaults_for_sparse_columns}
 
 <BetaBadge />
 
@@ -143,9 +119,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 保持禁用可使插入/合并速度与之前一样快；启用后，
 每个符合稀疏条件的列都会额外增加一次 O(rows) 扫描。
 
-<div id="deduplicate_merge_projection_mode">
-  ## deduplicate_merge_projection_mode
-</div>
+## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode}
 
 <SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
 
@@ -166,9 +140,7 @@ MergeTree 会忽略此设置。它也会控制 `OPTIMIZE DEDUPLICATE`，
 * `drop`
 * `rebuild`
 
-<div id="deduplication_hashes_cache_update_wait_ms">
-  ## deduplication_hashes_cache_update_wait_ms
-</div>
+## deduplication_hashes_cache_update_wait_ms {#deduplication_hashes_cache_update_wait_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="100" />
 
@@ -179,9 +151,7 @@ MergeTree 会忽略此设置。它也会控制 `OPTIMIZE DEDUPLICATE`，
 `deduplication_hashes` 目录，因此插入操作无需与
 Keeper 往返通信即可检测重复项。
 
-<div id="default_compression_codec">
-  ## default_compression_codec
-</div>
+## default_compression_codec {#default_compression_codec}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "新增设置"}]}]} />
 
@@ -193,15 +163,11 @@ Keeper 往返通信即可检测重复项。
 3. 在 `compression` 设置中定义的默认压缩编解码器
    默认值：空字符串 (未定义) 。
 
-<div id="disk">
-  ## disk
-</div>
+## disk {#disk}
 
 存储 磁盘 的名称。可以指定 磁盘 来代替 存储策略。
 
-<div id="dynamic_serialization_version">
-  ## dynamic_serialization_version
-</div>
+## dynamic_serialization_version {#dynamic_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
 
@@ -215,9 +181,7 @@ Dynamic 数据类型的序列化版本。兼容性需要此设置。
 * `v2`
 * `v3`
 
-<div id="enforce_index_structure_match_on_partition_manipulation">
-  ## enforce_index_structure_match_on_partition_manipulation
-</div>
+## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -226,9 +190,7 @@ Dynamic 数据类型的序列化版本。兼容性需要此设置。
 如果为分区操作查询 (`ATTACH/MOVE/REPLACE PARTITION`) 的目标表启用了此设置，
 则源表与目标表的索引和投影必须完全一致。否则，目标表可以拥有源表索引和投影的超集。
 
-<div id="execute_merges_on_single_replica_time_threshold">
-  ## execute_merges_on_single_replica_time_threshold
-</div>
+## execute_merges_on_single_replica_time_threshold {#execute_merges_on_single_replica_time_threshold}
 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
@@ -238,18 +200,14 @@ Dynamic 数据类型的序列化版本。兼容性需要此设置。
 
 * 任意正整数。
 
-<div id="finished_mutations_to_keep">
-  ## finished_mutations_to_keep
-</div>
+## finished_mutations_to_keep {#finished_mutations_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 要保留多少条已完成的变更记录。如果为零，则保留
 全部记录。
 
-<div id="force_read_through_cache_for_merges">
-  ## force_read_through_cache_for_merges
-</div>
+## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 
 <ExperimentalBadge />
 
@@ -257,25 +215,19 @@ Dynamic 数据类型的序列化版本。兼容性需要此设置。
 
 强制合并操作通过文件系统缓存读取
 
-<div id="initialization_retry_period">
-  ## initialization_retry_period
-</div>
+## initialization_retry_period {#initialization_retry_period}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
 表初始化的重试间隔，单位为秒。
 
-<div id="kill_threads">
-  ## kill_threads
-</div>
+## kill_threads {#kill_threads}
 
 <SettingsInfoBlock type="UInt64" default_value="128" />
 
 已废弃，不起作用。
 
-<div id="lightweight_mutation_projection_mode">
-  ## lightweight_mutation_projection_mode
-</div>
+## lightweight_mutation_projection_mode {#lightweight_mutation_projection_mode}
 
 <SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
 
@@ -296,9 +248,7 @@ drop 或 rebuild 之类的操作。
 * `drop`
 * `rebuild`
 
-<div id="load_existing_rows_count_for_old_parts">
-  ## load_existing_rows_count_for_old_parts
-</div>
+## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -314,17 +264,13 @@ drop 或 rebuild 之类的操作。
 
 * [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](/zh/reference/settings/merge-tree-settings/exclude#exclude_deleted_rows_for_part_size_in_merge) 设置
 
-<div id="lock_acquire_timeout_for_background_operations">
-  ## lock_acquire_timeout_for_background_operations
-</div>
+## lock_acquire_timeout_for_background_operations {#lock_acquire_timeout_for_background_operations}
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
 对于合并、变更等后台操作，获取表锁失败前会等待多少秒。
 
-<div id="mutation_workload">
-  ## mutation_workload
-</div>
+## mutation_workload {#mutation_workload}
 
 用于调节资源如何在变更与其他工作负载之间分配和共享。指定的值将作为该表后台变更的 `workload` 设置值使用。若未指定 (空字符串) ，则改用服务器设置 `mutation_workload`。
 
@@ -332,9 +278,7 @@ drop 或 rebuild 之类的操作。
 
 * [Workload Scheduling](/zh/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="non_replicated_deduplication_window">
-  ## non_replicated_deduplication_window
-</div>
+## non_replicated_deduplication_window {#non_replicated_deduplication_window}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -352,9 +296,7 @@ drop 或 rebuild 之类的操作。
 覆盖整个插入块。这些哈希值会写入
 磁盘上的本地文件，而不是写入 ClickHouse Keeper。
 
-<div id="notify_newest_block_number">
-  ## notify_newest_block_number
-</div>
+## notify_newest_block_number {#notify_newest_block_number}
 
 <ExperimentalBadge />
 
@@ -364,9 +306,7 @@ drop 或 rebuild 之类的操作。
 
 向 SharedJoin 或 SharedSet 通知最新的块编号。仅在 ClickHouse Cloud 中可用。
 
-<div id="nullable_serialization_version">
-  ## nullable_serialization_version
-</div>
+## nullable_serialization_version {#nullable_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
 
@@ -380,9 +320,7 @@ drop 或 rebuild 之类的操作。
 
 * allow&#95;sparse — 允许 `Nullable(T)` 使用稀疏编码。
 
-<div id="object_serialization_version">
-  ## object_serialization_version
-</div>
+## object_serialization_version {#object_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
 
@@ -398,9 +336,7 @@ JSON 数据类型的序列化版本。用于兼容性。
 
 只有 `v3` 版本支持更改共享数据序列化版本。
 
-<div id="old_parts_lifetime">
-  ## old_parts_lifetime
-</div>
+## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
 
@@ -433,9 +369,7 @@ JSON 数据类型的序列化版本。用于兼容性。
 `old_parts_lifetime` 选择了 480 秒，这段时间内可以保证
 新的 分片 被写入磁盘。
 
-<div id="optimize_row_order">
-  ## optimize_row_order
-</div>
+## optimize_row_order {#optimize_row_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -504,9 +438,7 @@ LZ4 或 ZSTD 的压缩率平均可提升 20–40%。
 对于高基数主键 (例如包含 `DateTime64` 类型时间戳列的主键) ，
 预计无法从此设置中受益。
 
-<div id="packed_skip_index_max_bytes">
-  ## packed_skip_index_max_bytes
-</div>
+## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />
 
@@ -538,9 +470,7 @@ below the threshold)` 成比例增长。
 子流。更改此设置只会影响新写入的 分片；
 现有 分片 会保留其写入时所使用的布局。
 
-<div id="part_minmax_index_columns">
-  ## part_minmax_index_columns
-</div>
+## part_minmax_index_columns {#part_minmax_index_columns}
 
 <SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
 
@@ -553,9 +483,7 @@ below the threshold)` 成比例增长。
 * `partition_key_only` — 仅跟踪分区键列。
 * `with_block_number_offset` — 分区键列，以及持久化的 `_block_number` 和 `_block_offset` 虚拟列。启用基于这些列的分片级裁剪。
 
-<div id="patch_parts_version">
-  ## patch_parts_version
-</div>
+## patch_parts_version {#patch_parts_version}
 
 <SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
 
@@ -572,9 +500,7 @@ below the threshold)` 成比例增长。
 
 无论此设置为何值，磁盘上的旧格式补丁仍可读取。
 
-<div id="propagate_types_serialization_versions_to_nested_types">
-  ## propagate_types_serialization_versions_to_nested_types
-</div>
+## propagate_types_serialization_versions_to_nested_types {#propagate_types_serialization_versions_to_nested_types}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -582,9 +508,7 @@ below the threshold)` 成比例增长。
 
 如果为 true，则像 string&#95;serialization&#95;version 这样的序列化版本会传播到 Array/Map/Nullable/JSON 等嵌套类型内部。如果禁用，该序列化版本则只会对该类型的顶层列和 Tuple el 生效
 
-<div id="ratio_of_defaults_for_sparse_serialization">
-  ## ratio_of_defaults_for_sparse_serialization
-</div>
+## ratio_of_defaults_for_sparse_serialization {#ratio_of_defaults_for_sparse_serialization}
 
 <SettingsInfoBlock type="Float" default_value="0.9375" />
 
@@ -697,9 +621,7 @@ WHERE table LIKE 'my_sparse_table';
 └────────┴────────────────────┘
 ```
 
-<div id="reduce_blocking_parts_sleep_ms">
-  ## reduce_blocking_parts_sleep_ms
-</div>
+## reduce_blocking_parts_sleep_ms {#reduce_blocking_parts_sleep_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -707,18 +629,14 @@ WHERE table LIKE 'my_sparse_table';
 
 仅在 ClickHouse Cloud 中可用。在未丢弃/替换任何范围后，再次尝试减少阻塞 parts 之前的最短等待时间。将此设置调低会频繁触发 background&#95;schedule&#95;pool 中的任务，从而在大规模集群中向 ZooKeeper 发起大量请求
 
-<div id="replace_long_file_name_to_hash">
-  ## replace_long_file_name_to_hash
-</div>
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果列文件名过长 (超过 &#39;max&#95;file&#95;name&#95;length&#39;
 字节) ，则替换为 SipHash128
 
-<div id="replicated_can_become_leader">
-  ## replicated_can_become_leader
-</div>
+## replicated_can_become_leader {#replicated_can_become_leader}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -730,9 +648,7 @@ leader。
 * `true`
 * `false`
 
-<div id="search_orphaned_parts_disks">
-  ## search_orphaned_parts_disks
-</div>
+## search_orphaned_parts_disks {#search_orphaned_parts_disks}
 
 <SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
 
@@ -749,9 +665,7 @@ ClickHouse 在执行任何 ATTACH 或 CREATE 表操作时，都会扫描所有�
 * local - 范围仅限于本地磁盘。
 * none - 范围为空，不搜索
 
-<div id="serialization_info_version">
-  ## serialization_info_version
-</div>
+## serialization_info_version {#serialization_info_version}
 
 <SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
 
@@ -765,14 +679,15 @@ ClickHouse 在执行任何 ATTACH 或 CREATE 表操作时，都会扫描所有�
 * `basic` - 基础格式。
 * `with_types` - 包含额外 `types_serialization_versions` 字段的格式，允许按类型指定序列化版本。
   这会使 `string_serialization_version` 之类的设置生效。
+* `with_missing_columns` - 记录 `with_types` 所记录的所有内容，另加一个 `missing_columns` 字段，
+  列出缺失列以及其默认值所对应的类型。
+  启用 `skip_empty_columns_on_insert` 时必需。
 
 在滚动升级期间，将其设置为 `basic`，以便新服务器生成
-与旧服务器兼容的数据分片。升级完成后，
-切换为 `WITH_TYPES` 以启用按类型的序列化版本。
+与旧服务器兼容的数据分区片段。升级完成后，
+切换为 `with_types` (或 `with_missing_columns`) 以启用相应功能。
 
-<div id="share_nested_offsets">
-  ## share_nested_offsets
-</div>
+## share_nested_offsets {#share_nested_offsets}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -785,9 +700,7 @@ ClickHouse 在执行任何 ATTACH 或 CREATE 表操作时，都会扫描所有�
 语义，而且标量列可以与共享相同前缀、名称中带点的 Array 列共存
 (例如 n UInt32 与 n.a Array(String) 同时存在) 。此设置在创建表后不可更改。
 
-<div id="simultaneous_parts_removal_limit">
-  ## simultaneous_parts_removal_limit
-</div>
+## simultaneous_parts_removal_limit {#simultaneous_parts_removal_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -795,17 +708,29 @@ ClickHouse 在执行任何 ATTACH 或 CREATE 表操作时，都会扫描所有�
 `simultaneous_parts_removal_limit` 个过期parts。
 将 `simultaneous_parts_removal_limit` 设置为 `0` 表示不受限制。
 
-<div id="storage_policy">
-  ## storage_policy
-</div>
+## skip_empty_columns_on_insert {#skip_empty_columns_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置：INSERT 时跳过写入值均为类型默认值的列"}]}]} />
+
+启用后，如果某个 INSERT 块中的某列值均为其类型默认值，则不会将该列写入磁盘上的数据分区片段。后续读取该分区片段时，缺失的列会填充为其记录类型的默认值。这可为稀疏更新工作负载节省磁盘空间，
+因为每次 INSERT 中大多数列都保持其类型的默认值。
+带有 `DEFAULT`、`MATERIALIZED` 或 `ALIAS` 表达式的列绝不会被跳过，
+因为读取路径会计算表达式，而非返回显式插入的类型默认值。补丁分区片段
+(用于轻量级 UPDATE) 也不适用此优化。
+此优化会使用 `with_missing_columns` 格式版本，将缺失列记录在分区片段的
+`serialization.json` 中，因此仅当 `serialization_info_version` 设置为
+`with_missing_columns` 时才会生效。使用较低版本时 (例如，为进行滚动升级而固定为较低
+值，以便旧服务器能够读取新写入的 parts) ，不会跳过任何列。
+
+## storage_policy {#storage_policy}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 存储磁盘策略名称
 
-<div id="string_serialization_version">
-  ## string_serialization_version
-</div>
+## string_serialization_version {#string_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
 
@@ -813,7 +738,7 @@ ClickHouse 在执行任何 ATTACH 或 CREATE 表操作时，都会扫描所有�
 
 控制顶层 `String` 列的序列化格式。
 
-此设置仅在 `serialization_info_version` 设置为 &quot;with&#95;types&quot; 时生效。
+此设置仅在 `serialization_info_version` 设置为 &quot;with&#95;types&quot; 或更高版本时生效。
 当设置为 `with_size_stream` 时，顶层 `String` 列会通过单独的
 `.size` 子列存储字符串长度，而不是内联存储。这样可以支持真正的 `.size`
 子列，并提升压缩效率。
@@ -826,18 +751,14 @@ ClickHouse 在执行任何 ATTACH 或 CREATE 表操作时，都会扫描所有�
 * `single_stream` — 使用带内联大小信息的标准序列化格式。
 * `with_size_stream` — 为顶层 `String` 列使用单独的大小流。
 
-<div id="temporary_directories_lifetime">
-  ## temporary_directories_lifetime
-</div>
+## temporary_directories_lifetime {#temporary_directories_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="86400" />
 
 tmp&#95; 目录会保留多少秒。不要调低此值，
 因为该设置值过低时，merges 和 变更 可能无法正常工作。
 
-<div id="try_fetch_recompressed_part_timeout">
-  ## try_fetch_recompressed_part_timeout
-</div>
+## try_fetch_recompressed_part_timeout {#try_fetch_recompressed_part_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="7200" />
 
@@ -849,9 +770,7 @@ tmp&#95; 目录会保留多少秒。不要调低此值，
 
 * 任意正整数。
 
-<div id="ttl_only_drop_parts">
-  ## ttl_only_drop_parts
-</div>
+## ttl_only_drop_parts {#ttl_only_drop_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -864,9 +783,7 @@ tmp&#95; 目录会保留多少秒。不要调低此值，
 当 `ttl_only_drop_parts` 被启用时，如果某个数据parts内的所有
 行都已根据其 `TTL` 设置过期，则会删除整个数据parts。
 
-<div id="wait_for_unique_parts_send_before_shutdown_ms">
-  ## wait_for_unique_parts_send_before_shutdown_ms
-</div>
+## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="0" />
 
@@ -874,9 +791,7 @@ tmp&#95; 目录会保留多少秒。不要调低此值，
 (仅存在于当前副本上) 被其他副本拉取 (0 表示
 禁用) 。
 
-<div id="zookeeper_session_expiration_check_period">
-  ## zookeeper_session_expiration_check_period
-</div>
+## zookeeper_session_expiration_check_period {#zookeeper_session_expiration_check_period}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 

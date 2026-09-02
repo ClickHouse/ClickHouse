@@ -23,14 +23,16 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 이 기능은 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블 엔진 계열에서만 사용할 수 있습니다.
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
 ```
 
 `filter_expr`는 `UInt8` 유형이어야 합니다. 이 쿼리는 `filter_expr`의 값이 0이 아닌 행에서, 지정된 컬럼의 값을 해당 표현식에 대응하는 값으로 업데이트합니다.
 값은 `CAST` 연산자를 사용해 컬럼 유형으로 변환됩니다. 프라이머리 키 또는 파티션 키 계산에 사용되는 컬럼은 업데이트할 수 없습니다.
 
+`IN PARTITION` 절은 업데이트를 나열된 파티션으로 제한합니다. 이 절이 없으면 `ReplicatedMergeTree` 계열 테이블에서는 [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ko/reference/settings/session-settings/optimize) 설정이 활성화된 경우(기본값), ClickHouse가 `filter_expr`의 파티션 키 조건을 자동으로 감지하여 영향을 받는 파티션만 업데이트합니다. 복제되지 않은 `MergeTree` 테이블에서는 명시적인 `IN PARTITION` 절을 사용하여 업데이트를 특정 파티션으로 제한하십시오.
+
 <div id="examples">
-  ## 예시
+  ## 예시 {#examples}
 </div>
 
 ```sql
@@ -40,7 +42,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
 <div id="lightweight-update-does-not-update-data-immediately">
-  ## 경량 업데이트는 데이터를 즉시 업데이트하지 않습니다
+  ## 경량 업데이트는 데이터를 즉시 업데이트하지 않습니다 {#lightweight-update-does-not-update-data-immediately}
 </div>
 
 경량 `UPDATE`는 **패치 파트(patch parts)**를 사용해 구현됩니다. 패치 파트는 업데이트된 컬럼과 행만 포함하는 특별한 유형의 데이터 파트(data part)입니다.
@@ -53,22 +55,18 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * 이후 머지 및 뮤테이션 과정에서만 **물리적으로 구체화됩니다**
 * 모든 활성 파트에 패치가 구체화되면 **자동으로 정리됩니다**
 
-<div id="lightweight-update-requirements">
-  ## 경량 업데이트 요구 사항
-</div>
+## 경량 업데이트 요구 사항 {#lightweight-update-requirements}
 
 경량 업데이트는 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/ko/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/ko/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) 엔진과 그 [`Replicated`](/ko/reference/engines/table-engines/mergetree-family/replication) 및 [`Shared`](/ko/products/cloud/features/infrastructure/shared-merge-tree) 버전에서 지원됩니다.
 
 경량 업데이트를 사용하려면 테이블 설정 [`enable_block_number_column`](/ko/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) 및 [`enable_block_offset_column`](/ko/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column)을 사용해 `_block_number` 및 `_block_offset` 컬럼의 머티리얼라이즈를 활성화해야 합니다.
 
-<div id="lightweight-delete">
-  ## 경량 DELETE
-</div>
+## 경량 DELETE {#lightweight-delete}
 
 [경량 `DELETE`](/ko/reference/statements/delete) 쿼리는 `ALTER UPDATE` 뮤테이션 대신 경량 `UPDATE`로 실행할 수 있습니다. 경량 `DELETE`의 동작 방식은 [`lightweight_delete_mode`](/ko/reference/settings/session-settings/lightweight#lightweight_delete_mode) 설정으로 제어됩니다.
 
 <div id="performance-considerations">
-  ## 성능 고려 사항
+  ## 성능 고려 사항 {#performance-considerations}
 </div>
 
 **경량 업데이트의 장점:**
@@ -85,15 +83,13 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * 지나치게 빈번한 소규모 업데이트는 &quot;too many parts&quot; 오류를 유발할 수 있습니다. 예를 들어 업데이트할 id를 `WHERE` 절의 단일 `IN` 절에 넣는 방식으로 여러 업데이트를 하나의 쿼리로 묶는 것이 좋습니다
 * 경량 업데이트는 소량의 행(테이블의 약 10%까지)을 업데이트하도록 설계되었습니다. 더 많은 양을 업데이트해야 한다면 [`ALTER TABLE ... UPDATE`](/ko/reference/statements/alter/update) 뮤테이션을 사용하는 것이 좋습니다
 
-<div id="concurrent-operations">
-  ## 동시 작업
-</div>
+## 동시 작업 {#concurrent-operations}
 
 경량 업데이트는 일반적인 뮤테이션과 달리 현재 실행 중인 머지나 뮤테이션이 완료될 때까지 기다리지 않습니다.
 동시에 실행되는 경량 업데이트의 일관성은 설정 [`update_sequential_consistency`](/ko/reference/settings/session-settings/update#update_sequential_consistency) 및 [`update_parallel_mode`](/ko/reference/settings/session-settings/update#update_parallel_mode)로 제어됩니다.
 
 <div id="update-permissions">
-  ## `UPDATE` 권한
+  ## `UPDATE` 권한 {#update-permissions}
 </div>
 
 `UPDATE`를 사용하려면 `ALTER UPDATE` 권한이 필요합니다. 특정 사용자가 지정된 테이블에서 `UPDATE` SQL 문을 실행할 수 있도록 하려면 다음을 실행하세요:
@@ -103,7 +99,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## 구현 세부 사항
+  ## 구현 세부 사항 {#details-of-the-implementation}
 </div>
 
 패치 파트는 일반 파트와 동일하지만, 업데이트된 컬럼과 몇 가지 시스템 컬럼만 포함합니다.
@@ -142,9 +138,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 join 모드는 merge 모드보다 느리고 더 많은 메모리가 필요하지만, 사용 빈도는 더 낮습니다.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * [`ALTER UPDATE`](/ko/reference/statements/alter/update) - 부하가 큰 `UPDATE` 작업
 * [Lightweight `DELETE`](/ko/reference/statements/delete) - 경량 `DELETE` 작업

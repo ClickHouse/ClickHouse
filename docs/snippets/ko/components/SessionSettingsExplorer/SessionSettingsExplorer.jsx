@@ -1,6 +1,6 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을
-  // 유지하지 않은 상태로 평가합니다. 지연 상태는 생성된 데이터를
+  // Mintlify의 프로덕션 렌더러는 내보낸 구성요소를 모듈 범위 바인딩을
+  // 유지하지 않은 채로 평가합니다. 지연 상태는 생성된 데이터를
   // 해당 평가 스코프에 보관하여 마운트당 한 번만 구성되도록 합니다.
   const [entries] = useState(() => [
     {
@@ -51,7 +51,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_*",
-      count: 40,
+      count: 41,
       settings: [
         { name: "allow_aggregate_partitions_independently", path: "/allow#allow_aggregate_partitions_independently", default: "1" },
         { name: "allow_archive_path_syntax", path: "/allow#allow_archive_path_syntax", default: "1" },
@@ -85,6 +85,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_non_metadata_alters", path: "/allow#allow_non_metadata_alters", default: "1" },
         { name: "allow_nonconst_timezone_arguments", path: "/allow#allow_nonconst_timezone_arguments", default: "0" },
         { name: "allow_nullable_tuple_in_extracted_subcolumns", path: "/allow#allow_nullable_tuple_in_extracted_subcolumns", default: "0" },
+        { name: "allow_preliminary_distinct_abandoning", path: "/allow#allow_preliminary_distinct_abandoning", default: "1" },
         { name: "allow_rank_dense_rank_arguments", path: "/allow#allow_rank_dense_rank_arguments", default: "0" },
         { name: "allow_reorder_prewhere_conditions", path: "/allow#allow_reorder_prewhere_conditions", default: "1" },
         { name: "allow_replace_partition_from_empty_source", path: "/allow#allow_replace_partition_from_empty_source", default: "0" },
@@ -252,9 +253,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "ast_fuzzer_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "ast_fuzzer_any_query", path: "/ast-fuzzer#ast_fuzzer_any_query", default: "0" },
+        { name: "ast_fuzzer_oracle", path: "/ast-fuzzer#ast_fuzzer_oracle", default: "0" },
         { name: "ast_fuzzer_runs", path: "/ast-fuzzer#ast_fuzzer_runs", default: "0" }
       ],
       children: []
@@ -999,11 +1001,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "function_*",
-      count: 7,
+      count: 6,
       settings: [
         { name: "function_base58_max_input_size", path: "/function#function_base58_max_input_size", default: "10000" },
         { name: "function_date_trunc_return_type_behavior", path: "/function#function_date_trunc_return_type_behavior", default: "0" },
-        { name: "function_implementation", path: "/function#function_implementation", default: '""' },
         { name: "function_locate_has_mysql_compatible_argument_order", path: "/function#function_locate_has_mysql_compatible_argument_order", default: "1" },
         { name: "function_range_max_elements_in_block", path: "/function#function_range_max_elements_in_block", default: "500000000" },
         { name: "function_sleep_max_microseconds_per_block", path: "/function#function_sleep_max_microseconds_per_block", default: "3000000" },
@@ -1984,7 +1985,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "optimize_*",
-      count: 28,
+      count: 29,
       settings: [
         { name: "optimize_aggregators_of_group_by_keys", path: "/optimize#optimize_aggregators_of_group_by_keys", default: "1" },
         { name: "optimize_append_index", path: "/optimize#optimize_append_index", default: "0" },
@@ -2000,6 +2001,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "optimize_functions_to_subcolumns", path: "/optimize#optimize_functions_to_subcolumns", default: "1" },
         { name: "optimize_inverse_dictionary_lookup", path: "/optimize#optimize_inverse_dictionary_lookup", default: "1" },
         { name: "optimize_multiif_to_if", path: "/optimize#optimize_multiif_to_if", default: "1" },
+        { name: "optimize_mutations_with_partition_pruning", path: "/optimize#optimize_mutations_with_partition_pruning", default: "1" },
         { name: "optimize_normalize_count_variants", path: "/optimize#optimize_normalize_count_variants", default: "1" },
         { name: "optimize_on_insert", path: "/optimize#optimize_on_insert", default: "1" },
         { name: "optimize_prewhere_after_pushdown", path: "/optimize#optimize_prewhere_after_pushdown", default: "0" },
@@ -2310,7 +2312,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 51,
+      count: 52,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_in_order", path: "/query-plan#query_plan_aggregation_in_order", default: "1" },
@@ -2328,6 +2330,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
         { name: "query_plan_lift_up_array_join", path: "/query-plan#query_plan_lift_up_array_join", default: "1" },
         { name: "query_plan_lift_up_union", path: "/query-plan#query_plan_lift_up_union", default: "1" },
+        { name: "query_plan_lower_array_join_function", path: "/query-plan#query_plan_lower_array_join_function", default: "0" },
         { name: "query_plan_max_limit_for_join_lazy_indexing", path: "/query-plan#query_plan_max_limit_for_join_lazy_indexing", default: "1000" },
         { name: "query_plan_max_limit_for_lazy_materialization", path: "/query-plan#query_plan_max_limit_for_lazy_materialization", default: "10000" },
         { name: "query_plan_max_limit_for_top_k_optimization", path: "/query-plan#query_plan_max_limit_for_top_k_optimization", default: "1000" },

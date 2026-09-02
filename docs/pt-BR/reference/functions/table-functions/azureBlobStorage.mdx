@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSuppo
 
 Fornece uma interface semelhante a uma tabela para selecionar/inserir arquivos no [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). Esta função de tabela é semelhante à [função s3](/pt-BR/reference/functions/table-functions/s3).
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 <Tabs>
   <Tab title="String de conexão">
@@ -45,11 +43,9 @@ Fornece uma interface semelhante a uma tabela para selecionar/inserir arquivos n
   </Tab>
 </Tabs>
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
-| Argument                         | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Argumento                         | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connection_string`              | Uma string de conexão que inclui credenciais embutidas (nome da conta + chave da conta ou SAS token). Ao usar esse formato, `account_name` e `account_key` **não** devem ser passados separadamente. Consulte [Configurar uma string de conexão](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account).                                                                                                                                                                                    |
 | `storage_account_url`            | A URL do endpoint da conta de armazenamento, por exemplo, `https://myaccount.blob.core.windows.net/`. Ao usar esse formato, você **deve** também passar `account_name` e `account_key`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -58,15 +54,13 @@ Fornece uma interface semelhante a uma tabela para selecionar/inserir arquivos n
 | `account_name`                   | Nome da conta de armazenamento. **Obrigatório** ao usar `storage_account_url` sem SAS; **não** deve ser passado ao usar `connection_string`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `account_key`                    | Chave da conta de armazenamento. **Obrigatória** ao usar `storage_account_url` sem SAS; **não** deve ser passada ao usar `connection_string`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `format`                         | O [formato](/pt-BR/reference/formats/index) do arquivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `compression`                    | Valores compatíveis: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo (o mesmo que definir como `auto`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `compression`                    | Valores compatíveis: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo (o mesmo que definir como `auto`). Para `snappy`, o formato de transmissão é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão).                                                                                                                                                                                                                                                                                   |
 | `structure`                      | Estrutura da tabela. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `partition_strategy`             | Opcional. Valores compatíveis: `WILDCARD` ou `HIVE`. `WILDCARD` exige um `{_partition_id}` no caminho, que é substituído pela chave de partição. `HIVE` não permite caracteres curinga, pressupõe que o caminho é a raiz da tabela e gera diretórios particionados no estilo Hive com IDs Snowflake como nomes de arquivo e o formato do arquivo como extensão. Sem uma estratégia explícita, um caminho com `{_partition_id}` usa `WILDCARD`. Um caminho com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um caminho sem glob usa `HIVE` quando `file_like_engine_default_partition_strategy` é `HIVE`; caso contrário, não usa estratégia de particionamento. |
 | `partition_columns_in_data_file` | Opcional. Usado apenas com a estratégia de particionamento `HIVE`. Informa ao ClickHouse se deve esperar que as colunas de partição sejam gravadas no arquivo de dados. O padrão é `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `extra_credentials`              | Use `client_id` e `tenant_id` para autenticação. Se `extra_credentials` forem fornecidas, elas terão prioridade sobre `account_name` e `account_key`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
-<div id="named-collections">
-  ## Coleções nomeadas
-</div>
+## Coleções nomeadas {#named-collections}
 
 Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections). Nesse caso, as seguintes chaves são aceitas:
 
@@ -112,19 +106,13 @@ FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'C
 LIMIT 5;
 ```
 
-<div id="returned-value">
-  ## Valor retornado
-</div>
+## Valor retornado {#returned-value}
 
 Uma tabela com a estrutura especificada para leitura ou gravação de dados no arquivo especificado.
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
-<div id="reading-with-storage-account-url">
-  ### Leitura usando o formato `storage_account_url`
-</div>
+### Leitura usando o formato `storage_account_url` {#reading-with-storage-account-url}
 
 ```sql
 SELECT *
@@ -139,9 +127,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-<div id="reading-with-connection-string">
-  ### Leitura no formato `connection_string`
-</div>
+### Leitura no formato `connection_string` {#reading-with-connection-string}
 
 ```sql
 SELECT *
@@ -154,9 +140,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-<div id="writing-with-partitions">
-  ### Gravação usando partições
-</div>
+### Gravação usando partições {#writing-with-partitions}
 
 Um caminho que contém `{_partition_id}` implica o uso da estratégia de particionamento `WILDCARD`. Um caminho com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um caminho sem glob usa `HIVE` quando `file_like_engine_default_partition_strategy` é `HIVE`; caso contrário, não usa estratégia de particionamento.
 
@@ -193,22 +177,16 @@ FROM azureBlobStorage(
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
 * `_size` — Tamanho do arquivo em bytes. Tipo: `Nullable(UInt64)`. Se o tamanho do arquivo for desconhecido, o valor será `NULL`.
 * `_time` — Horário da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se o horário for desconhecido, o valor será `NULL`.
 
-<div id="partitioned-write">
-  ## Gravação particionada
-</div>
+## Gravação particionada {#partitioned-write}
 
-<div id="partition-strategy">
-  ### Estratégia de particionamento
-</div>
+### Estratégia de particionamento {#partition-strategy}
 
 Compatível apenas com consultas INSERT.
 
@@ -248,9 +226,7 @@ SELECT _path, * FROM azureBlobStorage(
    └─────────────────────────────────────────────────────────────────────────────────┴────┴──────┴─────────┘
 ```
 
-<div id="hive-style-partitioning">
-  ## configuração use_hive_partitioning
-</div>
+## configuração use_hive_partitioning {#hive-style-partitioning}
 
 Esta é uma instrução para o ClickHouse interpretar arquivos particionados no estilo Hive no momento da leitura. Isso não afeta a gravação. Para manter simetria entre leituras e gravações, use o argumento `partition_strategy`.
 
@@ -264,9 +240,7 @@ Use a coluna virtual criada com particionamento no estilo Hive
 SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="using-shared-access-signatures-sas-sas-tokens">
-  ## Usando Shared Access Signatures (SAS)
-</div>
+## Usando Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 
 Uma Shared Access Signature (SAS) é um URI que concede acesso restrito a um contêiner ou arquivo no Azure Storage. Use-a para fornecer acesso por tempo limitado aos recursos da conta de armazenamento sem compartilhar a chave da conta de armazenamento. Mais detalhes [aqui](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature).
 
@@ -298,9 +272,7 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 1 row in set. Elapsed: 0.153 sec.
 ```
 
-<div id="related">
-  ## Relacionados
-</div>
+## Relacionados {#related}
 
 * [Mecanismo de tabela AzureBlobStorage](/pt-BR/reference/engines/table-engines/integrations/azureBlobStorage)
 

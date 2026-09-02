@@ -15,29 +15,23 @@ doc_type: 'reference'
   これらのファイルがノードごとに異なる場合、戻り値は事前には決定できず、ワーカーノードがイニシエーターにタスクを要求する順序に依存します。
 </Note>
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
-| Argument             | Description                                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cluster_name`       | リモートサーバーおよびローカルサーバーへのアドレスのセットと接続パラメーターを構築する際に使用するクラスター名。                                                                                               |
-| `path`               | [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings/user#user_files_path) からのファイルへの相対パスです。ファイルパスでは [グロブ](#globs-in-path) もサポートされます。 |
-| `format`             | ファイルの [フォーマット](/ja/reference/formats/index)。型: [String](/ja/reference/data-types/string)。                                                                    |
-| `structure`          | `'UserID UInt64, Name String'` 形式のテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                                     |
-| `compression_method` | 圧縮方式。サポートされている圧縮タイプは `gz`、`br`、`xz`、`zst`、`lz4`、`bz2` です。                                                                                              |
+| Argument             | Description                                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cluster_name`       | リモートサーバーおよびローカルサーバーへのアドレスのセットと接続パラメーターを構築する際に使用するクラスター名。                                                                                                                                                                                   |
+| `path`               | [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings/user#user_files_path) からのファイルへの相対パスです。ファイルパスでは [グロブ](#globs-in-path) もサポートされます。                                                                                     |
+| `format`             | ファイルの [フォーマット](/ja/reference/formats/index)。型: [String](/ja/reference/data-types/string)。                                                                                                                                                        |
+| `structure`          | `'UserID UInt64, Name String'` 形式のテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                                                                                                                         |
+| `compression_method` | 圧縮方式。サポートされている値は `none` (圧縮なし) 、`gzip/gz`、`deflate`、`brotli/br`、`lzma/xz`、`zstd/zst`、`lz4`、`bz2`、`snappy` です。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`) 。 |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定されたフォーマットとテーブル構造を持ち、指定されたパスに一致するファイル内のデータを含むテーブル。
 
@@ -86,15 +80,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-<div id="globs-in-path">
-  ## Path内のグロブ
-</div>
+## Path内のグロブ {#globs-in-path}
 
 [File](/ja/reference/functions/table-functions/file#globs-in-path) テーブル関数でサポートされているすべてのパターンは、FileClusterでもサポートされています。
 
-<div id="related">
-  ## 関連
-</div>
+## 関連 {#related}
 
 * [File テーブル関数](/ja/reference/functions/table-functions/file)
 

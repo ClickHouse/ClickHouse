@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="validate_enum_literals_in_operators">
-  ## validate_enum_literals_in_operators
-</div>
+## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,21 +21,17 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 有効にすると、`IN`、`NOT IN`、`==`、`!=` などの演算子で使われる enum リテラルを enum 型に対して検証し、そのリテラルが有効な enum 値でない場合は例外をスローします。
 
-<div id="validate_mutation_query">
-  ## validate_mutation_query
-</div>
+## validate_mutation_query {#validate_mutation_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "デフォルトで mutation クエリを検証するための新しい設定。"}]}]} />
 
-受け付ける前に mutation クエリを検証します。mutation はバックグラウンドで実行されるため、無効なクエリを実行すると mutation が停止したままとなり、手動での対応が必要になります。
+受け付ける前に mutation クエリを検証します。mutation はバックグラウンドで実行されるため、無効なクエリを実行すると mutation が停止したままとなり、手動での対応が必要になる場合があります。
 
 この設定を変更するのは、後方互換性のないバグに遭遇した場合のみにしてください。
 
-<div id="validate_polygons">
-  ## validate_polygons
-</div>
+## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -18,13 +18,11 @@ doc_type: 'reference'
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 ```
 
-`file_name` 和 `type` 都是字符串字面量。支持的压缩类型包括：`'none'`、`'gzip'`、`'deflate'`、`'br'`、`'xz'`、`'zstd'`、`'lz4'`、`'bz2'`。
+`file_name` 和 `type` 都是字符串字面量。支持的压缩类型包括：`'none'`、`'gzip'`、`'deflate'`、`'br'`、`'xz'`、`'zstd'`、`'lz4'`、`'bz2'`、`'snappy'`。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认使用 `basic`) 。
 
 `level` 是数值字面量。支持以下范围内的正整数：`gzip`、`deflate` 和 `lz4` 类型为 `1-12`，`zstd` 类型为 `1-22`，其他压缩类型为 `1-9`。对于 `gzip` 和 `deflate`，高于 `9` 的级别需要使用带有 `libdeflate` 的默认构建；不带 `libdeflate` 的构建仅支持 `1-9` 级别。
 
-<div id="implementation-details">
-  ## 实现细节
-</div>
+## 实现细节 {#implementation-details}
 
 * 此功能可在[命令行客户端](/zh/concepts/features/interfaces/client)和[clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local)中使用。因此，通过[HTTP interface](/zh/concepts/features/interfaces/http)发送的查询会失败。
 * 如果已存在同名文件，查询会失败。

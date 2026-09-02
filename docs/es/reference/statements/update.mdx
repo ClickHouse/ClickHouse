@@ -23,14 +23,16 @@ Se denomina &quot;actualización ligera&quot; para diferenciarla de la consulta 
 Solo está disponible para la familia de motores de tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree).
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
 ```
 
 `filter_expr` debe ser de tipo `UInt8`. Esta consulta actualiza los valores de las columnas especificadas con los valores de las expresiones correspondientes en las filas en las que `filter_expr` toma un valor distinto de cero.
 Los valores se convierten al tipo de la columna mediante el operador `CAST`. No se admite la actualización de columnas utilizadas en el cálculo de las claves primarias o de partición.
 
+La cláusula `IN PARTITION` limita la actualización a las particiones indicadas. Sin ella, en las tablas de la familia `ReplicatedMergeTree`, cuando el ajuste [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/es/reference/settings/session-settings/optimize) está habilitado (valor predeterminado), ClickHouse detecta automáticamente las condiciones sobre la clave de partición en `filter_expr` y solo actualiza las particiones afectadas. En tablas `MergeTree` no replicadas, usa una cláusula `IN PARTITION` explícita para limitar una actualización a particiones concretas.
+
 <div id="examples">
-  ## Ejemplos
+  ## Ejemplos {#examples}
 </div>
 
 ```sql
@@ -40,7 +42,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
 <div id="lightweight-update-does-not-update-data-immediately">
-  ## Las actualizaciones ligeras no actualizan los datos inmediatamente
+  ## Las actualizaciones ligeras no actualizan los datos inmediatamente {#lightweight-update-does-not-update-data-immediately}
 </div>
 
 La actualización ligera `UPDATE` se implementa mediante **partes de parche**, un tipo especial de parte de datos que contiene solo las columnas y filas actualizadas.
@@ -53,22 +55,18 @@ Los valores actualizados quedan:
 * **Materializados físicamente** solo durante fusiones y mutaciones posteriores
 * **Eliminados automáticamente** una vez que todas las partes activas tienen los parches materializados
 
-<div id="lightweight-update-requirements">
-  ## Requisitos de las actualizaciones ligeras
-</div>
+## Requisitos de las actualizaciones ligeras {#lightweight-update-requirements}
 
 Las actualizaciones ligeras son compatibles con los motores [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/es/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/es/reference/engines/table-engines/mergetree-family/collapsingmergetree) y [`VersionedCollapsingMergeTree`](/es/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), así como con sus versiones [`Replicated`](/es/reference/engines/table-engines/mergetree-family/replication) y [`Shared`](/es/products/cloud/features/infrastructure/shared-merge-tree).
 
 Para usar actualizaciones ligeras, la materialización de las columnas `_block_number` y `_block_offset` debe habilitarse mediante las opciones de configuración de la tabla [`enable_block_number_column`](/es/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) y [`enable_block_offset_column`](/es/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
-<div id="lightweight-delete">
-  ## Eliminaciones ligeras
-</div>
+## Eliminaciones ligeras {#lightweight-delete}
 
 Una consulta de [eliminación ligera `DELETE`](/es/reference/statements/delete) puede ejecutarse como una actualización ligera `UPDATE` en lugar de una mutación `ALTER UPDATE`. La implementación de la eliminación ligera `DELETE` se controla mediante el ajuste [`lightweight_delete_mode`](/es/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## Consideraciones de rendimiento
+  ## Consideraciones de rendimiento {#performance-considerations}
 </div>
 
 **Ventajas de las actualizaciones ligeras:**
@@ -85,15 +83,13 @@ Una consulta de [eliminación ligera `DELETE`](/es/reference/statements/delete) 
 * Las actualizaciones pequeñas demasiado frecuentes pueden provocar un error &quot;Too many parts&quot;. Se recomienda agrupar varias actualizaciones en una sola consulta, por ejemplo, incluyendo los ID de las actualizaciones en una sola cláusula `IN` dentro de la cláusula `WHERE`
 * Las actualizaciones ligeras están diseñadas para actualizar pequeñas cantidades de filas (hasta aproximadamente el 10 % de la tabla). Si necesita actualizar una cantidad mayor, se recomienda usar la mutación [`ALTER TABLE ... UPDATE`](/es/reference/statements/alter/update)
 
-<div id="concurrent-operations">
-  ## Operaciones concurrentes
-</div>
+## Operaciones concurrentes {#concurrent-operations}
 
 Las actualizaciones ligeras, a diferencia de las mutaciones tradicionales, no esperan a que finalicen las fusiones/mutaciones que están en ejecución.
 La consistencia de las actualizaciones ligeras concurrentes se controla mediante la configuración [`update_sequential_consistency`](/es/reference/settings/session-settings/update#update_sequential_consistency) y [`update_parallel_mode`](/es/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## Actualizar permisos
+  ## Actualizar permisos {#update-permissions}
 </div>
 
 `UPDATE` requiere el privilegio `ALTER UPDATE`. Para habilitar las sentencias `UPDATE` en una tabla específica para un usuario concreto, ejecute:
@@ -103,7 +99,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## Detalles de la implementación
+  ## Detalles de la implementación {#details-of-the-implementation}
 </div>
 
 Las partes de parche son iguales que las partes normales, pero contienen solo las columnas actualizadas y varias columnas del sistema:
@@ -142,9 +138,7 @@ Para estos dos casos, respectivamente, hay dos formas de aplicar partes de parch
 
 El modo join es más lento y requiere más memoria que el modo de fusión, pero se usa con menos frecuencia.
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * [`ALTER UPDATE`](/es/reference/statements/alter/update) - Operaciones `UPDATE` de alto costo
 * [eliminación ligera](/es/reference/statements/delete) - Operaciones de eliminación ligera con `DELETE`

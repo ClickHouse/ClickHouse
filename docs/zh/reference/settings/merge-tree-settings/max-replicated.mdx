@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源码自动生成。
 
-<div id="max_replicated_fetches_network_bandwidth">
-  ## max_replicated_fetches_network_bandwidth
-</div>
+## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -42,11 +40,9 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 可用于在复制数据以添加或替换新
 节点时对速度进行节流。
 
-<div id="max_replicated_logs_to_keep">
-  ## max_replicated_logs_to_keep
-</div>
+## max_replicated_logs_to_keep {#max_replicated_logs_to_keep}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
 如果存在不活跃的副本，ClickHouse Keeper 日志中最多可保留多少条记录。超过该数量时，不活跃的副本将被视为丢失。
 
@@ -54,34 +50,26 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 * 任意正整数。
 
-<div id="max_replicated_merges_in_queue">
-  ## max_replicated_merges_in_queue
-</div>
+## max_replicated_merges_in_queue {#max_replicated_merges_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 ReplicatedMergeTree 队列中同时允许执行的 parts 合并和变更任务数量。
 
-<div id="max_replicated_merges_with_ttl_in_queue">
-  ## max_replicated_merges_with_ttl_in_queue
-</div>
+## max_replicated_merges_with_ttl_in_queue {#max_replicated_merges_with_ttl_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 ReplicatedMergeTree 队列中允许同时进行的带有生存时间 (TTL) 的 parts 合并任务数量。
 
-<div id="max_replicated_mutations_in_queue">
-  ## max_replicated_mutations_in_queue
-</div>
+## max_replicated_mutations_in_queue {#max_replicated_mutations_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
 ReplicatedMergeTree 队列中允许同时进行的
 正在变更的 parts 任务数。
 
-<div id="max_replicated_sends_network_bandwidth">
-  ## max_replicated_sends_network_bandwidth
-</div>
+## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

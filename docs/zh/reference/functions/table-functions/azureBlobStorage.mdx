@@ -14,9 +14,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 提供类似表的接口，用于在 [Azure Blob 存储](https://azure.microsoft.com/en-us/products/storage/blobs) 中查询/插入文件。与 [s3 函数](/zh/reference/functions/table-functions/s3) 类似。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 <Tabs>
   <Tab title="连接字符串">
@@ -44,9 +42,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
   </Tab>
 </Tabs>
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
 | 参数                               | 说明                                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -57,15 +53,13 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 | `account_name`                   | 存储账户名称。使用不带 SAS 的 `storage_account_url` 时**必需**；使用 `connection_string` 时**不得**传递。                                                                                                                                                                                                                                                                             |
 | `account_key`                    | 存储账户密钥。使用不带 SAS 的 `storage_account_url` 时**必需**；使用 `connection_string` 时**不得**传递。                                                                                                                                                                                                                                                                             |
 | `format`                         | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                                                                                                                            |
-| `compression`                    | 支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。默认会根据文件扩展名自动检测压缩方式 (等同于设置为 `auto`) 。                                                                                                                                                                                                                                                                   |
+| `compression`                    | 支持的值：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。默认会根据文件扩展名自动检测压缩方式 (等同于设置为 `auto`) 。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。                                                                                                                    |
 | `structure`                      | 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                                                                                                                       |
 | `partition_strategy`             | 可选。支持的值：`WILDCARD` 或 `HIVE`。`WILDCARD` 要求路径中包含 `{_partition_id}`，该占位符会被替换为分区键。`HIVE` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、以文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `WILDCARD`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `HIVE` 时使用 `HIVE`；否则不使用分区策略。                  |
 | `partition_columns_in_data_file` | 可选。仅在 `HIVE` 分区策略下使用。用于告知 ClickHouse 是否应预期分区列会写入数据文件中。默认为 `false`。                                                                                                                                                                                                                                                                                            |
 | `extra_credentials`              | 使用 `client_id` 和 `tenant_id` 进行身份验证。如果提供了 `extra_credentials`，其优先级高于 `account_name` 和 `account_key`。                                                                                                                                                                                                                                                          |
 
-<div id="named-collections">
-  ## 命名集合
-</div>
+## 命名集合 {#named-collections}
 
 参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递。此时支持以下键：
 
@@ -111,19 +105,13 @@ FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'C
 LIMIT 5;
 ```
 
-<div id="returned-value">
-  ## 返回值
-</div>
+## 返回值 {#returned-value}
 
 一个具有指定结构的表，用于从指定文件读取数据或向其写入数据。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
-<div id="reading-with-storage-account-url">
-  ### 使用 `storage_account_url` 形式读取
-</div>
+### 使用 `storage_account_url` 形式读取 {#reading-with-storage-account-url}
 
 ```sql
 SELECT *
@@ -138,9 +126,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-<div id="reading-with-connection-string">
-  ### 使用 `connection_string` 格式读取
-</div>
+### 使用 `connection_string` 格式读取 {#reading-with-connection-string}
 
 ```sql
 SELECT *
@@ -153,9 +139,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-<div id="writing-with-partitions">
-  ### 按分区写入数据
-</div>
+### 按分区写入数据 {#writing-with-partitions}
 
 路径中包含 `{_partition_id}` 意味着使用 `WILDCARD` 分区策略。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `HIVE` 时使用 `HIVE`；否则不使用分区策略。
 
@@ -192,22 +176,16 @@ FROM azureBlobStorage(
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
 * `_size` — 文件大小 (字节) 。类型：`Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 
-<div id="partitioned-write">
-  ## 分区写入
-</div>
+## 分区写入 {#partitioned-write}
 
-<div id="partition-strategy">
-  ### 分区策略
-</div>
+### 分区策略 {#partition-strategy}
 
 仅支持 `INSERT` 查询。
 
@@ -247,9 +225,7 @@ SELECT _path, * FROM azureBlobStorage(
    └─────────────────────────────────────────────────────────────────────────────────┴────┴──────┴─────────┘
 ```
 
-<div id="hive-style-partitioning">
-  ## use_hive_partitioning 设置
-</div>
+## use_hive_partitioning 设置 {#hive-style-partitioning}
 
 这是给 ClickHouse 的一个提示，用于在读取时解析采用 Hive 风格分区的文件。它对写入没有影响。若要实现读写对称，请使用 `partition_strategy` 参数。
 
@@ -263,9 +239,7 @@ SELECT _path, * FROM azureBlobStorage(
 SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="using-shared-access-signatures-sas-sas-tokens">
-  ## 使用共享访问签名 (SAS)
-</div>
+## 使用共享访问签名 (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 
 共享访问签名 (SAS) 是一种 URI，可授予对 Azure Storage 容器或文件的受限访问权限。使用它可以在不共享存储账户密钥的情况下，为存储账户资源提供限时访问。更多详情请参见[此处](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature)。
 
@@ -297,9 +271,7 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 1 row in set. Elapsed: 0.153 sec.
 ```
 
-<div id="related">
-  ## 相关内容
-</div>
+## 相关内容 {#related}
 
 * [AzureBlobStorage 表引擎](/zh/reference/engines/table-engines/integrations/azureBlobStorage)
 

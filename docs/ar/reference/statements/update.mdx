@@ -23,14 +23,16 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 وهي متاحة فقط لعائلة محركات الجداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree).
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
 ```
 
 يجب أن يكون `filter_expr` من النوع `UInt8`. يحدّث هذا الاستعلام قيم الأعمدة المحددة إلى قيم التعبيرات المقابلة في الصفوف التي تكون فيها قيمة `filter_expr` غير صفرية.
-تُحوَّل القيم إلى نوع العمود باستخدام العامل `CAST`. لا يُدعم تحديث الأعمدة المستخدمة في حساب المفتاح الأساسي أو مفتاح التقسيم.
+تُحوَّل القيم إلى نوع العمود باستخدام العامل `CAST`. لا يُدعم تحديث الأعمدة المستخدمة في حساب المفتاح الأساسي أو مفتاح التقسيم.
+
+تَقصُر عبارة `IN PARTITION` التحديثَ على التقسيمات المُدرجة. وبدونها، في جداول عائلة `ReplicatedMergeTree`، وعندما يكون الإعداد [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ar/reference/settings/session-settings/optimize) مُفعَّلًا (وهو الوضع الافتراضي)، يكتشف ClickHouse تلقائيًا شروط مفتاح التقسيم في `filter_expr` ويحدّث التقسيمات المتأثرة فقط. أما في جداول `MergeTree` غير المنسوخة، فاستخدم عبارة `IN PARTITION` صريحة لقصر التحديث على تقسيمات محددة.
 
 <div id="examples">
-  ## أمثلة
+  ## أمثلة {#examples}
 </div>
 
 ```sql
@@ -40,7 +42,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
 <div id="lightweight-update-does-not-update-data-immediately">
-  ## التحديثات خفيفة الوزن لا تُحدِّث البيانات على الفور
+  ## التحديثات خفيفة الوزن لا تُحدِّث البيانات على الفور {#lightweight-update-does-not-update-data-immediately}
 </div>
 
 يُنفَّذ `UPDATE` خفيف الوزن باستخدام **أجزاء التصحيح** - وهي نوع خاص من أجزاء البيانات لا يحتوي إلا على الأعمدة والصفوف المحدَّثة.
@@ -53,22 +55,18 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * **تُطبَّق فعليًا على التخزين** فقط أثناء عمليات الدمج وعمليات mutation اللاحقة
 * **تُنظَّف تلقائيًا** بمجرد أن تُطبَّق التصحيحات فعليًا على جميع الأجزاء النشطة
 
-<div id="lightweight-update-requirements">
-  ## متطلبات التحديثات خفيفة الوزن
-</div>
+## متطلبات التحديثات خفيفة الوزن {#lightweight-update-requirements}
 
 تدعم التحديثات خفيفة الوزن محركات [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) و[`ReplacingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) و[`CollapsingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/collapsingmergetree) و[`VersionedCollapsingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree)، بالإضافة إلى إصداراتها [`Replicated`](/ar/reference/engines/table-engines/mergetree-family/replication) و[`Shared`](/ar/products/cloud/features/infrastructure/shared-merge-tree).
 
 لاستخدام التحديثات خفيفة الوزن، يجب تمكين التجسيد المادي على العمودين `_block_number` و`_block_offset` باستخدام إعدادات الجدول [`enable_block_number_column`](/ar/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) و[`enable_block_offset_column`](/ar/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
-<div id="lightweight-delete">
-  ## عمليات الحذف الخفيفة
-</div>
+## عمليات الحذف الخفيفة {#lightweight-delete}
 
 يمكن تنفيذ استعلام [`DELETE` خفيف الوزن](/ar/reference/statements/delete) باعتباره `UPDATE` خفيفًا بدلًا من عملية mutation من نوع `ALTER UPDATE`. ويُتحكَّم في آلية تنفيذ `DELETE` خفيف الوزن من خلال الإعداد [`lightweight_delete_mode`](/ar/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## اعتبارات الأداء
+  ## اعتبارات الأداء {#performance-considerations}
 </div>
 
 **مزايا التحديثات خفيفة الوزن:**
@@ -85,15 +83,13 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * قد تؤدي التحديثات الصغيرة المتكررة جدًا إلى ظهور الخطأ &quot;too many parts&quot;. ويُنصح بتجميع عدة تحديثات في استعلام واحد، على سبيل المثال بوضع معرّفات التحديثات في عبارة `IN` واحدة داخل عبارة `WHERE`
 * صُممت التحديثات خفيفة الوزن لتحديث عدد صغير من الصفوف (حتى نحو 10% من الجدول). وإذا كنت بحاجة إلى تحديث كمية أكبر، فيُنصح باستخدام [`ALTER TABLE ... UPDATE`](/ar/reference/statements/alter/update) mutation
 
-<div id="concurrent-operations">
-  ## العمليات المتزامنة
-</div>
+## العمليات المتزامنة {#concurrent-operations}
 
 لا تنتظر التحديثات خفيفة الوزن اكتمال عمليات الدمج/التعديلات الجارية حاليًا، بخلاف التعديلات الثقيلة.
 ويُتحكَّم في اتساق التحديثات خفيفة الوزن المتزامنة من خلال الإعدادات [`update_sequential_consistency`](/ar/reference/settings/session-settings/update#update_sequential_consistency) و[`update_parallel_mode`](/ar/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## أذونات `UPDATE`
+  ## أذونات `UPDATE` {#update-permissions}
 </div>
 
 يتطلب `UPDATE` امتياز `ALTER UPDATE`. لتمكين عبارات `UPDATE` على جدول محدد لمستخدم معيّن، شغّل:
@@ -103,7 +99,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## تفاصيل التنفيذ
+  ## تفاصيل التنفيذ {#details-of-the-implementation}
 </div>
 
 أجزاء التصحيح هي نفسها الأجزاء العادية، لكنها لا تحتوي إلا على الأعمدة المحدَّثة وعدة أعمدة خاصة بالنظام:
@@ -142,9 +138,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 ويكون وضع join أبطأ ويتطلب ذاكرة أكبر من وضع merge، لكنه يُستخدم بوتيرة أقل.
 
-<div id="related-content">
-  ## محتوى ذي صلة
-</div>
+## محتوى ذي صلة {#related-content}
 
 * [`ALTER UPDATE`](/ar/reference/statements/alter/update) - عمليات `UPDATE` الثقيلة
 * [`DELETE` خفيف الوزن](/ar/reference/statements/delete) - عمليات `DELETE` خفيفة الوزن

@@ -101,15 +101,11 @@ INSERT INTO t FORMAT TabSeparated
   ```
 </Note>
 
-<div id="constraints">
-  ## 制約
-</div>
+## 制約 {#constraints}
 
 テーブルに[制約](/ja/reference/statements/create/table#constraints)がある場合、挿入されるデータの各行に対してその式がチェックされます。いずれかの制約が満たされないと、サーバーは制約名と式を含む例外を返し、クエリは停止されます。
 
-<div id="data-type-validation">
-  ## データ型の検証
-</div>
+## データ型の検証 {#data-type-validation}
 
 ClickHouse では、許可されたデータ型 (`enable_time_time64_type`、`allow_suspicious_low_cardinality_types`、`allow_suspicious_fixed_string_types` などの設定で制御されます) の検証は、`INSERT` 時ではなく、テーブル作成時 (`CREATE TABLE`) とスキーマ変更時 (`ALTER TABLE`) にのみ行われます。
 
@@ -148,9 +144,7 @@ ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
   その結果、ターゲットテーブルに対応するカラム型がすでに存在していれば、新しいバージョンのクライアント (設定がデフォルトで有効) から、古いバージョンのサーバー (設定が無効) に対して、許可されていないデータ型のデータを挿入できます。検証は DML レベルではなく、DDL レベルで行われます。
 </Note>
 
-<div id="inserting-the-results-of-select">
-  ## SELECT の結果を挿入する
-</div>
+## SELECT の結果を挿入する {#inserting-the-results-of-select}
 
 **構文**
 
@@ -176,9 +170,7 @@ INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
 
-<div id="inserting-data-from-a-file">
-  ## ファイルからデータを挿入する
-</div>
+## ファイルからデータを挿入する {#inserting-data-from-a-file}
 
 **構文**
 
@@ -188,15 +180,13 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION
 
 上記の構文を使用すると、**クライアント**側に保存されているファイル、または複数のファイルからデータを挿入できます。`file_name` と `type` は文字列リテラルです。入力ファイルの[フォーマット](/ja/reference/formats/index)は、`FORMAT` 句で設定する必要があります。
 
-圧縮ファイルもサポートされています。圧縮の種類は、ファイル名の拡張子から検出されます。または、`COMPRESSION` 句で明示的に指定することもできます。サポートされる種類は次のとおりです: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`。
+圧縮ファイルもサポートされています。圧縮の種類は、ファイル名の拡張子から検出されます。または、`COMPRESSION` 句で明示的に指定することもできます。サポートされる種類は次のとおりです: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`)。
 
 この機能は、[コマンドラインクライアント](/ja/concepts/features/interfaces/client)および[clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local)で利用できます。
 
 **例**
 
-<div id="single-file-with-from-infile">
-  ### FROM INFILE を使った単一ファイル
-</div>
+### FROM INFILE を使った単一ファイル {#single-file-with-from-infile}
 
 [コマンドラインクライアント](/ja/concepts/features/interfaces/client)を使用して、次のクエリを実行します。
 
@@ -214,9 +204,7 @@ clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
 └────┴──────┘
 ```
 
-<div id="multiple-files-with-from-infile-using-globs">
-  ### globs を使用した FROM INFILE での複数ファイル
-</div>
+### globs を使用した FROM INFILE での複数ファイル {#multiple-files-with-from-infile-using-globs}
 
 この例は前の例とほぼ同じですが、`FROM INFILE 'input_*.csv'` を使用して、複数のファイルから挿入を行います。
 
@@ -237,9 +225,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
   ```
 </Tip>
 
-<div id="inserting-using-a-table-function">
-  ## テーブル関数を使用した挿入
-</div>
+## テーブル関数を使用した挿入 {#inserting-using-a-table-function}
 
 データは、[テーブル関数](/ja/reference/functions/table-functions/index)で参照されるテーブルに挿入できます。
 
@@ -266,9 +252,7 @@ SELECT * FROM simple_table;
 └─────┴───────────────────────┘
 ```
 
-<div id="inserting-into-clickhouse-cloud">
-  ## ClickHouse Cloud への挿入
-</div>
+## ClickHouse Cloud への挿入 {#inserting-into-clickhouse-cloud}
 
 デフォルトでは、ClickHouse Cloud のサービスは高可用性のために複数のレプリカを備えています。サービスに接続すると、それらのレプリカのいずれか 1 つとの接続が確立されます。
 
@@ -282,17 +266,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 
 `select_sequential_consistency` を使用すると、ClickHouse Keeper (ClickHouse Cloud の内部で使用) への負荷が増加し、サービスの負荷状況によってはパフォーマンスが低下する可能性があるため、注意してください。必要な場合を除き、この設定は有効にしないことを推奨します。推奨される方法は、同じセッションで読み取りと書き込みを実行するか、ネイティブプロトコルを使用するクライアントドライバー (つまり、スティッキー接続をサポートするもの) を使用することです。
 
-<div id="inserting-into-a-replicated-setup">
-  ## レプリケート構成への挿入
-</div>
+## レプリケート構成への挿入 {#inserting-into-a-replicated-setup}
 
 レプリケート構成では、データはレプリケーションが完了した後、他のレプリカから参照できるようになります。データのレプリケーション (他のレプリカへのダウンロード) は、`INSERT` の直後に開始されます。これは ClickHouse Cloud とは異なり、ClickHouse Cloud ではデータは即座に共有ストレージへ書き込まれ、レプリカはメタデータの変更をサブスクライブします。
 
 レプリケート構成では、分散合意のために ClickHouse Keeper へのコミットが必要になるため、`INSERT` にかなり時間 (1 秒程度) がかかることがあります。ストレージに S3 を使用すると、さらにレイテンシーが増加します。
 
-<div id="performance-considerations">
-  ## パフォーマンスに関する考慮事項
-</div>
+## パフォーマンスに関する考慮事項 {#performance-considerations}
 
 `INSERT` は、入力データを主キーでソートし、パーティションキーに基づいてパーティションに分割します。一度に複数のパーティションにデータを `INSERT` すると、`INSERT` クエリのパフォーマンスが大幅に低下することがあります。これを避けるには、次のようにします。
 
@@ -304,17 +284,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 * データをリアルタイムで追加する場合。
 * 通常は時系列順にソートされているデータをアップロードする場合。
 
-<div id="asynchronous-inserts">
-  ### 非同期挿入
-</div>
+### 非同期挿入 {#asynchronous-inserts}
 
 小規模な挿入を高頻度で行う場合でも、データを非同期に挿入できます。こうした挿入によるデータはバッチにまとめられ、その後、安全にテーブルへ挿入されます。非同期挿入を使用するには、[`async_insert`](/ja/reference/settings/session-settings/async-insert#async_insert) 設定を有効にします。
 
 `async_insert` または [`Buffer` テーブルエンジン](/ja/reference/engines/table-engines/special/buffer) を使用すると、追加のバッファリングが発生します。
 
-<div id="large-or-long-running-inserts">
-  ### 大量または長時間にわたる挿入
-</div>
+### 大量または長時間にわたる挿入 {#large-or-long-running-inserts}
 
 大量のデータを挿入する場合、ClickHouse は「まとめる」と呼ばれるプロセスによって書き込み性能を最適化します。メモリ内の小さな挿入データのブロックはマージされ、より大きなブロックにまとめられてからディスクに書き込まれます。まとめることで、各書き込み操作に伴うオーバーヘッドを削減できます。このプロセスでは、挿入されたデータは ClickHouse が [`max_insert_block_size`](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) 行ごとの書き込みを完了するたびにクエリできるようになります。
 

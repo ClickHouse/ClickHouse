@@ -15,25 +15,19 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정들은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스 코드에서 자동 생성됩니다.
 
-<div id="adaptive_write_buffer_initial_size">
-  ## adaptive_write_buffer_initial_size
-</div>
+## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
 적응형 쓰기 버퍼의 초기 크기입니다.
 
-<div id="add_implicit_sign_column_constraint_for_collapsing_engine">
-  ## add_implicit_sign_column_constraint_for_collapsing_engine
-</div>
+## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테이블의 `sign` 컬럼에 암시적 제약 조건을 추가하여 유효한 값(`1` 및 `-1`)만 허용합니다.
 
-<div id="alter_column_secondary_index_mode">
-  ## alter_column_secondary_index_mode
-</div>
+## alter_column_secondary_index_mode {#alter_column_secondary_index_mode}
 
 <SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
 
@@ -50,17 +44,13 @@ true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테
 * `compatibility`: 원래 동작과 동일하게 맞춥니다. `ALTER ... MODIFY COLUMN`에는 `throw`를, `ALTER ... UPDATE/DELETE`에는 `rebuild`를 적용합니다.
 * `ignore`: 전문가용 옵션입니다. 인덱스를 불일치한 상태로 남겨 두므로 잘못된 쿼리 결과가 발생할 수 있습니다.
 
-<div id="always_use_copy_instead_of_hardlinks">
-  ## always_use_copy_instead_of_hardlinks
-</div>
+## always_use_copy_instead_of_hardlinks {#always_use_copy_instead_of_hardlinks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 뮤테이션/대체/분리 등의 작업 중 하드링크를 사용하는 대신 항상 데이터를 복사합니다.
 
-<div id="apply_patches_on_merge">
-  ## apply_patches_on_merge
-</div>
+## apply_patches_on_merge {#apply_patches_on_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -68,18 +58,14 @@ true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테
 
 값이 true이면 머지 시 패치 파트가 적용됩니다
 
-<div id="assign_part_uuids">
-  ## assign_part_uuids
-</div>
+## assign_part_uuids {#assign_part_uuids}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 활성화하면 새 part마다 고유한 part 식별자가 할당됩니다.
 활성화하기 전에 모든 레플리카가 UUID 버전 4를 지원하는지 확인하십시오.
 
-<div id="auto_statistics_types">
-  ## auto_statistics_types
-</div>
+## auto_statistics_types {#auto_statistics_types}
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
@@ -89,26 +75,20 @@ true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테
 지원되는 통계 타입: basic, tdigest, countmin, uniq, uniq&#95;v2.
 `minmax` 통계 타입은 더 이상 권장되지 않습니다. `basic`의 부분 집합이므로 대신 `basic`을 사용해야 합니다.
 
-<div id="background_task_preferred_step_execution_time_ms">
-  ## background_task_preferred_step_execution_time_ms
-</div>
+## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}
 
 <SettingsInfoBlock type="밀리초" default_value="50" />
 
 머지 또는 mutation의 한 단계 실행에 대한 목표 시간입니다. 한 단계 실행 시간이 더 길면
 이 값을 초과할 수 있습니다.
 
-<div id="clean_deleted_rows">
-  ## clean_deleted_rows
-</div>
+## clean_deleted_rows {#clean_deleted_rows}
 
 <SettingsInfoBlock type="CleanDeletedRows" default_value="Never" />
 
 더 이상 사용되지 않는 설정이며, 아무 동작도 하지 않습니다.
 
-<div id="clone_replica_zookeeper_create_get_part_batch_size">
-  ## clone_replica_zookeeper_create_get_part_batch_size
-</div>
+## clone_replica_zookeeper_create_get_part_batch_size {#clone_replica_zookeeper_create_get_part_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -116,9 +96,7 @@ true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테
 
 레플리카를 복제할 때 ZooKeeper multi-create get-part 요청에 사용하는 Batch 크기입니다.
 
-<div id="compatibility_allow_sampling_expression_not_in_primary_key">
-  ## compatibility_allow_sampling_expression_not_in_primary_key
-</div>
+## compatibility_allow_sampling_expression_not_in_primary_key {#compatibility_allow_sampling_expression_not_in_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -126,9 +104,7 @@ true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테
 이전 버전과의 호환성을 위해 잘못된 테이블이 있는 서버를 일시적으로 실행해야 할 때에만
 필요합니다.
 
-<div id="compute_exact_num_defaults_for_sparse_columns">
-  ## compute_exact_num_defaults_for_sparse_columns
-</div>
+## compute_exact_num_defaults_for_sparse_columns {#compute_exact_num_defaults_for_sparse_columns}
 
 <BetaBadge />
 
@@ -144,9 +120,7 @@ true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테
 비활성화된 상태로 두면 삽입/머지 속도는 이전과 동일하게 유지되며, 활성화하면
 희소 직렬화가 가능한 각 컬럼마다 O(rows) 패스가 추가됩니다.
 
-<div id="deduplicate_merge_projection_mode">
-  ## deduplicate_merge_projection_mode
-</div>
+## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode}
 
 <SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
 
@@ -168,9 +142,7 @@ compatibility를 위한 것이며, 잘못된 결과를 초래할 수 있습니�
 * `drop`
 * `rebuild`
 
-<div id="deduplication_hashes_cache_update_wait_ms">
-  ## deduplication_hashes_cache_update_wait_ms
-</div>
+## deduplication_hashes_cache_update_wait_ms {#deduplication_hashes_cache_update_wait_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 
@@ -181,9 +153,7 @@ compatibility를 위한 것이며, 잘못된 결과를 초래할 수 있습니�
 ClickHouse Keeper의 `deduplication_hashes` 디렉터리를 미러링하므로, 삽입 시
 Keeper와 왕복 통신하지 않고도 중복을 감지할 수 있습니다.
 
-<div id="default_compression_codec">
-  ## default_compression_codec
-</div>
+## default_compression_codec {#default_compression_codec}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "새로운 설정"}]}]} />
 
@@ -195,15 +165,11 @@ Keeper와 왕복 통신하지 않고도 중복을 감지할 수 있습니다.
 3. `compression` 설정에 정의된 기본 압축 코덱
    기본값: 빈 문자열(정의되지 않음)입니다.
 
-<div id="disk">
-  ## 디스크
-</div>
+## 디스크 {#disk}
 
 스토리지 디스크의 이름입니다. 스토리지 정책 대신 지정할 수도 있습니다.
 
-<div id="dynamic_serialization_version">
-  ## dynamic_serialization_version
-</div>
+## dynamic_serialization_version {#dynamic_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
 
@@ -217,9 +183,7 @@ Dynamic 데이터 타입의 직렬화 버전입니다. compatibility를 위해 �
 * `v2`
 * `v3`
 
-<div id="enforce_index_structure_match_on_partition_manipulation">
-  ## enforce_index_structure_match_on_partition_manipulation
-</div>
+## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -230,9 +194,7 @@ Dynamic 데이터 타입의 직렬화 버전입니다. compatibility를 위해 �
 서로 동일해야 합니다. 그렇지 않으면 대상
 테이블은 원본 테이블의 인덱스와 프로젝션을 모두 포함하는 상위 집합이어도 됩니다.
 
-<div id="execute_merges_on_single_replica_time_threshold">
-  ## execute_merges_on_single_replica_time_threshold
-</div>
+## execute_merges_on_single_replica_time_threshold {#execute_merges_on_single_replica_time_threshold}
 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
@@ -242,18 +204,14 @@ Possible values:
 
 * 양의 정수 아무 값이나 가능합니다.
 
-<div id="finished_mutations_to_keep">
-  ## finished_mutations_to_keep
-</div>
+## finished_mutations_to_keep {#finished_mutations_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 완료된 뮤테이션에 대한 레코드를 몇 개까지 유지할지 지정합니다. 0이면
 모두 유지합니다.
 
-<div id="force_read_through_cache_for_merges">
-  ## force_read_through_cache_for_merges
-</div>
+## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 
 <ExperimentalBadge />
 
@@ -261,25 +219,19 @@ Possible values:
 
 머지 시 파일 시스템 캐시를 통한 읽기를 강제합니다
 
-<div id="initialization_retry_period">
-  ## initialization_retry_period
-</div>
+## initialization_retry_period {#initialization_retry_period}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
 테이블 초기화를 재시도하는 주기이며, 단위는 초입니다.
 
-<div id="kill_threads">
-  ## kill_threads
-</div>
+## kill_threads {#kill_threads}
 
 <SettingsInfoBlock type="UInt64" default_value="128" />
 
 더 이상 사용되지 않는 설정이며, 아무런 효과가 없습니다.
 
-<div id="lightweight_mutation_projection_mode">
-  ## lightweight_mutation_projection_mode
-</div>
+## lightweight_mutation_projection_mode {#lightweight_mutation_projection_mode}
 
 <SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
 
@@ -291,9 +243,7 @@ Possible values:
 * `drop`
 * `rebuild`
 
-<div id="load_existing_rows_count_for_old_parts">
-  ## load_existing_rows_count_for_old_parts
-</div>
+## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -310,17 +260,13 @@ Possible values:
 
 * [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](/ko/reference/settings/merge-tree-settings/exclude#exclude_deleted_rows_for_part_size_in_merge) 설정
 
-<div id="lock_acquire_timeout_for_background_operations">
-  ## lock_acquire_timeout_for_background_operations
-</div>
+## lock_acquire_timeout_for_background_operations {#lock_acquire_timeout_for_background_operations}
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
 머지, 뮤테이션 등의 백그라운드 작업에서 테이블 잠금을 획득하지 못한 상태로 실패 처리되기까지의 시간(초)입니다.
 
-<div id="mutation_workload">
-  ## mutation_workload
-</div>
+## mutation_workload {#mutation_workload}
 
 뮤테이션과 다른 워크로드 간에 리소스를 어떻게 사용하고 공유할지 조절하는 데 사용됩니다. 지정한 값은 이 테이블의 백그라운드 뮤테이션에 대한 `workload` 설정 값으로 사용됩니다. 지정하지 않으면(빈 문자열) 서버 설정 `mutation_workload`가 대신 사용됩니다.
 
@@ -328,9 +274,7 @@ Possible values:
 
 * [워크로드 스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="non_replicated_deduplication_window">
-  ## non_replicated_deduplication_window
-</div>
+## non_replicated_deduplication_window {#non_replicated_deduplication_window}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -348,9 +292,7 @@ Possible values:
 중복 제거 해시 합은 삽입된 블록 전체를 포함합니다. 해시 합은
 ClickHouse Keeper가 아니라 디스크의 로컬 파일에 기록됩니다.
 
-<div id="notify_newest_block_number">
-  ## notify_newest_block_number
-</div>
+## notify_newest_block_number {#notify_newest_block_number}
 
 <ExperimentalBadge />
 
@@ -360,9 +302,7 @@ ClickHouse Keeper가 아니라 디스크의 로컬 파일에 기록됩니다.
 
 최신 block 번호를 SharedJoin 또는 SharedSet에 전달합니다. ClickHouse Cloud에서만 지원됩니다.
 
-<div id="nullable_serialization_version">
-  ## nullable_serialization_version
-</div>
+## nullable_serialization_version {#nullable_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
 
@@ -376,9 +316,7 @@ ClickHouse Keeper가 아니라 디스크의 로컬 파일에 기록됩니다.
 
 * allow&#95;sparse — `Nullable(T)`에서 희소 인코딩을 사용할 수 있도록 허용합니다.
 
-<div id="object_serialization_version">
-  ## object_serialization_version
-</div>
+## object_serialization_version {#object_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
 
@@ -394,9 +332,7 @@ JSON 데이터 타입의 직렬화 버전입니다. compatibility를 위해 필�
 
 shared data 직렬화 버전을 변경할 수 있는 버전은 `v3`뿐입니다.
 
-<div id="old_parts_lifetime">
-  ## old_parts_lifetime
-</div>
+## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
 
@@ -430,9 +366,7 @@ server의 RAM(OS cache)에만 존재합니다. server가 예기치 않게 재부
 `old_parts_lifetime` 값은 480초로 선택되었으며, 이 시간 동안에는
 새 파트가 디스크에 기록되는 것이 보장됩니다.
 
-<div id="optimize_row_order">
-  ## optimize_row_order
-</div>
+## optimize_row_order {#optimize_row_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -483,9 +417,7 @@ LZ4 또는 ZSTD의 압축률은 평균적으로 20-40% 향상됩니다.
 이 설정은 기본 키가 없거나 low-cardinality 기본 키를 가진 테이블, 즉 서로 다른 기본 키 값이 적은 테이블에서 가장 효과적입니다.
 예를 들어 `DateTime64` 타입의 timestamp 컬럼을 포함하는 high-cardinality 기본 키는 이 설정의 효과를 보기 어렵습니다.
 
-<div id="packed_skip_index_max_bytes">
-  ## packed_skip_index_max_bytes
-</div>
+## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />
 
@@ -517,9 +449,7 @@ below the threshold)`에 비례합니다.
 서브스트림을 투명하게 처리합니다. 이 설정을 변경해도 새로 기록되는 파트에만 영향을 미치며,
 기존 파트는 쓰기 시점의 레이아웃을 그대로 유지합니다.
 
-<div id="part_minmax_index_columns">
-  ## part_minmax_index_columns
-</div>
+## part_minmax_index_columns {#part_minmax_index_columns}
 
 <SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
 
@@ -532,9 +462,7 @@ below the threshold)`에 비례합니다.
 * `partition_key_only` — 파티션 키 컬럼만 추적합니다.
 * `with_block_number_offset` — 파티션 키 컬럼에 더해 영속적으로 저장된 `_block_number` 및 `_block_offset` 가상 컬럼도 추적합니다. 이 컬럼을 기준으로 파트 수준 프루닝을 사용할 수 있습니다.
 
-<div id="patch_parts_version">
-  ## patch_parts_version
-</div>
+## patch_parts_version {#patch_parts_version}
 
 <SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
 
@@ -551,9 +479,7 @@ below the threshold)`에 비례합니다.
 
 이 설정과 관계없이 디스크에 저장된 이전 포맷 패치는 계속 읽을 수 있습니다.
 
-<div id="propagate_types_serialization_versions_to_nested_types">
-  ## propagate_types_serialization_versions_to_nested_types
-</div>
+## propagate_types_serialization_versions_to_nested_types {#propagate_types_serialization_versions_to_nested_types}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -561,9 +487,7 @@ below the threshold)`에 비례합니다.
 
 true인 경우, string&#95;serialization&#95;version과 같은 직렬화 버전이 Array/Map/Nullable/JSON/etc.와 같은 중첩 타입 내부로 전파됩니다. 비활성화하면 직렬화 버전은 이 타입의 최상위 컬럼과 Tuple el에만 적용됩니다
 
-<div id="ratio_of_defaults_for_sparse_serialization">
-  ## ratio_of_defaults_for_sparse_serialization
-</div>
+## ratio_of_defaults_for_sparse_serialization {#ratio_of_defaults_for_sparse_serialization}
 
 <SettingsInfoBlock type="Float" default_value="0.9375" />
 
@@ -675,9 +599,7 @@ WHERE table LIKE 'my_sparse_table';
 └────────┴────────────────────┘
 ```
 
-<div id="reduce_blocking_parts_sleep_ms">
-  ## reduce_blocking_parts_sleep_ms
-</div>
+## reduce_blocking_parts_sleep_ms {#reduce_blocking_parts_sleep_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -688,18 +610,14 @@ ClickHouse Cloud에서만 사용할 수 있습니다. 범위가 삭제되거나 
 background&#95;schedule&#95;pool의 작업이 더 자주 트리거되어 대규모 클러스터에서
 ZooKeeper로 많은 요청이 발생합니다.
 
-<div id="replace_long_file_name_to_hash">
-  ## replace_long_file_name_to_hash
-</div>
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 컬럼의 파일 이름이 너무 길면(&#39;max&#95;file&#95;name&#95;length&#39;
 바이트 초과) SipHash128로 대체됩니다
 
-<div id="replicated_can_become_leader">
-  ## replicated_can_become_leader
-</div>
+## replicated_can_become_leader {#replicated_can_become_leader}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -711,9 +629,7 @@ ZooKeeper로 많은 요청이 발생합니다.
 * `true`
 * `false`
 
-<div id="search_orphaned_parts_disks">
-  ## search_orphaned_parts_disks
-</div>
+## search_orphaned_parts_disks {#search_orphaned_parts_disks}
 
 <SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
 
@@ -729,15 +645,13 @@ ClickHouse는 정책에 포함되지 않은 정의되지 않은 디스크의 데
 * local - 범위가 로컬 디스크로 제한됩니다.
 * none - 범위가 비어 있으며, 검색하지 않습니다
 
-<div id="serialization_info_version">
-  ## serialization_info_version
-</div>
+## serialization_info_version {#serialization_info_version}
 
 <SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "with_types"},{"label": "사용자 지정 문자열 serialization을 지원하는 최신 포맷으로 변경"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "basic"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "with_types"},{"label": "사용자 지정 문자열 직렬화를 지원하는 최신 포맷으로 변경"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "basic"},{"label": "새로운 설정"}]}]} />
 
-`serialization.json`을 작성할 때 사용하는 serialization info version입니다.
+`serialization.json`을 작성할 때 사용하는 직렬화 info version입니다.
 이 설정은 cluster upgrade 중 compatibility를 유지하는 데 필요합니다.
 
 가능한 값:
@@ -745,14 +659,15 @@ ClickHouse는 정책에 포함되지 않은 정의되지 않은 디스크의 데
 * `basic` - 기본 포맷입니다.
 * `with_types` - 추가 `types_serialization_versions` 필드가 포함된 포맷이며, 타입별 직렬화 버전을 사용할 수 있습니다.
   이렇게 하면 `string_serialization_version`과 같은 설정이 적용됩니다.
+* `with_missing_columns` - `with_types`가 기록하는 모든 내용에 더해, 생략된 컬럼과 해당 값이 기본값으로 표현되는 타입을 나열하는
+  `missing_columns` 필드가 포함됩니다.
+  `skip_empty_columns_on_insert`를 활성화하려면 필요합니다.
 
-rolling upgrade 중에는 새 server가 기존 server와 호환되는
-data part를 생성하도록 이 값을 `basic`으로 설정하십시오. upgrade가 완료되면
-타입별 직렬화 버전을 활성화하려면 `WITH_TYPES`로 전환하십시오.
+롤링 업그레이드 중에는 새 server가 기존 server와 호환되는
+데이터 파트를 생성하도록 이 값을 `basic`으로 설정하십시오. upgrade가 완료되면
+해당 기능을 활성화하기 위해 `with_types`(또는 `with_missing_columns`)로 전환하십시오.
 
-<div id="share_nested_offsets">
-  ## share_nested_offsets
-</div>
+## share_nested_offsets {#share_nested_offsets}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -765,9 +680,7 @@ INSERT 중에는 배열 크기가 서로 같은지 검증합니다.
 시맨틱을 갖지 않습니다. 또한 동일한 접두사를 공유하는 점 표기 Array 컬럼과 스칼라 컬럼이 함께 존재할 수 있습니다
 (예: n UInt32와 n.a Array(String)). 이 설정은 테이블 생성 후에는 변경할 수 없습니다.
 
-<div id="simultaneous_parts_removal_limit">
-  ## simultaneous_parts_removal_limit
-</div>
+## simultaneous_parts_removal_limit {#simultaneous_parts_removal_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -775,17 +688,34 @@ INSERT 중에는 배열 크기가 서로 같은지 검증합니다.
 `simultaneous_parts_removal_limit`개의 파트를 삭제합니다.
 `simultaneous_parts_removal_limit`를 `0`으로 설정하면 제한 없이 삭제합니다.
 
-<div id="storage_policy">
-  ## storage_policy
-</div>
+## skip_empty_columns_on_insert {#skip_empty_columns_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "INSERT 시 값이 모두 타입 기본값인 컬럼의 기록을 건너뛰는 새로운 설정"}]}]} />
+
+활성화하면 특정 INSERT 블록에서 값이 모두 타입 기본값인 컬럼은 디스크의
+데이터 파트에 기록되지 않습니다. 이후 해당 파트를 읽을 때 누락된 컬럼은
+기록된 타입의 기본값으로 채워집니다. 이를 통해 각 INSERT에서 대부분의 컬럼이
+해당 타입의 기본값으로 남는 희소 업데이트 워크로드에서 디스크 공간을
+절약할 수 있습니다.
+`DEFAULT`, `MATERIALIZED`, `ALIAS` 표현식이 지정된 컬럼은 절대 건너뛰지
+않습니다. 읽기 경로에서 명시적으로 삽입된 타입 기본값을 반환하는 대신
+표현식을 평가하게 되기 때문입니다. 패치 파트(경량 UPDATE에서 사용)도
+제외됩니다.
+이 최적화는 누락된 컬럼을 `with_missing_columns` 포맷 버전으로 파트의
+`serialization.json`에 기록하므로, `serialization_info_version`이
+`with_missing_columns`로 설정된 경우에만 적용됩니다. 더 낮은 버전에서는
+(예: 롤링 업그레이드 시 이전 버전 서버가 새로 기록된 파트를 읽을 수 있도록
+더 낮은 값으로 고정한 경우) 어떤 컬럼도 건너뛰지 않습니다.
+
+## storage_policy {#storage_policy}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 스토리지 디스크 정책 이름
 
-<div id="string_serialization_version">
-  ## string_serialization_version
-</div>
+## string_serialization_version {#string_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
 
@@ -793,7 +723,7 @@ INSERT 중에는 배열 크기가 서로 같은지 검증합니다.
 
 최상위 `String` 컬럼의 직렬화 포맷을 제어합니다.
 
-이 설정은 `serialization_info_version`이 &quot;with&#95;types&quot;로 설정된 경우에만 적용됩니다.
+이 설정은 `serialization_info_version`이 &quot;with&#95;types&quot; 이상으로 설정된 경우에만 적용됩니다.
 `with_size_stream`으로 설정하면 최상위 `String` 컬럼은 문자열 길이를 저장하는 별도의
 `.size` 서브컬럼을 사용해 직렬화되며, 인라인으로 저장되지 않습니다. 이렇게 하면 실제 `.size`
 서브컬럼을 사용할 수 있고 압축 효율도 향상될 수 있습니다.
@@ -806,9 +736,7 @@ INSERT 중에는 배열 크기가 서로 같은지 검증합니다.
 * `single_stream` — 크기 정보를 인라인으로 저장하는 표준 직렬화 포맷을 사용합니다.
 * `with_size_stream` — 최상위 `String` 컬럼에 별도의 크기 스트림을 사용합니다.
 
-<div id="temporary_directories_lifetime">
-  ## temporary_directories_lifetime
-</div>
+## temporary_directories_lifetime {#temporary_directories_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="86400" />
 
@@ -816,9 +744,7 @@ tmp&#95;-directories를 유지하는 기간(초)입니다. 이 값을 낮추지 
 이 설정값이 너무 낮으면 머지와 뮤테이션이 제대로 작동하지 못할 수
 있습니다.
 
-<div id="try_fetch_recompressed_part_timeout">
-  ## try_fetch_recompressed_part_timeout
-</div>
+## try_fetch_recompressed_part_timeout {#try_fetch_recompressed_part_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="7200" />
 
@@ -834,9 +760,7 @@ tmp&#95;-directories를 유지하는 기간(초)입니다. 이 값을 낮추지 
 
 * 임의의 양의 정수.
 
-<div id="ttl_only_drop_parts">
-  ## ttl_only_drop_parts
-</div>
+## ttl_only_drop_parts {#ttl_only_drop_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -846,17 +770,13 @@ tmp&#95;-directories를 유지하는 기간(초)입니다. 이 값을 낮추지 
 
 `ttl_only_drop_parts`가 활성화된 경우, 해당 파트의 모든 행이 `TTL` 설정에 따라 만료되면 파트 전체가 삭제됩니다.
 
-<div id="wait_for_unique_parts_send_before_shutdown_ms">
-  ## wait_for_unique_parts_send_before_shutdown_ms
-</div>
+## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
 테이블은 종료되기 전에 현재 레플리카에만 존재하는 고유 파트를 다른 레플리카가 가져갈 수 있도록 지정된 시간 동안 대기합니다(0은 비활성화를 의미합니다).
 
-<div id="zookeeper_session_expiration_check_period">
-  ## zookeeper_session_expiration_check_period
-</div>
+## zookeeper_session_expiration_check_period {#zookeeper_session_expiration_check_period}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 

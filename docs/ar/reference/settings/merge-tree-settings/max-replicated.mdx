@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، ويتم توليدها تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="max_replicated_fetches_network_bandwidth">
-  ## max_replicated_fetches_network_bandwidth
-</div>
+## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -43,11 +41,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 يمكن استخدامه لتقييد السرعة عند نسخ البيانات لإضافة
 عُقد جديدة أو استبدالها.
 
-<div id="max_replicated_logs_to_keep">
-  ## max_replicated_logs_to_keep
-</div>
+## max_replicated_logs_to_keep {#max_replicated_logs_to_keep}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
 عدد السجلات التي يمكن أن يحتوي عليها سجل ClickHouse Keeper إذا كانت هناك
 replica غير نشطة. وتُعد replica غير النشطة مفقودة عند تجاوز هذا العدد.
@@ -56,35 +52,27 @@ replica غير نشطة. وتُعد replica غير النشطة مفقودة ع�
 
 * أي عدد صحيح موجب.
 
-<div id="max_replicated_merges_in_queue">
-  ## max_replicated_merges_in_queue
-</div>
+## max_replicated_merges_in_queue {#max_replicated_merges_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 عدد مهام دمج الأجزاء وتعديلها المسموح بتنفيذها بالتزامن في قائمة انتظار ReplicatedMergeTree.
 
-<div id="max_replicated_merges_with_ttl_in_queue">
-  ## max_replicated_merges_with_ttl_in_queue
-</div>
+## max_replicated_merges_with_ttl_in_queue {#max_replicated_merges_with_ttl_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 عدد مهام دمج الأجزاء باستخدام TTL المسموح بتنفيذها بالتزامن في
 قائمة انتظار ReplicatedMergeTree.
 
-<div id="max_replicated_mutations_in_queue">
-  ## max_replicated_mutations_in_queue
-</div>
+## max_replicated_mutations_in_queue {#max_replicated_mutations_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
 عدد مهام الأجزاء قيد التعديل المسموح بتنفيذها بالتزامن في
 قائمة انتظار ReplicatedMergeTree.
 
-<div id="max_replicated_sends_network_bandwidth">
-  ## max_replicated_sends_network_bandwidth
-</div>
+## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

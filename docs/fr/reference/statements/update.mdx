@@ -23,14 +23,16 @@ On l’appelle &quot;mise à jour légère&quot; pour la distinguer de la requê
 Elle n’est disponible que pour la famille de moteurs de table [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
 ```
 
 Le `filter_expr` doit être de type `UInt8`. Cette requête met à jour les valeurs des colonnes spécifiées en leur attribuant les valeurs des expressions correspondantes, pour les lignes dans lesquelles `filter_expr` prend une valeur non nulle.
 Les valeurs sont converties en type de colonne à l&#39;aide de l&#39;opérateur `CAST`. La mise à jour des colonnes utilisées dans le calcul des clés primaire ou de partition n&#39;est pas prise en charge.
 
+La clause `IN PARTITION` limite la mise à jour aux partitions répertoriées. Sans elle, sur les tables de la famille `ReplicatedMergeTree`, lorsque le paramètre [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/fr/reference/settings/session-settings/optimize) est activé (par défaut), ClickHouse détecte automatiquement les conditions de clé de partition dans `filter_expr` et ne met à jour que les partitions concernées. Sur les tables `MergeTree` non répliquées, utilisez une clause `IN PARTITION` explicite pour limiter une mise à jour à des partitions spécifiques.
+
 <div id="examples">
-  ## Exemples
+  ## Exemples {#examples}
 </div>
 
 ```sql
@@ -40,7 +42,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
 <div id="lightweight-update-does-not-update-data-immediately">
-  ## Les mises à jour légères ne mettent pas les données à jour immédiatement
+  ## Les mises à jour légères ne mettent pas les données à jour immédiatement {#lightweight-update-does-not-update-data-immediately}
 </div>
 
 L’`UPDATE` léger repose sur des **patch parts** — un type spécial de partie de données qui contient uniquement les colonnes et les lignes mises à jour.
@@ -53,22 +55,18 @@ Les valeurs mises à jour sont :
 * **Physiquement matérialisées** uniquement lors des fusions et mutations ultérieures
 * **Supprimées automatiquement** une fois les patchs matérialisés dans toutes les parties actives
 
-<div id="lightweight-update-requirements">
-  ## Exigences pour les mises à jour légères
-</div>
+## Exigences pour les mises à jour légères {#lightweight-update-requirements}
 
 Les mises à jour légères sont prises en charge par les moteurs [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/fr/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), ainsi que par leurs versions [`Replicated`](/fr/reference/engines/table-engines/mergetree-family/replication) et [`Shared`](/fr/products/cloud/features/infrastructure/shared-merge-tree).
 
 Pour utiliser les mises à jour légères, la matérialisation des colonnes `_block_number` et `_block_offset` doit être activée à l’aide des paramètres de table [`enable_block_number_column`](/fr/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) et [`enable_block_offset_column`](/fr/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
-<div id="lightweight-delete">
-  ## Suppressions légères
-</div>
+## Suppressions légères {#lightweight-delete}
 
 Une requête [lightweight `DELETE`](/fr/reference/statements/delete) peut être exécutée sous forme de `UPDATE` léger plutôt que comme une mutation `ALTER UPDATE`. L&#39;implémentation de lightweight `DELETE` est contrôlée par le paramètre [`lightweight_delete_mode`](/fr/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## Considérations relatives aux performances
+  ## Considérations relatives aux performances {#performance-considerations}
 </div>
 
 **Avantages des mises à jour légères :**
@@ -85,15 +83,13 @@ Une requête [lightweight `DELETE`](/fr/reference/statements/delete) peut être 
 * De petites mises à jour trop fréquentes peuvent entraîner une erreur « too many parts ». Il est recommandé de regrouper plusieurs mises à jour dans une seule requête, par exemple en plaçant les ID à mettre à jour dans une seule clause `IN` de la clause `WHERE`
 * Les mises à jour légères sont conçues pour mettre à jour de petites quantités de lignes (jusqu’à environ 10 % de la table). Si vous devez en mettre à jour une plus grande quantité, il est recommandé d’utiliser la mutation [`ALTER TABLE ... UPDATE`](/fr/reference/statements/alter/update)
 
-<div id="concurrent-operations">
-  ## Opérations concurrentes
-</div>
+## Opérations concurrentes {#concurrent-operations}
 
 Contrairement aux mutations lourdes, les mises à jour légères n&#39;attendent pas la fin des fusions/mutations en cours.
 La cohérence des mises à jour légères concurrentes est contrôlée par les paramètres [`update_sequential_consistency`](/fr/reference/settings/session-settings/update#update_sequential_consistency) et [`update_parallel_mode`](/fr/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## Autorisations de mise à jour
+  ## Autorisations de mise à jour {#update-permissions}
 </div>
 
 `UPDATE` nécessite le privilège `ALTER UPDATE`. Pour permettre à un utilisateur donné d’exécuter des instructions `UPDATE` sur une table spécifique, exécutez :
@@ -103,7 +99,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## Détails de l&#39;implémentation
+  ## Détails de l&#39;implémentation {#details-of-the-implementation}
 </div>
 
 Les patch parts sont identiques aux parts ordinaires, mais ne contiennent que les colonnes mises à jour et plusieurs colonnes système :
@@ -142,9 +138,7 @@ Pour ces deux cas, il existe respectivement deux façons d&#39;appliquer les pat
 
 Le mode jointure est plus lent et nécessite plus de mémoire que le mode fusion, mais il est utilisé moins souvent.
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * [`ALTER UPDATE`](/fr/reference/statements/alter/update) - Opérations `UPDATE` lourdes
 * [Lightweight `DELETE`](/fr/reference/statements/delete) - Opérations de `DELETE` légères

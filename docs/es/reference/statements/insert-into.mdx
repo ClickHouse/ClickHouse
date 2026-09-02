@@ -101,15 +101,11 @@ Puede insertar los datos por separado de la consulta mediante el [cliente de lí
   ```
 </Note>
 
-<div id="constraints">
-  ## Restricciones
-</div>
+## Restricciones {#constraints}
 
 Si una tabla tiene [restricciones](/es/reference/statements/create/table#constraints), sus expresiones se comprobarán para cada fila de datos insertados. Si alguna de esas restricciones no se cumple, el servidor generará una excepción que incluirá el nombre y la expresión de la restricción, y la consulta se detendrá.
 
-<div id="data-type-validation">
-  ## Validación de tipos de datos
-</div>
+## Validación de tipos de datos {#data-type-validation}
 
 ClickHouse valida los tipos de datos permitidos (controlados por ajustes como `enable_time_time64_type`, `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types`, etc.) solo durante la creación de tablas (`CREATE TABLE`) y la modificación del esquema (`ALTER TABLE`), no durante `INSERT`.
 
@@ -148,9 +144,7 @@ ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
   Como consecuencia, un cliente con una versión más reciente (en la que una configuración está habilitada de forma predeterminada) puede insertar datos con tipos de datos no permitidos en un servidor con una versión anterior (en la que la configuración está deshabilitada), siempre que la tabla de destino ya tenga los tipos de columna correspondientes. La validación se aplica en el nivel de DDL, no en el de DML.
 </Note>
 
-<div id="inserting-the-results-of-select">
-  ## Inserción de los resultados de SELECT
-</div>
+## Inserción de los resultados de SELECT {#inserting-the-results-of-select}
 
 **Sintaxis**
 
@@ -176,9 +170,7 @@ INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
 
-<div id="inserting-data-from-a-file">
-  ## Inserción de datos desde un archivo
-</div>
+## Inserción de datos desde un archivo {#inserting-data-from-a-file}
 
 **Sintaxis**
 
@@ -188,15 +180,13 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION
 
 Use la sintaxis anterior para insertar datos desde un archivo o varios archivos almacenados en el lado del **cliente**. `file_name` y `type` son literales de cadena. El [formato](/es/reference/formats/index) del archivo de entrada debe especificarse en la cláusula `FORMAT`.
 
-Se admiten archivos comprimidos. El tipo de compresión se detecta a partir de la extensión del nombre del archivo. También puede especificarse explícitamente en una cláusula `COMPRESSION`. Los tipos admitidos son: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+Se admiten archivos comprimidos. El tipo de compresión se detecta a partir de la extensión del nombre del archivo. También puede especificarse explícitamente en una cláusula `COMPRESSION`. Los tipos admitidos son: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. Para `snappy`, el formato de transmisión se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).
 
 Esta funcionalidad está disponible en el [cliente de línea de comandos](/es/concepts/features/interfaces/client) y en [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local).
 
 **Ejemplos**
 
-<div id="single-file-with-from-infile">
-  ### Un solo archivo con FROM INFILE
-</div>
+### Un solo archivo con FROM INFILE {#single-file-with-from-infile}
 
 Ejecute las siguientes consultas con el [cliente de línea de comandos](/es/concepts/features/interfaces/client):
 
@@ -214,9 +204,7 @@ clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
 └────┴──────┘
 ```
 
-<div id="multiple-files-with-from-infile-using-globs">
-  ### Varios archivos con FROM INFILE usando globs
-</div>
+### Varios archivos con FROM INFILE usando globs {#multiple-files-with-from-infile-using-globs}
 
 Este ejemplo es muy similar al anterior, pero aquí los datos se insertan desde varios archivos con `FROM INFILE 'input_*.csv`.
 
@@ -237,9 +225,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
   ```
 </Tip>
 
-<div id="inserting-using-a-table-function">
-  ## Inserción con una función de tabla
-</div>
+## Inserción con una función de tabla {#inserting-using-a-table-function}
 
 Se pueden insertar datos en tablas a las que se hace referencia mediante [funciones de tabla](/es/reference/functions/table-functions/index).
 
@@ -266,9 +252,7 @@ SELECT * FROM simple_table;
 └─────┴───────────────────────┘
 ```
 
-<div id="inserting-into-clickhouse-cloud">
-  ## Inserción en ClickHouse Cloud
-</div>
+## Inserción en ClickHouse Cloud {#inserting-into-clickhouse-cloud}
 
 De forma predeterminada, los servicios de ClickHouse Cloud proporcionan múltiples réplicas para alta disponibilidad. Cuando te conectas a un servicio, se establece una conexión con una de estas réplicas.
 
@@ -282,17 +266,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
 
 Tenga en cuenta que usar `select_sequential_consistency` aumentará la carga en ClickHouse Keeper (utilizado internamente por ClickHouse Cloud) y puede ralentizar el rendimiento en función de la carga del servicio. Recomendamos no habilitar esta configuración salvo que sea necesario. La forma recomendada es ejecutar lecturas/escrituras en la misma sesión o usar un driver de cliente que utilice el protocolo nativo (y, por tanto, admita conexiones persistentes).
 
-<div id="inserting-into-a-replicated-setup">
-  ## Inserción en una configuración replicada
-</div>
+## Inserción en una configuración replicada {#inserting-into-a-replicated-setup}
 
 En una configuración replicada, los datos serán visibles en otras réplicas una vez que se hayan replicado. Los datos empiezan a replicarse (a descargarse en otras réplicas) inmediatamente después de un `INSERT`. Esto difiere de ClickHouse Cloud, donde los datos se escriben de inmediato en almacenamiento compartido y las réplicas se suscriben a los cambios de metadatos.
 
 Tenga en cuenta que, en las configuraciones replicadas, los `INSERTs` a veces pueden tardar bastante (del orden de un segundo), ya que requieren confirmar la operación en ClickHouse Keeper para el consenso distribuido. Usar S3 para el almacenamiento también añade latencia.
 
-<div id="performance-considerations">
-  ## Consideraciones de rendimiento
-</div>
+## Consideraciones de rendimiento {#performance-considerations}
 
 `INSERT` ordena los datos de entrada por clave primaria y los divide en particiones según una clave de partición. Si se insertan datos en varias particiones a la vez, el rendimiento de la consulta `INSERT` puede reducirse significativamente. Para evitarlo:
 
@@ -304,17 +284,13 @@ El rendimiento no disminuirá si:
 * Los datos se añaden en tiempo real.
 * Se cargan datos que normalmente ya están ordenados por tiempo.
 
-<div id="asynchronous-inserts">
-  ### Inserciones asíncronas
-</div>
+### Inserciones asíncronas {#asynchronous-inserts}
 
 Es posible insertar datos de forma asíncrona mediante inserciones pequeñas pero frecuentes. Los datos de esas inserciones se combinan en lotes y luego se insertan de forma segura en una tabla. Para usar las inserciones asíncronas, habilite la configuración [`async_insert`](/es/reference/settings/session-settings/async-insert#async_insert).
 
 Usar `async_insert` o el [motor de tabla `Buffer`](/es/reference/engines/table-engines/special/buffer) implica un almacenamiento en búfer adicional.
 
-<div id="large-or-long-running-inserts">
-  ### Inserciones grandes o prolongadas
-</div>
+### Inserciones grandes o prolongadas {#large-or-long-running-inserts}
 
 Cuando se insertan grandes cantidades de datos, ClickHouse optimiza el rendimiento de escritura mediante un proceso llamado &quot;squashing&quot;. Los bloques pequeños de datos insertados en memoria se fusionan y compactan en bloques más grandes antes de escribirse en disco. El squashing reduce la sobrecarga asociada a cada operación de escritura. En este proceso, los datos insertados estarán disponibles para consulta una vez que ClickHouse termine de escribir cada [`max_insert_block_size`](/es/reference/settings/session-settings/max-insert#max_insert_block_size) filas.
 

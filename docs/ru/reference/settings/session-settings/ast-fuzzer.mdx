@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="ast_fuzzer_any_query">
-  ## ast_fuzzer_any_query
-</div>
+## ast_fuzzer_any_query {#ast_fuzzer_any_query}
 
 <ExperimentalBadge />
 
@@ -26,9 +24,17 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Когда false (по умолчанию), AST-фаззер на стороне сервера (управляется через `ast_fuzzer_runs`) выполняет фаззинг только запросов только для чтения (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). Когда true, фаззингу подвергаются все типы запросов, включая DDL и INSERT.
 
-<div id="ast_fuzzer_runs">
-  ## ast_fuzzer_runs
-</div>
+## ast_fuzzer_oracle {#ast_fuzzer_oracle}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для включения проверок оракула корректности в AST-фаззере на стороне сервера."}]}]} />
+
+Если настройка включена вместе с `ast_fuzzer_runs`, к успешно выполненным фаззинг-запросам SELECT применяется набор проверок оракула корректности: TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate, NoREC, DQP (переключение отдельных настроек оптимизатора), Identity WHERE и Subquery wrap. При расхождении генерируется исключение `AST_FUZZER_ORACLE_MISMATCH`.
+
+## ast_fuzzer_runs {#ast_fuzzer_runs}
 
 <ExperimentalBadge />
 

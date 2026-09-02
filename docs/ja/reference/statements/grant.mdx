@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 権限を取り消すには、[REVOKE](/ja/reference/statements/revoke)ステートメントを使用します。付与されている権限は、[SHOW GRANTS](/ja/reference/statements/show#show-grants)ステートメントで確認できます。
 
-<div id="granting-privilege-syntax">
-  ## 権限付与の構文
-</div>
+## 権限付与の構文 {#granting-privilege-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -30,9 +28,7 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 `WITH GRANT OPTION` 句は、`user` または `role` に `GRANT` クエリを実行する権限を付与します。ユーザーは、自身が持つ権限と同じスコープ、またはそれより狭いスコープの権限を付与できます。
 `WITH REPLACE OPTION` 句は、`user` または `role` に対する既存の権限を新しい権限で置き換えます。これが指定されていない場合は、権限が追加されます。
 
-<div id="assigning-role-syntax">
-  ## ロールの割り当て構文
-</div>
+## ロールの割り当て構文 {#assigning-role-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
@@ -44,9 +40,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 `WITH ADMIN OPTION` 句は、`user` または `role` に [ADMIN OPTION](#admin-option) 権限を付与します。
 `WITH REPLACE OPTION` 句は、`user` または `role` の既存のロールを新しいロールで置き換えます。指定しない場合は、ロールが追加されます。
 
-<div id="grant-current-grants-syntax">
-  ## Grant Current Grants の構文
-</div>
+## Grant Current Grants の構文 {#grant-current-grants-syntax}
 
 ```sql
 GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -59,9 +53,7 @@ GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*
 `CURRENT GRANTS` ステートメントを使用すると、指定したすべての権限を、指定したユーザーまたはロールに付与できます。
 権限が何も指定されていない場合は、指定したユーザーまたはロールに `CURRENT_USER` で利用可能なすべての権限が付与されます。
 
-<div id="usage">
-  ## 使用方法
-</div>
+## 使用方法 {#usage}
 
 `GRANT` を使用するには、アカウントに `GRANT OPTION` 権限が必要です。権限を付与できるのは、自身のアカウントに与えられている権限の範囲内に限られます。
 
@@ -90,9 +82,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 1 つのクエリで、複数のアカウントに複数の権限を付与できます。クエリ `GRANT SELECT, INSERT ON *.* TO john, robin` を使用すると、アカウント `john` と `robin` は、サーバー上のすべてのデータベース内のすべてのテーブルに対して `INSERT` クエリと `SELECT` クエリを実行できます。
 
-<div id="wildcard-grants">
-  ## ワイルドカードを使った権限付与
-</div>
+## ワイルドカードを使った権限付与 {#wildcard-grants}
 
 権限を指定する際は、テーブル名やデータベース名の代わりにアスタリスク (`*`) を使用できます。たとえば、`GRANT SELECT ON db.* TO john` クエリでは、`john` に `db` データベース内のすべてのテーブルに対する `SELECT` クエリの実行を許可します。
 また、データベース名を省略することもできます。この場合、権限は現在のデータベースに対して付与されます。
@@ -143,9 +133,7 @@ GRANT SELECT ON *suffix TO john -- 誤り
 GRANT SELECT(foo) ON db.table* TO john -- 誤り
 ```
 
-<div id="privileges">
-  ## 権限
-</div>
+## 権限 {#privileges}
 
 権限とは、ユーザーに対して特定の種類のクエリの実行を許可するものです。
 
@@ -271,6 +259,7 @@ ClickHouse における権限の階層は以下のとおりです。
   * [`SOURCES`](#sources)
     * `AZURE`
     * `BIGQUERY`
+    * `DISK`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -389,9 +378,7 @@ ClickHouse における権限の階層は以下のとおりです。
 
 一部のクエリは、その実装上、一連の権限を必要とします。たとえば、[RENAME](/ja/reference/statements/optimize) クエリを実行するには、次の権限が必要です: `SELECT`、`CREATE TABLE`、`INSERT`、`DROP TABLE`。
 
-<div id="select">
-  ### SELECT
-</div>
+### SELECT {#select}
 
 [SELECT](/ja/reference/statements/select/index) クエリの実行を許可します。
 
@@ -409,9 +396,7 @@ GRANT SELECT(x,y) ON db.table TO john
 
 この権限により、`john` は `db.table` の `x` および/または `y` カラムのデータを含む任意の `SELECT` クエリを実行できます。たとえば、`SELECT x FROM db.table` です。`john` は `SELECT z FROM db.table` を実行できません。`SELECT * FROM db.table` も実行できません。このクエリを処理しても、ClickHouse は `x` や `y` を含め、データを一切返しません。唯一の例外は、テーブルに `x` と `y` のカラムしかない場合で、この場合は ClickHouse がすべてのデータを返します。
 
-<div id="insert">
-  ### INSERT
-</div>
+### INSERT {#insert}
 
 [INSERT](/ja/reference/statements/insert-into) クエリの実行を許可します。
 
@@ -429,9 +414,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 付与された権限により、`john` は `db.table` の `x` および/または `y` カラムにデータを挿入できます。
 
-<div id="alter">
-  ### ALTER
-</div>
+### ALTER {#alter}
 
 次の権限階層に従って、[ALTER](/ja/reference/statements/alter/index)クエリの実行を許可します。
 
@@ -481,15 +464,11 @@ GRANT INSERT(x,y) ON db.table TO john
 * `DETACH` 操作には [DROP](#drop) 権限が必要です。
 * [KILL MUTATION](/ja/reference/statements/kill#kill-mutation)クエリでミューテーションを停止するには、そのミューテーションを開始できる権限が必要です。たとえば、`ALTER UPDATE` クエリを停止したい場合は、`ALTER UPDATE`、`ALTER TABLE`、または `ALTER` 権限が必要です。
 
-<div id="backup">
-  ### BACKUP
-</div>
+### BACKUP {#backup}
 
 クエリで [`BACKUP`] を実行できます。バックアップの詳細については、[&quot;バックアップと復元&quot;](/ja/concepts/features/backup-restore/overview) をご覧ください。
 
-<div id="create">
-  ### CREATE
-</div>
+### CREATE {#create}
 
 次の権限階層に応じて、[CREATE](/ja/reference/statements/create/index) および [ATTACH](/ja/reference/statements/attach) DDLクエリの実行を許可します。
 
@@ -505,9 +484,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 * 作成したテーブルを削除するには、ユーザーに [DROP](#drop) 権限が必要です。
 
-<div id="cluster">
-  ### クラスター
-</div>
+### クラスター {#cluster}
 
 `ON CLUSTER` クエリを実行できます。
 
@@ -530,9 +507,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 </access_control_improvements>
 ```
 
-<div id="drop">
-  ### DROP
-</div>
+### DROP {#drop}
 
 以下の権限階層に従って、[DROP](/ja/reference/statements/drop) および [DETACH](/ja/reference/statements/detach) クエリを実行できます。
 
@@ -542,25 +517,19 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `DROP VIEW`。レベル: `VIEW`
   * `DROP DICTIONARY`。レベル: `DICTIONARY`
 
-<div id="truncate">
-  ### TRUNCATE
-</div>
+### TRUNCATE {#truncate}
 
 [TRUNCATE](/ja/reference/statements/truncate) クエリの実行を許可します。
 
 権限レベル: `TABLE`。
 
-<div id="optimize">
-  ### OPTIMIZE
-</div>
+### OPTIMIZE {#optimize}
 
 [OPTIMIZE TABLE](/ja/reference/statements/optimize) クエリを実行できます。
 
 権限レベル: `TABLE`。
 
-<div id="show">
-  ### SHOW
-</div>
+### SHOW {#show}
 
 次の権限階層に従って、`SHOW`、`DESCRIBE`、`USE`、`EXISTS` クエリの実行を許可します。
 
@@ -574,9 +543,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 指定したテーブル、Dictionary、またはデータベースに関する他のいずれかの権限を持っているユーザーには、`SHOW` 権限も付与されます。
 
-<div id="kill-query">
-  ### KILL QUERY
-</div>
+### KILL QUERY {#kill-query}
 
 次の権限階層に従って、[KILL](/ja/reference/statements/kill#kill-query)クエリを実行できます。
 
@@ -586,9 +553,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 `KILL QUERY` 権限を持つユーザーは、他のユーザーのクエリを強制終了できます。
 
-<div id="access-management">
-  ### アクセス管理
-</div>
+### アクセス管理 {#access-management}
 
 ユーザーが、ユーザー、ロール、行ポリシーを管理するクエリを実行できるようにします。
 
@@ -619,9 +584,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 `ROLE ADMIN` 権限があると、admin オプション付きでそのユーザーに付与されていないロールも含め、あらゆるロールを付与したり取り消したりできます。
 
-<div id="system">
-  ### SYSTEM
-</div>
+### SYSTEM {#system}
 
 以下の権限階層に従って、ユーザーは [SYSTEM](/ja/reference/statements/system) クエリを実行できます。
 
@@ -656,9 +619,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 `SYSTEM RELOAD EMBEDDED DICTIONARIES` 権限は、`SYSTEM RELOAD DICTIONARY ON *.*` 権限により暗黙的に付与されます。
 
-<div id="introspection">
-  ### INTROSPECTION
-</div>
+### INTROSPECTION {#introspection}
 
 [イントロスペクション](/ja/concepts/features/performance/troubleshoot/sampling-query-profiler)関数を使用できるようにします。
 
@@ -668,11 +629,10 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`. レベル: `GLOBAL`
   * `demangle`. レベル: `GLOBAL`
 
-<div id="sources">
-  ### SOURCES
-</div>
+### SOURCES {#sources}
 
 外部データソースの使用を許可します。[テーブルエンジン](/ja/reference/engines/table-engines/index)および[テーブル関数](/ja/reference/functions/table-functions/index)に適用されます。
+バックアップの場所にも必要です。`BACKUP`/`RESTORE` および `ENGINE = Backup` では、これらの権限に基づいて場所へのアクセスが許可されます。
 
 * `READ`. レベル: `GLOBAL_WITH_PARAMETER`
 * `WRITE`. レベル: `GLOBAL_WITH_PARAMETER`
@@ -681,6 +641,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 * `AZURE`
 * `BIGQUERY`
+* `DISK`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -711,9 +672,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 * [MySQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/mysql)でテーブルを作成するには、`CREATE TABLE (ON db.table_name)` と `MYSQL` 権限が必要です。
 * [mysql テーブル関数](/ja/reference/functions/table-functions/mysql)を使用するには、`CREATE TEMPORARY TABLE` と `MYSQL` 権限が必要です。
 
-<div id="source-filter-grants">
-  ### ソースフィルターの権限付与
-</div>
+### ソースフィルターの権限付与 {#source-filter-grants}
 
 <Note>
   この機能は、バージョン 25.8 以降で、サーバー設定
@@ -783,9 +742,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * **部分的な取り消しはできません:** 付与済みのフィルターパターンの一部だけを取り消すことはできません。必要な場合は、付与全体をいったん取り消したうえで、新しいパターンで再付与する必要があります。
 * **ワイルドカードによる権限付与はできません:** `GRANT READ ON *('regexp')` や、これに類するワイルドカードのみのパターンは使用できません。必ず具体的なソースを指定してください。
 
-<div id="dictget">
-  ### dictGet
-</div>
+### dictGet {#dictget}
 
 * `dictGet`。別名: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
@@ -798,18 +755,14 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * `GRANT dictGet ON mydb.mydictionary TO john`
 * `GRANT dictGet ON mydictionary TO john`
 
-<div id="displaysecretsinshowandselect">
-  ### displaySecretsInShowAndSelect
-</div>
+### displaySecretsInShowAndSelect {#displaysecretsinshowandselect}
 
 [`display_secrets_in_show_and_select` サーバー設定](/ja/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 と
 [`format_display_secrets_in_show_and_select` フォーマット設定](/ja/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 の両方が有効になっている場合、ユーザーは `SHOW` クエリおよび `SELECT` クエリでシークレットを表示できます。
 
-<div id="named-collection-admin">
-  ### NAMED COLLECTION ADMIN
-</div>
+### NAMED COLLECTION ADMIN {#named-collection-admin}
 
 指定した named collection に対する特定の操作を許可する権限です。バージョン 23.7 より前は NAMED COLLECTION CONTROL と呼ばれていましたが、23.7 以降は NAMED COLLECTION ADMIN が追加され、NAMED COLLECTION CONTROL は別名として維持されています。
 
@@ -829,9 +782,7 @@ named collection の名前が abc であるとすると、ユーザー john に 
 
 * `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
-<div id="table-engine">
-  ### TABLE ENGINE
-</div>
+### TABLE ENGINE {#table-engine}
 
 <CloudNotSupportedBadge />
 
@@ -854,9 +805,7 @@ named collection の名前が abc であるとすると、ユーザー john に 
 
 * `GRANT READ, WRITE ON AZURE TO john`
 
-<div id="all">
-  ### ALL
-</div>
+### ALL {#all}
 
 <CloudNotSupportedBadge />
 
@@ -867,15 +816,11 @@ named collection の名前が abc であるとすると、ユーザー john に 
   また、`default` ユーザーとして `GRANT CURRENT GRANTS` を使用することで、`ALL` と同様の効果を得ることもできます。
 </Note>
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 権限は一切付与されません。
 
-<div id="admin-option">
-  ### ADMIN OPTION
-</div>
+### ADMIN OPTION {#admin-option}
 
 `ADMIN OPTION` 権限があると、ユーザーは自身のロールを別のユーザーに付与できます。
 

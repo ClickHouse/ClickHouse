@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 لإلغاء الامتيازات، استخدم عبارة [REVOKE](/ar/reference/statements/revoke). ويمكنك أيضًا عرض الامتيازات الممنوحة باستخدام عبارة [SHOW GRANTS](/ar/reference/statements/show#show-grants).
 
-<div id="granting-privilege-syntax">
-  ## صيغة منح الامتيازات
-</div>
+## صيغة منح الامتيازات {#granting-privilege-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -30,9 +28,7 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 تمنح العبارة `WITH GRANT OPTION` المستخدم `user` أو الدور `role` صلاحية تنفيذ الاستعلام `GRANT`. ويمكن للمستخدمين منح امتيازات ضمن النطاق نفسه الذي لديهم أو ضمن نطاق أضيق.
 تستبدل العبارة `WITH REPLACE OPTION` الامتيازات القديمة بامتيازات جديدة للمستخدم `user` أو الدور `role`، وإذا لم تُحدَّد، فإنها تضيف الامتيازات.
 
-<div id="assigning-role-syntax">
-  ## صيغة إسناد الدور
-</div>
+## صيغة إسناد الدور {#assigning-role-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
@@ -44,9 +40,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 يمنح البند `WITH ADMIN OPTION` امتياز [ADMIN OPTION](#admin-option) إلى `user` أو `role`.
 ويستبدل البند `WITH REPLACE OPTION` الأدوار القديمة بدور جديد لـ `user` أو `role`، وإذا لم يُحدَّد، فإنه يُضيف الأدوار.
 
-<div id="grant-current-grants-syntax">
-  ## صيغة GRANT CURRENT GRANTS
-</div>
+## صيغة GRANT CURRENT GRANTS {#grant-current-grants-syntax}
 
 ```sql
 GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -59,9 +53,7 @@ GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*
 يتيح لك استخدام عبارة `CURRENT GRANTS` منح جميع الامتيازات المحددة للمستخدم أو الدور المحدَّد.
 إذا لم يُحدَّد أي امتياز، فسيحصل المستخدم أو الدور المحدَّد على جميع الامتيازات المتاحة لـ `CURRENT_USER`.
 
-<div id="usage">
-  ## الاستخدام
-</div>
+## الاستخدام {#usage}
 
 لاستخدام `GRANT`، يجب أن يمتلك حسابك امتياز `GRANT OPTION`. ولا يمكنك منح الامتيازات إلا ضمن حدود الامتيازات الممنوحة لحسابك.
 
@@ -90,9 +82,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 يمكنك منح امتيازات متعددة لعدة حسابات في استعلام واحد. ويتيح الاستعلام `GRANT SELECT, INSERT ON *.* TO john, robin` للحسابين `john` و `robin` تنفيذ استعلامَي `INSERT` و `SELECT` على جميع الجداول في جميع قواعد البيانات على الخادم.
 
-<div id="wildcard-grants">
-  ## منح الامتيازات باستخدام أحرف البدل
-</div>
+## منح الامتيازات باستخدام أحرف البدل {#wildcard-grants}
 
 عند تحديد الامتيازات، يمكنك استخدام علامة النجمة (`*`) بدلًا من اسم جدول أو قاعدة بيانات. على سبيل المثال، يتيح الاستعلام `GRANT SELECT ON db.* TO john` للمستخدم `john` تنفيذ الاستعلام `SELECT` على جميع الجداول في قاعدة البيانات `db`.
 كما يمكنك حذف اسم قاعدة البيانات. في هذه الحالة، تُمنح الامتيازات لقاعدة البيانات الحالية.
@@ -143,9 +133,7 @@ GRANT SELECT ON *suffix TO john -- wrong
 GRANT SELECT(foo) ON db.table* TO john -- wrong
 ```
 
-<div id="privileges">
-  ## الامتيازات
-</div>
+## الامتيازات {#privileges}
 
 الامتياز هو صلاحية تُمنَح لمستخدم لتنفيذ أنواع محددة من الاستعلامات.
 
@@ -271,6 +259,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
   * [`المصادر`](#sources)
     * `AZURE`
     * `BIGQUERY`
+    * `DISK`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -389,9 +378,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
 
 تتطلب بعض الاستعلامات، بحسب طريقة تنفيذها، مجموعة من الامتيازات. على سبيل المثال، لتنفيذ الاستعلام [RENAME](/ar/reference/statements/optimize) تحتاج إلى الامتيازات التالية: `SELECT` و`CREATE TABLE` و`INSERT` و`DROP TABLE`.
 
-<div id="select">
-  ### SELECT
-</div>
+### SELECT {#select}
 
 يسمح بتنفيذ استعلامات [SELECT](/ar/reference/statements/select/index).
 
@@ -409,9 +396,7 @@ GRANT SELECT(x,y) ON db.table TO john
 
 يتيح هذا الامتياز للمستخدم `john` تنفيذ أي استعلام `SELECT` يتضمن بيانات من العمودين `x` و/أو `y` في `db.table`، على سبيل المثال: `SELECT x FROM db.table`. لا يمكن للمستخدم `john` تنفيذ `SELECT z FROM db.table`. كما أن `SELECT * FROM db.table` غير متاح أيضًا. عند معالجة هذا الاستعلام، لا يعيد ClickHouse أي بيانات، حتى `x` و`y`. والاستثناء الوحيد هو إذا كان الجدول يحتوي فقط على العمودين `x` و`y`، ففي هذه الحالة يعيد ClickHouse جميع البيانات.
 
-<div id="insert">
-  ### INSERT
-</div>
+### INSERT {#insert}
 
 يسمح بتنفيذ استعلامات [INSERT](/ar/reference/statements/insert-into).
 
@@ -429,9 +414,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 يتيح الامتياز الممنوح للمستخدم `john` إدخال بيانات في العمودين `x` و/أو `y` في `db.table`.
 
-<div id="alter">
-  ### ALTER
-</div>
+### ALTER {#alter}
 
 يسمح بتنفيذ استعلامات [ALTER](/ar/reference/statements/alter/index) وفقًا للتسلسل الهرمي التالي للامتيازات:
 
@@ -481,15 +464,11 @@ GRANT INSERT(x,y) ON db.table TO john
 * تتطلب عملية `DETACH` امتياز [DROP](#drop).
 * لإيقاف عملية mutation باستخدام الاستعلام [KILL MUTATION](/ar/reference/statements/kill#kill-mutation)، يجب أن تمتلك امتياز بدء هذه العملية. على سبيل المثال، إذا أردت إيقاف استعلام `ALTER UPDATE`، فستحتاج إلى امتياز `ALTER UPDATE` أو `ALTER TABLE` أو `ALTER`.
 
-<div id="backup">
-  ### BACKUP
-</div>
+### BACKUP {#backup}
 
 يتيح تنفيذ [`BACKUP`] ضمن الاستعلامات. لمزيد من المعلومات حول النسخ الاحتياطية، راجع [&quot;النسخ الاحتياطي والاستعادة&quot;](/ar/concepts/features/backup-restore/overview).
 
-<div id="create">
-  ### CREATE
-</div>
+### CREATE {#create}
 
 يتيح تنفيذ استعلامات DDL من نوع [CREATE](/ar/reference/statements/create/index) و[ATTACH](/ar/reference/statements/attach) وفقًا للتسلسل الهرمي التالي للامتيازات:
 
@@ -505,9 +484,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 * لحذف الجدول الذي أُنشئ، يحتاج المستخدم إلى [DROP](#drop).
 
-<div id="cluster">
-  ### CLUSTER
-</div>
+### CLUSTER {#cluster}
 
 يسمح بتنفيذ الاستعلامات التي تستخدم `ON CLUSTER`.
 
@@ -531,9 +508,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 </access_control_improvements>
 ```
 
-<div id="drop">
-  ### DROP
-</div>
+### DROP {#drop}
 
 يتيح تنفيذ استعلامات [DROP](/ar/reference/statements/drop) و[DETACH](/ar/reference/statements/detach) وفق التسلسل الهرمي التالي للامتيازات:
 
@@ -543,25 +518,19 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `DROP VIEW`. المستوى: `VIEW`
   * `DROP DICTIONARY`. المستوى: `DICTIONARY`
 
-<div id="truncate">
-  ### TRUNCATE
-</div>
+### TRUNCATE {#truncate}
 
 يتيح تنفيذ استعلامات [TRUNCATE](/ar/reference/statements/truncate).
 
 مستوى الامتياز: `TABLE`.
 
-<div id="optimize">
-  ### OPTIMIZE
-</div>
+### OPTIMIZE {#optimize}
 
 يسمح بتنفيذ استعلامات [OPTIMIZE TABLE](/ar/reference/statements/optimize).
 
 مستوى الامتياز: `TABLE`.
 
-<div id="show">
-  ### SHOW
-</div>
+### SHOW {#show}
 
 يسمح بتنفيذ استعلامات `SHOW` و`DESCRIBE` و`USE` و`EXISTS` وفق التسلسل الهرمي التالي للامتيازات:
 
@@ -575,9 +544,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 يكون لدى المستخدم امتياز `SHOW` إذا كان لديه أي امتياز آخر متعلق بالجدول أو القاموس أو قاعدة البيانات المحددة.
 
-<div id="kill-query">
-  ### KILL QUERY
-</div>
+### KILL QUERY {#kill-query}
 
 يتيح تنفيذ استعلامات [KILL](/ar/reference/statements/kill#kill-query) وفقًا للتسلسل الهرمي التالي للامتيازات:
 
@@ -587,9 +554,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 يتيح امتياز `KILL QUERY` لمستخدمٍ ما إنهاء استعلامات المستخدمين الآخرين.
 
-<div id="access-management">
-  ### إدارة الوصول
-</div>
+### إدارة الوصول {#access-management}
 
 يتيح للمستخدم تنفيذ الاستعلامات التي تدير المستخدمين والأدوار وسياسات الصفوف.
 
@@ -620,9 +585,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 يتيح امتياز `ROLE ADMIN` للمستخدم منح أي أدوار وسحبها، بما في ذلك الأدوار التي لم تُمنح للمستخدم مع خيار المسؤول.
 
-<div id="system">
-  ### SYSTEM
-</div>
+### SYSTEM {#system}
 
 يسمح للمستخدم بتنفيذ استعلامات [SYSTEM](/ar/reference/statements/system) وفقًا لتسلسل هرمي التالي للامتيازات.
 
@@ -657,9 +620,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 يُمنَح الامتياز `SYSTEM RELOAD EMBEDDED DICTIONARIES` ضمنيًا من خلال الامتياز `SYSTEM RELOAD DICTIONARY ON *.*`.
 
-<div id="introspection">
-  ### INTROSPECTION
-</div>
+### INTROSPECTION {#introspection}
 
 يسمح باستخدام دوال [الفحص الداخلي](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler).
 
@@ -669,11 +630,10 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`. المستوى: `GLOBAL`
   * `demangle`. المستوى: `GLOBAL`
 
-<div id="sources">
-  ### المصادر
-</div>
+### المصادر {#sources}
 
 يتيح استخدام مصادر البيانات الخارجية. ينطبق على [محركات الجداول](/ar/reference/engines/table-engines/index) و[دوال الجداول](/ar/reference/functions/table-functions/index).
+كما أنه مطلوب لمواقع النسخ الاحتياطي: إذ تعتمد `BACKUP`/`RESTORE` و`ENGINE = Backup` على هذه الامتيازات لتخويل مواقعها.
 
 * `READ`. المستوى: `GLOBAL_WITH_PARAMETER`
 * `WRITE`. المستوى: `GLOBAL_WITH_PARAMETER`
@@ -682,6 +642,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 * `AZURE`
 * `BIGQUERY`
+* `DISK`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -711,9 +672,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 * لإنشاء جدول باستخدام [محرك جدول MySQL](/ar/reference/engines/table-engines/integrations/mysql)، تحتاج إلى امتيازَي `CREATE TABLE (ON db.table_name)` و`MYSQL`.
 * لاستخدام [دالة الجدول MySQL](/ar/reference/functions/table-functions/mysql)، تحتاج إلى `CREATE TEMPORARY TABLE` وامتيازات `MYSQL`.
 
-<div id="source-filter-grants">
-  ### امتيازات مرشح المصدر
-</div>
+### امتيازات مرشح المصدر {#source-filter-grants}
 
 <Note>
   تتوفر هذه الميزة اعتبارًا من الإصدار 25.8، وفقط عند تفعيل إعداد الخادم
@@ -782,9 +741,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * **لا يُسمح بإلغاء الصلاحيات جزئيًا:** لا يمكنك إلغاء جزء من نمط التصفية الممنوح. يجب إلغاء المنح بالكامل ثم منحها من جديد باستخدام أنماط جديدة عند الحاجة.
 * **لا يُسمح بمنحٍ باستخدام أحرف البدل فقط:** لا يمكنك استخدام `GRANT READ ON *('regexp')` أو أنماط مشابهة تعتمد على أحرف البدل فقط. يجب تحديد `source` بعينه.
 
-<div id="dictget">
-  ### dictGet
-</div>
+### dictGet {#dictget}
 
 * `dictGet`. الأسماء البديلة: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
@@ -797,9 +754,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * `GRANT dictGet ON mydb.mydictionary TO john`
 * `GRANT dictGet ON mydictionary TO john`
 
-<div id="displaysecretsinshowandselect">
-  ### displaySecretsInShowAndSelect
-</div>
+### displaySecretsInShowAndSelect {#displaysecretsinshowandselect}
 
 يسمح للمستخدم بعرض الأسرار في استعلامات `SHOW` و`SELECT` إذا كان كلٌّ من
 [`display_secrets_in_show_and_select` إعداد الخادم](/ar/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
@@ -807,9 +762,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 [`format_display_secrets_in_show_and_select` إعداد التنسيق](/ar/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 مفعّلَين.
 
-<div id="named-collection-admin">
-  ### NAMED COLLECTION ADMIN
-</div>
+### NAMED COLLECTION ADMIN {#named-collection-admin}
 
 يسمح بإجراء عملية معيّنة على مجموعة مُسمّاة محددة. قبل الإصدار 23.7 كان يُسمّى NAMED COLLECTION CONTROL، وبعد 23.7 أُضيف NAMED COLLECTION ADMIN مع الإبقاء على NAMED COLLECTION CONTROL كاسم بديل.
 
@@ -829,9 +782,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 * `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
-<div id="table-engine">
-  ### TABLE ENGINE
-</div>
+### TABLE ENGINE {#table-engine}
 
 <CloudNotSupportedBadge />
 
@@ -854,9 +805,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 * `GRANT READ, WRITE ON AZURE TO john`
 
-<div id="all">
-  ### ALL
-</div>
+### ALL {#all}
 
 <CloudNotSupportedBadge />
 
@@ -867,15 +816,11 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   يمكن للمستخدمين أيضًا استخدام `GRANT CURRENT GRANTS` بصفتهم المستخدم `default` لتحقيق تأثير مشابه لـ `ALL`.
 </Note>
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 لا يمنح أي امتيازات.
 
-<div id="admin-option">
-  ### ADMIN OPTION
-</div>
+### ADMIN OPTION {#admin-option}
 
 يتيح امتياز `ADMIN OPTION` للمستخدم منح دوره إلى مستخدم آخر.
 

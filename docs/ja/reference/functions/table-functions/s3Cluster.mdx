@@ -13,31 +13,27 @@ doc_type: 'reference'
 
 指定したクラスター内の多数のノードで、[Amazon S3](https://aws.amazon.com/s3/) および Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) のファイルを並列に処理できます。イニシエーターでは、クラスター内のすべてのノードとの接続を確立し、S3 ファイルパス内のアスタリスクを展開して、各ファイルを動的に振り分けます。worker ノードでは、次に処理するタスクをイニシエーターに問い合わせて処理します。これを、すべてのタスクが完了するまで繰り返します。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 s3Cluster(cluster_name, url[, NOSIGN | access_key_id, secret_access_key,[session_token]][, format][, structure][, compression_method][, headers][, extra_credentials])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
-| 引数                                      | 説明                                                                                                                                                                                                                                                      |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`                          | リモートおよびローカルのserverへのアドレスのセットとconnection parameterの構築に使用されるクラスター名。                                                                                                                                                                                       |
-| `url`                                   | file または複数の file への path。readonly モードでは、次の wildcards をサポートします: `*`, `**`, `?`, `{'abc','def'}` および `{N..M}`。ここで `N`, `M` は数値、`abc`, `def` は文字列です。詳細は [Wildcards In Path](/ja/reference/engines/table-engines/integrations/s3#wildcards-in-path) を参照してください。 |
-| `NOSIGN`                                | credentials の代わりにこのキーワードを指定すると、すべての request が署名されなくなります。                                                                                                                                                                                                |
-| `access_key_id` and `secret_access_key` | 指定した endpoint で使用する credentials を指定するオプションの parameter です。                                                                                                                                                                                               |
-| `session_token`                         | 指定したオプションと併せて使用する session token。オプションを渡す場合は省略可能です。                                                                                                                                                                                                      |
-| `format`                                | file の [フォーマット](/ja/reference/formats/index)。                                                                                                                                                                                                              |
-| `structure`                             | table の構造。フォーマットは `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                     |
-| `compression_method`                    | parameter は省略可能です。サポートされる値: `none`, `gzip` または `gz`, `brotli` または `br`, `xz` または `LZMA`, `zstd` または `zst`。デフォルトでは、file 拡張子から圧縮方式を自動判別します。                                                                                                               |
-| `headers`                               | parameter は省略可能です。S3 request に headers を渡せます。`headers(key=value)` のフォーマットで指定します。例: `headers('x-amz-request-payer' = 'requester')`。使用例は [こちら](/ja/reference/functions/table-functions/s3#accessing-requester-pays-buckets) を参照してください。                       |
-| `extra_credentials`                     | 省略可能です。`roleARN` はこの parameter で渡せます。例は [こちら](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role) を参照してください。                                                                           |
+| 引数                                      | 説明                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`                          | リモートおよびローカルのserverへのアドレスのセットとconnection parameterの構築に使用されるクラスター名。                                                                                                                                                                                                                                              |
+| `url`                                   | file または複数の file への path。readonly モードでは、次の wildcards をサポートします: `*`, `**`, `?`, `{'abc','def'}` および `{N..M}`。ここで `N`, `M` は数値、`abc`, `def` は文字列です。詳細は [Wildcards In Path](/ja/reference/engines/table-engines/integrations/s3#wildcards-in-path) を参照してください。                                                        |
+| `NOSIGN`                                | credentials の代わりにこのキーワードを指定すると、すべての request が署名されなくなります。                                                                                                                                                                                                                                                       |
+| `access_key_id` and `secret_access_key` | 指定した endpoint で使用する credentials を指定するオプションの parameter です。                                                                                                                                                                                                                                                      |
+| `session_token`                         | 指定したオプションと併せて使用する session token。オプションを渡す場合は省略可能です。                                                                                                                                                                                                                                                             |
+| `format`                                | file の [フォーマット](/ja/reference/formats/index)。                                                                                                                                                                                                                                                                     |
+| `structure`                             | テーブル の構造。フォーマットは `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                                                                            |
+| `compression_method`                    | parameter は省略可能です。サポートされる値: `none`, `gzip` または `gz`, `deflate`, `brotli` または `br`, `xz` または `LZMA`, `zstd` または `zst`, `lz4`, `bz2`, `snappy`。デフォルトでは、file 拡張子から圧縮方式を自動判別します。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) setting により選択されます (デフォルトは `basic`) 。 |
+| `headers`                               | parameter は省略可能です。S3 request に headers を渡せます。`headers(key=value)` のフォーマットで指定します。例: `headers('x-amz-request-payer' = 'requester')`。使用例は [こちら](/ja/reference/functions/table-functions/s3#accessing-requester-pays-buckets) を参照してください。                                                                              |
+| `extra_credentials`                     | 省略可能です。`roleARN` はこの parameter で渡せます。例は [こちら](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role) を参照してください。                                                                                                                                  |
 
 引数は [named collections](/ja/concepts/features/configuration/server-config/named-collections) を使って渡すこともできます。この場合、`url`、`access_key_id`、`secret_access_key`、`format`、`structure`、`compression_method` は同じように機能し、さらに追加の parameter がいくつかサポートされます。
 
@@ -48,15 +44,11 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 | `no_sign_request`             | デフォルトでは無効です。                                                                                                                                                                              |
 | `expiration_window_seconds`   | デフォルト値は 120 です。                                                                                                                                                                           |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定したファイル内のデータを読み書きするための、指定した構造のテーブル。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 `cluster_simple` クラスター内のすべてのノードを使用して、`/root/data/clickhouse` と `/root/data/database/` フォルダー内のすべてのファイルからデータを取得します。
 
@@ -90,21 +82,15 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
-<div id="accessing-private-and-public-buckets">
-  ## 非公開バケットと公開バケットへのアクセス
-</div>
+## 非公開バケットと公開バケットへのアクセス {#accessing-private-and-public-buckets}
 
 ユーザーは、[こちら](/ja/reference/functions/table-functions/s3#accessing-public-buckets)の `s3` 関数のドキュメントにあるものと同じ方法を使用できます。
 
-<div id="optimizing-performance">
-  ## パフォーマンスの最適化
-</div>
+## パフォーマンスの最適化 {#optimizing-performance}
 
 `s3` 関数のパフォーマンス最適化について詳しくは、[詳細ガイド](/ja/integrations/connectors/data-ingestion/AWS/performance)をご覧ください。
 
-<div id="related">
-  ## 関連
-</div>
+## 関連 {#related}
 
 * [S3エンジン](/ja/reference/engines/table-engines/integrations/s3)
 * [s3テーブル関数](/ja/reference/functions/table-functions/s3)

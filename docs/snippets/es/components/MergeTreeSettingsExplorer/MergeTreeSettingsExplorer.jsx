@@ -318,7 +318,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 10,
+      count: 13,
       settings: [
         { name: "max_avg_part_size_for_too_many_parts", path: "/max#max_avg_part_size_for_too_many_parts", default: "1073741824" },
         { name: "max_buckets_in_map", path: "/max#max_buckets_in_map", default: "32" },
@@ -329,6 +329,9 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_file_name_length", path: "/max#max_file_name_length", default: "127" },
         { name: "max_partitions_to_read", path: "/max#max_partitions_to_read", default: "-1" },
         { name: "max_projections", path: "/max#max_projections", default: "25" },
+        { name: "max_table_size_bytes_compressed", path: "/max#max_table_size_bytes_compressed", default: "0" },
+        { name: "max_table_size_bytes_uncompressed", path: "/max#max_table_size_bytes_uncompressed", default: "0" },
+        { name: "max_table_size_rows", path: "/max#max_table_size_rows", default: "0" },
         { name: "max_uncompressed_bytes_in_patches", path: "/max#max_uncompressed_bytes_in_patches", default: "32212254720" }
       ],
       children: []
@@ -895,7 +898,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Otros",
-      count: 52,
+      count: 53,
       settings: [
         { name: "adaptive_write_buffer_initial_size", path: "/other#adaptive_write_buffer_initial_size", default: "16384" },
         { name: "add_implicit_sign_column_constraint_for_collapsing_engine", path: "/other#add_implicit_sign_column_constraint_for_collapsing_engine", default: "0" },
@@ -942,6 +945,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "serialization_info_version", path: "/other#serialization_info_version", default: "with_types" },
         { name: "share_nested_offsets", path: "/other#share_nested_offsets", default: "1" },
         { name: "simultaneous_parts_removal_limit", path: "/other#simultaneous_parts_removal_limit", default: "0" },
+        { name: "skip_empty_columns_on_insert", path: "/other#skip_empty_columns_on_insert", default: "0" },
         { name: "storage_policy", path: "/other#storage_policy", default: "default" },
         { name: "string_serialization_version", path: "/other#string_serialization_version", default: "with_size_stream" },
         { name: "temporary_directories_lifetime", path: "/other#temporary_directories_lifetime", default: "86400" },

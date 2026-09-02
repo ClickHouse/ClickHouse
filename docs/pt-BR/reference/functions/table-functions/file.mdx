@@ -15,9 +15,7 @@ Um motor de tabela que fornece uma interface semelhante a uma tabela para fazer 
 
 A função `file` pode ser usada em consultas `SELECT` e `INSERT` para ler arquivos ou gravar neles.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
@@ -29,17 +27,15 @@ Para consultas `SELECT`, `path` também pode ser uma expressão que retorna um `
 file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
-| Parâmetro         | Descrição                                                                                                                                                                                                                                                                                                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`            | O caminho relativo para o arquivo em [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings/user#user_files_path), ou um `Array(String)` de caminhos em consultas `SELECT`. No modo somente leitura, aceita os seguintes [globs](#globs-in-path): `*`, `?`, `{abc,def}` (em que `'abc'` e `'def'` são strings) e `{N..M}` (em que `N` e `M` são números). |
-| `path_to_archive` | O caminho relativo para um arquivo zip/tar/7z. Aceita os mesmos globs que `path`.                                                                                                                                                                                                                                                                                         |
-| `format`          | O [formato](/pt-BR/reference/formats/index) do arquivo.                                                                                                                                                                                                                                                                                                                         |
-| `structure`       | Estrutura da tabela. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                              |
-| `compression`     | O tipo de compactação existente quando usado em uma consulta `SELECT`, ou o tipo de compactação desejado quando usado em uma consulta `INSERT`. Os tipos de compactação compatíveis são `gz`, `br`, `xz`, `zst`, `lz4` e `bz2`.                                                                                                                                           |
+| Parâmetro         | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | O path relativo para o arquivo em [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings/user#user_files_path), ou um `Array(String)` de paths em consultas `SELECT`. No modo somente leitura, aceita os seguintes [globs](#globs-in-path): `*`, `?`, `{abc,def}` (em que `'abc'` e `'def'` são strings) e `{N..M}` (em que `N` e `M` são números).                                                                             |
+| `path_to_archive` | O path relativo para um arquivo zip/tar/7z. Aceita os mesmos globs que `path`.                                                                                                                                                                                                                                                                                                                                                                     |
+| `format`          | O [formato](/pt-BR/reference/formats/index) do arquivo.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `structure`       | Estrutura da tabela. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                          |
+| `compression`     | O tipo de compactação existente quando usado em uma consulta `SELECT`, ou o tipo de compactação desejado quando usado em uma consulta `INSERT`. Os valores compatíveis são `none` (sem compactação), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2` e `snappy`. Para `snappy`, o formato wire é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão). |
 
 <Tip>
   Quando o argumento `structure` é omitido, o ClickHouse infere o esquema a partir do próprio formato.
@@ -59,19 +55,13 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ```
 </Tip>
 
-<div id="returned-value">
-  ## Valor retornado
-</div>
+## Valor retornado {#returned-value}
 
 Uma tabela para leitura ou gravação de dados em um arquivo.
 
-<div id="examples-for-writing-to-a-file">
-  ## Exemplos de gravação em um arquivo
-</div>
+## Exemplos de gravação em um arquivo {#examples-for-writing-to-a-file}
 
-<div id="write-to-a-tsv-file">
-  ### Gravar em um arquivo TSV
-</div>
+### Gravar em um arquivo TSV {#write-to-a-tsv-file}
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -88,9 +78,7 @@ Como resultado, os dados são gravados no arquivo `test.tsv`:
 1    3    2
 ```
 
-<div id="partitioned-write-to-multiple-tsv-files">
-  ### Gravação particionada em vários arquivos TSV
-</div>
+### Gravação particionada em vários arquivos TSV {#partitioned-write-to-multiple-tsv-files}
 
 Se você especificar uma expressão `PARTITION BY` ao inserir dados em uma função de tabela do tipo `file`, será criado um arquivo separado para cada partição. Dividir os dados em arquivos separados ajuda a melhorar o desempenho das operações de leitura.
 
@@ -114,13 +102,9 @@ Como resultado, os dados são gravados em três arquivos: `test_1.tsv`, `test_2.
 1    2    3
 ```
 
-<div id="examples-for-reading-from-a-file">
-  ## Exemplos de leitura a partir de um arquivo
-</div>
+## Exemplos de leitura a partir de um arquivo {#examples-for-reading-from-a-file}
 
-<div id="select-from-a-csv-file">
-  ### SELECT a partir de um arquivo CSV
-</div>
+### SELECT a partir de um arquivo CSV {#select-from-a-csv-file}
 
 Primeiro, defina `user_files_path` na configuração do servidor e prepare um arquivo `test.csv`:
 
@@ -149,9 +133,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="inserting-data-from-a-file-into-a-table">
-  ### Inserindo dados de um arquivo em uma tabela
-</div>
+### Inserindo dados de um arquivo em uma tabela {#inserting-data-from-a-file-into-a-table}
 
 ```sql
 INSERT INTO FUNCTION
@@ -177,9 +159,7 @@ Lendo dados de `table.csv`, contido em `archive1.zip` e/ou `archive2.zip`:
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-<div id="globs-in-path">
-  ## Globs no path
-</div>
+## Globs no path {#globs-in-path}
 
 Paths podem usar globs. Os arquivos devem corresponder ao pattern do path completo, não apenas ao sufixo ou ao prefixo. Há uma exceção: se o path se referir a um diretório existente
 e não usar globs, um `*` será adicionado implicitamente ao path para que
@@ -193,9 +173,7 @@ todos os arquivos do diretório sejam selecionados.
 
 Construções com `{}` são semelhantes às funções de tabela [remote](/pt-BR/reference/functions/table-functions/remote) e [hdfs](/pt-BR/reference/functions/table-functions/hdfs).
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 **Exemplo**
 
@@ -254,18 +232,14 @@ Consulte o número total de linhas de todos os arquivos `file002` em qualquer pa
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
 * `_size` — Tamanho do arquivo em bytes. Tipo: `Nullable(UInt64)`. Se o tamanho do arquivo for desconhecido, o valor será `NULL`.
 * `_time` — Data e hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a data e hora forem desconhecidas, o valor será `NULL`.
 
-<div id="hive-style-partitioning">
-  ## configuração use_hive_partitioning
-</div>
+## configuração use_hive_partitioning {#hive-style-partitioning}
 
 Quando a configuração `use_hive_partitioning` é definida como 1, o ClickHouse detecta o particionamento no estilo Hive no caminho (`/name=value/`) e permite usar colunas de partição como colunas virtuais na consulta. Essas colunas virtuais terão os mesmos nomes definidos no caminho particionado.
 
@@ -277,9 +251,7 @@ Use a coluna virtual criada com o particionamento no estilo Hive
 SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="settings">
-  ## Configurações
-</div>
+## Configurações {#settings}
 
 | Configuração                                                                                                                                            | Descrição                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -289,9 +261,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 | [engine&#95;file&#95;skip&#95;empty&#95;files](/pt-BR/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                           | permite ignorar arquivos vazios durante a leitura. Desativado por padrão.                                                                                                                                |
 | [storage&#95;file&#95;read&#95;method](/pt-BR/reference/settings/session-settings/storage#storage_file_read_method)                                           | método de leitura de dados do arquivo de armazenamento, um dos seguintes: read, pread, mmap (somente para clickhouse-local). Valor padrão: `pread` para clickhouse-server, `mmap` para clickhouse-local. |
 
-<div id="related">
-  ## Relacionados
-</div>
+## Relacionados {#related}
 
 * [Colunas virtuais](/pt-BR/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [Renomear arquivos após o processamento](/pt-BR/reference/settings/session-settings/other#rename_files_after_processing)
