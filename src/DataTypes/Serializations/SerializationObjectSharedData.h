@@ -3,6 +3,7 @@
 #pragma clang diagnostic ignored "-Wdocumentation-html"
 
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
 
@@ -134,7 +135,7 @@ private:
         std::map<size_t, String> position_to_requested_path;
         /// List of all paths stored in the granule. It is filled only if whole
         /// shared data is deserialized when we need the list of all paths.
-        std::vector<String> all_paths;
+        VectorWithMemoryTracking<String> all_paths;
         /// Number of rows in this granule.
         size_t num_rows = 0;
         /// How much rows should be read from this granule. Can be less than num_rows if we read only a part of the granule.

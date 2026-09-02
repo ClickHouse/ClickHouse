@@ -1122,7 +1122,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
         {
-            std::vector<String> paths;
+            VectorWithMemoryTracking<String> paths;
 
             /// Collect all paths stored in this granule in all buckets.
             for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -1280,7 +1280,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         else
         {
             /// Collect list of paths from all buckets for each granule.
-            std::vector<std::vector<String>> granules_paths;
+            std::vector<VectorWithMemoryTracking<String>> granules_paths;
             /// Collect the number of rows to read for each granule.
             std::vector<size_t> granules_limits;
 
