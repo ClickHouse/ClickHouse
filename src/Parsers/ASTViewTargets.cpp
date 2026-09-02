@@ -11,6 +11,7 @@
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
 
+#include <algorithm>
 #include <unordered_set>
 
 
@@ -31,9 +32,9 @@ namespace
             case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mysamples
             case ViewTarget::Inner:   return Keyword::INNER;   /// INNER ENGINE = MergeTree()
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
+            case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
             case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
-            case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
         }
         UNREACHABLE();
     }
@@ -215,6 +216,30 @@ const ViewTarget * ASTViewTargets::tryGetTarget(ViewTarget::Kind kind) const
             return &target;
     }
     return nullptr;
+}
+
+void ASTViewTargets::removeTarget(ViewTarget::Kind kind)
+{
+    for (auto it = targets.begin(); it != targets.end(); ++it)
+    {
+        if (it->kind == kind)
+        {
+            /// Detach the target's ASTs from `children` before erasing the target.
+            reset(it->inner_engine);
+            reset(it->inner_columns);
+            /// TODO: `table_ast` is registered in `children` only on some paths (JSON deserialization, clone),
+            /// so it can't be `reset` here; make `setTableASTWithQueryParams` register it always.
+            if (it->table_ast)
+            {
+                auto child = std::find_if(children.begin(), children.end(),
+                    [&](const ASTPtr & child_) { return child_.get() == it->table_ast.get(); });
+                if (child != children.end())
+                    children.erase(child);
+            }
+            targets.erase(it);
+            return;
+        }
+    }
 }
 
 ASTPtr ASTViewTargets::clone() const

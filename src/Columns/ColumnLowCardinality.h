@@ -270,6 +270,11 @@ public:
         return getIndexes().getNumberOfDefaultRows();
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return getIndexes().hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
