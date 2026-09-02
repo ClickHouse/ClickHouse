@@ -128,9 +128,22 @@ bool SerializationDate::tryDeserializeTextJSON(IColumn & column, ReadBuffer & is
 
 void SerializationDate::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeChar('"', ostr);
+    const bool quote = textCSVMayNeedQuotes(settings);
+
+    if (quote)
+        writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    writeChar('"', ostr);
+    if (quote)
+        writeChar('"', ostr);
+}
+
+bool SerializationDate::textCSVMayNeedQuotes(const FormatSettings & settings) const
+{
+    const char delimiter = settings.csv.delimiter;
+    return settings.csv.quote_date_time_types
+        || settings.csv.force_quote_date_time_types
+        || delimiter == '-'
+        || isNumericASCII(delimiter);
 }
 
 void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const

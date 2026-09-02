@@ -927,10 +927,9 @@ static void deserializeTextImpl(
 }
 
 template <typename NestedSerialize>
-static void serializeTextImpl(
+static auto serializeTextImpl(
     const IColumn & column,
     size_t row_num,
-    WriteBuffer & ostr,
     NestedSerialize nested_serialize)
 {
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
@@ -944,12 +943,12 @@ static void serializeTextImpl(
         auto tmp_variant_column = variant_type->createColumn();
         auto variant_serialization = variant_type->getDefaultSerialization();
         variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
-        nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
+        return nested_serialize(*variant_serialization, *tmp_variant_column, 0);
     }
     /// Otherwise just use serialization for Variant.
     else
     {
-        nested_serialize(*dynamic_column.getVariantInfo().variant_type->getDefaultSerialization(), variant_column, row_num, ostr);
+        return nested_serialize(*dynamic_column.getVariantInfo().variant_type->getDefaultSerialization(), variant_column, row_num);
     }
 }
 
@@ -960,12 +959,26 @@ SerializationPtr SerializationDynamic::create(size_t max_dynamic_types_, const S
 
 void SerializationDynamic::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    auto nested_serialize = [&](const ISerialization & serialization, const IColumn & col, size_t row)
     {
-        serialization.serializeTextCSV(col, row, buf, settings);
+        serialization.serializeTextCSV(col, row, ostr, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    serializeTextImpl(column, row_num, nested_serialize);
+}
+
+bool SerializationDynamic::textCSVMayNeedQuotes(const FormatSettings &) const
+{
+    return true;
+}
+
+bool SerializationDynamic::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    return serializeTextImpl(column, row_num, [&](const ISerialization & serialization, const IColumn & variant, size_t variant_row)
+    {
+        return serialization.textCSVNeedsQuotes(variant, variant_row, settings);
+    });
 }
 
 void SerializationDynamic::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -998,12 +1011,12 @@ bool SerializationDynamic::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadB
 
 void SerializationDynamic::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    auto nested_serialize = [&](const ISerialization & serialization, const IColumn & col, size_t row)
     {
-        serialization.serializeTextEscaped(col, row, buf, settings);
+        serialization.serializeTextEscaped(col, row, ostr, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    serializeTextImpl(column, row_num, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1036,12 +1049,12 @@ bool SerializationDynamic::tryDeserializeTextEscaped(DB::IColumn & column, DB::R
 
 void SerializationDynamic::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    auto nested_serialize = [&](const ISerialization & serialization, const IColumn & col, size_t row)
     {
-        serialization.serializeTextQuoted(col, row, buf, settings);
+        serialization.serializeTextQuoted(col, row, ostr, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    serializeTextImpl(column, row_num, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1074,22 +1087,22 @@ bool SerializationDynamic::tryDeserializeTextQuoted(DB::IColumn & column, DB::Re
 
 void SerializationDynamic::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    auto nested_serialize = [&](const ISerialization & serialization, const IColumn & col, size_t row)
     {
-        serialization.serializeTextJSON(col, row, buf, settings);
+        serialization.serializeTextJSON(col, row, ostr, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    serializeTextImpl(column, row_num, nested_serialize);
 }
 
 void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
-    auto nested_serialize = [&settings, indent](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    auto nested_serialize = [&](const ISerialization & serialization, const IColumn & col, size_t row)
     {
-        serialization.serializeTextJSONPretty(col, row, buf, settings, indent);
+        serialization.serializeTextJSONPretty(col, row, ostr, settings, indent);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    serializeTextImpl(column, row_num, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1122,12 +1135,12 @@ bool SerializationDynamic::tryDeserializeTextJSON(DB::IColumn & column, DB::Read
 
 void SerializationDynamic::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    auto nested_serialize = [&](const ISerialization & serialization, const IColumn & col, size_t row)
     {
-        serialization.serializeTextRaw(col, row, buf, settings);
+        serialization.serializeTextRaw(col, row, ostr, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    serializeTextImpl(column, row_num, nested_serialize);
 }
 
 void SerializationDynamic::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1160,12 +1173,12 @@ bool SerializationDynamic::tryDeserializeTextRaw(DB::IColumn & column, DB::ReadB
 
 void SerializationDynamic::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    auto nested_serialize = [&](const ISerialization & serialization, const IColumn & col, size_t row)
     {
-        serialization.serializeText(col, row, buf, settings);
+        serialization.serializeText(col, row, ostr, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    serializeTextImpl(column, row_num, nested_serialize);
 }
 
 void SerializationDynamic::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1198,12 +1211,12 @@ bool SerializationDynamic::tryDeserializeWholeText(DB::IColumn & column, DB::Rea
 
 void SerializationDynamic::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+    auto nested_serialize = [&](const ISerialization & serialization, const IColumn & col, size_t row)
     {
-        serialization.serializeTextXML(col, row, buf, settings);
+        serialization.serializeTextXML(col, row, ostr, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    serializeTextImpl(column, row_num, nested_serialize);
 }
 
 SerializationPtr SerializationDynamic::createSerializationForType(const DataTypePtr & type) const

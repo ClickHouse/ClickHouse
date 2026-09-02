@@ -59,6 +59,10 @@ Because a bare `Tuple` then occupies one field per element, a `\N` in the field 
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
 )", 0) \
+    DECLARE(Bool, output_format_csv_quote_date_time_types, true, R"(
+If it is set to false, Date, Date32, DateTime, DateTime64, Time, and Time64 values are written without surrounding double quotes in CSV output.
+Temporal values remain quoted if the configured delimiter can occur in their output.
+)", 0) \
     DECLARE(Bool, input_format_csv_allow_cr_end_of_line, false, R"(
 If it is set true, \\r will be allowed at end of line not followed by \\n
 )", 0) \

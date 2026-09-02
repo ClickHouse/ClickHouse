@@ -493,6 +493,13 @@ void SerializationSparse::serializeTextCSV(const IColumn & column, size_t row_nu
     nested->serializeTextCSV(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
+bool SerializationSparse::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const auto & sparse_column = assert_cast<const ColumnSparse &>(column);
+    return nested->textCSVNeedsQuotes(sparse_column.getValuesColumn(), sparse_column.getValueIndex(row_num), settings);
+}
+
 void SerializationSparse::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserialize(column, [&](auto & nested_column)

@@ -636,6 +636,11 @@ public:
     virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    virtual bool textCSVMayNeedQuotes(const FormatSettings &) const { return false; }
+    virtual bool textCSVNeedsQuotes(const IColumn &, size_t, const FormatSettings & settings) const
+    {
+        return textCSVMayNeedQuotes(settings);
+    }
 
     /** Text serialization for the Hive text format. Used only for output.
       * Without escaping or quoting. Complex types separate their elements by the Hive separator

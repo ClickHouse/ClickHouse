@@ -67,6 +67,7 @@ private:
 
     const FormatSettings settings;
     Serializations serializations;
+    std::vector<FormatSettings> row_format_settings;
 
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;

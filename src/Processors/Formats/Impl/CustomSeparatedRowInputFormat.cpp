@@ -288,6 +288,15 @@ void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
 
     /// Clean custom delimiter from previous delimiter.
     format_settings.csv.custom_delimiter.clear();
+    format_settings.csv.force_quote_date_time_types = false;
+    /// Input tracks the delimiter after this field. Output header flattening instead follows the
+    /// shared field delimiter because it determines the number of header columns.
+    const auto & tuple_field_delimiter = is_last_column
+        ? format_settings.custom.row_after_delimiter
+        : format_settings.custom.field_delimiter;
+    format_settings.csv.tuple_delimiter_matches_field_delimiter =
+        tuple_field_delimiter.size() == 1
+        && tuple_field_delimiter.front() == format_settings.csv.tuple_delimiter;
 
     /// If delimiter has length = 1, it will be more efficient to use csv.delimiter.
     /// If we have some complex delimiter, normal CSV reading will now work properly if we will
@@ -297,18 +306,26 @@ void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
 
     if (is_last_column)
     {
+        const auto & delimiter = format_settings.custom.row_after_delimiter;
         /// If field delimiter has length = 1, it will be more efficient to use csv.delimiter.
-        if (format_settings.custom.row_after_delimiter.size() == 1)
-            format_settings.csv.delimiter = format_settings.custom.row_after_delimiter.front();
+        if (delimiter.size() == 1)
+            format_settings.csv.delimiter = delimiter.front();
         else
-            format_settings.csv.custom_delimiter = format_settings.custom.row_after_delimiter;
+        {
+            format_settings.csv.custom_delimiter = delimiter;
+            format_settings.csv.force_quote_date_time_types = true;
+        }
     }
     else
     {
-        if (format_settings.custom.field_delimiter.size() == 1)
-            format_settings.csv.delimiter = format_settings.custom.field_delimiter.front();
+        const auto & delimiter = format_settings.custom.field_delimiter;
+        if (delimiter.size() == 1)
+            format_settings.csv.delimiter = delimiter.front();
         else
-            format_settings.csv.custom_delimiter = format_settings.custom.field_delimiter;
+        {
+            format_settings.csv.custom_delimiter = delimiter;
+            format_settings.csv.force_quote_date_time_types = true;
+        }
     }
 }
 

@@ -247,11 +247,14 @@ struct FormatSettings
         bool empty_as_default = false;
         bool missing_nullable_as_empty_string = false;
         bool crlf_end_of_line = false;
+        bool quote_date_time_types = true;
+        bool force_quote_date_time_types = false;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
         bool arrays_as_nested_csv = false;
         String null_representation = "\\N";
         char tuple_delimiter = ',';
+        bool tuple_delimiter_matches_field_delimiter = true;
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
         String custom_delimiter;

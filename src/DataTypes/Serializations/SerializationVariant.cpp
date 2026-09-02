@@ -1227,14 +1227,50 @@ bool SerializationVariant::tryDeserializeTextQuotedImpl(DB::IColumn & column, co
     return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
+template <typename Callback>
+static auto applyToActiveVariant(
+    const IColumn & column, size_t row_num, const Serializations & variant_serializations, Callback && callback)
+{
+    const auto & column_variant = assert_cast<const ColumnVariant &>(column);
+    auto global_discriminator = column_variant.globalDiscriminatorAt(row_num);
+    if (global_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+        return callback(static_cast<const ISerialization *>(nullptr), static_cast<const IColumn *>(nullptr), 0);
+
+    return callback(
+        variant_serializations[global_discriminator].get(),
+        &column_variant.getVariantByGlobalDiscriminator(global_discriminator),
+        column_variant.offsetAt(row_num));
+}
+
 void SerializationVariant::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
-    auto global_discr = col.globalDiscriminatorAt(row_num);
-    if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-        SerializationNullable::serializeNullCSV(ostr, settings);
-    else
-        variant_serializations[global_discr]->serializeTextCSV(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
+    applyToActiveVariant(column, row_num, variant_serializations, [&](const auto * serialization, const auto * variant, size_t variant_row)
+    {
+        if (serialization)
+            serialization->serializeTextCSV(*variant, variant_row, ostr, settings);
+        else
+            SerializationNullable::serializeNullCSV(ostr, settings);
+    });
+}
+
+bool SerializationVariant::textCSVMayNeedQuotes(const FormatSettings & settings) const
+{
+    for (const auto & serialization : variant_serializations)
+    {
+        if (serialization->textCSVMayNeedQuotes(settings))
+            return true;
+    }
+
+    return false;
+}
+
+bool SerializationVariant::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    return applyToActiveVariant(column, row_num, variant_serializations, [&](const auto * serialization, const auto * variant, size_t variant_row)
+    {
+        return serialization && serialization->textCSVNeedsQuotes(*variant, variant_row, settings);
+    });
 }
 
 bool SerializationVariant::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

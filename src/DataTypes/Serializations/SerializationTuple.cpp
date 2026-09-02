@@ -11,7 +11,10 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteBufferFromString.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -23,6 +26,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -34,6 +38,73 @@ static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
     return assert_cast<const ColumnTuple &>(column).getColumn(idx);
+}
+
+static std::optional<FormatSettings> getInteriorTupleCSVSettings(const FormatSettings & settings, size_t elements)
+{
+    if (elements < 2
+        || (!settings.csv.force_quote_date_time_types
+            && settings.csv.delimiter == settings.csv.tuple_delimiter
+            && settings.csv.custom_delimiter.empty()))
+        return std::nullopt;
+
+    FormatSettings result = settings;
+    result.csv.delimiter = settings.csv.tuple_delimiter;
+    result.csv.custom_delimiter.clear();
+    result.csv.force_quote_date_time_types = false;
+    return result;
+}
+
+static bool tupleMayUseWholeCSVField(
+    const FormatSettings & settings,
+    const SerializationTuple::ElementSerializations & elements,
+    const std::optional<FormatSettings> & interior_settings)
+{
+    if (settings.csv.tuple_delimiter_matches_field_delimiter || !interior_settings)
+        return false;
+
+    FormatSettings interior_quote_check_settings = *interior_settings;
+    interior_quote_check_settings.csv.quote_date_time_types = false;
+    interior_quote_check_settings.csv.force_quote_date_time_types = false;
+
+    FormatSettings outer_quote_check_settings = settings;
+    outer_quote_check_settings.csv.quote_date_time_types = false;
+    outer_quote_check_settings.csv.force_quote_date_time_types = false;
+
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        const auto & element_settings = i + 1 < elements.size() ? interior_quote_check_settings : outer_quote_check_settings;
+        if (elements[i]->textCSVMayNeedQuotes(element_settings))
+            return true;
+    }
+    return false;
+}
+
+static bool tupleNeedsWholeCSVField(
+    const FormatSettings & settings,
+    const SerializationTuple::ElementSerializations & elements,
+    const std::optional<FormatSettings> & interior_settings,
+    const IColumn & column,
+    size_t row_num)
+{
+    if (settings.csv.tuple_delimiter_matches_field_delimiter || !interior_settings)
+        return false;
+
+    FormatSettings interior_quote_check_settings = *interior_settings;
+    interior_quote_check_settings.csv.quote_date_time_types = false;
+    interior_quote_check_settings.csv.force_quote_date_time_types = false;
+
+    FormatSettings outer_quote_check_settings = settings;
+    outer_quote_check_settings.csv.quote_date_time_types = false;
+    outer_quote_check_settings.csv.force_quote_date_time_types = false;
+
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        const auto & element_settings = i + 1 < elements.size() ? interior_quote_check_settings : outer_quote_check_settings;
+        if (elements[i]->textCSVNeedsQuotes(extractElementColumn(column, i), row_num, element_settings))
+            return true;
+    }
+    return false;
 }
 
 UInt128 SerializationTuple::getHash(const ElementSerializations & elems_, bool has_explicit_names_)
@@ -646,13 +717,19 @@ void SerializationTuple::serializeTextXML(const IColumn & column, size_t row_num
 
 void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.csv.serialize_tuple_into_separate_columns)
+    const size_t size = elems.size();
+    const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
+    if (settings.csv.serialize_tuple_into_separate_columns
+        && (settings.csv.quote_date_time_types
+            || !tupleNeedsWholeCSVField(settings, elems, interior_settings, column, row_num)))
     {
-        for (size_t i = 0; i < elems.size(); ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             if (i != 0)
                 writeChar(settings.csv.tuple_delimiter, ostr);
-            elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
+
+            const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
+            elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, element_settings);
         }
     }
     else
@@ -663,79 +740,265 @@ void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num
     }
 }
 
+template <typename ReturnType>
+static ReturnType deserializeTextCSVSeparateColumns(
+    IColumn & column,
+    ReadBuffer & istr,
+    const FormatSettings & settings,
+    const SerializationTuple::ElementSerializations & elems)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    const size_t size = elems.size();
+    const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
+    return addElementSafe<ReturnType>(size, column, [&]()
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (i != 0)
+            {
+                skipWhitespaceIfAny(istr);
+                if constexpr (throw_exception)
+                    assertChar(settings.csv.tuple_delimiter, istr);
+                else if (!checkChar(settings.csv.tuple_delimiter, istr))
+                    return false;
+                skipWhitespaceIfAny(istr);
+            }
+
+            auto & element_column = extractElementColumn(column, i);
+            const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
+            {
+                if constexpr (throw_exception)
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, element_settings, elems[i]);
+                else if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(
+                             element_column, istr, element_settings, elems[i]))
+                    return false;
+            }
+            else
+            {
+                if constexpr (throw_exception)
+                    elems[i]->deserializeTextCSV(element_column, istr, element_settings);
+                else if (!elems[i]->tryDeserializeTextCSV(element_column, istr, element_settings))
+                    return false;
+            }
+        }
+        return true;
+    });
+}
+
+static bool customDelimiterFollows(PeekableReadBuffer & buf, const String & delimiter)
+{
+    PeekableReadBufferCheckpoint checkpoint(buf, true);
+    return checkString(delimiter, buf);
+}
+
+template <typename ReturnType>
+ReturnType SerializationTuple::deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    const auto deserialize_whole_tuple = [&](ReadBuffer & buf) -> ReturnType
+    {
+        String value;
+        if constexpr (throw_exception)
+            readCSV(value, buf, settings.csv);
+        else if (!tryReadCSV(value, buf, settings.csv))
+            return false;
+
+        ReadBufferFromString value_buf(value);
+        if constexpr (throw_exception)
+        {
+            deserializeText(column, value_buf, settings, true);
+            return;
+        }
+        else
+            return tryDeserializeText(column, value_buf, settings, true);
+    };
+
+    const size_t size = elems.size();
+    const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
+    if (!settings.csv.deserialize_separate_columns_into_tuple)
+        return deserialize_whole_tuple(istr);
+    if (settings.csv.tuple_delimiter_matches_field_delimiter || !interior_settings || istr.eof())
+        return deserializeTextCSVSeparateColumns<ReturnType>(column, istr, settings, elems);
+
+    const bool may_use_whole_csv_field = tupleMayUseWholeCSVField(settings, elems, interior_settings);
+    const char first_char = *istr.position();
+    const bool quoted_field = (settings.csv.allow_double_quotes && first_char == '"')
+        || (settings.csv.allow_single_quotes && first_char == '\'');
+    if (!quoted_field && first_char != '(' && !may_use_whole_csv_field)
+        return deserializeTextCSVSeparateColumns<ReturnType>(column, istr, settings, elems);
+
+    auto * borrowed_buf = dynamic_cast<PeekableReadBuffer *>(&istr);
+    if (!borrowed_buf)
+    {
+        PeekableReadBuffer peekable_buf(istr, true);
+        const auto try_local_whole_tuple = [&]()
+        {
+            String value;
+            bool whole_tuple = tryReadCSV(value, peekable_buf, settings.csv);
+            if (whole_tuple && !peekable_buf.eof()
+                && *peekable_buf.position() == settings.csv.tuple_delimiter
+                && !settings.csv.tuple_delimiter_matches_field_delimiter)
+            {
+                whole_tuple = false;
+            }
+
+            if (whole_tuple && !peekable_buf.eof() && !settings.csv.force_quote_date_time_types
+                && settings.csv.custom_delimiter.empty())
+            {
+                whole_tuple = *peekable_buf.position() == settings.csv.delimiter
+                    || *peekable_buf.position() == '\r'
+                    || *peekable_buf.position() == '\n';
+            }
+
+            if (whole_tuple)
+            {
+                ReadBufferFromString value_buf(value);
+                whole_tuple = tryDeserializeText(column, value_buf, settings, true);
+            }
+            return whole_tuple;
+        };
+
+        if constexpr (throw_exception)
+        {
+            {
+                PeekableReadBufferCheckpoint checkpoint(peekable_buf);
+                if (!try_local_whole_tuple())
+                {
+                    peekable_buf.rollbackToCheckpoint();
+                    deserializeTextCSVSeparateColumns<void>(column, peekable_buf, settings, elems);
+                }
+            }
+
+            if (likely(!peekable_buf.hasUnreadData()))
+                return;
+
+            column.popBack(1);
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot safely continue parsing a CSV tuple after a speculative read crossed the input buffer boundary");
+        }
+        else
+        {
+            bool result = false;
+            {
+                PeekableReadBufferCheckpoint checkpoint(peekable_buf);
+                if (try_local_whole_tuple())
+                    result = true;
+                else
+                {
+                    peekable_buf.rollbackToCheckpoint();
+                    result = deserializeTextCSVSeparateColumns<bool>(column, peekable_buf, settings, elems);
+                }
+            }
+
+            if (peekable_buf.hasUnreadData())
+            {
+                if (result)
+                    column.popBack(1);
+                return false;
+            }
+            return result;
+        }
+    }
+
+    PeekableReadBuffer & peekable_buf = *borrowed_buf;
+    PeekableReadBufferCheckpoint checkpoint(peekable_buf);
+
+    String value;
+    bool whole_tuple = tryReadCSV(value, peekable_buf, settings.csv);
+    const bool boundary_follows = whole_tuple
+        && (peekable_buf.eof()
+            || (settings.csv.custom_delimiter.empty()
+                ? settings.csv.force_quote_date_time_types
+                    || *peekable_buf.position() == settings.csv.delimiter
+                    || *peekable_buf.position() == '\r'
+                    || *peekable_buf.position() == '\n'
+                : customDelimiterFollows(peekable_buf, settings.csv.custom_delimiter)));
+
+    const bool tuple_delimiter_follows = whole_tuple
+        && !peekable_buf.eof()
+        && *peekable_buf.position() == settings.csv.tuple_delimiter
+        && !settings.csv.tuple_delimiter_matches_field_delimiter;
+
+    if (tuple_delimiter_follows && boundary_follows && may_use_whole_csv_field)
+    {
+        peekable_buf.rollbackToCheckpoint();
+        bool flattened_tuple = deserializeTextCSVSeparateColumns<bool>(column, peekable_buf, settings, elems);
+        if (flattened_tuple)
+        {
+            /// Keep the legacy flattened interpretation when both parses are valid.
+            return ReturnType(true);
+        }
+
+        peekable_buf.rollbackToCheckpoint();
+        String reread_value;
+        whole_tuple = tryReadCSV(reread_value, peekable_buf, settings.csv);
+        chassert(!whole_tuple || reread_value == value);
+    }
+    else if (tuple_delimiter_follows && !boundary_follows)
+        whole_tuple = false;
+
+    if (whole_tuple)
+    {
+        ReadBufferFromString value_buf(value);
+        whole_tuple = tryDeserializeText(column, value_buf, settings, true);
+    }
+
+    if (whole_tuple)
+        return ReturnType(true);
+
+    peekable_buf.rollbackToCheckpoint();
+    return deserializeTextCSVSeparateColumns<ReturnType>(column, peekable_buf, settings, elems);
+}
+
 void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.csv.deserialize_separate_columns_into_tuple)
-    {
-        addElementSafe<void>(elems.size(), column, [&]
-        {
-            const size_t size = elems.size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                if (i != 0)
-                {
-                    skipWhitespaceIfAny(istr);
-                    assertChar(settings.csv.tuple_delimiter, istr);
-                    skipWhitespaceIfAny(istr);
-                }
-
-                auto & element_column = extractElementColumn(column, i);
-                if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]);
-                else
-                    elems[i]->deserializeTextCSV(element_column, istr, settings);
-            }
-            return true;
-        });
-    }
-    else
-    {
-        String s;
-        readCSV(s, istr, settings.csv);
-        ReadBufferFromString rb(s);
-        deserializeText(column, rb, settings, true);
-    }
+    deserializeTextCSVImpl<void>(column, istr, settings);
 }
 
 bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.csv.deserialize_separate_columns_into_tuple)
+    return deserializeTextCSVImpl<bool>(column, istr, settings);
+}
+
+bool SerializationTuple::textCSVMayNeedQuotes(const FormatSettings & settings) const
+{
+    const size_t size = elems.size();
+    const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
+    if (!settings.csv.serialize_tuple_into_separate_columns
+        || (!settings.csv.quote_date_time_types
+            && tupleMayUseWholeCSVField(settings, elems, interior_settings)))
+        return true;
+
+    for (size_t i = 0; i < size; ++i)
     {
-        return addElementSafe<bool>(elems.size(), column, [&]
-        {
-            const size_t size = elems.size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                if (i != 0)
-                {
-                skipWhitespaceIfAny(istr);
-                if (!checkChar(settings.csv.tuple_delimiter, istr))
-                    return false;
-                skipWhitespaceIfAny(istr);
-                }
-
-                auto & element_column = extractElementColumn(column, i);
-                if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                {
-                if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]))
-                    return false;
-                }
-                else
-                {
-                if (!elems[i]->tryDeserializeTextCSV(element_column, istr, settings))
-                    return false;
-                }
-            }
-
+        const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
+        if (elems[i]->textCSVMayNeedQuotes(element_settings))
             return true;
-        });
     }
+    return false;
+}
 
-    String s;
-    if (!tryReadCSV(s, istr, settings.csv))
-        return false;
-    ReadBufferFromString rb(s);
-    return tryDeserializeText(column, rb, settings, true);
+bool SerializationTuple::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const size_t size = elems.size();
+    const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
+    if (!settings.csv.serialize_tuple_into_separate_columns
+        || (!settings.csv.quote_date_time_types
+            && tupleNeedsWholeCSVField(settings, elems, interior_settings, column, row_num)))
+        return true;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
+        if (elems[i]->textCSVNeedsQuotes(extractElementColumn(column, i), row_num, element_settings))
+            return true;
+    }
+    return false;
 }
 
 struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBulkState
