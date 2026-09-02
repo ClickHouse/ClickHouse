@@ -803,7 +803,9 @@ TEST(SchedulerSpaceShared, PendingAllocationsRunWhileBlockedGrowthIsSuspended)
     AllocationQueue * queue = r.addQueue("/queue");
     r.registerResource();
 
-    ManualAllocation heavy(queue, "heavy", 8000);
+    ResourceAllocation::MemoryPressurePolicy spill_before_suction;
+    spill_before_suction.suction_max_allocation_bytes = 1;
+    ManualAllocation heavy(queue, "heavy", 8000, true, spill_before_suction);
     heavy.protectAfterPressureRounds(2);
 
     /// Park the scheduler so both requests are visible in the queue at once. `AllocationQueue` normally
