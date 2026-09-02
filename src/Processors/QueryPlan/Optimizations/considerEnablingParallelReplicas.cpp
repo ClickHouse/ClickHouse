@@ -236,10 +236,13 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
 /// a `Merge` table and over a plain table, with `use_index_for_in_with_subqueries` 0 and 1). It is here
 /// to keep the check honest if a set ever reaches this point with its source still attached.
 ///
-/// A step that owns nested plans (`ReadFromMerge`, `JoinStepLogicalLookup`, ...) does not support
-/// statistics collection itself, so it is reported by the check above and there is no need to descend
-/// into `getChildPlans` - which for `ReadFromMerge` would build those plans rather than hand them out.
-void collectStepsUnsupportedForStatistics(QueryPlan::Node & root, String & unsupported_steps)
+/// Inside a set's source plan the statistics predicate does not apply - those plans are never
+/// instrumented, so a step that cannot collect statistics is harmless there. What is not harmless is a
+/// step holding plans of its own: a set below one of those is reachable through neither
+/// `collectBuiltSets` nor `moveSetsFromLocalPlanToReplicasPlan`, both of which stop at `getChildPlans`
+/// because calling it on a `ReadFromMerge` builds the child plans rather than handing them out. So only
+/// such a step is reported from a set source plan, and `ownsChildPlans` answers that without the build.
+void collectStepsUnsupportedForStatistics(QueryPlan::Node & root, String & unsupported_steps, bool inside_set_source)
 {
     Stack stack;
     traverseQueryPlan(
@@ -247,11 +250,13 @@ void collectStepsUnsupportedForStatistics(QueryPlan::Node & root, String & unsup
         root,
         [&](auto & frame_node)
         {
-            const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
-                || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
-                || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
-                || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
-            if (!step_is_supported)
+            const bool step_blocks_optimization = inside_set_source
+                ? frame_node.step->ownsChildPlans()
+                : !(frame_node.step->supportsDataflowStatisticsCollection()
+                    || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
+                    || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
+                    || typeid_cast<const CreatingSetsStep *>(frame_node.step.get()));
+            if (step_blocks_optimization)
                 unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
 
             const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get());
@@ -265,7 +270,7 @@ void collectStepsUnsupportedForStatistics(QueryPlan::Node & root, String & unsup
 
                 auto * source = future_set->getQueryPlan();
                 if (source && source->getRootNode())
-                    collectStepsUnsupportedForStatistics(*source->getRootNode(), unsupported_steps);
+                    collectStepsUnsupportedForStatistics(*source->getRootNode(), unsupported_steps, /*inside_set_source=*/true);
             }
         });
 }
@@ -319,7 +324,7 @@ void considerEnablingParallelReplicas(
         return;
 
     String unsupported_steps;
-    collectStepsUnsupportedForStatistics(root, unsupported_steps);
+    collectStepsUnsupportedForStatistics(root, unsupported_steps, /*inside_set_source=*/false);
     if (!unsupported_steps.empty())
     {
         LOG_DEBUG(

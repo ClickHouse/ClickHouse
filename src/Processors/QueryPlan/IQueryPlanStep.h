@@ -113,6 +113,12 @@ public:
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
     virtual QueryPlanRawPtrs getChildPlans() { return {}; }
 
+    /// Whether this step holds plans of its own, i.e. whether `getChildPlans` has anything to return.
+    /// Answering must stay cheap: `ReadFromMerge::getChildPlans` builds the child plans instead of
+    /// just handing them out, so a caller that only needs to know whether they exist asks this.
+    /// Override it in every step that overrides `getChildPlans`.
+    virtual bool ownsChildPlans() const { return false; }
+
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
