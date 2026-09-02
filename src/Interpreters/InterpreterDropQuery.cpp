@@ -340,7 +340,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
 
             /// Only a replicated truncate is safe to run concurrently, and it may wait long enough to stall other DDL.
-            if (database->getUUID() != UUIDHelpers::Nil && table->supportsReplication())
+            /// The share lock is what replaces the guard, so the guard is dropped only while holding it.
+            if (database->getUUID() != UUIDHelpers::Nil && table_shared_lock && table->supportsReplication())
                 ddl_guard.reset();
 
             /// Drop table data, don't touch metadata
