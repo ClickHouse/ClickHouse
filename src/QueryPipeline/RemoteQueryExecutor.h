@@ -423,17 +423,13 @@ private:
     /// covering it (the read context fiber span or the synchronous-path fragment span).
     OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
 
-    /// Write the synchronous-path fragment span to the span log. At most one call takes
-    /// effect; all callers except the destructor must hold `was_cancelled_mutex`.
-    void finishSyncFragmentSpan(OpenTelemetry::SpanStatus status, const String & status_message = {}) noexcept;
-
-    /// Record the fragment's outcome on whichever span covers it: finishes the detached
-    /// synchronous-path span, or buffers the status onto the read context fiber span, which is
-    /// applied when the fiber exits. Write-once on both paths: the first recorded outcome wins.
+    /// Record the fragment's outcome on whichever span covers it: writes the detached
+    /// synchronous-path span to the span log, or buffers the status onto the read context fiber span,
+    /// which is applied when the fiber exits. Write-once on both paths: the first recorded outcome wins.
+    /// The synchronous-path span is guarded by `was_cancelled_mutex`: callers that can still reach it
+    /// (everything before the read context exists, except the destructor) must hold the mutex.
+    /// The fiber-span path is thread-safe on its own.
     void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept;
-
-    /// Record the in-flight exception as this fragment's failure. Must be called from a catch block.
-    void finishFragmentSpanWithCurrentException() noexcept;
 
     /// Record a shard failure tolerated by `skip_unavailable_shards` as ERROR on the fragment
     /// span, tagged with the `clickhouse.shard_skipped` attribute. The query keeps going, but the
