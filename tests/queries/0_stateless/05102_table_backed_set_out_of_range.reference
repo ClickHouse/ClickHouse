@@ -1,0 +1,21 @@
+1
+1
+1
+-1	0
+1	1
+1
+1
+a wider probe type
+1
+1
+a Nullable set key: the cross-type probe agrees with the same-type one
+1	1
+2	0
+\N	\N
+-1	0
+1	1
+\N	\N
+1
+a non-nullable set key with a nullable probe
+1
+1
