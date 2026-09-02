@@ -83,6 +83,11 @@ public:
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
+    /// The per-shard join clones created when the join is sharded by primary-key ranges.
+    /// All data goes through them and the original `join` stays empty, so `EXPLAIN ANALYZE`
+    /// aggregates the statistics over the clones.
+    void setShardJoins(std::vector<JoinPtr> shard_joins_) { shard_joins = std::move(shard_joins_); }
+
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
@@ -102,6 +107,8 @@ private:
     String join_readable_relation_name;
 
     JoinPtr join;
+    /// Per-shard clones from `QueryPipelineBuilder::joinPipelinesByShards`, see `setShardJoins`.
+    std::vector<JoinPtr> shard_joins;
     std::optional<size_t> result_rows_estimation;
     size_t max_block_size;
     size_t min_block_size_rows;
