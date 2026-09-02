@@ -157,6 +157,7 @@ public:
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
+    std::shared_ptr<const S3Settings> tryGetS3StorageSettings() const override { return std::make_shared<const S3Settings>(*s3_settings.get()); }
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);

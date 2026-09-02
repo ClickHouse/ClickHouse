@@ -980,21 +980,30 @@ void TableSnapshot::initOrUpdateSnapshot() const
             inflight_load = load;
         }
 
-        /// Registered as a waiter while still holding the mutex, so that a query evaluating
-        /// `given_up` above cannot observe this load as waited-for by nobody during the
-        /// unlock-to-wait handoff below.
+        /// Registered as a waiter while still holding the mutex — and unregistered under it
+        /// again below — so that a query evaluating `given_up` above never observes a waiter
+        /// which is already gone, nor misses one which is about to poll.
         load->waiters.fetch_add(1, std::memory_order_relaxed);
-        SCOPE_EXIT({ load->waiters.fetch_sub(1, std::memory_order_relaxed); });
 
         /// Wait for the build OUTSIDE the mutex, so that every waiter sits in its own polling
         /// loop with its own cancellation checks. With the wait under the mutex, sibling
         /// queries slept inside a plain lock and could not be killed while a load was stuck.
         lock.unlock();
-        /// This waiter may be cancelled or time out; if so it throws and the build keeps
-        /// running, staying installed in `inflight_load` for the other waiters and for later
-        /// queries. `lock` does not own the mutex here, so unwinding it does not unlock twice.
-        waitForSnapshotLoad(*load, *helper, log);
+        try
+        {
+            /// This waiter may be cancelled or time out; if so it throws and the build keeps
+            /// running, staying installed in `inflight_load` for the other waiters and for
+            /// later queries.
+            waitForSnapshotLoad(*load, *helper, log);
+        }
+        catch (...)
+        {
+            lock.lock();
+            load->waiters.fetch_sub(1, std::memory_order_relaxed);
+            throw;
+        }
         lock.lock();
+        load->waiters.fetch_sub(1, std::memory_order_relaxed);
 
         /// The registered load installs its result. A superseded load (given up on by everyone,
         /// then replaced by a fresh one for the same pinned version) may still install it while

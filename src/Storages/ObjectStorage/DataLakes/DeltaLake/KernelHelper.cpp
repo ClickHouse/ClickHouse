@@ -2,7 +2,7 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -231,14 +231,14 @@ public:
         /// The fallbacks come from the object storage's live settings — `applyNewSettings`
         /// reapplies config/endpoint settings on every update — rather than from the values
         /// captured when this helper was created, so a reloaded configuration reaches the
-        /// kernel client the same way it reaches the server's own S3 client.
+        /// kernel client the same way it reaches the server's own S3 client. The accessor is
+        /// virtual, so wrappers such as CachedObjectStorage forward it to the S3 storage inside.
         UInt64 fallback_connect_timeout_ms = connect_timeout_ms;
         UInt64 fallback_request_timeout_ms = request_timeout_ms;
-        if (const auto * s3_object_storage = dynamic_cast<const DB::S3ObjectStorage *>(object_storage.get()))
+        if (const auto live_settings = object_storage->tryGetS3StorageSettings())
         {
-            const auto live_settings = s3_object_storage->getS3Settings();
-            fallback_connect_timeout_ms = live_settings.auth_settings[DB::S3AuthSetting::connect_timeout_ms];
-            fallback_request_timeout_ms = live_settings.auth_settings[DB::S3AuthSetting::request_timeout_ms];
+            fallback_connect_timeout_ms = live_settings->auth_settings[DB::S3AuthSetting::connect_timeout_ms];
+            fallback_request_timeout_ms = live_settings->auth_settings[DB::S3AuthSetting::request_timeout_ms];
         }
         const UInt64 effective_connect_timeout_ms = options.s3_connect_timeout_ms.value_or(fallback_connect_timeout_ms);
         const UInt64 effective_request_timeout_ms = options.s3_request_timeout_ms.value_or(fallback_request_timeout_ms);
