@@ -109,10 +109,26 @@ TEST(ClientInfoRead, UsesInitiatorCoordinatorReplicasCountForRemoteReplica)
 {
     auto context = Context::createCopy(getContext().context);
     context->makeQueryContext();
+    context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     context->getClientInfo().obsolete_count_participating_replicas = 2;
 
     /// A remote replica must use the initiator's snapshot before consulting its own cluster liveness.
     /// Passing no cluster makes this test fail if the override is removed and local liveness is recomputed.
+    EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
+}
+
+TEST(ClientInfoRead, InitialQueryCannotOverrideCoordinatorReplicasCount)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    /// `ClientInfo` is deserialized from the client's `Query` packet and copied verbatim into the query
+    /// context, so a custom client can put any value in this field on an *initial* query. It must not be
+    /// able to resize the mark-segment-size heuristic away from the count the coordinator was sized with:
+    /// on an initial query only the out-of-band context carrier, written by the dispatch itself, counts.
+    context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    context->getClientInfo().obsolete_count_participating_replicas = 5;
+    context->setParallelReplicasCoordinatorCount(2);
+
     EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
 }
 

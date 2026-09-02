@@ -106,6 +106,7 @@ static void setClusterForParallelReplicas(const ContextMutablePtr & context, con
     /// a fan-out over the same cluster name but a different shard is a different replica set, and must not
     /// inherit the previous shard's count.
     context->getClientInfo().obsolete_count_participating_replicas = 0;
+    context->clearParallelReplicasCoordinatorCount();
 
     LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
     context->setSetting("cluster_for_parallel_replicas", cluster_name);
