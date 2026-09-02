@@ -35,9 +35,6 @@ public:
 
     bool readsFromOtherTables() const override { return true; }
 
-    /// The table this alias points to, whether or not it currently resolves.
-    StorageID getTargetTableId() const { return StorageID(target_database, target_table); }
-
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }

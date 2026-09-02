@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -28,7 +27,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int INFINITE_LOOP;
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -237,51 +235,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     return {};
 }
 
-/// A table `ENGINE = Alias(<new name>, ...)` inside the database being renamed ends up pointing into
-/// its own database, and can then be part of a cycle - the simplest one being `db.t = Alias(db, t)`.
-/// `StorageAlias` rejects a self-reference at `CREATE`, but only when the target already resolves: a
-/// `CREATE` naming a database that does not exist yet passes vacuously, and the rename never
-/// re-validates the stored engine arguments. Such a cycle in the server-wide table dependency graph
-/// then makes every later DDL statement that adds a dependency edge fail with `INFINITE_LOOP`,
-/// anywhere on the server, and the database stops being listable after a restart.
-static void assertRenameLeavesNoAliasCycle(IDatabase & database, const String & new_database_name, ContextPtr context)
-{
-    /// Alias name -> the name it would point to, for the aliases that would point into this database.
-    std::unordered_map<String, String> targets;
-
-    for (auto it = database.getTablesIterator(context); it->isValid(); it->next())
-    {
-        const auto * alias = typeid_cast<const StorageAlias *>(it->table().get());
-        if (!alias)
-            continue;
-
-        auto target = alias->getTargetTableId();
-        if (target.getDatabaseName() == new_database_name)
-            targets.emplace(it->name(), target.getTableName());
-    }
-
-    for (const auto & [name, _] : targets)
-    {
-        /// Follow the chain from `name`. It is a functional graph, so a cycle is reached within as
-        /// many steps as there are aliases.
-        String current = name;
-        for (size_t step = 0; step <= targets.size(); ++step)
-        {
-            auto it = targets.find(current);
-            if (it == targets.end())
-                break;
-
-            current = it->second;
-            if (current == name)
-                throw Exception(ErrorCodes::INFINITE_LOOP,
-                    "Cannot rename database {} to {}: the Alias table {} would then refer to {}, "
-                    "which leads back to it",
-                    backQuoteIfNeed(database.getDatabaseName()), backQuoteIfNeed(new_database_name),
-                    backQuoteIfNeed(name), backQuoteIfNeed(targets.at(name)));
-        }
-    }
-}
-
 BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const RenameDescriptions & descriptions)
 {
     chassert(descriptions.size() == 1);
@@ -297,7 +250,16 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
-        assertRenameLeavesNoAliasCycle(*db, new_name, getContext());
+
+        /// The rename re-keys every table of the database under the new name, which can close a cycle
+        /// in the server-wide dependency graph - the simplest case being a table
+        /// `db.t = Alias(<new name>, t)`, accepted at `CREATE` because the target database did not
+        /// exist yet and thus becoming a self-reference. Refuse such a rename before doing anything,
+        /// the same way `RENAME TABLE` already refuses it for a single table.
+        Strings table_names;
+        for (auto it = db->getTablesIterator(getContext()); it->isValid(); it->next())
+            table_names.push_back(it->name());
+        catalog.checkDatabaseCanBeRenamedWithNoCyclicDependencies(old_name, new_name, table_names);
         db->renameDatabase(getContext(), new_name);
     }
 

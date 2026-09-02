@@ -56,3 +56,31 @@ DROP TABLE outer_alias;
 DROP TABLE inner_alias;
 DROP TABLE base_table;
 "
+
+# `RENAME DATABASE` now refuses to leave an `Alias` of the database pointing back into it, but the
+# check can only see attached tables: a detached table is not in the dependency graph, so its stored
+# definition can still be moved into its own target namespace and re-attached afterwards. Loading
+# that must stay tolerated - a rejection on the load path fails the whole metadata load.
+
+$CLICKHOUSE_CLIENT -q "
+DROP DATABASE IF EXISTS \`${CLICKHOUSE_DATABASE_1}\`;
+CREATE DATABASE \`${CLICKHOUSE_DATABASE_1}\`;
+"
+
+# The renamed-to database is absent, so this names a table that does not exist yet.
+$CLICKHOUSE_CLIENT -q "
+CREATE TABLE \`${CLICKHOUSE_DATABASE_1}\`.renamed ENGINE = Alias(\`${CLICKHOUSE_DATABASE_2}\`, renamed);
+DETACH TABLE \`${CLICKHOUSE_DATABASE_1}\`.renamed;
+RENAME DATABASE \`${CLICKHOUSE_DATABASE_1}\` TO \`${CLICKHOUSE_DATABASE_2}\`;
+"
+
+echo '-- a stored self-referential definition loads'
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;"
+
+echo '-- and reading it is bounded'
+$CLICKHOUSE_CLIENT -q "SELECT * FROM \`${CLICKHOUSE_DATABASE_2}\`.renamed;" 2>&1 | grep -m 1 -o -F 'TOO_DEEP_RECURSION'
+
+$CLICKHOUSE_CLIENT -q "
+DROP TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;
+DROP DATABASE \`${CLICKHOUSE_DATABASE_2}\`;
+"

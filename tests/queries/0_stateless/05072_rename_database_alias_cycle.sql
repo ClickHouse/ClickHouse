@@ -28,6 +28,17 @@ CREATE TABLE db_05072_pair.a ENGINE = Alias('db_05072_paired', 'b');
 CREATE TABLE db_05072_pair.b ENGINE = Alias('db_05072_paired', 'a');
 RENAME DATABASE db_05072_pair TO db_05072_paired; -- { serverError INFINITE_LOOP }
 
+-- A cycle that runs through a third database is rejected too: before the rename `db_05072_cross_to.t`
+-- is only a placeholder node in the dependency graph, and the rename merges the renamed table into it.
+DROP DATABASE IF EXISTS db_05072_keep;
+DROP DATABASE IF EXISTS db_05072_cross;
+DROP DATABASE IF EXISTS db_05072_cross_to;
+CREATE DATABASE db_05072_keep;
+CREATE TABLE db_05072_keep.u ENGINE = Alias('db_05072_cross_to', 't');
+CREATE DATABASE db_05072_cross;
+CREATE TABLE db_05072_cross.t ENGINE = Alias('db_05072_keep', 'u');
+RENAME DATABASE db_05072_cross TO db_05072_cross_to; -- { serverError INFINITE_LOOP }
+
 -- A rename that does not create a cycle still works.
 DROP DATABASE IF EXISTS db_05072_ok;
 DROP DATABASE IF EXISTS db_05072_ok_renamed;
@@ -37,6 +48,8 @@ RENAME DATABASE db_05072_ok TO db_05072_ok_renamed;
 SELECT count() FROM db_05072_ok_renamed.t;
 
 DROP DATABASE db_05072_from;
+DROP DATABASE db_05072_keep;
+DROP DATABASE db_05072_cross;
 DROP DATABASE db_05072_pair;
 DROP DATABASE db_05072_ok_renamed;
 DROP VIEW v_05072;
