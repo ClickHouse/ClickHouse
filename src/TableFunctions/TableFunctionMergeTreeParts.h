@@ -28,6 +28,11 @@ public:
     /// `type` of the disk description: access is checked before the disk may be created.
     std::optional<AccessTypeObjects::Source> getSourceAccessObject() const override;
 
+    /// What a filtered source grant (`GRANT READ ON S3('...')`) is matched against: the `endpoint` of
+    /// an object storage disk, when the description gives it literally. Empty otherwise, and then the
+    /// unfiltered grant on the source is required, as for `file`.
+    const String & getFunctionURI() const override { return function_uri; }
+
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -54,6 +59,7 @@ private:
     /// do that before it is authorized, nor grow the global disk map by varying the disk description.
     ASTPtr disk_function_ast;
     std::optional<AccessTypeObjects::Source> source_access;
+    String function_uri;
 };
 
 }

@@ -428,8 +428,12 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         /// from the description itself: the `type` (and `object_storage_type`) must be given literally.
         /// A substitution (`from_env`, `from_zk`, `include`) or a wrapper disk cannot tell what kind of
         /// source the query is going to read, so they are rejected here, before any of it is resolved.
+        /// The `endpoint` is taken along the way: it is what a filtered source grant is matched against.
         std::string type;
         std::string object_storage_type;
+        std::string endpoint;
+        bool seen_endpoint = false;
+        bool has_endpoint_subpath = false;
         for (const auto & disk_arg : disk_args)
         {
             const auto * equals = disk_arg->as<ASTFunction>();
@@ -446,11 +450,38 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
             if (key->name() == "include")
                 throw_bad_argument(disk_arg_num, "`include` is not allowed in the disk description");
 
-            if (key->name() != "type" && key->name() != "object_storage_type")
+            /// `endpoint_subpath` moves what the disk reads below the `endpoint`, so the `endpoint` alone
+            /// is not the URI to check then.
+            if (key->name() == "endpoint_subpath")
+            {
+                has_endpoint_subpath = true;
+                continue;
+            }
+
+            if (key->name() != "type" && key->name() != "object_storage_type" && key->name() != "endpoint")
                 continue;
 
             const auto & value_ast = equals->arguments->children[1];
-            if (!value_ast->as<ASTLiteral>() && !value_ast->as<ASTIdentifier>())
+            const bool is_literal = value_ast->as<ASTLiteral>() || value_ast->as<ASTIdentifier>();
+
+            /// An `endpoint` that is not written literally simply is not used for the check: the query
+            /// is then held to the unfiltered grant on the source, which is the stricter outcome. A
+            /// repeated `endpoint` is rejected: the check must not trust one while the disk uses the other.
+            if (key->name() == "endpoint")
+            {
+                if (seen_endpoint)
+                    throw_bad_argument(disk_arg_num, "`endpoint` is given more than once in the disk description");
+                seen_endpoint = true;
+
+                if (is_literal)
+                {
+                    auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(value_ast, context);
+                    endpoint = checkAndGetLiteralArgument<String>(value_literal, key->name());
+                }
+                continue;
+            }
+
+            if (!is_literal)
                 throw_bad_argument(disk_arg_num, fmt::format("expected the `{}` of the disk to be a literal", key->name()));
 
             auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(value_ast, context);
@@ -468,27 +499,46 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         if (type.empty())
             throw_bad_argument(disk_arg_num, "the disk description requires an explicit `type`");
 
-        auto source_for_type = [&](const std::string & disk_type) -> std::optional<AccessTypeObjects::Source>
+        /// The names are the ones `DiskFactory` and `ObjectStorageFactory` register, including the
+        /// compatibility aliases, so that every disk the factories can create for a readable source is
+        /// accepted here.
+        auto source_for_backend = [&](const std::string & backend) -> std::optional<AccessTypeObjects::Source>
         {
-            if (disk_type == "local")
+            if (backend == "local" || backend == "local_blob_storage" || backend == "local_plain" || backend == "local_plain_rewritable")
                 return AccessTypeObjects::Source::FILE;
-            if (disk_type == "s3" || disk_type.starts_with("s3_"))
+            if (backend == "s3" || backend == "s3_plain" || backend == "s3_plain_rewritable" || backend == "s3_with_keeper")
                 return AccessTypeObjects::Source::S3;
-            if (disk_type == "azure_blob_storage" || disk_type == "azure")
+            if (backend == "azure_blob_storage" || backend == "azure" || backend == "azure_plain" || backend == "azure_plain_rewritable")
                 return AccessTypeObjects::Source::AZURE;
-            if (disk_type == "hdfs")
+            if (backend == "hdfs")
                 return AccessTypeObjects::Source::HDFS;
-            if (disk_type == "web")
+            if (backend == "web")
                 return AccessTypeObjects::Source::URL;
             return std::nullopt;
         };
 
-        /// `object_storage` is only a wrapper whose backend is chosen by `object_storage_type`.
-        source_access = type == "object_storage" ? source_for_type(object_storage_type) : source_for_type(type);
+        /// `local` is a disk of its own; every other type is an object storage disk, whose backend is
+        /// `object_storage_type` when it is given and the `type` itself otherwise, the same way
+        /// `ObjectStorageFactory::create` picks it. `object_storage` is only a wrapper, so it always
+        /// needs the `object_storage_type`.
+        const auto & backend = (type == "local" || object_storage_type.empty()) ? type : object_storage_type;
+        source_access = source_for_backend(backend);
         if (!source_access)
             throw_bad_argument(disk_arg_num, fmt::format(
                 "table function `{}` cannot read from a disk of type `{}`",
-                getName(), type == "object_storage" ? type + ", object_storage_type = " + object_storage_type : type));
+                getName(), object_storage_type.empty() ? type : type + ", object_storage_type = " + object_storage_type));
+
+        /// An object storage disk reads under its `endpoint`, so that is the URI a filtered source
+        /// grant is matched against. Only a plain literal is trusted: a substitution or a macro would
+        /// make the created disk read from somewhere else than what was checked. A local disk has no
+        /// URI, as `file` has none.
+        if (*source_access != AccessTypeObjects::Source::FILE
+            && !endpoint.empty()
+            && !has_endpoint_subpath
+            && !endpoint.contains('{')
+            && !endpoint.starts_with("from_env")
+            && !endpoint.starts_with("from_zk"))
+            function_uri = endpoint;
     }
 }
 
@@ -560,8 +610,12 @@ The function configures a disk from its arguments, so it is not allowed in reado
 restrictions on dynamically configured disks apply: a local disk must live under
 `custom_local_disks_base_directory`, and an S3 disk must not resolve the server's own credentials.
 The `type` of the disk (and `object_storage_type` when `type = object_storage`) must be a literal
-value: it decides what kind of source the access of the query is checked for, and the disk is only
-created after that check passes. The disk is local to the query and is not registered on the server.
+value: it decides what kind of source the access of the query is checked for (`READ ON S3`,
+`READ ON FILE`, ...), and the disk is only created after that check passes. A filtered grant, such as
+`GRANT READ ON S3('https://mybucket.s3.amazonaws.com/data/.*')`, is matched against the `endpoint` of
+the disk description, which then has to be a literal value as well; a local disk needs the unfiltered
+`READ ON FILE` grant, as the `file` table function does. The disk is local to the query and is not
+registered on the server.
 
 ## Usage example {#usage-example}
 
