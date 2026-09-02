@@ -15,7 +15,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
     { value: "ai-ml", label: "IA/ML" }
   ]
   const productOptions = [
-    { value: "self-managed", label: "ClickHouse (Open-Source)" },
+    { value: "self-managed", label: "ClickHouse (código abierto)" },
     { value: "cloud", label: "ClickHouse Cloud" },
     { value: "clickpipes", label: "ClickPipes" },
     { value: "language-clients", label: "Clientes de lenguaje" },

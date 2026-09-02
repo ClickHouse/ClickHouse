@@ -87,6 +87,136 @@ QUICKSTARTS_EXPLORE_HEADINGS = {
     "ru": "Изучить руководства по быстрому старту",
     "zh": "探索快速入门",
 }
+QUICKSTARTS_FILTER_OPTIONS = {
+    "ar": {
+        "useCaseOptions": [
+            ("real-time-analytics", "تحليلات الوقت الفعلي"),
+            ("data-warehousing", "تخزين البيانات"),
+            ("observability", "الأوبزيرفابيليتي"),
+            ("ai-ml", "AI/ML"),
+        ],
+        "productOptions": [
+            ("self-managed", "ClickHouse (مفتوح المصدر)"),
+            ("cloud", "ClickHouse Cloud"),
+            ("clickpipes", "ClickPipes"),
+            ("language-clients", "عملاء لغات البرمجة"),
+            ("clickstack", "ClickStack"),
+            ("chdb", "chDB"),
+        ],
+    },
+    "es": {
+        "useCaseOptions": [
+            ("real-time-analytics", "Analítica en tiempo real"),
+            ("data-warehousing", "Almacenamiento de datos"),
+            ("observability", "Observabilidad"),
+            ("ai-ml", "IA/ML"),
+        ],
+        "productOptions": [
+            ("self-managed", "ClickHouse (código abierto)"),
+            ("cloud", "ClickHouse Cloud"),
+            ("clickpipes", "ClickPipes"),
+            ("language-clients", "Clientes de lenguaje"),
+            ("clickstack", "ClickStack"),
+            ("chdb", "chDB"),
+        ],
+    },
+    "fr": {
+        "useCaseOptions": [
+            ("real-time-analytics", "Analytique en temps réel"),
+            ("data-warehousing", "Entrepôt de données"),
+            ("observability", "Observabilité"),
+            ("ai-ml", "IA/ML"),
+        ],
+        "productOptions": [
+            ("self-managed", "ClickHouse (code source ouvert)"),
+            ("cloud", "ClickHouse Cloud"),
+            ("clickpipes", "ClickPipes"),
+            ("language-clients", "Clients de langage"),
+            ("clickstack", "ClickStack"),
+            ("chdb", "chDB"),
+        ],
+    },
+    "ja": {
+        "useCaseOptions": [
+            ("real-time-analytics", "リアルタイム分析"),
+            ("data-warehousing", "データウェアハウス"),
+            ("observability", "オブザーバビリティ"),
+            ("ai-ml", "AI/ML"),
+        ],
+        "productOptions": [
+            ("self-managed", "ClickHouse（オープンソース）"),
+            ("cloud", "ClickHouse Cloud"),
+            ("clickpipes", "ClickPipes"),
+            ("language-clients", "言語クライアント"),
+            ("clickstack", "ClickStack"),
+            ("chdb", "chDB"),
+        ],
+    },
+    "ko": {
+        "useCaseOptions": [
+            ("real-time-analytics", "실시간 분석"),
+            ("data-warehousing", "데이터 웨어하우징"),
+            ("observability", "관측성"),
+            ("ai-ml", "AI/ML"),
+        ],
+        "productOptions": [
+            ("self-managed", "ClickHouse(오픈 소스)"),
+            ("cloud", "ClickHouse Cloud"),
+            ("clickpipes", "ClickPipes"),
+            ("language-clients", "언어 클라이언트"),
+            ("clickstack", "ClickStack"),
+            ("chdb", "chDB"),
+        ],
+    },
+    "pt-BR": {
+        "useCaseOptions": [
+            ("real-time-analytics", "Analytics em tempo real"),
+            ("data-warehousing", "Armazenamento de dados"),
+            ("observability", "Observabilidade"),
+            ("ai-ml", "IA/ML"),
+        ],
+        "productOptions": [
+            ("self-managed", "ClickHouse (código aberto)"),
+            ("cloud", "ClickHouse Cloud"),
+            ("clickpipes", "ClickPipes"),
+            ("language-clients", "Clientes de linguagem"),
+            ("clickstack", "ClickStack"),
+            ("chdb", "chDB"),
+        ],
+    },
+    "ru": {
+        "useCaseOptions": [
+            ("real-time-analytics", "Аналитика в реальном времени"),
+            ("data-warehousing", "Хранилище данных"),
+            ("observability", "Обсервабилити"),
+            ("ai-ml", "AI/ML"),
+        ],
+        "productOptions": [
+            ("self-managed", "ClickHouse (открытый исходный код)"),
+            ("cloud", "ClickHouse Cloud"),
+            ("clickpipes", "ClickPipes"),
+            ("language-clients", "Клиенты для языков программирования"),
+            ("clickstack", "ClickStack"),
+            ("chdb", "chDB"),
+        ],
+    },
+    "zh": {
+        "useCaseOptions": [
+            ("real-time-analytics", "实时分析"),
+            ("data-warehousing", "数据仓库"),
+            ("observability", "可观测性"),
+            ("ai-ml", "AI/ML"),
+        ],
+        "productOptions": [
+            ("self-managed", "ClickHouse（开源）"),
+            ("cloud", "ClickHouse Cloud"),
+            ("clickpipes", "ClickPipes"),
+            ("language-clients", "语言客户端"),
+            ("clickstack", "ClickStack"),
+            ("chdb", "chDB"),
+        ],
+    },
+}
 SAMPLE_EXPLORER_COPY = {
     "ar": {
         "aria": "aria-label={`استكشاف مجموعات بيانات ${cat.title}`}",
@@ -363,6 +493,30 @@ def check_localized_explorer_copy(docs_root):
             violations.append(
                 (quickstarts_rel, heading, "stale-quickstarts-heading", None)
             )
+
+        for option_group, expected_options in QUICKSTARTS_FILTER_OPTIONS[
+            locale
+        ].items():
+            match = re.search(
+                rf"const {option_group} = \[\n(?P<body>.*?)\n  \]",
+                quickstarts_source,
+                re.DOTALL,
+            )
+            actual_options = []
+            if match:
+                actual_options = re.findall(
+                    r'\{ value: "([^"]+)", label: "([^"]+)" \}',
+                    match.group("body"),
+                )
+            if actual_options != expected_options:
+                violations.append(
+                    (
+                        quickstarts_rel,
+                        f"{locale}.{option_group}",
+                        "stale-quickstarts-filter-options",
+                        repr(expected_options),
+                    )
+                )
 
         sample_explorer = os.path.join(
             docs_root, "snippets", locale, SAMPLE_EXPLORER

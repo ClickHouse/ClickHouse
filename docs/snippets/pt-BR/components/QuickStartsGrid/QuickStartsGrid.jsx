@@ -10,12 +10,12 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   // labels. Only `label` is display text.
   const useCaseOptions = [
     { value: "real-time-analytics", label: "Analytics em tempo real" },
-    { value: "data-warehousing", label: "Data warehousing" },
+    { value: "data-warehousing", label: "Armazenamento de dados" },
     { value: "observability", label: "Observabilidade" },
     { value: "ai-ml", label: "IA/ML" }
   ]
   const productOptions = [
-    { value: "self-managed", label: "ClickHouse (Open-Source)" },
+    { value: "self-managed", label: "ClickHouse (código aberto)" },
     { value: "cloud", label: "ClickHouse Cloud" },
     { value: "clickpipes", label: "ClickPipes" },
     { value: "language-clients", label: "Clientes de linguagem" },
