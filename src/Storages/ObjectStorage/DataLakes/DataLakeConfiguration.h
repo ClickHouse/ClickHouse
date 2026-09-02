@@ -215,7 +215,7 @@ public:
 
     void check(ContextPtr context) override
     {
-        if (ready_object_storage)
+        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
             this->checkFormat();
         else
             BaseStorageConfiguration::check(context);
