@@ -79,19 +79,37 @@ public:
         UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get values for a specific label (/api/v1/label/<name>/values)
+    /// Get label values (/api/v1/label/<name>/values): the sorted unique values of the label `label_name_param`
+    /// across the series matched by the `match[]` selectors (or across all series if no selectors are given),
+    /// capped by `limit` (0 means no limit). `label_name_param` may use the Prometheus "U__..." escaping of
+    /// label names that are not legacy ([a-zA-Z_][a-zA-Z0-9_]*).
     void getLabelValues(
         WriteBuffer & response,
-        const String & label_name,
-        const String & match_param,
+        const String & label_name_param,
+        const Strings & match_params,
         const String & start_param,
-        const String & end_param);
+        const String & end_param,
+        UInt64 limit,
+        QueryFinishCallback query_finish_callback = {});
 
 private:
     /// Parses the `match[]` instant selectors and the optional `start` and `end` bounds of the metadata endpoints
     /// and makes a UNION ALL query selecting the ids (`series_id`) of the series matched by any of the selectors,
     /// with their tags registered for timeSeriesIdToTags.
     ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
+
+    /// Shared implementation of getLabels and getLabelValues: executes a query aggregating `array_expression`
+    /// (a sorted array of unique strings) over the series matched by the `match[]` selectors
+    /// (or over all series if no selectors are given) and writes the result as a JSON array, capped by `limit`
+    /// (0 means no limit).
+    void getLabelsOrLabelValues(
+        WriteBuffer & response,
+        ASTPtr array_expression,
+        const Strings & match_params,
+        const String & start_param,
+        const String & end_param,
+        UInt64 limit,
+        QueryFinishCallback query_finish_callback);
 
     /// Writes the result of a prometheus query as a JSON.
     void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
