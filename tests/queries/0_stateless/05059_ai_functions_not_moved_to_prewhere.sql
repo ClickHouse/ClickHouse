@@ -9,7 +9,12 @@
 --
 -- `MergeTreeWhereOptimizer` prices a condition by the size of the columns it
 -- reads, which cannot express that cost, so `isExpensive` keeps such a condition
--- out. Only EXPLAIN is used here, so no HTTP call is ever made.
+-- out. Every AI function is listed here: `aiEmbed` and `aiSimilarity` do not
+-- share a base class with the rest, so a new function can miss the trait.
+--
+-- Only EXPLAIN is used, so no HTTP call is ever made. Each case reports whether
+-- the AI function reached PREWHERE (must be 0) and whether the cheap condition
+-- still did (must be 1).
 -- =============================================================================
 
 DROP TABLE IF EXISTS tab;
@@ -23,36 +28,45 @@ CREATE NAMED COLLECTION ai_creds AS
     model = 'test-model',
     api_key = 'test-key';
 
-SELECT 'cheap condition first';
-SELECT
-    countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aifilter%') AS ai_in_prewhere,
-    countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
-FROM (
-    EXPLAIN indexes = 1
-    SELECT count() FROM tab
-    WHERE flag = 1 AND aiFilter(text, 'matches', map('credentials', 'ai_creds'))
-);
+DROP NAMED COLLECTION IF EXISTS ai_vec_creds;
+CREATE NAMED COLLECTION ai_vec_creds AS
+    provider = 'openai',
+    endpoint = 'http://localhost:1/v1/embeddings',
+    api_key = 'test-key';
+
+SELECT 'aiGenerate' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aigenerate%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND aiGenerate(text, map('credentials', 'ai_creds')) != '');
+
+SELECT 'aiClassify' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aiclassify%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND aiClassify(text, ['a', 'b'], map('credentials', 'ai_creds')) = 'a');
+
+SELECT 'aiExtract' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aiextract%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND aiExtract(text, 'the topic', map('credentials', 'ai_creds')) != '');
+
+SELECT 'aiTranslate' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aitranslate%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND aiTranslate(text, 'French', map('credentials', 'ai_creds')) != '');
+
+SELECT 'aiFilter' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aifilter%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND aiFilter(text, 'matches', map('credentials', 'ai_creds')));
+
+SELECT 'aiRedact' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%airedact%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND aiRedact(text, ['email'], map('credentials', 'ai_creds')) != '');
+
+SELECT 'aiEmbed' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aiembed%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND length(aiEmbed(text, 'test-model', map('credentials', 'ai_vec_creds'))) != 0);
+
+SELECT 'aiSimilarity' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aisimilarity%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND aiSimilarity(text, 'reference', 'test-model', map('credentials', 'ai_vec_creds')) != 0);
 
 -- The optimizer sorts conditions by its own cost estimate, so the AI condition must
 -- stay out of PREWHERE however the query is written.
-SELECT 'AI condition first';
-SELECT
-    countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aifilter%') AS ai_in_prewhere,
-    countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
-FROM (
-    EXPLAIN indexes = 1
-    SELECT count() FROM tab
-    WHERE aiFilter(text, 'matches', map('credentials', 'ai_creds')) AND flag = 1
-);
+SELECT 'AI condition written first' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aifilter%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE aiFilter(text, 'matches', map('credentials', 'ai_creds')) AND flag = 1);
 
 -- With no other condition there is nothing to move, so there is no PREWHERE at all.
-SELECT 'AI condition alone';
-SELECT countIf(explain ILIKE '%prewhere%') AS prewhere_steps
-FROM (
-    EXPLAIN indexes = 1
-    SELECT count() FROM tab
-    WHERE aiFilter(text, 'matches', map('credentials', 'ai_creds'))
-);
+SELECT 'AI condition alone' AS fn, countIf(explain ILIKE '%prewhere%') AS prewhere_lines
+FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE aiFilter(text, 'matches', map('credentials', 'ai_creds')));
 
 DROP NAMED COLLECTION ai_creds;
+DROP NAMED COLLECTION ai_vec_creds;
 DROP TABLE tab;
