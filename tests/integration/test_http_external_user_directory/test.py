@@ -37,6 +37,12 @@ def admin(query, **kwargs):
     return instance.query(query, user="admin_user", password="admin_password", **kwargs)
 
 
+def admin2(query, **kwargs):
+    return instance2.query(
+        query, user="admin_user", password="admin_password", **kwargs
+    )
+
+
 def query4_local(query, user=None, password=None, nothrow=False):
     # ADAPTATION (Task 8): node4's http directory restricts `networks` to `127.0.0.1/32`.
     # `instance4.query` (the normal helper) runs `clickhouse-client` as a SEPARATE process
@@ -670,3 +676,130 @@ def test_distinct_users_authenticate_concurrently(started_cluster):
     for t in threads:
         t.join()
     assert results == ["1"] * n, results
+
+
+def test_distributed_query_propagates_helper_roles(started_cluster):
+    # Mirror the LDAP push test: role grants and the local table exist on both nodes,
+    # data only on node2, a Distributed table on the initiator.
+    admin("GRANT SELECT ON default.* TO cluster_role")
+    admin2("GRANT SELECT ON default.* TO cluster_role")
+    admin(
+        "CREATE TABLE IF NOT EXISTS default.local_table (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    admin2(
+        "CREATE TABLE IF NOT EXISTS default.local_table (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    admin2("INSERT INTO default.local_table VALUES (42)")
+    admin(
+        "CREATE TABLE IF NOT EXISTS default.distributed_table AS default.local_table "
+        "ENGINE = Distributed(test_cluster, default, local_table)"
+    )
+    # distributed_user gets cluster_role from the helper on node; the role must be
+    # effective on node2 via interserver propagation, where the user is materialized
+    # through AlwaysAllowCredentials without an HTTP request.
+    result = instance.query(
+        "SELECT count() FROM default.distributed_table",
+        user="distributed_user",
+        password=GOOD_PASSWORD,
+    ).strip()
+    assert result == "1"
+    # Materialized on node2 by the interserver path.
+    assert (
+        admin2(
+            "SELECT storage FROM system.users WHERE name = 'distributed_user'"
+        ).strip()
+        == "http"
+    )
+
+
+def test_receiving_node_does_not_contact_its_http_server(started_cluster):
+    # The central interserver contract: on the AlwaysAllowCredentials path the receiving
+    # node must NOT call its own HTTP auth server. Prove it directly by stopping node2's
+    # mock, then running a distributed query as a FRESH (uncached-on-node2) helper user.
+    # The initiator (node) still authenticates it against node's live mock; node2 must
+    # materialize it via AlwaysAllowCredentials with node2's mock DOWN and the query must
+    # still succeed. (interserver_user is delegated cluster_role by node's mock.)
+    admin2("GRANT SELECT ON default.* TO cluster_role")  # idempotent
+    instance2.exec_in_container(
+        ["bash", "-c", "pkill -f http_auth_server.py"], user="root"
+    )
+    try:
+        result = instance.query(
+            "SELECT count() FROM default.distributed_table",
+            user="interserver_user",
+            password=GOOD_PASSWORD,
+        ).strip()
+        assert result == "1"
+        assert (
+            admin2(
+                "SELECT storage FROM system.users WHERE name = 'interserver_user'"
+            ).strip()
+            == "http"
+        )
+    finally:
+        start_mock_server(instance2)
+
+
+def test_distributed_query_through_view_preserves_roles(started_cluster):
+    # Context-copy regression (cf. the external-role loss history): the same
+    # distributed read, but through a normal VIEW on the initiator.
+    admin(
+        "CREATE VIEW IF NOT EXISTS default.distributed_view AS SELECT * FROM default.distributed_table"
+    )
+    admin("GRANT SELECT ON default.distributed_view TO cluster_role")
+    result = instance.query(
+        "SELECT count() FROM default.distributed_view",
+        user="distributed_user",
+        password=GOOD_PASSWORD,
+    ).strip()
+    assert result == "1"
+
+
+def test_local_view_context_copy_preserves_roles(started_cluster):
+    # Purely local deferred/context-copy path: a VIEW over a role-protected table.
+    admin(
+        "CREATE VIEW IF NOT EXISTS default.protected_view AS SELECT * FROM default.protected"
+    )
+    admin("GRANT SELECT ON default.protected_view TO reader")
+    result = instance.query(
+        "SELECT count() FROM default.protected_view",
+        user="http_user",
+        password=GOOD_PASSWORD,
+    ).strip()
+    assert result == "3"
+
+
+def test_distributed_query_fails_closed_on_role_unknown_remotely(started_cluster):
+    # halfcluster_user returns [reader, only_node1_role]; only_node1_role exists only on
+    # `node`. These roles travel via ClientInfo.current_roles (Context::getCurrentRoles,
+    # which includes external roles). The receiver resolves that set in
+    # makeQueryContextImpl and FAILS CLOSED on any size mismatch (ACCESS_DENIED) — it does
+    # NOT drop the unknown role and run with the resolvable remainder. This is the
+    # current_roles path, verified fail-closed on origin/master; distinct from the legacy
+    # external_roles (granted_roles) push, which does silently drop unknown names.
+    admin("GRANT SELECT ON default.* TO only_node1_role")
+    error = instance.query_and_get_error(
+        "SELECT count() FROM default.distributed_table",
+        user="halfcluster_user",
+        password=GOOD_PASSWORD,
+    )
+    assert "current roles" in error or "ACCESS_DENIED" in error
+
+
+def test_networks_reject_remote_client(started_cluster):
+    # node4's directory allows only 127.0.0.1/32. A client connecting from node2's
+    # address must be rejected (the fail-closed `networks` row of the matrix;
+    # complements Task 8's allow test).
+    # ADAPTATION: the brief's literal command invokes a `clickhouse-client` binary, which
+    # this image does not provide (`bash: line 1: clickhouse-client: command not found`,
+    # verified by running the test). Use the same `/usr/bin/clickhouse client` multi-call
+    # invocation as `query4_local` above, which this suite already established as the
+    # working form in this image.
+    output = instance2.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "/usr/bin/clickhouse client --host node4 --user aux_user --password good_password --query 'SELECT 1' 2>&1 || true",
+        ]
+    )
+    assert "Authentication failed" in output or "not allowed" in output

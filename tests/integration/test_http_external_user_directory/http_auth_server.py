@@ -47,6 +47,9 @@ MAIN_USERS = {
     # Mixed set: reader exists on both nodes, only_node1_role only on `node`. Proves the
     # receiver fails closed on a PARTIALLY-resolvable set, not just an all-missing one.
     "halfcluster_user": {"body": {"roles": ["reader", "only_node1_role"]}},
+    # Used to prove the interserver AlwaysAllowCredentials path never contacts the
+    # receiving node's own HTTP server: authenticated only by `node`'s mock.
+    "interserver_user": {"body": {"roles": ["cluster_role"]}},
     "http_user_concurrent": {"body": {"roles": ["reader"]}},
 }
 MAIN_USERS.update({f"barrier_user_{i}": {"body": {}} for i in range(BARRIER_PARTIES)})
