@@ -2219,7 +2219,13 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto user = access_control.read<User>(user_id_);
 
     auto default_roles = user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
+    /// External roles (helper-returned or interserver-pushed) must participate in the
+    /// same role calculation as locally assigned roles when profiles and constraints
+    /// are derived; ContextAccess appends them for access rights, but the initial
+    /// profile/constraint calculation happens here.
+    auto roles_for_profiles = default_roles;
+    roles_for_profiles.insert(roles_for_profiles.end(), external_roles_.begin(), external_roles_.end());
+    auto enabled_roles = access_control.getEnabledRolesInfo(roles_for_profiles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
     if (!database.empty())
