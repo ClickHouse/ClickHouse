@@ -114,7 +114,7 @@ public:
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
-    IcebergHistory getHistory(ContextPtr local_context) const;
+    IcebergHistory getHistory(ContextPtr local_context, std::optional<UInt64> validated_incarnation = {}) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
@@ -240,7 +240,8 @@ private:
         const ContextPtr & local_context,
         const String & metadata_path,
         Int32 metadata_version,
-        const Iceberg::IcebergSchemaProcessorPtr & schema_processor) const;
+        const Iceberg::IcebergSchemaProcessorPtr & schema_processor,
+        std::optional<UInt64> validated_incarnation) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;

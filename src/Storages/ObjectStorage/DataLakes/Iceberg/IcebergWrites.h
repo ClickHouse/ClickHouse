@@ -178,6 +178,7 @@ private:
     Int64 total_chunks_size = 0;
 
     void checkTableWasNotReplaced() const;
+    void checkMetadataBelongsToValidatedTable() const;
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();

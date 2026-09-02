@@ -711,6 +711,11 @@ ExpireSnapshotsResult expireSnapshots(
             compression_method,
             persistent_table_components.getTableUuid());
 
+        /// The read may have gone to storage rather than to the cache, so the incarnation alone
+        /// does not vouch for the file: check that it still belongs to the validated table.
+        persistent_table_components.checkMetadataBelongsToValidatedTable(
+            metadata, validated_incarnation, "EXECUTE expire_snapshots");
+
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
 

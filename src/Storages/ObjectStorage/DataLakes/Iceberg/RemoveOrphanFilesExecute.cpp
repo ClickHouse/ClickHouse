@@ -345,6 +345,11 @@ Pipe executeRemoveOrphanFiles(
         compression_method,
         persistent_components.getTableUuid());
 
+    /// The read may have gone to storage rather than to the cache, so the incarnation alone does
+    /// not vouch for the file: check that it still belongs to the validated table.
+    persistent_components.checkMetadataBelongsToValidatedTable(
+        latest_metadata, validated_incarnation, "EXECUTE remove_orphan_files");
+
     Int32 current_format_version = latest_metadata->getValue<Int32>(f_format_version);
     if (current_format_version < 2)
         throw Exception(

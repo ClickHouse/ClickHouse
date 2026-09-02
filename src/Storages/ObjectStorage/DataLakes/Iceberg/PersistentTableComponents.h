@@ -3,6 +3,8 @@
 
 #if USE_AVRO
 
+#include <Poco/JSON/Object.h>
+
 #include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -64,6 +66,20 @@ struct PersistentTableComponents
     /// in the message. A statement carrying no validated incarnation, such as one deserialized on
     /// another server, has nothing to compare against and is let through.
     void checkTableWasNotReplaced(std::optional<UInt64> validated_incarnation, std::string_view operation) const;
+
+    /// Refuse to continue when the metadata file that was just read does not belong to the table
+    /// the statement was validated against.
+    ///
+    /// The incarnation counter only moves when a replacement is observed through
+    /// `IcebergMetadata::update`, so it cannot be the only authority here: a metadata read that
+    /// misses the cache goes straight to object storage, and it can select and parse the
+    /// replacement's file before any `update` has run. The file's own `table-uuid` is what settles
+    /// it, and it is compared against the UUID of the validated incarnation. A file with no
+    /// `table-uuid`, or a statement with no validated incarnation, has nothing to compare.
+    void checkMetadataBelongsToValidatedTable(
+        const Poco::JSON::Object::Ptr & metadata_object,
+        std::optional<UInt64> validated_incarnation,
+        std::string_view operation) const;
 
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).

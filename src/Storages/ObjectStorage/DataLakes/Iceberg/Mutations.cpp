@@ -659,6 +659,15 @@ void mutate(
 {
     validateMutationWriteFormat(write_format);
 
+    /// The incarnation the mutation was validated for. Every metadata read below has to describe
+    /// that table, and the state handed to the read phase has to be pinned to it.
+    std::optional<UInt64> validated_incarnation;
+    if (storage_metadata->datalake_table_state.has_value())
+    {
+        if (const auto * validated_state = std::get_if<TableStateSnapshot>(&*storage_metadata->datalake_table_state))
+            validated_incarnation = validated_state->trusted_uuid_incarnation;
+    }
+
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
@@ -688,6 +697,11 @@ void mutate(
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.getTableUuid());
+
+        /// The reread above can miss the cache and go to storage, where it may land on a table that
+        /// replaced this one without any `update` having observed the replacement yet. The
+        /// incarnation would then still match, so the file's own `table-uuid` has to be checked.
+        persistent_table_components.checkMetadataBelongsToValidatedTable(metadata, validated_incarnation, "the mutation");
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
@@ -762,6 +776,11 @@ void mutate(
                         current_schema_id);
             }
         }
+
+        /// The reread was just confirmed to describe the validated incarnation, so the state the
+        /// read phase runs against is pinned to it: without the pin, `IcebergIterator` and the
+        /// schema lookups it drives would resolve against whatever the shared cell holds by then.
+        current_iceberg_snapshot.trusted_uuid_incarnation = validated_incarnation;
 
         auto fresh_storage_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_metadata);
         fresh_storage_metadata->setDataLakeTableState(DataLakeTableStateSnapshot{current_iceberg_snapshot});
@@ -852,6 +871,10 @@ void alter(
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.getTableUuid());
+
+        /// As in `mutate`: the reread can observe a replacement directly from storage, which the
+        /// incarnation does not report, so the file's own `table-uuid` decides.
+        persistent_table_components.checkMetadataBelongsToValidatedTable(metadata, validated_incarnation, "ALTER");
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 

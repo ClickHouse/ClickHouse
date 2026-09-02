@@ -251,7 +251,10 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
             persistent_components.getTableUuid(),
             persistent_components.metadata_compression_method,
             force_fetch_latest_metadata);
-        auto state = getState(context, metadata_file_path, metadata_version, schema_processor);
+        /// The read above can miss the cache and go to storage, where it may land on a table that
+        /// replaced this one without anyone having observed the replacement yet, so the incarnation
+        /// alone cannot vouch for what was read: the file's own `table-uuid` has to.
+        auto state = getState(context, metadata_file_path, metadata_version, schema_processor, incarnation_before);
 
         if (persistent_components.trusted_table_uuid->getIncarnation() != incarnation_before)
             continue;
@@ -596,7 +599,8 @@ bool IcebergMetadata::optimize(
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
+        const auto validated_incarnation = getValidatedIncarnation(metadata_snapshot);
+        auto snapshots_info = getHistory(context, validated_incarnation);
         compactIcebergTable(
             snapshots_info,
             persistent_components,
@@ -606,7 +610,7 @@ bool IcebergMetadata::optimize(
             sample_block,
             context,
             write_format,
-            getValidatedIncarnation(metadata_snapshot));
+            validated_incarnation);
         return true;
     }
     else
@@ -735,7 +739,8 @@ IcebergMetadata::getState(
     const ContextPtr & local_context,
     const String & metadata_path,
     Int32 metadata_version,
-    const IcebergSchemaProcessorPtr & schema_processor) const
+    const IcebergSchemaProcessorPtr & schema_processor,
+    std::optional<UInt64> validated_incarnation) const
 {
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
@@ -745,6 +750,8 @@ IcebergMetadata::getState(
     /// altogether. It is fully described by the file name.
     auto metadata_object = getMetadataJSONObject(
         metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, getCompressionMethodFromMetadataFile(metadata_path), persistent_components.getTableUuid());
+
+    persistent_components.checkMetadataBelongsToValidatedTable(metadata_object, validated_incarnation, "the query");
 
     insertRowToLogTable(
         local_context,
@@ -1109,7 +1116,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 }
 
 
-IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
+IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context, std::optional<UInt64> validated_incarnation) const
 {
     const auto [metadata_version, metadata_file_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
@@ -1123,6 +1130,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.getTableUuid());
+    persistent_components.checkMetadataBelongsToValidatedTable(metadata_object, validated_incarnation, "the query");
+
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History

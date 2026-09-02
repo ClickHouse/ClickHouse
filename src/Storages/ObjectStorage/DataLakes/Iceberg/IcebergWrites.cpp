@@ -982,6 +982,15 @@ void generateManifestList(
     writer.close();
 }
 
+void IcebergStorageSink::checkMetadataBelongsToValidatedTable() const
+{
+    /// The reads above are only cache-keyed by the validated incarnation's UUID; on a miss they go
+    /// to object storage and can land on a table that replaced this one before any `update` has
+    /// observed the replacement, which leaves the incarnation unchanged. The metadata file's own
+    /// `table-uuid` is what settles which table the sink is about to write to.
+    persistent_table_components.checkMetadataBelongsToValidatedTable(metadata, pinned_incarnation, "the write");
+}
+
 void IcebergStorageSink::checkTableWasNotReplaced() const
 {
     /// A change of incarnation means the table this write was validated for was dropped and
@@ -1046,7 +1055,7 @@ IcebergStorageSink::IcebergStorageSink(
         compression_method,
         persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation));
 
-    checkTableWasNotReplaced();
+    checkMetadataBelongsToValidatedTable();
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
@@ -1359,7 +1368,7 @@ bool IcebergStorageSink::initializeMetadata()
                 compression_method,
                 persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation));
 
-            checkTableWasNotReplaced();
+            checkMetadataBelongsToValidatedTable();
             partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 

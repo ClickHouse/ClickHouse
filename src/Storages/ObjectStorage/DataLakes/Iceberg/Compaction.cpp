@@ -190,7 +190,8 @@ static Plan getPlan(
     ObjectStoragePtr object_storage,
     const String & write_format,
     ContextPtr context,
-    CompressionMethod compression_method)
+    CompressionMethod compression_method,
+    std::optional<UInt64> validated_incarnation)
 {
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
@@ -217,6 +218,10 @@ static Plan getPlan(
         log,
         getCompressionMethodFromMetadataFile(metadata_file_path),
         persistent_table_components.getTableUuid());
+
+    /// The read may have gone to storage rather than to the cache, so the incarnation alone does
+    /// not vouch for the file: check that it still belongs to the validated table.
+    persistent_table_components.checkMetadataBelongsToValidatedTable(initial_metadata_object, validated_incarnation, "OPTIMIZE");
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -1397,6 +1402,11 @@ void compactIcebergManifests(
             getCompressionMethodFromMetadataFile(metadata_file_path),
             persistent_table_components.getTableUuid());
 
+        /// The read may have gone to storage rather than to the cache, so the incarnation alone
+        /// does not vouch for the file: check that it still belongs to the validated table.
+        persistent_table_components.checkMetadataBelongsToValidatedTable(
+            metadata_object, validated_incarnation, "OPTIMIZE TABLE ... MANIFEST");
+
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
         const Int32 format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
         if (format_version < 2)
@@ -1474,7 +1484,8 @@ void compactIcebergTable(
         object_storage_,
         write_format,
         context_,
-        persistent_table_components.metadata_compression_method);
+        persistent_table_components.metadata_compression_method,
+        validated_incarnation);
     persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE");
 
     if (plan.need_optimize)
