@@ -247,7 +247,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
       aria-label={item.title}
       style={{
         "--sde-image-light-mode": `url("${webpFor(item.imgDark)}")`,
-        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`,
+        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`
       }}
     />
   )

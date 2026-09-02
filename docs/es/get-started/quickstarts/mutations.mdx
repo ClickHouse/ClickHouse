@@ -1,6 +1,6 @@
 ---
 slug: /guides/developer/mutations
-sidebarTitle: 'Actualización y eliminación de datos'
+sidebarTitle: 'Actualización y eliminación de datos de ClickHouse'
 searchable: true
 keywords: ['UPDATE', 'DELETE', 'mutaciones']
 title: 'Actualización y eliminación de datos de ClickHouse'
@@ -34,7 +34,7 @@ eliminar datos existentes. Estas operaciones se denominan &quot;mutaciones&quot;
 </Tip>
 
 <div id="updating-data">
-  ## Actualizar datos
+  ## Actualizar datos {#updating-data}
 </div>
 
 Utilice el comando `ALTER TABLE...UPDATE` para actualizar filas en una tabla:
@@ -76,7 +76,7 @@ ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_ex
 </Note>
 
 <div id="deleting-data">
-  ## Eliminación de datos
+  ## Eliminación de datos {#deleting-data}
 </div>
 
 Utilice el comando `ALTER TABLE` para eliminar filas:
@@ -106,7 +106,7 @@ La `<filter_expr>` debe devolver un valor UInt8 para cada fila de datos.
 Consulte la página de documentación de la [sentencia `DELETE`](/es/reference/statements/delete) para obtener más detalles.
 
 <div id="lightweight-deletes">
-  ## Eliminaciones ligeras
+  ## Eliminaciones ligeras {#lightweight-deletes}
 </div>
 
 Otra opción para eliminar filas es usar el comando `DELETE FROM`, lo que se conoce como una **eliminación ligera**. Las filas eliminadas se marcan como eliminadas de inmediato y quedarán excluidas automáticamente de todas las consultas posteriores, por lo que no es necesario esperar a la fusión de partes ni usar la palabra clave `FINAL`. La limpieza de los datos se realiza de forma asíncrona en segundo plano.

@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Home",
+      "group": "首页",
       "icon": "house",
       "pages": [
         "zh/integrations/language-clients/index"
@@ -32,7 +32,7 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "Third-party clients",
+      "group": "第三方客户端",
       "icon": "users",
       "pages": [
         "zh/integrations/language-clients/third-party/client-libraries"
@@ -40,5 +40,5 @@
     }
   ],
   "icon": "/images/icons/icon-language-clients.svg",
-  "item": "Language clients"
+  "item": "多语言客户端"
 }

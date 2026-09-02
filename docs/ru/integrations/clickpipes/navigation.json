@@ -4,7 +4,7 @@
   "pages": [
     "ru/integrations/clickpipes/home",
     {
-      "group": "ClickPipes for Streaming",
+      "group": "ClickPipes для потоковой передачи",
       "pages": [
         {
           "group": "Kafka",
@@ -37,7 +37,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Object Storage",
+      "group": "ClickPipes для объектного хранилища",
       "pages": [
         {
           "group": "Amazon S3",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "group": "ClickPipes for CDC",
+      "group": "ClickPipes для CDC",
       "pages": [
         {
           "group": "Postgres",
@@ -99,7 +99,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Источник",
               "pages": [
                 "ru/integrations/clickpipes/postgres/source/alloydb",
                 "ru/integrations/clickpipes/postgres/source/rds",
@@ -139,7 +139,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Источник",
               "pages": [
                 "ru/integrations/clickpipes/mysql/source/rds",
                 "ru/integrations/clickpipes/mysql/source/aurora",
@@ -174,7 +174,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Источник",
               "pages": [
                 "ru/integrations/clickpipes/mongodb/source/atlas",
                 "ru/integrations/clickpipes/mongodb/source/generic",
@@ -194,7 +194,7 @@
       ]
     },
     {
-      "group": "Programmatic access",
+      "group": "Программный доступ",
       "icon": "code",
       "pages": [
         "ru/integrations/clickpipes/programmatic-access/openapi",
@@ -202,7 +202,7 @@
       ]
     },
     {
-      "group": "Networking",
+      "group": "Сеть",
       "icon": "network-wired",
       "pages": [
         "ru/integrations/clickpipes/networking/index",

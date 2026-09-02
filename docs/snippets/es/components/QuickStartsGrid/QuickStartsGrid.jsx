@@ -244,7 +244,14 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                     <div className="relative w-full aspect-[2/1] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 pb-12">
                       <span className="relative z-10 mx-auto max-w-[90%] text-center text-base font-bold leading-tight text-black line-clamp-4">{quickStart.title}</span>
                       <div className="absolute inset-x-0 bottom-0 h-12 bg-[#E7EA5B] flex items-center justify-between px-5">
-                        <img src={withBase("/images/clickhouse.svg")} alt="" aria-hidden="true" className="h-[18px] w-auto" style={{ borderRadius: 0, filter: "brightness(0)" }} />
+                        <img
+                          src={withBase("/images/clickhouse.svg")}
+                          alt=""
+                          aria-hidden="true"
+                          className="h-[18px] w-auto"
+
+                          style={{ borderRadius: 0, filter: "brightness(0)" }}
+                        />
                         <span className="text-sm font-medium text-black">Primeros pasos</span>
                       </div>
                     </div>

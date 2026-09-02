@@ -58,7 +58,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        ### Conectarse mediante la consola SQL
+        ### Conectarse mediante la consola SQL {#connect-using-sql-console}
 
         Para empezar rápidamente, ClickHouse ofrece una consola SQL web a la que se le redirigirá al completar el proceso de onboarding.
 
@@ -78,7 +78,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
 
         Eso es todo; ¡ya puedes empezar a usar tu nuevo servicio de ClickHouse!
 
-        ### Conecta tu aplicación
+        ### Conecta tu aplicación {#connect-with-your-app}
 
         Pulsa el botón Conectar en el menú de navegación. Se abrirá un cuadro de diálogo con las credenciales de tu servicio y un conjunto de instrucciones para conectarte mediante tu interfaz o client de lenguaje.
 
@@ -104,7 +104,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
         * Cargue un archivo  - los formatos admitidos incluyen JSON, CSV y TSV
         * Cargue datos desde la URL de un archivo
 
-        ### ClickPipes
+        ### ClickPipes {#clickpipes}
 
         [ClickPipes](/es/integrations/clickpipes/home) es una plataforma de integración gestionada que permite ingerir datos desde una gran variedad de fuentes con solo unos pocos clics. Diseñada para las cargas de trabajo más exigentes, la arquitectura robusta y escalable de ClickPipes garantiza un rendimiento y una fiabilidad constantes. ClickPipes puede utilizarse tanto para necesidades de transmisión a largo plazo como para una carga de datos puntual.
 
@@ -112,7 +112,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        ### Añadir datos mediante la Consola SQL
+        ### Añadir datos mediante la Consola SQL {#add-data-using-the-sql-console}
 
         Como la mayoría de los sistemas de gestión de bases de datos, ClickHouse agrupa lógicamente las tablas en **bases de datos**. Utilice el comando [`CREATE DATABASE`](/es/reference/statements/create/database) para crear una nueva base de datos en ClickHouse:
 
@@ -155,7 +155,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
           Hay muchos motores de tabla entre los que elegir, pero para una tabla sencilla en un único servidor ClickHouse, [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) será probablemente la opción adecuada.
         </Info>
 
-        #### Breve introducción a las claves primarias
+        #### Breve introducción a las claves primarias {#a-brief-intro-to-primary-keys}
 
         Antes de seguir adelante, es importante entender cómo funcionan las claves primarias en ClickHouse (¡la implementación
         de las claves primarias puede resultar sorprendente!):
@@ -175,7 +175,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
 
         Para profundizar en los conceptos fundamentales de ClickHouse, consulte [&quot;Conceptos fundamentales&quot;](/es/concepts/core-concepts/index).
 
-        #### Inserte datos en su tabla
+        #### Inserte datos en su tabla {#insert-data-into-your-table}
 
         En ClickHouse puede usar el conocido comando [`INSERT INTO TABLE`](/es/reference/statements/insert-into), pero es importante tener en cuenta que cada inserción en una tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) genera una **part** en el almacenamiento.
 
@@ -208,7 +208,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
         SELECT * FROM helloworld.my_first_table
         ```
 
-        ### Añadir datos con ClickHouse Client
+        ### Añadir datos con ClickHouse Client {#add-data-using-the-clickhouse-client}
 
         También puede conectarse a su servicio de ClickHouse Cloud mediante una herramienta de línea de comandos llamada [**clickhouse client**](/es/concepts/features/interfaces/client). Haga clic en `Connect` en el menú de la izquierda para acceder a estos detalles. En el cuadro de diálogo, seleccione `Native` en la lista desplegable:
 
@@ -288,7 +288,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
         exit
         ```
 
-        ### Subir un archivo
+        ### Subir un archivo {#upload-a-file}
 
         Una tarea habitual al empezar a usar una base de datos es insertar datos que ya se tienen en archivos. Tenemos disponibles en línea
         datos de ejemplo que puede insertar y que representan datos de flujo de clics: incluyen un ID de usuario, una URL visitada y
@@ -331,7 +331,7 @@ import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.m
       Consulta [&quot;Configuración de filtros IP&quot;](/es/products/cloud/guides/security/connectivity/setting-ip-filters) para obtener más información.
     </Tip>
 
-    ## ¿Qué sigue?
+    ## ¿Qué sigue? {#whats-next}
 
     * El [Tutorial](/es/get-started/quickstarts/tutorial) le permite insertar 2 millones de filas en una tabla y escribir algunas consultas analíticas
     * Tenemos una lista de [datasets de ejemplo](/es/get-started/sample-datasets/index) con instrucciones sobre cómo insertarlos
