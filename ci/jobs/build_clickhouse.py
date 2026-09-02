@@ -178,6 +178,90 @@ def setup_build_caches_env(info):
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
 
 
+def verify_compact_symbols_ninja_rules(smoke_build_dir):
+    clickhouse_commands = Shell.get_output_or_raise(
+        f"ninja -C {smoke_build_dir} -t commands programs/clickhouse"
+    )
+    packaging_command = next(
+        (
+            command
+            for command in clickhouse_commands.splitlines()
+            if "--add-section=.clickhouse.symbols=" in command
+        ),
+        None,
+    )
+    if not packaging_command:
+        raise RuntimeError(
+            "The `programs/clickhouse` rule has no command that adds the `.clickhouse.symbols` section"
+        )
+
+    packaging_steps = packaging_command.split(" && ")
+    compact_symbols_command = next(
+        (
+            command
+            for command in packaging_steps
+            if os.path.basename(command.strip().split(maxsplit=1)[0].strip('"'))
+            == "compact-symbols"
+        ),
+        None,
+    )
+    if not compact_symbols_command:
+        raise RuntimeError(
+            "The `programs/clickhouse` packaging rule does not invoke the `compact-symbols` tool"
+        )
+
+    add_section_command = next(
+        (
+            command
+            for command in packaging_steps
+            if "--add-section=.clickhouse.symbols=" in command
+        ),
+        None,
+    )
+    add_section_executable = (
+        add_section_command.strip().split(maxsplit=1)[0].strip('"')
+        if add_section_command
+        else ""
+    )
+    if "objcopy" not in os.path.basename(add_section_executable):
+        raise RuntimeError(
+            "The `.clickhouse.symbols` section is not added by an `objcopy` command"
+        )
+
+    clickhouse_query = Shell.get_output_or_raise(
+        f"ninja -C {smoke_build_dir} -t query programs/clickhouse"
+    )
+    clickhouse_inputs, separator, _ = clickhouse_query.partition("\n  outputs:")
+    if not separator:
+        raise RuntimeError("Could not parse the `programs/clickhouse` Ninja query")
+    has_compact_symbols_dependency = any(
+        line.strip().startswith("|| ")
+        and os.path.basename(line.strip().removeprefix("|| ")) == "compact-symbols"
+        for line in clickhouse_inputs.splitlines()
+    )
+    if not has_compact_symbols_dependency:
+        raise RuntimeError(
+            "The `programs/clickhouse` target has no order-only dependency on `compact-symbols`"
+        )
+
+    print("Verified compact-symbols packaging commands and target dependency")
+
+
+def run_compact_symbols_cmake_smoke(cmake_command, smoke_build_dir, configure_log):
+    if os.path.exists(smoke_build_dir):
+        shutil.rmtree(smoke_build_dir)
+    try:
+        if not Shell.check(cmake_command, log_file=configure_log):
+            raise RuntimeError(
+                f"Compact symbols CMake configuration failed; see {configure_log}"
+            )
+        verify_compact_symbols_ninja_rules(smoke_build_dir)
+        return True
+    finally:
+        if os.path.exists(smoke_build_dir):
+            shutil.rmtree(smoke_build_dir)
+
+
 def main():
     args = parse_args()
 
@@ -509,6 +593,32 @@ def main():
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
+
+        # Cache-warmup builds use a distinct build type, even though they reuse
+        # the release build's base CMake flags.
+        if res and build_type == BuildTypes.AMD_RELEASE:
+            smoke_build_dir = f"{build_dir}_compact_smoke"
+            smoke_build_dir_normalized = f"{build_dir_normalized}_compact_smoke"
+            smoke_configure_log = f"{build_dir}/compact_symbols_cmake_smoke.log"
+            smoke_cmake_command = (
+                f"{BUILD_TYPE_TO_CMAKE[BuildTypes.AMD_RELEASE]} "
+                f"-DSYMBOL_SECTIONS=compact {repo_path_normalized} "
+                f"-B {smoke_build_dir_normalized}"
+            )
+            results.append(
+                Result.from_commands_run(
+                    name="Compact symbols cmake smoke",
+                    command=run_compact_symbols_cmake_smoke,
+                    command_kwargs={
+                        "cmake_command": smoke_cmake_command,
+                        "smoke_build_dir": smoke_build_dir,
+                        "configure_log": smoke_configure_log,
+                    },
+                )
+            )
+            if os.path.isfile(smoke_configure_log):
+                files.append(smoke_configure_log)
+            res = results[-1].is_ok()
 
         # Apply BOLT post-link optimization if profiles are available
         if res and use_bolt:
