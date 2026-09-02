@@ -1,0 +1,12 @@
+single node
+Read type: InOrder
+Read type: InOrder
+parallel replicas
+Read type: Default
+42
+142
+242
+342
+442
+Read type: Default
+100	499200
