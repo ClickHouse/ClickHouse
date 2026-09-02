@@ -233,48 +233,23 @@ export const SampleDatasetExplorer = ({ categories }) => {
   const cats = (categories || CATEGORIES).slice().sort((a, b) => categoryOrder.indexOf(a.id) - categoryOrder.indexOf(b.id))
 
   const [selectedId, setSelectedId] = useState(null)
-  const [isDark, setIsDark] = useState(null)
   const selected = cats.find((c) => c.id === selectedId) || null
 
-  useEffect(() => {
-    const checkTheme = () => setIsDark(document.documentElement.classList.contains("dark"))
-    checkTheme()
-
-    const observer = new MutationObserver(checkTheme)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
-    return () => observer.disconnect()
-  }, [])
-
   // The colour scheme is intentionally reversed: light mode shows the dark
-  // artwork and dark mode shows the light artwork. The responsive SSR fallback
-  // emits an image immediately while still downloading only one WebP variant.
+  // artwork and dark mode shows the light artwork. CSS keys directly off the
+  // docs theme class during SSR and only resolves the active custom-property
+  // URL, so a theme override cannot cause both variants to download.
   const webpFor = (path) => withBase(path.replace(/\.jpg$/, ".webp"))
-  const imageForTheme = (item) => webpFor(isDark ? item.imgLight : item.imgDark)
   const ThemeImage = ({ item, className }) => (
-    isDark === null ? (
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcSet={webpFor(item.imgLight)} />
-        <img
-          className={className || ""}
-          src={webpFor(item.imgDark)}
-          alt={item.title}
-          width="640"
-          height="494"
-          loading="lazy"
-          decoding="async"
-        />
-      </picture>
-    ) : (
-      <img
-        className={className || ""}
-        src={imageForTheme(item)}
-        alt={item.title}
-        width="640"
-        height="494"
-        loading="lazy"
-        decoding="async"
-      />
-    )
+    <span
+      className={`sde-theme-image ${className || ""}`}
+      role="img"
+      aria-label={item.title}
+      style={{
+        "--sde-image-light-mode": `url("${webpFor(item.imgDark)}")`,
+        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`,
+      }}
+    />
   )
   const Banner = ({ cat, className }) => <ThemeImage item={cat} className={className} />
 
@@ -319,12 +294,17 @@ export const SampleDatasetExplorer = ({ categories }) => {
         }
         .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
         .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
-        .sde-tile img {
+        .sde-theme-image {
+          display: block;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          margin: 0;
+          background-image: var(--sde-image-light-mode);
+          background-position: center;
+          background-size: cover;
           pointer-events: none;
+        }
+        .dark .sde-root .sde-theme-image {
+          background-image: var(--sde-image-dark-mode);
         }
         /* hover hint: translucent strip along the bottom of the image */
         .sde-tile-hint {

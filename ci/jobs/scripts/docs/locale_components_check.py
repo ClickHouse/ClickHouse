@@ -50,6 +50,24 @@ TEMPLATE = re.compile(r"`(/[A-Za-z0-9][A-Za-z0-9/_.#-]*)\$\{")
 # structure) that lychee never checks; the referenced file must exist on disk.
 ASSET = re.compile(r"""\b(?:image|img|src)\s*[:=]\s*\{?\s*(['"`])(/(?:images|assets)/[^'"`\s]+)\1""")
 EXPLICIT_ANCHOR = re.compile(r"""\{#([^}\s]+)\}|\bid\s*=\s*['"]([^'"]+)['"]""")
+SAMPLE_EXPLORER = os.path.join(
+    "components", "SampleDatasetExplorer", "SampleDatasetExplorer.jsx"
+)
+THEME_IMAGE_REQUIRED = (
+    "className={`sde-theme-image ${className || ",
+    'role="img"',
+    'aria-label={item.title}',
+    "--sde-image-light-mode",
+    "--sde-image-dark-mode",
+    "background-image: var(--sde-image-light-mode);",
+    ".dark .sde-root .sde-theme-image",
+    "background-image: var(--sde-image-dark-mode);",
+)
+THEME_IMAGE_FORBIDDEN = (
+    "prefers-color-scheme",
+    "isDark",
+    "imageForTheme",
+)
 
 
 def build_targets(docs_root):
@@ -77,6 +95,30 @@ def build_targets(docs_root):
     return pages, redirects, anchors
 
 
+def check_sample_explorer_theme_images(docs_root):
+    """Validate the SSR-safe, theme-class-driven image renderer in every copy."""
+    components = [os.path.join(docs_root, "snippets", SAMPLE_EXPLORER)]
+    components += [
+        os.path.join(docs_root, "snippets", loc, SAMPLE_EXPLORER)
+        for loc in LOCALE_DIRS
+    ]
+    violations = []
+    for component in components:
+        rel = os.path.relpath(component, docs_root)
+        source = open(component, encoding="utf-8", errors="replace").read()
+        for marker in THEME_IMAGE_REQUIRED:
+            if marker not in source:
+                violations.append(
+                    (rel, marker, "missing-theme-image-renderer", None)
+                )
+        for marker in THEME_IMAGE_FORBIDDEN:
+            if marker in source:
+                violations.append(
+                    (rel, marker, "stale-theme-image-renderer", None)
+                )
+    return violations
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("docs_root", nargs="?", default=".")
@@ -94,7 +136,8 @@ def main(argv=None):
             or fragment in anchors.get(bare + "/index", set())
         )
 
-    violations = []   # (file, path, kind, suggestion)
+    violations = check_sample_explorer_theme_images(docs_root)
+    # Entries are (file, path or marker, kind, suggestion).
     fixed = 0
     for loc in LOCALE_DIRS:
         roots = [os.path.join(docs_root, loc),
