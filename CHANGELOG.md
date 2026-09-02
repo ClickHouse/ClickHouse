@@ -22,6 +22,57 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release b20da91bdd72627221e512653aab73d2e7bed004 (b20da91bdd7) FIXME as compared to 9f35a2b2a5aba082bf1cbe251eced05a7cda73d1 (9f35a2b2a5a)
+
+#### Backward Incompatible Change
+* Fix setting `temporary_files_buffer_size` or `format_avro_schema_registry_*` to an out-of-range value making every subsequent query in the session fail, with no way to recover; the values are now bounded when they are set. [#113787](https://github.com/ClickHouse/ClickHouse/pull/113787) ([Pedro Ferreira](https://github.com/PedroTadim)).
+
+#### New Feature
+* Added the opt-in MergeTree setting `skip_empty_columns_on_insert`, which avoids storing columns containing only their type-default value. It requires `serialization_info_version = 'with_missing_columns'`; keep an older serialization version during rolling upgrades with servers that cannot read the new part metadata. [#98472](https://github.com/ClickHouse/ClickHouse/pull/98472) ([Amos Bird](https://github.com/amosbird)).
+
+#### Performance Improvement
+* Native protocol: Make batching protocol messages default and `sync()` api to ship immediately. This enables to send the end-of-query message sequence like (profile info, progress, profile events, end-of-stream, …) as one socket write instead of one packet per message. Removes a full round-trip of latency per query for clients on high-latency links whose connections idle between queries. [#111034](https://github.com/ClickHouse/ClickHouse/pull/111034) ([Kaviraj Kanagaraj](https://github.com/kavirajk)).
+* `ColumnArray::insertManyDefaults` and `ColumnString::insertManyDefaults` now pre-size their offsets array instead of appending one element at a time, so appending many default values performs a single reallocation rather than walking the whole doubling chain. Appending 4 million defaults reserves 32 MiB once instead of peaking at 48 MiB. [#113577](https://github.com/ClickHouse/ClickHouse/pull/113577) ([Groene AI](https://github.com/groeneai)).
+* The preliminary (per-stream) `DISTINCT` now abandons deduplication when the observed input is almost entirely unique, freeing its hash tables and skipping per-row hashing: the final `DISTINCT` deduplicates the output anyway, so on unique data this roughly halves the memory of `SELECT DISTINCT` and speeds it up (measured 1114 MB → 576 MB and 0.130 s → 0.074 s on 30M unique rows). Controlled by the new setting `allow_preliminary_distinct_abandoning`; observable via the new profile event `DistinctTransformsAbandonedDeduplication`. [#116508](https://github.com/ClickHouse/ClickHouse/pull/116508) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+
+#### Improvement
+* Rework the on-disk layout of text index positions (experimental phrase search): positions are now stored in PFor-packed blocks addressed by posting rank, and phrase search reads only the blocks covering candidate rows, greatly reducing position-data reads and memory usage. [#111550](https://github.com/ClickHouse/ClickHouse/pull/111550) ([Elmi Ahmadov](https://github.com/ahmadov)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fix `allow_feature_tier` rejecting `merge_tree_`-prefixed settings in settings profiles as unknown, and rejecting `CREATE TABLE` because of `MergeTree` settings set by the server through `compatibility` or the `merge_tree` config section. Also fix constraints on a `merge_tree_`-prefixed setting being bypassed when the setting is written through its alias, and a statement that rewrites the value such a setting already has being refused by a `CONST` constraint. [#113156](https://github.com/ClickHouse/ClickHouse/pull/113156) ([Raúl Marín](https://github.com/Algunenano)).
+* Fixed a server crash and an out-of-bounds write when inserting into a column with a long chain of compression codecs, for example `CODEC(FPC, FPC, ..., FPC)`. `CompressionCodecMultiple` compounded each stage's reserved size in a `UInt32` without checking for overflow, so a long enough chain wrapped the reserved size below its own input and the destination buffer was then sized from the wrapped value while the real payload kept growing. Such a chain is now rejected with `CANNOT_COMPRESS`. A chain of more than 255 codecs, which used to write a part that could not be read back, is now rejected with `BAD_ARGUMENTS` when the codec is created, unless `allow_suspicious_codecs` is set. [#113877](https://github.com/ClickHouse/ClickHouse/pull/113877) ([Groene AI](https://github.com/groeneai)).
+* Fix `openSSL` `cipherList` being silently ignored when its value is written on its own line, as an XML or YAML auto-formatter produces. The configured value is now trimmed before it reaches OpenSSL, and a cipher list OpenSSL cannot parse is reported instead of discarded, so the server no longer keeps OpenSSL's built-in default cipher list while appearing to honour the configured restriction. Closes [#115808](https://github.com/ClickHouse/ClickHouse/issues/115808). [#116053](https://github.com/ClickHouse/ClickHouse/pull/116053) ([Groene AI](https://github.com/groeneai)).
+* Fixed a server crash in the `ReplicatedMergeTree` cleanup thread for tables that set `max_replicated_logs_to_keep = 0`. The thread read one element past the end of the list of ZooKeeper `/log` entries, and that aborts the process because the bounds assertion of `std::vector` is enabled in release builds too. `max_replicated_logs_to_keep = 0` is now rejected, which matches the documented domain of the setting. [#117147](https://github.com/ClickHouse/ClickHouse/pull/117147) ([Groene AI](https://github.com/groeneai)).
+* Fix a path traversal on `RESTORE`. A backup metadata entry whose `<name>` was not already in normal form, for example one containing `//` or fewer `..` than the depth of its own directory prefix, was validated in normalized form but stored verbatim, so restoring the part wrote the entry outside the part's directory while `RESTORE` reported success. Such names are now rejected with `INSECURE_PATH`. [#117371](https://github.com/ClickHouse/ClickHouse/pull/117371) ([Groene AI](https://github.com/groeneai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Stateless tests: Remove useless `ignore_drop_queries_probability = 0`. [#113117](https://github.com/ClickHouse/ClickHouse/pull/113117) ([Robert Schulze](https://github.com/rschu1ze)).
+* Add test coverage for arrayElement compute-on-nested branches and simplify its type dispatch. [#114346](https://github.com/ClickHouse/ClickHouse/pull/114346) ([Diego Gomes Tomé](https://github.com/diegomestre2)).
+* Not for changelog. [#116684](https://github.com/ClickHouse/ClickHouse/pull/116684) ([Christoph Viebig](https://github.com/cv4g)).
+* Sync changes. [#116735](https://github.com/ClickHouse/ClickHouse/pull/116735) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* Not user-visible; the defect exists only on master. [#116739](https://github.com/ClickHouse/ClickHouse/pull/116739) ([Groene AI](https://github.com/groeneai)).
+* Ignore only well known and minor jemalloc errors and add entry about disabled per-cpu arena into system.warnings. [#116899](https://github.com/ClickHouse/ClickHouse/pull/116899) ([Azat Khuzhin](https://github.com/azat)).
+* Keep the per-query wall-clock limit in `04648_replicate_generic_no_quadratic_realloc` only on the arms whose runtime depends on the defect the test guards. [#116918](https://github.com/ClickHouse/ClickHouse/pull/116918) ([Groene AI](https://github.com/groeneai)).
+* Keep the last observed state when a wait in 02932 expires. [#117032](https://github.com/ClickHouse/ClickHouse/pull/117032) ([Groene AI](https://github.com/groeneai)).
+* Not required: the affected code is only on `master` and was never released. [#117098](https://github.com/ClickHouse/ClickHouse/pull/117098) ([Groene AI](https://github.com/groeneai)).
+* AST fuzzer oracle: collapse per-oracle dispatch + fix neighbor/runningAccumulate false mismatch. [#117189](https://github.com/ClickHouse/ClickHouse/pull/117189) ([Ilya Yatsishin](https://github.com/qoega)).
+* A timed-out bounded request in the SQL-defined handler body tests is now reported as a reference diff naming the `curl` exit code, instead of as unattributed stderr noise. [#117204](https://github.com/ClickHouse/ClickHouse/pull/117204) ([Groene AI](https://github.com/groeneai)).
+* Add SQL-level regression coverage for the trailing empty chunk in `IMergingTransformBase::prepare`. [#117259](https://github.com/ClickHouse/ClickHouse/pull/117259) ([Groene AI](https://github.com/groeneai)).
+* Disable use_concurrency_control with make_distributed_plan. [#117328](https://github.com/ClickHouse/ClickHouse/pull/117328) ([Alexander Gololobov](https://github.com/davenger)).
+* illumos: misc portability fixes. [#117363](https://github.com/ClickHouse/ClickHouse/pull/117363) ([Joshua Carp](https://github.com/jmcarp)).
+* Fix flaky 04758_alter_modify_projection_settings_replicated. [#117365](https://github.com/ClickHouse/ClickHouse/pull/117365) ([Raúl Marín](https://github.com/Algunenano)).
+* Add a test for `default_session_user` naming a user that is not declared in the users configuration. [#117386](https://github.com/ClickHouse/ClickHouse/pull/117386) ([Groene AI](https://github.com/groeneai)).
+* Keep the finished-stages drain test away from the parallel suite. [#117397](https://github.com/ClickHouse/ClickHouse/pull/117397) ([Groene AI](https://github.com/groeneai)).
+* Give the integration tests' nested containers the budget they actually use. [#117412](https://github.com/ClickHouse/ClickHouse/pull/117412) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Add a test that AI functions respect `remote_url_allow_hosts`. [#117425](https://github.com/ClickHouse/ClickHouse/pull/117425) ([Groene AI](https://github.com/groeneai)).
+* The documented example of `toYYYYMM` no longer depends on the current date. [#117459](https://github.com/ClickHouse/ClickHouse/pull/117459) ([Groene AI](https://github.com/groeneai)).
+* Small simplification of interfaces. [#117495](https://github.com/ClickHouse/ClickHouse/pull/117495) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* CI: Update ci infra config. [#117528](https://github.com/ClickHouse/ClickHouse/pull/117528) ([Max Kainov](https://github.com/maxknv)).
+* CI: fix Bugfix validation master-build lookup for the new S3 prefix scheme. [#117580](https://github.com/ClickHouse/ClickHouse/pull/117580) ([Nikita Fomichev](https://github.com/fm4v)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="269"></a> ClickHouse release 26.9, FIXME (in progress)
 
 #### Backward Incompatible Change
