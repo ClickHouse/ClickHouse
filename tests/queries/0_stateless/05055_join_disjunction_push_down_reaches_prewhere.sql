@@ -15,6 +15,8 @@ INSERT INTO pw_disj_right SELECT number, if(number % 3 = 0, 'FRANCE', 'GERMANY')
 
 SET use_join_disjunctions_push_down = 1;
 SET optimize_move_to_prewhere = 1;
+-- The test runner randomizes this one, and with it off `optimizePrewhere` never runs at all.
+SET query_plan_optimize_prewhere = 1;
 
 -- One per side: each read gets the part of the `OR` that only mentions its own columns.
 SELECT countIf(explain LIKE '%Prewhere filter column:%') AS pushed_to_prewhere
