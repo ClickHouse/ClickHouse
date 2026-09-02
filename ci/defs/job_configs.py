@@ -28,10 +28,19 @@ KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
 INTEGRATION_DIND_ROOT_RESERVE = 1 * 1024**3
 # Everything not charged to `/docker`: pytest, its xdist workers, the post-teardown steps, and the
 # per-test subprocesses - `helpers/cluster.py` runs each node's `clickhouse-client` and
-# `helpers/iceberg_utils.py` runs Spark's `local` driver on the host, not in a container. That
-# scales with xdist concurrency, hence a share of the job limit; the floor keeps the smallest
-# supported host runnable and the cap keeps the container budget from losing a worker.
-INTEGRATION_DIND_INIT_RESERVE = min(max(LIMITED_MEM // 3, 8 * 1024**3), 16 * 1024**3)
+# `helpers/iceberg_utils.py` runs Spark's `local` driver on the host, not in a container.
+#
+# A flat floor rather than the third of the job limit this used to take, because the share was
+# claiming memory `/docker` cannot do without. Measured over 58 integration jobs on the 61.78 GiB
+# runner: `/docker` peaks at its cap in every single one, while `/init` peaks at 20.8 GiB
+# (median) against this reserve and `/dockerd` at 18.3 GiB against its 2 GiB one, and the job
+# cgroup never breaches - the two overruns are page cache (the log archiving here, the image
+# layers there) and reclaim gives them back. `/docker` is the opposite: read off a kernel OOM
+# report, its 40.35 GiB charge is anonymous memory against 753664 bytes of cache, so not one page
+# of it is reclaimable and its cap is the only one that binds. Sizing the unreclaimable leaf last
+# is what put `Container memory budget exceeded (/docker)` on nearly every run of the ASan+UBSan
+# shards.
+INTEGRATION_DIND_INIT_RESERVE = 8 * 1024**3
 # Holds dockerd, containerd and one containerd-shim per nested container, so it scales with
 # concurrency rather than staying at the daemon's own footprint. An absolute floor, never a
 # fraction of the job limit: too small and the daemons cannot boot at all.
@@ -46,9 +55,10 @@ INTEGRATION_NESTED_BUDGET = max(
     - INTEGRATION_DIND_DAEMON_RESERVE,
     0,
 )
-# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out, and its
-# charge is anon, so reclaim cannot meet a cap the way it can for `/docker`'s page cache. It
-# overlaps `/docker`, so this cap alone is within the job limit but the three together are not.
+# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
+# cache of the logs it reads and archives, and neither is bounded by the reserve above. It
+# overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
+# which is what lets the reserve shrink without `/init` losing any room it actually uses.
 INTEGRATION_DIND_INIT_LIMIT = max(
     LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
     INTEGRATION_DIND_INIT_RESERVE,
@@ -248,14 +258,14 @@ common_integration_test_job_config = Job.Config(
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
@@ -636,7 +646,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
@@ -646,7 +656,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
@@ -673,7 +683,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
@@ -683,7 +693,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
@@ -1416,19 +1426,19 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
     )
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
@@ -1468,7 +1478,7 @@ class JobConfigs:
     ast_fuzzer_targeted_pr_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
@@ -1672,7 +1682,7 @@ class JobConfigs:
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
         # runners are in us-east-1, where Canonical's mirrors are often unreachable.
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
@@ -1688,7 +1698,7 @@ class JobConfigs:
     )
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
         # runners are in us-east-1, where Canonical's mirrors are often unreachable.
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
@@ -1839,13 +1849,13 @@ class JobConfigs:
     )
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py keeper",
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_SERVER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
@@ -1853,6 +1863,18 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+        ),
+    )
+    libfuzzer_corpus_minimization_job = Job.Config(
+        name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command=(
+            "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
+            "'libFuzzer corpus minimization'"
+        ),
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
@@ -1927,7 +1949,7 @@ class JobConfigs:
     )
     update_toolchain_dockerfile_job = Job.Config(
         name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
         enable_gh_auth=True,
     )
@@ -1956,18 +1978,6 @@ class JobConfigs:
         ),
         timeout=1800,
         enable_gh_auth=True,
-        # Run on a red head too. This job is the only writer of the
-        # `build-profile-diff` PR comment, so skipping it leaves the comment
-        # posted for an older commit pinned to the PR, reading as if it
-        # described the head. `Build (arm_release)` runs after every regular
-        # build (`set_run_after(REGULAR_BUILD_NAMES)` in ci/workflows/pull_request.py)
-        # and inherits the default "no upstream failure" gate, so an unrelated
-        # build failure skips it and would skip this job with it. With no
-        # profile data for the head the job posts the "no data" text over the
-        # stale comparison (see main()) instead of leaving it. Not
-        # `run_unless_cancelled`: that would also ignore the job filter and run
-        # this on a `release` or `do not test` PR.
-        run_on_upstream_failure=True,
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
@@ -2003,7 +2013,7 @@ class JobConfigs:
     )
     promql_compliance_job = Job.Config(
         name=JobNames.PROMQL_COMPLIANCE,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         run_in_docker="clickhouse/test-base",
         # Wait for integration upload post-hooks, including failed integration jobs.
         run_after=[
