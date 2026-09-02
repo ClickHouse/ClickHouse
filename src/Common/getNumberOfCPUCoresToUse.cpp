@@ -17,10 +17,12 @@
 #include <optional>
 #include <vector>
 
+#if defined(OS_LINUX)
 namespace
 {
     std::optional<uint32_t> countCPUsInList(const std::string & cpu_list);
 }
+#endif
 
 unsigned getNumberOfLogicalCPUCores()
 {
