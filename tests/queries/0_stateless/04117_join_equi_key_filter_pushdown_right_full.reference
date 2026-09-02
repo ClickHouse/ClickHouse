@@ -58,3 +58,6 @@ INNER JOIN ON, cross-type equi-key: result
 2020-06-01
 2020-06-02
 2020-06-03
+INNER JOIN ON, cross-type equi-key that is not stable within the query: result
+5
+6

@@ -237,3 +237,24 @@ WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03') ORDER BY 1;
 DROP TABLE inner_d32;
 DROP TABLE inner_d;
 DROP TABLE inner_d32_key;
+
+-- A key that is not stable within the query is not substitutable: the pushed-down filter computes it and
+-- the JOIN computes it again, so the two comparisons would see different values and matching rows would
+-- be dropped. `* 0` keeps the value at the row number while making the key an expression of the right
+-- input, and `max_threads` is pinned because `rowNumberInAllBlocks` numbers each stream from zero.
+
+DROP TABLE IF EXISTS inner_nd_wide;
+DROP TABLE IF EXISTS inner_nd_narrow;
+CREATE TABLE inner_nd_wide   (a Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE inner_nd_narrow (x Int32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO inner_nd_wide   SELECT number FROM numbers(10);
+INSERT INTO inner_nd_narrow SELECT number FROM numbers(10);
+
+SELECT 'INNER JOIN ON, cross-type equi-key that is not stable within the query: result';
+SELECT l.a FROM inner_nd_wide AS l INNER JOIN inner_nd_narrow AS r
+    ON l.a = toInt32(rowNumberInAllBlocks() + r.x * 0)
+WHERE l.a BETWEEN 5 AND 6 ORDER BY 1
+SETTINGS max_threads = 1;
+
+DROP TABLE inner_nd_wide;
+DROP TABLE inner_nd_narrow;

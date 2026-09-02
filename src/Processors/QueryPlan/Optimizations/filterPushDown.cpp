@@ -738,7 +738,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
     std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
 
-    /// Availability is applied per map below, so a pair registered for a side that cannot take the filter is inert.
+    /// The map keyed by a name of one side is applied to the filter pushed to the other side, while the
+    /// flag admitting its keys is the one of that name's own side, so a pair it rejects stays inert below.
     if (logical_join)
     {
         const auto & join_output_header = *join_header;
@@ -766,6 +767,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             const auto * replaced = join_output_header.findByName(replaced_name);
             if (!replaced || !replaced->type->equals(*supertype))
                 return;
+
+            /// The pushed-down filter computes this key and the JOIN computes it again, so a key that is
+            /// not stable within the query would be compared against two different values.
+            const auto source_dag = JoinExpressionActions::getSubDAG(source);
+            for (const auto & node : source_dag.getNodes())
+            {
+                if (node.type == ActionsDAG::ActionType::FUNCTION && !node.function_base->isDeterministicInScopeOfQuery())
+                    return;
+            }
 
             /// The side that already has the supertype is not cast by the JOIN either.
             if (source.getType()->equals(*supertype))
