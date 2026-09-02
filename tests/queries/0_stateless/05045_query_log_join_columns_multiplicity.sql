@@ -34,11 +34,13 @@ SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a JOIN t4 ON 
 FORMAT Null SETTINGS log_comment = '05045_join_multiplicity_a_same', join_algorithm = 'hash';
 
 SELECT 'a repeated combination and a distinct one, in the same query';
-SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a ANY LEFT JOIN t4 ON t3.a = t4.a
+SELECT count() FROM t1 ANY INNER JOIN t2 ON t1.a = t2.a ANY INNER JOIN t3 ON t2.a = t3.a
+                     LEFT JOIN t4 ON t3.a = t4.a
 FORMAT Null SETTINGS log_comment = '05045_join_multiplicity_b_mixed', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, used_number_of_joins, used_join_kinds, used_join_strictness,
+       arrayZip(used_join_kinds, used_join_strictness) AS joins_as_pairs,
        length(used_join_kinds) = used_number_of_joins AND length(used_join_strictness) = used_number_of_joins AS arrays_hold_one_element_per_join
 FROM system.query_log
 WHERE current_database = currentDatabase()

@@ -45,7 +45,7 @@ SELECT count() > 1 AS the_view_consumed_more_than_one_block
 FROM system.part_log
 WHERE database = currentDatabase() AND table = 'dst_one' AND event_type = 'NewPart';
 
-SELECT 'one join in a materialized view, the views processed in parallel streams';
+SELECT 'one join in a materialized view, with parallel_view_processing enabled';
 CREATE TABLE src_parallel (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE TABLE dst_parallel (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE MATERIALIZED VIEW mv_parallel TO dst_parallel AS
@@ -54,7 +54,7 @@ CREATE MATERIALIZED VIEW mv_parallel TO dst_parallel AS
 INSERT INTO src_parallel SELECT number FROM numbers(10)
 SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1,
          max_insert_threads = 4, parallel_view_processing = 1,
-         log_comment = '05054_view_rebuilds_b_parallel_streams', join_algorithm = 'hash';
+         log_comment = '05054_view_rebuilds_b_parallel_view_processing', join_algorithm = 'hash';
 
 SELECT count() FROM dst_parallel;
 
