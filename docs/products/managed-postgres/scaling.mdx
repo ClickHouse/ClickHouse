@@ -139,7 +139,7 @@ ClickHouse Managed Postgres monitors disk usage and scales storage automatically
 
 - **85% disk usage**: You receive a [notification](/products/managed-postgres/monitoring/notifications) through the cloud console and email.
 - **90% disk usage**: Autoscaling starts. Storage is increased to the next larger size available for your instance family. CPU and memory stay the same unless the current instance size doesn't support a larger disk, in which case the instance size is increased as well. [Read replicas](/products/managed-postgres/read-replicas) are scaled alongside the primary.
-- **95% disk usage**: The cutover skips any configured maintenance window and happens as soon as the new server is ready.
+- **95% disk usage**: The cutover happens as soon as the new server is ready, bypassing any wait.
 
 If your instance is already at the largest available configuration, autoscaling can't go further. Free up disk space or contact [support](https://clickhouse.com/support/program).
 
@@ -147,7 +147,7 @@ If your instance is already at the largest available configuration, autoscaling 
 
 Storage isn't resized in place. Autoscaling follows the same [scaling process](#scaling-process) as a manual instance type change: a replacement server with more storage is provisioned, restored from the latest backup, catches up on WAL, and a controlled cutover promotes it to the new primary. Instances with [high availability](/products/managed-postgres/high-availability) get replacement standbys at the new size as part of the same operation.
 
-The cutover is the only step with downtime, typically under a minute. If a [maintenance window](/products/managed-postgres/upgrades#maintenance-windows) is configured, the cutover waits for it unless disk usage reaches 95%. During the cutover, open connections are dropped and in-flight transactions are rolled back. Your connection string doesn't change: DNS is updated to point at the new primary, and applications with standard reconnect logic recover automatically.
+The cutover is the only step with downtime, typically under a minute. A configured [scheduled upgrade window](/products/managed-postgres/upgrades#scheduled-upgrades) doesn't delay it: the window applies to platform maintenance, not to scaling. During the cutover, open connections are dropped and in-flight transactions are rolled back. Your connection string doesn't change: DNS is updated to point at the new primary, and applications with standard reconnect logic recover automatically.
 
 ### Read-only mode {#autoscaling-read-only}
 
@@ -168,7 +168,7 @@ An instance with 1024 GB of storage runs a write-heavy workload:
 
 1. At 870 GB used (85%), you receive the storage notification.
 2. At 922 GB used (90%), autoscaling starts. A replacement server with 2048 GB of storage is provisioned and restored from the latest backup while your instance keeps serving traffic.
-3. Once the replacement has caught up, the cutover runs, within your maintenance window if one is configured. Connections drop for under a minute, your application reconnects to the same hostname, and usage is back around 45%.
+3. Once the replacement has caught up, the cutover runs. Connections drop for under a minute, your application reconnects to the same hostname, and usage is back around 45%.
 4. If free space drops below 2% (about 20 GB) before the cutover completes, the instance goes read-only. Writes resume automatically once the cutover to the larger disk finishes.
 
 ## Additional resources {#resources}
