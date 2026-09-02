@@ -15,7 +15,7 @@ from typing import List
 
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
-from ci.jobs.scripts.log_parser import FuzzerLogParser
+from ci.jobs.scripts.log_parser import EXPECTED_KILL_PATTERN, SANITIZER_OOM_PATTERN, FuzzerLogParser
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -1090,15 +1090,30 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                     name, description, files = log_parser.parse_failure()
                     # The prefilter fires on lines a healthy run writes too (the restart
                     # SIGKILL is `<Fatal>`, a benign OOM report matches the sanitizer
-                    # patterns), which `parse_failure` defers into "Unknown error". A name
-                    # in the second pass means only those were found and there is nothing
-                    # to block on; a `<Fatal>` no pattern claims stays unexplained.
+                    # patterns), which `parse_failure` defers into "Unknown error". But
+                    # `parse_failure` only ever names one of `ERROR_PATTERNS` - a `<Fatal>`
+                    # line matching none of them (a signature the parser has no pattern for
+                    # yet) comes back as the same "Unknown error", so a name in the second
+                    # pass proves only that an expected line exists *somewhere*, not that
+                    # every `<Fatal>` line is accounted for. Require that too before trusting it.
                     expected_only = (
                         log_parser.parse_failure(allow_expected_only=True)[0]
                         if name == FuzzerLogParser.UNKNOWN_ERROR
                         else None
                     )
-                    if expected_only and expected_only != FuzzerLogParser.UNKNOWN_ERROR:
+                    unexplained_fatal = bool(
+                        expected_only
+                        and Shell.get_output(
+                            f"rg -z --text '<Fatal>' "
+                            f"{' '.join(str(p) for p in server_logs + stderr_logs)}"
+                            f" | rg --text -v '{SANITIZER_OOM_PATTERN}|{EXPECTED_KILL_PATTERN}'"
+                        )
+                    )
+                    if (
+                        expected_only
+                        and expected_only != FuzzerLogParser.UNKNOWN_ERROR
+                        and not unexplained_fatal
+                    ):
                         results.append(
                             Result.create_from(
                                 name="Sanitizer assert or Fatal messages in server logs",

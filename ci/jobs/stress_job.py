@@ -369,13 +369,18 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         # once. The runner moves the current `stderr.log` to the result directory and leaves
         # the rotated ones in the server log directory, so that family spans both.
         replica_log_pairs: list[tuple[str, list[Path], list[Path]]] = []
-        err_logs = _log_family(server_log_path, lambda n: ".err." in n)
+        # The full `clickhouse-server*.log*` family, not just `.err.`: `crash_evidence` above
+        # is already set from a fatal anywhere in that whole family, so a fatal that landed
+        # only in the plain (non-`.err.`) log must reach the parser too, or it is never seen.
+        server_logs_family = _log_family(
+            server_log_path, lambda n: n.startswith("clickhouse-server")
+        )
         stderr_logs = _log_family(
             result_path, lambda n: n.startswith("stderr")
         ) + _log_family(server_log_path, lambda n: n.startswith("stderr"))
 
         for replica_name, replica in (("main", None), ("sc1", "sc1"), ("sc2", "sc2")):
-            replica_server_logs = _replica_logs(err_logs, replica)
+            replica_server_logs = _replica_logs(server_logs_family, replica)
             replica_stderr_logs = _replica_logs(stderr_logs, replica)
             # Either family on its own is enough to classify the replica: a crash can write a
             # sanitizer report to stderr and never create an err log at all.

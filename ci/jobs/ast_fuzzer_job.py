@@ -147,17 +147,18 @@ def _fuzzer_log_terminal_block_has_server_mle(fuzzer_log: Path) -> bool:
 BUZZHOUSE_ORACLE_ERROR_CODE = 1017
 BUZZHOUSE_ORACLE_EXIT_CODE = BUZZHOUSE_ORACLE_ERROR_CODE & 0xFF
 
-# Genuine (non-OOM) failure signals that veto the OOM-is-success downgrade, so a real
-# failure on one node is not hidden by a benign OOM on another. The bare sanitizer names
-# match a mention anywhere, which is wider than the parser's own report-shaped patterns.
-# `is_memory_limit_exceeded` is left out: a server that survived its memory cap is itself a
-# benign verdict. No bare signal number either - the unioned "Signal" pattern already
-# requires the fatal handler's "(from thread N)" prefix, which every genuine fatal signal
-# carries and the routine SIGTERM shutdown line does not.
+# Genuine (non-OOM) failure signals that veto the OOM-is-success downgrade, so a crash on
+# one node isn't hidden by a benign OOM on another. `is_memory_limit_exceeded` is excluded
+# (surviving the memory cap is itself benign), and bare signal numbers are excluded too (the
+# "Signal" pattern already requires the fatal handler's "(from thread N)" prefix). Bare
+# "<Fatal>" is included so a crash type with no signature here yet still vetoes;
+# `benign_pattern` below strips the two expected "<Fatal>" lines (OOM report, end-of-run
+# SIGKILL) back out.
 SANITIZER_NON_OOM_PATTERN = "|".join(
     [
         "AddressSanitizer|UndefinedBehaviorSanitizer|ThreadSanitizer"
         "|MemorySanitizer|SIGSEGV|SIGABRT",
+        "<Fatal>",
         *(
             pattern
             for _, flag_name, pattern in FuzzerLogParser.ERROR_PATTERNS

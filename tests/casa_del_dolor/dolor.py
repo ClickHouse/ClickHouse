@@ -717,9 +717,20 @@ while all_running and (not reached_limit):
         )
 
         try:
-            next_pick.stop_clickhouse(
+            stopped = next_pick.stop_clickhouse(
                 stop_wait_sec=SERVER_STOP_WAIT_SECONDS, kill=kill_server
             )
+            if not stopped:
+                # `stop_clickhouse` returns `False`, not an exception, when the process was
+                # already gone before this scheduled stop - i.e. it died on its own in the
+                # window since the last liveness check. Treat that the same as the exception
+                # below: `start_clickhouse` further down would otherwise clear
+                # `clickhouse_exec_id`/`clickhouse_last_exit_code` for a replacement server
+                # before the teardown loop ever gets to classify the unexpected death.
+                logger.error(
+                    f"The server {next_pick.name} was already gone before the scheduled restart could stop it"
+                )
+                all_running = False
         except Exception as ex:
             logger.error(f"Failed to stop ClickHouse: {ex}")
             logger.info(f"The server {next_pick.name} is not running")

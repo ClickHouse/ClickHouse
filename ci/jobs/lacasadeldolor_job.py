@@ -17,6 +17,7 @@ from ci.jobs.ast_fuzzer_job import (
     analyze_job_logs,
 )
 from ci.jobs.buzzhouse_job import generate_buzz_config
+from ci.jobs.ci_utils import is_extended_run
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV
 from ci.jobs.scripts.log_parser import (
@@ -750,6 +751,11 @@ def main():
     # with_glue = with_spark and random.randint(1, 4) == 1
     # with_rest = with_spark and random.randint(1, 4) == 1
     # with_hms = with_spark and random.randint(1, 4) == 1
+    # Same budget `generate_buzz_config` gave the BuzzHouse config's `time_to_run`
+    # (`ci/jobs/buzzhouse_job.py`): otherwise, on an extended-run PR, `dolor.py` kills
+    # BuzzHouse at 30 minutes while the generated config expected 60, silently dropping
+    # the second half of the intended fuzzing coverage and reporting a normal timeout.
+    dolor_timeout_minutes = 60 if is_extended_run() else 30
     base_command = f"""
 python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse
 --tmp-files-dir={workspace_path}
@@ -759,7 +765,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 --server-binaries={clickhouse_path}
 --client-config={buzzconfig}
 --log-path={dolor_log}
---timeout=30 --server-settings-prob=0
+--timeout={dolor_timeout_minutes} --server-settings-prob=0
 --kill-server-prob=50 --without-monitoring --without-transactions
 --replica-values={','.join(str(i) for i in range(number_of_nodes))}
 --shard-values={','.join(str(1) for _ in range(number_of_nodes))}
@@ -795,8 +801,8 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         outfile.write("\n")
 
     # 4-hour wall-clock ceiling so a wedged dolor.py doesn't block the runner until the
-    # job-level timeout. Comfortably above the internal --timeout=30 (minutes) plus
-    # restarts/setup/shutdown overhead.
+    # job-level timeout. Comfortably above the internal --timeout (30 or 60 minutes, see
+    # dolor_timeout_minutes above) plus restarts/setup/shutdown overhead.
     cmd_ok = Shell.check(command=base_command, verbose=True, timeout=4 * 3600)
 
     # Copy generated configuration files from container to host for further analysis.
