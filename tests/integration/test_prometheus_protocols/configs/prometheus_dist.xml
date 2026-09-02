@@ -23,6 +23,13 @@
                     <table>default.prom_dist_coarse</table>
                 </handler>
             </coarse_write>
+            <queue_write>
+                <url>/queue/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_queue</table>
+                </handler>
+            </queue_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>

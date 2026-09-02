@@ -1,9 +1,12 @@
-"""A shard skipped as unavailable leaves no verdict behind.
+"""An unreachable shard is neither refused by the shard-target check nor vouched for by it.
 
-The shard-target check keeps a passing verdict for a minute. Under `skip_unavailable_shards = 1` a
-request served while one shard is down passes too, but it has seen nothing of that shard, which
-may come back as anything. Only a verdict that saw every shard is kept, so the first write after
-the shard returns is checked again.
+The check keeps a passing verdict for a minute. A request served while one shard is down passes
+too, but it has seen nothing of that shard, which may come back as anything. Only a verdict that
+saw every shard is kept, so the first write after the shard returns is checked again.
+
+Whether the unreachable shard fails the request is the read's or the sink's decision, not the
+check's: a write through a wrapper with the default settings is queued for that shard and
+delivered once it is back, exactly as a plain INSERT would be.
 """
 
 import json
@@ -57,6 +60,13 @@ def start_cluster():
             "ENGINE = Distributed(two_nodes_dist, default, ts_local, cityHash64(tags['host'])) "
             "SETTINGS skip_unavailable_shards = 1"
         )
+        # Its own shard tables, so the two tests below never share a cached verdict.
+        node1.query("CREATE TABLE ts_queue ENGINE = TimeSeries")
+        node2.query("CREATE TABLE ts_queue ENGINE = TimeSeries")
+        node1.query(
+            "CREATE TABLE prom_queue AS ts_local "
+            "ENGINE = Distributed(two_nodes_dist, default, ts_queue, cityHash64(tags['host']))"
+        )
         node1.query(
             "INSERT INTO ts_local (metric_name, tags, time_series) "
             f"VALUES ('m', map('host', 'h0'), [(toDateTime64({START_TIME}, 3), 1)])"
@@ -66,18 +76,18 @@ def start_cluster():
         cluster.shutdown()
 
 
-def write(metric_name):
+def write(metric_name, path="/dist/write"):
     time_series = [({"__name__": metric_name, "host": WRITTEN_HOST}, {START_TIME: 1.0})]
     return get_response_to_remote_write(
         node1.ip_address,
         9093,
-        "/dist/write",
+        path,
         convert_time_series_to_protobuf(time_series),
     )
 
 
-def series_count(metric_name):
-    return f"SELECT count() FROM timeSeriesTags(ts_local) WHERE metric_name = '{metric_name}'"
+def series_count(metric_name, table="ts_local"):
+    return f"SELECT count() FROM timeSeriesTags({table}) WHERE metric_name = '{metric_name}'"
 
 
 def test_a_verdict_that_skipped_a_shard_is_not_kept():
@@ -108,3 +118,23 @@ def test_a_verdict_that_skipped_a_shard_is_not_kept():
     assert node2.query("SELECT count() FROM mt_local").strip() == "0"
     assert node1.query(series_count("after_outage")).strip() == "0"
     assert node2.query(series_count("after_outage")).strip() == "0"
+
+
+def test_a_write_over_an_unreachable_shard_is_queued_not_refused():
+    with PartitionManager() as pm:
+        pm.partition_instances(
+            node1, node2, port=9000, action="REJECT --reject-with tcp-reset"
+        )
+        # `prom_queue` declares no skip setting: the check must still let the sink do what a
+        # plain INSERT does with a shard it cannot reach, which is to queue the samples for it.
+        response = write("during_outage", "/queue/write")
+        assert response.status_code == 204, response.text
+        pending = node1.query(
+            "SELECT data_files FROM system.distribution_queue WHERE table = 'prom_queue'"
+        )
+        assert pending.strip() == "1", pending
+
+    # Delivered once node2 answers again, to the TimeSeries table the samples were meant for.
+    node1.query("SYSTEM FLUSH DISTRIBUTED prom_queue")
+    assert node2.query(series_count("during_outage", "ts_queue")).strip() == "1"
+    assert node1.query(series_count("during_outage", "ts_queue")).strip() == "0"

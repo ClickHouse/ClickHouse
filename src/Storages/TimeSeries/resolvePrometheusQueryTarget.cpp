@@ -12,7 +12,6 @@
 #include <mutex>
 #include <unordered_map>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -29,12 +28,6 @@ namespace DistributedSetting
 {
     extern const DistributedSettingsBool skip_unavailable_shards;
     extern const DistributedSettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
-}
-
-namespace Setting
-{
-    extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace ErrorCodes
@@ -162,17 +155,14 @@ void checkPrometheusQueryDistributedTargets(const IStorage & storage, const Cont
         : quoteString(remote_id.database_name);
     const String table_predicate = quoteString(remote_id.table_name);
     const String type_mismatch = "engine = 'TimeSeries' AND ts_type != " + quoteString(time_series_type);
-    const auto [skip_unavailable_shards, skip_unavailable_shards_mode] = declaredShardSkipSettings(storage);
 
-    /// Fans out like the read it guards: the wrapper's declared skip settings decide whether a dead
-    /// shard is an error here too, and the query text is shipped for the same reason as there.
+    /// The query text is shipped for the same reason as the read's.
     const String probe_query = "SELECT count(), countIf(engine != 'TimeSeries'), countIf(" + type_mismatch
         + "), arrayStringConcat(groupUniqArrayIf(ts_type, " + type_mismatch + "), ', ') FROM cluster("
         + backQuoteIfNeed(target->cluster_name) + ", view(SELECT (SELECT engine FROM system.tables WHERE database = "
         + database_predicate + " AND name = " + table_predicate + ") AS engine, (SELECT type FROM system.columns WHERE database = "
         + database_predicate + " AND table = " + table_predicate + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries)
-        + ") AS ts_type), SETTINGS skip_unavailable_shards = " + String(skip_unavailable_shards ? "1" : "0")
-        + ", skip_unavailable_shards_mode = " + quoteString(skip_unavailable_shards_mode) + ")";
+        + ") AS ts_type))";
 
     /// On the server's own context, and only ever after the caller's grant check: the caller needs
     /// no cluster grant of its own, and learns nothing it could not already see.
@@ -181,12 +171,10 @@ void checkPrometheusQueryDistributedTargets(const IStorage & storage, const Cont
     probe_context->setCurrentQueryId("");
     probe_context->setSetting("serialize_query_plan", false);
 
-    /// A query-level value overrides the declaration on the read as well (ClusterProxy's rule).
-    const auto & caller_settings = context->getSettingsRef();
-    if (caller_settings[Setting::skip_unavailable_shards].changed)
-        probe_context->setSetting("skip_unavailable_shards", caller_settings[Setting::skip_unavailable_shards].value);
-    if (caller_settings[Setting::skip_unavailable_shards_mode].changed)
-        probe_context->setSetting("skip_unavailable_shards_mode", caller_settings[Setting::skip_unavailable_shards_mode].toString());
+    /// Judges engines and types, never availability: an unreachable shard is left to the read or the
+    /// sink behind this check, which by default queues an INSERT for it rather than failing.
+    probe_context->setSetting("skip_unavailable_shards", true);
+    probe_context->setSetting("skip_unavailable_shards_mode", String("unavailable"));
 
     auto [probe_ast, probe_io] = executeQuery(probe_query, probe_context, QueryFlags{ .internal = true });
     PullingPipelineExecutor executor(probe_io.pipeline);
