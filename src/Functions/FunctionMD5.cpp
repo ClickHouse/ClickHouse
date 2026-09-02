@@ -420,9 +420,8 @@ DECLARE_MD5_TARGET_CODE(
     /// cannot cause a loss.
     constexpr size_t MD5_GROUP_MAX_KEY = 64;
     /// Reordering costs a fixed amount of integer work per row, so the predicate below requires an
-    /// absolute saving and not merely a relative one. A batch costs as much as its longest row, so
-    /// halving the lanes roughly doubles the saving one column models; dividing by the batch width is
-    /// what keeps a given column on the same side of the decision on every backend.
+    /// absolute saving, not a relative one. A batch costs as much as its longest row, so halving the
+    /// lanes doubles the saving a column models; dividing by the batch width keeps it comparable.
     constexpr size_t md5GroupMinSavedItersPer1kRows(size_t n2)
     {
         return 2048 / n2;
