@@ -4334,12 +4334,13 @@ ASTPtr QueryFuzzer::generatePredicate()
                 else if (nprob == 2)
                 {
                     /// col IN (expr1, expr2, ...) or col IN [expr1, expr2, ...] using any IN-family
-                    /// operator. The empty sets `col IN ()` and `col IN []` are valid too, and both
-                    /// always evaluate to 0. `array` only formats as `[...]` when it is an operator.
+                    /// operator. Both only bracket as operators, and `tuple` only from two elements
+                    /// up, so a zero-item set emits `col IN []` or `col IN tuple()` - no AST formats
+                    /// back as `col IN ()`. Either empty form evaluates to 0.
                     const bool use_array = fuzz_rand() % 4 == 0;
                     auto set_func = make_intrusive<ASTFunction>();
                     set_func->name = use_array ? "array" : "tuple";
-                    set_func->setIsOperator(use_array);
+                    set_func->setIsOperator(true);
                     set_func->arguments = make_intrusive<ASTExpressionList>();
                     set_func->children.push_back(set_func->arguments);
                     const size_t n_items = fuzz_rand() % 20 == 0 ? 0 : (fuzz_rand() % 4) + 1;
