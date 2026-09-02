@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+-- `optimize_rewrite_regexp_functions` is a query tree pass, and `EXPLAIN QUERY TREE` needs the analyzer.
 -- https://github.com/ClickHouse/ClickHouse/issues/116921
 -- `optimize_rewrite_regexp_functions` turns `replaceRegexpAll` into `replaceRegexpOne` for an
 -- anchored pattern, on the assumption that such a pattern matches at most once. That is wrong when
@@ -22,6 +24,11 @@ SELECT replaceRegexpAll(h, 'o?$', 'Z') FROM (SELECT 'foo' AS h) SETTINGS optimiz
 SELECT replaceRegexpAll(h, '(o|)$', 'Z') FROM (SELECT 'foo' AS h);
 SELECT replaceRegexpAll(h, '(o|)$', 'Z') FROM (SELECT 'foo' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
 
+-- A zero-width assertion in front of the trailing `$` does not make the tail have to consume:
+-- a global replace matches the trailing `a` and then the empty string at the end of the subject.
+SELECT replaceRegexpAll(h, 'a?\\b$', 'Z') FROM (SELECT 'a' AS h);
+SELECT replaceRegexpAll(h, 'a?\\b$', 'Z') FROM (SELECT 'a' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+
 -- A `^`-anchored pattern can only match at offset 0, so a nullable tail is harmless there.
 SELECT replaceRegexpAll(h, '^o*', 'Z') FROM (SELECT 'foo' AS h);
 SELECT replaceRegexpAll(h, '^o*', 'Z') FROM (SELECT 'foo' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
@@ -33,3 +40,4 @@ SELECT replaceRegexpAll(h, 'o+$', 'Z') FROM (SELECT 'foo' AS h) SETTINGS optimiz
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('foo'), 'o+$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('foo'), '(?m)o$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('foo'), 'o*$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('a'), 'a?\\b$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
