@@ -474,3 +474,48 @@ def test_invalid_auth_header_format(started_cluster):
         )
     assert "Invalid auth header format" in str(err.value)
 
+
+def test_create_and_drop_table(started_cluster):
+    """Lakekeeper returns a URL prefix in /v1/config, so CREATE/INSERT/DROP must send it too"""
+
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_create_and_drop_table_{uuid.uuid4().hex[:8]}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog.create_namespace((root_namespace,))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    assert (root_namespace, table_name) in catalog.list_tables((root_namespace,))
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('test_value')",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    assert (
+        node.query(
+            f"SELECT x FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`"
+        ).strip()
+        == "test_value"
+    )
+
+    node.query(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`")
+
+    assert catalog.list_tables((root_namespace,)) == []
