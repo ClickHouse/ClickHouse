@@ -116,16 +116,6 @@ bool hasSubexpression(const ActionsDAG::Node * node, const String & subexpressio
     return false;
 }
 
-/// Collects the result names of every node in a filter DAG, to test whether a predicate is part of it.
-void collectNodeNames(const ActionsDAG::Node * node, NameSet & names)
-{
-    if (!node || !names.emplace(node->result_name).second)
-        return;
-
-    for (const auto * child : node->children)
-        collectNodeNames(child, names);
-}
-
 const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node * node, const NodesReplacementMap & replacements)
 {
     if (auto it = replacements.find(node); it != replacements.end())
@@ -452,12 +442,10 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 class TextIndexDAGReplacer
 {
 public:
-    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, bool is_filter_dag_, bool require_index_analyzed_predicate_ = false)
+    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_)
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
-        , is_filter_dag(is_filter_dag_)
-        , require_index_analyzed_predicate(require_index_analyzed_predicate_)
     {
     }
 
@@ -560,12 +548,6 @@ private:
     ActionsDAG & actions_dag;
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
-    /// True while rewriting a WHERE/PREWHERE filter DAG; false for SELECT-list / above-scan rewrites.
-    bool is_filter_dag = false;
-    /// True while rewriting a DAG excluded from index analysis (a PREWHERE deferred after FINAL).
-    bool require_index_analyzed_predicate = false;
-    /// Per-index cache of the node names in the index-analysis filter DAG.
-    std::unordered_map<String, NameSet> index_analyzed_predicate_names;
 
     struct SelectedCondition
     {
@@ -573,28 +555,7 @@ private:
         String index_name;
         String virtual_column_name;
         const TextIndexReadInfo * info = nullptr;
-        /// Whether this predicate participated in skip-index analysis (always true unless `require_index_analyzed_predicate`).
-        bool is_index_analyzed = true;
     };
-
-    /// True if index analysis saw this exact predicate, i.e. it also appears in a filter that was not deferred.
-    bool isIndexAnalyzedPredicate(const String & index_name, const TextIndexReadInfo & info, const ActionsDAG::Node & predicate)
-    {
-        if (!info.index)
-            return false;
-
-        auto it = index_analyzed_predicate_names.find(index_name);
-        if (it == index_analyzed_predicate_names.end())
-        {
-            NameSet names;
-            if (const auto * filter_dag = info.index->condition_template->getFilterDAG())
-                collectNodeNames(filter_dag->predicate, names);
-
-            it = index_analyzed_predicate_names.emplace(index_name, std::move(names)).first;
-        }
-
-        return it->second.contains(predicate.result_name);
-    }
 
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
@@ -649,14 +610,11 @@ private:
             if (!text_index_condition.canAnswerFunctionNode(function_node))
                 continue;
 
-            const bool is_index_analyzed
-                = !require_index_analyzed_predicate || isIndexAnalyzedPredicate(index_name, info, canonical_node);
-
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise
             /// just inject the tokenizer/preprocessor/postprocessor (no virtual column), same as None mode.
             if (!direct_read_from_text_index || !info.index || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
-                selected_conditions.emplace_back(search_query, index_name, String{}, &info, is_index_analyzed);
+                selected_conditions.emplace_back(search_query, index_name, String{}, &info);
                 used_index_columns.insert(index_header.begin()->name);
                 continue;
             }
@@ -665,7 +623,7 @@ private:
             if (!virtual_column_name)
                 continue;
 
-            selected_conditions.emplace_back(search_query, index_name, *virtual_column_name, &info, is_index_analyzed);
+            selected_conditions.emplace_back(search_query, index_name, *virtual_column_name, &info);
             used_index_columns.insert(index_header.begin()->name);
         }
 
@@ -744,8 +702,8 @@ private:
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
-        /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
-        const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        /// All three transforms follow the index definition, so they apply to every occurrence of the function.
+        const bool apply_preprocessor = needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
@@ -1043,10 +1001,9 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     ActionsDAG & filter_dag,
     const TextIndexReadInfos & text_index_read_infos,
     const String & filter_column_name,
-    bool direct_read_from_text_index,
-    bool require_index_analyzed_predicate = false)
+    bool direct_read_from_text_index)
 {
-    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index, /*is_filter_dag=*/ true, require_index_analyzed_predicate);
+    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
 
     /// Even when no virtual columns are added (added_columns is empty),
@@ -1105,7 +1062,7 @@ static bool applyTextIndexInject(
     ActionsDAG & dag,
     const TextIndexReadInfos & text_index_infos)
 {
-    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false, /*is_filter_dag=*/ false);
+    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{});
     return result.is_dag_rewritten;
 }
@@ -1114,12 +1071,11 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
     ReadFromMergeTree & read_from_merge_tree_step,
     const PrewhereInfoPtr & prewhere_info,
     const TextIndexReadInfos & text_index_read_infos,
-    bool direct_read_from_text_index,
-    bool require_index_analyzed_predicate)
+    bool direct_read_from_text_index)
 {
     read_from_merge_tree_step.updatePrewhereInfo({});
     auto cloned_prewhere_info = prewhere_info->clone();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, direct_read_from_text_index, require_index_analyzed_predicate);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, direct_read_from_text_index);
 
     if (!result_filter_node)
     {
@@ -1194,10 +1150,9 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     bool prewhere_optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
     {
-        /// A PREWHERE deferred after FINAL never runs during reading and is excluded from index analysis, so it gets neither the direct read nor a sibling predicate's preprocessor.
-        bool is_deferred_after_final = read_from_merge_tree_step->isPrewhereDeferredAfterFinal();
-        bool direct_read_allowed = direct_read_from_text_index && !already_has_direct_read && !is_deferred_after_final;
-        prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
+        /// virtual-column/direct-read rewrite is pointless for a deferred PREWHERE (the filter never runs during reading)
+        bool direct_read_allowed = direct_read_from_text_index && !already_has_direct_read && !read_from_merge_tree_step->isPrewhereDeferredAfterFinal();
+        prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed);
     }
 
     /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the filter, e.g. the
