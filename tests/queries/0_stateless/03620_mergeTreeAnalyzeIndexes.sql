@@ -14,8 +14,9 @@ select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key >= 8193);
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8192+1 or key = 8192*3+1);
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8192+1 or key = 8192*5+1);
 
-select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, 'all_1_1_0');
-select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, 'no_such_part');
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, ['all_1_1_0']);
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, ['no_such_part']);
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, array('all_1_1_0'));
 
 -- Columns not from PK is allowed and ignored.
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, value = 0);
@@ -23,3 +24,10 @@ select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193 and va
 
 -- Set
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in (8193, 16385));
+
+-- Corner cases
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [materialize('all_1_1_0')]); -- { serverError BAD_ARGUMENTS }
+
+-- Constant expressions (non-literal) should be evaluated via evaluateConstantExpressionAsLiteral
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [concat('all', '_1_1_0')]);
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [toString('all_1_1_0')]);

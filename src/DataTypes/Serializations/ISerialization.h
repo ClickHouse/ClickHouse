@@ -1,26 +1,32 @@
 #pragma once
 
+#include <base/defines.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/Types.h>
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 #include <boost/noncopyable.hpp>
+#include <map>
 #include <unordered_map>
+#include <unordered_set>
+#include <functional>
 #include <memory>
 #include <set>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+class ISerialization;
+
+[[noreturn]] void throwEmptySerializationState(const ISerialization * serialization);
+[[noreturn]] void throwInvalidSerializationState(const ISerialization * serialization, const std::type_info & expected, const std::type_info & got);
 
 class IDataType;
 
@@ -34,6 +40,7 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
+using SerializationUniquePtr = std::unique_ptr<const ISerialization>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -48,6 +55,14 @@ struct NameAndTypePair;
 
 struct MergeTreeSettings;
 
+/** Returns the separator byte that the HiveText output format uses at the given nesting level,
+  * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
+  * 1 the collection-items delimiter, 2 the map-keys delimiter, and deeper levels default to
+  * consecutive control characters (0x04, 0x05, ...). Throws if the nesting is too deep to be
+  * represented (Hive supports at most 8 separators).
+  */
+char getHiveTextDelimiter(const FormatSettings & settings, size_t nesting_level);
+
 /** Represents serialization of data type.
  *  Has methods to serialize/deserialize column in binary and several text formats.
  *  Every data type has default serialization, but can be serialized in different representations.
@@ -57,8 +72,10 @@ struct MergeTreeSettings;
  */
 class ISerialization : private boost::noncopyable, public std::enable_shared_from_this<ISerialization>
 {
-public:
+protected:
     ISerialization() = default;
+
+public:
     virtual ~ISerialization() = default;
 
     enum class Kind : UInt8
@@ -78,6 +95,12 @@ public:
 
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
+
+    /// Wrap the base (`type->createColumn()`) column into the column layout this serialization deserializes
+    /// into. Each layer composes on top of the nested one, so this reproduces the serialization's kind stack
+    /// (Sparse/Replicated/Detached) and any custom wrapping (e.g. a per-part value broadcast as a ColumnConst).
+    /// Default: identity.
+    virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
 
     static KindStack getKindStack(const IColumn & column);
     static String kindStackToString(const KindStack & kind);
@@ -168,6 +191,12 @@ public:
             return *this;
         }
 
+        SubstreamData & withLazyColumnCreator(std::function<ColumnPtr()> lazy_column_creator_)
+        {
+            lazy_column_creator = std::move(lazy_column_creator_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
@@ -178,6 +207,11 @@ public:
         /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
         /// to enumerate dynamic streams.
         DeserializeBinaryBulkStatePtr deserialize_state;
+
+        /// When column is null, this optional creator can materialize it on demand.
+        /// Used for derived subcolumns (e.g. String `.size`) whose data can be
+        /// computed from a parent column without being stored separately.
+        std::function<ColumnPtr()> lazy_column_creator;
     };
 
     struct Substream
@@ -192,6 +226,7 @@ public:
 
             NullableElements,
             NullMap,
+            NullMapHidden,
             SparseNullMap,
 
             TupleElement,
@@ -226,7 +261,6 @@ public:
             ObjectTypedPath,
             ObjectDynamicPath,
             ObjectSharedData,
-            ObjectSharedDataBucket,
             ObjectSharedDataStructure,
             ObjectSharedDataStructurePrefix,
             ObjectSharedDataStructureSuffix,
@@ -241,6 +275,13 @@ public:
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
             ObjectStructure,
+
+            Bucket,
+            MapBucketsInfo,
+            MapBucketIndexes,
+
+            QuantizedCodes,
+            ProductQuantizationCodebook,
 
             Regular,
         };
@@ -259,8 +300,8 @@ public:
         /// Path name for Object type elements.
         String object_path_name;
 
-        /// Index of a bucket in Object shared data serialization.
-        size_t object_shared_data_bucket = 0;
+        /// Index of a bucket in Object shared data serialization or Map serialization with buckets.
+        size_t bucket = 0;
 
         /// Data for current substream.
         SubstreamData data;
@@ -320,8 +361,23 @@ public:
         MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
         /// Number of buckets that should be used for Object shared data serialization.
         size_t object_shared_data_buckets = 1;
+        /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
+        size_t max_buckets_in_map = 1;
+        /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
+        MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
+        /// Coefficient used in sqrt and linear map_buckets_strategy.
+        double map_buckets_coefficient = 1.0;
+        /// Minimum average map size to apply bucketing; if avg size is below this, a single bucket is used.
+        size_t map_buckets_min_avg_size = 0;
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during enumeration to skip substreams that were introduced after the part
+        /// was written (e.g. MapBucketIndexes in old bucketed Map parts).
+        /// When not set, all substreams are enumerated unconditionally.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
 
         /// Current level of array. Needed to differentiate stream names of nested array offsets.
         size_t array_level = 0;
@@ -361,14 +417,14 @@ public:
 
         bool use_compact_variant_discriminators_serialization = false;
 
-        enum class ObjectAndDynamicStatisticsMode
+        enum class StatisticsMode
         {
             NONE,   /// Don't write statistics.
             PREFIX, /// Write statistics in prefix.
             PREFIX_EMPTY, /// Write empty statistics in prefix.
             SUFFIX, /// Write statistics in suffix.
         };
-        ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
+        StatisticsMode write_statistics = StatisticsMode::NONE;
 
         /// Serialization versions that should be used for Dynamic and Object columns.
         MergeTreeDynamicSerializationVersion dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
@@ -378,6 +434,14 @@ public:
 
         /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
         size_t object_shared_data_buckets = 1;
+        /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
+        size_t max_buckets_in_map = 1;
+        /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
+        MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
+        /// Coefficient used in sqrt and linear map_buckets_strategy.
+        double map_buckets_coefficient = 1.0;
+        /// Minimum average map size to apply bucketing; if avg size is below this, a single bucket is used.
+        size_t map_buckets_min_avg_size = 0;
 
         bool native_format = false;
         const FormatSettings * format_settings = nullptr;
@@ -411,7 +475,7 @@ public:
         bool position_independent_encoding = true;
 
         bool native_format = false;
-        const FormatSettings * format_settings;
+        const FormatSettings * format_settings{};
 
         bool object_and_dynamic_read_statistics = false;
 
@@ -421,6 +485,9 @@ public:
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+        /// True when an ancestor parallel prefix-deserialization level already made the callbacks above
+        /// thread safe; a nested level then reuses them instead of wrapping again (avoids a second mutex).
+        bool prefix_deserialization_callbacks_are_thread_safe = false;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
@@ -437,6 +504,9 @@ public:
         /// Callback to seek specific stream to a current mark that we read from.
         /// Used only in MergeTree and Compact part for Object shared data deserialization.
         std::function<void(const SubstreamPath &)> seek_stream_to_current_mark_callback;
+        /// Callback to seek specific stream to the start.
+        /// Used in MergeTree for prefix deserialization.
+        std::function<void(const SubstreamPath &)> seek_to_start_callback;
 
         /// Callback used to get avg_value_size_hint for each substream.
         std::function<double(const SubstreamPath &)> get_avg_value_size_hint_callback;
@@ -447,19 +517,26 @@ public:
         /// Callback used to mark a specific stream as unneeded indicating that it won't be used anymore.
         std::function<void(const SubstreamPath &)> release_stream_callback;
 
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during deserialization to handle backward compatibility: old parts written
+        /// before a new substream was introduced will not have it, and the getter may throw
+        /// (e.g. in compact parts) if called for a non-existent substream.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
+
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
 
-        /// Usually substreams cache contains the whole column with rows from
-        /// multiple ranges. But sometimes we need to read a separate column
-        /// with rows only from current range. If this flag is true and
-        /// there is a column in cache, insert only rows from current range from it.
-        bool insert_only_rows_in_current_range_from_substreams_cache = false;
-
         /// If true, call release_stream on all streams used in the prefixes deserialization
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
+
+        /// Returns true if all marks for the given substream have at most
+        /// `max_transitions` distinct consecutive positions.
+        /// Used by `SerializationLowCardinality` as a cheap prefilter before
+        /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
+        std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -496,10 +573,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const;
 
     /// Read no more than limit values and append them into column.
-    /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
     virtual void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -508,11 +583,9 @@ public:
     /** Override these methods for data types that require just single stream (most of data types).
       */
     virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-    /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
     virtual void deserializeBinaryBulk(
         IColumn & column,
         ReadBuffer & istr,
-        size_t rows_offset,
         size_t limit,
         double avg_value_size_hint) const;
 
@@ -564,6 +637,14 @@ public:
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
+    /** Text serialization for the Hive text format. Used only for output.
+      * Without escaping or quoting. Complex types separate their elements by the Hive separator
+      * for the current nesting level (see getHiveTextDelimiter), threaded through
+      * settings.hive_text.nesting_level. The default implementation throws, so only the data
+      * types supported in Hive override it.
+      */
+    virtual void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
       */
@@ -609,6 +690,7 @@ public:
         explicit StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings);
 
         bool escape_variant_substreams = true;
+        bool share_nested_offsets = true;
     };
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
@@ -641,8 +723,16 @@ public:
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
+    /// Returns whether a substream should be prefetched.
+    static bool isPrefetchNeededForSubstream(const SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams);
+
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
-    static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
+    static bool isMetadataStream(const SubstreamPath & path);
+
+    /// Returns true if the stream holds a single value for the whole part, which every granule reads
+    /// (the product quantization codebook). Such a value is written once, after the data of all granules,
+    /// so the marks do not delimit it and it has to be read as a whole file.
+    static bool isSingleValuePerPartStream(const SubstreamPath & path);
 
     /// Returns true if stream with specified path corresponds to Variant subcolumn.
     static bool isVariantSubcolumn(const SubstreamPath & path);
@@ -657,11 +747,37 @@ public:
 
     /// If we have data in substreams cache for substream path from settings insert it
     /// into resulting column and return true, otherwise do nothing and return false.
-    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
-    /// Perform insertion from column found in substreams cache.
-    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
+    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, IColumn & result_column);
+    /// Insert rows from the current deserialized range of cached_column into result_column.
+    /// Always copies data via insertRangeFrom — never shares column pointers.
+    static void insertDataFromCachedColumn(IColumn & result_column, const ColumnPtr & cached_column, size_t num_read_rows);
+
+    /// Returns the total number of bytes allocated for this serialization object,
+    /// including sizeof(*this) and any heap allocations (strings, vectors, etc.).
+    virtual size_t allocatedBytes() const { return sizeof(*this); }
+
+    /// Returns true if this serialization supports pooling (caching by hash).
+    /// Returns false if the serialization or any of its nested serializations
+    /// cannot be cached (e.g. SerializationJSON which contains mutable state).
+    virtual bool supportsPooling() const { return true; }
+
+    /// Returns the hash that uniquely identifies this serialization object.
+    /// Set by pooled() or manually for non-pooled objects.
+    /// Throws LOGICAL_ERROR if the hash has not been set.
+    UInt128 getHash() const;
+
+    /// Identity of a custom serialization (`IDataType::setCustomization`), which changes a column's
+    /// streams while being invisible to `IDataType::equals`. The class is enough while the serialization
+    /// follows from the type; override when it is configured elsewhere.
+    virtual String getCustomSerializationIdentity() const { return typeid(*this).name(); }
 
 protected:
+    std::optional<UInt128> cached_hash;
+
+    /// Look up the pool by hash; on cache miss call the creator to build
+    /// the object.  The creator is invoked at most once and only on miss.
+    static SerializationPtr pooled(UInt128 hash, std::function<ISerialization *()> creator);
+
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
 
     template <typename State, typename StatePtr>
@@ -674,7 +790,7 @@ protected:
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = std::vector<SerializationPtr>;
+using Serializations = VectorWithMemoryTracking<SerializationPtr>;
 using SerializationByName = std::unordered_map<String, SerializationPtr>;
 using SubstreamType = ISerialization::Substream::Type;
 
@@ -688,18 +804,13 @@ template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state, const ISerialization * serialization)
 {
     if (!state)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(*serialization).name()));
+        throwEmptySerializationState(serialization);
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
     {
         auto & state_ref = *state;
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(*serialization).name()),
-                demangle(typeid(State).name()),
-                demangle(typeid(state_ref).name()));
+        throwInvalidSerializationState(serialization, typeid(State), typeid(state_ref));
     }
 
     return state_concrete;

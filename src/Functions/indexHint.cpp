@@ -8,7 +8,7 @@ namespace DB
 
 REGISTER_FUNCTION(IndexHint)
 {
-    FunctionDocumentation::Description description_indexHint = R"(
+    FunctionDocumentation::Description description = R"(
 This function is intended for debugging and introspection.
 It ignores its argument and always returns 1.
 The arguments are not evaluated.
@@ -52,32 +52,43 @@ It returns all 8,192 rows, including rows where `key = 456`, `key = 789`, etc. (
 
 Note: It is not possible to optimize a query with the `indexHint` function. The `indexHint` function does not optimize the query, as it does not provide any additional information for the query analysis. Having an expression inside the `indexHint` function is not anyhow better than without the `indexHint` function. The `indexHint` function can be used only for introspection and debugging purposes and it does not improve performance. If you see the usage of `indexHint` by anyone other than ClickHouse contributors, it is likely a mistake and you should remove it.
     )";
-    FunctionDocumentation::Syntax syntax_indexHint = "indexHint(expression)";
-    FunctionDocumentation::Arguments arguments_indexHint = {
+    FunctionDocumentation::Syntax syntax = "indexHint(expression)";
+    FunctionDocumentation::Arguments arguments = {
         {"expression", "Any expression for index range selection.", {"Expression"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_indexHint = {"Returns `1` in all cases.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_indexHint = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` in all cases.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example with date filtering",
         R"(
+-- `index_granularity` is lowered to 8 here only to keep the example small enough to follow.
+-- Do not change it in production: the default of 8192 is what makes the index sparse and cheap,
+-- and a small value makes the index large and slows queries down.
+CREATE TABLE ontime (FlightDate Date, Carrier String)
+ENGINE = MergeTree ORDER BY FlightDate
+SETTINGS index_granularity = 8;
+
+-- Ten flights on each of four days, so a granule of eight rows spans more than one day.
+INSERT INTO ontime SELECT toDate('2025-09-14') + intDiv(number, 10), 'AA' FROM numbers(40);
+
+-- The granules that hold the rows of 2025-09-15 also hold rows of the neighbouring days,
+-- and `indexHint` returns all of them.
 SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2025-09-15') GROUP BY k ORDER BY k ASC;
         )",
         R"(
 ┌──────────k─┬─count()─┐
-│ 2025-09-14 │    7071 │
-│ 2025-09-15 │   16428 │
-│ 2025-09-16 │    1077 │
-│ 2025-09-30 │    8167 │
+│ 2025-09-14 │       2 │
+│ 2025-09-15 │      10 │
+│ 2025-09-16 │       4 │
 └────────────┴─────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_indexHint = {1, 1};
-    FunctionDocumentation::Category category_indexHint = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_indexHint = {description_indexHint, syntax_indexHint, arguments_indexHint, {}, returned_value_indexHint, examples_indexHint, introduced_in_indexHint, category_indexHint};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIndexHint>(documentation_indexHint);
+    factory.registerFunction<FunctionIndexHint>(documentation);
 }
 
 }

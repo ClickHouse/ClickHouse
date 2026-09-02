@@ -17,7 +17,7 @@ PartsRanges constructPartsRanges(
     for (const auto & range : ranges)
     {
         PartsRange properties_range;
-        properties_ranges.reserve(range.size());
+        properties_range.reserve(range.size());
 
         for (const auto & part : range)
             properties_range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time));

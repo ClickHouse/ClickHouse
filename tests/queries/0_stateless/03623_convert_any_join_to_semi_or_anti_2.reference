@@ -67,8 +67,8 @@ Positions: 0
                FUNCTION greater(__table3.age :: 0, 1_UInt8 :: 1) -> greater(__table3.age, 1_UInt8) UInt8 : 2
       Positions: 2
         JoinLogical
-        Join: u1 ⋉ u2
-        ResultRows: unknown
+        Join: u1[100000] ⋉ u2[1000]
+        ResultRows: 100000
         Type: LEFT
         Strictness: SEMI
         Locality: UNSPECIFIED

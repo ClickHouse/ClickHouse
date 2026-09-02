@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -9,6 +10,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
@@ -16,6 +19,8 @@
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
+#include <chrono>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -176,8 +181,17 @@ public:
     template<typename TMessage>
     std::unique_ptr<TMessage> receiveWithPayloadSize(Int32 payload_size)
     {
+        if (payload_size < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Negative payload size {} received from client", payload_size);
+
         std::unique_ptr<TMessage> message = std::make_unique<TMessage>(payload_size);
-        message->deserialize(*in);
+
+        /// The message is parsed with a buffer limited to the declared payload size, so that parsing
+        /// cannot read past the end of the message. Otherwise a client could declare a small message
+        /// and then stream data without a terminator, making the parser consume it without a bound.
+        LimitReadBuffer limited_in(*in, {.read_no_more = static_cast<size_t>(payload_size)});
+        message->deserialize(limited_in);
         return message;
     }
 
@@ -219,8 +233,11 @@ public:
 
     void dropMessage()
     {
-        Int32 size;
+        Int32 size = 0;
         readBinaryBigEndian(size, *in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} received from client, it must be at least 4", size);
         in->ignore(size - 4);
     }
 
@@ -411,7 +428,7 @@ public:
     String user;
     String database;
     // includes username, may also include database and other runtime parameters
-    std::unordered_map<String, String> parameters;
+    UnorderedMapWithMemoryTracking<String, String> parameters;
 
     explicit StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
 
@@ -438,7 +455,9 @@ public:
 
             parameters.insert({std::move(parameter_name), std::move(parameter_value)});
 
-            if (payload_size < 0)
+            /// `payload_size` is the declared size of the message and never changes, so the check
+            /// has to be made against the remaining size instead.
+            if (ps < 0)
             {
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                                 "Size of payload is larger than one declared in the message of type {}.",
@@ -509,15 +528,22 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type;
+        UInt8 message_type = 0;
         readBinaryBigEndian(message_type, in);
-        Int32 size;
+        Int32 size = 0;
         readBinaryBigEndian(size, in);
         readNullTerminated(auth_method, in);
-        Int32 size_sasl_mechanism;
+        Int32 size_sasl_mechanism = 0;
         readBinaryBigEndian(size_sasl_mechanism, in);
-        sasl_mechanism.resize(size_sasl_mechanism);
-        in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+        /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
+        if (size_sasl_mechanism < -1)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
+        if (size_sasl_mechanism > 0)
+        {
+            sasl_mechanism.resize(size_sasl_mechanism);
+            in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+        }
     }
 
     MessageType getMessageType() const override
@@ -562,10 +588,13 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type;
+        UInt8 message_type = 0;
         readBinaryBigEndian(message_type, in);
-        Int32 size;
+        Int32 size = 0;
         readBinaryBigEndian(size, in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in SASLResponse, it must be at least 4", size);
         sasl_mechanism.resize(size - 4);
         in.readStrict(sasl_mechanism.data(), size - 4);
     }
@@ -605,7 +634,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(password, in);
     }
@@ -685,7 +714,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -701,16 +730,16 @@ class ParseQuery : FrontMessage
 public:
     String function_name;
     String sql_query;
-    Int16 num_params;
+    Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
-        Int32 oid_param;
+        Int32 oid_param = 0;
         for (int i = 0; i < num_params; ++i)
             readBinaryBigEndian(oid_param, in);
     }
@@ -748,19 +777,19 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    std::vector<String> parameters;
-    Int16 num_params;
+    VectorWithMemoryTracking<String> parameters;
+    Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
-        Int16 num_format_params;
+        Int16 num_format_params = 0;
         readBinaryBigEndian(num_format_params, in);
-        Int16 format_param;
+        Int16 format_param = 0;
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
@@ -768,16 +797,26 @@ public:
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
         {
-            Int32 sz_param;
+            Int32 sz_param = 0;
             readBinaryBigEndian(sz_param, in);
+            /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
+            /// any other negative value is malformed.
+            if (sz_param < -1)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
+            if (sz_param == -1)
+            {
+                parameters.emplace_back("NULL");
+                continue;
+            }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
         }
 
-        Int16 num_format_params_result;
+        Int16 num_format_params_result = 0;
         readBinaryBigEndian(num_format_params_result, in);
-        Int16 format_param_result;
+        Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);
     }
@@ -813,12 +852,12 @@ public:
 class DescribeQuery : FrontMessage
 {
 public:
-    char describe;
+    char describe{};
     String function_name;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
@@ -835,11 +874,11 @@ class ExecuteQuery : FrontMessage
 {
 public:
     String portal_name;
-    Int32 max_rows;
+    Int32 max_rows{};
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
@@ -882,13 +921,16 @@ class CloseQuery : FrontMessage
 {
 public:
     String function_name;
+    /// 'S' for prepared statement, 'P' for portal
+    char close_target = 0;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
-        Int8 byte;
+        Int8 byte = 0;
         readBinaryBigEndian(byte, in);
+        close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
     }
 
@@ -901,9 +943,13 @@ public:
 class CloseQueryComplete : BackendMessage
 {
 public:
+    CloseQueryComplete() = default;
+
     void serialize(WriteBuffer & out) const override
     {
-        out.write('C');
+        /// 'C' is `CommandComplete`; `CloseComplete` is tagged with '3' per
+        /// the PostgreSQL message protocol.
+        out.write('3');
         writeBinaryBigEndian(size(), out);
     }
 
@@ -923,7 +969,7 @@ class SyncQuery : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
     }
 
@@ -971,10 +1017,10 @@ public:
 class RowDescription : BackendMessage
 {
 private:
-    const std::vector<FieldDescription> & fields_descr;
+    const VectorWithMemoryTracking<FieldDescription> & fields_descr;
 
 public:
-    explicit RowDescription(const std::vector<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
+    explicit RowDescription(const VectorWithMemoryTracking<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1031,10 +1077,10 @@ public:
 class DataRow : BackendMessage
 {
 private:
-    const std::vector<std::shared_ptr<ISerializable>> & row;
+    const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row;
 
 public:
-    explicit DataRow(const std::vector<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
+    explicit DataRow(const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1072,7 +1118,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -1142,12 +1188,15 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
+        if (sz < static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyData, it must be at least 4", sz);
         query.reserve(sz - sizeof(Int32));
         for (size_t i = 0; i < sz - sizeof(Int32); ++i)
         {
-            char byte;
+            char byte = 0;
             readBinary(byte, in);
             query.push_back(byte);
         }
@@ -1164,7 +1213,7 @@ class CopyDone : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
     }
 
@@ -1176,9 +1225,9 @@ public:
 
 class CopyOutData : public BackendMessage
 {
-    std::vector<char> data;
+    VectorWithMemoryTracking<char> data;
 public:
-    explicit CopyOutData(std::vector<char> data_)
+    explicit CopyOutData(VectorWithMemoryTracking<char> data_)
         : data(data_)
     {
     }
@@ -1301,6 +1350,14 @@ public:
         }
     }
 
+    /// Construct a CommandComplete carrying an explicit command tag verbatim.
+    /// Used for driver-specific commands (e.g. `RESET ALL`, `UNLISTEN *`) that
+    /// ClickHouse accepts as no-ops and for which no row count applies.
+    explicit CommandComplete(String tag_)
+        : value(std::move(tag_))
+    {
+    }
+
     void serialize(WriteBuffer & out) const override
     {
         out.write('C');
@@ -1348,7 +1405,7 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        static const std::vector<std::pair<String, Command>> query_patterns = {
+        static const VectorWithMemoryTracking<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
             {"CREATE DATABASE", Command::CREATE_DATABASE},
@@ -1409,6 +1466,11 @@ protected:
     }
 
 public:
+    virtual bool isSupportedForUser(const String &, Session &) const
+    {
+        return true;
+    }
+
     virtual void authenticate(
         const String & user_name,
         Session & session,
@@ -1469,6 +1531,137 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
+    enum class ScramSaltKind : uint8_t
+    {
+        /// The user has no `scram_sha256_password` at all.
+        NoScram,
+        /// Live verifiers sharing a single salt, which PostgreSQL SCRAM can offer on the wire.
+        Live,
+        /// Only expired verifiers: the salt is still usable to run the exchange and report invalid credentials.
+        ExpiredOnly,
+        /// A live verifier that PostgreSQL SCRAM cannot represent: a second factor, several different salts to
+        /// choose from, or another method that narrows the session and which a SCRAM client proof cannot be checked
+        /// against.
+        UnsupportedConfiguration,
+    };
+
+    struct ScramSalt
+    {
+        ScramSaltKind kind = ScramSaltKind::NoScram;
+        String salt;
+        /// The user has another live authentication method that the PostgreSQL protocol can offer on the wire.
+        bool has_live_alternative = false;
+    };
+
+    /// A method that limits the session (`GRANTS`) or its lifetime (`VALID UNTIL`) takes part in the fail-close
+    /// combination of `IAccessStorage::authenticateImpl` when it accepts the same credential.
+    static bool methodNarrowsSession(const AuthenticationData & auth_method)
+    {
+        return auth_method.getValidUntil() != 0 || !auth_method.getGrants().structurallyEmpty();
+    }
+
+    ScramSalt getScramSalt(const String & user_name, Session & session) const
+    {
+        const auto & access_control = session.globalContext()->getAccessControl();
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+        ScramSalt result;
+        std::optional<String> expired_scram_salt;
+        std::optional<String> live_scram_salt;
+        bool unsupported_configuration = false;
+
+        if (auto id = access_control.find<User>(user_name))
+        {
+            if (auto user = access_control.tryRead<User>(*id))
+            {
+                /// First pass: choose the salt that `AuthenticationSASLContinue` would send.
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
+                        continue;
+
+                    const auto valid_until = auth_method.getValidUntil();
+                    if (valid_until && now > valid_until)
+                    {
+                        if (!expired_scram_salt)
+                            expired_scram_salt = auth_method.getSalt();
+                        continue;
+                    }
+
+                    /// PostgreSQL SCRAM cannot represent a second factor.
+                    if (auth_method.getOneTimePassword())
+                    {
+                        unsupported_configuration = true;
+                        continue;
+                    }
+
+                    /// Several live verifiers are representable as long as they agree on the salt: the exchange sends a
+                    /// single salt in `AuthenticationSASLContinue`, and the client proof derived from it is then checked
+                    /// against every stored salted password of the user. Differing salts cannot be represented, because
+                    /// only one of them can be sent on the wire.
+                    if (live_scram_salt && *live_scram_salt != auth_method.getSalt())
+                    {
+                        unsupported_configuration = true;
+                        continue;
+                    }
+
+                    live_scram_salt = auth_method.getSalt();
+                }
+
+                /// Second pass: look for the other authentication methods of the user.
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    const auto type = auth_method.getType();
+                    const auto valid_until = auth_method.getValidUntil();
+                    const bool expired = valid_until && now > valid_until;
+
+                    /// The only other authentication methods the PostgreSQL protocol can offer on the wire.
+                    if (!expired
+                        && (type == AuthenticationType::NO_PASSWORD || type == AuthenticationType::PLAINTEXT_PASSWORD))
+                        result.has_live_alternative = true;
+
+                    if (!live_scram_salt)
+                        continue;
+
+                    /// `IAccessStorage::authenticateImpl` fails close for ambiguous credentials: when the same
+                    /// credential is accepted by several methods, the session is limited to the intersection of their
+                    /// `GRANTS` and expires at the earliest of their `VALID UNTIL`, even when that moment has already
+                    /// passed. That scan re-checks the credential against the other methods, but a SCRAM client proof
+                    /// can only be checked against a `scram_sha256_password` method that uses the very salt sent in
+                    /// `AuthenticationSASLContinue`: the proof is derived from the salted password and the salt is part
+                    /// of the authentication message. A method that could narrow the session but cannot be matched by
+                    /// the proof would silently drop out of the combination, so a password shared with such a method
+                    /// would be accepted over PostgreSQL while the native protocol rejects it as expired or grants it
+                    /// less. Refuse to run the exchange in that case instead of authenticating with weaker checks.
+                    if (!methodNarrowsSession(auth_method))
+                        continue;
+                    /// Methods verified against an external system never take part in the combination.
+                    if (!authenticationTypeIsVerifiedLocally(type))
+                        continue;
+                    if (type == AuthenticationType::SCRAM_SHA256_PASSWORD && auth_method.getSalt() == *live_scram_salt)
+                        continue;
+
+                    unsupported_configuration = true;
+                }
+            }
+        }
+
+        if (unsupported_configuration)
+            result.kind = ScramSaltKind::UnsupportedConfiguration;
+        else if (live_scram_salt)
+        {
+            result.kind = ScramSaltKind::Live;
+            result.salt = *live_scram_salt;
+        }
+        else if (expired_scram_salt)
+        {
+            result.kind = ScramSaltKind::ExpiredOnly;
+            result.salt = *expired_scram_salt;
+        }
+
+        return result;
+    }
+
     static size_t findPatternPosition(const String & key, const String & pattern)
     {
         size_t pos = key.size();
@@ -1520,6 +1713,22 @@ class ScrambleSHA256Auth : public AuthenticationMethod
     }
 
 public:
+    bool isSupportedForUser(const String & user_name, Session & session) const override
+    {
+        const auto scram_salt = getScramSalt(user_name, session);
+
+        if (scram_salt.kind == ScramSaltKind::NoScram)
+            return false;
+        if (scram_salt.kind == ScramSaltKind::Live)
+            return true;
+
+        /// Neither an expired verifier nor a configuration that the protocol cannot represent can lead to a successful
+        /// login. Select SCRAM in these cases only if nothing else can succeed either, so that an expired verifier is
+        /// reported as invalid credentials and an unsupported configuration is reported as such, instead of shadowing
+        /// a method that would have worked.
+        return !scram_salt.has_live_alternative;
+    }
+
     static String generateNonce()
     {
         static constexpr size_t nonce_length = 16;
@@ -1579,6 +1788,11 @@ public:
 
         String auth_message;
 
+        const auto scram_salt = getScramSalt(user_name, session);
+        if (scram_salt.kind == ScramSaltKind::UnsupportedConfiguration || scram_salt.kind == ScramSaltKind::NoScram)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
+
         mt.send(Messaging::AuthenticationSASL(), true);
         auto rsp = mt.receive<Messaging::SASLInitialResponse>();
 
@@ -1587,19 +1801,7 @@ public:
         auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
         auto nonce = client_nonce + server_nonce;
 
-        String salt;
-        const auto& access_control = session.globalContext()->getAccessControl();
-        if (auto id = access_control.find<User>(user_name))
-        {
-            if (auto user = access_control.tryRead<User>(*id))
-            {
-                for (const auto & auth_method : user->authentication_methods)
-                {
-                    salt = auth_method.getSalt();
-                }
-            }
-        }
-        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
+        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, scram_salt.salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();
@@ -1621,10 +1823,10 @@ class AuthenticationManager
 {
 private:
     LoggerPtr log = getLogger("AuthenticationManager");
-    std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
+    UnorderedMapWithMemoryTracking<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
-    explicit AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
+    explicit AuthenticationManager(const VectorWithMemoryTracking<std::shared_ptr<AuthenticationMethod>> & auth_methods)
     {
         for (const std::shared_ptr<AuthenticationMethod> & method : auth_methods)
         {
@@ -1644,7 +1846,7 @@ public:
 
             for (auto user_authentication_type : user_authentication_types)
             {
-                if (type_to_method.contains(user_authentication_type))
+                if (type_to_method.contains(user_authentication_type) && type_to_method[user_authentication_type]->isSupportedForUser(user_name, session))
                 {
                     type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
                     mt.send(Messaging::AuthenticationOk(), true);
@@ -1653,10 +1855,14 @@ public:
                 }
             }
         }
-        catch (const Exception&)
+        catch (const Exception & e)
         {
-            mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
-                    true);
+            const bool unsupported_authentication_configuration = e.code() == ErrorCodes::NOT_IMPLEMENTED;
+            mt.send(Messaging::ErrorOrNoticeResponse(
+                Messaging::ErrorOrNoticeResponse::ERROR,
+                unsupported_authentication_configuration ? "0A000" : "28P01",
+                unsupported_authentication_configuration ? "Authentication configuration is not supported by the PostgreSQL protocol" : "Invalid user or password"),
+                true);
 
             throw;
         }
@@ -1693,42 +1899,68 @@ public:
         return getStatement(execute->function_name, execute->arguments);
     }
 
-    void deleteStatement(ASTDeallocate * query)
+    void deleteStatement(const String & function_name)
     {
-        auto it = statements.find(query->function_name);
+        auto it = statements.find(function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
     }
 
+    /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
+    /// statement or portal is not an error — it is a silent no-op that still
+    /// responds with `CloseComplete`. Use this instead of `deleteStatement`
+    /// from the extended-query `Close` handler so a stray `Close` does not
+    /// terminate the connection.
+    void tryDeleteStatement(const String & function_name)
+    {
+        statements.erase(function_name);
+    }
+
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        if (bind_query)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Query is already binded");
+        /// We only support the unnamed portal (an empty `portal_name`).
+        /// Reject named portals explicitly: with a single bind slot we cannot
+        /// keep their state correct, and silently overwriting would let
+        /// `Bind(p1, ...); Bind(p2, ...); Execute(p1)` return the result of `p2`.
+        if (!query->portal_name.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Named portals are not supported in the PostgreSQL wire protocol, "
+                "got portal name '{}'", query->portal_name);
 
+        /// For the unnamed portal, a new `Bind` replaces the previous one
+        /// per the PostgreSQL extended-query protocol — clients such as Npgsql
+        /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
         bind_query = std::move(query);
     }
 
     String getStatmentFromBind()
     {
+        if (!bind_query)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
+
         auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
         return result;
     }
 
-    void resetBindQuery(const String& function_name)
+    void resetBindQuery()
     {
-        statements.erase(function_name);
         bind_query.reset();
     }
 
+    bool bindReferencesStatement(const String & function_name) const
+    {
+        return bind_query && bind_query->function_name == function_name;
+    }
+
 private:
-    std::unordered_map<String, String> statements;
+    UnorderedMapWithMemoryTracking<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
-    String getStatement(const String & function_name, const std::vector<String> & arguments)
+    String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
     {
         auto it = statements.find(function_name);
         if (it == statements.end())

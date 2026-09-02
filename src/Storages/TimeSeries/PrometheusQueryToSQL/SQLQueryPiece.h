@@ -13,7 +13,7 @@ struct ConverterContext;
 enum class StoreMethod
 {
     /// No data.
-    /// Can be used with types ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
+    /// Can be used with any types.
     EMPTY,
 
     /// A const scalar value stored in `SQLQueryPiece::scalar_value`.
@@ -25,6 +25,10 @@ enum class StoreMethod
     /// CONST_STRING is produced by a string literal in a prometheus query.
     /// Can be used only with type ResultType::STRING.
     CONST_STRING,
+
+    /// A single scalar is stored in one row and one column named `value` (floating-point).
+    /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
+    SINGLE_SCALAR,
 
     /// Data are stored in one row and one column named `values` (array of floating-point values).
     /// The values are aligned to the time grid.
@@ -55,7 +59,7 @@ struct SQLQueryPiece
         : node(node_), type(type_), store_method(store_method_) {}
 
     const Node * node = nullptr;
-    ResultType type = ResultType::RANGE_VECTOR;
+    ResultType type = ResultType::SCALAR;
     StoreMethod store_method = StoreMethod::EMPTY;
 
     /// Operators and functions drop the metric name, i.e. the tag named '__name__.
@@ -75,14 +79,18 @@ struct SQLQueryPiece
     /// `string_value` is used only if `store_method` is CONST_STRING.
     String string_value;
 
-    /// `select_query` is used only if `store_method` is one of [SCALAR_GRID, VECTOR_GRID, RAW_DATA].
-    /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(Nullable(scalar_data_type))).
+    /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA].
+    /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (scalar_data_type) with a single row.
+    /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(scalar_data_type)) with a single row.
     /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(scalar_data_type))).
     /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp` (timestamp_data_type), `value` (scalar_data_type).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
 };
 
-String getPromQLQuery(const SQLQueryPiece & query_piece, const ConverterContext & context);
+String getPromQLText(const SQLQueryPiece & query_piece, const ConverterContext & context);
+
+/// Called when the store method can't be handled because it's incompatible with the type of `query_piece`.
+[[noreturn]] void throwUnexpectedStoreMethod(const SQLQueryPiece & query_piece, const ConverterContext & context);
 
 }

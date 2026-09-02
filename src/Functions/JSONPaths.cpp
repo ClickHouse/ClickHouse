@@ -13,6 +13,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -79,7 +81,7 @@ struct JSONSharedDataPathsWithTypesImpl
 /// Implements functions that extracts paths and types from JSON object column.
 /// Used for introspection of the content of the JSON object column.
 template <typename Impl>
-class FunctionJSONPaths : public IFunction
+class FunctionJSONPaths final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -101,7 +103,7 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires single argument with type JSON", getName());
 
         if (data_types[0]->getTypeId() != TypeIndex::Object)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires argument with type JSON, got: {}", getName(),data_types[0]->getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires argument with type JSON, got: {}", getName(),data_types[0]->getName());
 
         if constexpr (Impl::with_types)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
@@ -132,15 +134,16 @@ private:
             return ColumnArray::create(shared_data_paths, shared_data_array.getOffsetsPtr());
         }
 
-        auto res = ColumnArray::create(ColumnString::create());
-        auto & offsets = res->getOffsets();
-        ColumnString & data = assert_cast<ColumnString &>(res->getData());
+        auto data_column = ColumnString::create();
+        auto offsets_column = ColumnArray::ColumnOffsets::create();
+        ColumnString & data = *data_column;
+        auto & offsets = offsets_column->getData();
 
         if constexpr (Impl::paths_mode == PathsMode::DYNAMIC_PATHS)
         {
             /// Collect all dynamic paths.
             const auto & dynamic_path_columns = column_object.getDynamicPaths();
-            std::vector<std::string_view> dynamic_paths;
+            VectorWithMemoryTracking<std::string_view> dynamic_paths;
             dynamic_paths.reserve(dynamic_path_columns.size());
             for (const auto & [path, _] : dynamic_path_columns)
                 dynamic_paths.push_back(path);
@@ -159,11 +162,11 @@ private:
                 }
                 offsets.push_back(data.size());
             }
-            return res;
+            return ColumnArray::create(std::move(data_column), std::move(offsets_column));
         }
 
         /// Collect all paths: typed, dynamic and paths from shared data.
-        std::vector<std::string_view> sorted_dynamic_and_typed_paths;
+        VectorWithMemoryTracking<std::string_view> sorted_dynamic_and_typed_paths;
         const auto & typed_path_columns = column_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         sorted_dynamic_and_typed_paths.reserve(typed_path_columns.size() + dynamic_path_columns.size());
@@ -208,7 +211,7 @@ private:
             offsets.push_back(data.size());
         }
 
-        return res;
+        return ColumnArray::create(std::move(data_column), std::move(offsets_column));
     }
 
     ColumnPtr executeWithTypes(const ColumnObject & column_object, const DataTypeObject & type_object) const
@@ -221,7 +224,7 @@ private:
         if constexpr (Impl::paths_mode == PathsMode::DYNAMIC_PATHS)
         {
             const auto & dynamic_path_columns = column_object.getDynamicPaths();
-            std::vector<std::string_view> sorted_dynamic_paths;
+            VectorWithMemoryTracking<std::string_view> sorted_dynamic_paths;
             sorted_dynamic_paths.reserve(dynamic_path_columns.size());
             for (const auto & [path, _] : dynamic_path_columns)
                 sorted_dynamic_paths.push_back(path);
@@ -273,7 +276,7 @@ private:
         }
 
         /// Iterate over all rows and extract types from dynamic columns from dynamic paths and from values in shared data.
-        std::vector<std::pair<std::string_view, String>> sorted_typed_and_dynamic_paths_with_types;
+        VectorWithMemoryTracking<std::pair<std::string_view, String>> sorted_typed_and_dynamic_paths_with_types;
         const auto & typed_path_types = type_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         sorted_typed_and_dynamic_paths_with_types.reserve(typed_path_types.size() + dynamic_path_columns.size());
@@ -392,15 +395,15 @@ Returns the list of all paths stored in each row in JSON column.
             "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONAllPaths(json) FROM test;
             )",
             R"(
-┌─json─────────────────────────────────┬─JSONAllPaths(json)─┐
-│ {"a":"42"}                           │ ['a']              │
-│ {"b":"Hello"}                        │ ['b']              │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a','c']          │
-└──────────────────────────────────────┴────────────────────┘
+┌─json───────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a":42}                       │ ['a']              │
+│ {"b":"Hello"}                  │ ['b']              │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['a','c']          │
+└────────────────────────────────┴────────────────────┘
             )"
         }
         };
@@ -425,15 +428,15 @@ Returns the list of all paths and their data types stored in each row in JSON co
             "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONAllPathsWithTypes(json) FROM test;
             )",
             R"(
-┌─json─────────────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
-│ {"a":"42"}                           │ {'a':'Int64'}                             │
-│ {"b":"Hello"}                        │ {'b':'String'}                            │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
-└──────────────────────────────────────┴───────────────────────────────────────────┘
+┌─json───────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
+│ {"a":42}                       │ {'a':'Int64'}                             │
+│ {"b":"Hello"}                  │ {'b':'String'}                            │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
+└────────────────────────────────┴───────────────────────────────────────────┘
             )"
         }
         };
@@ -458,15 +461,15 @@ Returns the list of dynamic paths that are stored as separate subcolumns in JSON
             "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONDynamicPaths(json) FROM test;
             )",
             R"(
-┌─json─────────────────────────────────┬─JSONDynamicPaths(json)─┐
-│ {"a":"42"}                           │ ['a']                  │
-│ {"b":"Hello"}                        │ []                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a']                  │
-└──────────────────────────────────────┴────────────────────────┘
+┌─json───────────────────────────┬─JSONDynamicPaths(json)─┐
+│ {"a":42}                       │ ['a']                  │
+│ {"b":"Hello"}                  │ []                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['a']                  │
+└────────────────────────────────┴────────────────────────┘
             )"
         }
         };
@@ -491,15 +494,15 @@ Returns the list of dynamic paths that are stored as separate subcolumns and the
             "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
             )",
             R"(
-┌─json─────────────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {'a':'Int64'}                   │
-│ {"b":"Hello"}                        │ {}                              │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
-└──────────────────────────────────────┴─────────────────────────────────┘
+┌─json───────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
+│ {"a":42}                       │ {'a':'Int64'}                   │
+│ {"b":"Hello"}                  │ {}                              │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
+└────────────────────────────────┴─────────────────────────────────┘
             )"
         }
         };
@@ -524,15 +527,15 @@ Returns the list of paths that are stored in shared data structure in JSON colum
             "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONSharedDataPaths(json) FROM test;
             )",
             R"(
-┌─json─────────────────────────────────┬─JSONSharedDataPaths(json)─┐
-│ {"a":"42"}                           │ []                        │
-│ {"b":"Hello"}                        │ ['b']                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['c']                     │
-└──────────────────────────────────────┴───────────────────────────┘
+┌─json───────────────────────────┬─JSONSharedDataPaths(json)─┐
+│ {"a":42}                       │ []                        │
+│ {"b":"Hello"}                  │ ['b']                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['c']                     │
+└────────────────────────────────┴───────────────────────────┘
             )"
         }
         };
@@ -557,15 +560,15 @@ Returns the list of paths that are stored in shared data structure and their typ
             "Usage example",
             R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
             )",
             R"(
-┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                  │
-│ {"b":"Hello"}                        │ {'b':'String'}                      │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
-└──────────────────────────────────────┴─────────────────────────────────────┘
+┌─json───────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
+│ {"a":42}                       │ {}                                 │
+│ {"b":"Hello"}                  │ {'b':'String'}                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└────────────────────────────────┴────────────────────────────────────┘
             )"
         }
         };

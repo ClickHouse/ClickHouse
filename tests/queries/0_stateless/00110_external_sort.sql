@@ -9,6 +9,6 @@ SELECT number FROM (SELECT number FROM numbers(2097152)) ORDER BY number * 12345
 
 -- This query is heavy, let's do it only once
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['ExternalSortWritePart'] FROM system.query_log WHERE type != 'QueryStart' AND current_database = currentDatabase() AND Settings['max_bytes_before_external_sort']='70000000';
-SELECT if((ProfileEvents['ExternalSortWritePart'] as x) > 10, 10, x) FROM system.query_log WHERE type != 'QueryStart' AND current_database = currentDatabase() AND Settings['max_bytes_before_external_sort']='10000000';
-SELECT ProfileEvents['ExternalSortWritePart'] FROM system.query_log WHERE type != 'QueryStart' AND current_database = currentDatabase() AND Settings['max_bytes_before_external_sort']='32000000';
+SELECT ProfileEvents['ExternalSortWritePart'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type != 'QueryStart' AND current_database = currentDatabase() AND Settings['max_bytes_before_external_sort']='70000000';
+SELECT if((ProfileEvents['ExternalSortWritePart'] as x) > 10, 10, x) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type != 'QueryStart' AND current_database = currentDatabase() AND Settings['max_bytes_before_external_sort']='10000000';
+SELECT ProfileEvents['ExternalSortWritePart'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type != 'QueryStart' AND current_database = currentDatabase() AND Settings['max_bytes_before_external_sort']='32000000';

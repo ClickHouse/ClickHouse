@@ -1,0 +1,14 @@
+-- valid: 1-based positional reference (position 1 is the boundary that must be accepted)
+0
+1
+2
+-- valid: descending positional reference
+2
+1
+0
+-- valid: a normal comma-separated list is still accepted
+0
+1
+2
+-- invalid: a zero positional reference is rejected, not treated as ORDER BY 0
+-- invalid: an empty element (stray/leading/trailing comma) is rejected, not silently dropped

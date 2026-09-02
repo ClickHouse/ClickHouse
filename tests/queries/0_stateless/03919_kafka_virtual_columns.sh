@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, no-replicated-database, no-llvm-coverage
 # Tag no-fasttest: Kafka is not available in fast tests
 # Tag no-replicated-database: the test uses a single-partition topic, and multiple replicas compete for partition assignment
+# Tag no-llvm-coverage: Kafka consumer is too slow under coverage instrumentation, consumer group rebalancing times out
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,18 +11,33 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 KAFKA_TOPIC=$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr '_' '-')
 KAFKA_GROUP="${CLICKHOUSE_TEST_UNIQUE_NAME}_group"
 KAFKA_BROKER="127.0.0.1:9092"
-KAFKA_PRODUCER_OPTS="--producer-property delivery.timeout.ms=30000 --producer-property linger.ms=0"
+
+cleanup()
+{
+    local exit_code=$?
+
+    trap - EXIT INT TERM
+    set +e
+
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka" 2>/dev/null
+    timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
+
+    exit $exit_code
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Create topic
-timeout 30 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --create --topic $KAFKA_TOPIC \
-    --partitions 1 --replication-factor 1 2>/dev/null | sed 's/Created topic .*/Created topic./'
+rpk topic create $KAFKA_TOPIC -p 1 --brokers $KAFKA_BROKER > /dev/null 2>&1 && echo "Created topic."
 
 # Produce messages with keys
 for i in $(seq 1 3); do
     echo "key_$i:{\"id\": $i, \"data\": \"row_$i\"}"
-done | timeout 30 kafka-console-producer.sh --bootstrap-server $KAFKA_BROKER --topic $KAFKA_TOPIC \
-    --property "parse.key=true" --property "key.separator=:" \
-    $KAFKA_PRODUCER_OPTS 2>/dev/null
+done | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER -f '%k:%v\n' > /dev/null 2>&1
 
 # Create Kafka engine table
 $CLICKHOUSE_CLIENT -q "
@@ -58,8 +74,8 @@ $CLICKHOUSE_CLIENT -q "
     FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka;
 "
 
-# Wait for messages to be consumed
-for i in $(seq 1 30); do
+# Wait for messages to be consumed (120s to allow for slow consumer group assignment)
+for i in $(seq 1 120); do
     count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst")
     if [ "$count" -ge 3 ]; then
         break
@@ -72,9 +88,3 @@ $CLICKHOUSE_CLIENT -q "SELECT id, data, kafka_key, kafka_offset, kafka_partition
 
 # Verify topic name
 $CLICKHOUSE_CLIENT -q "SELECT kafka_topic = '$KAFKA_TOPIC' AS topic_matches FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst LIMIT 1"
-
-# Cleanup
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv" 2>/dev/null
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst" 2>/dev/null
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka" 2>/dev/null
-timeout 10 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --delete --topic $KAFKA_TOPIC 2>/dev/null

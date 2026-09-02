@@ -25,7 +25,11 @@ class FunctionH3CellAreaM2 final : public IFunction
 public:
     static constexpr auto name = "h3CellAreaM2";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3CellAreaM2>(); }
+    H3Validator validator;
+
+    explicit FunctionH3CellAreaM2(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3CellAreaM2>(context); }
 
     std::string getName() const override { return name; }
 
@@ -74,15 +78,18 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
+            Float64 res = 0;
 
-            validateH3Cell(index);
+            if (validator.validateCell(index))
+            {
+                CellBoundary boundary{};
+                auto err = cellToBoundary(index, &boundary);
+                if (err)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
 
-            CellBoundary boundary{};
-            auto err = cellToBoundary(index, &boundary);
-            if (err)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
+                cellAreaM2(index, &res);
+            }
 
-            Float64 res = cellAreaM2(index);
             dst_data[row] = res;
         }
 
@@ -111,7 +118,7 @@ Returns the exact area of a specific cell in square meters corresponding to the 
             "SELECT h3CellAreaM2(579205133326352383) AS area",
             R"(
 ┌───────────────area─┐
-│ 4106166334463.9233 │
+│ 4106166334463.9214 │
 └────────────────────┘
             )"
         }

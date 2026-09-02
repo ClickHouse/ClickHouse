@@ -1,14 +1,5 @@
 #pragma once
 
-#include <string.h>
-
-#include <math.h>
-
-#include <new>
-#include <utility>
-
-#include <boost/noncopyable.hpp>
-
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -19,9 +10,16 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/CacheLine.h>
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <utility>
+#include <math.h>
+#include <string.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -74,7 +72,7 @@ struct HashTableNoState
   * Otherwise the invariants in hash table probing do not met when NaNs are present.
   */
 template <typename T>
-inline bool bitEquals(T a, T b)
+inline ALWAYS_INLINE bool bitEquals(T a, T b)
 {
     if constexpr (is_floating_point<T>)
         /// Note that memcmp with constant size is a compiler builtin.
@@ -175,9 +173,9 @@ struct HashTableCell
     static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
-    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -272,7 +270,7 @@ struct HashTableGrower
   * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrowerWithPrecalculation
+class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
@@ -330,7 +328,7 @@ public:
     }
 };
 
-static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
@@ -361,11 +359,11 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell>
+struct ZeroValueStorage<true, Cell> // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
 {
 private:
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
 
 public:
     bool hasZero() const { return has_zero; }
@@ -1076,7 +1074,7 @@ protected:
 
             // The hash table was rehashed, so we have to re-find the key.
             size_t new_place = findCell(key, hash_value, grower.place(hash_value));
-            assert(!buf[new_place].isZero(*this));
+            chassert(!buf[new_place].isZero(*this));
             it = &buf[new_place];
         }
     }
@@ -1091,16 +1089,27 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
+public:
     void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
     {
         const auto place = grower.place(hash_key);
         __builtin_prefetch(&buf[place]);
     }
 
-public:
+    bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
+    {
+        const auto place = grower.place(hash_key);
+        return buf[place].isZero(*this);
+    }
+
+    /// A reservation of zero must be a no-op: the parameterless `resize` below is the
+    /// grow-one-step primitive, so forwarding zero would double the buffer instead. Repeated
+    /// zero reservations (e.g. `reserve(size() + additional)` with both terms zero) would then
+    /// grow an empty table without bound.
     void reserve(size_t num_elements)
     {
-        resize(num_elements);
+        if (num_elements)
+            resize(num_elements);
     }
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
@@ -1147,6 +1156,9 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
         prefetchByHash(key_hash);
+        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
+        /// Without this, every prefetch would leak the serialized key bytes in the aggregation pool.
+        keyHolderDiscardKey(key_holder);
     }
 
     /** Insert the key.
@@ -1260,7 +1272,7 @@ public:
             return false;
 
         /// We need to guarantee loop termination because there will be empty position
-        assert(m_size < grower.bufSize());
+        chassert(m_size < grower.bufSize());
 
         size_t next_position = erased_key_position;
 

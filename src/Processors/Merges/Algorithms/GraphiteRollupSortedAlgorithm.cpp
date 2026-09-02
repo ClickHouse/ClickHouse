@@ -1,9 +1,10 @@
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Block.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
-#include <Core/Block.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -66,6 +67,11 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
 
     graphite_rollup_merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
     columns_definition = defineColumns(*header_, params);
+}
+
+GraphiteRollupSortedAlgorithm::~GraphiteRollupSortedAlgorithm()
+{
+    merged_data.reset();
 }
 
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
@@ -149,7 +155,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
                 next_rule = selectPatternForPath(this->params, next_path);
 
             const Graphite::RetentionPattern * retention_pattern = std::get<0>(next_rule);
-            time_t next_time_rounded;
+            time_t next_time_rounded = 0;
             if (retention_pattern)
             {
                 UInt32 precision = selectPrecision(retention_pattern->retentions, next_row_time);

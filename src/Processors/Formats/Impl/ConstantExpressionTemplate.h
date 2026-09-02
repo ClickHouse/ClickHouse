@@ -19,6 +19,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct FormatSettings;
 struct Settings;
 
+class BlockMissingValues;
+
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.
 /// Using ConstantExpressionTemplate for one expression is slower then evaluateConstantExpression(...),
@@ -32,7 +34,7 @@ class ConstantExpressionTemplate : boost::noncopyable
                           ASTPtr & expr, const IDataType & result_type, bool null_as_default_, ContextPtr context);
 
         static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default);
-        static size_t getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
+        static UInt64 getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
                                       const DataTypePtr & result_column_type, bool null_as_default, const String & salt);
 
         String dumpTemplate() const;

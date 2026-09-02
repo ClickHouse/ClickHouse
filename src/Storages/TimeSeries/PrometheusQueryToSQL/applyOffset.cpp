@@ -24,7 +24,7 @@ namespace
 {
     /// Applies an offset for the evaluation time: <expression> offset 1d
     SQLQueryPiece offsetEvaluationTime(
-        const PQT::Offset * offset_node,
+        const PrometheusQueryTree::Offset * offset_node,
         SQLQueryPiece && expression,
         DurationType offset_value,
         ConverterContext & context)
@@ -40,6 +40,7 @@ namespace
 
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::CONST_STRING:
+            case StoreMethod::SINGLE_SCALAR:
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
@@ -62,8 +63,11 @@ namespace
                     /// timestamp + INTERVAL x MILLISECONDS
                     chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
                     /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::max<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    Decimal64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale);
+                    UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
+                    /// The interval functions do not accept Decimal arguments, so the literal must be
+                    /// the integer number of units of 10^-scale seconds. The conversion is exact because
+                    /// scale >= timestamp_scale.
+                    Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
 
                     static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
                     std::string_view to_interval_function = to_interval_functions[scale / 3];
@@ -100,21 +104,29 @@ namespace
         UNREACHABLE();
     }
 
-    /// Applies setting a fixed evaluation time: <expression> @ 1609746000
-    SQLQueryPiece setEvaluationTime(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
+    /// Applies a fixed evaluation time: <expression> @ 1609746000, @ start(), or @ end()
+    SQLQueryPiece setEvaluationTime(
+        const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
+        /// A range vector already contains the samples evaluated at the fixed time. Keep its timestamps and, for a
+        /// subquery, its complete inner grid intact. A range-vector function will aggregate it at the fixed time.
+        if (expression.type == ResultType::RANGE_VECTOR)
+        {
+            expression.node = offset_node;
+            return std::move(expression);
+        }
+
+        auto node_range = context.node_range_getter.get(offset_node);
+        if (node_range.empty())
+            return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
+
         /// <expression> is expected to be calculated at a fixed evaluation time.
         if (expression.start_time != expression.end_time)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Expression {} is expected to be calculated at a fixed evaluation time",
-                            getPromQLQuery(expression, context));
+                            getPromQLText(expression, context));
         }
-
-        auto evaluation_range = context.node_evaluation_range_getter.get(offset_node);
-
-        if (evaluation_range.start_time > evaluation_range.end_time)
-            return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
 
         expression.node = offset_node;
 
@@ -127,10 +139,11 @@ namespace
 
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::CONST_STRING:
+            case StoreMethod::SINGLE_SCALAR:
             {
-                expression.start_time = evaluation_range.start_time;
-                expression.end_time = evaluation_range.end_time;
-                expression.step = evaluation_range.step;
+                expression.start_time = node_range.start_time;
+                expression.end_time = node_range.end_time;
+                expression.step = node_range.step;
                 return std::move(expression);
             }
 
@@ -154,7 +167,7 @@ namespace
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(
-                        stepsInTimeSeriesRange(evaluation_range.start_time, evaluation_range.end_time, evaluation_range.step)),
+                        stepsInTimeSeriesRange(node_range.start_time, node_range.end_time, node_range.step)),
                     makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
 
                 new_values->setAlias(ColumnNames::Values);
@@ -166,9 +179,9 @@ namespace
 
                 expression.select_query = builder.getSelectQuery();
 
-                expression.start_time = evaluation_range.start_time;
-                expression.end_time = evaluation_range.end_time;
-                expression.step = evaluation_range.step;
+                expression.start_time = node_range.start_time;
+                expression.end_time = node_range.end_time;
+                expression.step = node_range.step;
                 return std::move(expression);
             }
 
@@ -186,9 +199,9 @@ namespace
                     "arrayJoin",
                     makeASTFunction(
                         "timeSeriesRange",
-                        timeSeriesTimestampToAST(evaluation_range.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(evaluation_range.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(evaluation_range.step, context.timestamp_data_type)));
+                        timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
+                        timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
+                        timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)));
 
                 new_timestamp->setAlias(ColumnNames::Timestamp);
                 builder.select_list.push_back(std::move(new_timestamp));
@@ -209,9 +222,9 @@ namespace
     }
 }
 
-SQLQueryPiece applyOffset(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
+SQLQueryPiece applyOffset(const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
 {
-    if (offset_node->at_timestamp)
+    if (offset_node->hasAtModifier())
     {
         /// Set fixed evaluation time.
         return setEvaluationTime(offset_node, std::move(expression), context);

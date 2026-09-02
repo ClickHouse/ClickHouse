@@ -2,6 +2,8 @@
 
 set allow_experimental_parallel_reading_from_replicas=0;
 set enable_analyzer = 1;
+--- Ignore warnings when replica does not respond, and analysis is done on initiator
+set send_logs_level='error';
 
 DROP TABLE IF EXISTS tab;
 
@@ -45,17 +47,15 @@ SETTINGS distributed_index_analysis_for_non_shared_merge_tree = 1, distributed_i
 -- Common from 03620_distributed_index_analysis.sql
 system flush logs query_log;
 select format(
-  'distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisMissingParts={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisFailedReplicas>0={}',
+  'distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisScheduledReplicas={}',
   Settings['distributed_index_analysis'],
   ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0,
-  ProfileEvents['DistributedIndexAnalysisMissingParts'],
-  ProfileEvents['DistributedIndexAnalysisScheduledReplicas'],
-  ProfileEvents['DistributedIndexAnalysisFailedReplicas'] > 0
+  ProfileEvents['DistributedIndexAnalysisScheduledReplicas']
 )
 from system.query_log
 where
   current_database = currentDatabase()
-  and event_date >= yesterday()
+  and event_date >= yesterday() AND event_time >= now() - 600
   and type = 'QueryFinish'
   and query_kind = 'Select'
   and is_initial_query
@@ -70,7 +70,7 @@ where initial_query_id = (select query_id
         from system.query_log
         where
         current_database = currentDatabase()
-        and event_date >= yesterday()
+        and event_date >= yesterday() AND event_time >= now() - 600
         and type = 'QueryFinish'
         and query_kind = 'Select'
         and is_initial_query

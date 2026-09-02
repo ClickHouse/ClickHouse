@@ -22,7 +22,7 @@ SELECT 1 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false, 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase()
   AND query = 'SELECT 1 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false, max_threads = 16;';
 

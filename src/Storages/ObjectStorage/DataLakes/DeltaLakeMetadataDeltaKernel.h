@@ -8,10 +8,11 @@
 #include <Core/Types.h>
 #include <Common/CacheBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeTableStateSnapshot.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <optional>
 
 namespace DeltaLake
 {
@@ -44,6 +45,10 @@ public:
     void update(const ContextPtr & context) override;
 
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
+
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr) const override;
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr) const override;
+    bool shouldReloadSchemaForConsistency(ContextPtr) const override;
 
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,

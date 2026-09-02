@@ -1,8 +1,16 @@
 #include <Interpreters/ITokenizer.h>
 
+#include "config.h"
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Functions/Regexps.h>
+
+#include <limits>
 
 #if defined(__SSE2__)
 #  include <emmintrin.h>
@@ -11,12 +19,28 @@
 #  endif
 #endif
 
+#if USE_ICU
+#  include <unicode/ubrk.h>
+#  include <unicode/utext.h>
+#  include <unicode/utypes.h>
+
+/// ICU renames its entry points via self-referential macros (e.g. `u_errorName` expands to
+/// `U_ICU_ENTRY_POINT_RENAME(u_errorName)`), which trips `-Wdisabled-macro-expansion`.
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#endif
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+#if USE_ICU
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_STRING_SIZE;
+#endif
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -85,6 +109,16 @@ bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t 
     return false;
 }
 
+void NgramsTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool, bool) const
+{
+    stringToBloomFilter(data, length, bloom_filter);
+}
+
+void NgramsTokenizer::substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool, bool) const
+{
+    stringToTokens(data, length, tokens);
+}
+
 bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
 {
     token_start = pos;
@@ -110,97 +144,6 @@ bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, si
     return token_length > 0;
 }
 
-bool SplitByNonAlphaTokenizer::nextInStringPadded(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
-{
-    token_start = pos;
-    token_length = 0;
-
-    while (pos < length)
-    {
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
-        // NOTE: we assume that `data` string is padded from the right with 15 bytes.
-        const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + pos));
-        const size_t haystack_length = 16;
-
-#if defined(__SSE4_2__)
-        // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
-        const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
-                '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
-        // Every bit represents if `haystack` character is in the ranges (1) or not (0)
-        const unsigned result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
-#else
-        // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
-        const auto number_begin =      _mm_set1_epi8('0' - 1);
-        const auto number_end =        _mm_set1_epi8('9' + 1);
-        const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
-        const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
-        const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
-        const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
-        const auto zero =              _mm_set1_epi8(0);
-
-        // every bit represents if `haystack` character `c` satisfies condition:
-        // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
-        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
-        const unsigned result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
-                _mm_cmplt_epi8(haystack, zero),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
-#endif
-        if (result_bitmask == 0)
-        {
-            if (token_length != 0)
-                // end of token started on previous haystack
-                return true;
-
-            pos += haystack_length;
-            continue;
-        }
-
-        const auto token_start_pos_in_current_haystack = std::countr_zero(result_bitmask);
-        if (token_length == 0)
-            // new token
-            token_start = pos + token_start_pos_in_current_haystack;
-        else if (token_start_pos_in_current_haystack != 0)
-            // end of token starting in one of previous haystacks
-            return true;
-
-        const auto token_bytes_in_current_haystack = std::countr_zero(~(result_bitmask >> token_start_pos_in_current_haystack));
-        token_length += token_bytes_in_current_haystack;
-
-        pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
-        if (token_start_pos_in_current_haystack + token_bytes_in_current_haystack == haystack_length)
-            // check if there are leftovers in next `haystack`
-            continue;
-
-        break;
-#else
-        if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
-        {
-            /// Finish current token if any
-            if (token_length > 0)
-                return true;
-            token_start = ++pos;
-        }
-        else
-        {
-            /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
-            ++pos;
-            ++token_length;
-        }
-#endif
-    }
-
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
-    // Could happen only if string is not padded with zeros, and we accidentally hopped over the end of data.
-    if (token_start > length)
-        return false;
-    token_length = std::min(length - token_start, token_length);
-#endif
-
-    return token_length > 0;
-}
-
 bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
 {
     token.clear();
@@ -210,6 +153,7 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
     {
         if (!escaped && (data[pos] == '%' || data[pos] == '_'))
         {
+            /// Unescaped wildcard: invalidates current token
             token.clear();
             bad_token = true;
             ++pos;
@@ -221,8 +165,12 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
         }
         else if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
         {
+            /// Non-alphanumeric ASCII is a separator (including escaped \_ and \%)
             if (!bad_token && !token.empty())
+            {
+                ++pos; /// consume separator before returning
                 return true;
+            }
 
             token.clear();
             bad_token = false;
@@ -245,40 +193,46 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
     return !bad_token && !token.empty();
 }
 
-void SplitByNonAlphaTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
-{
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-
-    while (cur < length && nextInString(data, length, cur, token_start, token_len))
-    {
-        /// In order to avoid filter updates with incomplete tokens, first token is ignored unless substring is prefix,
-        /// and last token is ignored, unless substring is suffix. See comment below for example
-        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
-            bloom_filter.add(data + token_start, token_len);
-    }
-}
-
-void SplitByNonAlphaTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
-{
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-
-    while (cur < length && nextInString(data, length, cur, token_start, token_len))
-    {
-        /// In order to avoid adding incomplete tokens, first token is ignored unless substring is prefix and last token is ignored, unless substring is suffix.
-        /// Ex: If we want to match row "Service is not ready", and substring is "Serv" or "eady", we don't want to add either
-        /// of these substrings as tokens since they will not match any of the real tokens. However if our token string is
-        /// "Service " or " not ", we want to add these full tokens to our tokens vector.
-        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
-            tokens.push_back({data + token_start, token_len});
-    }
-}
-
 namespace
 {
+
+/// Shared implementation of `substringToBloomFilter` for word-boundary tokenizers
+/// (`SplitByNonAlphaTokenizer`, `AsciiCJKTokenizer`).
+///
+/// In order to avoid filter updates with incomplete tokens, the first token is
+/// ignored unless the substring is a prefix, and the last token is ignored unless
+/// the substring is a suffix.
+/// Ex: If we want to match row "Service is not ready", and substring is "Serv"
+/// or "eady", we don't want to add either of these substrings as tokens since
+/// they will not match any of the real tokens. However if our token string is
+/// "Service " or " not ", we want to add these full tokens to our bloom filter.
+template <typename Tokenizer>
+void wordBoundarySubstringToBloomFilter(
+    const Tokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix)
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && tokenizer.nextInString(data, length, cur, token_start, token_len))
+        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
+            bloom_filter.add(data + token_start, token_len);
+}
+
+/// Shared implementation of `substringToTokens` for word-boundary tokenizers.
+/// Same boundary-filtering logic as `wordBoundarySubstringToBloomFilter`.
+template <typename Tokenizer>
+void wordBoundarySubstringToTokens(
+    const Tokenizer & tokenizer, const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix)
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && tokenizer.nextInString(data, length, cur, token_start, token_len))
+        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
+            tokens.push_back({data + token_start, token_len});
+}
 
 bool startsWithSeparator(const char * data, size_t length, size_t pos, const std::vector<String> & separators, std::string & matched_sep)
 {
@@ -294,6 +248,18 @@ bool startsWithSeparator(const char * data, size_t length, size_t pos, const std
     return false;
 }
 
+}
+
+void SplitByNonAlphaTokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void SplitByNonAlphaTokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
 bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
@@ -328,6 +294,16 @@ bool SplitByStringTokenizer::nextInStringLike(const char * /*data*/, size_t /*le
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
+void SplitByStringTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToBloomFilter is not implemented");
+}
+
+void SplitByStringTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToTokens is not implemented");
+}
+
 String SplitByStringTokenizer::getDescription() const
 {
     String result = fmt::format("{}([", getName());
@@ -340,6 +316,82 @@ String SplitByStringTokenizer::getDescription() const
     }
 
     return result + "])";
+}
+
+SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_)
+    : ITokenizerHelper(Type::SplitByRegexp)
+    , regexp_str(regexp_)
+    /// `no_capture = true`: only the whole match (group 0) is ever read via `nextRegexpMatch`, so tracking
+    /// capture groups would only waste work (a larger `MatchVec` resized on every match).
+    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, true, false>(regexp_)))
+{
+}
+
+bool SplitByRegexpTokenizer::nextInStringImpl(
+    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
+{
+    while (pos <= length)
+    {
+        const size_t token_begin = pos;
+        size_t match_start = 0;
+        size_t match_length = 0;
+
+        if (nextRegexpMatch(*regexp, data, length, pos, match_start, match_length, matches))
+        {
+            /// The token is the text preceding the separator; `pos` has already advanced past the separator.
+            if (match_start > token_begin)
+            {
+                token_start = token_begin;
+                token_length = match_start - token_begin;
+                return true;
+            }
+            /// Empty piece (leading or consecutive separators): skip it and keep scanning.
+        }
+        else
+        {
+            /// No further separator: the remaining tail is the last token. An empty tail is not emitted.
+            pos = length + 1; /// Mark exhausted so subsequent calls return false.
+            if (token_begin < length)
+            {
+                token_start = token_begin;
+                token_length = length - token_begin;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    return false;
+}
+
+bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+{
+    /// Allocates the RE2 match scratch per call. This is only used by the (constant-only, documented as
+    /// inefficient) `stringToTokens` / `stringToBloomFilter` paths. The hot path - `forEachToken`, used by
+    /// index build, search and the `tokens` function - goes through `forEachTokenImpl`, which reuses a single
+    /// scratch buffer across all tokens of a string.
+    OptimizedRegularExpression::MatchVec matches;
+    return nextInStringImpl(data, length, pos, token_start, token_length, matches);
+}
+
+bool SplitByRegexpTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::nextInStringLike is not implemented");
+}
+
+void SplitByRegexpTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToBloomFilter is not implemented");
+}
+
+void SplitByRegexpTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToTokens is not implemented");
+}
+
+String SplitByRegexpTokenizer::getDescription() const
+{
+    return fmt::format("{}({})", getName(), quoteString(regexp_str));
 }
 
 bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
@@ -357,6 +409,16 @@ bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t &
 bool ArrayTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::nextInStringLike is not implemented");
+}
+
+void ArrayTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToBloomFilter is not implemented");
+}
+
+void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
 }
 
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
@@ -377,8 +439,8 @@ bool SparseGramsTokenizer::nextInString(const char * data, size_t length, size_t
         sparse_grams_iterator.set(data, data + length);
     }
 
-    Pos next_begin;
-    Pos next_end;
+    Pos next_begin = nullptr;
+    Pos next_end = nullptr;
     if (!sparse_grams_iterator.get(next_begin, next_end))
     {
         previous_data = nullptr;
@@ -405,8 +467,8 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
 
     while (true)
     {
-        Pos next_begin;
-        Pos next_end;
+        Pos next_begin = nullptr;
+        Pos next_end = nullptr;
         if (!sparse_grams_iterator.get(next_begin, next_end))
         {
             previous_data = nullptr;
@@ -442,7 +504,17 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
     }
 }
 
-std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String> & tokens) const
+void SparseGramsTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    stringToBloomFilter(data, length, bloom_filter);
+}
+
+void SparseGramsTokenizer::substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    stringToTokens(data, length, tokens);
+}
+
+VectorWithMemoryTracking<String> SparseGramsTokenizer::compactTokens(const VectorWithMemoryTracking<String> & tokens) const
 {
     std::unordered_set<String> result;
     auto sorted_tokens = tokens;
@@ -460,7 +532,7 @@ std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String
 
         for (const auto & existing_token : result)
         {
-            if (existing_token.find(token) != std::string::npos)
+            if (existing_token.contains(token))
             {
                 is_covered = true;
                 break;
@@ -471,7 +543,7 @@ std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String
             result.insert(token);
     }
 
-    return std::vector<String>(result.begin(), result.end());
+    return VectorWithMemoryTracking<String>(result.begin(), result.end());
 }
 
 String SparseGramsTokenizer::getDescription() const
@@ -482,4 +554,536 @@ String SparseGramsTokenizer::getDescription() const
     return result + ")";
 }
 
+void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter)
+{
+    forEachToken(
+        tokenizer,
+        data,
+        length,
+        [&](const char * token_start, size_t token_length)
+        {
+            bloom_filter.add(token_start, token_length);
+            return false;
+        });
 }
+
+ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows)
+{
+    chassert(from + rows <= input.size());
+
+    auto tokens_data = ColumnString::create();
+    auto tokens_offsets = ColumnArray::ColumnOffsets::create();
+    tokens_offsets->reserve(rows);
+
+    /// Reserve token character storage to avoid repeated reallocations of the chars buffer as tokens are appended.
+    if (const auto * col_string = typeid_cast<const ColumnString *>(&input))
+    {
+        const auto & str_offsets = col_string->getOffsets();
+        tokens_data->getChars().reserve(str_offsets[from + rows - 1] - str_offsets[from - 1]);
+    }
+
+    auto tokenize = [&](std::string_view doc)
+    {
+        forEachToken(tokenizer, doc.data(), doc.size(),
+            [&](const char * token_start, size_t token_length)
+            {
+                tokens_data->insertData(token_start, token_length);
+                return false;
+            });
+    };
+
+    if (const auto * col_array = typeid_cast<const ColumnArray *>(&input))
+    {
+        const IColumn & data = col_array->getData();
+        const IColumn::Offsets & src_offsets = col_array->getOffsets();
+        const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(data);
+
+        for (size_t i = from; i < from + rows; ++i)
+        {
+            for (size_t j = src_offsets[i - 1]; j < src_offsets[i]; ++j)
+            {
+                if (data_is_nullable && data.isNullAt(j))
+                    continue;
+                tokenize(data.getDataAt(j));
+            }
+            tokens_offsets->getData().push_back(tokens_data->size());
+        }
+    }
+    else
+    {
+        for (size_t i = from; i < from + rows; ++i)
+        {
+            if (!input.isNullAt(i))
+                tokenize(input.getDataAt(i));
+            tokens_offsets->getData().push_back(tokens_data->size());
+        }
+    }
+
+    return ColumnArray::create(std::move(tokens_data), std::move(tokens_offsets));
+}
+
+bool AsciiCJKTokenizer::nextInString(
+    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    token_length = 0;
+    while (pos < length)
+    {
+        token_start = pos;
+        char c = data[pos];
+
+        /// 1. ASCII fast path
+
+        if (isAlphaNumericASCII(c) || c == '_')
+        {
+            size_t token_alnum_count = 0;
+            token_length = 0;
+
+            while (pos < length)
+            {
+                char cur = data[pos];
+
+                /// 1a. ASCII letter or digit
+                if (isAlphaNumericASCII(cur))
+                {
+                    ++pos;
+                    ++token_length;
+                    ++token_alnum_count;
+                    continue;
+                }
+
+                /// 1b. Underscore
+                if (cur == '_')
+                {
+                    ++pos;
+                    ++token_length;
+                    continue;
+                }
+
+                /// Check if next character exists
+                if (pos + 1 >= length)
+                    break;
+
+                char next_c = data[pos + 1];
+                char prev_c = pos > 0 ? data[pos - 1] : '\0';
+
+                /// 1c. Colon: connects letters only
+                if (cur == ':' && isAlphaASCII(prev_c) && isAlphaASCII(next_c))
+                {
+                    ++pos;
+                    ++token_length;
+                    continue;
+                }
+
+                /// 1d. Dot or single quote: connects letter-letter or digit-digit
+                if ((cur == '.' || cur == '\'') &&
+                    ((isAlphaASCII(prev_c) && isAlphaASCII(next_c)) ||
+                     (isNumericASCII(prev_c) && isNumericASCII(next_c))))
+                {
+                    ++pos;
+                    ++token_length;
+                    continue;
+                }
+
+                /// Token ends
+                break;
+            }
+
+            /// Token must contain at least one alphanumeric character
+            if (token_alnum_count > 0)
+            {
+                return true;
+            }
+
+            /// Invalid token (underscore only), continue searching
+            token_length = 0;
+            continue;
+        }
+
+        /// 2. ASCII non-alphanumeric: skip
+
+        if (isASCII(c))
+        {
+            ++pos;
+            continue;
+        }
+
+        /// 3. Unicode character handling
+
+        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+
+        /// Truncated UTF-8 sequence at end of buffer
+        if (pos + char_len > length)
+        {
+            pos = length;
+            return false;
+        }
+
+        token_start = pos;
+        token_length = char_len;
+        pos += char_len;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
+{
+    token.clear();
+    size_t token_start = 0;
+    std::optional<size_t> last_glob_pos;
+    bool escaped = false; /// Whether current char is an escaped char
+    while (pos < length)
+    {
+        token_start = pos;
+        char c = data[pos];
+
+        if (c == '\\' && !escaped)
+        {
+            if (pos + 1 >= length)
+                break;
+            ++pos;
+            c = data[pos];
+            escaped = true;
+        }
+
+        /// ASCII alphanumeric or escaped underscore
+        if (isAlphaNumericASCII(c) || (c == '_' && escaped))
+        {
+            size_t token_alnum_count = 0;
+            token.clear();
+
+            while (pos < length)
+            {
+                char cur = data[pos];
+                if (cur == '\\' && !escaped)
+                {
+                    if (pos + 1 >= length)
+                        break;
+                    ++pos;
+                    cur = data[pos];
+                    escaped = true;
+                }
+
+                /// 1a. ASCII letter or digit
+                if (isAlphaNumericASCII(cur))
+                {
+                    ++pos;
+                    escaped = false;
+                    token.push_back(cur);
+                    ++token_alnum_count;
+                    continue;
+                }
+
+                /// 1b. Underscore
+                if (cur == '_' && escaped)
+                {
+                    ++pos;
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// Wildcard
+                if (cur == '_' || (cur == '%' && !escaped))
+                {
+                    last_glob_pos = pos;
+                    ++pos;
+                    break;
+                }
+
+                /// Check if next character exists
+                if (pos + 1 >= length)
+                    break;
+
+                char next_c = data[pos + 1];
+                if (next_c == '\\')
+                {
+                    if (pos + 2 >= length)
+                        break;
+                    next_c = data[pos + 2];
+                }
+                char prev_c = token.empty() ? '\0' : token.back();
+
+                /// 1c. Colon: connects letters only
+                if (cur == ':' && isAlphaASCII(prev_c) && isAlphaASCII(next_c))
+                {
+                    ++pos;
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// 1d. Dot or single quote: connects letter-letter or digit-digit
+                if ((cur == '.' || cur == '\'') &&
+                    ((isAlphaASCII(prev_c) && isAlphaASCII(next_c)) ||
+                     (isNumericASCII(prev_c) && isNumericASCII(next_c))))
+                {
+                    ++pos;
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// Token ends
+                break;
+            }
+
+            /// Token must contain at least one alphanumeric character. Tokens adjacent to unescaped wildcards are
+            /// discarded, since their boundaries are ambiguous.
+            if (token_alnum_count > 0 && (!last_glob_pos || (*last_glob_pos + 1 != pos && *last_glob_pos + 1 != token_start)))
+            {
+                /// If we consumed a backslash but the escaped char didn't continue the token, back up so the next call
+                /// re-parses `\X` with proper escape context.
+                if (escaped)
+                    --pos;
+
+                return true;
+            }
+
+            /// Invalid token, continue searching
+            continue;
+        }
+
+        /// Skip ASCII non-alphanumeric
+        if (isASCII(c))
+        {
+            if (!escaped && (c == '_' || c == '%'))
+                last_glob_pos = pos;
+
+            ++pos;
+            escaped = false;
+            continue;
+        }
+
+        /// Unicode character
+        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+
+        /// Truncated UTF-8 sequence at end of buffer
+        if (pos + char_len > length)
+        {
+            pos = length;
+            escaped = false;
+            continue;
+        }
+
+        token = {data + pos, char_len};
+
+        pos += char_len;
+        return true;
+    }
+
+    return false;
+}
+
+void AsciiCJKTokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void AsciiCJKTokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
+}
+
+#if USE_JIEBA
+bool ChineseTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
+{
+    /// All hot-path tokenization for `ChineseTokenizer` goes through `stringToTokens` /
+    /// `stringToBloomFilter` (and the substring variants which delegate to them), each of
+    /// which calls the segmenter directly with per-call local state. There is no
+    /// streaming, stateful entry point for this tokenizer.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInString is not supported");
+}
+
+bool ChineseTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    /// LIKE/ILIKE tokenization is intentionally unsupported for the `chinese` tokenizer
+    /// (`supportsStringLike()` returns `false`). `nextInStringLike` is the streaming entry
+    /// point that extracts index tokens from a LIKE pattern, splitting it on the `%`/`_`
+    /// wildcards and emitting the literal fragments between them. That model assumes a
+    /// tokenizer whose tokens are delimited by characters in the text (splitByNonAlpha,
+    /// ngrams, ...). Chinese word segmentation has no such delimiters: words are inferred
+    /// from a dictionary/HMM over a whole sentence, and a LIKE fragment cut at an arbitrary
+    /// wildcard boundary is generally not a word boundary, so the fragments would not match
+    /// the indexed tokens. We therefore reject it instead of producing wrong tokens; use
+    /// `tokens(value, 'chinese')` with `hasAnyTokens`/`hasAllTokens` instead of LIKE.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInStringLike is not supported");
+}
+
+void ChineseTokenizer::stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
+{
+    const auto tokens = JiebaSegmenter::instance().tokenize({data, length}, granularity);
+    for (const auto & token : tokens)
+        bloom_filter.add(token.data(), token.size());
+}
+
+void ChineseTokenizer::stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const
+{
+    const auto words = JiebaSegmenter::instance().tokenize({data, length}, granularity);
+    tokens.reserve(tokens.size() + words.size());
+    for (const auto & word : words)
+        tokens.emplace_back(word);
+}
+
+void ChineseTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    /// Substring/prefix/suffix paths are gated by `supportsStringLike()` everywhere
+    /// they are called from (`startsWith`, `endsWith`, `like`, `match`,
+    /// `multiSearchAny`, `multiMatchAny` in `MergeTreeIndexConditionText`), and
+    /// `ChineseTokenizer::supportsStringLike()` returns `false`. Reaching this
+    /// method indicates a bug in the index-condition machinery, not a user error,
+    /// so fail loud rather than silently returning an empty filter that would
+    /// over-prune granules.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToBloomFilter is not supported");
+}
+
+void ChineseTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    /// See the comment on `substringToBloomFilter`.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToTokens is not supported");
+}
+#endif
+
+
+#if USE_ICU
+namespace
+{
+
+using UBreakIteratorPtr = std::unique_ptr<UBreakIterator, decltype(&ubrk_close)>;
+
+/// A word break iterator is stateful and not thread-safe, while tokenizers are shared as `const`
+/// pointers across threads. Keeping one iterator per (thread, locale) makes the tokenizer itself
+/// stateless (it only stores the locale) and avoids re-creating the iterator for every string.
+UBreakIterator * getThreadLocalIcuWordIterator(const String & locale)
+{
+    static constexpr size_t max_cached_iterators = 32;
+    thread_local std::unordered_map<String, UBreakIteratorPtr> iterators;
+
+    auto it = iterators.find(locale);
+    if (it == iterators.end())
+    {
+        /// Coarse bound: the locale comes from user SQL, so cap per-thread state. Cleared entries are
+        /// lazily re-created on their next use.
+        if (iterators.size() >= max_cached_iterators)
+            iterators.clear();
+
+        UErrorCode status = U_ZERO_ERROR;
+        UBreakIteratorPtr iterator(ubrk_open(UBRK_WORD, locale.c_str(), nullptr, 0, &status), &ubrk_close);
+
+        if (U_FAILURE(status))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot create ICU word break iterator for locale '{}': {}",
+                locale, u_errorName(status));
+
+        it = iterators.emplace(locale, std::move(iterator)).first;
+    }
+
+    return it->second.get();
+}
+
+/// Holds the UTF-8 `UText` currently bound to the thread-local break iterator.
+struct IcuTextBinding
+{
+    UText * utext = nullptr;
+    const char * data = nullptr;
+    const UBreakIterator * iterator = nullptr;
+
+    ~IcuTextBinding()
+    {
+        if (utext)
+            utext_close(utext);
+    }
+};
+
+}
+#endif
+
+#if USE_ICU
+String IcuTokenizer::getDescription() const
+{
+    return fmt::format("icu({})", quoteString(locale));
+}
+
+bool IcuTokenizer::nextInString(
+    const char * data,
+    size_t length,
+    size_t & __restrict pos,
+    size_t & __restrict token_start,
+    size_t & __restrict token_length) const
+{
+    /// ICU break iteration exposes only 32-bit offsets, so a value past INT32_MAX would silently
+    /// stop tokenizing at 2 GiB. Reject it explicitly instead of returning truncated results.
+    if (length > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "The 'icu' tokenizer cannot process values larger than {} bytes",
+            std::numeric_limits<int32_t>::max());
+
+    UBreakIterator * iterator = getThreadLocalIcuWordIterator(locale);
+
+    /// The iterator's text is (re)bound at the start of each new string (`pos == 0`); afterwards
+    /// `nextInString` is called repeatedly with an increasing `pos` until the string is exhausted.
+    thread_local IcuTextBinding binding;
+
+    if (pos == 0 || data != binding.data || iterator != binding.iterator)
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        binding.utext = utext_openUTF8(binding.utext, data, static_cast<int64_t>(length), &status);
+        if (U_FAILURE(status))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot open ICU UTF-8 text: {}", u_errorName(status));
+
+        ubrk_setUText(iterator, binding.utext, &status);
+        if (U_FAILURE(status))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set ICU break iterator text: {}", u_errorName(status));
+
+        binding.data = data;
+        binding.iterator = iterator;
+    }
+
+    auto start = static_cast<int32_t>(pos);
+    int32_t end = 0;
+    while ((end = ubrk_following(iterator, start)) != UBRK_DONE)
+    {
+        if (ubrk_getRuleStatus(iterator) >= UBRK_WORD_NONE_LIMIT)
+        {
+            token_start = static_cast<size_t>(start);
+            token_length = static_cast<size_t>(end - start);
+            pos = static_cast<size_t>(end);
+            return true;
+        }
+
+        start = end;
+    }
+
+    pos = length;
+    return false;
+}
+
+bool IcuTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IcuTokenizer::nextInStringLike is not implemented");
+}
+
+void IcuTokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void IcuTokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
+}
+#endif
+
+}
+
+#if USE_ICU
+#  pragma clang diagnostic pop
+#endif

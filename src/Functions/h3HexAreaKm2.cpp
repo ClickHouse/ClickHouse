@@ -88,7 +88,8 @@ public:
                     getName(),
                     MAX_H3_RES);
 
-            Float64 res = getHexagonAreaAvgKm2(resolution);
+            double res = 0;
+            getHexagonAreaAvgKm2(resolution, &res);
             dst_data[row] = res;
         }
 
@@ -116,9 +117,9 @@ Returns average hexagon area in square kilometers at the given [H3](#h3-index) r
             "Get hexagon area at resolution 13",
             "SELECT h3HexAreaKm2(13) AS area",
             R"(
-┌──────area─┐
-│ 0.0000439 │
-└───────────┘
+┌───────────────────area─┐
+│ 0.00004387026794728296 │
+└────────────────────────┘
             )"
         }
     };

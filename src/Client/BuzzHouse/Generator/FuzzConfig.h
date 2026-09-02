@@ -10,19 +10,19 @@
 #include "config.h"
 
 #if USE_SIMDJSON
-#    include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::SimdJSONParser;
 }
 #elif USE_RAPIDJSON
-#    include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::RapidJSONParser;
 }
 #else
-#    include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::DummyJSONParser;
@@ -30,6 +30,7 @@ using JSONParserImpl = DB::DummyJSONParser;
 #endif
 
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#include <Client/BuzzHouse/Generator/SQLFuncs.h>
 #include <Client/ClientBase.h>
 #include <Common/logger_useful.h>
 
@@ -68,9 +69,12 @@ const constexpr uint64_t allow_replacing_mergetree
     allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
     allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
     allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41), allow_datalakecatalog = (UINT64_C(1) << 42),
-    allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45);
+    allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45),
+    allow_backup = (UINT64_C(1) << 46), allow_paimon = (UINT64_C(1) << 47), allow_paimonS3 = (UINT64_C(1) << 48),
+    allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50), allow_remote = (UINT64_C(1) << 51);
 
 extern const DB::Strings compressionMethods;
+extern const DB::Strings codecs;
 
 using JSONObjectType = JSONParserImpl::Element;
 
@@ -254,12 +258,26 @@ public:
     SystemTable & operator=(const SystemTable & c) = default;
     SystemTable & operator=(SystemTable && c) noexcept = default;
 
-    void setName(ExprSchemaTable * est) const
-    {
-        est->mutable_database()->set_database(schema_name);
-        est->mutable_table()->set_table(table_name);
-    }
+    void setName(ExprSchemaTable * est) const;
 };
+
+struct DiskInfo
+{
+    String name;
+    String type; /// DataSourceType enum name: "Local", "ObjectStorage", "RAM"
+    String path;
+    String object_storage_type; /// ObjectStorageType enum name: "S3", "Azure", "Local", "None", ...
+    String metadata_type; /// MetadataStorageType enum name: "Local", "Plain", "Keeper", ...
+    bool is_encrypted = false;
+    bool is_cached = false; /// true when cache_path != '' in system.disks
+};
+
+/// Escape a string for embedding inside a single-quoted SQL literal (doubles single quotes).
+String escapeSQLString(const String & s, char escape_char = '\'');
+
+/// Percent-encode a string for use as a URL query parameter value.
+/// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
+String urlEncodeQueryParam(const String & s);
 
 class FuzzConfig
 {
@@ -267,13 +285,20 @@ private:
     DB::ClientBase * cb = nullptr;
 
 public:
+    static const constexpr String oracleUser = "buzzhouse_oracle_user";
+    static const constexpr String oracleRole = "buzzhouse_oracle_role";
+
     LoggerPtr log;
     std::ofstream outf;
     DB::Strings collations;
+    /// Formats loaded from `system.formats`. The defaults are used until the server is queried.
+    DB::Strings in_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native"};
+    DB::Strings out_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native", "Null"};
+    DB::Strings in_out_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native"};
     DB::Strings storage_policies;
     DB::Strings timezones;
-    DB::Strings disks;
     DB::Strings keeper_disks;
+    std::vector<DiskInfo> disks;
     DB::Strings clusters;
     DB::Strings caches;
     DB::Strings failpoints;
@@ -285,6 +310,14 @@ public:
     DB::Strings hot_settings;
     DB::Strings disallowed_settings;
     DB::Strings hot_table_settings;
+    DB::Strings tokenizers;
+
+    std::vector<CHFunction> det_funcs;
+    std::vector<CHFunction> nondet_funcs;
+    std::vector<CHFunction> common_funcs;
+    std::vector<CHAggregate> det_aggrs;
+    std::vector<CHAggregate> simple_det_aggrs;
+    std::vector<CHAggregate> nondet_aggrs;
 
     std::optional<ServerCredentials> clickhouse_server;
     std::optional<ServerCredentials> mysql_server;
@@ -317,6 +350,7 @@ public:
     bool allow_client_restarts = false;
     bool enable_fault_injection_settings = false;
     bool enable_force_settings = false;
+    bool enable_time_settings = false;
     bool allow_hardcoded_inserts = true;
     bool allow_async_requests = false;
     bool truncate_output = false;
@@ -328,8 +362,10 @@ public:
     bool allow_health_check = true;
     bool enable_compatibility_settings = false;
     bool enable_memory_settings = false;
+    bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
+    bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
     uint64_t min_insert_rows = 1;
@@ -347,6 +383,8 @@ public:
     uint32_t max_tables = 10;
     uint32_t max_views = 5;
     uint32_t max_dictionaries = 5;
+    uint32_t max_policies = 8;
+    uint32_t max_hypotheticals = 8;
     uint32_t max_columns = 5;
     uint32_t time_to_run = 0;
     uint32_t port = 9000;
@@ -365,8 +403,7 @@ public:
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql";
     std::filesystem::path client_file_path = "/var/lib/clickhouse/user_files";
     std::filesystem::path server_file_path = "/var/lib/clickhouse/user_files";
-    std::filesystem::path fuzz_client_out = client_file_path / "fuzz.data";
-    std::filesystem::path fuzz_server_out = server_file_path / "fuzz.data";
+    std::filesystem::path fuzzer_out_file = std::filesystem::temp_directory_path() / "out.data";
     std::filesystem::path lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
     FuzzConfig()
@@ -380,8 +417,20 @@ public:
     bool processServerQuery(bool outlog, const String & query);
 
 private:
+    template <typename T, typename ParseFunc>
+    void loadServerSettings(std::vector<T> & out, const String & desc, const String & query, ParseFunc parse);
+
     template <typename T>
-    void loadServerSettings(std::vector<T> & out, const String & desc, const String & query);
+    void loadServerSettings(std::vector<T> & out, const String & desc, const String & query)
+    {
+        loadServerSettings(out, desc, query, [](const String & s) -> T { return s; });
+    }
+
+    uint32_t tableCountSystemRows(const String & system_table, const String & database, const String & table);
+
+    String tableGetRandomSystemName(uint64_t rand_val, const String & system_table, const String & database, const String & table);
+
+    void loadFunctions();
 
 public:
     void loadServerConfigurations();
@@ -389,6 +438,19 @@ public:
     String getConnectionHostAndPort(bool secure) const;
 
     String getHTTPURL(bool secure) const;
+
+    /// The name of the input format that can read what the given output format wrote, when there is one.
+    /// The `WithProgress` output variants are read back by their plain counterparts.
+    std::optional<String> formatToRead(const String & out_format) const
+    {
+        String base = out_format;
+
+        if (base.ends_with("WithProgress"))
+        {
+            base.resize(base.size() - String("WithProgress").size());
+        }
+        return std::find(in_formats.begin(), in_formats.end(), base) != in_formats.end() ? std::optional<String>(base) : std::nullopt;
+    }
 
     void loadSystemTables(std::vector<SystemTable> & tables);
 
@@ -403,6 +465,20 @@ public:
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
     String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
+
+    String tableGetRandomPartitionValue(uint64_t rand_val, const String & database, const String & table);
+
+    uint32_t tableCountIndexes(const String & database, const String & table);
+
+    String tableGetRandomIndex(uint64_t rand_val, const String & database, const String & table);
+
+    uint32_t tableCountProjections(const String & database, const String & table);
+
+    String tableGetRandomProjection(uint64_t rand_val, const String & database, const String & table);
+
+    uint32_t tableCountConstraints(const String & database, const String & table);
+
+    String tableGetRandomConstraint(uint64_t rand_val, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 

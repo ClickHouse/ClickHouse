@@ -61,3 +61,16 @@ format_query "with (((1,1),1),1) as t1 select t1.1.1.1;"
 
 # Array with tuple element access (should not add extra parens around array)
 format_query "SELECT [['hello']].1;"
+
+# SETTINGS on SelectWithUnionQuery: parenthesized subqueries preserve SETTINGS attachment
+format_query "(SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1"
+
+# SETTINGS on SelectWithUnionQuery inside EXPLAIN AST
+format_query "EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT Null"
+
+# complex row policy with aliases should be consistent
+format_query "CREATE ROW POLICY OR REPLACE p0 ON t0 USING (1 AND (2 AND (4 AS a)) AND (3 as b))"
+format_query "ALTER ROW POLICY p0 ON t0 USING (1 AND (2 AND (4 AS a)) AND (3 as b))"
+# WITH CHECK is parsed but not implemented, so it is ignored by the formatter for now
+format_query "CREATE ROW POLICY OR REPLACE p0 ON t0 WITH CHECK (2 AND (3 AS b))"
+format_query "ALTER ROW POLICY p0 ON t0 WITH CHECK (2 AND (3 AS b))"

@@ -1,0 +1,3 @@
+SELECT formatQuery('WITH t(a, b) AS (SELECT 1, 2) SELECT * FROM t') FORMAT TSVRaw;
+SELECT formatQuery('WITH t(a) AS (SELECT 1) SELECT * FROM t') FORMAT TSVRaw;
+SELECT formatQuery('(WITH phrase(ph) AS (SELECT COALESCE(NULLIF(beer, 0)::text, \'no\') || \' bottle\' || CASE beer WHEN 1 THEN \'\' ELSE \'s\' END || \' of beer\' FROM generate_series(99, 0, -1) AS c(beer)) SELECT ph || \' on the wall, \' || ph || \'.\' || \'\\n\' || \'Take one down and pass it around, \' || LEAD(ph) OVER() || \' on the wall.\\n\' AS " " FROM phrase LIMIT 99) UNION ALL SELECT \'No more bottles of beer on the wall, no more bottles of beer.\\nGo to the store and buy some more, 99 bottles of beer on the wall.\'') FORMAT TSVRaw;

@@ -2,7 +2,7 @@ import logging
 import random
 import traceback
 
-from integration.helpers.kafka.common_direct import KafkaAdminClient
+from kafka import KafkaAdminClient
 import integration.helpers.kafka.common as k
 
 
@@ -83,5 +83,5 @@ class KafkaHandler:
         except Exception as e:
             # If an error happens, ignore it, but log it
             traceback.print_exc()
-            self.logger.error(str(e))
+            self.logger.exception(e)
         return True

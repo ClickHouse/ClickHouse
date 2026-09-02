@@ -19,4 +19,4 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
 SELECT ProfileEvents['SelectedRows'] < 1_000_000
   FROM system.query_log
- WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query_id = {query_id:String} AND current_database = currentDatabase()"
+ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND query_id = {query_id:String} AND current_database = currentDatabase()"

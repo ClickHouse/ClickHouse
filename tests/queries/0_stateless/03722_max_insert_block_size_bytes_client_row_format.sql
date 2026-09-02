@@ -189,7 +189,7 @@ SYSTEM FLUSH LOGS query_log, part_log;
 -- We expect to see 8+4 parts inserted
 SELECT count()  
 FROM system.part_log 
-WHERE table = 'test_max_insert_bytes' 
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table = 'test_max_insert_bytes' 
 AND event_type = 'NewPart' 
 AND (query_id IN (
     SELECT query_id 
@@ -202,7 +202,7 @@ AND (query_id IN (
 -- We expect to see 4+1 parts inserted
 SELECT count()  
 FROM system.part_log 
-WHERE table = 'test_min_insert_rows_bytes' 
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table = 'test_min_insert_rows_bytes' 
 AND event_type = 'NewPart' 
 AND (query_id IN (
     SELECT query_id  
@@ -215,7 +215,7 @@ AND (query_id IN (
 -- We expect to see 2+4 parts inserted
 SELECT count()  
 FROM system.part_log 
-WHERE table = 'test_min_insert_rows' 
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table = 'test_min_insert_rows' 
 AND event_type = 'NewPart' 
 AND (query_id IN (
     SELECT query_id  
@@ -228,12 +228,13 @@ AND (query_id IN (
 -- We expect to see 2 parts inserted
 SELECT count()  
 FROM system.part_log 
-WHERE table = 'test_min_insert_bytes' 
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table = 'test_min_insert_bytes' 
 AND event_type = 'NewPart' 
 AND (query_id IN (
-    SELECT query_id  
-    FROM system.query_log 
-    WHERE query LIKE '%INSERT INTO test_min_insert_bytes FORMAT CSV%' 
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND query LIKE '%INSERT INTO test_min_insert_bytes FORMAT CSV%'
     AND type = 'QueryFinish'
     AND current_database = currentDatabase() 
 ));

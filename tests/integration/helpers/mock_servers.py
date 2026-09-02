@@ -7,7 +7,7 @@ import time
 # Starts simple HTTP servers written in Python.
 # Parameters:
 # `script_dir` contains a path to the directory containing server scripts.
-# `mocks` is a list of tuples (server_script, container_name, port), where
+# `mocks` is a list of tuples (server_script, container_name, port[, args]), where
 #     `server_script` is a name of a python file inside `script_dir`,
 #     `container_name` is usually "resolver" (see docker/test/integration/resolver)
 def start_mock_servers(cluster, script_dir, mocks, timeout=100):

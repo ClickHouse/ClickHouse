@@ -1,10 +1,14 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -17,12 +21,14 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -118,6 +124,26 @@ void materializeFilterColumnIfNeededAfterPushDown(FilterStep & filter, const boo
     const auto & non_const_filter_node = expression.materializeNode(filter_node, false);
     expression.addOrReplaceInOutputs(non_const_filter_node);
 }
+
+/// When the filter column was const before push-down (e.g., `and(const_false, ..., aggregate)` short-circuits to 0)
+/// but the remaining expression after extracting the constant parts is non-const, we must constify it back.
+/// Otherwise, parent steps that cached the original (const) output header will see a non-const column, causing
+/// a "Block structure mismatch" exception or "non constant in source stream but must be constant in result" error.
+bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & filter_column_name, const ColumnPtr & original_const_column)
+{
+    auto * filter_node = const_cast<ActionsDAG::Node *>(expression.tryFindInOutputs(filter_column_name));
+    if (!filter_node || filter_node->type == ActionsDAG::ActionType::INPUT)
+        return false;
+
+    ActionsDAG::Node const_node;
+    const_node.type = ActionsDAG::ActionType::COLUMN;
+    const_node.result_name = filter_node->result_name;
+    const_node.result_type = filter_node->result_type;
+    const_node.column = filter_node->result_type->createColumnConst(0, (*original_const_column)[0]);
+
+    *filter_node = std::move(const_node);
+    return true;
+}
 }
 
 static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
@@ -136,10 +162,45 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
     const auto & all_inputs = child->getInputHeaders()[child_idx]->getColumnsWithTypeAndName();
     const bool allow_deterministic_functions = !step_changes_the_number_of_rows;
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
+
+    /// Capture the original constant column value before push-down modifies the expression DAG.
+    ColumnPtr original_filter_const_column;
+    if (is_filter_column_const_before)
+        original_filter_const_column = filter->getOutputHeader()->getByName(filter_column_name).column;
+
     auto result = expression.splitActionsForFilterPushDown(
         filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
     if (result)
-        materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, result->is_filter_const_after_push_down);
+    {
+        if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
+        {
+            /// The filter column was const before push-down (e.g., AND short-circuits to constant false)
+            /// but became non-const after extracting the constant parts. Restore constness.
+            result->is_filter_const_after_push_down
+                = constifyFilterColumnAfterPushDown(expression, filter_column_name, original_filter_const_column);
+        }
+        else
+        {
+            bool is_filter_const_after = result->is_filter_const_after_push_down;
+
+            /// After push-down, the remaining expression may produce a Const filter column
+            /// even though `is_filter_const_after_push_down` is false (that flag is only set
+            /// when ALL conjunctions are pushed down). This happens when the remaining expression
+            /// contains a NULL constant argument — `defaultImplementationForNulls` short-circuits
+            /// to a ColumnConst, e.g. `plus(count(), NULL)` becomes Const(NULL).
+            /// If uncorrected, the Const output header propagates to parent steps (e.g. UnionStep)
+            /// causing a "Block structure mismatch" exception.
+            if (!is_filter_column_const_before && !is_filter_const_after && !removes_filter)
+            {
+                auto test_header = expression.updateHeader(*filter->getInputHeaders().front());
+                const auto * filter_col = test_header.findByName(filter_column_name);
+                if (filter_col && filter_col->column && isColumnConst(*filter_col->column))
+                    is_filter_const_after = true;
+            }
+
+            materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, is_filter_const_after);
+        }
+    }
     return result;
 }
 
@@ -232,7 +293,7 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, bool step_ch
 class EquivalentJoinKeySet
 {
 public:
-    JoinActionRef find(JoinActionRef ref)
+    JoinActionRef findOrAdd(JoinActionRef ref)
     {
         auto it = parent.find(ref);
         if (it == parent.end())
@@ -244,15 +305,15 @@ public:
         if (it->second == ref)
             return ref;
 
-        JoinActionRef root = find(it->second);
+        JoinActionRef root = findOrAdd(it->second);
         parent.insert_or_assign(ref, root);
         return root;
     }
 
     JoinActionRef unite(JoinActionRef a, JoinActionRef b)
     {
-        JoinActionRef root_a = find(a);
-        JoinActionRef root_b = find(b);
+        JoinActionRef root_a = findOrAdd(a);
+        JoinActionRef root_b = findOrAdd(b);
 
         if (root_a == root_b)
             return root_a;
@@ -273,24 +334,24 @@ public:
 
     bool connected(JoinActionRef a, JoinActionRef b)
     {
-        return find(a) == find(b);
+        return findOrAdd(a) == findOrAdd(b);
     }
 
     std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> getClasses()
     {
         std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> classes;
         for (auto & [ref, _] : parent)
-            classes[find(ref)].push_back(ref);
+            classes[findOrAdd(ref)].push_back(ref);
         return classes;
     }
 
     std::vector<JoinActionRef> getClass(JoinActionRef ref)
     {
         std::vector<JoinActionRef> res;
-        JoinActionRef root = find(ref);
+        JoinActionRef root = findOrAdd(ref);
         for (auto & [other_ref, _] : parent)
         {
-            if (find(other_ref) == root)
+            if (findOrAdd(other_ref) == root)
                 res.push_back(other_ref);
         }
         return res;
@@ -311,30 +372,36 @@ struct JoinActionRefPairHash
     }
 };
 
-std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+/// Invokes `callback(lhs, rhs)` per Equals / NullSafeEquals predicate, `lhs` normalised to the left side.
+template <typename Callback>
+static void forEachEquiJoinKey(const JoinOperator & join_operator, Callback && callback)
 {
-    std::vector<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
             continue;
-
         if (lhs.fromRight() && rhs.fromLeft())
             std::swap(lhs, rhs);
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
-
-        auto left_column = lhs.getColumn();
-        auto right_column = rhs.getColumn();
-        if (!left_column.type->equals(*right_column.type))
-            continue;
-        joining_keys.emplace_back(lhs, rhs);
+        callback(lhs, rhs);
     }
+}
+
+static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+{
+    std::vector<JoinActionRefPair> joining_keys;
+    forEachEquiJoinKey(join_operator, [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
+    {
+        if (!lhs.getColumn().type->equals(*rhs.getColumn().type))
+            return;
+        joining_keys.emplace_back(lhs, rhs);
+    });
     return joining_keys;
 }
 
-std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
+static std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
     EquivalentJoinKeySet & equivalent_sets,
     const JoinStepLogical * join_step,
     const std::vector<QueryPlan::Node *> & child_nodes,
@@ -385,6 +452,11 @@ static void projectDagInputs(ActionsDAG & actions_dag)
             continue;
         outputs.push_back(node);
     }
+}
+
+static bool isAnyInnerJoin(JoinKind kind, JoinStrictness strictness)
+{
+    return kind == JoinKind::Inner && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny);
 }
 
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
@@ -502,7 +574,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_expressions.append_range(std::move(extra_equivalent_expressions));
     }
 
-    auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)
+    auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available, bool require_stable_types = false)
     {
         Names available_input_columns_for_filter;
 
@@ -517,8 +589,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (!join_header->has(name))
                 continue;
 
-            /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_header->getByName(name).type->equals(*join_header->getByName(name).type))
+            /// For the legacy JoinStep (not JoinStepLogical), there is no mechanism to adjust
+            /// the pushed-down filter expression types. When join_use_nulls changes column types
+            /// (e.g. UInt8 in the input becomes Nullable(UInt8) in the join output), pushing a
+            /// filter built for the join output directly to the input side causes a type mismatch.
+            /// JoinStepLogical handles this via fix_predicate_for_join_logical_step below.
+            ///
+            /// The disjunction (partial predicate) push-down path has no such type-fixup, so it
+            /// passes require_stable_types to also exclude type-changing columns for JoinStepLogical.
+            if ((!logical_join || require_stable_types)
+                && !input_header->getByName(name).type->equals(*join_header->getByName(name).type))
                 continue;
 
             available_input_columns_for_filter.push_back(name);
@@ -540,6 +620,23 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
+    /** `ANY INNER` join emits at most one row per key, deduplicating both sides.
+      * Both sides are blocked: filtering the right stream can change which match is taken for the left row.
+      * If the left side has multiple rows with the same value, only one survives
+      * and pushing the filter down to the left may affect which one survives.
+      * Also the optimizer is allowed to swap the sides of the join after that pass,
+      * thus a filter on the left may end up on the right.
+      * Predicates over the equi-join keys are still pushed to both sides through the equivalent-columns path below.
+      */
+    const bool is_any_inner_join = (table_join_ptr && isAnyInnerJoin(table_join_ptr->kind(), table_join_ptr->strictness()))
+        || (logical_join && isAnyInnerJoin(logical_join->getJoinOperator().kind, logical_join->getJoinOperator().strictness));
+
+    if (is_any_inner_join)
+    {
+        right_stream_filter_push_down_input_columns_available = false;
+        left_stream_filter_push_down_input_columns_available = false;
+    }
+
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
       * 2. ASOF Right join is not supported.
@@ -556,12 +653,152 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     Names equivalent_columns_to_push_down;
 
-    for (const auto & [lhs, rhs] : equivalent_expressions)
+    std::unordered_map<JoinActionRef, String> equivalent_expressions_alias;
+    for (auto & [lhs, rhs] : equivalent_expressions)
     {
+        const auto & lhs_original_name = lhs.getColumnName();
+        const auto & rhs_original_name = rhs.getColumnName();
+        /* If we originally had an OUTER join with join_use_nulls, which altered the types of the inner joined side,
+         * and then converted it to INNER because of WHERE conditions that filter out NULLs, we still should preserve nullability.
+         *
+         * However, the pushed down filter may use a nullable or original column depending on where it comes from.
+         *
+         * Consider this example:
+         *   SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id WHERE t1.id < 10 AND t2.id > 0
+         *
+         * Column `t2.id` has a nullable type in the WHERE section, so when we push it through JOIN to the right table,
+         * it should remain nullable.
+         * In that case filter inherits the toNullable conversion from JoinStepLogical.
+         *
+         * We can also push down the condition t2.id < 10 which is inferred from the equality condition t1.id = t2.id and t1.id < 10.
+         *
+         * The `t1.id` is not nullable, as well as in the JOIN ON expression `t1.id = t2.id` are not nullable.
+         * So we should replace `t1.id` with the original non-nullable version of `t2.id` column in the `t1.id < 10` expression.
+         * In this case we rename this column by adding a unique prefix to it,
+         * so we ensure the filter DAG with the replaced column uses the correct one
+         * and we can easily distinguish it when merging expressions into it later on.
+         */
+        auto create_alias = [&](const auto & arg)
+        {
+            String alias = fmt::format("__filterpushdown_src{}", arg.getColumnName());
+            int counter = 0;
+            for (; left_stream_input_header->has(alias) || right_stream_input_header->has(alias); ++counter)
+                alias = fmt::format("__filterpushdown_src_{}{}", counter, arg.getColumnName());
+            return alias;
+        };
+
+        bool changes_left_type = logical_join && logical_join->typeChangingSides().contains(JoinTableSide::Left);
+        bool changes_right_type = logical_join && logical_join->typeChangingSides().contains(JoinTableSide::Right);
+
         auto lhs_column = lhs.getColumn();
         auto rhs_column = rhs.getColumn();
-        equivalent_left_stream_column_to_right_stream_column[lhs_column.name] = rhs_column;
-        equivalent_right_stream_column_to_left_stream_column[rhs_column.name] = lhs_column;
+
+        if (changes_left_type)
+        {
+            auto alias = create_alias(lhs);
+            lhs_column.name = alias;
+            equivalent_expressions_alias[lhs] = alias;
+        }
+        if (changes_right_type)
+        {
+            auto alias = create_alias(rhs);
+            rhs_column.name = alias;
+            equivalent_expressions_alias[rhs] = alias;
+        }
+
+        if (!changes_left_type)
+            equivalent_left_stream_column_to_right_stream_column[lhs_original_name] = rhs_column;
+        if (!changes_right_type)
+            equivalent_right_stream_column_to_left_stream_column[rhs_original_name] = lhs_column;
+    }
+
+    /// Register the cross-type equi-key pairs that `buildEquialentSetsForJoinStepLogical` skips: its
+    /// Union-Find needs the two input types to be equal, plain name substitution does not.
+    ///
+    /// Substitution needs two other things. The replacement must carry the type the replaced name has
+    /// in the JOIN output, because that is what the filter's nodes were typed against, and it must
+    /// evaluate to the value that output column holds, because the filter's own semantics are defined
+    /// on that value.
+    ///
+    /// A cross-type equi-key gives both once the replacement is cast the way the JOIN casts that key:
+    /// the two sides are compared in their least supertype, so `CAST(<opposite side>, supertype)` is
+    /// exactly what is behind the JOIN output column. Demanding that the JOIN output type is that
+    /// supertype keeps the cast widening - a narrowing one would change what the predicate returns -
+    /// and rejects a column the JOIN altered for an unrelated reason, such as `join_use_nulls` widening
+    /// it to `Nullable`, where the replacement no longer matches the output.
+    ///
+    /// The cast node itself is only added once we know a filter really reaches that side, so the two
+    /// lists below carry what is needed to build it.
+    struct CrossTypeReplacement
+    {
+        JoinActionRef source;
+        DataTypePtr target_type;
+        String name;
+    };
+    std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
+    std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
+
+    if (logical_join
+        && (!left_stream_filter_push_down_input_columns_available
+            || !right_stream_filter_push_down_input_columns_available))
+    {
+        const auto & join_output_header = *join_header;
+
+        auto create_cast_name = [&](const String & replaced_name)
+        {
+            String name = fmt::format("__filterpushdown_cast{}", replaced_name);
+            int counter = 0;
+            for (; left_stream_input_header->has(name) || right_stream_input_header->has(name); ++counter)
+                name = fmt::format("__filterpushdown_cast_{}{}", counter, replaced_name);
+            return name;
+        };
+
+        /// Makes `replaced_name` substitutable by the opposite side's key, cast to `supertype`.
+        auto add_replacement = [&](
+            std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_columns,
+            std::vector<CrossTypeReplacement> & replacements,
+            const String & replaced_name,
+            const JoinActionRef & source,
+            const DataTypePtr & supertype)
+        {
+            if (equivalent_columns.contains(replaced_name))
+                return;
+
+            const auto * replaced = join_output_header.findByName(replaced_name);
+            if (!replaced || !replaced->type->equals(*supertype))
+                return;
+
+            /// The side that already has the supertype is not cast by the JOIN either.
+            if (source.getType()->equals(*supertype))
+            {
+                equivalent_columns[replaced_name] = source.getColumn();
+                return;
+            }
+
+            auto name = create_cast_name(replaced_name);
+            equivalent_columns[replaced_name] = ColumnWithTypeAndName(nullptr, supertype, name);
+            replacements.push_back({source, supertype, std::move(name)});
+        };
+
+        forEachEquiJoinKey(logical_join->getJoinOperator(), [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
+        {
+            /// Equal types are already covered by the equivalent sets above.
+            if (lhs.getType()->equals(*rhs.getType()))
+                return;
+
+            auto supertype = tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
+            if (!supertype)
+                return;
+
+            add_replacement(
+                equivalent_left_stream_column_to_right_stream_column,
+                cross_type_replacements_for_right_stream,
+                lhs.getColumnName(), rhs, supertype);
+            add_replacement(
+                equivalent_right_stream_column_to_left_stream_column,
+                cross_type_replacements_for_left_stream,
+                rhs.getColumnName(), lhs, supertype);
+        });
     }
 
     Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
@@ -572,9 +809,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
+    else if (is_any_inner_join
+        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi))
     {
-        if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
+        /// The `typeChangingSides` check is not needed in case of physical join, because
+        ///     1. `INNER` joins never widen the columns' types.
+        ///     2. On this path an `INNER` join cannot have been produced from an `OUTER` one by
+        ///        `tryConvertOuterJoinToInnerJoin` and thus it's not carrying the preserved nullability.
+        if (!logical_join || !logical_join->typeChangingSides().contains(JoinTableSide::Left))
         {
             /// In this case we can also push down to left side of JOIN using equivalent sets.
             for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
@@ -587,9 +829,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
+    else if (is_any_inner_join
+        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi))
     {
-        if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
+        /// The `typeChangingSides` check is not needed in case of physical join, because
+        ///     1. `INNER` joins never widen the columns' types.
+        ///     2. On this path an `INNER` join cannot have been produced from an `OUTER` one by
+        ///        `tryConvertOuterJoinToInnerJoin` and thus it's not carrying the preserved nullability.
+        if (!logical_join || !logical_join->typeChangingSides().contains(JoinTableSide::Right))
         {
             /// In this case we can also push down to right side of JOIN using equivalent sets.
             for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
@@ -598,6 +845,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
 
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
+
+    /// Capture the original constant column value before push-down modifies the expression DAG.
+    ColumnPtr original_filter_const_column;
+    if (is_filter_column_const_before)
+        original_filter_const_column = filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column;
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -609,36 +862,124 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column);
 
-    materializeFilterColumnIfNeededAfterPushDown(
-        *filter, is_filter_column_const_before, join_filter_push_down_actions.is_filter_const_after_all_push_downs);
+    if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
+    {
+        join_filter_push_down_actions.is_filter_const_after_all_push_downs
+            = constifyFilterColumnAfterPushDown(filter->getExpression(), filter->getFilterColumnName(), original_filter_const_column);
+    }
+    else
+    {
+        materializeFilterColumnIfNeededAfterPushDown(
+            *filter, is_filter_column_const_before, join_filter_push_down_actions.is_filter_const_after_all_push_downs);
+    }
 
     size_t updated_steps = 0;
 
     /// For the logical join step, we need to merge pre-join actions to filter dag.
-    /// TODO: this should be refactored and replaced with optimizations which
+    /// TODO: this could be refactored and replaced with "expression pushdown to JOIN" optimizations which
     /// 1. push filter/expression into JOIN (as post-filter)
     /// 2. move filter within JOIN step, potentially changing JoinKind
     /// 3. push filter/expression out of JOIN (from pre-filter)
-
-    auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, ActionsDAG side_dag)
+    auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, ActionsDAG pre_filter_dag)
     {
-        projectDagInputs(side_dag);
-        filter_dag = ActionsDAG::merge(std::move(side_dag), std::move(filter_dag));
+        projectDagInputs(pre_filter_dag);
+
+        /// Snapshot ARRAY_JOIN nodes from `pre_filter_dag` so we can drop them
+        /// after the merge: `removeUnusedActions` would keep them via its
+        /// row-changing carve-out, but they are re-evaluated by `JoinStepLogical`'s
+        /// per-side Pre Join Actions above, causing duplicate row expansion.
+        /// `mergeInplace` uses `list::splice`, so pointer identity stays valid.
+        std::unordered_set<const ActionsDAG::Node *> array_joins_from_pre_filter;
+        for (const auto & node : pre_filter_dag.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+                array_joins_from_pre_filter.insert(&node);
+        }
+
+        filter_dag = ActionsDAG::merge(std::move(pre_filter_dag), std::move(filter_dag));
         auto & outputs = filter_dag.getOutputs();
         outputs.resize(1);
 
         projectDagInputs(filter_dag);
         filter_dag.removeUnusedActions();
+
+        if (!array_joins_from_pre_filter.empty())
+            filter_dag.removeNodes(array_joins_from_pre_filter);
+
         return filter_dag;
+    };
+
+    /// Filter DAG may use columns with types changed by JOIN due to join_use_nulls.
+    /// In that case, the actions DAG in JoinStepLogical will have toNullable conversions.
+    /// The filter applied after JOIN uses those columns with altered types, so when we push it down through JOIN,
+    /// we should also apply the required conversions.
+    /// Here we extract required expressions from JoinStepLogical actions DAG and apply them to the filter DAG that expects them to be calculated.
+    /// In general, it could be not only toNullable, but arbitrary expressions, which may be the case once expression pushdown to JOIN is implemented.
+    auto get_required_pre_actions = [&](const auto & join_actions, const auto & filter_dag_inputs)
+    {
+        /// In case of duplicate names resolve them in corresponding order
+        std::unordered_map<std::string_view, size_t> filter_dag_inputs_map;
+        for (const auto * node : filter_dag_inputs)
+            filter_dag_inputs_map[node->result_name]++;
+
+        std::vector<JoinActionRef> required_actions;
+        for (const auto & join_action : join_actions)
+        {
+            auto it = filter_dag_inputs_map.find(join_action.getColumnName());
+            if (it != filter_dag_inputs_map.end() && it->second > 0)
+            {
+                /// If for any reason we have column with same name multiple times,
+                /// return it as many times as it is needed in filter_dag_inputs.
+                it->second--;
+                required_actions.push_back(join_action);
+            }
+        }
+        return required_actions;
+    };
+
+    /// Materializes the casts the cross-type equi-key substitutions above refer to by name, so that
+    /// `fix_predicate_for_join_logical_step` can compute them from the stream's own input columns.
+    auto add_cross_type_replacement_actions = [&](
+        const std::vector<CrossTypeReplacement> & replacements,
+        const auto & filter_dag_inputs,
+        std::vector<JoinActionRef> & required_actions)
+    {
+        for (const auto & replacement : replacements)
+        {
+            auto is_used = [&](const auto * input) { return input->result_name == replacement.name; };
+            if (std::ranges::none_of(filter_dag_inputs, is_used))
+                continue;
+
+            /// The cast is built without a context, and that is not a shortcut. There is no cast of
+            /// this key to reuse: the JOIN's actions only keep the cast behind its output column,
+            /// which converts the opposite side, and the key matching casts are added later, by the
+            /// conversion to the physical join - also without a context. So the pushed-down predicate
+            /// is built the same way as the values the key matching compares. Nor can a context make
+            /// the conversion differ: for the type pairs that have a least supertype, none of the
+            /// context-dependent conversion settings apply - they concern parsing from `String` and
+            /// serialization to `String`, which never appear as a supertype cast - and the date-time
+            /// overflow behavior is pinned by `createInternalCast` whether or not a context is given.
+            required_actions.push_back(JoinActionRef::transform({replacement.source},
+                [&](ActionsDAG & dag, auto && args) { return &dag.addCast(*args.at(0), replacement.target_type, replacement.name, nullptr); }));
+        }
     };
 
     if (join_filter_push_down_actions.left_stream_filter_to_push_down)
     {
         if (logical_join)
         {
-            auto side_dag = JoinExpressionActions::getSubDAG(equivalent_expressions | std::views::transform([](const auto & pair) { return pair.first; }));
+            const auto & filter_dag_inputs = join_filter_push_down_actions.left_stream_filter_to_push_down->getInputs();
+            std::vector<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
+            for (auto [lhs, _] : equivalent_expressions)
+            {
+                if (auto it = equivalent_expressions_alias.find(lhs); it != equivalent_expressions_alias.end())
+                    lhs = JoinActionRef::transform({lhs}, [&](ActionsDAG & dag, auto && args) { return &dag.addAlias(*args.at(0), it->second); });
+                required_actions_from_join.push_back(lhs);
+            }
+            add_cross_type_replacement_actions(cross_type_replacements_for_left_stream, filter_dag_inputs, required_actions_from_join);
+            auto pre_filter_dag = JoinExpressionActions::getSubDAG(required_actions_from_join);
             *join_filter_push_down_actions.left_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
-                std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down), std::move(side_dag));
+                std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down), std::move(pre_filter_dag));
             join_filter_push_down_actions.left_stream_filter_removes_filter = true;
         }
 
@@ -662,9 +1003,18 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         if (logical_join)
         {
-            auto side_dag = JoinExpressionActions::getSubDAG(equivalent_expressions | std::views::transform([](const auto & pair) { return pair.second; }));
+            const auto & filter_dag_inputs = join_filter_push_down_actions.right_stream_filter_to_push_down->getInputs();
+            std::vector<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
+            for (auto [_, rhs] : equivalent_expressions)
+            {
+                if (auto it = equivalent_expressions_alias.find(rhs); it != equivalent_expressions_alias.end())
+                    rhs = JoinActionRef::transform({rhs}, [&](ActionsDAG & dag, auto && args) { return &dag.addAlias(*args.at(0), it->second); });
+                required_actions_from_join.push_back(rhs);
+            }
+            add_cross_type_replacement_actions(cross_type_replacements_for_right_stream, filter_dag_inputs, required_actions_from_join);
+            auto pre_filter_dag = JoinExpressionActions::getSubDAG(required_actions_from_join);
             *join_filter_push_down_actions.right_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
-                std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down), std::move(side_dag));
+                std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down), std::move(pre_filter_dag));
             join_filter_push_down_actions.right_stream_filter_removes_filter = true;
         }
 
@@ -720,8 +1070,18 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             return updated_steps;
         }
 
+        /// Unlike the main push-down above, addFilterOnTop builds the partial FilterStep directly
+        /// against the join input header without fix_predicate_for_join_logical_step. So a function
+        /// node whose type was computed for the join output (e.g. equals over a USING key widened to
+        /// Nullable) would be applied to the non-widened input column and trip the result-type check
+        /// in updateHeader. Restrict the partial predicate to columns with stable types across the join.
+        Names left_stream_stable_columns_to_push_down = get_available_columns_for_filter(
+            true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
+        Names right_stream_stable_columns_to_push_down = get_available_columns_for_filter(
+            false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
+
         {
-            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_available_columns_to_push_down);
+            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down);
             if (left_partial_filter_dag.has_value())
             {
                 const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
@@ -735,7 +1095,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         }
 
         {
-            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_available_columns_to_push_down);
+            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down);
             if (right_partial_filter_dag.has_value())
             {
                 const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
@@ -811,6 +1171,50 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
           * since we can gen a result row when everything is filtered.
           */
         if (keys.empty())
+            return 0;
+
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
+            return updated_steps;
+    }
+
+    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
+    {
+        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
+        /// window: it only removes whole partitions, and dropping a partition never changes
+        /// any window value on a surviving row (regardless of the window function or frame).
+        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
+        Names partition_keys;
+        for (const auto & sort_column : window->getWindowDescription().partition_by)
+            partition_keys.push_back(sort_column.column_name);
+
+        if (partition_keys.empty())
+            return 0;
+
+        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
+        /// A predicate must be deterministic in the partition key, not merely reference only it:
+        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
+        /// inside a surviving partition before the window runs, which can change which row
+        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
+        /// rows in the partition, so non-deterministic filters are not safe to move below it.
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys))
+            return updated_steps;
+    }
+
+    if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
+    {
+        /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
+        /// per-group rows (and therefore the result) are identical whether it runs above or
+        /// below the LIMIT BY. But it is only safe to push when every non-empty input group
+        /// keeps at least one output row, i.e. `OFFSET 0` and `LIMIT >= 1`. Otherwise a group
+        /// can be fully discarded by the step (OFFSET past its size, or `LIMIT 0 BY`), and a
+        /// pushed key predicate would then be evaluated on rows the original query never
+        /// reached -- changing exception semantics for throwing key expressions
+        /// (e.g. `intDiv(1, key)` on a group that OFFSET would have dropped). This mirrors
+        /// AggregatingStep, where GROUP BY likewise never empties a non-empty group.
+        /// `step_changes_the_number_of_rows = true`: LIMIT BY drops rows, so
+        /// non-deterministic key predicates must NOT be pushed.
+        const auto & keys = limit_by->getColumns();
+        if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
@@ -934,6 +1338,16 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {
+        /// This rewrite forces every union branch input header to the pushed-down filter's
+        /// output header, which assumes the union forwards each branch unchanged. Skip it
+        /// when the union normalizes a branch (its output differs from some input header),
+        /// e.g. it drops a Const that diverged across branches. Otherwise a branch still
+        /// outputting Const would get a full input header and the mismatch would move here.
+        const auto & union_output = *union_step->getOutputHeader();
+        for (const auto & input_header : union_step->getInputHeaders())
+            if (!blocksHaveEqualStructure(*input_header, union_output))
+                return 0;
+
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
@@ -946,7 +1360,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Filter - Union - Something
         ///                - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);

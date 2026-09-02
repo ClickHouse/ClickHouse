@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
@@ -9,11 +10,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
@@ -39,7 +35,7 @@ public:
         return convertToFullColumn();
     }
 
-    ColumnPtr removeLowCardinality() const;
+    ColumnPtr convertToFullColumnIfLowCardinality() const override;
 
     std::string getName() const override
     {
@@ -76,9 +72,9 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        data->getValueNameImpl(name_buf, 0, options);
     }
 
     std::string_view getDataAt(size_t) const override
@@ -127,11 +123,12 @@ public:
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void insertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #else
-    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
+        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
@@ -174,13 +171,7 @@ public:
         ++s;
     }
 
-    void popBack(size_t n) override
-    {
-        if (n > s)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
-        s -= n;
-    }
+    void popBack(size_t n) override;
 
     std::string_view
     serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
@@ -191,6 +182,33 @@ public:
     char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override
     {
         return data->serializeValueIntoMemory(0, memory, settings);
+    }
+
+    void serializeAsComparable(size_t, String & out) const override
+    {
+        data->serializeAsComparable(0, out);
+    }
+
+    /// All rows are identical: encode row 0 once and append to every output row.
+    /// Permutation is irrelevant for a constant column. Rows masked by `null_map`
+    /// (set by a Nullable wrapper) are skipped, matching the other columns.
+    void batchSerializeAsComparable(
+        size_t num_rows,
+        VectorWithMemoryTracking<String> & out,
+        const IColumn::Permutation * permutation,
+        const UInt8 * null_map) const override
+    {
+        /// Match the base class no-op for empty batches: avoid touching the payload
+        /// (and a possible NOT_IMPLEMENTED from an unsupported nested type).
+        if (num_rows == 0)
+            return;
+
+        String encoded;
+        data->serializeAsComparable(0, encoded);
+        /// All rows share `encoded`; `src` only matters for the null-map check.
+        batchSerializeAsComparableImpl(
+            num_rows, out, permutation, null_map,
+            [&encoded](size_t /*src*/, String & dst) { dst.append(encoded); });
     }
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
@@ -210,7 +228,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -253,19 +271,25 @@ public:
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
+    int compareAtWithCollation(size_t, size_t, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override
+    {
+        return data->compareAtWithCollation(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint, collator);
+    }
+
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const override
     {
-        data->getExtremes(min, max);
+        data->get(0, min);
+        max = min;
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override
@@ -319,7 +343,8 @@ public:
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }
-    bool onlyNull() const override { return data->isNullAt(0); }
+    /// Delegate to `data->onlyNull` so that e.g. `Const(Nullable(Nothing))` reports itself as only-null.
+    bool onlyNull() const override { return data->isNullAt(0) || data->onlyNull(); }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
@@ -331,6 +356,10 @@ public:
     IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
+
+    /// Replace the single broadcast value (the number of rows is unchanged). `value` must have exactly one row.
+    /// Only valid while building the column (uniquely owned), e.g. when a serialization fills the value it read.
+    void setValue(const ColumnPtr & value);
 
     Field getField() const { return getDataColumn()[0]; }
 

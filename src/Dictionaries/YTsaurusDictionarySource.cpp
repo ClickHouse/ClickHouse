@@ -43,6 +43,7 @@ namespace Setting
 }
 
 
+void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory);
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
     #if USE_YTSAURUS
@@ -108,7 +109,67 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("ytsaurus", create_dictionary_source);
+    factory.registerSource("ytsaurus", create_dictionary_source, Documentation{
+        .description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+# YTsaurus dictionary source
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Info>
+This is an experimental feature that may change in backwards-incompatible ways in future releases.
+Enable usage of the YTsaurus dictionary source
+using setting [`allow_experimental_ytsaurus_dictionary_source`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_dictionary_source).
+</Info>
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+SOURCE(YTSAURUS(
+    http_proxy_urls 'http://localhost:8000'
+    cypress_path '//tmp/test'
+    oauth_token 'password'
+))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<source>
+    <ytsaurus>
+        <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+        <cypress_path>//tmp/test</cypress_path>
+        <oauth_token>password</oauth_token>
+        <check_table_schema>1</check_table_schema>
+    </ytsaurus>
+</source>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+Setting fields:
+
+| Setting | Description |
+|---------|-------------|
+| `http_proxy_urls` | URL to the YTsaurus http proxy. |
+| `cypress_path` | Cypress path to the table source. |
+| `oauth_token` | OAuth token. |
+)DOCS_MD"
+#if !USE_YTSAURUS
+            "\n\nCurrently unavailable, because this ClickHouse build does not include YTsaurus support."
+#endif
+        ,
+        .syntax = "SOURCE(YTSAURUS(http_proxy_urls 'url' cypress_path '//path' oauth_token 'token'))",
+        .related = {}});
 }
 
 #if USE_YTSAURUS
@@ -144,12 +205,17 @@ YTsarususDictionarySource::~YTsarususDictionarySource() = default;
 BlockIO YTsarususDictionarySource::loadAll()
 {
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {
-        .cypress_path = configuration->cypress_path,
-        .settings = configuration->settings,
-        .select_rows_columns = configuration->ytsaurus_columns_description,
-        .check_types_allow_nullable = true,
-    }, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+          client
+        , configuration->cypress_path
+        , { .settings = configuration->settings,
+            .select_rows_columns = configuration->ytsaurus_columns_description,
+            .check_types_allow_nullable = true,
+        }
+        , sample_block
+        , max_block_size
+        // TODO enable parallelization for reads from dictionary
+        , 1));
     return io;
 }
 
@@ -164,7 +230,15 @@ BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
     auto block = blockForIds(dict_struct, ids);
 
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+        client
+        , configuration->cypress_path
+        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+        , sample_block
+        , max_block_size
+        // Parallel reads supported only for static tables
+        , 1
+    ));
     return io;
 }
 
@@ -182,7 +256,15 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
 
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+          client
+        , configuration->cypress_path
+        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+         , sample_block
+         , max_block_size
+         // Parallel reads supported only for static tables
+         , 1
+    ));
     return io;
 }
 

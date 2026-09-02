@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>
+#include <Common/ErrnoException.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 

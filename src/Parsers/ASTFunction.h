@@ -5,6 +5,8 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/NullsAction.h>
 
+#include <initializer_list>
+
 
 namespace DB
 {
@@ -77,7 +79,7 @@ public:
 
     /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool noEmptyArgs() const { return flags<ASTFunctionFlags>().no_empty_args; }
-    void setNoEmptyArgs(bool value) { flags<ASTFunctionFlags>().no_empty_args = value; }
+    void setNoEmptyArgs(bool value);
 
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8
@@ -98,6 +100,8 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
@@ -142,6 +146,9 @@ boost::intrusive_ptr<ASTFunction> makeASTOperator(const String & name, Args &&..
     function->setIsOperator(true);
     return function;
 }
+
+/// Creates an AST for a lambda: `(param_names...) -> body`.
+boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body);
 
 /// Adds a parameters to aggregate function.
 inline boost::intrusive_ptr<ASTFunction> addParametersToAggregateFunction(boost::intrusive_ptr<ASTFunction> && function) { return std::move(function); }

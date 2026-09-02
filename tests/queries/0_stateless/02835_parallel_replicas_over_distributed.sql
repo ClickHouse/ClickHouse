@@ -12,6 +12,7 @@ ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, currentDat
 
 insert into test select *, today() from numbers(100);
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 2, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree=1;
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 

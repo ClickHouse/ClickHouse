@@ -5,6 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --optimize_on_insert=1"
+
 # Wait for number of parts in table $1 to become $2.
 # Print the changed value. If no changes for $3 seconds, prints initial value.
 wait_for_number_of_parts() {
@@ -26,7 +28,7 @@ SET alter_sync = 2;
 
 DROP TABLE IF EXISTS replacing;
 
-CREATE TABLE replacing (key int, value int, version int, deleted UInt8) ENGINE = ReplacingMergeTree(version, deleted) ORDER BY key SETTINGS merge_tree_clear_old_parts_interval_seconds = 1;
+CREATE TABLE replacing (key int, value int, version int, deleted UInt8) ENGINE = ReplacingMergeTree(version, deleted) ORDER BY key SETTINGS merge_tree_clear_old_parts_interval_seconds = 1, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 
 INSERT INTO replacing VALUES (1, 1, 1, 0), (1, 1, 2, 1);
 
@@ -59,6 +61,9 @@ CREATE TABLE replacing2 (key int, value int, version int, deleted UInt8) ENGINE 
 SETTINGS allow_experimental_replacing_merge_with_cleanup = true,
     enable_replacing_merge_with_cleanup_for_min_age_to_force_merge = true,
     merge_tree_clear_old_parts_interval_seconds = 1,
+    cleanup_delay_period = 1,
+    cleanup_delay_period_random_add = 0,
+    cleanup_thread_preferred_points_per_iteration = 0,
     number_of_free_entries_in_pool_to_execute_optimize_entire_partition = 1,
     min_age_to_force_merge_on_partition_only = true,
     min_age_to_force_merge_seconds = 1,
