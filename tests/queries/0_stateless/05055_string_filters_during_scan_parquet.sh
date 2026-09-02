@@ -67,8 +67,8 @@ for file in "$FILE_PLAIN" "$FILE_DICT"; do
 done
 
 echo 'the optimization is applied'
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_PLAIN', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05029_string_filter_applied_plain'"
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_DICT', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05029_string_filter_applied_dict'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_PLAIN', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_plain'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_DICT', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_dict'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
@@ -77,14 +77,14 @@ SELECT
     sum(ProfileEvents['StringValueFilterValuesReplaced']) > 0,
     sum(ProfileEvents['StringValueFilterBytesSkipped']) > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05029_string_filter_applied_plain';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05055_string_filter_applied_plain';
 
 SELECT
     sum(ProfileEvents['StringValueFilterValuesChecked']) > 0,
     sum(ProfileEvents['StringValueFilterValuesReplaced']) > 0,
     sum(ProfileEvents['StringValueFilterBytesSkipped']) > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05029_string_filter_applied_dict';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05055_string_filter_applied_dict';
 "
 
 # Dictionary-encoded pages where the indexes come as RLE runs rather than as bit-packed indexes:
@@ -118,8 +118,8 @@ for file in "$FILE_RLE" "$FILE_ONE_VALUE"; do
 done
 
 echo 'the optimization is applied to the runs'
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_RLE', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05029_string_filter_applied_rle'"
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_ONE_VALUE', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05029_string_filter_applied_one_value'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_RLE', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_rle'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_ONE_VALUE', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_one_value'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
@@ -130,7 +130,7 @@ SELECT
     sum(ProfileEvents['StringValueFilterBytesSkipped']) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05029_string_filter_applied_rle', '05029_string_filter_applied_one_value')
+    AND log_comment IN ('05055_string_filter_applied_rle', '05055_string_filter_applied_one_value')
 GROUP BY log_comment ORDER BY log_comment;
 "
 
@@ -152,11 +152,11 @@ $CLICKHOUSE_CLIENT -q "
 SELECT count() FROM file('$FILE_PRUNE', Parquet)
 PREWHERE s IN ('needle 5', 'needle 7') AND s LIKE '%needle%'
 SETTINGS apply_string_filters_during_scan = 1, input_format_parquet_dictionary_filter_push_down = 16777216,
-    log_comment = '05029_string_filter_pruning'"
+    log_comment = '05055_string_filter_pruning'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(ProfileEvents['StringValueFilterValuesReplaced']) > 100000
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05029_string_filter_pruning';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05055_string_filter_pruning';
 "

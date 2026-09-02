@@ -62,12 +62,12 @@ SELECT count() FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_
 SELECT sum(cityHash64(s)) FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 0;
 SELECT sum(cityHash64(s)) FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1;
 
-SELECT count() FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05030_string_filter_applied';
+SELECT count() FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied';
 SYSTEM FLUSH LOGS query_log;
 SELECT
     sum(ProfileEvents['StringValueFilterValuesChecked']) > 0,
     sum(ProfileEvents['StringValueFilterValuesReplaced']) > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05030_string_filter_applied';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05055_string_filter_applied';
 
 DROP TABLE t_string_filter_move;

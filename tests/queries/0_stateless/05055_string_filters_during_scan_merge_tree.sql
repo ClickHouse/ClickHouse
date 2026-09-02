@@ -130,15 +130,15 @@ SELECT count() FROM t_string_filter_long PREWHERE s LIKE '%needle%' OR s LIKE '%
 DROP TABLE t_string_filter_long;
 
 SELECT 'the optimization is applied';
-SELECT count() > 0 FROM t_string_filter_wide PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05028_string_filter_applied';
-SELECT count() > 0 FROM t_string_filter_single PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05028_string_filter_applied';
+SELECT count() > 0 FROM t_string_filter_wide PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied';
+SELECT count() > 0 FROM t_string_filter_single PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied';
 SYSTEM FLUSH LOGS query_log;
 SELECT
     sum(ProfileEvents['StringValueFilterValuesChecked']) > 0,
     sum(ProfileEvents['StringValueFilterValuesReplaced']) > 0,
     sum(ProfileEvents['StringValueFilterBytesSkipped']) > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05028_string_filter_applied';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05055_string_filter_applied';
 
 DROP TABLE t_string_filter_wide;
 DROP TABLE t_string_filter_compact;
