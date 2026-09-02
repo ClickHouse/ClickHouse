@@ -2,9 +2,9 @@
 -- containing IN (subquery); on debug/sanitizer builds FunctionIn on a not-ready Set aborted via
 -- LOGICAL_ERROR before the surrounding try/catch could intercept
 
-DROP TABLE IF EXISTS t_left_04104  SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_right_04104 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_subq_04104  SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_left_04104;
+DROP TABLE IF EXISTS t_right_04104;
+DROP TABLE IF EXISTS t_subq_04104;
 
 CREATE TABLE t_left_04104  (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE TABLE t_right_04104 (a UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;
