@@ -929,8 +929,13 @@ void SchemaConverter::processPrimitiveColumn(
         else switch (which.idx)
         {
             case TypeIndex::IPv4:
-                /// Only the UInt32 -> IPv4 cast is supported; stats on other inputs could hide
-                /// the unsupported-cast error when all row groups are pruned.
+                /// Fail closed unless the input is an unsigned 32-bit integer. A signed input has no
+                /// `... -> IPv4` cast at all, so enabling stats could prune every row group and hide
+                /// the unsupported-cast error behind an empty result. An unsigned 64-bit input does
+                /// have a cast, but it wraps (`static_cast<UInt32>`) instead of saturating, so its
+                /// min/max stats are not monotonic and could misprune. Only an unsigned 32-bit input
+                /// (physical `INT32` with a `UINT_8`/`UINT_16`/`UINT_32` annotation) casts
+                /// monotonically; `field_ipv4` then drops any out-of-range bound.
                 if (!allow_datetime_and_ipv4 || converter.input_signed || converter.input_size != sizeof(IPv4))
                     return false;
                 converter.field_ipv4 = true;
