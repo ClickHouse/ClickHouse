@@ -24,9 +24,11 @@ release_job = Job.Config(
 # release code (runs only when it changes) and on the small PR pool, not
 # amd-release-maker (the PR workflow's `pr-` label prefix cannot resolve it). No
 # robot PAT: a dry run pushes nothing and gh reads use the minted PR token
-# (enable_gh_auth). --skip-repo/--skip-docker drop package export and image
-# builds. "new" cuts from master; release_job.py makes master a local branch when
-# the checkout is detached (the PR case) so its checkout("master") resolves.
+# (enable_gh_auth). A dry run never publishes and never skips a validation, so
+# the recovery-ref guard stays active — the recovery/out-of-order/misuse cases
+# below drive prepare() into each of its states. "new" cuts from master;
+# release_job.py makes master a local branch when the checkout is detached (the
+# PR case) so its checkout("master") resolves.
 _release_dry_run_digest = Job.CacheDigestConfig(
     include_paths=[
         "./.github/workflows/create_release.yml",
@@ -34,38 +36,68 @@ _release_dry_run_digest = Job.CacheDigestConfig(
         "./ci/jobs/release_job.py",
         "./ci/jobs/scripts/create_release.py",
         "./ci/jobs/scripts/clickhouse_version.py",
+        "./ci/jobs/scripts/expect_release_refusal.py",
     ],
 )
 
-release_dry_run_new_job = Job.Config(
-    name="Release Dry Run (new)",
-    runs_on=RunnerLabels.ARM_SMALL,
-    command=(
-        "PYTHONPATH=. python3 ./ci/jobs/release_job.py"
-        " --ref master --release-type new --dry-run --skip-repo --skip-docker"
-    ),
-    enable_gh_auth=True,
-    digest_config=_release_dry_run_digest,
-    timeout=1800,
-)
 
-# "patch" rehearses a patch release; --ref auto picks the newest unreleased
-# release-branch commit (a pass when none exists). It exercises the generic
-# prepare/setup path — the changelog-push-to-master and R2/package/docker steps
-# are real-only, so a dry run never reaches them.
-release_dry_run_patch_job = Job.Config(
-    name="Release Dry Run (patch)",
-    runs_on=RunnerLabels.ARM_SMALL,
-    command=(
-        "PYTHONPATH=. python3 ./ci/jobs/release_job.py"
-        " --ref auto --release-type patch --dry-run --skip-repo --skip-docker"
-    ),
-    enable_gh_auth=True,
-    digest_config=_release_dry_run_digest,
-    timeout=1800,
-)
+def _dry_run_job(name: str, job_args: str) -> Job.Config:
+    return Job.Config(
+        name=name,
+        runs_on=RunnerLabels.ARM_SMALL,
+        command=f"PYTHONPATH=. python3 {job_args}",
+        enable_gh_auth=True,
+        digest_config=_release_dry_run_digest,
+        timeout=1800,
+    )
 
-PR_DRY_RUN_JOBS = [release_dry_run_new_job, release_dry_run_patch_job]
+
+# "new" cuts a fresh release branch from 30.12 (a branch whose prev tag matches
+# what prepare() expects). "patch" (--ref auto) creates a new patch from the
+# newest unreleased release-branch commit and, without --skip-repo, exercises the
+# artifact-download path (which tolerates absent artifacts on a dry run).
+# "recovery" re-publishes an already-tagged release (--ref recovery-auto resolves
+# to a published tag) with --skip-repo --skip-docker, the one mode where those
+# flags are valid.
+_RELEASE_DRY_RUN_POSITIVE = [
+    _dry_run_job(
+        "Release Dry Run (new)",
+        "./ci/jobs/release_job.py --ref 30.12 --release-type new --dry-run",
+    ),
+    _dry_run_job(
+        "Release Dry Run (patch)",
+        "./ci/jobs/release_job.py --ref auto --release-type patch --dry-run",
+    ),
+    _dry_run_job(
+        "Release Dry Run (recovery)",
+        "./ci/jobs/release_job.py --ref recovery-auto --release-type patch"
+        " --dry-run --skip-repo --skip-docker",
+    ),
+]
+
+# Negative checks: prepare() must *refuse* these. expect_release_refusal.py scores
+# a refusal (non-zero exit carrying the expected message) as a pass. "out of
+# order" targets a commit behind a branch's latest release; "recovery misuse"
+# passes --skip-repo --skip-docker against an untagged (--ref auto) commit, which
+# only a recovery may do, so the recovery-ref guard rejects it.
+_RELEASE_DRY_RUN_NEGATIVE = [
+    _dry_run_job(
+        "Release Dry Run (out of order)",
+        "./ci/jobs/scripts/expect_release_refusal.py"
+        " --expect 'Refusing out-of-order release' --"
+        " --ref out-of-order-auto --release-type patch"
+        " --dry-run --skip-repo --skip-docker",
+    ),
+    _dry_run_job(
+        "Release Dry Run (recovery misuse guard)",
+        "./ci/jobs/scripts/expect_release_refusal.py"
+        " --expect 'must be run against its release tag' --"
+        " --ref auto --release-type patch"
+        " --dry-run --skip-repo --skip-docker",
+    ),
+]
+
+PR_DRY_RUN_JOBS = _RELEASE_DRY_RUN_POSITIVE + _RELEASE_DRY_RUN_NEGATIVE
 
 workflow = Workflow.Config(
     name="CreateRelease",
