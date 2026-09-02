@@ -219,13 +219,15 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     /// Decimal constants (including decimals nested in Array/Tuple/Map/Variant/Dynamic) have no exact
     /// literal syntax: a bare numeric literal is re-parsed as Float64 on the receiving side and rounds.
+    /// A Variant value has none either: a literal does not record its active alternative, so the
+    /// receiving side re-selects one by value.
     /// Rebuild the literal from the column, upgrading every decimal-backed leaf to an exact
     /// String -> Decimal cast (reconstructed with its own type), then cast the whole value to the
     /// final type. This must run even when add_cast_for_constants is false (e.g. the RHS of IN/notIn,
     /// where casts are suppressed): a bare decimal in the set would be parsed as Float64 on the shard
     /// and round, so an OR-to-IN rewrite over high-scale Decimal values could filter on rounded
     /// constants.
-    if (typeMayContainDecimal(*constant_value_type))
+    if (typeNeedsExactLiteralSerialization(*constant_value_type))
     {
         auto exact_ast = columnConstantToExactLiteralAST(constant_value.getColumn(), 0, constant_value_type);
         if (!options.add_cast_for_constants)

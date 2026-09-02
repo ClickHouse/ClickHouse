@@ -143,6 +143,13 @@ ColumnPtr convertColumnToTypeOrNull(
     /// on the underlying full column so the fast path's CAST returns a plain (non-const) column and the
     /// `Field` fallback reads the value directly.
     const ColumnPtr full = value.convertToFullColumnIfConst();
+
+    /// An identity conversion must not round-trip through a `Field`: a `Field` cannot record which
+    /// `Variant` alternative a value occupies. Both tests are needed - `equals` ignores custom names
+    /// (`Bool` is a named `UInt8`), and a shared name does not pin an `AggregateFunction`'s state layout.
+    if (from->equals(*to) && from->getName() == to->getName())
+        return full;
+
     const IColumn & unwrapped = *full;
 
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))

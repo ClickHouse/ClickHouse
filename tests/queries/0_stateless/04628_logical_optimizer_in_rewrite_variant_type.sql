@@ -112,3 +112,41 @@ SELECT materialize(1) = 1 OR materialize(1) = NULL SETTINGS optimize_min_equalit
 
 DROP TABLE t_dt;
 DROP TABLE t_var;
+
+-- A `Variant` value also has to survive the trip into the set, and a `Field` cannot record which
+-- alternative it occupies: rebuilding the value from one re-selects an alternative by value, so a value
+-- stored as `UInt64` came back as `Date` and stopped matching the row it was built for. This shape is
+-- wrong at the DEFAULT setting, so re-enable it - line 11 turns it off for everything above.
+SET use_variant_default_implementation_for_comparisons = 1;
+
+DROP TABLE IF EXISTS t_var_disc;
+CREATE TABLE t_var_disc (id UInt32, a Array(Variant(Date, UInt64)), v Variant(Date, UInt64)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_var_disc VALUES (1, [1::UInt64], 1::UInt64);
+
+-- No chain and no rewrite involved: `x IN (x, ...)` must agree with `x = x`.
+SELECT a = [1::UInt64]::Array(Variant(Date, UInt64)),
+       a IN ([1::UInt64]::Array(Variant(Date, UInt64)), [5::UInt64]::Array(Variant(Date, UInt64))) FROM t_var_disc;
+
+-- The OR chain the rewrite turns into that IN, against the un-rewritten form as ground truth.
+SELECT count() FROM t_var_disc WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)));
+SELECT count() FROM t_var_disc WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)))
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+-- ... and the rewrite still fires: it is now faithful rather than declined, so nothing is given up. A
+-- single-alternative Variant also keeps being rewritten, which lines 53-54 above already pin.
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_var_disc WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)))) WHERE explain ILIKE '%function_name: in%';
+
+-- A top-level Variant is exposed too: the nullability guard above only reaches that shape at
+-- use_variant_default_implementation_for_comparisons = 0.
+SELECT count() FROM t_var_disc WHERE (v = 1::UInt64::Variant(Date, UInt64)) OR (v = 5::UInt64::Variant(Date, UInt64)) OR (v = 7::UInt64::Variant(Date, UInt64));
+SELECT count() FROM t_var_disc WHERE (v = 1::UInt64::Variant(Date, UInt64)) OR (v = 5::UInt64::Variant(Date, UInt64)) OR (v = 7::UInt64::Variant(Date, UInt64))
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+
+-- The notEquals -> NOT IN seam, whose first conjunct is false, so no row may survive. Result only: a
+-- separate change screens a Variant comparison out of that merge, and the result is correct either way.
+SELECT count() FROM t_var_disc WHERE (a != [1::UInt64]::Array(Variant(Date, UInt64))) AND (a != [5::UInt64]::Array(Variant(Date, UInt64))) AND (a != [7::UInt64]::Array(Variant(Date, UInt64))) AND (id = 1);
+
+-- Across a connection the literal must name the alternative's type and the Variant type, or the receiver
+-- re-infers the element type and either re-selects an alternative or refuses the conversion outright.
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_var_disc) WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)));
+
+DROP TABLE t_var_disc;
