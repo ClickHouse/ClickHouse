@@ -173,13 +173,17 @@ On HTTP `200`, the response body may be empty (equivalent to `{}`) or a JSON obj
   two simultaneous sessions of the same user may have different role sets. An empty
   delegation configuration denies every returned role.
 - `settings` — session settings, applied like the existing `IDENTIFIED WITH HTTP`
-  response settings, subject to the usual setting constraints.
+  response settings, subject to the usual setting constraints. Every name must be a
+  built-in server setting; custom settings (see `custom_settings_prefixes`) are not
+  accepted from the response, and an unknown name fails the authentication attempt.
 - `valid_until` — absolute Unix timestamp limiting this authentication; `0` or absence
   means no expiry; a past or malformed value fails the attempt.
 
 Unlike locally defined users with `IDENTIFIED WITH HTTP`, malformed response metadata
 fails the authentication attempt instead of being ignored. The response body is read up to
-a fixed limit of 1 MiB; a larger body fails the attempt.
+a fixed limit of 1 MiB; a larger body fails the attempt. A `404` body is read and discarded
+so that the connection to the authentication server can be reused; an empty `404` body is
+preferred.
 
 ### Failure semantics {#http-external-user-directory-failures}
 
@@ -222,6 +226,21 @@ re-read from the current access/profile state each time a named session is acqui
 (pre-existing named-session behavior, unchanged by this feature). Rebinding does not
 rebuild the session's settings values or constraints, but it does not suppress this
 existing per-acquisition re-read either.
+
+If creating a named session fails — a returned setting violates a constraint, or the
+request is refused with `USER_SESSION_LIMIT_EXCEEDED` — no session is left behind under
+that `session_id`: a later request with the same `session_id` creates a fresh session from
+its own authentication.
+
+### Views with `SQL SECURITY DEFINER` {#http-external-user-directory-definer}
+
+When a user of this directory creates a view with `SQL SECURITY DEFINER`, ClickHouse stores
+a persistent shadow user named `<username>:definer` as the view's definer, as it does for
+any ephemeral user, because the ephemeral user itself does not survive a restart. The shadow
+user cannot log in and is granted the roles that were returned by the authentication server
+for the session that created the view, so the view keeps the access rights its creator had
+at creation time. Later changes to the roles returned for that user do not affect the shadow
+user.
 
 ### Established-session refresh and revocation {#http-external-user-directory-revocation}
 
