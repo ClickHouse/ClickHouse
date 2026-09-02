@@ -82,13 +82,17 @@ A single ClickHouse server uses several background [merge threads](/reference/se
 
 Each merge thread executes a loop:
 
-① Decide which parts to merge next, and load these parts into memory.
-
-② Merge the parts in memory into a larger part.
-
-③ Write the merged part to disk.
-
-Go to ①
+<Steps>
+<Step title="Load parts into memory">
+Decide which parts to merge next, and load these parts into memory.
+</Step>
+<Step title="Merge parts">
+Merge the parts in memory into a larger part.
+</Step>
+<Step title="Write to disk">
+Write the merged part to disk, then return to step 1.
+</Step>
+</Steps>
 
 Note that increasing the number of CPU cores and the size of RAM allows to increase the background merge throughput.
 
@@ -104,17 +108,24 @@ The diagram below illustrates how a single background [merge thread](/concepts/c
 
 The part merging is performed in several steps:
 
-**① Decompression & Loading**: The [compressed binary column files](/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) from the parts to be merged are decompressed and loaded into memory.
-
-**② Merging**: The data is merged into larger column files.
-
-**③ Indexing**: A new [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) is generated for the merged column files.
-
-**④ Compression & Storage**: The new column files and index are [compressed](/reference/statements/create/table/codec) and saved in a new [directory](/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) representing the merged data part.
+<Steps>
+<Step title="Decompression and loading">
+The [compressed binary column files](/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) from the parts to be merged are decompressed and loaded into memory.
+</Step>
+<Step title="Merging">
+The data is merged into larger column files.
+</Step>
+<Step title="Indexing">
+A new [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) is generated for the merged column files.
+</Step>
+<Step title="Compression and storage">
+The new column files and index are [compressed](/reference/statements/create/table/codec) and saved in a new [directory](/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) representing the merged data part.
+</Step>
+</Steps>
 
 Additional [metadata in data parts](/concepts/core-concepts/parts), such as secondary data skipping indexes, column statistics, checksums, and min-max indexes, is also recreated based on the merged column files. We omitted these details for simplicity.
 
-The mechanics of step ② depend on the specific [MergeTree engine](/reference/engines/table-engines/mergetree-family/index) used, as different engines handle merging differently. For example, rows may be aggregated or replaced if outdated. As mentioned earlier, this approach **offloads all data processing to background merges**, enabling **super-fast inserts** by keeping write operations lightweight and efficient.
+The mechanics of the merging step depend on the specific [MergeTree engine](/reference/engines/table-engines/mergetree-family/index) used, as different engines handle merging differently. For example, rows may be aggregated or replaced if outdated. As mentioned earlier, this approach **offloads all data processing to background merges**, enabling **super-fast inserts** by keeping write operations lightweight and efficient.
 
 Next, we will briefly outline the merge mechanics of specific engines in the MergeTree family.
 

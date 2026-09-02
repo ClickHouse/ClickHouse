@@ -2,10 +2,10 @@
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
 -- Regression test: a distributed read (make_distributed_plan) over a table with a normal projection
--- used to abort with LOGICAL_ERROR 'Different list of shards in child plans'. The projection
+-- threw `LOGICAL_ERROR` 'Different list of shards in child plans'. The projection
 -- optimization replaced the single read with a Union of (surviving-parts read, projection read), but
 -- only the surviving-parts branch carried the distributed (sharded) flag, so the two Union branches
--- exposed different shard lists and makeDistributedPlan asserted on the mismatch. The projection
+-- exposed different shard lists and `makeDistributedPlan` threw on the mismatch. The projection
 -- optimization now declines for distributed reads, keeping the read whole.
 
 DROP TABLE IF EXISTS t1;
@@ -32,7 +32,7 @@ INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
 SET max_rows_to_group_by = 0;
 -- Pin optimize_use_projections = 1. Without it, randomized settings can disable projection
 -- optimization, so optimizeUseNormalProjections never runs, no Union split happens, and neither the
--- fixed nor the unfixed binary aborts, so the test would pass trivially and prove nothing.
+-- fixed nor the unfixed binary throws, so the test would pass trivially and prove nothing.
 SET optimize_use_projections = 1;
 -- Pin distributed_plan_max_rows_to_broadcast low so t2's read is sharded (the bug path) without a
 -- huge fixture; t1 stays under the threshold and is broadcast, as in the original bug. Otherwise

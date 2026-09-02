@@ -28,14 +28,16 @@ Si esta configuración está habilitada, permite usar columnas materializadas en
 
 Activa o desactiva la deduplicación de bloques de `INSERT` (para tablas Replicated*).
 
+Esta configuración solo surte efecto cuando [`deduplicate_insert`](/es/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) se establece en `backward_compatible_choice`.
+
 Valores posibles:
 
 * 0 — Desactivado.
 * 1 — Activado.
 
 De forma predeterminada, los bloques insertados en tablas replicadas mediante la instrucción `INSERT` se deduplican (consulte [Replicación de datos](/es/reference/engines/table-engines/mergetree-family/replication)).
-En las tablas replicadas, de forma predeterminada solo se deduplican los 100 bloques más recientes de cada partición (consulte [replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/es/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-Para las tablas no replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+En las tablas replicadas, de forma predeterminada solo se deduplican los 100 bloques más recientes de cada partición (consulte [replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/es/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+Para las tablas no replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <div id="insert_deduplication_token">
   ## insert_deduplication_token
@@ -43,7 +45,7 @@ Para las tablas no replicadas, consulte [non&#95;replicated&#95;deduplication&#9
 
 Esta configuración permite al usuario definir su propia semántica de deduplicación en MergeTree/ReplicatedMergeTree.
 Por ejemplo, al proporcionar un valor único para esta configuración en cada instrucción INSERT,
-el usuario puede evitar que se deduzcan como duplicados los mismos datos insertados.
+el usuario puede evitar que se deduplicen los mismos datos insertados.
 
 Valores posibles:
 
@@ -51,8 +53,8 @@ Valores posibles:
 
 `insert_deduplication_token` se usa para la deduplicación *solo* cuando no está vacío.
 
-En las tablas replicadas, de forma predeterminada, solo se deduplican las 100 inserciones más recientes de cada partición (consulte [replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/es/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-Para las tablas no replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+En las tablas replicadas, de forma predeterminada, solo se deduplican las 100 inserciones más recientes de cada partición (consulte [replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/es/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+Para las tablas no replicadas, consulte [non&#95;replicated&#95;deduplication&#95;window](/es/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <Note>
   `insert_deduplication_token` se registra por partición, por lo que varias particiones escritas mediante una sola inserción pueden llevar el mismo token. Sin un token, la suma de comprobación de contenido predeterminada se calcula sobre todo el bloque insertado, por lo que una inserción se deduplica solo cuando todos sus datos coinciden con los de una inserción anterior (un reintento), no cuando las filas de una sola partición coinciden por casualidad con las de una inserción distinta.

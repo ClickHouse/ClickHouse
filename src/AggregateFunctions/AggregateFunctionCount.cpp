@@ -283,8 +283,8 @@ ClickHouse supports the following syntaxes for `count`:
 
 ClickHouse supports the `COUNT(DISTINCT ...)` syntax.
 The behavior of this construction depends on the [`count_distinct_implementation`](/reference/settings/session-settings/count-distinct#count_distinct_implementation) setting.
-It defines which of the [uniq*](/sql-reference/aggregate-functions/reference/uniq) functions is used to perform the operation.
-The default is the [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact) function.
+It defines which of the [uniq*](/reference/functions/aggregate-functions/uniq) functions is used to perform the operation.
+The default is the [uniqExact](/reference/functions/aggregate-functions/uniqExact) function.
 
 The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree.
 If you need to use row-level security, disable optimization using the [`optimize_trivial_count_query`](/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) setting.
@@ -294,7 +294,7 @@ With `optimize_functions_to_subcolumns = 1` the function reads only [`null`](/re
 The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
 
 :::tip Improving COUNT(DISTINCT expr) performance
-If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/sql-reference/statements/select/group-by) clause as this improves parallelization.
+If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/reference/statements/select/group-by) clause as this improves parallelization.
 You can also use a [projection](/reference/statements/alter/projection) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
 :::
     )";
@@ -308,6 +308,9 @@ You can also use a [projection](/reference/statements/alter/projection) to creat
     {
         "Basic row count",
         R"(
+CREATE TABLE t (num UInt8) ENGINE = Memory;
+INSERT INTO t VALUES (1), (1), (2), (2), (3);
+
 SELECT count() FROM t
         )",
         R"(
@@ -327,9 +330,9 @@ SELECT count(DISTINCT num) FROM t
 ┌─name──────────────────────────┬─value─────┐
 │ count_distinct_implementation │ uniqExact │
 └───────────────────────────────┴───────────┘
-┌─uniqExact(num)─┐
-│              3 │
-└────────────────┘
+┌─countDistinct(num)─┐
+│                  3 │
+└────────────────────┘
         )"
     }
     };
