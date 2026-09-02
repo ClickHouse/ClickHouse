@@ -6,7 +6,7 @@ Run from the docs root (the directory containing docs.json):
 
     python3 ../ci/jobs/scripts/docs/quickstarts_check.py .
 
-Two checks (see docs/get-started/quickstarts/README.md for the authoring
+Three checks (see docs/get-started/quickstarts/README.md for the authoring
 guide):
 
 1. Frontmatter metadata and badge markers. Every English and localized
@@ -29,6 +29,10 @@ guide):
    author edited a quickstart without re-running the generator and committing
    its output. The working tree is restored afterwards; the failure message
    names the exact command to run.
+
+3. Localized homepage quickstart links. Every localized `QuickstartPill` must
+   contain its locale in a static path so server-side rendering, middle-click,
+   copied links, and no-JavaScript clients do not fall back to English.
 """
 
 import importlib.util
@@ -236,6 +240,35 @@ def check_localized_cloud_setup_fallback(docs_root: Path) -> list:
     return errors
 
 
+def check_localized_homepage_quickstart_href(docs_root: Path) -> list:
+    """Ensure localized homepage Cloud links are correct before hydration."""
+    component = re.compile(
+        r"export const QuickstartPill = \(\{ children \}\) => \{"
+        r".*?const path = ['\"](?P<path>[^'\"]+)['\"];"
+        r".*?href=\{path\}",
+        re.DOTALL,
+    )
+    errors = []
+    for locale in LOCALES:
+        page = docs_root / locale / "index.mdx"
+        match = component.search(page.read_text(encoding="utf-8"))
+        if not match:
+            errors.append(
+                f"{page.relative_to(docs_root)}: could not find a static "
+                "QuickstartPill path and href"
+            )
+            continue
+
+        expected = f"/{locale}/get-started/setup/cloud"
+        if match.group("path") != expected:
+            errors.append(
+                f"{page.relative_to(docs_root)}: QuickstartPill path is "
+                f"{match.group('path')!r}; expected {expected!r} so the "
+                "server-rendered link preserves the locale"
+            )
+    return errors
+
+
 def check_freshness(docs_root: Path) -> list:
     generator = docs_root / "_site" / "scripts" / "update_quickstarts.py"
     # Snapshot the content of everything the generator may rewrite, so the
@@ -288,6 +321,7 @@ def main() -> int:
     errors = check_searchable(docs_root)
     errors += check_frontmatter(docs_root)
     errors += check_localized_cloud_setup_fallback(docs_root)
+    errors += check_localized_homepage_quickstart_href(docs_root)
     # Only bother running the generator when the tags are valid — invalid tags
     # would just produce garbage slugs in the regenerated data.
     if not errors:

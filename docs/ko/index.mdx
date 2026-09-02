@@ -209,7 +209,7 @@ export const McpLink = ({ children }) => {
 };
 
 export const QuickstartPill = ({ children }) => {
-    const path = localizeHref('/get-started/setup/cloud');
+    const path = '/ko/get-started/setup/cloud';
     const withBase = (p) => (typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '') + p;
     return (
         <a
