@@ -87,12 +87,16 @@ namespace DB
 
 bool OptimizeShardingKeyRewriteInMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
-    /// Do not rewrite an `IN` that is part of the query's own output. Pruning the set to the elements
-    /// routed to this shard leaves the value of the expression correct - a row on this shard can only
-    /// equal an element routed here - but it changes the result column's name, so the initiator cannot
-    /// bind the column the shard returns.
+    /// Rewrite the set only inside the filtering clauses. Pruning the set to the elements routed to
+    /// this shard leaves the value of the expression correct - a row on this shard can only equal an
+    /// element routed here - but it changes the expression's name, and every other clause can carry
+    /// that name into the header the shard returns to the initiator: the projection directly, and
+    /// `GROUP BY` / `ORDER BY` / `LIMIT BY` through the intermediate stages, which ship the
+    /// aggregation keys and the `before_order_by` columns and are matched by name on the initiator.
+    ///
+    /// The join tree is still visited, so a subquery in `FROM` keeps being pruned by its own filters.
     if (const auto * select = node->as<ASTSelectQuery>())
-        return child != select->select();
+        return child == select->where() || child == select->prewhere() || child == select->tables();
 
     return true;
 }
@@ -106,6 +110,13 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTPtr & node, Data & data)
 void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & data)
 {
     if (function.name != "in")
+        return;
+
+    /// An aliased `IN` in a filter can be referenced from any other clause - and, in the old
+    /// analyzer, the alias is expanded to a copy of this expression there. Rewriting only the copy
+    /// in the filter would either rename the column the initiator binds, or leave two different
+    /// expressions behind the same alias (`MULTIPLE_EXPRESSIONS_FOR_ALIAS`).
+    if (!function.tryGetAlias().empty())
         return;
 
     auto * left = function.arguments->children.front().get();
@@ -158,13 +169,13 @@ public:
         , data(std::move(data_))
     {}
 
-    /// See the comment in `OptimizeShardingKeyRewriteInMatcher::needChildVisit`: an `IN` in the
-    /// projection would keep its value but change its result column name, which the initiator then
-    /// cannot bind.
+    /// See the comment in `OptimizeShardingKeyRewriteInMatcher::needChildVisit`: outside of the
+    /// filtering clauses the rewrite keeps the value of the expression but changes its name, and the
+    /// initiator binds the columns the shard returns by name.
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         if (const auto * query_node = parent->as<QueryNode>())
-            return child != query_node->getProjectionNode();
+            return child == query_node->getWhere() || child == query_node->getPrewhere() || child == query_node->getJoinTreeNode();
 
         return true;
     }
@@ -173,6 +184,11 @@ public:
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "in")
+            return;
+
+        /// An aliased node is shared between the clauses that reference the alias, so rewriting it
+        /// through a filter would also rewrite it in the projection or in `ORDER BY`.
+        if (node->hasAlias())
             return;
 
         auto & arguments = function_node->getArguments().getNodes();
