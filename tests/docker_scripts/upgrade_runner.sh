@@ -384,18 +384,14 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
 #       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
 #       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
-# `Cluster` + `Code: 198` + a host label built from one repeated character is the deliberately unresolvable
-#       host that `04725_distributed_async_insert_long_directory_name` puts in a `Remote(...)` table to exercise
-#       the `NAME_MAX` limit on the async-INSERT directory name. Master's copy of that test now spells its
-#       addresses as IP literals, but this job runs the previous release's copy, cloned by tag above, which
-#       still carries the hostnames; the exclusion is needed until a release without them becomes the previous
-#       one. `--fake-drop` makes the test's `DROP` a no-op, so the table survives into the upgrade restart,
-#       where attaching it builds its `Cluster` and `Cluster::Address::getResolvedAddress` logs the expected DNS
-#       failure. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND `Code: 198`
-#       AND a first host label of 64 or more identical characters, which is past the 63 octets RFC 1035 permits
-#       a label and a shape no deployment uses, so a genuine post-upgrade failure to resolve a cluster peer
-#       still fails this job. Matching the repeated run rather than the letters keeps the entry off the
-#       specific literals.
+# `Cluster` + `Code: 198` + a first host label of one repeated character is the deliberately unresolvable
+#       host of `04725_distributed_async_insert_long_directory_name`. Master no longer carries that test, but
+#       this job runs the previous release's copy of the suite, cloned by tag above, and `--fake-drop` makes
+#       its `DROP` a no-op, so the `Remote` table survives into the upgrade restart, where attaching it
+#       resolves the address and logs the failure. The entry is needed until a release without the test is
+#       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
+#       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
+#       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
