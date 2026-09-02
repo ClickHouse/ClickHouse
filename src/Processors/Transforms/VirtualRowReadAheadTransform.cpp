@@ -91,13 +91,13 @@ bool VirtualRowReadAheadTransform::boundaryLess(const Lane & lhs, const Lane & r
     return false;
 }
 
-void VirtualRowReadAheadTransform::touchLane(size_t lane_num)
+bool VirtualRowReadAheadTransform::touchLane(size_t lane_num)
 {
-    if (lane_touch_epoch[lane_num] != touch_epoch)
-    {
-        lane_touch_epoch[lane_num] = touch_epoch;
-        touched_lanes.push_back(lane_num);
-    }
+    if (lane_touch_epoch[lane_num] == touch_epoch)
+        return false;
+    lane_touch_epoch[lane_num] = touch_epoch;
+    touched_lanes.push_back(lane_num);
+    return true;
 }
 
 void VirtualRowReadAheadTransform::grantCredit(size_t lane_num, bool speculative)
@@ -107,8 +107,8 @@ void VirtualRowReadAheadTransform::grantCredit(size_t lane_num, bool speculative
     lane.speculative = speculative;
     lane.input->setNeeded();
     /// The input may already hold a chunk pushed just before the lane parked; the setNeeded
-    /// above wakes only the upstream, so make sure this pass processes the lane too.
-    touchLane(lane_num);
+    /// above wakes only the upstream, so this prepare must process the lane too.
+    credited_lanes.push_back(lane_num);
 }
 
 void VirtualRowReadAheadTransform::topUpReadAhead()
@@ -307,25 +307,15 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare(const UpdatedInputPorts
     touched_lanes.clear();
     bool port_finished = false;
 
-    auto touch = [&](const Port * port)
-    {
-        size_t lane_num = port_to_lane.at(port);
-        if (lane_touch_epoch[lane_num] != touch_epoch)
-        {
-            lane_touch_epoch[lane_num] = touch_epoch;
-            touched_lanes.push_back(lane_num);
-        }
-    };
-
     for (const auto * port : updated_inputs)
     {
         port_finished |= port->isFinished();
-        touch(port);
+        touchLane(port_to_lane.at(port));
     }
     for (const auto * port : updated_outputs)
     {
         port_finished |= port->isFinished();
-        touch(port);
+        touchLane(port_to_lane.at(port));
     }
 
     /// A finished port changes the termination state, which only the full pass tracks; an
@@ -336,18 +326,18 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare(const UpdatedInputPorts
 
     /// A pull can unblock a push on the same lane and vice versa, and our own port updates do
     /// not reschedule this processor, so iterate to a fixpoint. Lanes outside the touched set
-    /// are at their fixpoint already (every state transition here is driven by a port event);
-    /// credits granted to them only mark their input ports needed, which needs no processing.
+    /// are at their fixpoint already (every state transition here is driven by a port event)
+    /// until a pass grants them credit; those join the set for the next pass.
     bool progress = true;
     while (progress)
     {
         progress = false;
-        /// `grantCredit` touches more lanes during the pass; they get their turn in the next
-        /// one, so a pass walks only the prefix that existed when it started.
-        const size_t pass_end = touched_lanes.size();
-        for (size_t pos = 0; pos < pass_end; ++pos)
-            progress |= processLane(touched_lanes[pos]);
-        progress |= touched_lanes.size() > pass_end;
+        for (size_t lane_num : touched_lanes)
+            progress |= processLane(lane_num);
+
+        for (size_t lane_num : credited_lanes)
+            progress |= touchLane(lane_num);
+        credited_lanes.clear();
     }
 
     return tryFinish();
@@ -384,8 +374,6 @@ IProcessor::Status VirtualRowReadAheadTransform::tryFinish()
 IProcessor::Status VirtualRowReadAheadTransform::prepare()
 {
     initialized = true;
-    ++touch_epoch;
-    touched_lanes.clear();
 
     bool all_outputs_finished = true;
     for (const auto & lane : lanes)
@@ -412,6 +400,8 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
         progress = false;
         for (size_t i = 0; i < lanes.size(); ++i)
             progress |= processLane(i);
+        /// Every lane is in the pass already.
+        credited_lanes.clear();
     }
 
     return tryFinish();

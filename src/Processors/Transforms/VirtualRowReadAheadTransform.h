@@ -88,7 +88,8 @@ private:
     }
     Status tryFinish();
     void grantCredit(size_t lane_num, bool speculative = false);
-    void touchLane(size_t lane_num);
+    /// Returns true if the lane was not yet in the touched set of this prepare.
+    bool touchLane(size_t lane_num);
     void topUpReadAhead();
     bool speculationAllowed() const { return read_ahead_window > 0; }
     bool boundaryLess(const Lane & lhs, const Lane & rhs) const;
@@ -115,6 +116,9 @@ private:
     std::unordered_map<const Port *, size_t> port_to_lane;
     std::vector<UInt64> lane_touch_epoch;
     std::vector<size_t> touched_lanes;
+    /// Lanes `grantCredit` woke during the running fixpoint pass; they join `touched_lanes`
+    /// between passes, so no pass appends to the set it iterates.
+    std::vector<size_t> credited_lanes;
     UInt64 touch_epoch = 0;
     bool initialized = false;
 };
