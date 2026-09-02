@@ -340,7 +340,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -349,7 +349,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -358,7 +358,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -442,11 +442,11 @@ A policy can be defined as restrictive as an alternative. Restrictive policies a
 Here is the general formula:
 
 ```text
-row_is_visible = (one or more of the permissive policies that apply to the user have non-zero conditions) AND
-                 (all of the restrictive policies that apply to the user have non-zero conditions)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the user are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the user are non-zero)
 ```
 
-With the default server configuration, if no permissive policy applies to the user, the first condition is not applied and only the restrictive policies decide, so a user to whom no policy applies at all sees every row.
+With the default server configuration, if no permissive condition applies to the user, the first condition is not applied and only the restrictive policies decide, so a user to whom no policy applies at all sees every row.
 
 For example, the following policies:
 
@@ -503,7 +503,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 )",
