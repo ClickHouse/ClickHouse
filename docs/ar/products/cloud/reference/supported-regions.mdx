@@ -13,7 +13,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   ## المناطق المدعومة
 </div>
 
-توضح الجداول التالية المناطق المدعومة حسب مزود السحابة. تشير الشارات إلى توفر منطقة خاصة وHIPAA وPCI. أما المناطق التي لا تحمل شارة، فلا تتوفر فيها حاليًا أي من هذه الخيارات.
+توضح الجداول التالية المناطق المدعومة حسب مزود السحابة. تشير الشارات إلى التوافر: `Public` للمناطق المتاحة بشكل عام، و`Private` أو `HIPAA` أو `PCI` للمناطق التي توفر هذه الخيارات.
 
 <Tabs>
   <Tab title="AWS" id="aws-regions" icon="aws">
@@ -22,51 +22,52 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     | `af-south-1`     | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-east-1`      | <Badge color="purple">خاص</Badge>                                                                    |
     | `ap-east-2`      | <Badge color="purple">خاص</Badge>                                                                    |
-    | `ap-northeast-1` | —                                                                                                    |
-    | `ap-northeast-2` | —                                                                                                    |
-    | `ap-south-1`     | —                                                                                                    |
-    | `ap-southeast-1` | —                                                                                                    |
-    | `ap-southeast-2` | —                                                                                                    |
+    | `ap-northeast-1` | <Badge color="yellow">عام</Badge>                                                                    |
+    | `ap-northeast-2` | <Badge color="yellow">عام</Badge>                                                                    |
+    | `ap-south-1`     | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-southeast-1` | <Badge color="yellow">عام</Badge>                                                                    |
+    | `ap-southeast-2` | <Badge color="yellow">عام</Badge>                                                                    |
     | `ap-southeast-3` | <Badge color="purple">خاص</Badge>                                                                    |
     | `ap-southeast-5` | <Badge color="purple">خاص</Badge>                                                                    |
-    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
-    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `ca-central-1`   | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-central-1`   | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `eu-north-1`     | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
-    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
-    | `il-central-1`   | —                                                                                                    |
-    | `mx-central-1`   | <Badge color="purple">خاص</Badge> <Badge color="blue">PCI</Badge>                                    |
+    | `eu-west-1`      | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-2`      | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `il-central-1`   | <Badge color="yellow">عام</Badge>                                                                    |
+    | `me-central-1`   | <Badge color="yellow">عام</Badge>                                                                    |
+    | `mx-central-1`   | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `sa-east-1`      | <Badge color="purple">خاص</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
-    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
-    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                   |
+    | `us-east-1`      | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-2`      | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west-2`      | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
   </Tab>
 
   <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
-    | المنطقة                   | التوافر                                                            |
-    | ------------------------- | ------------------------------------------------------------------ |
-    | `asia-northeast1`         | —                                                                  |
-    | `asia-southeast1`         | —                                                                  |
-    | `australia-southeast1`    | <Badge color="purple">خاص</Badge>                                  |
-    | `europe-west2`            | —                                                                  |
-    | `europe-west3`            | <Badge color="purple">خاص</Badge>                                  |
-    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `europe-west6`            | <Badge color="purple">خاص</Badge>                                  |
-    | `northamerica-northeast1` | <Badge color="purple">خاص</Badge>                                  |
-    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-west1`                | <Badge color="purple">خاص</Badge>                                  |
+    | المنطقة                   | التوافر                                                                                              |
+    | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+    | `asia-northeast1`         | <Badge color="yellow">عام</Badge>                                                                    |
+    | `asia-southeast1`         | <Badge color="yellow">عام</Badge>                                                                    |
+    | `australia-southeast1`    | <Badge color="purple">خاص</Badge>                                                                    |
+    | `europe-west2`            | <Badge color="yellow">عام</Badge>                                                                    |
+    | `europe-west3`            | <Badge color="purple">خاص</Badge>                                                                    |
+    | `europe-west4`            | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">خاص</Badge>                                                                    |
+    | `northamerica-northeast1` | <Badge color="purple">خاص</Badge>                                                                    |
+    | `us-central1`             | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">خاص</Badge>                                                                    |
   </Tab>
 
   <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
     | المنطقة                | التوافر                           |
     | ---------------------- | --------------------------------- |
     | `Australia East`       | <Badge color="purple">خاص</Badge> |
-    | `East US 2`            | —                                 |
-    | `Germany West Central` | —                                 |
+    | `East US 2`            | <Badge color="yellow">عام</Badge> |
+    | `Germany West Central` | <Badge color="yellow">عام</Badge> |
     | `Japan East`           | <Badge color="purple">خاص</Badge> |
     | `UAE North`            | <Badge color="purple">خاص</Badge> |
-    | `West US 3`            | —                                 |
+    | `West US 3`            | <Badge color="yellow">عام</Badge> |
   </Tab>
 </Tabs>
 
