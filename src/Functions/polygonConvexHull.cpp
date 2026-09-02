@@ -47,7 +47,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        checkGeometryArgumentType<Point, GeoKindPoint>(arguments[0], getName(), "The argument of function {} must not be a {}", ErrorCodes::BAD_ARGUMENTS);
+        checkGeometryArgumentType<Point, GeoKindPoint>(arguments[0], getName(), "The argument of function {} must not be a {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return DataTypeFactory::instance().get("Polygon");
     }
 

@@ -20,34 +20,43 @@ VALUES ([[(100., 100.), (101., 100.), (101., 101.), (100., 100.)]], 1);
 -- Each of these answered `0` before, because `pointInPolygon` filters the block empty first.
 SELECT count() FROM test_geometry_argument_domain
 WHERE pointInPolygon((0., 0.), poly) AND polygonsUnionCartesian(n, poly).1 IS NOT NULL
-SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError BAD_ARGUMENTS }
+SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT count() FROM test_geometry_argument_domain
 WHERE pointInPolygon((0., 0.), poly) AND polygonAreaCartesian(n) > 0
-SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError BAD_ARGUMENTS }
+SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT count() FROM test_geometry_argument_domain
 WHERE pointInPolygon((0., 0.), poly) AND polygonPerimeterCartesian(n) > 0
-SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError BAD_ARGUMENTS }
+SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT count() FROM test_geometry_argument_domain
 WHERE pointInPolygon((0., 0.), poly) AND polygonsDistanceCartesian(poly, CAST(1 AS Nullable(UInt8))) > 0
-SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError BAD_ARGUMENTS }
+SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT count() FROM test_geometry_argument_domain
 WHERE pointInPolygon((0., 0.), poly) AND length(wkt(n)) > 0
-SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError BAD_ARGUMENTS }
+SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Raised from analysis alone, with no rows involved at all.
-EXPLAIN SELECT polygonAreaCartesian(n) FROM test_geometry_argument_domain; -- { serverError BAD_ARGUMENTS }
-EXPLAIN SELECT wkt(n) FROM test_geometry_argument_domain; -- { serverError BAD_ARGUMENTS }
-EXPLAIN SELECT polygonsUnionCartesian(n, poly) FROM test_geometry_argument_domain; -- { serverError BAD_ARGUMENTS }
+EXPLAIN SELECT polygonAreaCartesian(n) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN SELECT wkt(n) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN SELECT polygonsUnionCartesian(n, poly) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- A geometry kind the function refuses, rather than a type it cannot read.
 EXPLAIN SELECT polygonAreaCartesian(CAST((0., 0.) AS Point)) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 EXPLAIN SELECT polygonsUnionCartesian(CAST((0., 0.) AS Point), poly) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 EXPLAIN SELECT polygonsDistanceCartesian(poly, CAST((0., 0.) AS Point)) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-EXPLAIN SELECT polygonConvexHullCartesian(CAST((0., 0.) AS Point)) FROM test_geometry_argument_domain; -- { serverError BAD_ARGUMENTS }
+EXPLAIN SELECT polygonConvexHullCartesian(CAST((0., 0.) AS Point)) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- A `Variant` argument keeps the uniform `Variant` semantics: an alternative the function refuses
+-- is skipped, rather than turning the query into an analysis error. That works only while every
+-- rejection is signalled with `ILLEGAL_TYPE_OF_ARGUMENT`, the code `FunctionBaseVariantAdaptor`
+-- treats as type incompatibility.
+SELECT wkt(CAST((0., 0.)::Point AS Variant(Point, String)));
+SELECT round(polygonAreaCartesian(CAST([[(0., 0.), (1., 0.), (1., 1.), (0., 1.)]]::Polygon AS Variant(Polygon, String))), 4);
+SELECT polygonsIntersectCartesian(CAST([[(0., 0.), (2., 0.), (2., 2.), (0., 2.)]]::Polygon AS Variant(Polygon, String)), [[(1., 1.), (3., 1.), (3., 3.), (1., 3.)]]::Polygon);
+SELECT polygonConvexHullCartesian(CAST([(0., 0.), (2., 0.), (1., 1.)]::Ring AS Variant(Point, Ring)));
 
 -- The accepted domain keeps working, on real rows.
 SELECT round(polygonAreaCartesian(poly), 4) FROM test_geometry_argument_domain;
