@@ -12,9 +12,6 @@
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/Serializations/SerializationWrapper.h>
-#include <DataTypes/Serializations/SerializationReplicated.h>
-#include <DataTypes/Serializations/SerializationDetached.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -34,7 +31,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
@@ -208,43 +204,6 @@ MutableColumnPtr DataTypeTuple::createColumn() const
     return ColumnTuple::create(std::move(tuple_columns));
 }
 
-MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
-{
-    /// If we read subcolumn of nested Tuple or this Tuple is a subcolumn, it may be wrapped to SerializationWrapper
-    /// several times to allow to reconstruct the substream path name.
-    /// Here we don't need substream path name, so we drop first several wrapper serializations.
-    const auto * current_serialization = &serialization;
-    while (const auto * serialization_wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
-        current_serialization = serialization_wrapper->getNested().get();
-
-    /// We can have Replicated serialization over Tuple.
-    if (const auto * serialization_replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
-        return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
-
-    /// We can have Detached serialization over Tuple (for parallel blocks marshalling).
-    /// Create the inner column; SerializationDetached::deserializeBinaryBulkWithMultipleStreams
-    /// will wrap it in ColumnBLOB during deserialization.
-    if (const auto * serialization_detached = typeid_cast<const SerializationDetached *>(current_serialization))
-        return createColumn(*serialization_detached->getNested());
-
-    const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
-    if (!serialization_tuple)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
-
-    if (elems.empty())
-        return IDataType::createColumn(serialization);
-
-    const auto & element_serializations = serialization_tuple->getElementsSerializations();
-
-    size_t size = elems.size();
-    chassert(element_serializations.size() == size);
-    MutableColumns tuple_columns(size);
-    for (size_t i = 0; i < size; ++i)
-        tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]->getNested());
-
-    return ColumnTuple::create(std::move(tuple_columns));
-}
-
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(std::from_range_t{}, elems | std::views::transform([](const DataTypePtr & elem) { return elem->getDefault(); }));
@@ -407,18 +366,18 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
-SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
+SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn());
-    return getSerializationInfoImpl(column);
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+    return getSerializationInfoImpl(column, settings);
 }
 
-SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColumn & column) const
+SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColumn & column, const SerializationInfoSettings & settings) const
 {
     if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
     {
-        auto info = getSerializationInfoImpl(*column_replicated->getNestedColumn());
+        auto info = getSerializationInfoImpl(*column_replicated->getNestedColumn(), settings);
         info->appendToKindStack(ISerialization::Kind::REPLICATED);
         return info;
     }
@@ -431,7 +390,7 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i));
+        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i), settings);
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
@@ -498,9 +457,9 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
+A tuple of elements, each having an individual [type](/reference/data-types). Tuple must contain at least one element.
 
-Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
+Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](/reference/statements/in) and [Higher order functions](/reference/functions/regular-functions/overview#higher-order-functions).
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in `()`. In JSON formats, tuples are output as arrays (in `[]`).
 
@@ -554,7 +513,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 
 ## Data Type Detection {#data-type-detection}
 
-When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/operations/settings/formats#input_format_null_as_default), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
+When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/reference/settings/formats/input-format#input_format_null_as_default), the interfered type is [Nullable](/reference/data-types/nullable).
 
 Example of automatic data type detection:
 

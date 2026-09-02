@@ -11,5 +11,4 @@ export const CloudOnlyBadge = () => {
         </div>
     )
 }
-
 export default CloudOnlyBadge;

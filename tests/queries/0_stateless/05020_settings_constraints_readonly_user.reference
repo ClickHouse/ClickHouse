@@ -1,0 +1,8 @@
+-- the row filter is in force
+tenant1-own
+-- a nested SETTINGS clause cannot lift the row filter: it is dropped and the query still works
+tenant1-own
+-- a readonly user can read a view whose inner query carries a SETTINGS clause
+1
+-- the session is still readonly
+1

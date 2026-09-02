@@ -115,12 +115,18 @@ static void appendRightColumns(
     std::set<size_t> block_columns_to_erase;
     if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
     {
-        std::unordered_set<String> left_output_columns;
+        /// Keep left columns matching getOutputColumns(Left) by name AND multiplicity: it may list a
+        /// name fewer times than the physical block holds it, and the surviving count must equal
+        /// getOutputColumns(Left).size() (used as left_columns_count downstream). Cap per name.
+        std::unordered_map<std::string_view, size_t> left_output_remaining;
         for (const auto & out_column : table_join.getOutputColumns(JoinTableSide::Left))
-            left_output_columns.insert(out_column.name);
+            ++left_output_remaining[out_column.name];
         for (size_t i = 0; i < block.columns(); ++i)
         {
-            if (!left_output_columns.contains(block.getByPosition(i).name))
+            auto it = left_output_remaining.find(block.getByPosition(i).name);
+            if (it != left_output_remaining.end() && it->second > 0)
+                --it->second;
+            else
                 block_columns_to_erase.insert(i);
         }
     }
@@ -341,7 +347,11 @@ static size_t numLeftRowsForNextBlock(
 
     size_t max_rows = max_joined_block_rows;
     if (max_joined_block_bytes)
-        max_rows = std::min<size_t>(max_rows, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
+    {
+        const size_t max_rows_by_bytes
+            = std::max<size_t>(1, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
+        max_rows = max_rows ? std::min(max_rows, max_rows_by_bytes) : max_rows_by_bytes;
+    }
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
     const size_t next_allowed_offset = prev_offset + max_rows;
@@ -369,6 +379,7 @@ HashJoinResult::HashJoinResult(
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
     IColumn::Offsets && matched_rows_,
+    size_t matched_right_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -378,6 +389,7 @@ HashJoinResult::HashJoinResult(
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
     , matched_rows(std::move(matched_rows_))
+    , matched_right_rows(matched_right_rows_)
 {
 }
 

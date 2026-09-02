@@ -41,11 +41,11 @@ doc_type: 'guide'
 </Note>
 
 <Note>
-  [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)은 한 번에 하나의 쿼리만 실행합니다. 쿼리 결과를 캐싱하는 것은 의미가 없으므로 clickhouse-local에서는 쿼리
+  [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)은 한 번에 하나의 쿼리만 실행합니다. 쿼리 결과를 캐싱하는 것은 의미가 없으므로 clickhouse-local에서는 쿌리
   결과 캐시가 비활성화되어 있습니다.
 </Note>
 
-설정 [use&#95;query&#95;cache](/ko/reference/settings/session-settings#use_query_cache)를 사용하면 특정 쿼리 또는 현재
+설정 [use&#95;query&#95;cache](/ko/reference/settings/session-settings/use-query#use_query_cache)를 사용하면 특정 쿼리 또는 현재
 세션의 모든 쿼리에서 쿼리 캐시를 사용할지 제어할 수 있습니다. 예를 들어, 다음 쿼리를 처음 실행할 때
 
 ```sql
@@ -63,8 +63,8 @@ SETTINGS use_query_cache = true;
   SQL 문을 `SETTINGS use_query_cache = true`로 실행하지 않는 한 캐시되지 않습니다.
 </Note>
 
-캐시 활용 방식은 [enable&#95;writes&#95;to&#95;query&#95;cache](/ko/reference/settings/session-settings#enable_writes_to_query_cache)
-및 [enable&#95;reads&#95;from&#95;query&#95;cache](/ko/reference/settings/session-settings#enable_reads_from_query_cache) 설정(두 설정의 기본값은 모두 `true`)으로 더 세부적으로 구성할 수 있습니다. 앞의 설정은
+캐시 활용 방식은 [enable&#95;writes&#95;to&#95;query&#95;cache](/ko/reference/settings/session-settings/enable#enable_writes_to_query_cache)
+및 [enable&#95;reads&#95;from&#95;query&#95;cache](/ko/reference/settings/session-settings/enable#enable_reads_from_query_cache) 설정(두 설정의 기본값은 모두 `true`)으로 더 세부적으로 구성할 수 있습니다. 앞의 설정은
 쿼리 결과를 캐시에 저장할지 제어하고, 뒤의 설정은 데이터베이스가 쿼리 결과를 캐시에서 가져오도록 시도할지 결정합니다. 예를 들어, 다음 쿼리는 캐시를 수동적으로만 사용합니다. 즉, 캐시에서 읽기만 시도하고 그
 결과를 캐시에 저장하지는 않습니다:
 
@@ -96,7 +96,7 @@ use_query_cache = true`), 이 경우 모든 `SELECT` 쿼리가 캐시된 결과�
 예외가 발생하거나 사용자가 취소하여 쿼리가 중단된 경우에는 쿼리 캐시에 엔트리가 기록되지 않습니다.
 
 바이트 단위의 쿼리 캐시 크기, 최대 캐시 엔트리 수, 개별 캐시 엔트리의 최대 크기(바이트 및
-레코드 기준)는 서로 다른 [서버 구성 옵션](/ko/reference/settings/server-settings/settings#query_cache)을 사용해 구성할 수 있습니다.
+레코드 기준)는 서로 다른 [서버 구성 옵션](/ko/reference/settings/server-settings/settings/query#query_cache)을 사용해 구성할 수 있습니다.
 
 ```xml
 <query_cache>
@@ -110,8 +110,8 @@ use_query_cache = true`), 이 경우 모든 `SELECT` 쿼리가 캐시된 결과�
 개별 사용자의 캐시 사용량도 [설정 프로필](/ko/concepts/features/configuration/settings/settings-profiles) 및 [설정
 제약 조건](/ko/concepts/features/configuration/settings/constraints-on-settings)을 사용해 제한할 수 있습니다. 구체적으로는 사용자가
 쿼리 캐시에서 할당할 수 있는 최대 메모리 양(바이트)과 저장할 수 있는 쿼리 결과의 최대 개수를 제한할 수 있습니다. 이를 위해 먼저
-`users.xml`의 사용자 프로필에 [query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ko/reference/settings/session-settings#query_cache_max_size_in_bytes) 및
-[query&#95;cache&#95;max&#95;entries](/ko/reference/settings/session-settings#query_cache_max_entries) 설정을 지정한 다음, 두 설정을 모두
+`users.xml`의 사용자 프로필에 [query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ko/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) 및
+[query&#95;cache&#95;max&#95;entries](/ko/reference/settings/session-settings/query-cache#query_cache_max_entries) 설정을 지정한 다음, 두 설정을 모두
 읽기 전용으로 설정합니다:
 
 ```xml
@@ -134,7 +134,7 @@ use_query_cache = true`), 이 경우 모든 `SELECT` 쿼리가 캐시된 결과�
 </profiles>
 ```
 
-쿼리 결과를 캐시할 수 있도록 하려면 쿼리가 최소 얼마 동안 실행되어야 하는지 [query&#95;cache&#95;min&#95;query&#95;duration](/ko/reference/settings/session-settings#query_cache_min_query_duration) 설정으로 지정할 수 있습니다. 예를 들어, 다음 쿼리의 결과는
+쿼리 결과를 캐시할 수 있도록 하려면 쿼리가 최소 얼마 동안 실행되어야 하는지 [query&#95;cache&#95;min&#95;query&#95;duration](/ko/reference/settings/session-settings/query-cache#query_cache_min_query_duration) 설정으로 지정할 수 있습니다. 예를 들어, 다음 쿼리의 결과는
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -143,9 +143,9 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 ```
 
 쿼리가 5초를 초과해 실행되는 경우에만 캐시됩니다. 또한 쿼리 결과가 캐시되기까지 쿼리가 몇 번 실행되어야 하는지도 지정할 수 있습니다.
-이를 위해 [query&#95;cache&#95;min&#95;query&#95;runs](/ko/reference/settings/session-settings#query_cache_min_query_runs) 설정을 사용하십시오.
+이를 위해 [query&#95;cache&#95;min&#95;query&#95;runs](/ko/reference/settings/session-settings/query-cache#query_cache_min_query_runs) 설정을 사용하십시오.
 
-엔트리는 일정 시간이 지나면 오래된 상태가 됩니다(time-to-live). 기본적으로 이 기간은 60초이지만, [query&#95;cache&#95;ttl](/ko/reference/settings/session-settings#query_cache_ttl) 설정을 사용하여 세션, 프로필 또는 쿼리 수준에서 다른
+엔트리는 일정 시간이 지나면 오래된 상태가 됩니다(time-to-live). 기본적으로 이 기간은 60초이지만, [query&#95;cache&#95;ttl](/ko/reference/settings/session-settings/query-cache#query_cache_ttl) 설정을 사용하여 세션, 프로필 또는 쿼리 수준에서 다른
 값을 지정할 수 있습니다. 쿼리 캐시는 엔트리를 &quot;지연 방식으로&quot; 제거합니다. 즉, 엔트리가 오래된 상태가 되어도 캐시에서 즉시 제거되지는 않습니다. 대신 새 엔트리를
 쿼리 캐시에 삽입하려고 할 때 데이터베이스는 새 엔트리를 위한 충분한 여유 공간이 캐시에 있는지 확인합니다. 여유 공간이 충분하지 않은
 경우 데이터베이스는 오래된 엔트리를 모두 제거하려고 시도합니다. 그래도 캐시에 여유 공간이 충분하지 않으면 새 엔트리는 삽입되지 않습니다.
@@ -153,10 +153,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 쿼리가 HTTP를 통해 실행되면 ClickHouse는 캐시된 엔트리의 경과 시간(초 단위)과 만료 timestamp를 나타내는 `Age` 및 `Expires` header를 설정합니다.
 
 엔트리는 기본적으로 압축됩니다. 이렇게 하면 쿼리 캐시에 대한 쓰기/읽기 속도는 느려지지만 전체 메모리 사용량은 줄어듭니다.
-압축을 비활성화하려면 [query&#95;cache&#95;compress&#95;entries](/ko/reference/settings/session-settings#query_cache_compress_entries) 설정을 사용하십시오.
+압축을 비활성화하려면 [query&#95;cache&#95;compress&#95;entries](/ko/reference/settings/session-settings/query-cache#query_cache_compress_entries) 설정을 사용하십시오.
 
 때로는 동일한 쿼리에 대해 여러 결과를 캐시된 상태로 유지하는 것이 유용합니다. 이는 엔트리의 레이블(또는 네임스페이스) 역할을 하는
-[query&#95;cache&#95;tag](/ko/reference/settings/session-settings#query_cache_tag) 설정을 사용해 구현할 수 있습니다. 쿼리 캐시는 서로 다른 tag가 있는 동일한 쿼리의 결과를 서로 다른 것으로
+[query&#95;cache&#95;tag](/ko/reference/settings/session-settings/query-cache#query_cache_tag) 설정을 사용해 구현할 수 있습니다. 쿼리 캐시는 서로 다른 태그가 있는 동일한 쿼리의 결과를 서로 다른 것으로
 간주합니다.
 
 동일한 쿼리에 대해 서로 다른 3개의 쿼리 캐시 엔트리를 생성하는 예시:
@@ -203,20 +203,20 @@ SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
 서브쿼리 캐시 엔트리는 `is_subquery = 1`인 경우 [system.query&#95;cache](/ko/reference/system-tables/query_cache)에서 확인할 수 있습니다. `query_cache_ttl` 설정도 서브쿼리 캐시 엔트리에 적용되며, 서브쿼리별로 설정할 수 있습니다.
 
-ClickHouse는 테이블 데이터를 [max&#95;block&#95;size](/ko/reference/settings/session-settings#max_block_size)행 단위의 블록으로 읽습니다. 필터링, 집계
+ClickHouse는 테이블 데이터를 [max&#95;block&#95;size](/ko/reference/settings/session-settings/max#max_block_size)행 단위의 블록으로 읽습니다. 필터링, 집계
 등으로 인해 결과 블록은 일반적으로 &#39;max&#95;block&#95;size&#39;보다 훨씬 작지만, 그보다 훨씬 커지는 경우도 있습니다. 설정
-[query&#95;cache&#95;squash&#95;partial&#95;results](/ko/reference/settings/session-settings#query_cache_squash_partial_results) (기본적으로 활성화됨)는 결과 블록을
+[query&#95;cache&#95;squash&#95;partial&#95;results](/ko/reference/settings/session-settings/query-cache#query_cache_squash_partial_results) (기본적으로 활성화됨)는 결과 블록을
 쿼리 결과 캐시에 삽입하기 전에 &#39;max&#95;block&#95;size&#39; 크기의 블록으로 합치거나(너무 작은 경우) 분할할지(큰 경우) 제어합니다.
 이 설정을 사용하면 쿼리 캐시에 쓰는 성능은 다소 떨어지지만, 캐시 엔트리의 압축률이 향상되고 이후 쿼리 결과를 쿼리 캐시에서 제공할 때
 더 자연스러운 블록 세분화 수준을 얻을 수 있습니다.
 
 그 결과, 쿼리 캐시는 각 쿼리마다 여러 개의 (partial)
 결과 블록을 저장합니다. 이 동작은 기본값으로 적절하지만, 설정
-[query&#95;cache&#95;squash&#95;partial&#95;results](/ko/reference/settings/session-settings#query_cache_squash_partial_results)를 사용해 비활성화할 수 있습니다.
+[query&#95;cache&#95;squash&#95;partial&#95;results](/ko/reference/settings/session-settings/query-cache#query_cache_squash_partial_results)를 사용해 비활성화할 수 있습니다.
 
 또한 비결정적 함수를 포함하는 쿼리 결과는 기본적으로 캐시되지 않습니다. 이러한 함수에는 다음이 포함됩니다.
 
-* 딕셔너리에 접근하는 함수: [`dictGet()`](/ko/reference/functions/regular-functions/ext-dict-functions) 등
+* 딕셔너리에 액세스하는 함수: [`dictGet()`](/ko/reference/functions/regular-functions/ext-dict-functions) 등
 * XML
   정의에 `<deterministic>true</deterministic>` 태그가 없는 [사용자 정의 함수](/ko/reference/statements/create/function),
 * 현재 날짜 또는 시간을 반환하는 함수: [`now()`](/ko/reference/functions/regular-functions/date-time-functions#now),
@@ -234,15 +234,15 @@ ClickHouse는 테이블 데이터를 [max&#95;block&#95;size](/ko/reference/sett
   [`getMacro()`](/ko/reference/functions/regular-functions/other-functions#getMacro) 등.
 
 그럼에도 비결정적 함수를 포함하는 쿼리 결과를 강제로 캐시하려면 설정
-[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ko/reference/settings/session-settings#query_cache_nondeterministic_function_handling)을 사용하십시오.
+[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ko/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling)을 사용하십시오.
 
 시스템 테이블이 포함된 쿼리의 결과(예: [system.processes](/ko/reference/system-tables/processes)&#96; 또는
 [information&#95;schema.tables](/ko/reference/system-tables/information_schema))도 기본적으로 캐시되지 않습니다. 시스템 테이블이 포함된 쿼리 결과를
-강제로 캐시하려면 설정 [query&#95;cache&#95;system&#95;table&#95;handling](/ko/reference/settings/session-settings#query_cache_system_table_handling)을 사용하십시오।
+강제로 캐시하려면 설정 [query&#95;cache&#95;system&#95;table&#95;handling](/ko/reference/settings/session-settings/query-cache#query_cache_system_table_handling)을 사용하십시오.
 
 마지막으로, 보안상의 이유로 쿼리 캐시의 엔트리는 사용자 간에 공유되지 않습니다. 예를 들어, 사용자 A가
 그러한 정책이 없는 다른 사용자 B와 동일한 쿼리를 실행하는 방식으로 테이블의 ROW POLICY를 우회할 수는 없어야 합니다. 그러나 필요한 경우에는 설정
-[query&#95;cache&#95;share&#95;between&#95;users](/ko/reference/settings/session-settings#query_cache_share_between_users)을 지정하여 캐시 엔트리를
+[query&#95;cache&#95;share&#95;between&#95;users](/ko/reference/settings/session-settings/query-cache#query_cache_share_between_users)을 지정하여 캐시 엔트리를
 다른 사용자가 접근할 수 있도록(즉, 공유되도록) 표시할 수 있습니다.
 
 <div id="related-content">

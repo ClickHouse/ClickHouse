@@ -1,0 +1,4 @@
+Type Enum is not supported by the HiveText output format
+Type Time is not supported by the HiveText output format
+Type Time64 is not supported by the HiveText output format
+Type Interval is not supported by the HiveText output format

@@ -13,6 +13,7 @@ doc_type: 'reference'
 さまざまな[Geo データ型](/ja/reference/data-types/geo)から、WKT (Well Known Text) 形式のジオメトリオブジェクトを返します。サポートされている WKT オブジェクトは次のとおりです。
 
 * POINT
+* MULTIPOINT
 * POLYGON
 * MULTIPOLYGON
 * LINESTRING
@@ -29,6 +30,7 @@ WKT(geo_data)
 `geo_data` には、次のいずれかの [Geoデータ型](/ja/reference/data-types/geo) またはそれらの基になるプリミティブ型を指定できます。
 
 * [Point](/ja/reference/data-types/geo#point)
+* [MultiPoint](/ja/reference/data-types/geo#multipoint)
 * [Ring](/ja/reference/data-types/geo#ring)
 * [Polygon](/ja/reference/data-types/geo#polygon)
 * [MultiPolygon](/ja/reference/data-types/geo#multipolygon)
@@ -38,6 +40,7 @@ WKT(geo_data)
 **戻り値**
 
 * Point の場合は、WKT 幾何オブジェクト `POINT` が返されます。
+* MultiPoint の場合は、WKT 幾何オブジェクト `MULTIPOINT` が返されます。
 * Polygon の場合は、WKT 幾何オブジェクト `POLYGON` が返されます。
 * MultiPolygon の場合は、WKT 幾何オブジェクト `MULTIPOLYGON` が返されます。
 * LineString の場合は、WKT 幾何オブジェクト `LINESTRING` が返されます。
@@ -253,6 +256,44 @@ SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6)
 
 ```response
 [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
+```
+
+<div id="readwktmultipoint">
+  ## readWKTMultiPoint
+</div>
+
+MultiPoint ジオメトリの Well-Known Text (WKT) 表現を解析し、ClickHouse の内部フォーマットで返します。
+
+<div id="syntax">
+  ### 構文
+</div>
+
+```sql
+readWKTMultiPoint(wkt_string)
+```
+
+<div id="arguments">
+  ### 引数
+</div>
+
+* `wkt_string`: MultiPoint ジオメトリを表す入力WKT文字列。
+
+<div id="returned-value">
+  ### 戻り値
+</div>
+
+この関数は、マルチポイントジオメトリの ClickHouse 内部表現を返します。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)');
+```
+
+```response
+[(1,1),(2,2),(3,3)]
 ```
 
 <div id="readwktring">
@@ -500,6 +541,44 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
 </div>
 
 UInt8。false の場合は 0、true の場合は 1
+
+<div id="readwkbmultipoint">
+  ## readWKBMultiPoint
+</div>
+
+MultiPoint ジオメトリの Well-Known Binary (WKB) 表現を解析し、ClickHouse の内部フォーマットで返します。
+
+<div id="syntax">
+  ### 構文
+</div>
+
+```sql
+readWKBMultiPoint(wkb_string)
+```
+
+<div id="arguments">
+  ### 引数
+</div>
+
+* `wkb_string`: MultiPointジオメトリを表す入力WKB文字列。
+
+<div id="returned-value">
+  ### 戻り値
+</div>
+
+この関数は、マルチポイントジオメトリの ClickHouse 内部表現を返します。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f000000000000f03f010100000000000000000000400000000000000040'));
+```
+
+```response
+[(1,1),(2,2)]
+```
 
 <div id="polygonsdistancespherical">
   ## polygonsDistanceSpherical
@@ -775,11 +854,11 @@ UInt8。false の場合は 0、true の場合は 1
   ## geometryIntersectCartesian
 </div>
 
-2 つのジオメトリが交差し、共通の Point、line、または領域を持つ場合に true を返します。
+2 つのジオメトリが交差し、共通の Point、線、または領域を持つ場合に true を返します。
 
 [`polygonsIntersectCartesian`](#polygonsintersectcartesian) とは異なり、任意の ジオメトリデータ型
-(`Point`、`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) を受け付け、共通の
-[`Geometry`](/ja/reference/data-types/geo#geometry) 型も含まれます。さらに、2 つの argument は異なる型でもかまいません。
+(`Point`、`MultiPoint`、`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) を受け付け、共通の
+[`Geometry`](/ja/reference/data-types/geo#geometry) 型も含まれます。さらに、2 つの 引数 は異なる型でもかまいません。
 
 座標はデカルト座標系です。
 
@@ -811,10 +890,10 @@ UInt8。false の場合は 0、true の場合は 1
   ## geometryIntersectSpherical
 </div>
 
-2 つのジオメトリが交差し (共通の点、線、または領域を持つ場合) 、true を返します。
+2 つのジオメトリが交差し (共通の Point、線、または領域を持つ場合) 、true を返します。
 
 [`polygonsIntersectSpherical`](#polygonsintersectspherical) とは異なり、任意のジオメトリデータ型
-(`Point`、`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) を受け付け、共通の
+(`Point`、`MultiPoint`、`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) を受け付け、共通の
 [`Geometry`](/ja/reference/data-types/geo#geometry) 型も含まれます。また、2 つの引数は異なる型でもかまいません。
 
 座標は理想的な球面上にあるものとして解釈されます。

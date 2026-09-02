@@ -18,16 +18,6 @@ import QuickstartCLI from "/snippets/managed-postgres/_quickstart_cli.mdx";
 </Visibility>
 
 <Visibility for="humans">
-<View title="CLI">
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
-
-You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
-
-<QuickstartCLI />
-
-</View>
-
 <View title="Cloud UI">
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
@@ -253,7 +243,7 @@ While Postgres excels at transactional workloads (OLTP), ClickHouse is purpose-b
 This section shows you how to replicate your Postgres data to ClickHouse and query it seamlessly.
 
 ### Setup ClickHouse integration {#setup-integrate-clickhouse}
-Now that we have tables and data in Postgres, let's replicate the tables to ClickHouse for analytics. We start by clicking on **ClickHouse integration** in the sidebar. Then you can click on **Replicate data in ClickHouse**.
+Now that we have tables and data in Postgres, let's replicate the tables to ClickHouse for analytics. We start by clicking on **Sync to ClickHouse** in the sidebar. Then you can click on **Replicate data in ClickHouse**.
 <Image img="/images/managed-postgres/integration-landing.webp" alt="ClickHouse Managed Postgres integration empty" size="md" border/>
 In the form that follows, you can enter a name for your integration and select an existing ClickHouse instance to replicate to. If you don't have a ClickHouse instance yet, you can create one directly from this form.
 <Info>
@@ -292,6 +282,14 @@ CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
 Replace `<clickhouse_cloud_host>` with your ClickHouse hostname and `<database_name>` with the database you selected during replication setup. You can find the hostname in your ClickHouse service by clicking **Connect** in the sidebar.
 
 <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="Get ClickHouse host" size="md" border/>
+
+<Note>
+If you're using the ClickHouse Cloud console to run SQL, grant the console admin user access to the foreign server:
+
+```sql
+GRANT USAGE ON FOREIGN SERVER ch TO chpg_console_admin;
+```
+</Note>
 
 Now, we map the Postgres user to the ClickHouse service's credentials:
 ```sql
@@ -414,6 +412,16 @@ To delete the resources created in this quickstart:
 
 1. First, delete the ClickPipe integration from the ClickHouse service
 2. Then, delete the ClickHouse Managed Postgres instance from the Cloud Console
+
+</View>
+
+<View title="CLI">
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
+
+You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
+
+<QuickstartCLI />
 
 </View>
 </Visibility>

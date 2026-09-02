@@ -1,5 +1,9 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
 
+#include <unordered_map>
+
+#include <fmt/ranges.h>
+
 #if USE_ORC
 
 #include <Common/assert_cast.h>
@@ -11,6 +15,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsCommon.h>
 
@@ -20,10 +25,12 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NestedUtils.h>
 
+#include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -60,6 +67,33 @@ orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
 
+/// Two ORC types get the same key exactly when `parseORCType` (NativeORCBlockInputFormat.cpp) reads
+/// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, and a nested
+/// `UNION` reads as a `Variant`, which sorts its branches, while ORC keeps them positional.
+/// A field name is length-prefixed so a name containing `:` or `,` cannot forge another key.
+String orcTypeDedupKey(const orc::Type & type)
+{
+    const auto kind = type.getKind();
+    if (kind == orc::TypeKind::BINARY || kind == orc::TypeKind::STRING)
+        return "string";
+    if (kind == orc::TypeKind::DECIMAL)
+        return fmt::format("decimal({},{})", type.getPrecision(), type.getScale());
+
+    std::vector<String> children;
+    for (size_t i = 0; i < type.getSubtypeCount(); ++i)
+    {
+        auto child = orcTypeDedupKey(*type.getSubtype(i));
+        if (kind == orc::TypeKind::STRUCT)
+            child = fmt::format("{}:{}:{}", type.getFieldName(i).size(), type.getFieldName(i), child);
+        children.push_back(std::move(child));
+    }
+    if (kind == orc::TypeKind::UNION)
+        std::sort(children.begin(), children.end());
+    /// Every remaining kind the writer emits is a parameterless primitive mapping to a distinct
+    /// ClickHouse type, so for those the kind alone is the key and there are no children.
+    return fmt::format("{}<{}>", static_cast<int>(kind), fmt::join(children, ","));
+}
+
 }
 
 ORCOutputStream::ORCOutputStream(WriteBuffer & out_) : out(out_) {}
@@ -93,7 +127,12 @@ ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader head
 std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const String & column_path)
 {
     /// Nullable(T) maps to the same ORC node as T; only the Iceberg `required` flag differs.
-    const bool required = !type->isNullable();
+    /// A complex container (list/map/struct) is never wrapped in Nullable, so its Iceberg
+    /// optionality is not recoverable from the type: consult the per-path Iceberg metadata when
+    /// present, else fall back to the type (also for non-Iceberg writes and field-id-only mappers).
+    bool required = !type->isNullable();
+    if (column_mapper && column_mapper->hasIcebergRequiredInfo())
+        required = !column_mapper->isIcebergOptionalPath(column_path);
     const DataTypePtr unwrapped = removeNullable(type);
 
     std::unique_ptr<orc::Type> result;
@@ -229,6 +268,34 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
                 getORCType(map_type->getKeyType(), Nested::concatenateName(column_path, "key")),
                 getORCType(map_type->getValueType(), Nested::concatenateName(column_path, "value"))
                 );
+            break;
+        }
+        case TypeIndex::Variant:
+        {
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*unwrapped);
+            auto union_type = orc::createUnionType();
+            /// ORC keeps one physical stream per union branch and identifies a branch only by its
+            /// ORC type, so two variants that map to the same ORC type (e.g. `Int32` and `UInt32`,
+            /// both ORC `int`) would produce a union with duplicate branches, which the reader
+            /// rejects. Branches whose ORC types merely read back as one ClickHouse type collide the
+            /// same way, so they are keyed by `orcTypeDedupKey` rather than by the ORC type itself.
+            std::unordered_map<String, std::pair<String, String>> variant_by_orc_type;
+            /// A union child is addressed by its type name, the way a `Variant` subcolumn is
+            /// (`v.Int32`). Iceberg has no union type, so no field id is expected to be found there.
+            for (const auto & nested_type : variant_type.getVariants())
+            {
+                auto child_type = getORCType(nested_type, Nested::concatenateName(column_path, nested_type->getName()));
+                auto [it, inserted] = variant_by_orc_type.emplace(
+                    orcTypeDedupKey(*child_type), std::pair{nested_type->getName(), child_type->toString()});
+                if (!inserted)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Type {} is not supported for ORC output format: variant {} is written as ORC type '{}' and variant {} as "
+                        "'{}', which are read back as the same type, and ORC unions with duplicate branch types cannot be read back",
+                        unwrapped->getName(), it->second.first, it->second.second, nested_type->getName(), child_type->toString());
+                union_type->addUnionChild(std::move(child_type));
+            }
+            result = std::move(union_type);
             break;
         }
         default:
@@ -590,6 +657,42 @@ void ORCBlockOutputFormat::writeColumn(
             writeColumn(values_orc_column, *nested_columns[1], value_type, nullptr);
             break;
         }
+        case TypeIndex::Variant:
+        {
+            auto & union_orc_column = dynamic_cast<orc::UnionVectorBatch &>(orc_column);
+            const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+            const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
+
+            /// The ORC union branches are created in the same order as the Variant's variants (see
+            /// getORCType), so a global discriminator is exactly the ORC tag. A Variant NULL row (the
+            /// NULL discriminator) is written as a NULL union row.
+            bool has_nulls = orc_column.hasNulls;
+            for (size_t i = 0; i < rows; ++i)
+            {
+                auto global_discr = variant_column.globalDiscriminatorAt(i);
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || (null_bytemap && (*null_bytemap)[i]))
+                {
+                    union_orc_column.notNull[i] = 0;
+                    union_orc_column.tags[i] = 0;
+                    union_orc_column.offsets[i] = 0;
+                    has_nulls = true;
+                }
+                else
+                {
+                    union_orc_column.tags[i] = static_cast<unsigned char>(global_discr);
+                    union_orc_column.offsets[i] = variant_column.offsetAt(i);
+                }
+            }
+            union_orc_column.hasNulls = has_nulls;
+
+            /// Each branch column already contains exactly the rows routed to it (in offset order).
+            for (size_t i = 0; i < variant_types.size(); ++i)
+            {
+                auto nested_type = variant_types[i];
+                writeColumn(*union_orc_column.children[i], variant_column.getVariantByGlobalDiscriminator(i), nested_type, nullptr);
+            }
+            break;
+        }
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
     }
@@ -634,6 +737,7 @@ void ORCBlockOutputFormat::prepareWriter()
 {
     const Block & header = getPort(PortKind::Main).getHeader();
     schema = orc::createStructType();
+    options.setMemoryPool(&getORCMemoryPool());
     options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
     options.setRowIndexStride(format_settings.orc.output_row_index_stride);
     options.setDictionaryKeySizeThreshold(format_settings.orc.output_dictionary_key_size_threshold);

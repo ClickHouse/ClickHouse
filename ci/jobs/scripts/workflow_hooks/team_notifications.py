@@ -3,7 +3,7 @@ import sys
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 
-integrations_ecosystem_files = ["src/Core/TypeId.h"]
+INTEGRATIONS_ECOSYSTEM_FILES = ("src/Core/TypeId.h",)
 
 
 def check():
@@ -15,14 +15,17 @@ def check():
         "most likely failed to fetch the PR file list from the GitHub API. "
         "See the Config Workflow logs for the underlying error."
     )
-    for file in changed_files:
-        if any(file.startswith(f) for f in integrations_ecosystem_files):
-            GH.post_updateable_comment(
-                comment_tags_and_bodies={
-                    "team_notification": "@ClickHouse/integrations team,  please, take a look"
-                }
-            )
-            break
+
+    if any(
+        file.startswith(prefix)
+        for file in changed_files
+        for prefix in INTEGRATIONS_ECOSYSTEM_FILES
+    ):
+        GH.post_updateable_comment(
+            comment_tags_and_bodies={
+                "team_notification": "@ClickHouse/integrations team,  please, take a look"
+            }
+        )
 
     return True
 

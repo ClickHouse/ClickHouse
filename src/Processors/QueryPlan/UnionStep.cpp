@@ -1,6 +1,9 @@
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Common/NaNUtils.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
@@ -20,6 +23,16 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
+}
+
+static bool containsAggregateStateColumn(const IColumn & column)
+{
+    if (typeid_cast<const ColumnAggregateFunction *>(&column))
+        return true;
+
+    bool found = false;
+    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || containsAggregateStateColumn(*subcolumn); });
+    return found;
 }
 
 static SharedHeader checkHeaders(const SharedHeaders & input_headers)
@@ -59,6 +72,17 @@ static SharedHeader checkHeaders(const SharedHeaders & input_headers)
     {
         if (!common[col].column || !isColumnConst(*common[col].column))
             continue;
+
+        /// Aggregate-state values cannot be compared as `Field`: the comparison throws when the
+        /// aggregate function type names differ, and they may legitimately differ between branches
+        /// when the functions have the same state representation (e.g. `quantileState` and
+        /// `quantilesState(0.9)`). Don't keep constness for them, materialize instead.
+        if (containsAggregateStateColumn(assert_cast<const ColumnConst &>(*common[col].column).getDataColumn()))
+        {
+            common[col].column = common[col].column->convertToFullColumnIfConst();
+            materialized = true;
+            continue;
+        }
 
         const Field value = assert_cast<const ColumnConst &>(*common[col].column).getField();
         bool keep_const = true;
@@ -196,17 +220,26 @@ void UnionStep::describePipeline(FormatSettings & settings) const
 
 void UnionStep::serialize(Serialization & ctx) const
 {
-    (void)ctx;
+    /// Only the planner knows whether this union may be narrowed (SQL UNION) or feeds an
+    /// order-sensitive consumer that forbids it, so the flag must survive the round trip.
+    /// `max_threads` is intentionally not serialized: zero makes `updatePipeline` derive it from the
+    /// executing server's own settings, which is the right source for a per-machine thread cap.
+    UInt8 flags = 0;
+    if (allow_narrowing)
+        flags |= 1;
+    writeIntBinary(flags, ctx.out);
 }
 
 QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 {
-    return std::make_unique<UnionStep>(ctx.input_headers);
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    return std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);
 }
 
 QueryPlanStepPtr UnionStep::clone() const
 {
-    return std::make_unique<UnionStep>(*this);
+    return std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
 }
 
 void registerUnionStep(QueryPlanStepRegistry & registry);

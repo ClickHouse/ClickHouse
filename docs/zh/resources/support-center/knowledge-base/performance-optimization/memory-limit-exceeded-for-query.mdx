@@ -6,10 +6,6 @@ tags: ['错误和异常']
 keywords: ['OOM', '超出内存限制']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <div id="troubleshooting-out-of-memory-issues">
@@ -30,8 +26,8 @@ ClickHouse Cloud 会自动、轻松地完成这项工作，以确保查询始终
 </div>
 
 对于内存密集型的聚合或排序场景，用户可以分别使用设置
-[`max_bytes_before_external_group_by`](/zh/reference/settings/session-settings#max_bytes_before_external_group_by)
-和 [`max_bytes_before_external_sort`](/zh/reference/settings/session-settings#max_bytes_ratio_before_external_sort)。
+[`max_bytes_before_external_group_by`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)
+和 [`max_bytes_before_external_sort`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)。
 前者已在[这里](/zh/reference/statements/select/group-by#group-by-in-external-memory)进行了详细讨论。
 
 简而言之，这可以确保当超过内存
@@ -40,7 +36,7 @@ ClickHouse Cloud 会自动、轻松地完成这项工作，以确保查询始终
 内存密集型排序问题。这在
 Distributed 环境中特别重要，因为协调节点会接收来自各个分片的已排序响应。
 在这种情况下，协调服务器可能需要对一个
-大于其可用内存的数据集进行排序。借助 [`max_bytes_before_external_sort`](/zh/reference/settings/session-settings#max_bytes_ratio_before_external_sort)，
+大于其可用内存的数据集进行排序。借助 [`max_bytes_before_external_sort`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)，
 可以允许排序结果落盘到磁盘。对于用户在 `GROUP BY` 后使用带有 `LIMIT` 的 `ORDER BY` 的情况，
 这一设置同样很有帮助，尤其是在 Distributed 查询中。
 
@@ -53,7 +49,7 @@ Distributed 环境中特别重要，因为协调节点会接收来自各个分�
 而且通常也有最佳性能。该算法会将 `JOIN` 的右侧表加载到内存中的哈希
 表中，然后用它来匹配左侧表。因此，为了尽量减少内存占用，
 用户应将较小的表放在右侧。不过，这种方法在受内存限制的场景下
-仍然存在局限。在这类情况下，可以通过 [`join_algorithm`](/zh/reference/settings/session-settings#join_algorithm)
+仍然存在局限。在这类情况下，可以通过 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm)
 设置启用 `partial_merge`
 连接。作为 [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) 的一种变体，
 它会先将右侧表按块排序，并为这些块创建 min-max index。

@@ -10,4 +10,7 @@ $CLICKHOUSE_CLIENT --query "
 INSERT INTO TABLE FUNCTION s3('http://localhost:11111/test/content-type.csv', 'test', 'testtest', 'CSV', 'number UInt64') SELECT number FROM numbers(1000000) SETTINGS s3_max_single_part_upload_size = 10000, s3_truncate_on_insert = 1;
 "
 
-aws --endpoint-url http://localhost:11111 s3api head-object --bucket test --key content-type.csv | grep Content | sed 's/[ \t,"]*//g'
+# pass the credentials explicitly - the S3 server setup does not write ~/.aws,
+# and ambient credentials (an instance role, a real profile) are not authorized
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=testtest AWS_DEFAULT_REGION=us-east-1 \
+    aws --endpoint-url http://localhost:11111 s3api head-object --bucket test --key content-type.csv | grep Content | sed 's/[ \t,"]*//g'

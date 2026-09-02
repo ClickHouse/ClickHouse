@@ -9,7 +9,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
@@ -118,6 +117,12 @@ public:
     /// In this case we shouldn't use read in order optimization.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
+    /// Whether LIMIT lazy materialization can be used for the data snapshot pinned in the
+    /// storage metadata snapshot (see ReadFromObjectStorageStep::canUseLazyMaterialization).
+    /// It requires that every data file can be re-read by physical row numbers with the
+    /// deferred columns pruned from the main read.
+    virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
+
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
@@ -138,7 +143,7 @@ public:
     virtual bool optimize(
         const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
-        return false;
+        throwNotImplemented("optimize");
     }
 
     virtual bool supportsDelete() const { return false; }
