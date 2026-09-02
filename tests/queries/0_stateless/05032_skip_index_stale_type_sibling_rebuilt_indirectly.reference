@@ -32,3 +32,14 @@
 0
 64
 64
+-- 32b. the MATERIALIZED column the sibling index reads may hop through an ALIAS
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64

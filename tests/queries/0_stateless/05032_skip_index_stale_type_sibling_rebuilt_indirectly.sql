@@ -2,7 +2,7 @@
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
--- Cases 30-32 of the series started in 04165_skip_index_stale_type_after_alter and continued in
+-- Cases 30-32b of the series started in 04165_skip_index_stale_type_after_alter and continued in
 -- 04869_skip_index_stale_type_absent_column: the sibling index that decides whether the mutation may
 -- record an absent column is rebuilt through something the commands do not name -- a column TTL, a
 -- `MATERIALIZE TTL`, or a `MATERIALIZED` column. The series is split across files because one test
@@ -117,6 +117,49 @@ SELECT count() FROM t_sibling_materialized_rebuilt WHERE c = '150' SETTINGS use_
 SELECT count() FROM t_sibling_materialized_rebuilt WHERE c = '';
 SELECT count() FROM t_sibling_materialized_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 32b. the MATERIALIZED column the sibling index reads may hop through an ALIAS';
+-- Case 32 with one change: m reads the table ALIAS a_alias rather than e directly. An ALIAS is
+-- computed on read and is not a source column, so the dependency analysis has to expand it exactly
+-- as `MutationsInterpreter` does; resolving the name against the physical columns alone throws
+-- `UNKNOWN_IDENTIFIER` and leaves the mutation unfinished.
+DROP TABLE IF EXISTS t_sibling_materialized_alias_rebuilt;
+CREATE TABLE t_sibling_materialized_alias_rebuilt (
+    k UInt64,
+    d DateTime,
+    c String TTL d + INTERVAL 1 SECOND,
+    e UInt64,
+    a_alias UInt64 ALIAS e * 2,
+    m UInt64 MATERIALIZED a_alias,
+    INDEX idx_old (c, m) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_sibling_materialized_alias_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), number FROM numbers(64);
+ALTER TABLE t_sibling_materialized_alias_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_alias_rebuilt' AND active AND column = 'c';
+ALTER TABLE t_sibling_materialized_alias_rebuilt MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_materialized_alias_rebuilt ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_materialized_alias_rebuilt UPDATE e = e + 1 WHERE 1, MATERIALIZE INDEX idx_new
+    SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_materialized_alias_rebuilt;
+-- The mutation must have gone through on the first attempt: a throw here is retried after a restart,
+-- so only the recorded failure reason tells the two apart.
+SELECT countIf(latest_fail_reason != '') = 0 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_alias_rebuilt';
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_alias_rebuilt' AND active AND column = 'c';
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_alias_rebuilt';
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '150';
+SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '150' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '';
+SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_sibling_ttl_rebuilt;
 DROP TABLE t_sibling_materialize_ttl_rebuilt;
 DROP TABLE t_sibling_materialized_rebuilt;
+DROP TABLE t_sibling_materialized_alias_rebuilt;

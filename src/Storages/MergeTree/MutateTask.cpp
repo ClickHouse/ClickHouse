@@ -1,3 +1,4 @@
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTAlterQuery.h>
@@ -23,7 +24,6 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -345,35 +345,30 @@ static NameSet collectIndicesRebuiltByMutation(
     if (!updated_columns.empty())
     {
         const auto & columns = metadata_snapshot->getColumns();
-        NamesAndTypesList all_columns = columns.getAllPhysical();
-        std::unordered_set<String> ephemeral_columns;
-        for (const auto & column : columns.getEphemeral())
-        {
-            ephemeral_columns.insert(column.name);
-            all_columns.push_back(column);
-        }
+
+        /// The same graph `MutationsInterpreter::prepare` walks, so a `MATERIALIZED` default reading
+        /// an `ALIAS` column is normalized here exactly as it is there. Spelling the analysis out
+        /// again would resolve the alias against the physical columns alone and throw
+        /// `UNKNOWN_IDENTIFIER` on a schema the interpreter accepts.
+        MaterializedColumnDependencies dependency_graph(columns, context);
 
         std::unordered_map<String, NameSet> materialized_dependencies;
         const auto & part_columns = part->getColumnsDescription();
         for (const auto & column : columns)
         {
-            if (column.default_desc.kind != ColumnDefaultKind::Materialized
-                || !column.default_desc.expression
-                || !part_columns.has(column.name))
+            if (!part_columns.has(column.name))
                 continue;
 
-            auto expression = column.default_desc.expression->clone();
-            replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression, all_columns);
-            auto syntax_result = TreeRewriter(context).analyze(expression, all_columns);
-            auto required_columns = syntax_result->requiredSourceColumns();
+            const auto * materialized = dependency_graph.findNode(column.name);
 
-            if (std::ranges::any_of(required_columns, [&](const auto & dependency)
-                { return ephemeral_columns.contains(dependency); }))
+            /// A column reading an EPHEMERAL one is never recomputed outside `INSERT`, so the
+            /// interpreter leaves its stored value alone and no index over it is rebuilt.
+            if (!materialized || materialized->reads_ephemeral)
                 continue;
 
             materialized_dependencies.emplace(
                 column.name,
-                NameSet(required_columns.begin(), required_columns.end()));
+                NameSet(materialized->dependencies.begin(), materialized->dependencies.end()));
         }
 
         NameSet reachable = updated_columns;
