@@ -362,6 +362,21 @@ void MergingSortedAlgorithm::insertChunk(size_t source_num)
     }
 }
 
+IMergingAlgorithm::Status MergingSortedAlgorithm::forwardVirtualRow(size_t source_num)
+{
+    /// Forward the announcement in the form `VirtualRowTransform` emits it: an empty chunk whose
+    /// key lives in the chunk info. The row `setVirtualRow` materialized for the cursor would pass
+    /// for data in the transforms between this merge and the next one (a preliminary DISTINCT
+    /// remembers it and drops the real rows with the same key).
+    Chunk consumed = std::move(current_inputs[source_num].chunk);
+    Chunk boundary(header->cloneEmptyColumns(), 0);
+    boundary.setChunkInfos(std::move(consumed.getChunkInfos()));
+
+    Status result(std::move(boundary));
+    result.required_source = source_num;
+    return result;
+}
+
 template <typename TSortingHeap>
 IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue)
 {
@@ -385,9 +400,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
                     return Status(merged_data.pull());
 
                 queue.removeTop();
-                Status result(std::move(current_inputs[source_num].chunk));
-                result.required_source = source_num;
-                return result;
+                return forwardVirtualRow(source_num);
             }
 
             /// Get the next block from the corresponding source, if there is one.
@@ -485,9 +498,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
                         return Status(merged_data.pull());
 
                     queue.removeTop();
-                    Status result(std::move(current_inputs[source_num].chunk));
-                    result.required_source = source_num;
-                    return result;
+                    return forwardVirtualRow(source_num);
                 }
 
                 /// Get the next block from the corresponding source, if there is one.

@@ -81,6 +81,10 @@ private:
     template <typename TSortingQueue>
     Status mergeBatchImpl(TSortingQueue & queue);
 
+    /// Re-emits the virtual row consumed from `source_num` as this merge's own boundary
+    /// announcement and asks the source for its next chunk.
+    Status forwardVirtualRow(size_t source_num);
+
     bool hasFilter() const { return filter_column_position != -1; }
     void insertRow(const SortCursorImpl & current);
     void insertRows(const SortCursorImpl & current, size_t num_rows);
