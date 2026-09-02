@@ -73,10 +73,17 @@ do
     sleep 0.5
 done
 
-# Read once more now that a row has arrived: a split pass writes a second `MutatePart`, and counting
-# it is the whole point of this assertion, so what is printed has to be the settled count rather
-# than whichever value the poll happened to break on.
-echo -en 'mutate_parts\t'
-count_mutate_parts
+# The count alone cannot prove coalescing: a split pass commits each replacement part before
+# enqueueing its own `MutatePart`, so the first event can be visible while the second is still on
+# its way, and any read then sees exactly one row. `mutation_ids` settles it from a single row - a
+# coalesced pass carries both mutation ids in one event, a split pass one id per event - so the
+# assertion holds even when a second event has not arrived yet.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'mutate_parts', count(), 'mutation_ids', max(length(mutation_ids))
+    FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_clear_coalesced_mutation'
+      AND event_type = 'MutatePart'
+      AND toUnixTimestamp64Micro(event_time_microseconds) > ${run_start}"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_clear_coalesced_mutation"
