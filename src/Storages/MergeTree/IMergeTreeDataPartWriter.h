@@ -88,7 +88,7 @@ protected:
     /// True if `column_name` uses the default codec (no `CODEC` clause, or an explicit lone `CODEC(Default)`).
     bool columnUsesDefaultCodec(const String & column_name) const;
 
-    /// Codec for a default-coded substream: adaptive when enabled and the substream is eligible, else `resolved_codec`.
+    /// Codec for a default-coded substream: adaptive when enabled and the substream is typed, else `resolved_codec`.
     CompressionCodecPtr maybeAdaptiveDefaultCodec(
         bool column_uses_default_codec, const ISerialization::SubstreamPath & substream_path, CompressionCodecPtr resolved_codec) const;
 

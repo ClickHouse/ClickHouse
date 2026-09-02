@@ -189,13 +189,6 @@ bool IMergeTreeDataPartWriter::columnUsesDefaultCodec(const String & column_name
 CompressionCodecPtr IMergeTreeDataPartWriter::maybeAdaptiveDefaultCodec(
     bool column_uses_default_codec, const ISerialization::SubstreamPath & substream_path, CompressionCodecPtr resolved_codec) const
 {
-    /// A structural substream goes adaptive if its serialized bytes = declared type and a candidate wins on size without losing read speed.
-    /// Excluded: null maps (adaptive wins size but reads slower), `SparseOffsets` (`UInt64` in memory, varint on disk).
-    const auto kind = substream_path.back().type;
-    const bool is_size_substream = kind == ISerialization::Substream::ArraySizes || kind == ISerialization::Substream::StringSizes;
-    if (!is_size_substream && !ISerialization::isSpecialCompressionAllowed(substream_path))
-        return resolved_codec;
-
     const auto & substream_type = substream_path.back().data.type;
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting default.
     if (settings.apply_adaptive_codec && column_uses_default_codec && substream_type && !resolved_codec->isEncryption())
