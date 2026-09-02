@@ -3,8 +3,8 @@
 -- replicas replace, and the `RIGHT JOIN` shapes below hit the unrelated logical error of
 -- https://github.com/ClickHouse/ClickHouse/issues/113292 there.
 
--- Equi-key `WHERE` predicates must reach the left `MergeTree` input of a `RIGHT JOIN` as an index
--- condition, including when the two `USING` keys differ in type.
+-- Equi-key `WHERE` predicates must reach the opposite `MergeTree` input of a `RIGHT JOIN` or a plain
+-- `INNER JOIN` as an index condition, including when the two join keys differ in type.
 --
 -- Analyzer only. Under `enable_analyzer = 0` a `USING` key is renamed to `<table>.<key>` in the right
 -- input header while the `JOIN` output keeps the bare name, so the equivalence maps are keyed by a name
@@ -190,3 +190,50 @@ SET join_use_nulls = 0;
 
 DROP TABLE mt_u32;
 DROP TABLE mt_i32;
+
+-- A plain `INNER JOIN` leaves both inputs open to a pushed-down filter, so a cross-type equi-key must
+-- reach the opposite input there too. The side ordered by `tuple()` can never prune, so a read that
+-- prunes granules is unambiguously the other one; the assertion compares the two granule counts rather
+-- than matching a literal total, which depends on the part layout.
+
+DROP TABLE IF EXISTS inner_d32;
+DROP TABLE IF EXISTS inner_d;
+DROP TABLE IF EXISTS inner_d32_key;
+CREATE TABLE inner_d32     (a Date32) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE inner_d       (b Date)   ENGINE = MergeTree ORDER BY b
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE inner_d32_key (a Date32) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO inner_d32     SELECT toDate32('2020-01-01') + number FROM numbers(40000);
+INSERT INTO inner_d       SELECT toDate('2020-01-01')   + number FROM numbers(40000);
+INSERT INTO inner_d32_key SELECT toDate32('2020-01-01') + number FROM numbers(40000);
+
+SELECT 'INNER JOIN ON, cross-type equi-key, predicate on the wider key: right MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
+
+SELECT 'INNER JOIN ON, cross-type equi-key, wider key on the right: left MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT count() FROM inner_d AS l INNER JOIN inner_d32 AS r ON l.b = r.a
+    WHERE r.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
+
+SELECT 'INNER JOIN ON, matched types: right MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d32_key AS r ON l.a = r.a
+    WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
+
+SELECT 'INNER JOIN ON, cross-type equi-key: result';
+SELECT r.b FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03') ORDER BY 1;
+
+DROP TABLE inner_d32;
+DROP TABLE inner_d;
+DROP TABLE inner_d32_key;

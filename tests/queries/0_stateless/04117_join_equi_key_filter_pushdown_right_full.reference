@@ -48,3 +48,13 @@ FULL JOIN USING, cross-type: neither MergeTree prunes granules
 1
 FULL JOIN USING, cross-type, join_use_nulls: neither MergeTree prunes granules
 1
+INNER JOIN ON, cross-type equi-key, predicate on the wider key: right MergeTree prunes granules
+1
+INNER JOIN ON, cross-type equi-key, wider key on the right: left MergeTree prunes granules
+1
+INNER JOIN ON, matched types: right MergeTree prunes granules
+1
+INNER JOIN ON, cross-type equi-key: result
+2020-06-01
+2020-06-02
+2020-06-03

@@ -738,9 +738,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
     std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
 
-    if (logical_join
-        && (!left_stream_filter_push_down_input_columns_available
-            || !right_stream_filter_push_down_input_columns_available))
+    /// Availability is applied per map below, so a pair registered for a side that cannot take the filter is inert.
+    if (logical_join)
     {
         const auto & join_output_header = *join_header;
 
