@@ -84,6 +84,11 @@ public:
     /// if the allocation is over budget again, the next `renew` corrects it. Call only after a
     /// `park` that returned true. Default is a no-op.
     virtual void unpark() {}
+
+    /// Whether parking is enabled for this lease (captured once at construction from the
+    /// `cpu_slot_parking` server setting). When false the executor does not publish this lease
+    /// as the current CPU lease, so `park`/`unpark` are never invoked and there is no overhead.
+    virtual bool isParkingEnabled() const { return false; }
 };
 
 using SlotLeasePtr = std::shared_ptr<ISlotLease>;

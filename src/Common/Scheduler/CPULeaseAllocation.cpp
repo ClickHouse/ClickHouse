@@ -115,6 +115,11 @@ void CPULeaseAllocation::Lease::unpark()
         parent->unparkLease(*this);
 }
 
+bool CPULeaseAllocation::Lease::isParkingEnabled() const
+{
+    return parent ? parent->settings.parking_enabled : false;
+}
+
 void CPULeaseAllocation::Lease::reset()
 {
     if (parent->settings.trace_cpu_scheduling)

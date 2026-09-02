@@ -80,9 +80,15 @@ struct WorkloadResources
             // startConsumption, which must be called from that thread).
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
-            prev_cpu_lease = getCurrentCPULease();
-            setCurrentCPULease(lease);
-            publishes_lease = true;
+            // Publish as the current CPU lease only when parking is enabled (captured at lease
+            // construction from `cpu_slot_parking`); otherwise the park guards find no current
+            // lease and are a no-op, so a server with parking disabled pays zero overhead.
+            if (lease->isParkingEnabled())
+            {
+                prev_cpu_lease = getCurrentCPULease();
+                setCurrentCPULease(lease);
+                publishes_lease = true;
+            }
         }
     }
 
@@ -618,6 +624,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                             .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
                             .workload = query_context->getSettingsRef()[Setting::workload],
                             .trace_cpu_scheduling = trace_cpu_scheduling,
+                            .parking_enabled = query_context->getCPUSlotParking(),
                         },
                         initial_max);
                 }
