@@ -18,6 +18,7 @@ public:
 
 protected:
     bool supportsColumnsMask() const override { return true; }
+    Block getFilterSampleBlock() const override;
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

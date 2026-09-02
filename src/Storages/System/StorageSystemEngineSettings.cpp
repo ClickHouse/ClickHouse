@@ -9,6 +9,8 @@
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Interpreters/Context.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Columns/ColumnString.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 
@@ -48,7 +50,31 @@ development and the expectations one might have when using them:
     };
 }
 
-void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
+Block StorageSystemEngineSettings::getFilterSampleBlock() const
+{
+    /// Must list every column of the block passed to filterBlockWithPredicate in getFilteredEngines.
+    return { { {}, std::make_shared<DataTypeString>(), "engine_name" } };
+}
+
+/// The engines a query can still be interested in. Enumerating a settings struct is not free - the
+/// `MergeTree` family alone is 366 rows per engine - so a query naming one engine should not pay
+/// for the other 56.
+static ColumnPtr getFilteredEngines(const StorageFactory::Storages & storages, const ActionsDAG::Node * predicate, ContextPtr context)
+{
+    MutableColumnPtr engine_column = ColumnString::create();
+    for (const auto & [engine_name, creator] : storages)
+    {
+        if (!creator.features.fill_engine_settings_fn || !creator.features.supports_settings)
+            continue;
+        engine_column->insert(engine_name);
+    }
+
+    Block block { ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine_name") };
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+    return block.getByPosition(0).column;
+}
+
+void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     const auto & storages = StorageFactory::instance().getAllStorages();
 
@@ -62,18 +88,12 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
     /// `system.merge_tree_settings`, which has no mask to pass on.
     const auto all_columns = getColumnsDescription().getAllPhysical();
 
-    for (const auto & [engine_name, creator] : storages)
-    {
-        const auto fill_fn = creator.features.fill_engine_settings_fn;
-        if (!fill_fn)
-            continue;
+    const auto filtered_engines = getFilteredEngines(storages, predicate, context);
 
-        /// An engine that does not accept a `SETTINGS` clause at `CREATE` must not advertise
-        /// settings here. `Hudi` shares `DataLakeStorageSettings` with the other data lake
-        /// engines, and so inherits their fill function, but is registered with
-        /// `supports_settings = false` - listing 356 settings it rejects would be misleading.
-        if (!creator.features.supports_settings)
-            continue;
+    for (size_t engine_index = 0; engine_index < filtered_engines->size(); ++engine_index)
+    {
+        const String engine_name{filtered_engines->getDataAt(engine_index)};
+        const auto fill_fn = storages.at(engine_name).features.fill_engine_settings_fn;
 
         /// Every column except `engine_name`, which is per engine rather than per setting.
         MutableColumns setting_columns;
