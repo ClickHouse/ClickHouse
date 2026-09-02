@@ -103,9 +103,10 @@ Run SQL against a Cloud service over HTTP via the Query API — no local `clickh
 clickhousectl cloud service query --id <service-id> -q 'SELECT 1'
 clickhousectl cloud service query --name my-service -q 'SELECT version()'
 
-# Run queries from a file (use "-" for stdin), choosing an output format
+# Run a query from a SQL file (use "-" for stdin), choosing an output format.
+# The file must hold a single statement
 clickhousectl cloud service query --id <service-id> \
-  --queries-file schema.sql --format JSONEachRow
+  --queries-file report.sql --format JSONEachRow
 
 # With neither --query nor --queries-file, SQL is read from stdin
 echo 'SELECT 1' | clickhousectl cloud service query --id <service-id>
@@ -114,15 +115,15 @@ echo 'SELECT 1' | clickhousectl cloud service query --id <service-id>
 clickhousectl cloud service repair-query-key <service-id>
 ```
 
-With API key authentication, queries run with read and write access. With OAuth, SQL runs as your cloud user with read-only access (`SELECT` only).
+With API key authentication, queries run with read and write access. The authenticated key is used directly when the service's query endpoint already authorizes it; otherwise the first query provisions a query endpoint and a per-service read/write key and stores that key in `.clickhouse/credentials.json`. Pass `--no-auto-enable` to fail instead of provisioning. With OAuth, SQL runs as your cloud user with read-only access (`SELECT` only), and nothing is provisioned.
 
 Things to know:
 
-- `--query` and `--queries-file` are mutually exclusive. Stdin is read only when neither is given — it is silently ignored alongside `--query`.
-- SQL containing several `;`-separated statements is split and the statements are sent in order, one per request. Execution stops at the first failure, and there is no transaction, so a failed script can leave partial changes behind.
-- The default output format is `PrettyCompact` on a terminal and `TabSeparated` when piped. `--json` selects `JSONEachRow` and cannot be combined with `--format`.
-- A stored Query API key that the endpoint rejects with HTTP 401/403 is never replaced automatically. Repair only that credential with `clickhousectl cloud service repair-query-key <service-id>`.
-- For queries that may exceed the Query API timeout, run `clickhousectl local use latest` to put the standard `clickhouse` binary on `PATH` and connect with `clickhouse client` instead.
+- `service query` runs a single statement per request. Multi-statement SQL is rejected by the Query API, whichever way it arrives — `--query`, `--queries-file`, or stdin — with `Error: SQL error 62: Syntax error (Multi-statements are not allowed)`. A trailing `;` on a single statement is fine. For scripts, run `clickhousectl local use latest` and use `clickhouse client` against the service instead.
+- `--query` and `--queries-file` are mutually exclusive (exit code 2). Stdin is read only when neither is given. `--query` never reads stdin, so redirecting or piping data alongside it is a hard error rather than a silent no-op: `Error: --query cannot be combined with SQL or data on stdin.` Send an `INSERT` and its data as a single stream instead — `printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <service-id>` — or read a whole statement from stdin with `--queries-file -`.
+- The default output format is `PrettyCompact` on a terminal and `TabSeparated` when piped. `--json` selects `JSONEachRow` and cannot be combined with `--format` (exit code 2).
+- A stored Query API key that the endpoint rejects with HTTP 401/403 is never replaced automatically; the CLI reads the key's management record only to report why. Replace that one credential with `clickhousectl cloud service repair-query-key <service-id>`, which also deletes the key it replaced. On a running service it exits 0 only once a probe query with the new key succeeds, reported under `verification` in `--json` output. If the Query API still rejects the key when the readiness window ends the command exits 1, but the repair stands: do not rerun it, run `cloud service query` instead.
+- The Query API times out after about 30 seconds; the statement keeps running on the service, but the result is lost. For anything longer, run `clickhousectl local use latest` to put the standard `clickhouse` binary on `PATH` and connect with `clickhouse client --host <host> --secure --port 9440 --user default --password <password>` instead.
 
 ### Service endpoints and configuration {#service-endpoints-and-configuration}
 
@@ -140,12 +141,17 @@ clickhousectl cloud service private-endpoint create <service-id> --endpoint-id <
 # Backup configuration
 clickhousectl cloud service backup-config get <service-id>
 clickhousectl cloud service backup-config update <service-id> --backup-period-hours 24
+clickhousectl cloud service backup-config update <service-id> \
+  --backup-start-time 02:00 --backup-period-hours 24
+clickhousectl cloud service backup-config update <service-id> --clear-backup-start-time
 
 # Prometheus metrics for a service (always raw Prometheus exposition text)
 clickhousectl cloud service prometheus <service-id>
 ```
 
-`--backup-start-time` must be exactly on the hour (`HH:00`) and is validated by the CLI before any API call. When it is supplied in the same command, an explicit `--backup-period-hours` must be `24` or `48`.
+`--backup-start-time` must be exactly on the hour (`HH:00`) and is validated by the CLI before any API call. It also requires the backup period to be `24` or `48` hours: pass `--backup-period-hours 24` or `--backup-period-hours 48` in the same command, or have one of those two already stored. Against any other stored period the CLI refuses before calling the API, with `Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48.`
+
+`--clear-backup-start-time` removes a stored start time and lifts that restriction. Combine it with `--backup-period-hours` to clear the start time and set any period in one call. It conflicts with `--backup-start-time`.
 
 ### Backups {#backups}
 
@@ -154,7 +160,7 @@ clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
 ```
 
-To restore a backup, create a new service from it with `clickhousectl cloud service create --backup-id <backup-id>`.
+To restore a backup, create a new service from it: `clickhousectl cloud service create --name restored-service --backup-id <backup-id>`.
 
 ### ClickPipes {#clickpipes}
 
@@ -165,7 +171,7 @@ Manage [ClickPipes](/integrations/clickpipes) for ingesting data into a Cloud se
 clickhousectl cloud clickpipe list <service-id>
 clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
 
-# Create a pipe. Sources: object-storage, kafka, kinesis,
+# Create a pipe. Sources: object-storage, kafka, kinesis, pubsub,
 # postgres, mysql, mongodb, bigquery
 clickhousectl cloud clickpipe create object-storage <service-id> \
   --name my-pipe \
@@ -174,7 +180,7 @@ clickhousectl cloud clickpipe create object-storage <service-id> \
   --database default \
   --table events
 
-# A Postgres pipe needs at least one --table-mapping
+# A Postgres pipe needs at least one --table-mapping or --table-mapping-json
 clickhousectl cloud clickpipe create postgres <service-id> \
   --name my-cdc-pipe \
   --host pg.example.com \
@@ -182,6 +188,7 @@ clickhousectl cloud clickpipe create postgres <service-id> \
   --username replicator \
   --password <password> \
   --table-mapping public.orders:orders \
+  --sync-interval-seconds 30 \
   --ca-certificate ./source-ca.pem
 
 # Lifecycle
@@ -199,14 +206,32 @@ clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id>
 # Discover a source schema without creating a pipe (beta)
 clickhousectl cloud clickpipe schema-discover <service-id> kafka [options]
 clickhousectl cloud clickpipe schema-discover <service-id> kinesis [options]
+clickhousectl cloud clickpipe schema-discover <service-id> object-storage [options]
+clickhousectl cloud clickpipe schema-discover <service-id> pubsub [options]
+
+# Reverse private endpoints: AWS PrivateLink, Amazon MSK multi-VPC,
+# Google Private Service Connect
+clickhousectl cloud clickpipe reverse-private-endpoint list <service-id>
+clickhousectl cloud clickpipe reverse-private-endpoint get <service-id> <endpoint-id>
+clickhousectl cloud clickpipe reverse-private-endpoint create <service-id> \
+  --type VPC_ENDPOINT_SERVICE \
+  --description 'kafka source' \
+  --vpc-endpoint-service-name <vpc-endpoint-service-name>
+clickhousectl cloud clickpipe reverse-private-endpoint update <service-id> <endpoint-id> \
+  --custom-private-dns-mapping pg.internal.example.com
+clickhousectl cloud clickpipe reverse-private-endpoint delete <service-id> <endpoint-id>
 ```
 
 Things to know:
 
-- `clickpipe create postgres` requires at least one `--table-mapping <schema.table:target_table>`, and the flag is repeatable. `--iam-role` is required with `--auth IAM_ROLE` and rejected with basic auth, and `--replication-slot-name` is only valid with `--replication-mode cdc_only`.
+- `clickpipe create postgres` requires one of `--table-mapping <schema.table:target_table>` (repeatable, one table per flag) or `--table-mapping-json <json>`; the two can be combined. The JSON form takes the API's table mapping object verbatim and is the only way to set `excludedColumns`, `sortingKeys`, `partitionByExpr`, `partitionKey` and `tableEngine`. Note that `partitionKey` partitions the initial snapshot for parallelism and is unrelated to the destination table's `PARTITION BY`, which is `partitionByExpr`. `--iam-role` is required with `--auth IAM_ROLE` and rejected with basic auth, and `--replication-slot-name` is only valid with `--replication-mode cdc_only`.
+- Postgres CDC settings are applied when the pipe is created: `--sync-interval-seconds`, `--pull-batch-size`, `--initial-load-parallelism`, `--snapshot-rows-per-partition`, `--snapshot-parallel-tables`, `--allow-nullable-columns`, `--enable-failover-slots` and `--delete-on-merge`. Only the sync interval and the pull batch size can be changed afterwards; the snapshot and initial-load settings cannot.
+- `--role <role>` on any `clickpipe create` subcommand is repeatable and picks the ClickHouse role granted to the pipe's destination user. It replaces the role that user would otherwise receive: with no `--role` the user holds `clickpipes_system` and `default_role`, and with `--role my_role` it holds `clickpipes_system` and `my_role`. The role must be able to create tables in the destination database — a read-only role makes creation fail with `Not enough privileges`. The API-reserved names `clickpipes` and `clickpipes_system` are rejected.
 - TLS and certificate verification are on by default for Postgres sources. A publicly trusted source chain needs no CA file; for a private or self-signed source CA, pass its PEM bundle with `--ca-certificate <path>`. For a ClickHouse Cloud Postgres source, fetch that bundle with `clickhousectl cloud postgres certs get`. Hostname verification uses `--host` unless `--tls-host <hostname>` overrides it.
 - For Kafka and Kinesis pipes, `--auth` is inferred from the credential flags when omitted, and no authentication is sent when no credential flags are given.
-- `clickpipe settings` applies to streaming pipes: Kafka-only settings are omitted for non-Kafka pipes, and the ingestion settings of a Postgres CDC pipe are not exposed.
+- `clickpipe settings` covers ingestion settings for streaming (Kafka, Kinesis) and object-storage pipes only, and Kafka-only settings are omitted for non-Kafka pipes. Database CDC pipes (Postgres, MySQL, MongoDB, BigQuery) have no ingestion settings: `settings get` on one exits 1 and points at `clickhousectl cloud clickpipe get <service-id> <clickpipe-id>`, which is where their sync interval and pull batch size are reported.
+- A pipe can only use a reverse private endpoint that has reached the `Ready` status; an AWS PrivateLink endpoint stays in `PendingAcceptance` until the connection request is accepted in the account that owns the source. Kafka pipes reference the endpoint by ID with `--reverse-private-endpoint-id` (repeatable); Postgres and MySQL CDC pipes pass one of the endpoint's `dnsNames` as `--host`.
+- Google Cloud Pub/Sub pipes are in limited preview: contact support to enable the feature for your organization before creating one. `--service-account-file` takes the path to a GCP service account JSON key, or `-` to read the key from stdin; the key is never accepted inline, so it stays out of process listings and shell history.
 
 ### Postgres services (beta) {#postgres-services}
 
@@ -257,8 +282,8 @@ clickhousectl cloud postgres delete <pg-id>
 Things to know:
 
 - `--provider` defaults to `aws`; `gcp` is also accepted, with GCP machine sizes such as `c4-standard-4`. `--size` is validated by the Cloud API rather than by the CLI, so an unsupported size is only rejected on the server.
-- Role changes are eventually consistent. `promote` and `switchover` accept `--wait` to poll until the target reports the new role, with `--wait-timeout <seconds>` (default 300) bounding the poll. `switchover --force` issues the switchover even when the service has no standby.
-- `postgres delete` works from any state, including `running`; `--force` is accepted for parity with `cloud service delete` and only reports the state it deleted from.
+- Role changes are eventually consistent, and the API acknowledges `promote` and `switchover` before applying them, so exit code 0 alone does not confirm the role changed. Both accept `--wait` to poll until the target reports the new role, with `--wait-timeout <seconds>` (default 300) bounding the poll. The previous primary can keep reporting `isPrimary=true` for minutes afterwards, so confirm with `clickhousectl cloud postgres list --filter isPrimary=true` that exactly one service is primary.
+- `postgres delete` works from any state, including `running`, so the service does not have to be stopped first.
 
 ### Organizations {#organizations}
 
