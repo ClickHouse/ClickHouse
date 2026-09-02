@@ -1,0 +1,60 @@
+---
+description: 'Un port de protocole natif qui traite les requêtes pendant le démarrage ou l’arrêt du serveur, lorsque les ports habituels n’acceptent pas les connexions.'
+sidebarTitle: 'Port d’introspection'
+slug: /operations/introspection-port
+title: 'Port d’introspection'
+doc_type: 'reference'
+---
+
+Lorsque `clickhouse-server` est bloqué au démarrage ou à l’arrêt, les ports habituels n’acceptent pas les connexions et il est impossible de savoir ce que fait le serveur.
+
+Un port d’introspection est un écouteur TCP utilisant le protocole natif qui démarre avant que le serveur ne commence à attacher les tables et ne s’arrête qu’une fois le détachement des tables terminé. Pendant ces phases, un opérateur peut s’y connecter avec un `clickhouse-client` standard et exécuter des requêtes telles que `SHOW PROCESSLIST`, `SELECT * FROM system.stack_trace` ou `SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5`.
+
+<div id="configuration">
+  ## Configuration
+</div>
+
+Un port d’introspection est un endpoint de [protocole composable](/fr/concepts/features/configuration/server-config/composable-protocols) identifié par `<introspection>true</introspection>`. Aucun port d’introspection n’est configuré par défaut :
+
+```xml
+<protocols>
+    <introspection_native>
+        <type>tcp</type>
+        <introspection>true</introspection>
+        <description>introspection native protocol (tcp)</description>
+        <host>127.0.0.1</host>
+        <port>9010</port>
+    </introspection_native>
+
+    <introspection_native_secure>
+        <type>tls</type>
+        <impl>introspection_native</impl>
+        <introspection>true</introspection>
+        <description>secure introspection native protocol (tcp_secure)</description>
+        <host>127.0.0.1</host>
+        <port>9011</port>
+    </introspection_native_secure>
+</protocols>
+```
+
+Comme il s&#39;agit d&#39;un endpoint de protocole composable standard, il prend en charge tout ce qu&#39;un endpoint peut prendre en charge : `host`, `port`, `description`, une liste d&#39;autorisation `networks`, `default_database`, ainsi que l&#39;encapsulation dans les couches `tls` et `proxy1`.
+
+L&#39;indicateur `introspection` est une propriété de l&#39;endpoint — l&#39;entrée qui contient le `port` — et n&#39;est pas hérité via les références `impl`. Une couche peut donc être partagée entre un endpoint d&#39;introspection et un endpoint standard.
+
+La stack doit se terminer par une couche `tcp`, car la sémantique décrite ci-dessous est implémentée par le handler du protocole natif. Marquer un endpoint dont la stack contient une couche `http`, `mysql`, `postgres`, `prometheus` ou `interserver` est rejeté avec `INVALID_CONFIG_PARAMETER` au démarrage, plutôt que de créer un port qui cesse de répondre précisément lorsqu&#39;il est nécessaire.
+
+| Clé             | Description                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| `introspection` | Marque un endpoint de protocole composable comme port d&#39;introspection. Valeur par défaut : `false`. |
+
+<div id="behavior">
+  ## Comportement
+</div>
+
+* Les requêtes autorisées sont `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `KILL QUERY`, `SYSTEM`, `SET` et `USE`. Toutes les autres, y compris les requêtes DDL et celles qui modifient les données, sont rejetées avec `QUERY_IS_PROHIBITED`, car le port est ouvert alors que l’état du serveur n’est pas encore entièrement initialisé ou qu’il est en cours d’arrêt.
+* `SYSTEM RELOAD CONFIG` et `SYSTEM RELOAD USERS` sont rejetées avec `QUERY_IS_PROHIBITED` tant que le serveur n’est pas complètement démarré, car recharger la configuration pendant le démarrage peut perturber l’ordre d’initialisation.
+* Les requêtes sur ces ports contournent `max_concurrent_queries` et le planificateur de charge de travail, comme `SHOW PROCESSLIST`.
+* Les connexions sont gérées par un pool de threads dédié ; l’épuisement du pool de connexions standard n’affecte donc pas ces ports. La taille du pool est définie par `max_connections`.
+* Les connexions sont acceptées même lorsque le serveur refuse les connexions standard en raison d’une surcharge CPU.
+* L’authentification et l’autorisation complètes habituelles s’appliquent : se connecter à ce port n’accorde aucun droit d’accès supplémentaire. Cela lève toutefois les limites de concurrence ci-dessus ; liez donc ce port à une adresse accessible uniquement aux opérateurs.
+* Ces ports ne sont pas soumis à `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (y compris `ALL` et `CUSTOM`) et ne sont pas reconfigurés lors du rechargement de la configuration.
