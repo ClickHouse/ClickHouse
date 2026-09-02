@@ -245,15 +245,24 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
-/// True if a value of this type may contain a decimal-backed leaf (Decimal/Time64, or a Dynamic that
-/// can hold one) that needs the exact serialization provided by columnConstantToExactLiteralAST.
-bool typeMayContainDecimal(const IDataType & type);
+/// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type,
+/// so it needs the exact serialization provided by `columnConstantToExactLiteralAST`: a decimal-backed
+/// leaf anywhere (`Decimal`/`DateTime64`/`Time64` re-parse through `Float64` and round), a `Variant`
+/// anywhere (a literal does not keep the active member type, and conversion to `Variant` is allowed only
+/// from a type equal by name to one of its members), or a `Dynamic` (whose value's type is not visible in
+/// the type).
+bool typeNeedsExactLiteralSerialization(const IDataType & type);
 
-/// Build a literal AST for a constant column value, serializing decimal-backed leaves (Decimal,
-/// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
-/// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
-/// DateTime text-parsing heuristics. Decimal-free values use the same representation as
-/// getFieldFromColumnForASTLiteral.
+/// True if a `DateTime` can appear anywhere in this type. Its text form is local date-time text, which two
+/// UTC instants share across a DST overlap, so under a named `Variant` member it is rendered as the raw
+/// Unix timestamp instead. `Date`/`Date32` text is unambiguous and stays as text.
+bool typeMayContainDateTime(const IDataType & type);
+
+/// Build a literal AST for a constant column value, serializing leaves whose type or value a plain literal
+/// cannot carry exactly so they round-trip across distributed / serialized-plan boundaries: decimal-backed
+/// leaves (`Decimal`, `DateTime64`, `Time64`) as exact decimal carriers rather than through `Float64` or the
+/// `DateTime` text-parsing heuristics, and the active member of a `Variant` under its own type name. Other
+/// values use the same representation as `getFieldFromColumnForASTLiteral`.
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
