@@ -73,13 +73,18 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// does this between queries of one session); otherwise a stale entry produces
 /// wrong results (e.g. DateTime values rendered in another query's timezone).
 ///
-/// Serializations with `supportsPooling() == false` (e.g. SerializationJSON, which
-/// holds mutable per-use state, see the comment in SerializationJSON::create) are
-/// never cached at all, not even within one query: for them only the type is cached
-/// and a fresh serialization is built on every lookup. Note that query-scoped
-/// invalidation alone would not be enough for them anyway: clickhouse-client keeps
-/// one client context attached to the client thread for the whole session, so
-/// consecutive client queries can share one "query scope".
+/// This scoping is also what makes it safe to pool serializations with
+/// `supportsPooling() == false` here, e.g. SerializationJSON: its own contract
+/// (see the comment in SerializationJSON::create) forbids sharing *across queries*,
+/// because its extraction tree accumulates mutable, context-dependent state (its
+/// documented example is exactly the timezone case this cache already invalidates
+/// on). Reuse *within* one query is already an established, trusted pattern for the
+/// very same object (see ColumnDynamic's per-column `serialization_cache`, used
+/// throughout its binary insert/deserialize paths). One narrower gap is accepted:
+/// `DataTypeObject::doGetSerialization` also reads `allow_simdjson` at construction,
+/// which this cache does not track, so a client session that flips it in place keeps
+/// the previously-built parser until invalidated for another reason; this only
+/// selects between two semantically equivalent JSON parsers, not a correctness issue.
 class DataTypesCache
 {
 public:
@@ -101,9 +106,6 @@ private:
     struct Element
     {
         DataTypePtr type;
-        /// Null if the default serialization of `type` has `supportsPooling() == false`:
-        /// such serializations keep mutable per-use state and must be rebuilt for every use
-        /// instead of being served from the cache.
         SerializationPtr serialization;
     };
 
