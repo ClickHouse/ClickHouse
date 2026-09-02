@@ -19,8 +19,10 @@ FROM numbers(20000);
 
 CREATE TABLE t_window_tree_dist_results (variant String, r UInt64) ENGINE = Memory;
 
+-- The CI users profile sets a non-zero max_rows_to_group_by, and make_distributed_plan rejects aggregation with that limit, so pin it to 0.
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-    distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, max_block_size = 123;
+    distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, max_block_size = 123,
+    max_rows_to_group_by = 0;
 
 INSERT INTO t_window_tree_dist_results
 SELECT 'tree', groupBitXor(reinterpretAsUInt64(s))
