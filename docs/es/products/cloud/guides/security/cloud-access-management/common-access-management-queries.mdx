@@ -52,6 +52,10 @@ A los usuarios Admin se les asigna el rol `sql_console_admin` de forma predeterm
   ### Control de acceso granular
 </div>
 
+<Tip>
+  Prefiera los [roles de base de datos administrados en Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para administrar el acceso a la base de datos desde la consola. Los roles `sql-console-role:<email>` no son compatibles con la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
 Esta funcionalidad de control de acceso también puede configurarse manualmente con granularidad a nivel de usuario. Antes de asignar a los usuarios los nuevos roles `sql_console_*`, deben crearse roles de base de datos específicos por usuario para la consola SQL que coincidan con el espacio de nombres `sql-console-role:<email>`. Por ejemplo:
 
 ```sql

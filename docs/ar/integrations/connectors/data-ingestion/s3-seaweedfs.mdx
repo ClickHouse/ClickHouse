@@ -47,8 +47,10 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
 docker run -d --name seaweedfs -p 8333:8333 \
   -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
   chrislusf/seaweedfs:latest \
-  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse -admin.port=12646
 ```
+
+يبقي الخيار `-admin.port=12646` منفذ gRPC الإداري الذي ينشئه SeaweedFS اعتمادًا عليه أدنى من نطاق المنافذ المؤقتة في Linux، إذ قد تحجزه وصلة عند بدء التشغيل أولًا لولا ذلك.
 
 تعمل نقطة نهاية S3 على المنفذ 8333؛ انتظر حتى تستجيب قبل المتابعة:
 
