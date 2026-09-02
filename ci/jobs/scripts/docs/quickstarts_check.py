@@ -6,7 +6,7 @@ Run from the docs root (the directory containing docs.json):
 
     python3 ../ci/jobs/scripts/docs/quickstarts_check.py .
 
-Three checks (see docs/get-started/quickstarts/README.md for the authoring
+Four checks (see docs/get-started/quickstarts/README.md for the authoring
 guide):
 
 1. Frontmatter metadata and badge markers. Every English and localized
@@ -33,6 +33,9 @@ guide):
 3. Localized homepage quickstart links. Every localized `QuickstartPill` must
    contain its locale in a static path so server-side rendering, middle-click,
    copied links, and no-JavaScript clients do not fall back to English.
+
+4. Cloud setup signup attribution. The English and localized Cloud setup
+   guides must all use the same attributed signup URL.
 """
 
 import importlib.util
@@ -58,6 +61,7 @@ ALLOWED_PRODUCTS = [
 ]
 SKIP_FILES = {"home.mdx", "README.md"}
 LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
+CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
 
 # The badge block the generator rewrites, same pattern as
 # update_quickstart_page in _site/scripts/update_quickstarts.py.
@@ -269,6 +273,35 @@ def check_localized_homepage_quickstart_href(docs_root: Path) -> list:
     return errors
 
 
+def check_cloud_setup_signup_attribution(docs_root: Path) -> list:
+    """Ensure every Cloud setup guide uses the attributed signup URL."""
+    signup_link = re.compile(
+        r"https://(?:console\.)?clickhouse\.cloud/signUp(?:\?[^)\s]+)?"
+    )
+    pages = [docs_root / "get-started" / "setup" / "cloud.mdx"]
+    pages += [
+        docs_root / locale / "get-started" / "setup" / "cloud.mdx"
+        for locale in LOCALES
+    ]
+
+    errors = []
+    for page in pages:
+        links = signup_link.findall(page.read_text(encoding="utf-8"))
+        if not links:
+            errors.append(
+                f"{page.relative_to(docs_root)}: no ClickHouse Cloud signup "
+                "link found"
+            )
+            continue
+        for link in links:
+            if link != CLOUD_SIGNUP_URL:
+                errors.append(
+                    f"{page.relative_to(docs_root)}: signup link is {link!r}; "
+                    f"expected {CLOUD_SIGNUP_URL!r}"
+                )
+    return errors
+
+
 def check_freshness(docs_root: Path) -> list:
     generator = docs_root / "_site" / "scripts" / "update_quickstarts.py"
     # Snapshot the content of everything the generator may rewrite, so the
@@ -322,6 +355,7 @@ def main() -> int:
     errors += check_frontmatter(docs_root)
     errors += check_localized_cloud_setup_fallback(docs_root)
     errors += check_localized_homepage_quickstart_href(docs_root)
+    errors += check_cloud_setup_signup_attribution(docs_root)
     # Only bother running the generator when the tags are valid — invalid tags
     # would just produce garbage slugs in the regenerated data.
     if not errors:
