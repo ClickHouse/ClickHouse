@@ -6867,7 +6867,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
 
         Coordination::Stat block_numbers_stat;
         Strings zk_partitions = zookeeper->getChildren(
-            fs::path(zookeeper_path) / "block_numbers", &block_numbers_stat);
+            pathToGenericString(fs::path(zookeeper_path) / "block_numbers"), &block_numbers_stat);
 
         auto affected = *mutation_affected_partition_ids;
 
@@ -6909,13 +6909,13 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
             /// partition list). For explicit IN PARTITION the target set is exact and does not
             /// depend on the partition list, so no version check is needed.
             EphemeralLocksInPartitions lock_holder(
-                fs::path(zookeeper_path) / "block_numbers",
+                pathToGenericString(fs::path(zookeeper_path) / "block_numbers"),
                 "block-",
-                fs::path(zookeeper_path) / "temp",
+                pathToGenericString(fs::path(zookeeper_path) / "temp"),
                 block_data,
                 *zookeeper,
                 affected,
-                fs::path(replica_path) / "host",
+                pathToGenericString(fs::path(replica_path) / "host"),
                 has_pruned_commands ? std::optional<int32_t>(block_numbers_stat.version) : std::nullopt);
 
             PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
