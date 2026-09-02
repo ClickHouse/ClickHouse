@@ -657,7 +657,7 @@ void DiskLocal::syncFile(const String & path) const
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, full_path, "Cannot open file {}", full_path);
     }
 
-    SCOPE_EXIT({ ::close(fd); });
+    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(fd); });
 
     ProfileEvents::increment(ProfileEvents::FileSync);
     Stopwatch watch;
