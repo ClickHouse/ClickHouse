@@ -43,7 +43,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int READONLY;
 }
 
 // clang-format off
@@ -2199,7 +2198,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
+    void sanityCheck(size_t background_pool_tasks) const;
 };
 
 static void validateTableDisk(const DiskPtr & disk)
@@ -2306,35 +2305,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks) const
 {
-    if (!allow_experimental || !allow_beta)
-    {
-        for (const auto & setting : all())
-        {
-            if (!setting.isValueChanged())
-                continue;
-
-            auto tier = setting.getTier();
-            if (!allow_experimental && tier == EXPERIMENTAL)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_beta && tier == BETA)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                    setting.getName());
-            }
-        }
-    }
-
-
     if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
@@ -2551,6 +2523,18 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
+SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) const
+{
+    SettingsChanges res;
+    for (const auto & setting : impl->all())
+    {
+        auto value = setting.getValue();
+        if (value != base.impl->get(setting.getName()))
+            res.emplace_back(String{setting.getName()}, value);
+    }
+    return res;
+}
+
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
@@ -2602,6 +2586,15 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames()
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
 void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
@@ -2635,9 +2628,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || (impl->min_compressed_bytes_to_fsync_after_merge && input_bytes >= impl->min_compressed_bytes_to_fsync_after_merge));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta);
+    impl->sanityCheck(background_pool_tasks);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
@@ -2763,6 +2756,11 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {
     return MergeTreeSettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> MergeTreeSettings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return MergeTreeSettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view MergeTreeSettings::resolveName(std::string_view name)
