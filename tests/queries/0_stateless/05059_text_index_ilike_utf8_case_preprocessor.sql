@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: upper/lowerUTF8 use ICU
+
 -- https://github.com/ClickHouse/ClickHouse/issues/116970
 -- The default-on `use_text_index_like_evaluation_by_dictionary_scan` answers `ILIKE '%needle%'` from
 -- the index token dictionary in `Exact` mode, with no row-level recheck. That is only sound when the
