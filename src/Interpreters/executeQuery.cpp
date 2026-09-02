@@ -2267,8 +2267,10 @@ static BlockIO executeQueryImpl(
     const Settings & settings = context->getSettingsRef();
 
     size_t max_query_size = settings[Setting::max_query_size];
-    /// Don't limit the size of internal queries or distributed subquery.
-    if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    /// Don't limit the size of internal queries, distributed subqueries, or server-generated DDL queries.
+    if (internal
+        || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || context->isDDLOrOnClusterInternal())
         max_query_size = 0;
 
     String query;
