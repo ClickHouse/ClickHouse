@@ -238,15 +238,14 @@ void optimizeTreeSecondPass(
 
     Stack stack;
 
-    /// Before the index analysis below, so that the copied conjuncts take part in it, and before
-    /// `tryAddJoinRuntimeFilter`, which wraps both sides and would hide the source filters.
-    /// Without the index analysis a copied conjunct is just a full scan filter, so skip the pass then
-    bool predicates_were_lifted = false;
-    if (optimization_settings.lift_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
+    /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
+    /// filters, which would hide the source filters
+    bool predicates_were_propagated = false;
+    if (optimization_settings.propagate_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
     {
         traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
         {
-            predicates_were_lifted |= tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0;
+            predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0;
         });
     }
 
@@ -337,12 +336,10 @@ void optimizeTreeSecondPass(
                 convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-    /// A runtime filter or a lifted predicate is a new filter node, so re-run push down to move it
-    /// as deep in the tree as possible. A runtime filter is re-merged unconditionally, as it was
-    /// before this pass existed; a lift-only rerun keeps each rewrite behind its own setting,
-    /// because a copied predicate is no reason to run a pass the user turned off
+    /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
+    /// before; a copied predicate alone is no reason to run a rewrite the user turned off
     const bool rewrite_regardless_of_settings = join_runtime_filters_were_added;
-    if (join_runtime_filters_were_added || predicates_were_lifted)
+    if (join_runtime_filters_were_added || predicates_were_propagated)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
@@ -773,10 +770,9 @@ void optimizeTreeSecondPass(
         }
     }
 
-    /// The filter merges above and lazy materialization rebuild `FilterStep`s without carrying over
-    /// the QCC key that `updateQueryConditionCache` set earlier. Re-walk so they get it back
+    /// The merges above rebuild `FilterStep`s and drop the QCC key, so re-walk to set it again
     if (optimization_settings.use_query_condition_cache
-        && (join_runtime_filters_were_added || predicates_were_lifted || lazy_materialization_applied))
+        && (join_runtime_filters_were_added || predicates_were_propagated || lazy_materialization_applied))
     {
         Stack qcc_stack;
         qcc_stack.push_back({.node = &root});

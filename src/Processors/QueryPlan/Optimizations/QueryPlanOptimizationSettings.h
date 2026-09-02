@@ -55,7 +55,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
-    bool lift_predicate_across_join;
+    bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
