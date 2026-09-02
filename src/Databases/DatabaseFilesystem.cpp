@@ -15,7 +15,11 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageProxy.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Common/filesystemHelpers.h>
 #include <Formats/FormatFactory.h>
 
@@ -38,6 +42,104 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+}
+
+namespace
+{
+
+/// Whether the user is allowed to read local files, i.e. whether the resolution of a table of a
+/// `Filesystem` database would pass the read source access check of its `file` delegate. The
+/// decision is derived directly from the grants, without constructing the delegate: already the
+/// parsing of the arguments of the `file` table function observes the filesystem
+/// (`StorageFile::FileSource::parse` enumerates the matching paths), which must not happen before
+/// the grant is confirmed. `TableFunctionFile` reports an empty URI for source-access filtering
+/// (it does not override `getFunctionURI`), so a filtered grant applies iff its regexp matches the
+/// empty string - replicated here by filtering against the empty string as well.
+bool isFileReadGranted(const ContextPtr & context)
+{
+    return context->getAccess()->isGrantedWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+}
+
+void checkFileReadGranted(const ContextPtr & context)
+{
+    context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+}
+
+/// A table of a `Filesystem` database is resolved into a `StorageFile` created by the `file` table
+/// function, and the resolved storage is cached under the logical table name. The `file` delegate
+/// is constructed identically for reads and writes (`TableFunctionFile::getStorage` ignores
+/// `is_insert_query`), so a single cached delegate serves both - but the source access it checks
+/// once, during its own construction, is the READ grant only, and a cache hit skips that check
+/// altogether. The proxy restores the contract: the read grant is checked on every resolution (see
+/// `DatabaseFilesystem::getTableImpl`) and the WRITE grant is checked here, on every write entry
+/// point (INSERT, asynchronous insert, a materialized view target, `TRUNCATE`), which the
+/// underlying `StorageFile` does not check on its own.
+///
+/// The proxy also carries the logical storage ID (`db`.`name`): the table function creates the
+/// nested storage under the internal `_table_function` database, and privilege checks against the
+/// storage ID must see the name the user's grants refer to.
+class StorageFilesystemDatabaseTable final : public StorageProxy
+{
+public:
+    StorageFilesystemDatabaseTable(const StorageID & storage_id_, StoragePtr nested_, TableFunctionPtr table_function_)
+        : StorageProxy(storage_id_)
+        , nested(std::move(nested_))
+        , table_function(std::move(table_function_))
+    {
+        const auto nested_metadata = nested->getInMemoryMetadataPtr(nullptr, false);
+        setInMemoryMetadata(*nested_metadata);
+    }
+
+    StoragePtr getNested() const override { return nested; }
+    String getName() const override { return nested->getName(); }
+
+    /// Read through a snapshot of the nested storage (like `StorageTableFunctionProxy` does):
+    /// the storage may downcast `storage_snapshot->storage` to its own type.
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr &,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override
+    {
+        const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
+        auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
+        nested->read(query_plan, column_names, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    }
+
+    /// Checked on the initiator, before the query is executed or queued for asynchronous insertion:
+    /// with `async_insert = 1` the sink below is created in a background flush, after the query has
+    /// already reported success to the user (`wait_for_async_insert = 0`) and possibly with
+    /// different privileges than the ones the user had when the query was issued.
+    void checkInsertIsAllowed(ContextPtr context) const override
+    {
+        table_function->checkSourceAccess(context, /* is_insert_query */ true);
+    }
+
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
+    {
+        table_function->checkSourceAccess(context, /* is_insert_query */ true);
+        return nested->write(query, metadata_snapshot, context, async_insert);
+    }
+
+    void truncate(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        TableExclusiveLockHolder & lock) override
+    {
+        table_function->checkSourceAccess(context, /* is_insert_query */ true);
+        nested->truncate(query, metadata_snapshot, context, lock);
+    }
+
+private:
+    StoragePtr nested;
+    TableFunctionPtr table_function;
+};
+
 }
 
 DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
@@ -137,6 +239,15 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");
     }
 
+    /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
+    /// resolution of a table reports `FILE_DOESNT_EXIST` instead of `ACCESS_DENIED`), so it must
+    /// not be performed without the read source grant: `EXISTS TABLE` requires only `SHOW TABLES`,
+    /// which would otherwise turn a `Filesystem` database into an oracle for the contents of
+    /// `user_files`. Claim the table instead: a resolution of it fails with the access error, and
+    /// `EXISTS` answers what it answers for a path with globs, which is not probed either.
+    if (!isFileReadGranted(context_))
+        return true;
+
     if (!containsGlobs(table_path))
     {
         const bool exists = disk ? disk->existsFileOrDirectory(disk_relative_path) : fs::exists(table_path);
@@ -192,6 +303,12 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
 
 bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) const
 {
+    /// Without the read source grant the cache is an oracle as well: an entry warmed by a
+    /// privileged query would otherwise report the existence of a file to a user who may not
+    /// look at `user_files` at all. Claim the table, as `checkTableFilePath` does.
+    if (!isFileReadGranted(context_))
+        return true;
+
     if (tryGetTableFromCache(name))
         return true;
 
@@ -200,6 +317,13 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
+    /// Neither the delegate may be constructed nor a cached one served without the read source
+    /// grant: already the parsing of the arguments of the `file` table function observes the
+    /// filesystem (see `isFileReadGranted`), and a cache entry warmed by a privileged query would
+    /// otherwise let an unprivileged user read the file. Fail with the same access error the
+    /// source-access check of the delegate produces after the parsing.
+    checkFileReadGranted(context_);
+
     /// Check if table exists in loaded tables map.
     if (auto table = tryGetTableFromCache(name))
         return table;
@@ -232,10 +356,15 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
 
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
-    if (table_storage)
-        return addTable(name, table_storage);
+    if (!table_storage)
+        return table_storage;
 
-    return table_storage;
+    /// Cache the proxy, not the raw `StorageFile`: the proxy re-checks the WRITE source grant on
+    /// every write entry point, which neither the cached storage nor `StorageFile` itself does.
+    auto proxy = std::make_shared<StorageFilesystemDatabaseTable>(
+        StorageID(getDatabaseName(), name), std::move(table_storage), std::move(table_function));
+
+    return addTable(name, std::move(proxy));
 }
 
 StoragePtr DatabaseFilesystem::getTable(const String & name, ContextPtr context_) const
