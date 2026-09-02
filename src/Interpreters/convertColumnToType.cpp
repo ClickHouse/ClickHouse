@@ -84,6 +84,14 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
     return result;
 }
 
+/// `Bool` anywhere in the type tree (the shapes `retagBoolInField` normalizes, and any other nesting).
+bool containsBool(const IDataType & type)
+{
+    bool found = type.getName() == "Bool";
+    type.forEachChild([&](const IDataType & child) { found = found || child.getName() == "Bool"; });
+    return found;
+}
+
 /// `IColumn::get` reconstructs a `Field` using the storage column's `NearestFieldType`, which does not
 /// round-trip the `Field` tag for `Bool`: a `DataTypeBool` column is a plain `ColumnUInt8`, so `get`
 /// yields a `UInt64` `Field`. `convertFieldToType` keys on that tag (e.g. `Bool -> String` gives
@@ -162,14 +170,16 @@ ColumnPtr convertColumnToTypeOrNull(
     const IColumn & unwrapped = *full;
 
     /// Same as `convertFieldToType`, which returns the value untouched when `from` equals `to` - but
-    /// only for genuinely identical types. `IDataType::equals` ignores custom names, so it also holds
-    /// for `Bool` and its storage type `UInt8` (and for wrapper pairs such as `Nullable(Bool)` and
-    /// `Nullable(UInt8)`), which are not byte-for-byte aliases: a `Bool` column may hold a raw byte
-    /// such as 2 (e.g. from `reinterpret`) that the `Field` path normalizes to `true` through
-    /// `retagBoolInField`, and that `strict` rejects for a `Bool` target. Like the identity check of
-    /// `CAST`, require the custom names to match too; comparing the full names does so at every
-    /// nesting level.
-    if (from->equals(*to) && from->getName() == to->getName())
+    /// only for genuinely identical types that do not involve `Bool`. `IDataType::equals` ignores
+    /// custom names, so it also holds for `Bool` and its storage type `UInt8` (and for wrapper pairs
+    /// such as `Nullable(Bool)` and `Nullable(UInt8)`); like the identity check of `CAST`, require the
+    /// custom names to match too, comparing the full names so every nesting level is covered. And a
+    /// `Bool` column is a plain `ColumnUInt8` that may hold a raw byte such as 2 (e.g. from
+    /// `reinterpret`), which the `Field` path below normalizes to `true` through `retagBoolInField`
+    /// (and which `strict` rejects for a `Bool` target) - so a type containing `Bool` is never returned
+    /// untouched, not even for `Bool -> Bool`; `CAST` likewise treats `Bool -> Bool` as
+    /// `UInt8 -> Bool` normalization rather than identity.
+    if (from->equals(*to) && from->getName() == to->getName() && !containsBool(*from))
         return full;
 
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, strict, convert_inexact_floats))
