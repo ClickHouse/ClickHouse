@@ -1,0 +1,14 @@
+<clickhouse>
+    <users>
+        <local_user>
+            <password>local_password</password>
+        </local_user>
+        <shadowed_user>
+            <password>xml_password</password>
+        </shadowed_user>
+        <admin_user>
+            <password>admin_password</password>
+            <access_management>1</access_management>
+        </admin_user>
+    </users>
+</clickhouse>

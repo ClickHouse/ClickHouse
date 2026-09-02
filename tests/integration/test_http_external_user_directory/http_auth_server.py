@@ -1,0 +1,121 @@
+import base64
+import http.server
+import json
+
+GOOD_PASSWORD = "good_password"
+
+# Usernames this server has been asked to authenticate — used by the precedence tests to
+# prove the http directory actually reached the server (rather than being bypassed by a
+# higher-precedence users.xml). Shared across threads; set operations are atomic enough here.
+SEEN_USERS = set()
+
+# user -> dict describing the response for a correct password.
+# "status" overrides the HTTP status (default 200); "body" is sent verbatim
+# if it is a string, else JSON-encoded.
+MAIN_USERS = {
+    "http_user": {"body": {"roles": ["reader"]}},
+    "norole_user": {"body": {}},
+    "emptyroles_user": {"body": {"roles": []}},
+    "settings_user": {"body": {"settings": {"max_threads": "4"}, "roles": ["reader"]}},
+    "prefix_user": {
+        "body": {"roles": ["external_team1"]}
+    },  # external_ prefix delegation
+    "disallowed_role_user": {"body": {"roles": ["admin_role"]}},
+    "mixed_roles_user": {"body": {"roles": ["reader", "admin_role"]}},
+    "unknown_role_user": {"body": {"roles": ["no_such_role"]}},
+    "malformed_json_user": {"body": "{not json"},
+    "bad_roles_type_user": {"body": {"roles": "reader"}},
+    "expired_user": {"body": {"valid_until": 1000000000, "roles": ["reader"]}},
+    "negative_vu_user": {"body": {"valid_until": -5}},
+    "future_vu_user": {"body": {"valid_until": 4102444800, "roles": ["reader"]}},
+    "err500_user": {"status": 500},
+    "err429_user": {"status": 429},
+    "local_user": {
+        "body": {"roles": ["reader"]}
+    },  # also exists in users.xml with another password
+    "rowpolicy_user": {"body": {"roles": ["policy_role"]}},
+    "profileclash_user": {"body": {"settings": {"max_threads": "7"}, "roles": []}},
+    "distributed_user": {"body": {"roles": ["cluster_role"]}},
+    # Mixed set: reader exists on both nodes, only_node1_role only on `node`. Proves the
+    # receiver fails closed on a PARTIALLY-resolvable set, not just an all-missing one.
+    "halfcluster_user": {"body": {"roles": ["reader", "only_node1_role"]}},
+}
+
+# dual_user: the returned role set depends on the password, to simulate
+# membership changes between authentications of the same username.
+DUAL_USER_PASSWORDS = {
+    "password_a": {"roles": ["role_a"]},
+    "password_b": {"roles": ["role_b"]},
+}
+
+# Users known only to node4's directory (default_profile + networks).
+# aux_override_user: response settings override the directory profile's value for the
+# same setting (ADR additional test 8).
+AUX_USERS = {
+    "aux_user": {"body": {"roles": []}},
+    "aux_override_user": {"body": {"settings": {"max_rows_to_read": "777"}}},
+}
+
+# Users known only to node3's directory (cache-bound, configured BEFORE users.xml).
+# shadowed_user also exists in users.xml with password "xml_password": the helper
+# rejects that password (401), which must fail closed WITHOUT falling through to
+# the later users.xml storage.
+CACHE_USERS = {f"cache_user_{i}": {"body": {}} for i in range(10)}
+CACHE_USERS["shadowed_user"] = {"body": {}}
+
+
+class RequestHandler(http.server.BaseHTTPRequestHandler):
+    def _decode_basic_auth(self):
+        auth = self.headers.get("Authorization", "")
+        if not auth.startswith("Basic "):
+            return None, None
+        user, _, password = base64.b64decode(auth[6:]).decode().partition(":")
+        return user, password
+
+    def _reply(self, status, body=""):
+        payload = body if isinstance(body, str) else json.dumps(body)
+        data = payload.encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _auth_against(self, users):
+        user, password = self._decode_basic_auth()
+        SEEN_USERS.add(user)  # record that the directory actually consulted this server
+        if user == "dual_user" and users is MAIN_USERS:
+            if password in DUAL_USER_PASSWORDS:
+                return self._reply(200, DUAL_USER_PASSWORDS[password])
+            return self._reply(401)
+        if user not in users:
+            return self._reply(404)
+        if password != GOOD_PASSWORD:
+            return self._reply(401)
+        entry = users[user]
+        return self._reply(entry.get("status", 200), entry.get("body", ""))
+
+    def do_GET(self):
+        if self.path == "/health":
+            return self._reply(200, "OK")
+        # Debug endpoint: was a username ever presented to this server? Used to prove the
+        # http directory was actually consulted (precedence), not bypassed by users.xml.
+        if self.path.startswith("/seen?"):
+            from urllib.parse import parse_qs, urlparse
+
+            wanted = parse_qs(urlparse(self.path).query).get("user", [""])[0]
+            return self._reply(200, "1" if wanted in SEEN_USERS else "0")
+        if self.path == "/main":
+            return self._auth_against(MAIN_USERS)
+        if self.path == "/aux":
+            return self._auth_against(AUX_USERS)
+        if self.path == "/cache":
+            return self._auth_against(CACHE_USERS)
+        return self._reply(404)
+
+
+if __name__ == "__main__":
+    # ThreadingHTTPServer (not the single-threaded HTTPServer) so the concurrency test
+    # can prove that different usernames authenticate concurrently — a single-threaded
+    # server would serialize requests at the mock and mask a directory-wide lock.
+    http.server.ThreadingHTTPServer(("0.0.0.0", 8000), RequestHandler).serve_forever()

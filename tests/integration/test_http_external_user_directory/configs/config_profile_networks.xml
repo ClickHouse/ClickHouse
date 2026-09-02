@@ -1,0 +1,17 @@
+<clickhouse>
+    <http_authentication_servers>
+        <aux_server>
+            <uri>http://localhost:8000/aux</uri>
+        </aux_server>
+    </http_authentication_servers>
+
+    <user_directories>
+        <http>
+            <server>aux_server</server>
+            <default_profile>sql_profile</default_profile>
+            <networks>
+                <ip>127.0.0.1/32</ip>
+            </networks>
+        </http>
+    </user_directories>
+</clickhouse>
