@@ -52,6 +52,10 @@ Admin 用户默认会被分配 `sql_console_admin` 角色，因此对他们来�
   ### 细粒度访问控制
 </div>
 
+<Tip>
+  建议使用 [Cloud 托管数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (Beta) 从控制台管理数据库访问权限。`sql-console-role:<email>` 角色与 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) 不兼容。
+</Tip>
+
 此访问控制功能也支持手动配置到用户级粒度。为用户分配新的 `sql_console_*` 角色之前，应先创建与命名空间 `sql-console-role:<email>` 对应的 SQL 控制台用户专用数据库角色。例如：
 
 ```sql
@@ -59,7 +63,7 @@ CREATE ROLE OR REPLACE sql-console-role:<email>;
 GRANT <some grants> TO sql-console-role:<email>;
 ```
 
-检测到匹配的角色后，系统会将其分配给用户，而不是默认的样板角色。这也支持更复杂的访问控制配置，例如创建 `sql_console_sa_role` 和 `sql_console_pm_role` 这类角色，并将其授予特定用户。例如：
+检测到匹配的角色后，系统会将该角色分配给用户，而非默认样板角色。这样可以实现更复杂的访问控制配置，例如创建 `sql_console_sa_role` 和 `sql_console_pm_role` 等角色，并将其授予特定用户。例如：
 
 ```sql
 CREATE ROLE OR REPLACE sql_console_sa_role;

@@ -10,6 +10,7 @@ Converted from stateless tests (which must not modify the server's data on disk)
   - 04235_corrupted_columns_substreams_detection.sh
   - 04323_text_index_marks_empty_part.sh
   - 04506_packed_part_fetch_checksum.sh
+  - 02346_text_index_corrupted_positions.sh
 """
 
 import shlex
@@ -507,6 +508,98 @@ def test_text_index_marks_empty_part(started_cluster):
     assert node1.query("SELECT count() FROM t_text_idx_empty WHERE has(['anything'], s)") == "0\n"
 
     node1.query("DROP TABLE t_text_idx_empty SYNC")
+
+
+def test_text_index_corrupted_positions(started_cluster):
+    # Converted from stateless test 02346_text_index_corrupted_positions.sh.
+    # A damaged positions stream (.pos) must raise an error, not answer hasPhrase from the garbage it
+    # decodes. .pos is uncompressed, so the bytes edited here reach the decoder, not a checksum.
+    node1.query("DROP TABLE IF EXISTS t_pos SYNC")
+
+    node1.query(
+        """
+        CREATE TABLE t_pos
+        (
+            k UInt64,
+            s String,
+            INDEX txt(s) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1) GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY k
+        -- min_bytes_for_full_part_storage=0: the test edits the raw skp_idx_txt.pos.idx file, which a
+        -- packed part keeps inside data.packed instead of on disk.
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
+                 replace_long_file_name_to_hash = 0, min_bytes_for_full_part_storage = 0,
+                 allow_experimental_text_index_phrase_search = 1
+        """,
+        settings={"enable_full_text_index": 1},
+    )
+
+    # Selective (100 of 2000 rows) so the reader takes the positional path, not the selectivity fallback.
+    node1.query(
+        "INSERT INTO t_pos SELECT number, if(number < 100, 'needle alpha beta',"
+        " concat('hello', number % 50, ' world', number % 50)) FROM numbers(2000)"
+    )
+
+    pos = get_active_part_path(node1, "t_pos") + "skp_idx_txt.pos.idx"
+    assert file_nonempty(node1, pos)
+
+    # Kept outside the part directory: the server removes files it does not recognise from a part.
+    backup = "/tmp/t_pos_positions.orig"
+    bash(node1, f"cp {pos} {backup}")
+    size = file_size(node1, pos)
+
+    index_settings = {
+        "use_skip_indexes": 1,
+        "use_skip_indexes_on_data_read": 1,
+        "query_plan_direct_read_from_text_index": 1,
+        "use_query_condition_cache": 0,
+    }
+    query = "SELECT count() FROM t_pos WHERE hasPhrase(s, 'needle alpha')"
+
+    def drop_caches():
+        # The edits below keep the file size, so only cached content can hide them.
+        node1.query(
+            "SYSTEM DROP TEXT INDEX CACHES; SYSTEM DROP MARK CACHE; SYSTEM DROP UNCOMPRESSED CACHE;"
+            " SYSTEM DROP MMAP CACHE; SYSTEM DROP PAGE CACHE"
+        )
+
+    def phrase_count():
+        drop_caches()
+        return node1.query(query, settings=index_settings).strip()
+
+    def phrase_error():
+        drop_caches()
+        return node1.query_and_get_error(query, settings=index_settings)
+
+    # Control: the intact index agrees with a plain scan, else the cases below would prove nothing.
+    expected = node1.query(query, settings={"use_skip_indexes": 0}).strip()
+    assert phrase_count() == expected
+
+    # Every case keeps the file size. Shrinking it would leave the part's cached size stale, so the
+    # query would fail on the seek rather than on the bytes under test.
+
+    # Zeroed directory: the stored document count no longer matches the dictionary's.
+    bash(node1, f"head -c {size} /dev/zero > {pos}")
+    assert "CORRUPTED_DATA" in phrase_error()
+
+    # Oversized declared sizes: high bits set in the directory's leading bytes inflate every count.
+    bash(node1, f"cp {backup} {pos} && printf '\\xff\\xff\\xff\\xff' | dd of={pos} bs=1 seek=0 conv=notrunc status=none")
+    assert "CORRUPTED_DATA" in phrase_error()
+
+    # A block size past this token's 6-byte blob but inside the file: only a bound taken from the
+    # token's own length rejects it. Byte 2 is the first token's block size, asserted so the fixture
+    # fails loudly if it ever drifts.
+    bash(node1, f"cp {backup} {pos}")
+    assert bash(node1, f"od -An -tu1 -N 3 {pos}").split() == ["100", "1", "3"]
+    bash(node1, f"printf '\\x64' | dd of={pos} bs=1 seek=2 conv=notrunc status=none")
+    assert "CORRUPTED_DATA" in phrase_error()
+
+    # Restored: the query works again, so the failures came from the bytes, not a broken table.
+    bash(node1, f"cp {backup} {pos}")
+    assert phrase_count() == expected
+
+    bash(node1, f"rm -f {backup}")
+    node1.query("DROP TABLE t_pos SYNC")
 
 
 def test_packed_part_fetch_checksum(started_cluster):
