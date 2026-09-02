@@ -21,17 +21,19 @@ ColumnsDescription StorageSystemEngineSettings::getColumnsDescription()
     {
         {"engine_name",  std::make_shared<DataTypeString>(), "Name of the table engine."},
         {"name",         std::make_shared<DataTypeString>(), "Setting name."},
-        {"value",        std::make_shared<DataTypeString>(), "Setting value."},
-        {"default",      std::make_shared<DataTypeString>(), "Setting default value."},
-        {"changed",      std::make_shared<DataTypeUInt8>(), "1 if the setting was explicitly defined in the config or explicitly changed."},
+        {"value",        std::make_shared<DataTypeString>(), "Value the engine uses on this server. For `MergeTree` and `Distributed` this reflects the server configuration; for engines that have no server-level settings it is the same as `default`."},
+        {"default",      std::make_shared<DataTypeString>(), "Value the setting has when nothing configures it."},
+        {"changed",      std::make_shared<DataTypeUInt8>(), "1 if `value` differs from `default`, i.e. the server configuration or the `compatibility` setting changed it. Always 0 for engines that have no server-level settings."},
         {"description",  std::make_shared<DataTypeString>(), "Setting description."},
-        {"min",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Minimum value of the setting, if any is set via constraints. If the setting has no minimum value, contains NULL."},
-        {"max",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Maximum value of the setting, if any is set via constraints. If the setting has no maximum value, contains NULL."},
-        {"disallowed_values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "List of disallowed values."},
+        {"min",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Minimum value of the setting, if one is set via the current user's constraints, otherwise NULL. Constraints can only be declared for `MergeTree` settings, so this is NULL for every other engine."},
+        {"max",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Maximum value of the setting, if one is set via the current user's constraints, otherwise NULL. Constraints can only be declared for `MergeTree` settings, so this is NULL for every other engine."},
+        {"disallowed_values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Values the current user's constraints forbid. Empty for every engine other than `MergeTree`, which is the only one for which constraints can be declared."},
         {"readonly",     std::make_shared<DataTypeUInt8>(),
-            "Shows whether the current user can change the setting: "
-            "0 - Current user can change the setting, "
-            "1 - Current user can't change the setting."
+            "Whether the current user's constraints forbid changing the setting: "
+            "0 - no constraint forbids it, "
+            "1 - a constraint makes it read-only. "
+            "Only `MergeTree` settings can be constrained, so this is 0 for every other engine. "
+            "It says nothing about whether the engine accepts `ALTER TABLE ... MODIFY SETTING`."
         },
         {"type",         std::make_shared<DataTypeString>(), "Setting type (implementation specific string value)."},
         {"is_obsolete",  std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."},
