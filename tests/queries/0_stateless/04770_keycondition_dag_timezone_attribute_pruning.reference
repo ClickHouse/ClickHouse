@@ -25,6 +25,17 @@ oracle_nullable_dt64	1
 partition_nullable_dt64	1
 control_nullable_element_carries_key_timezone	1
 control_nullable_transform_null_in_off	1
+order_by_nullable_key	1
+order_by_nullable_key_in	1
+partition_by_nullable_key	1
+order_by_nullable_key_dt64	1
+order_by_lowcardinality_key_in	1
+order_by_array_nullable_key	1
+control_nullable_key_total_rows	1
+control_nullable_key_row_matches	1
+control_nullable_key_element_carries_key_timezone	1
+control_nullable_key_other_instant	0
+control_nullable_key_pruning_used	1
 oracle_array	1
 partition_array	1
 oracle_array_dt64	1

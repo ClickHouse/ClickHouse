@@ -2131,13 +2131,22 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 ///   output: `[123]`  type `UInt8`
 
 /// Returns a copy of `elem_type` with every `DateTime`/`DateTime64` leaf replaced by the corresponding
-/// leaf of `dag_type`, or nullptr if any other leaf differs. Requires `elem_type->equals(*dag_type)`:
-/// `equals` ignores the timezone, but the DAG reads it off the type it is handed.
+/// leaf of `dag_type`, or nullptr if the two do not describe the same shape. Keeps `elem_type`'s own
+/// structure, so only timezones move: `equals` ignores those, but the DAG reads them off what it is handed.
 static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, const DataTypePtr & dag_type)
 {
     const WhichDataType elem_which(elem_type);
+    const WhichDataType dag_which(dag_type);
+
+    /// A `Nullable`/`LowCardinality` the key column carries and the element does not is reconciled by
+    /// the casts in the caller, which do not move the instant, so it must not hide the timezone either.
+    if (dag_which.isLowCardinality() && !elem_which.isLowCardinality())
+        return adoptDateTimeLeafTimezones(elem_type, removeLowCardinality(dag_type));
+    if (dag_which.isNullable() && !elem_which.isNullable())
+        return adoptDateTimeLeafTimezones(elem_type, removeNullable(dag_type));
+
     if (elem_which.isDateTimeOrDateTime64())
-        return dag_type;
+        return dag_type->equals(*elem_type) ? dag_type : nullptr;
 
     /// A custom name over the same representation is a different type (`DataTypeVariant::equals`),
     /// and `equals` cannot see it either. Refuse rather than relabel across that boundary.
@@ -2162,42 +2171,47 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
 
     if (elem_which.isArray())
     {
+        const auto * dag_array = typeid_cast<const DataTypeArray *>(dag_type.get());
+        if (!dag_array)
+            return nullptr;
         auto nested = adoptDateTimeLeafTimezones(
-            assert_cast<const DataTypeArray &>(*elem_type).getNestedType(),
-            assert_cast<const DataTypeArray &>(*dag_type).getNestedType());
+            assert_cast<const DataTypeArray &>(*elem_type).getNestedType(), dag_array->getNestedType());
         return nested ? std::make_shared<DataTypeArray>(nested) : nullptr;
     }
 
     if (elem_which.isMap())
     {
+        const auto * dag_map = typeid_cast<const DataTypeMap *>(dag_type.get());
+        if (!dag_map)
+            return nullptr;
         const auto & elem_map = assert_cast<const DataTypeMap &>(*elem_type);
-        const auto & dag_map = assert_cast<const DataTypeMap &>(*dag_type);
-        auto key = adoptDateTimeLeafTimezones(elem_map.getKeyType(), dag_map.getKeyType());
-        auto value = adoptDateTimeLeafTimezones(elem_map.getValueType(), dag_map.getValueType());
+        auto key = adoptDateTimeLeafTimezones(elem_map.getKeyType(), dag_map->getKeyType());
+        auto value = adoptDateTimeLeafTimezones(elem_map.getValueType(), dag_map->getValueType());
         return (key && value) ? std::make_shared<DataTypeMap>(key, value) : nullptr;
     }
 
     if (elem_which.isTuple())
     {
+        const auto * dag_tuple = typeid_cast<const DataTypeTuple *>(dag_type.get());
         const auto & elem_tuple = assert_cast<const DataTypeTuple &>(*elem_type);
-        const auto & dag_tuple = assert_cast<const DataTypeTuple &>(*dag_type);
+        if (!dag_tuple || dag_tuple->getElements().size() != elem_tuple.getElements().size())
+            return nullptr;
         DataTypes elems;
         elems.reserve(elem_tuple.getElements().size());
         for (size_t i = 0; i < elem_tuple.getElements().size(); ++i)
         {
-            auto nested = adoptDateTimeLeafTimezones(elem_tuple.getElements()[i], dag_tuple.getElements()[i]);
+            auto nested = adoptDateTimeLeafTimezones(elem_tuple.getElements()[i], dag_tuple->getElements()[i]);
             if (!nested)
                 return nullptr;
             elems.push_back(std::move(nested));
         }
-        /// `equals` requires the names to match, so either side's names describe both.
         if (elem_tuple.hasExplicitNames())
             return std::make_shared<DataTypeTuple>(elems, elem_tuple.getElementNames());
         return std::make_shared<DataTypeTuple>(elems);
     }
 
-    /// Every other leaf: `equals` already proved them equal and there is nothing to adopt.
-    return elem_type;
+    /// Every other leaf carries no timezone, so there is nothing to adopt.
+    return elem_type->equals(*dag_type) ? elem_type : nullptr;
 }
 
 static bool applyDeterministicDagToColumn(
@@ -2213,14 +2227,12 @@ static bool applyDeterministicDagToColumn(
 
     /// Hand the DAG the timezone it was built against; `equals` cannot see it, so the pair is
     /// interchangeable everywhere except inside the transform. Relabel, never convert.
-    if (input_type->equals(*dag.input_type))
-    {
-        auto adopted = adoptDateTimeLeafTimezones(input_type, dag.input_type);
-        /// A refusal means the pair is not interchangeable, so the DAG cannot be given either type.
-        if (!adopted)
-            return false;
+    if (auto adopted = adoptDateTimeLeafTimezones(input_type, dag.input_type))
         input_type = std::move(adopted);
-    }
+    /// A refusal on an otherwise equal pair means it is not interchangeable, so the DAG cannot be
+    /// given either type. A refusal on an unequal pair leaves the casts below to reconcile it.
+    else if (input_type->equals(*dag.input_type))
+        return false;
 
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)

@@ -64,6 +64,12 @@ DROP TABLE IF EXISTS k_arr_tup_bool;
 DROP TABLE IF EXISTS oracle_bool_in;
 DROP TABLE IF EXISTS k_bool_in;
 DROP TABLE IF EXISTS k_hour_arr;
+DROP TABLE IF EXISTS k_nul_key;
+DROP TABLE IF EXISTS k_nul_key_part;
+DROP TABLE IF EXISTS k_nul_key_dt64;
+DROP TABLE IF EXISTS k_lc_key;
+DROP TABLE IF EXISTS k_arr_nul_key;
+DROP TABLE IF EXISTS k_nul_prune;
 
 -- The oracle: identical data and predicate, no key transform to get wrong.
 CREATE TABLE oracle_utc (ts DateTime('UTC')) ENGINE = Memory;
@@ -174,6 +180,57 @@ SELECT 'partition_nullable_dt64', count() FROM (SELECT ts FROM k_nullable_dt64 W
 SELECT 'control_nullable_element_carries_key_timezone', count() FROM (SELECT ts FROM k_nullable WHERE ts IN (SELECT CAST(toDateTime(1675195200, 'UTC') AS Nullable(DateTime('UTC')))));
 SELECT 'control_nullable_transform_null_in_off', count() FROM (SELECT ts FROM k_nullable WHERE ts IN (SELECT CAST(toDateTime(1675195200) AS Nullable(DateTime)))) SETTINGS transform_null_in = 0;
 SET transform_null_in = 0;
+
+-- Carriers 23-28: the wrapper sits on the KEY COLUMN alone. Every row above pairs a wrapped key with an
+-- equally wrapped element, so the two types are `equals` and the timezone is adopted. A bare comparison
+-- constant never carries the wrapper, so the pair is unequal, and the constant reached the transform in
+-- its own timezone. `toYYYYMM` above is monotonic and takes a different path, which casts the constant to
+-- the function's declared argument type, so the carriers below use non-monotonic key transforms.
+CREATE TABLE k_nul_key (ts Nullable(DateTime('UTC'))) ENGINE = MergeTree ORDER BY ts::String
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO k_nul_key SELECT toDateTime(1675195200, 'UTC');
+SELECT 'order_by_nullable_key', count() FROM k_nul_key WHERE ts = toDateTime(1675195200);
+SELECT 'order_by_nullable_key_in', count() FROM k_nul_key WHERE ts IN (SELECT toDateTime(1675195200));
+
+CREATE TABLE k_nul_key_part (ts Nullable(DateTime('UTC'))) ENGINE = MergeTree PARTITION BY ts::String ORDER BY tuple()
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO k_nul_key_part SELECT toDateTime(1675195200, 'UTC');
+SELECT 'partition_by_nullable_key', count() FROM k_nul_key_part WHERE ts = toDateTime(1675195200);
+
+CREATE TABLE k_nul_key_dt64 (ts Nullable(DateTime64(3, 'UTC'))) ENGINE = MergeTree ORDER BY ts::String
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO k_nul_key_dt64 SELECT toDateTime64(1675195200, 3, 'UTC');
+SELECT 'order_by_nullable_key_dt64', count() FROM k_nul_key_dt64 WHERE ts = toDateTime64(1675195200, 3);
+
+-- `LowCardinality` is the other wrapper a key column can carry alone. It needs `IN` rather than `=`: a
+-- scalar comparison resolves a common supertype for its two arguments first, which retypes the constant
+-- onto the key column's timezone before key analysis ever sees it (measured: the `=` form of this row
+-- reads 1 either way, so it would witness nothing). A set element carries its own type all the way in.
+CREATE TABLE k_lc_key (ts LowCardinality(DateTime('UTC'))) ENGINE = MergeTree ORDER BY ts::String
+    SETTINGS allow_suspicious_low_cardinality_types = 1;
+INSERT INTO k_lc_key SELECT toDateTime(1675195200, 'UTC');
+SELECT 'order_by_lowcardinality_key_in', count() FROM k_lc_key WHERE ts IN (SELECT toDateTime(1675195200));
+
+-- The wrapper difference one level down, so it is reached through the `Array` rather than at the top of
+-- the type: only the array element is `Nullable`.
+CREATE TABLE k_arr_nul_key (a Array(Nullable(DateTime('UTC')))) ENGINE = MergeTree ORDER BY a::String
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO k_arr_nul_key SELECT [toDateTime(1675195200, 'UTC')];
+SELECT 'order_by_array_nullable_key', count() FROM k_arr_nul_key WHERE a = [toDateTime(1675195200)];
+
+-- Controls for the six rows above. The first two prove the zeros they replace were dropped rows rather
+-- than an empty fixture, the next two were already correct, and the last distinguishes "the wrapper was
+-- relabelled" from "the atom was declined", which would also return the right count.
+SELECT 'control_nullable_key_total_rows', count() FROM k_nul_key;
+SELECT 'control_nullable_key_row_matches', ts = toDateTime(1675195200) FROM k_nul_key;
+SELECT 'control_nullable_key_element_carries_key_timezone', count() FROM k_nul_key WHERE ts = toDateTime(1675195200, 'UTC');
+SELECT 'control_nullable_key_other_instant', count() FROM k_nul_key WHERE ts = toDateTime(1675195200 + 86400);
+CREATE TABLE k_nul_prune (ts Nullable(DateTime('UTC'))) ENGINE = MergeTree ORDER BY ts::String
+    SETTINGS allow_nullable_key = 1, index_granularity = 1;
+INSERT INTO k_nul_prune SELECT toDateTime(1675195200, 'UTC') + number * 3600 FROM numbers(16);
+SELECT 'control_nullable_key_pruning_used',
+       countIf(explain LIKE '%Granules:%') > 0 AND countIf(explain LIKE '%Granules: 16/16%') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM k_nul_prune WHERE ts = toDateTime(1675195200 + 5 * 3600));
 
 -- Carriers 15-22: the same defect at arbitrary wrapper depth. `Array`, `Map`, `Tuple` and
 -- `LowCardinality` all delegate `equals` to their children, so a nested timezone is exactly as
@@ -470,3 +527,9 @@ DROP TABLE k_map_keytype;
 DROP TABLE oracle_saf;
 DROP TABLE k_saf;
 DROP TABLE k_saf_arr;
+DROP TABLE k_nul_key;
+DROP TABLE k_nul_key_part;
+DROP TABLE k_nul_key_dt64;
+DROP TABLE k_lc_key;
+DROP TABLE k_arr_nul_key;
+DROP TABLE k_nul_prune;
