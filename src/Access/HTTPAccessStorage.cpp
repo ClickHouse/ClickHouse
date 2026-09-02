@@ -454,14 +454,14 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
     /// let AlwaysAllowCredentials (handled above) or BasicCredentials through.
 
     /// The try below covers exactly the external-auth + validation + materialization stage
-    /// of this applicable Basic attempt (Task 11): HTTPUserDirectoryAuthFailures counts
+    /// of this applicable Basic attempt (Task 11): `HTTPUserDirectoryAuthFailures` counts
     /// what fails closed inside it, and nothing else — not the applicability
-    /// classification, not the networks check, not the AlwaysAllowCredentials path above,
+    /// classification, not the networks check, not the `AlwaysAllowCredentials` path above,
     /// all of which stay outside.
     ///
-    /// A 404 (UserNotFound) is a fallthrough, not a failure, so it must never reach the
+    /// A 404 (`UserNotFound`) is a fallthrough, not a failure, so it must never reach the
     /// catch as an exception: the flag below lets that branch finish the try normally (no
-    /// throw, no return) and defers throwNotFound to after the try, where it is no longer
+    /// throw, no return) and defers `throwNotFound` to after the try, where it is no longer
     /// subject to the catch and therefore never counted.
     bool user_not_found = false;
     try
@@ -473,10 +473,10 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
         /// authenticate concurrently. Infrastructure failures propagate (fail-closed).
         HTTPUserDirectoryResponseParser::Result response;
         {
-            /// Narrow scope: HTTPUserDirectoryAuthMicroseconds measures only the external
+            /// Narrow scope: `HTTPUserDirectoryAuthMicroseconds` measures only the external
             /// call itself, not the validation/materialization below. Retries inside
-            /// HTTPAuthClient are counted (they happen inside the call); a throw from the
-            /// call itself is counted via SCOPE_EXIT before propagating to the catch below.
+            /// `HTTPAuthClient` are counted (they happen inside the call); a throw from the
+            /// call itself is counted via `SCOPE_EXIT` before propagating to the catch below.
             Stopwatch watch;
             SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryAuthMicroseconds, watch.elapsedMicroseconds()); });
             response = external_authenticators.checkHTTPUserDirectoryCredentials(http_auth_server_name, *basic_credentials, client_info);
@@ -484,7 +484,7 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
 
         if (response.status == HTTPUserDirectoryResponseParser::Result::Status::UserNotFound)
         {
-            /// 404 fallthrough — NOT a failure. throwNotFound (if any) happens after the
+            /// 404 fallthrough — NOT a failure. `throwNotFound` (if any) happens after the
             /// try, uncounted.
             user_not_found = true;
         }
@@ -537,9 +537,9 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
         throw;
     }
 
-    /// Reached only for the UserNotFound fallthrough, decided above but thrown here —
+    /// Reached only for the `UserNotFound` fallthrough, decided above but thrown here —
     /// outside the try — so it is never caught by the catch above and never counted as an
-    /// HTTPUserDirectoryAuthFailures.
+    /// `HTTPUserDirectoryAuthFailures`.
     chassert(user_not_found);
     if (throw_if_user_not_exists)
         throwNotFound(AccessEntityType::USER, user_name, getStorageName());

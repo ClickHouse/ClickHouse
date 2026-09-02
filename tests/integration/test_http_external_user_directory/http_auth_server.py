@@ -52,6 +52,8 @@ MAIN_USERS = {
     "interserver_user": {"body": {"roles": ["cluster_role"]}},
     "http_user_concurrent": {"body": {"roles": ["reader"]}},
     "legacy_settings_user": {"body": {"settings": {"max_threads": "4"}}},
+    # Used only by test_metrics for delta-based ProfileEvents/CurrentMetrics assertions.
+    "metrics_user": {"body": {}},
 }
 MAIN_USERS.update({f"barrier_user_{i}": {"body": {}} for i in range(BARRIER_PARTIES)})
 

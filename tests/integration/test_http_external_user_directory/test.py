@@ -1071,27 +1071,71 @@ def test_failed_named_session_init_not_reusable(started_cluster):
     assert value == "555"
 
 
+def _event_value(event_name):
+    # system.events is cumulative since server startup and has no row for an event that
+    # has never fired, so a missing row is treated as 0.
+    result = admin(
+        f"SELECT value FROM system.events WHERE event = '{event_name}'"
+    ).strip()
+    return int(result) if result else 0
+
+
+def _metric_value(metric_name):
+    result = admin(
+        f"SELECT value FROM system.metrics WHERE metric = '{metric_name}'"
+    ).strip()
+    return int(result) if result else 0
+
+
 def test_metrics(started_cluster):
-    instance.query("SELECT 1", user="http_user", password=GOOD_PASSWORD)
-    requests = int(
-        admin(
-            "SELECT value FROM system.events WHERE event = 'HTTPUserDirectoryAuthRequests'"
-        ).strip()
-        or 0
+    # Delta-based, not absolute: system.events/system.metrics are cumulative since server
+    # startup and this test runs last among many sharing one cluster, so an absolute
+    # `> 0` assertion would pass regardless of what this test does. Single-threaded and
+    # nothing else runs concurrently in this suite, so a snapshot-then-act-then-snapshot
+    # pair is race-free.
+    def snapshot():
+        return {
+            "requests": _event_value("HTTPUserDirectoryAuthRequests"),
+            "failures": _event_value("HTTPUserDirectoryAuthFailures"),
+            "created": _event_value("HTTPUserDirectoryUsersCreated"),
+            "cached": _metric_value("HTTPUserDirectoryCachedUsers"),
+        }
+
+    # 1. A brand-new username, first (successful) authentication: materializes a new
+    # cached user.
+    before = snapshot()
+    instance.query("SELECT 1", user="metrics_user", password=GOOD_PASSWORD)
+    after = snapshot()
+    assert after["requests"] == before["requests"] + 1
+    assert after["created"] == before["created"] + 1
+    assert after["cached"] == before["cached"] + 1
+    assert after["failures"] == before["failures"]
+
+    # 2. Same username, second authentication: cache hit, no new materialization.
+    before = snapshot()
+    instance.query("SELECT 1", user="metrics_user", password=GOOD_PASSWORD)
+    after = snapshot()
+    assert after["requests"] == before["requests"] + 1
+    assert after["created"] == before["created"]
+    assert after["cached"] == before["cached"]
+    assert after["failures"] == before["failures"]
+
+    # 3. Same username, wrong password: a Basic external-authentication failure.
+    before = snapshot()
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="metrics_user", password="wrong"
     )
-    assert requests > 0
-    cached = int(
-        admin(
-            "SELECT value FROM system.metrics WHERE metric = 'HTTPUserDirectoryCachedUsers'"
-        ).strip()
-        or 0
+    after = snapshot()
+    assert after["requests"] == before["requests"] + 1
+    assert after["failures"] == before["failures"] + 1
+
+    # 4. A username the mock server does not know: 404 (UserNotFound) fallthrough, then
+    # "Authentication failed" overall since `http` is the last (and only) storage on
+    # `node`. Not a failure: HTTPUserDirectoryAuthFailures must stay unchanged.
+    before = snapshot()
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="metrics_ghost_user", password=GOOD_PASSWORD
     )
-    assert cached > 0
-    instance.query_and_get_error("SELECT 1", user="http_user", password="wrong")
-    failures = int(
-        admin(
-            "SELECT value FROM system.events WHERE event = 'HTTPUserDirectoryAuthFailures'"
-        ).strip()
-        or 0
-    )
-    assert failures > 0
+    after = snapshot()
+    assert after["requests"] == before["requests"] + 1
+    assert after["failures"] == before["failures"]
