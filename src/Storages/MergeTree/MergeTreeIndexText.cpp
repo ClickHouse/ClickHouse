@@ -535,7 +535,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto & settings = condition_text.getContext()->getSettingsRef();
 
     /// Dictionary scan is complete; bypass pattern queries that cannot be selective before reading postings.
-    if (settings[Setting::use_text_index_like_pattern_bypass])
+    if (state.apply_pattern_selectivity_guards && settings[Setting::use_text_index_like_pattern_bypass])
         analyzer->analyzeCardinalitiesAndBypassPatterns(state.part_info.getRowCount());
 
     if (!state.skip_postings_deserialization)
@@ -711,7 +711,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             }
         }
 
-        if (postings_to_read > max_postings_to_read || postings_rows_to_read > max_postings_rows_to_read)
+        if (postings_to_read > max_postings_to_read
+            || (state.apply_pattern_selectivity_guards && postings_rows_to_read > max_postings_rows_to_read))
         {
             /// Scan cut short: matched-token set is incomplete, so bypass pattern queries and fall back.
             analyzer->bypassPatternQueries();

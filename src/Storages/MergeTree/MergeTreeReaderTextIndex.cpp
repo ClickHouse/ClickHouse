@@ -89,6 +89,9 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         .part_info = *data_part_info_for_read,
         .index = *index.index,
         .readable_ranges = nullptr,
+        /// The exact direct read has no surviving-row context; the selectivity guards
+        /// would count whole-part cardinalities and wrongly abandon selective reads.
+        .apply_pattern_selectivity_guards = false,
         .skip_postings_deserialization = false,
     };
 

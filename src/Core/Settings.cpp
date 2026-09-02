@@ -8896,7 +8896,7 @@ Maximum total number of posting rows to read when text index LIKE evaluation by 
 
 Each matched token with a large (non-embedded) posting list costs its cardinality in rows, so one very common token can exhaust the budget. Exceeding either this limit or `text_index_like_max_postings_to_read` cuts the dictionary scan short, and LIKE evaluation falls back to reading the column.
 
-The budget is charged per part against the whole part, except where earlier pruning has already narrowed the readable rows: a token those rows cannot reach costs nothing. It is not charged against the mark set of a combined predicate such as `pk = ... AND message LIKE ...`.
+The budget applies where the dictionary scan runs with the pruning context of index analysis: a token that the rows surviving earlier pruning cannot reach costs nothing, and a reachable token costs its full stored cardinality. The exact direct read lacks that context and applies only `text_index_like_max_postings_to_read`, so a combined predicate such as `pk = ... AND message LIKE ...` no longer abandons it on whole-part counts.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
@@ -8905,7 +8905,7 @@ Whether a LIKE/ILIKE pattern query whose matched tokens provably cover every row
 
 The decision reads no posting list: each list's row count is stored in the dictionary next to the token, and the bypass fires exactly when one matched token's stored count equals the part's row count - then the union covers the part and reading it cannot prune anything. An estimate is never used.
 
-"Every row" means every row of the part, not of the rows surviving an earlier predicate, so a combined predicate does not make the bypass more eager.
+The bypass runs only where the scan has the pruning context of index analysis; the exact direct read never bypasses. "Every row" means every row of the part, not of the rows surviving an earlier predicate, so a combined predicate does not make the bypass more eager.
 
 Disabling turns off only this exact-proof bypass; it does not by itself force the posting lists to be read, because `text_index_like_max_postings_to_read` and `text_index_like_max_postings_rows_to_read` can still cut the dictionary scan short. A test that must reach the posting-list reader on a broad pattern also needs both budgets set high enough for its data.
 
