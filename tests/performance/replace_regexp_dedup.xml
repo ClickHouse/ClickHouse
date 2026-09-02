@@ -50,4 +50,9 @@
 
     <!-- Same guard, but with blocks small enough that a high first-check threshold would never trigger it. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 500</query>
+
+    <!-- A repeated prefix followed by a mostly-distinct suffix in each block (400 rows of one haystack, then
+         3600 distinct matches): the distinct ratio must be measured over recent rows, or the repeated prefix
+         would keep the cache on for the whole suffix and every distinct row would pay the lookup for nothing. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 4000 &lt; 400, 'https://example.com/path/repeated', concat('https://example.com/path/', toString(number))), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 4000</query>
 </test>

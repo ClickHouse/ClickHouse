@@ -404,11 +404,13 @@ struct ReplaceRegexpImpl
         static constexpr size_t ratio_check_window = 32;
         /// The distinct ratio needs a longer sample: values that repeat with a longer cycle would be
         /// written off as distinct before the first repeat can arrive.
-        static constexpr size_t min_rows_for_distinct_ratio_check = 256;
+        static constexpr size_t distinct_ratio_window = 256;
+        static_assert(distinct_ratio_window % ratio_check_window == 0);
 
         bool precheck_non_matching = false;
         size_t rows_in_window = 0;
         size_t matched_in_window = 0;
+        size_t cache_size_at_distinct_check = 0;
 
         std::string_view prev_haystack;
         bool has_prev_haystack = false;
@@ -438,13 +440,19 @@ struct ReplaceRegexpImpl
             {
                 precheck_non_matching = matched_in_window * 20 < ratio_check_window;
                 /// While the cache is enabled every row either reaches it or is an adjacent duplicate
-                /// (a repeat the caching strategy serves), so `i` is the right denominator for the
-                /// distinct ratio.
-                if (map_enabled && i >= min_rows_for_distinct_ratio_check
-                    && results_cache.size() * 10 > i * 9)
+                /// (a repeat the caching strategy serves), so the insertions since the previous check
+                /// count the distinct rows of the last window. The ratio covers only that window rather
+                /// than the whole prefix: a repetitive prefix must not keep the cache on for a
+                /// mostly-distinct remainder of the block, where the lookups would pay for nothing.
+                if (map_enabled && i % distinct_ratio_window == 0)
                 {
-                    map_enabled = false;
-                    results_cache.clearAndShrink();
+                    const size_t distinct_in_window = results_cache.size() - cache_size_at_distinct_check;
+                    if (distinct_in_window * 10 > distinct_ratio_window * 9)
+                    {
+                        map_enabled = false;
+                        results_cache.clearAndShrink();
+                    }
+                    cache_size_at_distinct_check = results_cache.size();
                 }
                 rows_in_window = 0;
                 matched_in_window = 0;
