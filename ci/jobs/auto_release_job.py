@@ -29,9 +29,15 @@ MAIN_BRANCH = "master"
 # not-ready rather than reaching arbitrarily deep into history.
 MAX_COMMITS_TO_CONSIDER = 8
 
-# The one CI job that gates a release candidate: its check-run must be green.
-# Name must match JobNames.FAST_TEST (ci/defs/defs.py) — the check-run name.
-FAST_TEST_CHECK = "Fast test"
+# Release-branch CI check-runs that validate the published artifacts install.
+# AutoReleases gates a candidate on these instead of the whole ReleaseBranchCI,
+# which also runs release-irrelevant test jobs (integration/stateless/stress)
+# that are frequently red and would otherwise starve branches of patch releases.
+# Names must match the `Install packages` jobs ReleaseBranchCI emits as check-runs.
+RELEASE_VALIDATION_CHECKS = (
+    "Install packages (amd_release)",
+    "Install packages (arm_release)",
+)
 
 # The dispatched release workflow, referenced by its generated YAML file name
 # (what `gh workflow run` / `gh run list --workflow` expect — the workflow *name*
@@ -104,27 +110,35 @@ def _latest_release_tag(branch: str) -> Optional[str]:
     return tags[-1] if tags else None
 
 
-def _fast_test_passed(sha: str) -> bool:
-    """True when the commit's newest `Fast test` check-run concluded success.
+def _release_checks_passed(sha: str) -> bool:
+    """True when every RELEASE_VALIDATION_CHECKS check-run concluded success.
 
-    False when it failed, is still running, or was never reported — GitHub keeps
-    a separate row per re-run, so the latest by `started_at` is authoritative."""
+    Uses the newest run per name (GitHub keeps a row per re-run). A required
+    check that is missing, unfinished, or not success makes the commit not a
+    candidate."""
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/check-runs"
-        f" --jq '.check_runs[] | select(.name==\"{FAST_TEST_CHECK}\")"
-        f" | [.started_at, .status, .conclusion] | @tsv'"
+        f" --jq '.check_runs[] | [.name, .started_at, .status, .conclusion] | @tsv'"
     )
-    runs = [line.split("\t") for line in out.splitlines() if line.strip()]
-    if not runs:
-        print(f"   No {FAST_TEST_CHECK} check-run reported yet for [{sha}]")
-        return False
-    _, status, conclusion = max(runs, key=lambda r: r[0])
-    if status != "completed":
-        print(f"   {FAST_TEST_CHECK} still {status} for [{sha}]")
-        return False
-    if conclusion != "success":
-        print(f"   {FAST_TEST_CHECK} concluded {conclusion} for [{sha}]")
-        return False
+    latest: Dict[str, Tuple[str, str, str]] = {}
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        name, started_at, status, conclusion = line.split("\t")
+        if name not in latest or latest[name][0] < started_at:
+            latest[name] = (started_at, status, conclusion)
+    for name in RELEASE_VALIDATION_CHECKS:
+        run = latest.get(name)
+        if run is None:
+            print(f"   {name} not reported yet for [{sha}]")
+            return False
+        _, status, conclusion = run
+        if status != "completed":
+            print(f"   {name} still {status} for [{sha}]")
+            return False
+        if conclusion != "success":
+            print(f"   {name} concluded {conclusion} for [{sha}]")
+            return False
     return True
 
 
@@ -178,10 +192,10 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
     """Return (commit_sha, reason, status) for `branch`.
 
     commit_sha is the newest commit within MAX_COMMITS_TO_CONSIDER of the branch
-    head, excluding the version-bump commit, whose `Fast test` check-run is green
-    and whose release build artifacts are present; empty when none qualifies,
-    with `reason` explaining why. `status` is what the sub-result reports:
-    SKIPPED when not ready yet, ERROR when the branch is broken."""
+    head, excluding the version-bump commit, whose RELEASE_VALIDATION_CHECKS are
+    green and whose release build artifacts are present; empty when none
+    qualifies, with `reason` explaining why. `status` is what the sub-result
+    reports: SKIPPED when not ready yet, ERROR when the branch is broken."""
     tag = _latest_release_tag(branch)
     if not tag:
         return "", "no release tag found", Result.Status.ERROR
@@ -207,16 +221,16 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
     last_failure = ""
     for idx, commit in enumerate(commits_to_check):
         print(f"[{branch}~{idx + 1}] check commit [{commit}] as release candidate")
-        if not _fast_test_passed(commit):
-            last_failure = last_failure or f"{FAST_TEST_CHECK} not green"
+        if not _release_checks_passed(commit):
+            last_failure = last_failure or "release validation checks not green"
             continue
-        # A green Fast test does not mean the release build ran: it can be
-        # deduplicated by the CI cache (reported `skipped`, not `failed`) so no
-        # packages were uploaded under this commit's SHA, and CreateRelease's
-        # package download then 404s. Require the exact artifacts to be present.
+        # The install-packages checks prove the .deb/.rpm install, but not that
+        # every object CreateRelease downloads is present: a dedup-skipped build
+        # uploads nothing under this SHA (and macOS signed artifacts are separate),
+        # so CreateRelease's package download 404s. Require them to be present.
         if not _release_build_artifacts_ready(branch, commit):
             print(
-                f"   {FAST_TEST_CHECK} green but release build artifacts missing"
+                f"   release validation green but release build artifacts missing"
                 f" for [{commit}] - check previous commit"
             )
             last_failure = (
@@ -228,7 +242,7 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
 
     return (
         "",
-        last_failure or f"no commit with green {FAST_TEST_CHECK} in range",
+        last_failure or "no commit with green release validation in range",
         Result.Status.SKIPPED,
     )
 
