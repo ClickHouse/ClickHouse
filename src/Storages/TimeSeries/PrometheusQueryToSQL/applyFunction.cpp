@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyClampFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionAbsent.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
@@ -36,6 +37,9 @@ SQLQueryPiece applyFunction(
 
     if (isFunctionTime(function_name))
         return fromFunctionTime(function_node, std::move(arguments), context);
+
+    if (isFunctionAbsent(function_name))
+        return applyFunctionAbsent(function_node, std::move(arguments), context);
 
     if (isDateTimeFunction(function_name))
         return applyDateTimeFunction(function_node, std::move(arguments), context);
