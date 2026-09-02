@@ -44,3 +44,33 @@ INSERT INTO t_injective_mac VALUES (1), (281474976710657);
 SELECT count() FROM (SELECT MACNumToString(x) AS k FROM t_injective_mac GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1, allow_aggregate_partitions_independently = 1;
 SELECT count() FROM (SELECT MACNumToString(x) AS k FROM t_injective_mac GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
 DROP TABLE t_injective_mac;
+
+-- The same claim is consumed by `tryConvertAnyOuterJoinToInnerJoin`, which peels an injective
+-- function off the join key of the aggregated side to decide that every row of the other side has
+-- at most one match, and then rewrites `ANY OUTER` into `ALL INNER`. With a false claim two
+-- aggregation groups collapse onto one join key, so the rewritten join duplicates rows instead of
+-- keeping the single row `ANY` returns. Both prints must give one row.
+SELECT 'ANY OUTER JOIN to INNER JOIN';
+DROP TABLE IF EXISTS t_injective_join;
+CREATE TABLE t_injective_join (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_injective_join VALUES (1), (281474976710657);
+
+SELECT count()
+FROM
+(
+    SELECT l.s
+    FROM (SELECT MACNumToString(toUInt64(1)) AS s) AS l
+    ANY LEFT JOIN (SELECT x, count() AS c FROM t_injective_join GROUP BY x) AS agg ON l.s = MACNumToString(agg.x)
+    WHERE agg.c > 0
+);
+
+SELECT count()
+FROM
+(
+    SELECT r.s
+    FROM (SELECT x, count() AS c FROM t_injective_join GROUP BY x) AS agg
+    ANY RIGHT JOIN (SELECT MACNumToString(toUInt64(1)) AS s) AS r ON MACNumToString(agg.x) = r.s
+    WHERE agg.c > 0
+);
+
+DROP TABLE t_injective_join;
