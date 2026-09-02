@@ -561,6 +561,68 @@ def test_kafka_consumer_hang2(kafka_cluster):
     k.kafka_delete_topic(admin_client, topic_name)
 
 
+def test_kafka_consumer_leaves_group_on_restart(kafka_cluster):
+    # A stopped consumer must send `LeaveGroup`. Otherwise it remains a member for the configured 45-second
+    # `session.timeout.ms` and prevents the replacement consumer from getting an assignment after restart.
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_restart_{suffix}"
+    topic_name = "restart_leave_group"
+
+    admin_client = k.get_admin_client(kafka_cluster)
+    k.kafka_create_topic(admin_client, topic_name)
+
+    try:
+        instance.query(
+            f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{kafka_table}',
+                         kafka_format = 'JSONEachRow';
+            CREATE TABLE test.{kafka_table}_dst (key UInt64, value UInt64)
+                ENGINE = MergeTree
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
+                SELECT * FROM test.{kafka_table};
+            """
+        )
+
+        k.kafka_produce(kafka_cluster, topic_name, [json.dumps({"key": 1, "value": 1})])
+        assert 1 == int(
+            instance.query_with_retry(
+                f"SELECT count() FROM test.{kafka_table}_dst",
+                check_callback=lambda result: int(result) == 1,
+                retry_count=20,
+            )
+        )
+
+        instance.restart_clickhouse()
+
+        k.kafka_produce(kafka_cluster, topic_name, [json.dumps({"key": 2, "value": 2})])
+        resume_timeout_sec = 25
+        start = time.monotonic()
+        result = instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_dst",
+            check_callback=lambda result: int(result) == 2,
+            retry_count=resume_timeout_sec,
+            sleep_time=1,
+        )
+        elapsed = time.monotonic() - start
+        assert int(result) == 2, (
+            f"Consumption did not resume within {elapsed:.0f} seconds after restart, got {result!r}"
+        )
+    finally:
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.{kafka_table}_mv;
+            DROP TABLE IF EXISTS test.{kafka_table}_dst;
+            DROP TABLE IF EXISTS test.{kafka_table};
+            """
+        )
+        k.kafka_delete_topic(admin_client, topic_name)
+
+
 # sequential read from different consumers leads to breaking lot of kafka invariants
 # (first consumer will get all partitions initially, and may have problems in doing polls every 60 sec)
 def test_kafka_read_consumers_in_parallel(kafka_cluster):

@@ -888,6 +888,7 @@ void stopConsumerImpl(
     cppkafka::Consumer& consumer,
     RevocationCb revocation_cb,
     AssignmentCb assignment_cb,
+    bool leave_group,
     const std::chrono::milliseconds drain_timeout,
     const LoggerPtr& log,
     StorageKafkaUtils::ErrorHandler error_handler)
@@ -916,7 +917,48 @@ void stopConsumerImpl(
         LOG_ERROR(log, "Error during pause (stopConsumerImpl): {}", e.what());
     }
 
+    const auto start_time = std::chrono::steady_clock::now();
+    const bool wait_for_empty_member_id
+        = leave_group && consumer.get_configuration().get("group.protocol") == "classic";
+
+    if (leave_group)
+    {
+        try
+        {
+            /// `unsubscribe` is asynchronous. For the classic group protocol librdkafka clears the member id when it
+            /// hands `LeaveGroup` to the broker connection. The consumer protocol does not clear it on this path.
+            consumer.unsubscribe();
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            LOG_ERROR(log, "Error during unsubscribe (stopConsumerImpl): {}", e.what());
+        }
+    }
+
     StorageKafkaUtils::drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+
+    if (!wait_for_empty_member_id)
+        return;
+
+    /// Keep serving the event queue until librdkafka has handed `LeaveGroup` to the broker connection. Reuse the drain
+    /// budget because consumers are stopped one by one during table teardown.
+    while (true)
+    {
+        const auto member_id = consumer.get_member_id();
+        if (member_id.empty())
+            return;
+
+        if (std::chrono::steady_clock::now() - start_time > drain_timeout)
+        {
+            LOG_WARNING(
+                log,
+                "Timeout waiting for Kafka consumer member {} to leave the group; the broker will keep it until `session.timeout.ms` expires",
+                member_id);
+            return;
+        }
+
+        consumer.poll(100ms);
+    }
 }
 
 namespace StorageKafkaUtils
@@ -942,20 +984,21 @@ void consumerGracefulStop(
     // Before destruction, our objectives are:
     //   (1) Process all outstanding callbacks by polling the event queue.
     //   (2) Ensure that only special events (e.g. callbacks, rebalances) are polled (we don't want to poll regular messages).
+    //   (3) Leave the consumer group so the broker can reassign its partitions immediately.
     //
-    // Previously, we performed an unsubscribe to stop message consumption and clear 'read' messages.
-    // However, unsubscribe triggers a rebalance that schedules additional background tasks, such as locking
-    // and removal of internal toppar queues. Meanwhile, polling to release callbacks may concurrently
-    // cause those same queues to be destroyed.
+    // `unsubscribe` triggers a rebalance that schedules additional background tasks, such as locking
+    // and removal of internal toppar queues. Polling to release callbacks may concurrently cause those same
+    // queues to be destroyed.
     // This can lead to a situation where the background thread doing rebalance and the current thread doing polling access
     // the toppar queues simultaneously, potentially locking them in a different order, which risks a deadlock.
     //
-    // To mitigate this, we now:
-    //   (1) Avoid calling unsubscribe (letting rebalance occur naturally via consumer group timeout).
-    //   (2) Set up different rebalance callbacks to repeat (3) if a rebalance will occur before consumer destruction.
-    //   (3) Pause the consumer to stop processing new messages.
-    //   (4) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
-    //   (5) Poll the event queue to process any remaining callbacks.
+    // To avoid the lock inversion while still sending `LeaveGroup`, we:
+    //   (1) Set up different rebalance callbacks to repeat (2) if a rebalance occurs before consumer destruction.
+    //   (2) Pause the consumer to stop processing new messages.
+    //   (3) Disconnect the toppar queues before `unsubscribe` to remove the cascading queue locks.
+    //   (4) Unsubscribe from the consumer group.
+    //   (5) Poll the event queue to process the revocation and any remaining callbacks. With the classic group protocol,
+    //       wait until librdkafka has handed `LeaveGroup` to the broker connection.
 
     stopConsumerImpl(
         consumer,
@@ -974,6 +1017,7 @@ void consumerGracefulStop(
             // as just after processing the callback cppkafka will call run assign
             // and that can reset the queues
         },
+        /*leave_group*/ true,
         drain_timeout, log, std::move(error_handler));
 }
 
@@ -990,6 +1034,7 @@ void consumerStopWithoutRebalance(
         {
             // we don't care during the destruction
         },
+        /*leave_group*/ false,
         drain_timeout, log, std::move(error_handler));
 }
 
