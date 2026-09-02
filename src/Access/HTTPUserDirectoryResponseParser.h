@@ -25,6 +25,9 @@ namespace DB
 /// allowed setting (built-in, or matching `custom_settings_prefixes`) and how a built-in setting
 /// interprets the value is decided by `HTTPAccessStorage`, which owns the `AccessControl` policy.
 ///
+/// A 200 response must be length-delimited (Content-Length or chunked transfer encoding), so that
+/// a truncated body is detectable; a close-delimited 200 fails the attempt.
+///
 /// Status mapping:
 ///   200 -> Ok (body parsed strictly),
 ///   404 -> UserNotFound (the caller may try the next access storage),

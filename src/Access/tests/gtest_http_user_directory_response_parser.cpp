@@ -2,6 +2,8 @@
 
 #include <map>
 #include <sstream>
+#include <stdexcept>
+#include <streambuf>
 
 #include <Access/HTTPUserDirectoryResponseParser.h>
 #include <Common/Exception.h>
@@ -12,14 +14,72 @@ using namespace DB;
 namespace
 {
 
+/// A length-delimited response, as every real helper sends: Content-Length matches the body.
 HTTPUserDirectoryResponseParser::Result parseBody(Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)
 {
     Poco::Net::HTTPResponse response;
     response.setStatus(status);
+    response.setContentLength(static_cast<std::streamsize>(body.size()));
     std::istringstream body_stream(body);
     return HTTPUserDirectoryResponseParser{}.parse(response, &body_stream);
 }
 
+/// A stream buffer whose every read fails, standing in for a stream implementation that reports a
+/// broken transfer through `badbit` instead of an exception.
+class FailingStreamBuf : public std::streambuf
+{
+protected:
+    int_type underflow() override { throw std::runtime_error("broken transfer"); }
+};
+
+}
+
+TEST(HTTPUserDirectoryResponseParser, OkResponseMustBeLengthDelimited)
+{
+    /// Neither Content-Length nor chunked: a truncation would be undetectable, so the 200 is rejected
+    /// whether the body is empty or valid.
+    for (const std::string & body : {std::string{}, std::string{"{}"}})
+    {
+        Poco::Net::HTTPResponse response;
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        std::istringstream body_stream(body);
+        EXPECT_THROW(HTTPUserDirectoryResponseParser{}.parse(response, &body_stream), Exception) << body;
+    }
+    /// Content-Length: 0 keeps the "empty 200 means {}" contract.
+    EXPECT_EQ(parseBody(Poco::Net::HTTPResponse::HTTP_OK, "").status, HTTPUserDirectoryResponseParser::Result::Status::Ok);
+    /// Chunked framing is accepted as well.
+    {
+        Poco::Net::HTTPResponse response;
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setChunkedTransferEncoding(true);
+        std::istringstream body_stream(R"({"roles": ["reader"]})");
+        auto result = HTTPUserDirectoryResponseParser{}.parse(response, &body_stream);
+        EXPECT_EQ(result.status, HTTPUserDirectoryResponseParser::Result::Status::Ok);
+        ASSERT_EQ(result.role_names.size(), 1u);
+    }
+    /// A 404 does not need verifiable framing: the status is the result.
+    {
+        Poco::Net::HTTPResponse response;
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+        std::istringstream body_stream("");
+        EXPECT_EQ(HTTPUserDirectoryResponseParser{}.parse(response, &body_stream).status,
+            HTTPUserDirectoryResponseParser::Result::Status::UserNotFound);
+    }
+}
+
+TEST(HTTPUserDirectoryResponseParser, BrokenBodyStreamFailsClosed)
+{
+    /// With the default exception mask, `istream::read` turns a streambuf exception into `badbit` and
+    /// returns nothing; the parser must not mistake that for an empty (valid) body.
+    for (auto status : {Poco::Net::HTTPResponse::HTTP_OK, Poco::Net::HTTPResponse::HTTP_NOT_FOUND})
+    {
+        Poco::Net::HTTPResponse response;
+        response.setStatus(status);
+        response.setContentLength(100);
+        FailingStreamBuf failing_buf;
+        std::istream body_stream(&failing_buf);
+        EXPECT_THROW(HTTPUserDirectoryResponseParser{}.parse(response, &body_stream), Exception) << static_cast<int>(status);
+    }
 }
 
 TEST(HTTPUserDirectoryResponseParser, FullValidResponse)

@@ -69,6 +69,12 @@ String HTTPUserDirectoryResponseParser::readBoundedBody(std::istream * body_stre
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                 "HTTP authentication server response body exceeds {} bytes", max_response_body_size);
     }
+    /// ClickHouse's Poco HTTP streams throw on badbit (a truncated Content-Length or chunked
+    /// body surfaces as an exception from `read`), but keep this check fail-closed for other
+    /// or future stream implementations, where `read` swallows the error into `badbit`.
+    if (body_stream->bad())
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Failed to read the HTTP authentication server response body");
     return body;
 }
 
@@ -91,6 +97,16 @@ HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response,
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "HTTP authentication server responded with status {}", static_cast<int>(status));
+
+    /// The 200 body carries authentication state (roles, settings, valid_until), so its complete
+    /// reception must be verifiable. With Content-Length or chunked framing a truncated body is
+    /// detected by the stream; a body delimited only by connection close is indistinguishable
+    /// from a complete one, and a helper dying right after the headers would look like a valid
+    /// empty response. Reject that framing. A 404 needs no such guarantee: the status itself is
+    /// the result and the body carries nothing.
+    if (!response.hasContentLength() && !response.getChunkedTransferEncoding())
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "HTTP authentication server response must use Content-Length or chunked transfer encoding");
 
     Result result;
     result.status = Result::Status::Ok;
