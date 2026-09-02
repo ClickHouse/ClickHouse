@@ -13,9 +13,8 @@ SELECT singleValueOrNull(j) FROM (SELECT '{"a":1}'::JSON AS j FROM numbers(3));
 SELECT singleValueOrNull(j) FROM (SELECT if(number % 2, '{"a":1}', '{"b":2}')::JSON AS j FROM numbers(4));
 
 -- Test 2: Deserialization from MergeTree must not crash.
--- Note: singleValueOrNull serialize/read methods do not persist first_value/is_null flags (see TODO in source),
--- so the deserialized state always appears empty and returns NULL. This is a known pre-existing limitation.
--- This test verifies the SEGFAULT is fixed (the server does not crash during deserialization).
+-- The serialized state keeps first_value/is_null, so a valid single-value state remains usable after
+-- deserialization. This also verifies the SEGFAULT is fixed.
 DROP TABLE IF EXISTS t_single_value_or_null_json;
 CREATE TABLE t_single_value_or_null_json (id UInt32, s AggregateFunction(singleValueOrNull, JSON)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_single_value_or_null_json SELECT 1, singleValueOrNullState(j) FROM (SELECT '{"a":1}'::JSON AS j);
