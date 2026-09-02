@@ -1008,6 +1008,23 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationBucketTopKConversions, "Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
+    M(AggregationMergePrepAllSingleLevel, "Number of in-memory final aggregation merges whose non-empty keyed input variants were all single-level before merge preparation.", ValueType::Number) \
+    M(AggregationMergePrepMixedLevel, "Number of in-memory final aggregation merges that received both single-level and two-level non-empty keyed input variants before merge preparation.", ValueType::Number) \
+    M(AggregationMergePrepAllTwoLevel, "Number of in-memory final aggregation merges whose non-empty keyed input variants were all two-level before merge preparation.", ValueType::Number) \
+    M(AggregationMergeInputVariants, "Number of non-empty keyed aggregation variants presented to in-memory final aggregation merges.", ValueType::Number) \
+    M(AggregationMergeInputGroups, "Number of groups across non-empty keyed aggregation variants presented to in-memory final aggregation merges.", ValueType::Number) \
+    M(AggregationFinalMergePathSingleLevel, "Number of final keyed aggregation merges that used a single-level hash-table path.", ValueType::Number) \
+    M(AggregationFinalMergePathTwoLevel, "Number of final keyed aggregation merges that used the parallel two-level bucket path.", ValueType::Number) \
+    M(AggregationMergeBuckets, "Number of two-level buckets successfully merged and converted during final aggregation merges.", ValueType::Number) \
+    M(AggregationMergeBucketElapsedMicroseconds, "Total wall-clock time spent merging and converting individual two-level buckets during final aggregation merges, summed across merge sources.", ValueType::Microseconds) \
+    M(AggregationMergeBusiestBucketElapsedMicroseconds, "Sum, across successfully completed final aggregation merge operations, of the wall-clock time of each operation's slowest two-level bucket.", ValueType::Microseconds) \
+    M(AggregationMergeSources, "Number of merge source processors that completed at least one two-level bucket during successfully completed final aggregation merges.", ValueType::Number) \
+    M(AggregationMergeBusiestSourceElapsedMicroseconds, "Sum, across successfully completed final aggregation merge operations, of the total bucket wall-clock time accumulated by each operation's busiest merge source processor.", ValueType::Microseconds) \
+    M(UniqExactMergeWaves, "Number of existing uniqExact parallel conversion or merge dispatches that successfully completed their aggregation thread-pool barrier.", ValueType::Number) \
+    M(UniqExactMergeWaveInputStates, "Number of uniqExact states presented to successfully completed parallel conversion or merge waves.", ValueType::Number) \
+    M(UniqExactMergeWaveElapsedMicroseconds, "Total wall-clock time of successfully completed uniqExact parallel conversion and merge waves, measured from dispatch through their completion barrier.", ValueType::Microseconds) \
+    M(UniqExactMergeWaveCPUTimeMicroseconds, "Total thread CPU time consumed by pooled tasks in successfully completed uniqExact parallel conversion and merge waves.", ValueType::Microseconds) \
+    M(UniqExactMergeWaveWorkers, "Sum of the number of distinct thread-pool workers, up to 256 per wave, that executed each successfully completed uniqExact parallel conversion or merge wave.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
     M(AggregationTopKRowsSkipped, "How many rows were skipped during aggregation because their grouping key could not enter the top-K result (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysEvicted, "How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).", ValueType::Number) \

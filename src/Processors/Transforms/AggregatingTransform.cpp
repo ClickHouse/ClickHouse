@@ -6,20 +6,21 @@
 
 #include <Interpreters/AdaptiveAggregationImpl.h>
 
-#include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/types.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -36,6 +37,18 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AggregationMergePrepAllSingleLevel;
+    extern const Event AggregationMergePrepMixedLevel;
+    extern const Event AggregationMergePrepAllTwoLevel;
+    extern const Event AggregationMergeInputVariants;
+    extern const Event AggregationMergeInputGroups;
+    extern const Event AggregationFinalMergePathSingleLevel;
+    extern const Event AggregationFinalMergePathTwoLevel;
+    extern const Event AggregationMergeBuckets;
+    extern const Event AggregationMergeBucketElapsedMicroseconds;
+    extern const Event AggregationMergeBusiestBucketElapsedMicroseconds;
+    extern const Event AggregationMergeSources;
+    extern const Event AggregationMergeBusiestSourceElapsedMicroseconds;
 }
 
 namespace DB
@@ -44,6 +57,38 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
+}
+
+static void recordFinalAggregationMergeInputShape(const ManyAggregatedDataVariants & data, size_t keys_size)
+{
+    if (keys_size == 0)
+        return;
+
+    size_t non_empty_variants = 0;
+    size_t two_level_variants = 0;
+    size_t input_groups = 0;
+    for (const auto & variant : data)
+    {
+        if (variant->empty())
+            continue;
+
+        ++non_empty_variants;
+        two_level_variants += variant->isTwoLevel();
+        input_groups += variant->sizeWithoutOverflowRow();
+    }
+
+    if (non_empty_variants <= 1)
+        return;
+
+    ProfileEvents::increment(ProfileEvents::AggregationMergeInputVariants, non_empty_variants);
+    ProfileEvents::increment(ProfileEvents::AggregationMergeInputGroups, input_groups);
+
+    if (two_level_variants == 0)
+        ProfileEvents::increment(ProfileEvents::AggregationMergePrepAllSingleLevel);
+    else if (two_level_variants == non_empty_variants)
+        ProfileEvents::increment(ProfileEvents::AggregationMergePrepAllTwoLevel);
+    else
+        ProfileEvents::increment(ProfileEvents::AggregationMergePrepMixedLevel);
 }
 
 ManyAggregatedData::~ManyAggregatedData()
@@ -209,6 +254,12 @@ public:
 
     struct SharedData
     {
+        struct SourceStats
+        {
+            std::atomic<UInt64> elapsed_microseconds = 0;
+            std::atomic<UInt32> completed_buckets = 0;
+        };
+
         std::atomic<UInt32> next_bucket_to_merge = 0;
         std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed{};
         std::atomic<bool> is_cancelled = false;
@@ -230,6 +281,57 @@ public:
             for (auto & flag : is_bucket_processed)
                 flag = false;
         }
+
+        void initializeMergeSources(size_t num_sources_)
+        {
+            source_stats = std::make_unique<SourceStats[]>(num_sources_);
+            num_sources = num_sources_;
+        }
+
+        void recordSuccessfulBucket(size_t source_index_, UInt64 elapsed_microseconds)
+        {
+            ProfileEvents::increment(ProfileEvents::AggregationMergeBuckets);
+            ProfileEvents::increment(ProfileEvents::AggregationMergeBucketElapsedMicroseconds, elapsed_microseconds);
+
+            updateMaximum(busiest_bucket_elapsed_microseconds, elapsed_microseconds);
+            source_stats[source_index_].elapsed_microseconds.fetch_add(elapsed_microseconds, std::memory_order_relaxed);
+            source_stats[source_index_].completed_buckets.fetch_add(1, std::memory_order_relaxed);
+
+            if (completed_buckets.fetch_add(1, std::memory_order_acq_rel) + 1 != NUM_BUCKETS)
+                return;
+
+            UInt64 active_sources = 0;
+            UInt64 busiest_source_elapsed_microseconds = 0;
+            for (size_t i = 0; i < num_sources; ++i)
+            {
+                if (source_stats[i].completed_buckets.load(std::memory_order_relaxed) == 0)
+                    continue;
+
+                ++active_sources;
+                busiest_source_elapsed_microseconds
+                    = std::max(busiest_source_elapsed_microseconds, source_stats[i].elapsed_microseconds.load(std::memory_order_relaxed));
+            }
+
+            ProfileEvents::increment(
+                ProfileEvents::AggregationMergeBusiestBucketElapsedMicroseconds,
+                busiest_bucket_elapsed_microseconds.load(std::memory_order_relaxed));
+            ProfileEvents::increment(ProfileEvents::AggregationMergeSources, active_sources);
+            ProfileEvents::increment(ProfileEvents::AggregationMergeBusiestSourceElapsedMicroseconds, busiest_source_elapsed_microseconds);
+        }
+
+    private:
+        static void updateMaximum(std::atomic<UInt64> & maximum, UInt64 value)
+        {
+            UInt64 current = maximum.load(std::memory_order_relaxed);
+            while (current < value && !maximum.compare_exchange_weak(current, value, std::memory_order_relaxed, std::memory_order_relaxed))
+            {
+            }
+        }
+
+        std::unique_ptr<SourceStats[]> source_stats;
+        size_t num_sources = 0;
+        std::atomic<UInt32> completed_buckets = 0;
+        std::atomic<UInt64> busiest_bucket_elapsed_microseconds = 0;
     };
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
@@ -240,7 +342,8 @@ public:
         SharedDataPtr shared_data_,
         Arena * arena_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSessionPtr adaptive_session_)
+        AdaptiveAggregationSessionPtr adaptive_session_,
+        size_t source_index_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
@@ -248,6 +351,7 @@ public:
         , arena(arena_)
         , updater(std::move(updater_))
         , adaptive_session(std::move(adaptive_session_))
+        , source_index(source_index_)
     {
     }
 
@@ -273,6 +377,8 @@ protected:
             data.reset();
             return {};
         }
+
+        Stopwatch bucket_watch;
 
         /// The adaptive merge gives every bucket its own arena (see the setup in
         /// `createSources`), so a retired bucket's drained and merged states free with its
@@ -314,6 +420,8 @@ protected:
             params->aggregator.retireAdaptiveMergedBucket(*data->at(0), *adaptive_session, bucket_num);
 
         shared_data->is_bucket_processed[bucket_num] = true;
+        if (!shared_data->is_cancelled.load(std::memory_order_seq_cst))
+            shared_data->recordSuccessfulBucket(source_index, bucket_watch.elapsedMicroseconds());
 
         return chunk;
     }
@@ -325,6 +433,7 @@ private:
     Arena * arena;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr adaptive_session;
+    size_t source_index;
 };
 
 /// Worker of the parallel single-level merge: atomically takes the next hash partition, merges it out of
@@ -572,6 +681,14 @@ public:
         {
             initialize();
             return;
+        }
+
+        if (!merge_path_recorded && data->size() > 1 && params->params.keys_size > 0)
+        {
+            ProfileEvents::increment(
+                data->at(0)->isTwoLevel() ? ProfileEvents::AggregationFinalMergePathTwoLevel
+                                          : ProfileEvents::AggregationFinalMergePathSingleLevel);
+            merge_path_recorded = true;
         }
 
         if (data->at(0)->isTwoLevel())
@@ -912,6 +1029,7 @@ private:
 
     bool is_initialized = false;
     bool finished = false;
+    bool merge_path_recorded = false;
     bool parallelize_single_level_merge = false;
     bool parallel_partition_merge_started = false;
 
@@ -1022,6 +1140,7 @@ private:
     void createSources()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
+        shared_data->initializeMergeSources(num_threads);
 
         if (adaptive_session)
         {
@@ -1045,7 +1164,7 @@ private:
             /// per bucket instead.
             Arena * arena = adaptive_session ? nullptr : first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(
-                params, data, shared_data, arena, updater, adaptive_session);
+                params, data, shared_data, arena, updater, adaptive_session, thread);
 
             processors.emplace_back(std::move(source));
         }
@@ -1405,6 +1524,7 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
+            recordFinalAggregationMergeInputShape(many_data->variants, params->params.keys_size);
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
                 std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));

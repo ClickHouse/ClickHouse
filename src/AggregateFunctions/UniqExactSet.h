@@ -1,5 +1,7 @@
 #pragma once
 
+#include <AggregateFunctions/UniqExactMergeStats.h>
+
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
@@ -141,12 +143,15 @@ public:
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
         if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
+            UniqExactMergeWaveStats wave_stats(places.size());
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
+                auto thread_func
+                    = [&places, &accessor, data_vec_atomic_index, &is_cancelled, &wave_stats, thread_group = getCurrentThreadGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
+                    UniqExactMergeWaveTaskTimer task_timer(wave_stats);
 
                     while (true)
                     {
@@ -170,6 +175,7 @@ public:
                 thread_pool.wait();
                 throw;
             }
+            wave_stats.report();
         }
     }
 
@@ -217,13 +223,16 @@ public:
         for (size_t i = 0; i < places.size(); ++i)
             two_level_ptrs.emplace_back(&accessor(places[i])->asTwoLevelChecked());
 
+        UniqExactMergeWaveStats wave_stats(places.size());
         ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_MERGER);
         try
         {
             auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-            auto thread_func = [&two_level_ptrs, &first_two_level, next_bucket_to_merge, &is_cancelled]()
+            auto thread_func = [&two_level_ptrs, &first_two_level, next_bucket_to_merge, &is_cancelled, &wave_stats]()
             {
+                UniqExactMergeWaveTaskTimer task_timer(wave_stats);
+
                 while (true)
                 {
                     if (is_cancelled.load(std::memory_order_seq_cst))
@@ -254,6 +263,7 @@ public:
             throw;
         }
         runner.waitForAllToFinishAndRethrowFirstError();
+        wave_stats.report();
     }
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
@@ -290,15 +300,17 @@ public:
             }
             else
             {
-
                 /// Usage of lhs and rhs is fine. The references belong to *this and will outlive `runner`, so the order of destruction is ok
+                UniqExactMergeWaveStats wave_stats(2);
                 ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled]()
+                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, &wave_stats]()
                     {
+                        UniqExactMergeWaveTaskTimer task_timer(wave_stats);
+
                         while (true)
                         {
                             if (is_cancelled->load())
@@ -322,6 +334,7 @@ public:
                     throw;
                 }
                 runner.waitForAllToFinishAndRethrowFirstError();
+                wave_stats.report();
             }
         }
     }
