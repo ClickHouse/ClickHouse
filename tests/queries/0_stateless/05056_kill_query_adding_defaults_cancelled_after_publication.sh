@@ -16,25 +16,25 @@ output_file="${CLICKHOUSE_TMP}/${query_id}.out"
 
 trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT adding_defaults_transform_before_execute_pause" 2>/dev/null;
       ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS kill_query_adding_defaults_after_publication" 2>/dev/null;
-      ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS infinite_loop_05054" 2>/dev/null;
-      ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = '\''faulty_05054'\''" 2>/dev/null' EXIT
+      ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS infinite_loop_05056" 2>/dev/null;
+      ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = '\''faulty_05056'\''" 2>/dev/null' EXIT
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT adding_defaults_transform_before_execute_pause"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS kill_query_adding_defaults_after_publication"
-${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS infinite_loop_05054"
-${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty_05054'"
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS infinite_loop_05056"
+${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty_05056'"
 
-cat "${CUR_DIR}"/wasm/faulty.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'faulty_05054', code FROM input('code String') FORMAT RawBlob"
+cat "${CUR_DIR}"/wasm/faulty.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'faulty_05056', code FROM input('code String') FORMAT RawBlob"
 
 ${CLICKHOUSE_CLIENT} -q "
-    CREATE OR REPLACE FUNCTION infinite_loop_05054 LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty_05054' :: 'infinite_loop_signal' ARGUMENTS (UInt32) RETURNS UInt32;
+    CREATE OR REPLACE FUNCTION infinite_loop_05056 LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty_05056' :: 'infinite_loop_signal' ARGUMENTS (UInt32) RETURNS UInt32;
 "
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE kill_query_adding_defaults_after_publication
     (
         x UInt32,
-        y UInt32 DEFAULT infinite_loop_05054(x)
+        y UInt32 DEFAULT infinite_loop_05056(x)
     ) ENGINE = Memory
 "
 
@@ -82,7 +82,7 @@ wait "$curl_pid"
 grep -qE "QUERY_WAS_CANCELLED|WASM_ERROR" "$output_file" || { echo "FAIL: the query was not cancelled"; cat "$output_file"; exit 1; }
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE kill_query_adding_defaults_after_publication"
-${CLICKHOUSE_CLIENT} -q "DROP FUNCTION infinite_loop_05054"
-${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty_05054'"
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION infinite_loop_05056"
+${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty_05056'"
 
 echo "OK"
