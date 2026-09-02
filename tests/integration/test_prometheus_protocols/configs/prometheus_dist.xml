@@ -30,6 +30,13 @@
                     <table>default.prom_queue</table>
                 </handler>
             </queue_write>
+            <rep_write>
+                <url>/rep/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_rep</table>
+                </handler>
+            </rep_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>

@@ -1,12 +1,11 @@
-"""An unreachable shard is neither refused by the shard-target check nor vouched for by it.
+"""The shard-target check asks every replica, and never vouches for one it could not reach.
 
-The check keeps a passing verdict for a minute. A request served while one shard is down passes
-too, but it has seen nothing of that shard, which may come back as anything. Only a verdict that
-saw every shard is kept, so the first write after the shard returns is checked again.
+A passing verdict is kept for a minute. A read served while one replica is down passes too, but
+it has seen nothing of that replica, which may come back as anything: only a verdict that saw
+every replica is kept, so the first request after the replica returns is checked again.
 
-Whether the unreachable shard fails the request is the read's or the sink's decision, not the
-check's: a write through a wrapper with the default settings is queued for that shard and
-delivered once it is back, exactly as a plain INSERT would be.
+A write is refused outright while a replica is unreachable. The sink would queue the samples for
+it and the background sender would deliver them once it is back, without any check of its own.
 """
 
 import json
@@ -60,12 +59,24 @@ def start_cluster():
             "ENGINE = Distributed(two_nodes_dist, default, ts_local, cityHash64(tags['host'])) "
             "SETTINGS skip_unavailable_shards = 1"
         )
-        # Its own shard tables, so the two tests below never share a cached verdict.
+        # Its own shard tables, so the tests below never share a cached verdict.
         node1.query("CREATE TABLE ts_queue ENGINE = TimeSeries")
         node2.query("CREATE TABLE ts_queue ENGINE = TimeSeries")
+        node2.query(
+            "CREATE TABLE mt_queue AS ts_queue ENGINE = MergeTree ORDER BY tuple()"
+        )
         node1.query(
             "CREATE TABLE prom_queue AS ts_local "
             "ENGINE = Distributed(two_nodes_dist, default, ts_queue, cityHash64(tags['host']))"
+        )
+        # One shard whose two replicas are node1 and node2; no internal_replication, so the sink
+        # writes every replica itself.
+        node1.query("CREATE TABLE ts_rep ENGINE = TimeSeries")
+        node2.query("CREATE TABLE ts_rep ENGINE = TimeSeries")
+        node2.query("CREATE TABLE mt_rep AS ts_rep ENGINE = MergeTree ORDER BY tuple()")
+        node1.query(
+            "CREATE TABLE prom_rep AS ts_local "
+            "ENGINE = Distributed(one_shard_two_replicas, default, ts_rep)"
         )
         node1.query(
             "INSERT INTO ts_local (metric_name, tags, time_series) "
@@ -120,21 +131,57 @@ def test_a_verdict_that_skipped_a_shard_is_not_kept():
     assert node2.query(series_count("after_outage")).strip() == "0"
 
 
-def test_a_write_over_an_unreachable_shard_is_queued_not_refused():
+def test_a_write_over_an_unreachable_shard_is_refused_not_queued():
     with PartitionManager() as pm:
         pm.partition_instances(
             node1, node2, port=9000, action="REJECT --reject-with tcp-reset"
         )
-        # `prom_queue` declares no skip setting: the check must still let the sink do what a
-        # plain INSERT does with a shard it cannot reach, which is to queue the samples for it.
+        # `prom_queue` declares no skip setting, so the sink would queue the samples for node2:
+        # the write is refused instead, with an error Prometheus retries.
         response = write("during_outage", "/queue/write")
-        assert response.status_code == 204, response.text
+        assert response.status_code >= 500, response.text
+        assert "ALL_CONNECTION_TRIES_FAILED" in response.text
         pending = node1.query(
-            "SELECT data_files FROM system.distribution_queue WHERE table = 'prom_queue'"
+            "SELECT sum(data_files) FROM system.distribution_queue WHERE table = 'prom_queue'"
         )
-        assert pending.strip() == "1", pending
+        assert pending.strip() == "0", pending
+        # What a queued file would have been delivered to once node2 answered again.
+        node2.query("EXCHANGE TABLES ts_queue AND mt_queue")
 
-    # Delivered once node2 answers again, to the TimeSeries table the samples were meant for.
     node1.query("SYSTEM FLUSH DISTRIBUTED prom_queue")
-    assert node2.query(series_count("during_outage", "ts_queue")).strip() == "1"
+    assert node2.query("SELECT count() FROM ts_queue").strip() == "0"
+    assert node2.query(series_count("during_outage", "mt_queue")).strip() == "0"
     assert node1.query(series_count("during_outage", "ts_queue")).strip() == "0"
+
+    # Refused while the target is wrong, then accepted and delivered once it is restored.
+    response = write("after_swap", "/queue/write")
+    assert response.status_code >= 400, response.text
+    assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    node2.query("EXCHANGE TABLES ts_queue AND mt_queue")
+    assert write("after_restore", "/queue/write").status_code == 204
+    node1.query("SYSTEM FLUSH DISTRIBUTED prom_queue")
+    assert node2.query(series_count("after_restore", "ts_queue")).strip() == "1"
+    assert node2.query("SELECT count() FROM mt_queue").strip() == "0"
+
+
+def test_every_replica_is_checked_not_one_per_shard():
+    # node2's replica of the shard is a MergeTree table, node1's a TimeSeries table: a cluster()
+    # probe would have asked only one of them.
+    node2.query("EXCHANGE TABLES ts_rep AND mt_rep")
+    response = write("two_replicas", "/rep/write")
+    assert response.status_code >= 400, response.text
+    assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    error = node1.query_and_get_error(
+        f"SELECT * FROM prometheusQuery(prom_rep, 'm', {START_TIME})"
+    )
+    assert "UNEXPECTED_TABLE_ENGINE" in error
+    # The refused write reached neither replica.
+    assert node2.query("SELECT count() FROM ts_rep").strip() == "0"
+    assert node1.query(series_count("two_replicas", "ts_rep")).strip() == "0"
+
+    # With both replicas TimeSeries tables, the write is accepted and the sink writes both.
+    node2.query("EXCHANGE TABLES ts_rep AND mt_rep")
+    assert write("two_replicas", "/rep/write").status_code == 204
+    assert_eq_with_retry(node1, series_count("two_replicas", "ts_rep"), "1")
+    assert_eq_with_retry(node2, series_count("two_replicas", "ts_rep"), "1")
+    assert node2.query("SELECT count() FROM mt_rep").strip() == "0"
