@@ -169,7 +169,8 @@ void registerStorageYTsaurus(StorageFactory & factory)
     {
         .supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
-        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
+        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin,
+        .fill_engine_settings_fn = YTsaurusSettings::fillEngineSettingsColumns,
     },
     Documentation{
         .description = R"DOCS_MD(

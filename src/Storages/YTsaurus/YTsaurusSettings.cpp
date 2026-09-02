@@ -4,6 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/YTsaurus/YTsaurusSettings.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -104,6 +105,11 @@ void YTsaurusSettings::set(const std::string & name, const std::string & value)
 bool YTsaurusSettings::hasBuiltin(std::string_view name)
 {
     return YTsaurusSettingsImpl::hasBuiltin(name);
+}
+
+void YTsaurusSettings::fillEngineSettingsColumns(MutableColumns & columns)
+{
+    fillEngineSettingsColumnsFromImpl<YTsaurusSettingsImpl>(columns);
 }
 
 
