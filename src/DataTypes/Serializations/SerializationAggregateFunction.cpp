@@ -119,8 +119,9 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     /// pointers that is reserved for them anyway, so a block of rows of an ordinary state still
     /// takes a single allocation, and a state larger than that bound is allocated on its own.
     static constexpr size_t max_bytes_per_block = DEFAULT_INSERT_BLOCK_SIZE * sizeof(AggregateDataPtr);
-    const size_t states_per_block
-        = total_size_of_state == 0 ? limit : std::max<size_t>(1, max_bytes_per_block / total_size_of_state);
+    const size_t states_per_block = total_size_of_state == 0
+        ? DEFAULT_INSERT_BLOCK_SIZE
+        : std::max<size_t>(1, max_bytes_per_block / total_size_of_state);
 
     vec.reserve(vec.size() + std::min<size_t>(limit, DEFAULT_INSERT_BLOCK_SIZE));
 
