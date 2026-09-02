@@ -1,11 +1,22 @@
 0
 0
-100
-100
-100
 0
 0
 0
+0
+0
+1
+a truthy constant that does not fit UInt8
+3
+3
+3
+3
+3
+3
+a Nothing-typed argument
+3
+10
+10
 1
 controls
 100
