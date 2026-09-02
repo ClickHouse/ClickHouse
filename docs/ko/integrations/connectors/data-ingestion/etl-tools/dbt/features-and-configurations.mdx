@@ -185,11 +185,29 @@ S3 테이블 함수의 매개변수를 채우는 데 사용되는 다음
 | aws&#95;access&#95;key&#95;id     | S3 액세스 키 ID입니다.                                                                                                                   |
 | aws&#95;secret&#95;access&#95;key | S3 시크릿 키입니다.                                                                                                                      |
 | role&#95;arn                      | 안전한 S3 액세스를 위해 생성된 IAM role의 ARN입니다. 자세한 내용은 이 [문서](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오.      |
+| external&#95;id                   | IAM role을 assume할 때 `role_arn`과 함께 전달할 외부 ID입니다. `role_arn`을 설정해야 합니다. dbt-clickhouse 1.10.2부터 사용할 수 있습니다.                        |
 | compression                       | S3 객체에 사용되는 압축 방식입니다. 지정하지 않으면 ClickHouse가 파일 이름을 기준으로 압축 방식을 판단하려고 시도합니다.                                                        |
 
-이 매크로의 사용 예시는
-[S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)을
-참조하십시오.
+<div id="s3source-example">
+  #### 예시
+</div>
+
+`dbt_project.yml`에서 공유 구성을 정의합니다(딕셔너리 이름은 반드시 `s3`로 끝나야 합니다):
+
+```yaml
+vars:
+  taxi_s3:
+    bucket: 'datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi'
+    fmt: 'TabSeparatedWithNames'
+```
+
+그런 다음 모델에서 매크로를 호출합니다. 위의 인수는 호출 시 직접 전달할 수도 있으며, 이 경우 딕셔너리의 값보다 우선합니다:
+
+```sql
+select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
+```
+
+더 많은 예시는 [S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)을 참조하십시오.
 
 <div id="cross-database-macro-support">
   ### 교차 데이터베이스 매크로 지원
