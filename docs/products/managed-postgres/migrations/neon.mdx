@@ -77,7 +77,7 @@ It cannot simply be pointed to ClickHouse Managed Postgres.
 Before migrating:
 
 - Check for dependencies such as [@neondatabase/serverless](https://www.npmjs.com/package/@neondatabase/serverless). If present, replace them with a standard Postgres driver such as [node-postgres (pg)](https://node-postgres.com/).
-- For serverless workloads that create many short-lived connections, use the [bundled PgBouncer instance](/products/managed-postgres/connection#pgbouncer-connection-pooling).
+- For serverless workloads that create many short-lived connections, use the [bundled PgBouncer instance](/products/managed-postgres/connection#pgbouncer).
 - Prepared statements are supported. However, because PgBouncer uses transaction pooling, validate applications that rely on session-level behavior, which is uncommon in most applications:
   1. Use `SET LOCAL` instead of session-level `SET` or `RESET`.
   2. Use transaction-scoped temporary tables with `ON COMMIT DROP`.
