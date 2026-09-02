@@ -462,7 +462,7 @@ Collect all the keys and sum corresponding values.
     FunctionDocumentation::ReturnedValue returned_value_mapAdd = {"Returns a map or returns a tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
     FunctionDocumentation::Examples examples_mapAdd = {
         {"With Map type", "SELECT mapAdd(map(1, 1), map(1, 1))", "{1:2}"},
-        {"With tuple", "SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))", "([1, 2], [2, 2])"}
+        {"With tuple", "SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))", "([1,2],[2,2])"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapAdd = {20, 7};
     FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
@@ -480,7 +480,7 @@ Collect all the keys and subtract corresponding values.
     FunctionDocumentation::ReturnedValue returned_value_mapSubtract = {"Returns one map or tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
     FunctionDocumentation::Examples examples_mapSubtract = {
         {"With Map type", "SELECT mapSubtract(map(1, 1), map(1, 1))", "{1:0}"},
-        {"With tuple map", "SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))", "([1, 2], [-1, 0])"}
+        {"With tuple map", "SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))", "([1,2],[-1,0])"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapSubtract = {20, 7};
     FunctionDocumentation::Category category_mapSubtract = FunctionDocumentation::Category::Map;

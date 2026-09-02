@@ -342,12 +342,6 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
-[submodule "contrib/wasmedge"]
-	path = contrib/wasmedge
-	url = https://github.com/WasmEdge/WasmEdge.git
-[submodule "contrib/spdlog"]
-	path = contrib/spdlog
-	url = https://github.com/gabime/spdlog.git
 [submodule "contrib/wasmtime"]
 	path = contrib/wasmtime
 	url = https://github.com/ClickHouse/wasmtime
@@ -426,3 +420,6 @@
 [submodule "contrib/MeCab"]
 	path = contrib/MeCab
 	url = https://github.com/taku910/mecab
+[submodule "contrib/substrait"]
+	path = contrib/substrait
+	url = https://github.com/substrait-io/substrait.git
