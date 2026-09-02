@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 
 JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     WriteBuffer & out_,
@@ -24,6 +29,14 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     , with_types(with_types_)
     , settings(settings_)
 {
+    /// The header rows are written before the rows, so they cannot be part of the enclosing array.
+    if (settings.json.array_of_rows && (with_names || with_types))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'output_format_json_array_of_rows' is not applicable to the 'WithNames' and "
+            "'WithNamesAndTypes' variants of the 'JSONEachRow' formats, "
+            "because a JSON array cannot contain the header rows");
+
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     fields = JSONUtils::makeNamesValidJSONStrings(getPort(PortKind::Main).getHeader().getNames(), settings, settings.json.validate_utf8);
 }
@@ -76,17 +89,14 @@ void JSONEachRowRowOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
 
+    /// The header rows are JSON arrays, written exactly like the `JSONCompactEachRowWithNames*` ones.
     if (with_names)
-        JSONUtils::writeStringFieldsFromJSONArrayRow(
-            JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8),
-            *ostr,
-            pretty_json ? ",\n" : ",");
+        JSONUtils::writeStringFieldsAsJSONArrayRow(
+            JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8), *ostr);
 
     if (with_types)
-        JSONUtils::writeStringFieldsFromJSONArrayRow(
-            JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8),
-            *ostr,
-            pretty_json ? ",\n" : ",");
+        JSONUtils::writeStringFieldsAsJSONArrayRow(
+            JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8), *ostr);
 
     if (settings.json.array_of_rows)
     {
@@ -150,13 +160,13 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         /// base64-encode accordingly.
         factory.registerOutputFormatMayProduceRawBytesChecker(
             format,
-            [with_names, with_types, serialize_as_strings](const FormatSettings & settings, const Block & header)
+            [with_types, serialize_as_strings](const FormatSettings & settings, const Block & header)
             {
-                return (with_names
-                        && JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8))
+                /// The column names are written by every variant (in the data rows, and additionally in
+                /// the header row of the `WithNames*` ones), the type names only by `WithNamesAndTypes`.
+                return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8)
                     || (with_types
                         && JSONUtils::namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, settings.json.validate_utf8))
-                    || JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8)
                     || (!serialize_as_strings
                         && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8))
                     || (serialize_as_strings
@@ -395,9 +405,9 @@ The output will be in JSON format:
 ## Format settings {#format-settings}
 
 <Note>
-If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
+The data rows are JSON objects, so on input the columns are always matched by the names inside each
+row, as in the `JSONEachRow` format: the header row of names is read and skipped. Columns with unknown
+names are skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 </Note>
 )DOCS_MD"});
 
@@ -436,9 +446,14 @@ The output will be in JSON format:
 ## Format settings {#format-settings}
 
 <Note>
-If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
+The data rows are JSON objects, so on input the columns are always matched by the names inside each
+row, as in the `JSONEachRow` format: the header row of names is read and skipped. Columns with unknown
+names are skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
+</Note>
+
+<Note>
+If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to 1,
+the types in the header row are checked against the types of the destination columns and a mismatch is an error.
 </Note>
 )DOCS_MD"});
 
@@ -476,9 +491,9 @@ The output will be in JSON format:
 ## Format settings {#format-settings}
 
 <Note>
-If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
+The data rows are JSON objects, so on input the columns are always matched by the names inside each
+row, as in the `JSONEachRow` format: the header row of names is read and skipped. Columns with unknown
+names are skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 </Note>
 )DOCS_MD"});
 
@@ -517,9 +532,14 @@ The output will be in JSON format:
 ## Format settings {#format-settings}
 
 <Note>
-If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
+The data rows are JSON objects, so on input the columns are always matched by the names inside each
+row, as in the `JSONEachRow` format: the header row of names is read and skipped. Columns with unknown
+names are skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
+</Note>
+
+<Note>
+If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to 1,
+the types in the header row are checked against the types of the destination columns and a mismatch is an error.
 </Note>
 )DOCS_MD"});
 }

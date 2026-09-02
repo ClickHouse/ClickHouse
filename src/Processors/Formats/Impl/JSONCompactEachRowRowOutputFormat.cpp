@@ -76,16 +76,12 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)
-        JSONUtils::writeStringFieldsFromJSONArrayRow(
-            JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8),
-            *ostr,
-            ", ");
+        JSONUtils::writeStringFieldsAsJSONArrayRow(
+            JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8), *ostr);
 
     if (with_types)
-        JSONUtils::writeStringFieldsFromJSONArrayRow(
-            JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8),
-            *ostr,
-            ", ");
+        JSONUtils::writeStringFieldsAsJSONArrayRow(
+            JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8), *ostr);
 }
 
 void JSONCompactEachRowRowOutputFormat::writeSuffix()

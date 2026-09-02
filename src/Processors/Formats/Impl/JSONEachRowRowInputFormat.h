@@ -121,7 +121,6 @@ private:
     bool with_names;
     bool with_types;
     bool first_row = true;
-    bool header_rows_read = false;
     bool data_in_square_brackets = false;
     JSONInferenceInfo inference_info;
 };
