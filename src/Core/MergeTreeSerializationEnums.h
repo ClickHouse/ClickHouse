@@ -9,7 +9,8 @@ enum class MergeTreeSerializationInfoVersion : uint8_t
 {
     BASIC = 0,
     WITH_TYPES = 1,
-    WITH_SUBCOLUMNS = 2,
+    WITH_MISSING_COLUMNS = 2,
+    WITH_SUBCOLUMNS = 3,
 };
 
 enum class MergeTreeStringSerializationVersion : uint8_t
