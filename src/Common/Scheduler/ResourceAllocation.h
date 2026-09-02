@@ -92,8 +92,6 @@ public:
         if (limit == 0)
             return true;
 
-        chassert(allocated >= 0);
-        chassert(increase_size >= 0);
         const UInt64 current_allocation = static_cast<UInt64>(allocated);
         const UInt64 pending_increase = static_cast<UInt64>(increase_size);
         return current_allocation <= limit && pending_increase <= limit - current_allocation;
