@@ -11,6 +11,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/ResizeProcessor.h>
@@ -125,7 +126,7 @@ void IntersectOrExceptStep::updateOutputHeader()
     output_header = checkHeaders(input_headers);
 }
 
-QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
@@ -169,7 +170,9 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(getOutputHeader(), cur_pipeline->getNumStreams(), 1));
     }
 
-    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
+    /// Zero means the step was deserialized on a worker; use the executing server's own setting.
+    size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
     auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
     processors.push_back(transform);
     pipeline->addTransform(std::move(transform));
@@ -198,6 +201,7 @@ void IntersectOrExceptStep::serialize(Serialization & ctx) const
             "make_distributed_plan: serializing an IntersectOrExceptStep requires query plan serialization "
             "version >= {}; all nodes must run the same version", MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP);
 
+    /// `max_threads` is not serialized: zero makes `updatePipeline` use the executing server's own setting.
     writeIntBinary(static_cast<UInt8>(current_operator), ctx.out);
 }
 
