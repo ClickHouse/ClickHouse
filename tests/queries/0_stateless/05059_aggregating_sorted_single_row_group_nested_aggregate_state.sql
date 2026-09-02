@@ -17,15 +17,19 @@ ENGINE = AggregatingMergeTree ORDER BY k;
 
 SYSTEM STOP MERGES t_nested_states;
 
+-- Every state column gets its own expression on purpose: feeding two SimpleAggregateFunction(any, AggregateFunction(...))
+-- columns from one shared `uniqState(v)` column trips a pre-existing bug in the merge on insert when the INSERT
+-- SELECT delivers more than one block (for example with group_by_two_level_threshold = 1), which is not what this
+-- test is about.
 -- Part 1: keys 0..9, the state of key k counts the k + 1 values 0..k.
 INSERT INTO t_nested_states
-SELECT k, uniqState(v), uniqState(v), [uniqState(v), uniqState(toUInt64(v % 3))]
+SELECT k, uniqState(v), uniqState(v + 0), [uniqState(v * 1), uniqState(toUInt64(v % 3))]
 FROM (SELECT number AS k, arrayJoin(range(number + 1)) AS v FROM numbers(10))
 GROUP BY k;
 
 -- Part 2: keys 5..14, the state of key k counts the 2 * (k + 1) values 100..100 + 2 * k + 1.
 INSERT INTO t_nested_states
-SELECT k, uniqState(v), uniqState(v), [uniqState(v), uniqState(toUInt64(v % 5))]
+SELECT k, uniqState(v), uniqState(v + 0), [uniqState(v * 1), uniqState(toUInt64(v % 5))]
 FROM (SELECT number AS k, arrayJoin(range(100, 100 + 2 * (number + 1))) AS v FROM numbers(5, 10))
 GROUP BY k;
 
@@ -51,7 +55,7 @@ SELECT uniqMerge(a), uniqMerge(al), uniqMerge(arr[1]), uniqMerge(arr[2]) FROM t_
 
 -- Part 3: every key again, the state counts the 3 values 200..202. Every group of the merged part now gets more rows.
 INSERT INTO t_nested_states
-SELECT k, uniqState(v), uniqState(v), [uniqState(v), uniqState(toUInt64(v % 7))]
+SELECT k, uniqState(v), uniqState(v + 0), [uniqState(v * 1), uniqState(toUInt64(v % 7))]
 FROM (SELECT number AS k, arrayJoin(range(toUInt64(200), 203)) AS v FROM numbers(15))
 GROUP BY k;
 
