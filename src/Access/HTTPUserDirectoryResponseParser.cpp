@@ -83,6 +83,14 @@ HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response,
 
         for (const auto & [name, value] : *settings_object)
         {
+            /// `settingStringToValueUtil` alone is not strict enough: `Settings` allows custom settings, so an
+            /// unrecognized name would silently fall through to `Field::restoreFromDump` instead of failing -
+            /// which would only reject values that happen not to look like a dumped `Field` (e.g. "NULL",
+            /// "Int64_5" would be silently accepted as a bogus custom setting). Reject unknown names explicitly.
+            if (!settingIsBuiltin(name))
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Unknown setting {} in the HTTP authentication server response", backQuote(name));
+
             try
             {
                 result.settings.emplace_back(name, settingStringToValueUtil(name, value.toString()));

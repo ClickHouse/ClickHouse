@@ -112,6 +112,10 @@ TEST(HTTPUserDirectoryResponseParser, MalformedMetadataThrows)
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": ["max_threads"]})"), Exception);
     /// Unknown setting name must fail (strict), unlike the legacy parser.
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"no_such_setting_xyz": "1"}})"), Exception);
+    /// Unknown setting name must fail even when the value happens to look like a `Field` dump - the rejection
+    /// must be based on the setting name being unrecognized, not merely on the value failing to parse.
+    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"no_such_setting_xyz": "NULL"}})"), Exception);
+    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"no_such_setting_xyz": "Int64_5"}})"), Exception);
     /// valid_until: negative, fractional, string, boolean.
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": -5})"), Exception);
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": 123.5})"), Exception);
@@ -119,4 +123,15 @@ TEST(HTTPUserDirectoryResponseParser, MalformedMetadataThrows)
     /// Poco::Dynamic::Var::isInteger() reports true for a boolean value, so `isInteger` alone is not
     /// enough to reject `valid_until: true` - must also check `isBoolean()`.
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"valid_until": true})"), Exception);
+}
+
+TEST(HTTPUserDirectoryResponseParser, MergeTreePrefixedSettingIsAccepted)
+{
+    /// A `merge_tree_`-prefixed name resolved through `resolveSetting` to `MergeTreeSettings` must still be
+    /// accepted as a known (builtin) setting, not rejected as unknown.
+    auto result = parseBody(Poco::Net::HTTPResponse::HTTP_OK,
+        R"({"settings": {"merge_tree_max_avg_part_size_for_too_many_parts": "1"}})");
+    EXPECT_EQ(result.status, HTTPUserDirectoryResponseParser::Result::Status::Ok);
+    ASSERT_EQ(result.settings.size(), 1u);
+    EXPECT_EQ(result.settings[0].name, "merge_tree_max_avg_part_size_for_too_many_parts");
 }
