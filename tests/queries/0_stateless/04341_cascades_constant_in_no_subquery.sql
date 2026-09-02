@@ -3,7 +3,6 @@
 -- The Cascades optimizer forces an `IN` -> `JOIN` rewrite, but that only applies to `IN (subquery)`.
 -- A constant or tuple right-hand side needs no rewrite and must not require correlated subqueries.
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
