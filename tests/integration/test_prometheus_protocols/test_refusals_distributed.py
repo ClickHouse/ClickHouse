@@ -37,8 +37,8 @@ EVALUATION_TIME = 140
 
 METADATA_HELP = "Metadata of the metric the shards hold"
 
-# The same series, tags and timestamps as 05055: `h1` and `h2` hash to one shard and `h3`, `h4`,
-# `h5` to the other, so the Distributed target really does span both shards.
+# The same series, tags and timestamps as 05055's `m`: `h1` and `h2` hash to one shard and `h3`,
+# `h4` to the other, so the Distributed target really does span both shards.
 INSERT_TEST_DATA = """
 INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
     ('m', map('job', 'a', 'host', 'h1'),

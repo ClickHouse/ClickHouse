@@ -1,5 +1,5 @@
-"""The shard-target check asks every replica and keeps a passing verdict for a minute, but never one that
-missed one; with a replica down a read still passes, a write is refused, not queued."""
+"""The shard-target check asks every replica and keeps a passing verdict for a minute, never one that missed a
+replica (down or without its table): a read passes, a write is refused, not queued."""
 
 import json
 
@@ -70,6 +70,16 @@ def start_cluster():
         node1.query(
             "CREATE TABLE prom_rep AS ts_local "
             "ENGINE = Distributed(one_shard_two_replicas, default, ts_rep)"
+        )
+        # Its second shard loses its table for a while.
+        node1.query("CREATE TABLE ts_missing ENGINE = TimeSeries")
+        node2.query("CREATE TABLE ts_missing ENGINE = TimeSeries")
+        node2.query(
+            "CREATE TABLE mt_missing AS ts_missing ENGINE = MergeTree ORDER BY tuple()"
+        )
+        node1.query(
+            "CREATE TABLE prom_missing AS ts_local "
+            "ENGINE = Distributed(two_nodes_dist, default, ts_missing, cityHash64(tags['host']))"
         )
         node1.query(
             "INSERT INTO ts_local (metric_name, tags, time_series) "
@@ -178,3 +188,38 @@ def test_every_replica_is_checked_not_one_per_shard():
     assert_eq_with_retry(node1, series_count("two_replicas", "ts_rep"), "1")
     assert_eq_with_retry(node2, series_count("two_replicas", "ts_rep"), "1")
     assert node2.query("SELECT count() FROM mt_rep").strip() == "0"
+
+
+def test_a_missing_shard_table_is_refused_for_a_write_and_never_validated():
+    node2.query("RENAME TABLE ts_missing TO ts_missing_away")
+    # Routed to node2, which has no `ts_missing`: refused with an error Prometheus retries, and
+    # queued for nothing, where the sink would have kept the samples for whatever takes the name.
+    response = write("while_missing", "/missing/write")
+    assert response.status_code >= 500, response.text
+    assert "ALL_CONNECTION_TRIES_FAILED" in response.text
+    assert "no table" in response.text, response.text
+    pending = node1.query(
+        "SELECT sum(data_files) FROM system.distribution_queue WHERE table = 'prom_missing'"
+    )
+    assert pending.strip() == "0", pending
+    # A read told to skip the shard passes, served by node1 alone, and keeps no verdict either.
+    node1.query(
+        f"SELECT count() FROM prometheusQuery(prom_missing, 'm', {START_TIME}) "
+        "SETTINGS skip_unavailable_shards = 1"
+    )
+
+    # A MergeTree table answers to the name now, well within the minute a kept verdict would cover.
+    node2.query("RENAME TABLE mt_missing TO ts_missing")
+    response = write("into_mergetree", "/missing/write")
+    assert response.status_code >= 400, response.text
+    assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    node1.query("SYSTEM FLUSH DISTRIBUTED prom_missing")
+    assert node2.query("SELECT count() FROM ts_missing").strip() == "0"
+
+    # Restored, the very next write is accepted and lands on node2.
+    node2.query("RENAME TABLE ts_missing TO mt_missing, ts_missing_away TO ts_missing")
+    assert write("restored_missing", "/missing/write").status_code == 204
+    node1.query("SYSTEM FLUSH DISTRIBUTED prom_missing")
+    assert node2.query(series_count("restored_missing", "ts_missing")).strip() == "1"
+    assert node1.query(series_count("while_missing", "ts_missing")).strip() == "0"
+    assert node2.query(series_count("while_missing", "ts_missing")).strip() == "0"

@@ -78,16 +78,8 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
             "a prometheus query over a Distributed table requires a cluster defined in the server configuration",
             storage.getStorageID().getNameForLogs());
 
-    auto remote_table_name = distributed->getRemoteTableName();
-    if (remote_table_name.empty())
-        throw Exception(
-            ErrorCodes::UNEXPECTED_TABLE_ENGINE,
-            "This operation is not supported over table {} because it points to a table function: "
-            "a prometheus query over a Distributed table requires a TimeSeries table on each shard",
-            storage.getStorageID().getNameForLogs());
-
     target.remote_time_series_storage_id.database_name = distributed->getRemoteDatabaseName();
-    target.remote_time_series_storage_id.table_name = std::move(remote_table_name);
+    target.remote_time_series_storage_id.table_name = distributed->getRemoteTableName();
     return target;
 }
 
@@ -121,10 +113,10 @@ namespace
     std::unordered_map<String, std::chrono::steady_clock::time_point> validated_shard_targets
         TSA_GUARDED_BY(validated_shard_targets_mutex);
 
-    /// Asks every replica itself, not one per shard as cluster() would: load balancing, failover or the
-    /// sink may reach any of them later. An unreachable replica is skipped or refused as the caller says.
+    /// Asks every replica itself, not one per shard as cluster() would: load balancing, failover or the sink may
+    /// reach any of them later. A replica unreachable or without the table is skipped or refused as the caller says.
     void checkShardTargets(
-        const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, bool refuse_unreachable)
+        const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, bool refuse_unavailable)
     {
         const auto & remote_id = target.remote_time_series_storage_id;
         const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
@@ -178,7 +170,8 @@ namespace
         UInt64 wrong_engine_replicas = 0;
         UInt64 wrong_type_replicas = 0;
         std::set<String> wrong_types;
-        Strings unreachable_replicas;
+        /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
+        Strings unavailable_replicas;
         for (const auto & shard : cluster->getShardsInfo())
             for (const auto & pool : shard.per_replica_pools)
             {
@@ -192,10 +185,10 @@ namespace
                     answered = true;
                     const Field engine = (*block.getByPosition(0).column)[0];
                     const Field ts_type = (*block.getByPosition(1).column)[0];
-                    /// NULL where the table is absent, which is left to the read or the sink as for any INSERT.
                     if (engine.isNull())
-                        continue;
-                    if (engine.safeGet<String>() != "TimeSeries")
+                        unavailable_replicas.push_back(
+                            fmt::format("{} (no table {})", pool->getAddress(), backQuoteIfNeed(remote_id.table_name)));
+                    else if (engine.safeGet<String>() != "TimeSeries")
                         ++wrong_engine_replicas;
                     else if (!ts_type.isNull() && ts_type.safeGet<String>() != time_series_type)
                     {
@@ -204,7 +197,7 @@ namespace
                     }
                 }
                 if (!answered)
-                    unreachable_replicas.push_back(pool->getAddress());
+                    unavailable_replicas.push_back(fmt::format("{} (unreachable)", pool->getAddress()));
             }
 
         if (wrong_engine_replicas)
@@ -221,14 +214,14 @@ namespace
                 storage.getStorageID().getNameForLogs(), wrong_type_replicas, backQuoteIfNeed(remote_id.table_name),
                 TimeSeriesColumnNames::TimeSeries, fmt::join(wrong_types, ", "), time_series_type);
 
-        if (!unreachable_replicas.empty())
+        if (!unavailable_replicas.empty())
         {
-            /// Samples the sink queued for an unseen replica would be delivered later without any check.
-            if (refuse_unreachable)
+            /// Samples the sink queued for such a replica would be delivered later without any check.
+            if (refuse_unavailable)
                 throw Exception(
                     ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-                    "Remote write over table {} is refused while {} cannot be reached to verify its target: retry once it answers",
-                    storage.getStorageID().getNameForLogs(), fmt::join(unreachable_replicas, ", "));
+                    "Remote write over table {} is refused while it has no verified target on {}: retry once it has one",
+                    storage.getStorageID().getNameForLogs(), fmt::join(unavailable_replicas, ", "));
 
             /// A skipped replica may come back as anything: no verdict outlives it.
             return;
@@ -244,9 +237,9 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     /// The planner never sees the wrapper (the rewrite hands it a cluster() call), so its SELECT grant
     /// is checked explicitly: again here, before a probe that runs on the server's own context.
     context->checkAccess(AccessType::SELECT, storage.getStorageID());
-    /// Whether an unreachable replica fails the read is the read's own decision, as for any cluster() call.
+    /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
     if (const auto target = resolvePrometheusQueryTarget(storage))
-        checkShardTargets(storage, *target, context, /* refuse_unreachable = */ false);
+        checkShardTargets(storage, *target, context, /* refuse_unavailable = */ false);
 }
 
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context)
@@ -264,7 +257,7 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
             "samples are routed by the table's sharding key alone",
             storage.getStorageID().getNameForLogs());
 
-    checkShardTargets(storage, *target, context, /* refuse_unreachable = */ true);
+    checkShardTargets(storage, *target, context, /* refuse_unavailable = */ true);
 }
 
 std::pair<bool, String> declaredShardSkipSettings(const IStorage & storage)
