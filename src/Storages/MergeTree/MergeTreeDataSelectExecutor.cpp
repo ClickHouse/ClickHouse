@@ -1532,9 +1532,8 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
         if (where_children.empty())
             return std::nullopt;
 
-        /// Nothing was stripped, so this root already is the node a plain
-        /// `SELECT ... WHERE <predicate>` keys on (a TopK read whose `__topKFilter` is installed
-        /// after index analysis reaches this with a plain multi-conjunct `and(a, b, ...)` root).
+        /// Nothing was stripped, so this root is already the node a plain
+        /// `SELECT ... WHERE <predicate>` keys on.
         if (where_children.size() == node->children.size())
             return node->getHash();
 

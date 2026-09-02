@@ -82,11 +82,9 @@ struct TopKFilterInfo
     /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
     UInt64 condition_hash = 0;
 
-    /// Set while the dynamic `__topKFilter` prewhere condition is still to be installed, and
-    /// cleared once it is. Lives here rather than as a separate `ReadFromMergeTree` member so the
-    /// copies that rebuild state field by field (`clone`,
-    /// `createLocalParallelReplicasReadingStep`, `copyTopKFilterInfoAndQueryConditionCacheGate`)
-    /// carry it along; a plan is cloned between the pass that sets it and the pass that installs.
+    /// Set while the dynamic `__topKFilter` prewhere condition is still to be installed. It belongs
+    /// here, not in `ReadFromMergeTree`, because a plan is cloned between the pass that sets it and
+    /// the pass that installs, and the copies rebuild this struct field by field.
     bool dynamic_filter_pending = false;
 };
 
@@ -485,8 +483,6 @@ public:
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
-    /// True while `tryOptimizeTopK` has requested a dynamic `__topKFilter` prewhere condition that
-    /// `installTopKDynamicFilter` has not built yet.
     bool hasPendingTopKDynamicFilter() const
     {
         return top_k_filter_info.has_value() && top_k_filter_info->dynamic_filter_pending;

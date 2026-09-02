@@ -19,8 +19,9 @@
 9991	9991
 9990	9990
 Description: Filter TopK Granules
-Prewhere filter column: __topKFilter(v1) (removed)
-FUNCTION __topKFilter(v1 : 0) -> __topKFilter(v1) UInt8 : 1
+Prewhere filter column: and(__topKFilter(v1), greater(__table1.v2, 0_UInt8)) (removed)
+FUNCTION __topKFilter(v1 : 2) -> __topKFilter(v1) UInt8 : 1
+FUNCTION and(__topKFilter(v1) :: 1, greater(__table1.v2, 0_UInt8) :: 3) -> and(__topKFilter(v1), greater(__table1.v2, 0_UInt8)) UInt8 : 0
 1	1
 2	2
 3	3

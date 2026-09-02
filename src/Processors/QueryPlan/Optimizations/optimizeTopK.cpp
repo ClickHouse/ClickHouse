@@ -88,10 +88,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     if (!read_from_mergetree_step)
         return 0;
 
-    /// Already stamped by an earlier visit: this node can be revisited when another optimization
-    /// requests a re-traversal, and a plan can be optimized more than once (StorageMerge child
-    /// plans, set subplans). Re-running would install a second `__topKFilter` and make
-    /// `setTopKColumn` fold the part-set salt into `condition_hash` twice.
+    /// A plan can be optimized more than once (StorageMerge child plans, set subplans). A second
+    /// run here would install a second `__topKFilter` and fold the part-set salt into
+    /// `condition_hash` twice.
     if (read_from_mergetree_step->isSelectedForTopKFilterOptimization())
         return 0;
 
@@ -299,14 +298,16 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         /// Keep the conjunction flat. `MergeTreeSplitPrewhereIntoReadSteps` splits on the direct
         /// children of the root `and`, so nesting `and(and(a, b), __topKFilter)` would present two
         /// children and collapse a multi-condition PREWHERE into a single read step.
+        /// The order of the conjuncts is the order of the read steps, and the threshold filter is
+        /// the cheapest condition here: it reads only the sort column.
         ActionsDAG::NodeRawConstPtrs conditions;
+        conditions.push_back(merged_filter_node);
         const bool existing_is_conjunction = existing_filter_node->type == ActionsDAG::ActionType::FUNCTION
             && existing_filter_node->function_base && existing_filter_node->function_base->getName() == "and";
         if (existing_is_conjunction)
-            conditions = existing_filter_node->children;
+            conditions.insert(conditions.end(), existing_filter_node->children.begin(), existing_filter_node->children.end());
         else
             conditions.push_back(existing_filter_node);
-        conditions.push_back(merged_filter_node);
 
         FunctionOverloadResolverPtr func_builder_and
             = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());

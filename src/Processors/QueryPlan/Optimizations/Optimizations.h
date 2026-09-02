@@ -288,8 +288,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 /// Builds the dynamic `__topKFilter` PREWHERE condition that `tryOptimizeTopK` requested and merges
-/// it into whatever PREWHERE the read has by then. Runs after `optimizePrewhere` so that a user
-/// predicate promoted to PREWHERE keeps pruning the read instead of being displaced by the filter.
+/// it into whatever PREWHERE the read already has. Must run after `optimizePrewhere`.
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
