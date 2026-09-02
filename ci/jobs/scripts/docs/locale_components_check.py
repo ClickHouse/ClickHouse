@@ -7,6 +7,9 @@ navigation lives in `href:`/`to:` string literals -- not markdown links. lychee
 neither sees `snippets/<locale>/...` nor parses JSX/JS, so `--mode locale-links`
 cannot catch when a localized component routes users to the wrong place.
 
+The global navbar customization is also checked because it renders on every
+locale tree but lives outside the locale directories scanned below.
+
 For every localized file (under `<locale>/` and `snippets/<locale>/`), check:
 
   * static `href`/`to` paths: one already under `/<locale>/` must resolve; an
@@ -68,6 +71,16 @@ THEME_IMAGE_FORBIDDEN = (
     "isDark",
     "imageForTheme",
 )
+NAVBAR_SIGN_IN_LABELS = {
+    "ar": "تسجيل الدخول",
+    "es": "Iniciar sesión",
+    "fr": "Se connecter",
+    "ja": "ログイン",
+    "ko": "로그인",
+    "pt-BR": "Entrar",
+    "ru": "Войти",
+    "zh": "登录",
+}
 
 
 def build_targets(docs_root):
@@ -119,6 +132,35 @@ def check_sample_explorer_theme_images(docs_root):
     return violations
 
 
+def check_navbar_sign_in_labels(docs_root):
+    """Validate the sign-in label rendered by the global navbar script."""
+    path = os.path.join(docs_root, "_site", "customizations", "navbar-cta.js")
+    source = open(path, encoding="utf-8", errors="replace").read()
+    rel = os.path.relpath(path, docs_root)
+    violations = []
+    for locale, label in NAVBAR_SIGN_IN_LABELS.items():
+        key = f"'{locale}'" if "-" in locale else locale
+        marker = f"    {key}: '{label}',"
+        if source.count(marker) != 1:
+            violations.append((rel, locale, "missing-sign-in-label", label))
+
+    locale_pattern = (
+        r"/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/"
+    )
+    if source.count(locale_pattern) != 1:
+        violations.append(
+            (rel, locale_pattern, "missing-navbar-locale-detection", None)
+        )
+    label_assignment = (
+        "signInLink.textContent = SIGN_IN_LABELS[getLocale()] || 'Sign in';"
+    )
+    if source.count(label_assignment) != 1:
+        violations.append(
+            (rel, label_assignment, "missing-localized-sign-in", None)
+        )
+    return violations
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("docs_root", nargs="?", default=".")
@@ -137,6 +179,7 @@ def main(argv=None):
         )
 
     violations = check_sample_explorer_theme_images(docs_root)
+    violations += check_navbar_sign_in_labels(docs_root)
     # Entries are (file, path or marker, kind, suggestion).
     fixed = 0
     for loc in LOCALE_DIRS:
