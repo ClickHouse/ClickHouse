@@ -155,11 +155,7 @@ protected:
             writer.addEncoded(std::string_view(ek), r);
         /// This test reads the SST back directly, so the recorded checksum is unused.
         MergeTreeDataPartChecksums sst_checksums;
-        std::unique_ptr<WriteBufferFromFileBase> sst_file;
-        writer.finalizeToStorage(sst_checksums, sst_file);
-        /// Flush the deferred buffer so the reader below sees the full SST.
-        if (sst_file)
-            sst_file->finalize();
+        writer.finish(sst_checksums, /*fsync=*/false);
 
         auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
         auto bitmap = std::make_shared<DeleteBitmap>();

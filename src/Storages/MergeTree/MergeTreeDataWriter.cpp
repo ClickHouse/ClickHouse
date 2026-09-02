@@ -1111,30 +1111,22 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
-    /// Write and finalize the `unique_key_index.sst` as two steps. `finalizeToStorage`
+    /// Write the `unique_key_index.sst` in one step: `writeDenseIndexOnInsert`
     /// records its checksum in `gathered_data.checksums` (so it is covered by
-    /// `CHECK TABLE`, part-size accounting, backup and fetches) and hands the buffer
-    /// back; finalize + fsync it here, before `checksums.txt` is written, so a crash
-    /// cannot leave the checksum durable while the SST is not.
+    /// `CHECK TABLE`, part-size accounting, backup and fetches) and finalizes +
+    /// optionally fsyncs the file inline - before `checksums.txt` is written,
+    /// so a crash cannot leave the checksum durable while the SST is not.
     if (metadata_snapshot->hasUniqueKey())
     {
-        if (auto sst_writer = SSTIndexWriter::writeDenseIndexOnInsert(
-                *data_part_storage,
-                metadata_snapshot,
-                block,
-                perm_ptr,
-                context->getSettingsRef()[Setting::unique_key_max_encoded_size],
-                context))
-        {
-            std::unique_ptr<WriteBufferFromFileBase> sst_file;
-            sst_writer->finalizeToStorage(gathered_data.checksums, sst_file);
-            if (sst_file)
-            {
-                sst_file->finalize();
-                if ((*data_settings)[MergeTreeSetting::fsync_after_insert])
-                    sst_file->sync();
-            }
-        }
+        SSTIndexWriter::writeDenseIndexOnInsert(
+            *data_part_storage,
+            metadata_snapshot,
+            block,
+            perm_ptr,
+            context->getSettingsRef()[Setting::unique_key_max_encoded_size],
+            gathered_data.checksums,
+            (*data_settings)[MergeTreeSetting::fsync_after_insert],
+            context);
     }
 
     if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])

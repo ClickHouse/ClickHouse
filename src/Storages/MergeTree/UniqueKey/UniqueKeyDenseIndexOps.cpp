@@ -247,12 +247,12 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         /// check-only bound in `encodeBlock`); the rebuild re-encodes rows the
         /// server already accepted at INSERT, so no cap applies here.
         ///
-        /// Write then finalize as two steps. `finalizeToStorage` records the file
-        /// in `part->checksums`, overwriting the stale entry of the removed corrupt
-        /// SST. There is no part `Finalizer` here, so finalize + fsync inline before
-        /// `writeChecksums`: the SST must be durable before its checksum is, or a
-        /// crash would reintroduce the missing-SST inconsistency the rebuild fixes.
-        auto sst_writer = SSTIndexWriter::write(
+        /// `SSTIndexWriter::write` commits in one step: it records the file in
+        /// `part->checksums` (overwriting the stale entry of the removed corrupt
+        /// SST) and finalizes + fsyncs it inline before `writeChecksums` below -
+        /// the SST must be durable before its checksum is, or a crash would
+        /// reintroduce the missing-SST inconsistency the rebuild fixes.
+        SSTIndexWriter::write(
             storage,
             accumulated,
             uk_names,
@@ -260,19 +260,9 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
             metadata_snapshot->getSortingKeyReverseFlags(),
             /*permutation=*/nullptr,
             /*max_encoded_size=*/std::numeric_limits<UInt64>::max(),
+            part->checksums,
+            /*fsync=*/true,
             data.getContext());
-
-        /// Null only on empty input, which cannot happen here (rows > 0 checked above).
-        if (sst_writer)
-        {
-            std::unique_ptr<WriteBufferFromFileBase> sst_file;
-            sst_writer->finalizeToStorage(part->checksums, sst_file);
-            if (sst_file)
-            {
-                sst_file->finalize();
-                sst_file->sync();
-            }
-        }
 
         part->writeChecksums(part->checksums, data.getContext()->getWriteSettings());
         part->setBytesOnDisk(part->checksums.getTotalSizeOnDisk());

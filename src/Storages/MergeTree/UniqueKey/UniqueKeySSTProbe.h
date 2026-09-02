@@ -29,7 +29,7 @@ class IMergeTreeDataPart;
 class DeleteBitmap;
 
 /// Reads a part's `unique_key_index.sst` through `IDataPartStorage` via a custom
-/// RocksDB `Env`, so encrypted and remote (S3 etc.) disks work as well. Block
+/// RocksDB `Env`, so remote (S3 etc.) disks work as well. Block
 /// cache is disabled: load-time validation would only pollute it.
 class SSTFileReader
 {
