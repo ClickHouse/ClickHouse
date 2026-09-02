@@ -17,7 +17,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 
 namespace DB
