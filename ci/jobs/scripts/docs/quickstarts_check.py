@@ -31,6 +31,7 @@ guide):
    names the exact command to run.
 """
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -188,6 +189,53 @@ def generated_paths(docs_root: Path) -> list:
 GENERATOR_COMMAND = "python3 _site/scripts/update_quickstarts.py"
 
 
+def check_localized_cloud_setup_fallback(docs_root: Path) -> list:
+    """Ensure removed locale quickstarts retain translated Cloud card copy.
+
+    An empty quickstart list models the state after the translation pipeline
+    removes the obsolete create-your-first-service-on-cloud page. The generator
+    must then source the card title and description from the locale's Cloud
+    setup guide, not from the canonical English fallback.
+    """
+    generator_path = docs_root / "_site" / "scripts" / "update_quickstarts.py"
+    spec = importlib.util.spec_from_file_location(
+        "update_quickstarts_for_check", generator_path
+    )
+    if spec is None or spec.loader is None:
+        return [f"could not load quickstart generator from {generator_path}"]
+
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+
+    errors = []
+    for locale in LOCALES:
+        setup_page = docs_root / locale / "get-started" / "setup" / "cloud.mdx"
+        expected = generator.parse_frontmatter(
+            setup_page.read_text(encoding="utf-8")
+        )
+        generated = []
+        try:
+            generator.add_cloud_setup_card(generated, docs_root, locale)
+        except Exception as ex:
+            errors.append(f"{locale}: Cloud setup fallback failed: {ex}")
+            continue
+
+        card = generated[0]
+        for field in ("title", "description"):
+            if card.get(field) != expected.get(field):
+                errors.append(
+                    f"{locale}: generated Cloud card {field} does not match "
+                    f"{setup_page.relative_to(docs_root)} frontmatter"
+                )
+        expected_href = f"/{locale}/get-started/setup/cloud"
+        if card.get("href") != expected_href:
+            errors.append(
+                f"{locale}: generated Cloud card href is {card.get('href')!r}; "
+                f"expected {expected_href!r}"
+            )
+    return errors
+
+
 def check_freshness(docs_root: Path) -> list:
     generator = docs_root / "_site" / "scripts" / "update_quickstarts.py"
     # Snapshot the content of everything the generator may rewrite, so the
@@ -239,6 +287,7 @@ def main() -> int:
 
     errors = check_searchable(docs_root)
     errors += check_frontmatter(docs_root)
+    errors += check_localized_cloud_setup_fallback(docs_root)
     # Only bother running the generator when the tags are valid — invalid tags
     # would just produce garbage slugs in the regenerated data.
     if not errors:

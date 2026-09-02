@@ -42,13 +42,15 @@ CLOUD_SETUP_CARD = {
 
 
 def add_cloud_setup_card(quickstarts: List[Dict[str, Any]],
+                         project_root: Path,
                          locale: Optional[str] = None) -> None:
     """Add or redirect the Cloud setup card without keeping a duplicate page.
 
     Localized quickstart trees may still contain the translated legacy page
     until the translation pipeline catches up. Reuse its translated card copy,
-    but always point it at the localized Cloud setup guide. If the page is no
-    longer present, fall back to the canonical English card metadata.
+    but always point it at the localized Cloud setup guide. Once the legacy page
+    is removed, read the card copy from that locale's Cloud setup guide instead
+    of silently replacing translated text with the canonical English metadata.
     """
     prefix = f'/{locale}' if locale else ''
     href = f'{prefix}/get-started/setup/cloud'
@@ -58,7 +60,25 @@ def add_cloud_setup_card(quickstarts: List[Dict[str, Any]],
             quickstart['href'] = href
             return
 
-    quickstarts.append({**CLOUD_SETUP_CARD, 'href': href})
+    card = CLOUD_SETUP_CARD
+    if locale:
+        setup_page = (project_root / locale / 'get-started' / 'setup'
+                      / 'cloud.mdx')
+        frontmatter = parse_frontmatter(setup_page.read_text(encoding='utf-8'))
+        missing = [field for field in ('title', 'description')
+                   if not frontmatter.get(field)]
+        if missing:
+            raise ValueError(
+                f"{setup_page}: missing required Cloud card frontmatter: "
+                f"{', '.join(missing)}"
+            )
+        card = {
+            **CLOUD_SETUP_CARD,
+            'title': frontmatter['title'],
+            'description': frontmatter['description'],
+        }
+
+    quickstarts.append({**card, 'href': href})
     quickstarts.sort(key=lambda quickstart: quickstart['id'])
 
 
@@ -409,7 +429,7 @@ def main():
     if not quickstarts:
         print("No valid quick-start data extracted")
         return 1
-    add_cloud_setup_card(quickstarts)
+    add_cloud_setup_card(quickstarts, project_root)
 
     output_path = (project_root / 'snippets' / 'components' / 'QuickStartsGrid'
                    / 'quickstarts-data.jsx')
@@ -433,7 +453,7 @@ def main():
         if not locale_quickstarts:
             print(f"  - {locale}: no valid quick-start data, skipped")
             continue
-        add_cloud_setup_card(locale_quickstarts, locale)
+        add_cloud_setup_card(locale_quickstarts, project_root, locale)
         # Keep useCases/products canonical English: the grid filters match data
         # values against its option lists by string equality, and the
         # translation pipeline translates frontmatter tag values inconsistently.
