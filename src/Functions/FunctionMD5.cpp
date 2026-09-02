@@ -413,7 +413,7 @@ DECLARE_MD5_TARGET_CODE(
 
     /// A batch runs in lockstep until its longest row retires, so it costs the batch maximum of
     /// numMD5Blocks per lane. Ordering a window of rows by block count makes a batch's lanes retire
-    /// together; the window is bounded so the string bytes it touches stay cache-resident.
+    /// together; the window is bounded so its per-row index arrays fit on the stack.
     constexpr size_t MD5_GROUP_WINDOW = 1024;
     /// Rows of at least this many blocks share one histogram bucket, so above it the candidate order is
     /// only near-optimal. It is scored against column order below, so the cap can forfeit a gain but
@@ -462,41 +462,52 @@ DECLARE_MD5_TARGET_CODE(
         return work;
     }
 
-    /// Cheap column-level screen for whether any window could gain, decided from one pooled sample of
-    /// batches. Pooling rows from across the column orders them better than any single window can be
-    /// ordered, so a column it admits may still have every window decline on its own rows.
+    /// How many windows the column-level screen scores. A whole window holds every phase of every
+    /// period up to its own length, so scoring one cannot be misled by periodic row lengths the way
+    /// scoring scattered single batches can.
+    constexpr size_t MD5_GROUP_PROBE_WINDOWS = 2;
+
+    /// Cheap column-level screen: score whole windows the way the windowed path scores them, and admit
+    /// the column if any of them would group. Probes cannot see per-window heterogeneity elsewhere in
+    /// the column, so an admitted column may still have unprobed windows decline on their own rows.
     template <typename Ops>
     static bool md5GroupingPays(const ColumnString::Offsets & offsets, size_t input_rows_count)
     {
         constexpr size_t N2 = 2 * Ops::lanes;
-        constexpr size_t sample_batches = 16;
-        constexpr size_t sample_rows = sample_batches * N2;
+        static_assert(MD5_GROUP_WINDOW % N2 == 0);
 
-        if (input_rows_count < sample_rows * 8)
+        const size_t whole_windows = input_rows_count / MD5_GROUP_WINDOW;
+        if (whole_windows < MD5_GROUP_PROBE_WINDOWS)
             return false;
 
-        /// A driver batch starts at a multiple of N2 from row 0, so stepping whole batches is what makes
-        /// each sampled group of N2 rows a batch the kernel will really see.
-        const size_t batch_step = input_rows_count / (N2 * sample_batches);
-
-        uint32_t histogram[MD5_GROUP_MAX_KEY + 1] = {};
-        size_t work_in_order = 0;
-
-        for (size_t b = 0; b < sample_batches; ++b)
+        for (size_t p = 0; p < MD5_GROUP_PROBE_WINDOWS; ++p)
         {
-            size_t batch_max = 0;
-            for (size_t j = 0; j < N2; ++j)
+            const size_t window_base = (p * whole_windows / MD5_GROUP_PROBE_WINDOWS) * MD5_GROUP_WINDOW;
+
+            uint32_t histogram[MD5_GROUP_MAX_KEY + 1] = {};
+            size_t work_in_order = 0;
+            ColumnString::Offset current_offset = offsets[static_cast<ssize_t>(window_base) - 1];
+
+            for (size_t off = 0; off < MD5_GROUP_WINDOW; off += N2)
             {
-                const size_t row = b * batch_step * N2 + j;
-                const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
-                const size_t key = std::min(numMD5Blocks(offsets[row] - begin), MD5_GROUP_MAX_KEY);
-                ++histogram[key];
-                batch_max = std::max(batch_max, key);
+                size_t batch_max = 0;
+                for (size_t j = 0; j < N2; ++j)
+                {
+                    const size_t len = offsets[window_base + off + j] - current_offset;
+                    current_offset += len;
+
+                    const size_t blocks = numMD5Blocks(len);
+                    ++histogram[std::min(blocks, MD5_GROUP_MAX_KEY)];
+                    batch_max = std::max(batch_max, blocks);
+                }
+                work_in_order += batch_max;
             }
-            work_in_order += batch_max;
+
+            if (md5GroupingWorthIt(work_in_order, md5CappedGroupedWork(histogram, N2), MD5_GROUP_WINDOW, N2))
+                return true;
         }
 
-        return md5GroupingWorthIt(work_in_order, md5CappedGroupedWork(histogram, N2), sample_rows, N2);
+        return false;
     }
 
     /// Batch process `rows` rows of ColumnString data starting at `first_row`, in column order.

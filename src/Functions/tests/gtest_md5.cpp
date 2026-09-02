@@ -449,6 +449,8 @@ enum class ColumnShape
     Spread, /// wide block-count spread: profitable in every window
     Flat, /// constant length: the column-level gate declines
     Mixed, /// spread first half, constant second half: windows decide differently
+    Periodic, /// one long row per window, all at the same offset: no window can gain
+    AboveCapHalf, /// one-block first half, above-the-cap second half: the second half reaches stage 2
 };
 
 std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
@@ -473,6 +475,18 @@ std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
                 case 7: case 8: len = 200 + rng() % 301; break;
                 default: len = 4000 + rng() % 201; break;
             }
+        }
+        else if (shape == ColumnShape::Periodic)
+        {
+            /// 4100 B is 65 blocks and 1..40 B is one, so every window holds one long row and 1023
+            /// short ones, and its own rows can save at most one iteration per batch boundary.
+            len = i % DB::TargetSpecific::Default::MD5_GROUP_WINDOW == 0 ? 4100 : 1 + rng() % 40;
+        }
+        else if (shape == ColumnShape::AboveCapHalf)
+        {
+            /// 4550 B is 72 blocks, the fewest for which the capped bound passes while the true counts
+            /// tie, so the second half's windows are placed and then declined on their exact score.
+            len = i < rows / 2 ? 20 : 4550;
         }
 
         std::string s(len, '\0');
@@ -531,6 +545,20 @@ TYPED_TEST(MD5MultiBufTest, ColumnBlockCountGroupingPartialWindow)
     /// 8709 is neither a multiple of the window nor of any batch width, so the last window is short and
     /// its last grouped batch holds fewer rows than there are lanes.
     checkColumnMD5<TypeParam>(ColumnShape::Spread, 8709, 8709, 0);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnScreenPeriodicLengths)
+{
+    /// One long row per window, all at the same offset: no window's own rows can save enough to group,
+    /// so the column screen must decline and neither counter may fire.
+    checkColumnMD5<TypeParam>(ColumnShape::Periodic, 8192, /*grouped*/ 0, /*declined*/ 0);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnGroupingDeclinedAfterPlacement)
+{
+    /// Rows above the histogram cap all tie, so the bound passes and the placement is the identity:
+    /// these windows are declined on their exact score, which is the only path that reaches it.
+    checkColumnMD5<TypeParam>(ColumnShape::AboveCapHalf, 8192, /*grouped*/ 0, /*declined*/ 8192);
 }
 
 } // anonymous namespace
