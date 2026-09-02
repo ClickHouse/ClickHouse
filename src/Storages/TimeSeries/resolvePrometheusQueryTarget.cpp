@@ -213,7 +213,7 @@ namespace
                 storage.getStorageID().getNameForLogs(), wrong_type_replicas, backQuoteIfNeed(remote_id.table_name),
                 TimeSeriesColumnNames::TimeSeries, fmt::join(wrong_types, ", "), time_series_type);
 
-        /// Samples the sink queued for such a replica would be delivered later without any check.
+        /// A replica the check could not see would take the samples unchecked.
         if (refuse_unavailable && !unavailable_replicas.empty())
             throw Exception(
                 ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
