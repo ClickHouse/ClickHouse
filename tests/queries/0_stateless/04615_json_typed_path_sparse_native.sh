@@ -41,12 +41,22 @@ ${CLICKHOUSE_CLIENT} --query \
     | ${CLICKHOUSE_LOCAL} --input-format Native --query \
         "SELECT count(), countIf(s.x = 'value'), countIf(s.y = 'dense') FROM table"
 
+${CLICKHOUSE_CURL} -sS --fail "${CLICKHOUSE_URL}" --data-binary \
+    "WITH (SELECT j FROM ${CLICKHOUSE_DATABASE}.${table} LIMIT 1) AS s SELECT s FROM numbers(10) FORMAT Native" \
+    | ${CLICKHOUSE_LOCAL} --input-format Native --query \
+        "SELECT count(), countIf(s.x = 'value'), countIf(s.y = 'dense') FROM table"
+
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${compressed_table} AS ${table} ENGINE = Memory SETTINGS compress = 1;
     INSERT INTO ${compressed_table} SELECT * FROM ${table};
 "
 
 ${CLICKHOUSE_CLIENT} --query "SELECT j FROM ${compressed_table} FORMAT Native" \
+    | ${CLICKHOUSE_LOCAL} --input-format Native --query \
+        "SELECT count(), countIf(j.x = 'value'), countIf(j.y = 'dense') FROM table"
+
+${CLICKHOUSE_CURL} -sS --fail "${CLICKHOUSE_URL}" --data-binary \
+    "SELECT j FROM ${CLICKHOUSE_DATABASE}.${compressed_table} FORMAT Native" \
     | ${CLICKHOUSE_LOCAL} --input-format Native --query \
         "SELECT count(), countIf(j.x = 'value'), countIf(j.y = 'dense') FROM table"
 

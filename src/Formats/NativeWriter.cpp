@@ -154,11 +154,12 @@ void NativeWriter::flush()
 
 std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
+    ColumnPtr result_column = column.column->convertToFullColumnIfConst()->decompress();
+    if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
+        result_column = result_column->convertToFullColumnIfReplicated();
+
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
-        ColumnPtr result_column = column.column->convertToFullColumnIfConst()->decompress();
-        if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
-            result_column = result_column->convertToFullColumnIfReplicated();
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
             result_column = recursiveRemoveSparse(result_column);
         if (client_revision < DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION)
@@ -178,7 +179,7 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(result_column)};
 }
 
 size_t NativeWriter::write(const Block & block)
