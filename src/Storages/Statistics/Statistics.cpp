@@ -1,5 +1,7 @@
 #include <Storages/Statistics/Statistics.h>
 
+#include <unordered_set>
+
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -19,6 +21,8 @@
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
@@ -956,6 +960,35 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
                 { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+ColumnsStatistics collectStatisticsToMaterialize(
+    const ColumnsDescription & columns,
+    bool materialize_statistics,
+    const String & exclude_columns_string,
+    const Settings & settings)
+{
+    ColumnsStatistics statistics;
+    if (!materialize_statistics)
+        return statistics;
+
+    std::unordered_set<String> exclude_column_names;
+    if (!exclude_columns_string.empty())
+        exclude_column_names = parseIdentifiersOrStringLiteralsToSet(exclude_columns_string, settings);
+
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+    for (const auto & column : columns)
+    {
+        if (column.statistics.empty())
+            continue;
+
+        if (exclude_column_names.contains(column.name))
+            continue;
+
+        statistics.emplace(column.name, factory.get(column));
+    }
+
+    return statistics;
 }
 
 }

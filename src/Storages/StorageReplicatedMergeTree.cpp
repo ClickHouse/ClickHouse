@@ -247,7 +247,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
-    extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool share_nested_offsets;
@@ -6974,8 +6973,8 @@ void StorageReplicatedMergeTree::alter(
 
     removeImplicitStatistics(future_metadata.columns);
     auto old_settings = getSettings();
-    commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
 
+    commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 

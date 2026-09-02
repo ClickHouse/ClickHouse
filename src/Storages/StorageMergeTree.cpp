@@ -135,7 +135,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
-    extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool share_nested_offsets;
 }

@@ -9,6 +9,8 @@
 namespace DB
 {
 
+struct Settings;
+
 constexpr std::string_view STATS_FILE_PREFIX = "statistics_";
 constexpr std::string_view STATS_FILE_SUFFIX = ".stats";
 
@@ -227,5 +229,13 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 
+/// Create statistics objects for materialization during INSERT or merge, optionally excluding
+/// columns named in `exclude_columns_string` (comma-delimited identifiers / string literals).
+/// Returns an empty map when `materialize_statistics` is false.
+ColumnsStatistics collectStatisticsToMaterialize(
+    const ColumnsDescription & columns,
+    bool materialize_statistics,
+    const String & exclude_columns_string,
+    const Settings & settings);
 
 }

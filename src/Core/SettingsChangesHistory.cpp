@@ -64,10 +64,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"exclude_materialize_statistics_on_insert", "", "", "New setting. Excludes provided columns from statistics materialization during INSERTs"},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"exclude_materialize_statistics_on_insert", "", "", "New setting. Excludes provided columns from statistics materialization during INSERTs"},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
             {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
@@ -1456,6 +1458,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
+            {"exclude_materialize_statistics_on_merge", "", "", "New setting. Excludes provided columns from statistics materialization during merges"},
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
@@ -1463,6 +1466,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
+            {"exclude_materialize_statistics_on_merge", "", "", "New setting. Excludes provided columns from statistics materialization during merges"},
             {"merge_use_batch_sorting_queue", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."},
             {"always_fetch_mutated_part", false, false, "New setting to make a replica fetch mutated parts instead of executing mutations locally"},
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},

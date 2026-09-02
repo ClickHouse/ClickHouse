@@ -161,6 +161,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool materialize_statistics_on_merge;
+    extern const MergeTreeSettingsString exclude_materialize_statistics_on_merge;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
@@ -864,10 +865,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
     }
 
-    if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
-    {
-        global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
-    }
+    global_ctx->gathered_data.statistics = collectStatisticsToMaterialize(
+        global_ctx->metadata_snapshot->getColumns(),
+        (*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge],
+        (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_statistics_on_merge].toString(),
+        global_ctx->context->getSettingsRef());
 
     if (global_ctx->merge_may_reduce_rows)
     {
