@@ -6,7 +6,7 @@ Run from the docs root (the directory containing docs.json):
 
     python3 ../ci/jobs/scripts/docs/quickstarts_check.py .
 
-Four checks (see docs/get-started/quickstarts/README.md for the authoring
+Five checks (see docs/get-started/quickstarts/README.md for the authoring
 guide):
 
 1. Frontmatter metadata and badge markers. Every English and localized
@@ -36,7 +36,11 @@ guide):
    through that helper. This keeps middle-click, copied links, and no-JavaScript
    clients from falling back to English.
 
-4. Cloud setup signup attribution. The English and localized Cloud setup
+4. Install-page Cloud banner parity. The English and localized install pages
+   must render the same recommended Cloud banner, attributed signup link, and
+   locale-preserving quickstart link.
+
+5. Cloud setup signup attribution. The English and localized Cloud setup
    guides must all use the same attributed signup URL.
 """
 
@@ -64,6 +68,7 @@ ALLOWED_PRODUCTS = [
 SKIP_FILES = {"home.mdx", "README.md"}
 LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
 CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
+INSTALL_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-install-page-banner"
 EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 42
 
 # The badge block the generator rewrites, same pattern as
@@ -370,6 +375,46 @@ def check_cloud_setup_signup_attribution(docs_root: Path) -> list:
     return errors
 
 
+def check_install_cloud_banners(docs_root: Path) -> list:
+    """Ensure every install page has the same Cloud-first entry points."""
+    pages = [(None, docs_root / "get-started" / "setup" / "install.mdx")]
+    pages += [
+        (
+            locale,
+            docs_root / locale / "get-started" / "setup" / "install.mdx",
+        )
+        for locale in LOCALES
+    ]
+
+    errors = []
+    for locale, page in pages:
+        source = page.read_text(encoding="utf-8")
+        name = page.relative_to(docs_root)
+        quickstart_href = "/get-started/setup/cloud"
+        if locale:
+            quickstart_href = f"/{locale}{quickstart_href}"
+
+        if source.count('className="ch-install-cloud-card"') != 1:
+            errors.append(
+                f"{name}: expected one recommended Cloud install banner"
+            )
+        if source.count(f'href="{INSTALL_SIGNUP_URL}"') != 1:
+            errors.append(
+                f"{name}: expected one signup link attributed with "
+                "`loc=docs-install-page-banner`"
+            )
+        if source.count(f'href="{quickstart_href}"') != 1:
+            errors.append(
+                f"{name}: expected one Cloud quickstart link to "
+                f"{quickstart_href!r}"
+            )
+        if '<Card title="ClickHouse Cloud"' in source:
+            errors.append(
+                f"{name}: legacy single-card Cloud treatment is still present"
+            )
+    return errors
+
+
 def check_freshness(docs_root: Path) -> list:
     generator = docs_root / "_site" / "scripts" / "update_quickstarts.py"
     # Snapshot the content of everything the generator may rewrite, so the
@@ -423,6 +468,7 @@ def main() -> int:
     errors += check_frontmatter(docs_root)
     errors += check_localized_cloud_setup_fallback(docs_root)
     errors += check_localized_homepage_links(docs_root)
+    errors += check_install_cloud_banners(docs_root)
     errors += check_cloud_setup_signup_attribution(docs_root)
     # Only bother running the generator when the tags are valid — invalid tags
     # would just produce garbage slugs in the regenerated data.
@@ -434,7 +480,7 @@ def main() -> int:
         for e in errors:
             print(f"- {e}")
         return 1
-    print("OK: quickstart frontmatter valid, generated data up to date")
+    print("OK: quickstart and Cloud onboarding docs checks passed")
     return 0
 
 
