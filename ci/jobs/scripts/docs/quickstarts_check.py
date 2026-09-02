@@ -6,7 +6,7 @@ Run from the docs root (the directory containing docs.json):
 
     python3 ../ci/jobs/scripts/docs/quickstarts_check.py .
 
-Seven checks (see docs/get-started/quickstarts/README.md for the authoring
+Eight checks (see docs/get-started/quickstarts/README.md for the authoring
 guide):
 
 1. Frontmatter metadata and badge markers. Every English and localized
@@ -49,6 +49,10 @@ guide):
 7. Localized quickstart navigation. The group labels added for the quickstart
    explorer must use each locale's existing terminology instead of rendering
    English labels in translated sidebars.
+
+8. Cloud setup link labels. Links from quickstart prerequisites to the Cloud
+   setup guide must use that destination page's title in English and every
+   locale, so retiring or renaming an onboarding page cannot leave stale copy.
 """
 
 import importlib.util
@@ -371,6 +375,43 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
                     f"{setup_page.relative_to(docs_root)}: sidebarTitle must "
                     "be the localized equivalent of `Cloud quickstart`"
                 )
+    return errors
+
+
+def check_cloud_setup_link_labels(docs_root: Path) -> list:
+    """Ensure Cloud prerequisite links use their destination page title."""
+    errors = []
+    for locale in [None, *LOCALES]:
+        prefix = f"{locale}/" if locale else ""
+        locale_prefix = f"/{locale}" if locale else ""
+        setup_page = (
+            docs_root / prefix / "get-started" / "setup" / "cloud.mdx"
+        )
+        setup_source = setup_page.read_text(encoding="utf-8")
+        title_match = re.search(
+            r"^title:\s*(['\"])(.*?)\1\s*$", setup_source, re.MULTILINE
+        )
+        if not title_match:
+            errors.append(
+                f"{setup_page.relative_to(docs_root)}: missing quoted title"
+            )
+            continue
+        expected_label = title_match.group(2)
+        expected_href = f"{locale_prefix}/get-started/setup/cloud"
+        link = re.compile(
+            rf"\[([^\]]+)\]\({re.escape(expected_href)}\)"
+        )
+        quickstarts_dir = docs_root / prefix / "get-started" / "quickstarts"
+        for pattern in ("**/*.mdx", "**/*.md"):
+            for page in quickstarts_dir.glob(pattern):
+                source = page.read_text(encoding="utf-8")
+                for match in link.finditer(source):
+                    if match.group(1) != expected_label:
+                        errors.append(
+                            f"{page.relative_to(docs_root)}: Cloud setup link "
+                            f"label is {match.group(1)!r}; expected destination "
+                            f"title {expected_label!r}"
+                        )
     return errors
 
 
@@ -780,6 +821,7 @@ def main() -> int:
     errors = check_searchable(docs_root)
     errors += check_frontmatter(docs_root)
     errors += check_cloud_setup_cards(docs_root)
+    errors += check_cloud_setup_link_labels(docs_root)
     errors += check_localized_homepage_links(docs_root)
     errors += check_install_cloud_banners(docs_root)
     errors += check_explorer_docs_links(docs_root)
