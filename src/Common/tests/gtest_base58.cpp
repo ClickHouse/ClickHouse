@@ -355,6 +355,57 @@ TEST(Base58, Generic)
     }
 }
 
+/// The callback fires on accumulated inner-loop work, so how often it fires must not depend on how
+/// many input elements one iteration consumes. The count is the sum over passes of
+/// `limb_count * CHUNK * <limb width>` divided by the threshold, an exact function of the body
+/// length, so the band below needs no timing and cannot be flaky. 10000 bytes gives 64 either way.
+TEST(Base58, GenericCancellationInterval)
+{
+    constexpr size_t expected_calls = 64;
+    constexpr size_t min_calls = 40;
+    constexpr size_t max_calls = 200;
+
+    const std::string body = bodyOfLength(10000, 0);
+
+    std::vector<UInt8> encoded(2 * body.size() + 1);
+    size_t encode_calls = 0;
+    const size_t encoded_size = encodeBase58(
+        reinterpret_cast<const UInt8 *>(body.data()), body.size(), encoded.data(), [&] { ++encode_calls; });
+    const std::string encoded_text(reinterpret_cast<const char *>(encoded.data()), encoded_size);
+
+    std::vector<UInt8> decoded(encoded_text.size());
+    size_t decode_calls = 0;
+    const auto decoded_size = decodeBase58(
+        reinterpret_cast<const UInt8 *>(encoded_text.data()), encoded_text.size(), decoded.data(),
+        [&] { ++decode_calls; });
+    ASSERT_TRUE(decoded_size.has_value());
+    ASSERT_EQ(std::string(reinterpret_cast<const char *>(decoded.data()), *decoded_size), body);
+
+    EXPECT_GE(encode_calls, min_calls) << "encodeBase58 checked " << encode_calls << " times, expected "
+                                       << expected_calls;
+    EXPECT_LE(encode_calls, max_calls) << "encodeBase58 checked " << encode_calls << " times, expected "
+                                       << expected_calls;
+    EXPECT_GE(decode_calls, min_calls) << "decodeBase58 checked " << decode_calls << " times, expected "
+                                       << expected_calls;
+    EXPECT_LE(decode_calls, max_calls) << "decodeBase58 checked " << decode_calls << " times, expected "
+                                       << expected_calls;
+
+    /// The callback is expected to throw once the query is cancelled or out of time, which is only
+    /// useful if the throw leaves the conversion.
+    struct Cancelled
+    {
+    };
+    EXPECT_THROW(
+        encodeBase58(
+            reinterpret_cast<const UInt8 *>(body.data()), body.size(), encoded.data(), [] { throw Cancelled{}; }),
+        Cancelled);
+    EXPECT_THROW(
+        decodeBase58(
+            reinterpret_cast<const UInt8 *>(encoded_text.data()), encoded_text.size(), decoded.data(),
+            [] { throw Cancelled{}; }),
+        Cancelled);
+}
+
 TEST(Base58, DecodeInvalid)
 {
     uint8_t out32[32] = {};

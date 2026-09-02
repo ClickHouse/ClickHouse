@@ -1,5 +1,7 @@
 #include <Common/Base58.h>
 
+#include <base/unaligned.h>
+
 #include <cstring>
 #include <optional>
 
@@ -663,16 +665,28 @@ size_t encodeBase58_64_fd(const uint8_t * src, uint8_t * dst)
 namespace
 {
 
+constexpr UInt64 power58(size_t exponent)
+{
+    UInt64 result = 1;
+    for (size_t i = 0; i < exponent; ++i)
+        result *= 58;
+    return result;
+}
+
 /// The same 58^5 the fixed-size codecs above use as their intermediate radix (`R1div`).
-constexpr UInt32 BASE58_ENCODE_LIMB_RADIX = 656356768; /// 58^5
-constexpr UInt64 BASE58_DECODE_CHUNK_RADIX = 656356768; /// 58^BASE58_DECODE_CHUNK
+constexpr UInt32 BASE58_ENCODE_LIMB_RADIX = 656356768;
+constexpr UInt64 BASE58_DECODE_CHUNK_RADIX = 656356768;
 constexpr size_t BASE58_ENCODE_LIMB_DIGITS = 5;
 
 /// Input elements per outer pass. Encode takes 4 bytes, not 7: `limb * 2^(8 * CHUNK) + carry` must fit
-/// UInt64 and a radix-58^5 limb is below 2^30, so `8 * CHUNK` must stay below 34. Decode takes 5
-/// characters, not 9: `limb * 58^CHUNK + carry` must fit UInt64, and 58^5 < 2^30 does, 58^6 > 2^35 not.
+/// `UInt64` and a radix-58^5 limb is below 2^30, so `8 * CHUNK` must stay below 34. Decode takes 5
+/// characters, not 9: `limb * 58^CHUNK + carry` must fit `UInt64`, and 58^5 < 2^30 does, 58^6 > 2^35 not.
 constexpr size_t BASE58_ENCODE_CHUNK = 4;
 constexpr size_t BASE58_DECODE_CHUNK = 5;
+
+static_assert(BASE58_ENCODE_LIMB_RADIX == power58(BASE58_ENCODE_LIMB_DIGITS));
+static_assert(BASE58_DECODE_CHUNK_RADIX == power58(BASE58_DECODE_CHUNK));
+static_assert(BASE58_ENCODE_LIMB_RADIX < (1ULL << 30));
 
 /// Upper bounds on the limb count: 1366/1000 exceeds 8/log2(58) and 733/1000 exceeds log2(58)/8.
 constexpr size_t base58EncodeLimbs(size_t body)
@@ -697,17 +711,17 @@ static_assert(base58EncodeLimbs(BASE58_ENCODE_STACK_MAX_BODY + 1) > BASE58_STACK
 static_assert(base58DecodeLimbs(BASE58_DECODE_STACK_MAX_BODY) <= BASE58_STACK_LIMBS);
 static_assert(base58DecodeLimbs(BASE58_DECODE_STACK_MAX_BODY + 1) > BASE58_STACK_LIMBS);
 
-/// `memcpy` because the limbs may live in a byte buffer with no alignment guarantee.
+/// `decodeBase58` hands the limb array's bytes back as its own output, so the layout is part of the
+/// algorithm and is little-endian on every host, not just the ones where that is the native order.
+/// Unaligned because the limbs may live in a byte buffer.
 UInt32 loadLimb(const UInt8 * limbs, size_t i)
 {
-    UInt32 value;
-    memcpy(&value, limbs + i * sizeof(UInt32), sizeof(UInt32));
-    return value;
+    return unalignedLoadLittleEndian<UInt32>(limbs + i * sizeof(UInt32));
 }
 
 void storeLimb(UInt8 * limbs, size_t i, UInt32 value)
 {
-    memcpy(limbs + i * sizeof(UInt32), &value, sizeof(UInt32));
+    unalignedStoreLittleEndian<UInt32>(limbs + i * sizeof(UInt32), value);
 }
 
 } // anonymous namespace
@@ -730,7 +744,7 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
         ++src;
     }
 
-    /// The accumulator is the input so far as UInt32 limbs of radix 58^5, least significant limb first.
+    /// The accumulator is the input so far as `UInt32` limbs of radix 58^5, least significant limb first.
     const size_t body_length = src_length - processed;
     UInt32 stack_limbs[BASE58_STACK_LIMBS];
     UInt8 * limbs = body_length > BASE58_ENCODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_limbs);
@@ -738,12 +752,12 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
 
     /// The total work is quadratic, so the cancellation check is driven by accumulated inner-loop work
     /// rather than by outer iterations: the time limit and `KILL QUERY` stay prompt even with the size
-    /// limit disabled. One iteration now covers `CHUNK * LIMB_DIGITS` of the units it used to count, and
-    /// scaling by that product is what keeps the interval between checks from growing.
+    /// limit disabled. The unit counted is one (input element, accumulator element) pair, and one
+    /// iteration covers `BASE58_ENCODE_CHUNK * BASE58_ENCODE_LIMB_DIGITS` of them, hence the scaling.
     size_t work_since_check = 0;
     static constexpr size_t work_per_check = 1ULL << 20;
 
-    /// A short leading chunk goes first, so every chunk below is exactly BASE58_ENCODE_CHUNK bytes.
+    /// A short leading chunk goes first, so every chunk below is exactly `BASE58_ENCODE_CHUNK` bytes.
     if (size_t head = body_length % BASE58_ENCODE_CHUNK)
     {
         UInt64 carry = 0;
@@ -797,7 +811,7 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
     /// The most significant limb is never zero: multiplying a non-zero accumulator by 2^32 always carries
     /// past one radix-58^5 limb, so a pass that would zero the top limb appends a non-zero one above it.
     /// Expanding top-down, reading each limb before writing over it, is what keeps this safe while the
-    /// limbs are IN `dst`: limbs 0 .. i-1 occupy dst[0, 4 * i) and limb i's digits start at 5 * i.
+    /// limbs are IN `dst`: limbs 0 .. i-1 occupy `dst[0, 4 * i)` and limb i's digits start at 5 * i.
     if (limb_count)
     {
         size_t top_digits = 1;
@@ -872,19 +886,19 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         ++src;
     }
 
-    /// The accumulator is the characters so far as UInt32 limbs of base 2^32, least significant first -
+    /// The accumulator is the characters so far as `UInt32` limbs of base 2^32, least significant first -
     /// byte for byte the little-endian form the result needs, so only the byte reversal is left at the end.
     const size_t body_length = src_length - processed;
     UInt32 stack_limbs[BASE58_STACK_LIMBS];
     UInt8 * limbs = body_length > BASE58_DECODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_limbs);
     size_t limb_count = 0;
 
-    /// As in `encodeBase58`, the check is driven by accumulated inner-loop work and scaled by
-    /// `CHUNK * sizeof(UInt32)`, the units one iteration now covers, so the interval cannot grow.
+    /// As in `encodeBase58`, the check is driven by accumulated inner-loop work, and one iteration
+    /// covers `BASE58_DECODE_CHUNK * sizeof(UInt32)` of the pairs that unit counts.
     size_t work_since_check = 0;
     static constexpr size_t work_per_check = 1ULL << 20;
 
-    /// A short leading chunk goes first, so every chunk below is exactly BASE58_DECODE_CHUNK characters.
+    /// A short leading chunk goes first, so every chunk below is exactly `BASE58_DECODE_CHUNK` characters.
     if (size_t head = body_length % BASE58_DECODE_CHUNK)
     {
         UInt64 carry = 0;
@@ -944,7 +958,7 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         }
     }
 
-    /// The most significant limb is never zero: a pass only multiplies the accumulator by 58^CHUNK.
+    /// The most significant limb is never zero: a pass only multiplies the accumulator by `58^CHUNK`.
     if (limb_count)
     {
         size_t top_bytes = 1;
