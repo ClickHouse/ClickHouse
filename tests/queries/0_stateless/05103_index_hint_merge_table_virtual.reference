@@ -1,0 +1,12 @@
+t_merge_hint_1	1
+t_merge_hint_1	1
+t_merge_hint_1	1
+t_merge_hint_1	1
+t_merge_hint_2	2
+1
+2
+t_merge_hint_2	2
+plain virtual column filters are unaffected
+1
+2
+2

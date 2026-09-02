@@ -1953,16 +1953,22 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
             auto filter_column_name = filter_expression->getActionsDAG().getOutputs().at(0)->result_name;
-            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name), lc_string_type] (const auto& database_name, const auto& table_name)
+            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name)] (const auto& database_name, const auto& table_name)
             {
-                MutableColumnPtr database_column = lc_string_type->createColumn();
-                MutableColumnPtr table_column = lc_string_type->createColumn();
-                database_column->insert(database_name);
-                table_column->insert(table_name);
-                Block block{
-                    ColumnWithTypeAndName(std::move(database_column), lc_string_type, "_database"),
-                    ColumnWithTypeAndName(std::move(table_column), lc_string_type, "_table")
-                };
+                /// Build the block from the expression's own inputs rather than a fixed pair of
+                /// columns: an `indexHint` argument contributes a second input for the same virtual
+                /// column, and a block holding it once cannot satisfy both.
+                Block block;
+                for (const auto & input : filter->getRequiredColumnsWithTypes())
+                {
+                    MutableColumnPtr column = input.type->createColumn();
+                    if (input.name == "_database")
+                        column->insert(database_name);
+                    else
+                        column->insert(table_name);
+                    block.insert(ColumnWithTypeAndName(std::move(column), input.type, input.name));
+                }
+
                 filter->execute(block);
                 // Valid only when block has exactly one row.
                 return block.getByName(column_name).column->getBool(0);
