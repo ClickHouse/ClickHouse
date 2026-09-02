@@ -235,6 +235,10 @@ SIDEBAR_AD_COPY = {
         "linkLabel": "Experimente grátis",
     },
 }
+REQUIRED_GLOBAL_SCRIPTS = (
+    "/_site/customizations/navbar-cta.js",
+    "/_site/customizations/cloud-sidebar-ad.js",
+)
 
 
 def build_targets(docs_root):
@@ -424,6 +428,25 @@ def check_navbar_sign_in_labels(docs_root):
     return violations
 
 
+def check_global_script_registrations(docs_root):
+    """Validate that Mintlify loads the localized global customizations."""
+    path = os.path.join(docs_root, "docs.json")
+    config = json.load(open(path, encoding="utf-8"))
+    rel = os.path.relpath(path, docs_root)
+    registered_scripts = [
+        script.get("src")
+        for script in config.get("scripts", [])
+        if isinstance(script, dict)
+    ]
+    violations = []
+    for script in REQUIRED_GLOBAL_SCRIPTS:
+        if registered_scripts.count(script) != 1:
+            violations.append(
+                (rel, script, "missing-global-script-registration", None)
+            )
+    return violations
+
+
 def check_sidebar_ad_localization(docs_root):
     """Validate attributed, localized sidebar advert behavior."""
     path = os.path.join(
@@ -498,6 +521,7 @@ def main(argv=None):
     violations = check_sample_explorer_theme_images(docs_root)
     violations += check_localized_explorer_copy(docs_root)
     violations += check_navbar_sign_in_labels(docs_root)
+    violations += check_global_script_registrations(docs_root)
     violations += check_sidebar_ad_localization(docs_root)
     # Entries are (file, path or marker, kind, suggestion).
     fixed = 0

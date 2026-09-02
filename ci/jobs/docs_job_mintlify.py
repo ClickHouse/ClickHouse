@@ -34,6 +34,7 @@ LOCALE_CHECK_TRIGGERS = tuple(f"docs/{d}/" for d in LOCALE_DIRS) + (
     #  - global customizations whose navbar and sidebar copy is localized at
     #    runtime and validated by locale_components_check.py.
     "docs/snippets/",
+    "docs/docs.json",
     "docs/_site/redirects.json",
     "docs/_site/customizations/",
 )

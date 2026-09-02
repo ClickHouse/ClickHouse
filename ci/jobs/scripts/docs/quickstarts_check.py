@@ -151,6 +151,16 @@ LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES = {
     "ru": "Быстрый старт в Cloud",
     "zh": "Cloud 快速入门",
 }
+LOCALIZED_MCP_LABELS = {
+    "ar": "خادم MCP",
+    "es": "servidor MCP",
+    "fr": "serveur MCP",
+    "ja": "MCPサーバー",
+    "ko": "MCP 서버",
+    "pt-BR": "servidor MCP",
+    "ru": "MCP-сервер",
+    "zh": "MCP 服务器",
+}
 
 # The badge block the generator rewrites, same pattern as
 # update_quickstart_page in _site/scripts/update_quickstarts.py.
@@ -740,6 +750,14 @@ def check_localized_homepage_links(docs_root: Path) -> list:
             errors.append(
                 f"{page.relative_to(docs_root)}: McpLink must route its "
                 "knowledge-base path through localizeHref"
+            )
+
+        mcp_label = LOCALIZED_MCP_LABELS[locale]
+        mcp_label_marker = f"<McpLink>{mcp_label}</McpLink>"
+        if source.count(mcp_label_marker) != 1:
+            errors.append(
+                f"{page.relative_to(docs_root)}: expected localized MCP "
+                f"link label {mcp_label!r}"
             )
 
         hero_match = hero_card.search(source)
