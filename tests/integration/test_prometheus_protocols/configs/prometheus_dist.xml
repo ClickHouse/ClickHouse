@@ -37,6 +37,13 @@
                     <table>default.prom_rep</table>
                 </handler>
             </rep_write>
+            <missing_write>
+                <url>/missing/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_missing</table>
+                </handler>
+            </missing_write>
             <keyless_write>
                 <url>/keyless/write</url>
                 <handler>

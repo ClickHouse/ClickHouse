@@ -38,8 +38,8 @@ FILTERED_USERS = {
     "prom_filter_other": "{''ts_other'':''0'',''shard_0.ts_all'':''0''}",
 }
 
-# The same series, tags and timestamps as 05055: `h1` and `h2` hash to one shard and `h3`, `h4`,
-# `h5` to the other, so both jobs of `m` straddle the two shards.
+# The same series, tags and timestamps as 05055's `m`: `h1` and `h2` hash to one shard and `h3`,
+# `h4` to the other, so both jobs of `m` straddle the two shards.
 INSERT_TEST_DATA = """
 INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
     ('m', map('job', 'a', 'host', 'h1'),

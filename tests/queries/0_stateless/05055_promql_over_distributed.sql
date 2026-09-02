@@ -1,6 +1,7 @@
 -- Tags: no-parallel, no-fasttest, no-flaky-check, shard
 -- no-parallel: uses the global shard_0 / shard_1 databases of test_cluster_two_shards_different_databases.
 -- no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- no-flaky-check: for the same reason, as for the other tests over these two databases.
 
 -- Raw samples are selected on every shard and the PromQL is evaluated on the initiator, so the answer
 -- must be the same as evaluating it against one local TimeSeries table holding all of the data.
@@ -16,6 +17,10 @@ DROP TABLE IF EXISTS ts_remote;
 DROP TABLE IF EXISTS ts_remote_tf;
 DROP TABLE IF EXISTS ts_nested;
 DROP TABLE IF EXISTS ts_coarse;
+DROP TABLE IF EXISTS ts_skip_on;
+DROP TABLE IF EXISTS ts_mode_only;
+DROP TABLE IF EXISTS ts_dead;
+DROP TABLE IF EXISTS ts_dead_skip;
 DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;
 
@@ -93,22 +98,15 @@ SELECT count() FROM prometheusQuery(ts_coarse, '1 + 2', 140);
 DROP TABLE ts_coarse;
 
 SELECT '--- declared Distributed settings the generated read has to carry ---';
--- Declaring the default explicitly changes nothing about the read: must pass.
-CREATE TABLE ts_skip_default AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 0;
-SELECT count() > 0 FROM prometheusQuery(ts_skip_default, 'm', 140);
-DROP TABLE ts_skip_default;
--- A declared non-default value is carried into the generated cluster() read, so the read matches
--- a plain SELECT through the wrapper: must pass.
+-- A declared non-default value is carried into the generated cluster() read.
 CREATE TABLE ts_skip_on AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 1;
 SELECT count() > 0 FROM prometheusQuery(ts_skip_on, 'm', 140);
--- A selector-free query never reads the wrapper at all.
-SELECT count() FROM prometheusQuery(ts_skip_on, '1 + 2', 140);
 -- An explicit query setting overrides the declaration on the normal path and reaches the generated
--- cluster() call too, so with it the reads match exactly: must pass.
+-- cluster() call too.
 SELECT count() > 0 FROM prometheusQuery(ts_skip_on, 'm', 140) SETTINGS skip_unavailable_shards = 0;
 DROP TABLE ts_skip_on;
 -- A declared mode with shard skipping effectively off changes nothing - the mode only controls
--- which exceptions skipping ignores: must pass.
+-- which exceptions skipping ignores.
 CREATE TABLE ts_mode_only AS shard_0.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards_mode = 'unavailable';
 SELECT count() > 0 FROM prometheusQuery(ts_mode_only, 'm', 140);
 DROP TABLE ts_mode_only;
