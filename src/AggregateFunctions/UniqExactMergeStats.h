@@ -6,9 +6,8 @@
 #include <base/getThreadId.h>
 #include <base/types.h>
 
-#include <algorithm>
-#include <array>
 #include <atomic>
+#include <vector>
 
 namespace ProfileEvents
 {
@@ -28,19 +27,26 @@ namespace DB
 class UniqExactMergeWaveStats
 {
 public:
-    explicit UniqExactMergeWaveStats(size_t input_states_)
+    UniqExactMergeWaveStats(size_t input_states_, size_t max_worker_tasks)
         : input_states(input_states_)
+        , worker_thread_ids(max_worker_tasks)
     {
+        for (auto & thread_id : worker_thread_ids)
+            thread_id.store(0, std::memory_order_relaxed);
     }
 
-    void recordTask(UInt64 cpu_nanoseconds) noexcept
+    void recordTask(UInt64 cpu_nanoseconds, size_t processed_items_) noexcept
     {
         cpu_time_nanoseconds.fetch_add(cpu_nanoseconds, std::memory_order_relaxed);
+        processed_items.fetch_add(processed_items_, std::memory_order_relaxed);
         registerWorker(getThreadId());
     }
 
     void report() const
     {
+        if (processed_items.load(std::memory_order_relaxed) == 0)
+            return;
+
         ProfileEvents::increment(ProfileEvents::UniqExactMergeWaves);
         ProfileEvents::increment(ProfileEvents::UniqExactMergeWaveInputStates, input_states);
         ProfileEvents::increment(ProfileEvents::UniqExactMergeWaveElapsedMicroseconds, wall_watch.elapsedMicroseconds());
@@ -50,27 +56,36 @@ public:
     }
 
 private:
-    static constexpr size_t max_tracked_workers = 256;
-
     void registerWorker(UInt64 thread_id) noexcept
     {
-        const size_t seen = std::min(num_workers.load(std::memory_order_acquire), max_tracked_workers);
-        for (size_t i = 0; i < seen; ++i)
-            if (worker_thread_ids[i].load(std::memory_order_relaxed) == thread_id)
+        for (auto & worker_thread_id : worker_thread_ids)
+        {
+            UInt64 current = worker_thread_id.load(std::memory_order_acquire);
+            if (current == thread_id)
                 return;
 
-        const size_t slot = num_workers.fetch_add(1, std::memory_order_acq_rel);
-        if (slot < max_tracked_workers)
-            worker_thread_ids[slot].store(thread_id, std::memory_order_relaxed);
+            if (current == 0
+                && worker_thread_id.compare_exchange_strong(current, thread_id, std::memory_order_acq_rel, std::memory_order_acquire))
+                return;
+
+            if (current == thread_id)
+                return;
+        }
     }
 
-    size_t distinctWorkers() const { return std::min(num_workers.load(std::memory_order_relaxed), max_tracked_workers); }
+    size_t distinctWorkers() const
+    {
+        size_t result = 0;
+        for (const auto & thread_id : worker_thread_ids)
+            result += thread_id.load(std::memory_order_relaxed) != 0;
+        return result;
+    }
 
     size_t input_states;
     Stopwatch wall_watch;
     std::atomic<UInt64> cpu_time_nanoseconds = 0;
-    std::array<std::atomic<UInt64>, max_tracked_workers> worker_thread_ids{};
-    std::atomic<size_t> num_workers = 0;
+    std::atomic<size_t> processed_items = 0;
+    std::vector<std::atomic<UInt64>> worker_thread_ids;
 };
 
 /// Measures one pooled task with the per-thread CPU clock. The stats object outlives every task
@@ -87,14 +102,18 @@ public:
     ~UniqExactMergeWaveTaskTimer() noexcept
     {
         timespec cpu_end{};
-        if (!cpu_clock_available || clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_end) != 0)
-            return;
-
-        const UInt64 start_nanoseconds = static_cast<UInt64>(cpu_start.tv_sec) * 1'000'000'000 + cpu_start.tv_nsec;
-        const UInt64 end_nanoseconds = static_cast<UInt64>(cpu_end.tv_sec) * 1'000'000'000 + cpu_end.tv_nsec;
-        if (end_nanoseconds >= start_nanoseconds)
-            stats.recordTask(end_nanoseconds - start_nanoseconds);
+        UInt64 cpu_nanoseconds = 0;
+        if (cpu_clock_available && clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_end) == 0)
+        {
+            const UInt64 start_nanoseconds = static_cast<UInt64>(cpu_start.tv_sec) * 1'000'000'000 + cpu_start.tv_nsec;
+            const UInt64 end_nanoseconds = static_cast<UInt64>(cpu_end.tv_sec) * 1'000'000'000 + cpu_end.tv_nsec;
+            if (end_nanoseconds >= start_nanoseconds)
+                cpu_nanoseconds = end_nanoseconds - start_nanoseconds;
+        }
+        stats.recordTask(cpu_nanoseconds, processed_items);
     }
+
+    void recordWorkItem() noexcept { ++processed_items; }
 
     UniqExactMergeWaveTaskTimer(const UniqExactMergeWaveTaskTimer &) = delete;
     UniqExactMergeWaveTaskTimer & operator=(const UniqExactMergeWaveTaskTimer &) = delete;
@@ -102,6 +121,7 @@ public:
 private:
     UniqExactMergeWaveStats & stats;
     timespec cpu_start{};
+    size_t processed_items = 0;
     bool cpu_clock_available = false;
 };
 

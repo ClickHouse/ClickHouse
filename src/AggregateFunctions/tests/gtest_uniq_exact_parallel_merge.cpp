@@ -26,6 +26,34 @@ void fillSet(TestSet & set, size_t start, size_t count)
 }
 }
 
+TEST(UniqExactParallelMerge, WaveWorkersAreDistinct)
+{
+    constexpr size_t NUM_TASKS = 8;
+
+    ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), 1);
+    UniqExactMergeWaveStats wave_stats(NUM_TASKS, NUM_TASKS);
+
+    const auto waves_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaves];
+    const auto wave_states_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveInputStates];
+    const auto wave_workers_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveWorkers];
+
+    for (size_t i = 0; i < NUM_TASKS; ++i)
+    {
+        pool.scheduleOrThrowOnError(
+            [&wave_stats]
+            {
+                UniqExactMergeWaveTaskTimer task_timer(wave_stats);
+                task_timer.recordWorkItem();
+            });
+    }
+    pool.wait();
+    wave_stats.report();
+
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaves] - waves_before, 1);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveInputStates] - wave_states_before, NUM_TASKS);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveWorkers] - wave_workers_before, 1);
+}
+
 /// Test pairwise merge (the existing path) with thread pool.
 TEST(UniqExactParallelMerge, PairwiseMerge)
 {
@@ -178,7 +206,17 @@ TEST(UniqExactParallelMerge, BatchMergeCancellation)
     ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), 4);
     std::atomic<bool> is_cancelled{true}; /// Pre-cancelled.
 
+    const auto waves_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaves];
+    const auto wave_states_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveInputStates];
+    const auto wave_wall_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveElapsedMicroseconds];
+    const auto wave_cpu_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveCPUTimeMicroseconds];
+    const auto wave_workers_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveWorkers];
+
     TestSet::parallelizeMergeMulti(ptrs, [](TestSet * p) { return p; }, pool, is_cancelled);
-    /// With cancellation, the merge may be partial or empty — just verify no crash.
-    ASSERT_LE(a.size(), 2 * N);
+    ASSERT_EQ(a.size(), N);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaves] - waves_before, 0);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveInputStates] - wave_states_before, 0);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveElapsedMicroseconds] - wave_wall_before, 0);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveCPUTimeMicroseconds] - wave_cpu_before, 0);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveWorkers] - wave_workers_before, 0);
 }

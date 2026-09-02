@@ -37,18 +37,16 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
-    extern const Event AggregationMergePrepAllSingleLevel;
-    extern const Event AggregationMergePrepMixedLevel;
-    extern const Event AggregationMergePrepAllTwoLevel;
-    extern const Event AggregationMergeInputVariants;
-    extern const Event AggregationMergeInputGroups;
-    extern const Event AggregationFinalMergePathSingleLevel;
-    extern const Event AggregationFinalMergePathTwoLevel;
-    extern const Event AggregationMergeBuckets;
-    extern const Event AggregationMergeBucketElapsedMicroseconds;
-    extern const Event AggregationMergeBusiestBucketElapsedMicroseconds;
-    extern const Event AggregationMergeSources;
-    extern const Event AggregationMergeBusiestSourceElapsedMicroseconds;
+    extern const Event AggregationInMemoryMergeInputVariants;
+    extern const Event AggregationInMemoryMergeInputTwoLevelVariants;
+    extern const Event AggregationInMemoryMergeInputGroups;
+    extern const Event AggregationInMemoryMergePathSingleLevel;
+    extern const Event AggregationInMemoryMergePathTwoLevel;
+    extern const Event AggregationInMemoryMergeBuckets;
+    extern const Event AggregationInMemoryMergeBucketElapsedMicroseconds;
+    extern const Event AggregationInMemoryMergeBusiestBucketElapsedMicroseconds;
+    extern const Event AggregationInMemoryMergeSources;
+    extern const Event AggregationInMemoryMergeBusiestSourceElapsedMicroseconds;
 }
 
 namespace DB
@@ -59,7 +57,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void recordFinalAggregationMergeInputShape(const ManyAggregatedDataVariants & data, size_t keys_size)
+static void recordInMemoryAggregationMergeInputs(const ManyAggregatedDataVariants & data, size_t keys_size)
 {
     if (keys_size == 0)
         return;
@@ -80,15 +78,9 @@ static void recordFinalAggregationMergeInputShape(const ManyAggregatedDataVarian
     if (non_empty_variants <= 1)
         return;
 
-    ProfileEvents::increment(ProfileEvents::AggregationMergeInputVariants, non_empty_variants);
-    ProfileEvents::increment(ProfileEvents::AggregationMergeInputGroups, input_groups);
-
-    if (two_level_variants == 0)
-        ProfileEvents::increment(ProfileEvents::AggregationMergePrepAllSingleLevel);
-    else if (two_level_variants == non_empty_variants)
-        ProfileEvents::increment(ProfileEvents::AggregationMergePrepAllTwoLevel);
-    else
-        ProfileEvents::increment(ProfileEvents::AggregationMergePrepMixedLevel);
+    ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeInputVariants, non_empty_variants);
+    ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeInputTwoLevelVariants, two_level_variants);
+    ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeInputGroups, input_groups);
 }
 
 ManyAggregatedData::~ManyAggregatedData()
@@ -290,8 +282,8 @@ public:
 
         void recordSuccessfulBucket(size_t source_index_, UInt64 elapsed_microseconds)
         {
-            ProfileEvents::increment(ProfileEvents::AggregationMergeBuckets);
-            ProfileEvents::increment(ProfileEvents::AggregationMergeBucketElapsedMicroseconds, elapsed_microseconds);
+            ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeBuckets);
+            ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeBucketElapsedMicroseconds, elapsed_microseconds);
 
             updateMaximum(busiest_bucket_elapsed_microseconds, elapsed_microseconds);
             source_stats[source_index_].elapsed_microseconds.fetch_add(elapsed_microseconds, std::memory_order_relaxed);
@@ -313,10 +305,11 @@ public:
             }
 
             ProfileEvents::increment(
-                ProfileEvents::AggregationMergeBusiestBucketElapsedMicroseconds,
+                ProfileEvents::AggregationInMemoryMergeBusiestBucketElapsedMicroseconds,
                 busiest_bucket_elapsed_microseconds.load(std::memory_order_relaxed));
-            ProfileEvents::increment(ProfileEvents::AggregationMergeSources, active_sources);
-            ProfileEvents::increment(ProfileEvents::AggregationMergeBusiestSourceElapsedMicroseconds, busiest_source_elapsed_microseconds);
+            ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeSources, active_sources);
+            ProfileEvents::increment(
+                ProfileEvents::AggregationInMemoryMergeBusiestSourceElapsedMicroseconds, busiest_source_elapsed_microseconds);
         }
 
     private:
@@ -686,8 +679,8 @@ public:
         if (!merge_path_recorded && data->size() > 1 && params->params.keys_size > 0)
         {
             ProfileEvents::increment(
-                data->at(0)->isTwoLevel() ? ProfileEvents::AggregationFinalMergePathTwoLevel
-                                          : ProfileEvents::AggregationFinalMergePathSingleLevel);
+                data->at(0)->isTwoLevel() ? ProfileEvents::AggregationInMemoryMergePathTwoLevel
+                                          : ProfileEvents::AggregationInMemoryMergePathSingleLevel);
             merge_path_recorded = true;
         }
 
@@ -1524,7 +1517,7 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
-            recordFinalAggregationMergeInputShape(many_data->variants, params->params.keys_size);
+            recordInMemoryAggregationMergeInputs(many_data->variants, params->params.keys_size);
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
                 std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));

@@ -143,7 +143,8 @@ public:
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
         if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
-            UniqExactMergeWaveStats wave_stats(places.size());
+            const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num);
+            UniqExactMergeWaveStats wave_stats(places.size(), max_threads_to_enqueue);
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
@@ -162,10 +163,13 @@ public:
                         if (i >= places.size())
                             return;
                         if (accessor(places[i])->isSingleLevel())
+                        {
+                            task_timer.recordWorkItem();
                             accessor(places[i])->convertToTwoLevel();
+                        }
                     }
                 };
-                for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
+                for (size_t i = 0; i < max_threads_to_enqueue; ++i)
                     thread_pool.scheduleOrThrowOnError(thread_func);
 
                 thread_pool.wait();
@@ -223,7 +227,8 @@ public:
         for (size_t i = 0; i < places.size(); ++i)
             two_level_ptrs.emplace_back(&accessor(places[i])->asTwoLevelChecked());
 
-        UniqExactMergeWaveStats wave_stats(places.size());
+        const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
+        UniqExactMergeWaveStats wave_stats(places.size(), max_threads_to_enqueue);
         ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_MERGER);
         try
         {
@@ -241,6 +246,7 @@ public:
                     const auto bucket = next_bucket_to_merge->fetch_add(1);
                     if (bucket >= NUM_BUCKETS)
                         return;
+                    task_timer.recordWorkItem();
 
                     for (size_t j = 1; j < two_level_ptrs.size(); ++j)
                     {
@@ -252,7 +258,6 @@ public:
                 }
             };
 
-            const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
             for (size_t i = 0; i < max_threads_to_enqueue
                  && next_bucket_to_merge->load(std::memory_order_relaxed) < NUM_BUCKETS; ++i)
                 runner.enqueueAndKeepTrack(thread_func, Priority{});
@@ -301,7 +306,8 @@ public:
             else
             {
                 /// Usage of lhs and rhs is fine. The references belong to *this and will outlive `runner`, so the order of destruction is ok
-                UniqExactMergeWaveStats wave_stats(2);
+                const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                UniqExactMergeWaveStats wave_stats(2, max_threads_to_enqueue);
                 ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
                 try
                 {
@@ -319,11 +325,11 @@ public:
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
                             if (bucket >= rhs.NUM_BUCKETS)
                                 return;
+                            task_timer.recordWorkItem();
                             lhs.impls[bucket].merge(rhs.impls[bucket]);
                         }
                     };
 
-                    const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
                     for (size_t i = 0; i < max_threads_to_enqueue
                          && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
                         runner.enqueueAndKeepTrack(thread_func, Priority{});

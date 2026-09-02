@@ -48,11 +48,11 @@ SETTINGS
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
-    argMax(ProfileEvents['AggregationMergePrepAllSingleLevel'], event_time_microseconds) = 1,
-    argMax(ProfileEvents['AggregationFinalMergePathSingleLevel'], event_time_microseconds) = 1,
-    argMax(ProfileEvents['AggregationFinalMergePathTwoLevel'], event_time_microseconds) = 0,
-    argMax(ProfileEvents['AggregationMergeInputVariants'], event_time_microseconds) > 1,
-    argMax(ProfileEvents['AggregationMergeInputGroups'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['AggregationInMemoryMergeInputVariants'], event_time_microseconds) > 1,
+    argMax(ProfileEvents['AggregationInMemoryMergeInputTwoLevelVariants'], event_time_microseconds) = 0,
+    argMax(ProfileEvents['AggregationInMemoryMergeInputGroups'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['AggregationInMemoryMergePathSingleLevel'], event_time_microseconds) = 1,
+    argMax(ProfileEvents['AggregationInMemoryMergePathTwoLevel'], event_time_microseconds) = 0,
     argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds) = 0
 FROM system.query_log
 WHERE
@@ -62,18 +62,20 @@ WHERE
     AND log_comment = '05059_aggregation_merge_single_level';
 
 SELECT
-    argMax(ProfileEvents['AggregationMergePrepAllTwoLevel'], event_time_microseconds) = 1,
-    argMax(ProfileEvents['AggregationFinalMergePathSingleLevel'], event_time_microseconds) = 0,
-    argMax(ProfileEvents['AggregationFinalMergePathTwoLevel'], event_time_microseconds) = 1,
-    argMax(ProfileEvents['AggregationMergeBuckets'], event_time_microseconds) = 256,
-    argMax(ProfileEvents['AggregationMergeBucketElapsedMicroseconds'], event_time_microseconds) > 0,
-    argMax(ProfileEvents['AggregationMergeBusiestBucketElapsedMicroseconds'], event_time_microseconds) > 0,
-    argMax(ProfileEvents['AggregationMergeBusiestBucketElapsedMicroseconds'], event_time_microseconds)
-        <= argMax(ProfileEvents['AggregationMergeBucketElapsedMicroseconds'], event_time_microseconds),
-    argMax(ProfileEvents['AggregationMergeSources'], event_time_microseconds) BETWEEN 1 AND 4,
-    argMax(ProfileEvents['AggregationMergeBusiestSourceElapsedMicroseconds'], event_time_microseconds) > 0,
-    argMax(ProfileEvents['AggregationMergeBusiestSourceElapsedMicroseconds'], event_time_microseconds)
-        <= argMax(ProfileEvents['AggregationMergeBucketElapsedMicroseconds'], event_time_microseconds)
+    argMax(ProfileEvents['AggregationInMemoryMergeInputVariants'], event_time_microseconds) > 1,
+    argMax(ProfileEvents['AggregationInMemoryMergeInputTwoLevelVariants'], event_time_microseconds)
+        = argMax(ProfileEvents['AggregationInMemoryMergeInputVariants'], event_time_microseconds),
+    argMax(ProfileEvents['AggregationInMemoryMergePathSingleLevel'], event_time_microseconds) = 0,
+    argMax(ProfileEvents['AggregationInMemoryMergePathTwoLevel'], event_time_microseconds) = 1,
+    argMax(ProfileEvents['AggregationInMemoryMergeBuckets'], event_time_microseconds) = 256,
+    argMax(ProfileEvents['AggregationInMemoryMergeBucketElapsedMicroseconds'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['AggregationInMemoryMergeBusiestBucketElapsedMicroseconds'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['AggregationInMemoryMergeBusiestBucketElapsedMicroseconds'], event_time_microseconds)
+        <= argMax(ProfileEvents['AggregationInMemoryMergeBucketElapsedMicroseconds'], event_time_microseconds),
+    argMax(ProfileEvents['AggregationInMemoryMergeSources'], event_time_microseconds) BETWEEN 1 AND 4,
+    argMax(ProfileEvents['AggregationInMemoryMergeBusiestSourceElapsedMicroseconds'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['AggregationInMemoryMergeBusiestSourceElapsedMicroseconds'], event_time_microseconds)
+        <= argMax(ProfileEvents['AggregationInMemoryMergeBucketElapsedMicroseconds'], event_time_microseconds)
 FROM system.query_log
 WHERE
     event_date >= yesterday()
