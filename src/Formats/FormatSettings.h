@@ -441,6 +441,7 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         bool named_tuples_as_json = true;
+        bool named_tuples_as_subcolumns = true;
 
         bool use_nbsp_for_padding = false;
 
