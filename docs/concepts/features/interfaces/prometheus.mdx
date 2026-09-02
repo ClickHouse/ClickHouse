@@ -82,7 +82,7 @@ curl http://127.0.0.1:9363/metrics
 
 ## Prometheus HTTP API and PromQL {#prometheus-http-api-and-promql}
 
-ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
+ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, range PromQL queries, and metadata endpoints.
 
 ### Prerequisites {#prerequisites}
 
@@ -127,7 +127,10 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/query_range` | Range PromQL queries |
 | `/prometheus/api/v1/format_query` | PromQL expression formatting |
 | `/prometheus/api/v1/series` | Series metadata |
+| `/prometheus/api/v1/labels` | Label names |
+| `/prometheus/api/v1/label/<name>/values` | Label values |
 | `/prometheus/api/v1/metadata` | Metric-family metadata |
+| `/prometheus/api/v1/status/tsdb` | TSDB cardinality statistics |
 
 The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
 
@@ -234,7 +237,9 @@ datasources:
 Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
 
 <Note>
-Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
+The query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These metadata endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
+
+The `/api/v1/status/tsdb` endpoint returns cardinality statistics for stored logical series. Its `limit` parameter defaults to 10 and applies independently to each statistics list, with a maximum of 10000. The `memoryInBytesByLabelName` values are approximations based on the encoded byte lengths of label names and values. Because ClickHouse does not use Prometheus head chunks, `chunkCount` is always zero and `numSeries` describes stored logical series. When the tags target stores time bounds, `minTime` and `maxTime` report the bounds of the stored TimeSeries data; otherwise they are zero.
 </Note>
 
 #### SQL entry points {#sql-entry-points}
