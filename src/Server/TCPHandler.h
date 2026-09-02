@@ -342,7 +342,8 @@ private:
         QueryState & state,
         std::shared_ptr<TCPHandlerPocoChunkedWriter> & out,
         size_t prev_bytes_written_out,
-        size_t prev_bytes_written_compressed_out);
+        size_t prev_bytes_written_compressed_out,
+        size_t prev_flush_count_out);
 
     void sendData(QueryState & state, const Block & block); /// Write a block to the network.
     static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
