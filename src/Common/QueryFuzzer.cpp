@@ -1718,18 +1718,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         if (view_targets.size() > 1 && fuzz_rand() % 10 == 0)
         {
             const auto kind = view_targets[fuzz_rand() % view_targets.size()].kind;
-            /// Detach the registered children first, or they outlive the erased target in `children`.
-            /// These two setters do it themselves; `resetTableASTWithQueryParams` only nulls the member.
-            create.targets->setInnerEngine(kind, nullptr);
-            create.targets->setInnerColumns(kind, nullptr);
-            if (auto table_ast = create.targets->getTableASTWithQueryParams(kind))
-            {
-                create.targets->resetTableASTWithQueryParams(kind);
-                auto & target_children = create.targets->children;
-                target_children.erase(
-                    std::remove(target_children.begin(), target_children.end(), table_ast), target_children.end());
-            }
-            std::erase_if(view_targets, [kind](const ViewTarget & target) { return target.kind == kind; });
+            create.targets->removeTarget(kind);
         }
 
         for (auto * inner_storage : create.targets->getInnerEngines())
