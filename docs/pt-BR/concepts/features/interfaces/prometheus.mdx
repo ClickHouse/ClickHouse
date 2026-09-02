@@ -127,12 +127,14 @@ Configure um manipulador roteado por prefixo na porta HTTP principal do ClickHou
 
 `<defaults/>` preserva os handlers integrados para endpoints como `/ping` e solicitações SQL. O prefixo acima expõe esses endpoints por meio de um único handler:
 
-| Endpoint                         | Finalidade                    |
-| -------------------------------- | ----------------------------- |
-| `/prometheus/api/v1/write`       | gravação remota do Prometheus |
-| `/prometheus/api/v1/read`        | leitura remota do Prometheus  |
-| `/prometheus/api/v1/query`       | consultas PromQL instantâneas |
-| `/prometheus/api/v1/query_range` | consultas PromQL em intervalo |
+| Endpoint                         | Finalidade                       |
+| -------------------------------- | -------------------------------- |
+| `/prometheus/api/v1/write`       | gravação remota do Prometheus    |
+| `/prometheus/api/v1/read`        | leitura remota do Prometheus     |
+| `/prometheus/api/v1/query`       | consultas PromQL instantâneas    |
+| `/prometheus/api/v1/query_range` | consultas PromQL em intervalo    |
+| `/prometheus/api/v1/series`      | Metadados de séries              |
+| `/prometheus/api/v1/metadata`    | Metadados da família de métricas |
 
 O exemplo omite `database` e `table` do handler. Cada solicitação deve fornecer o parâmetro de consulta `table`. Ela também pode fornecer `database`, usar um nome de tabela qualificado, como `prometheus.metrics`, ou omitir o banco de dados para usar `default`. Isso permite que um único handler atenda a várias tabelas `TimeSeries`.
 
@@ -171,6 +173,15 @@ remote_write:
 ```
 
 O Prometheus envia amostras para a tabela `prometheus.metrics`.
+
+Para agrupar dados de várias solicitações simultâneas de gravação remota em menos partes, habilite as [inserções assíncronas](/pt-BR/reference/settings/session-settings/async-insert#async_insert) adicionando a configuração `async_insert` à URL (ou habilitando-a no perfil de usuário):
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
+```
+
+O ClickHouse confirma uma solicitação assíncrona de gravação remota somente depois que os dados são gravados em todas as tabelas internas da tabela `TimeSeries`, independentemente da configuração [`wait_for_async_insert`](/pt-BR/reference/settings/session-settings/wait-for#wait_for_async_insert): o protocolo de gravação remota considera uma gravação confirmada como durável. Se a gravação falhar, a solicitação retorna um erro e o Prometheus tenta novamente.
 
 <div id="promql-query-support">
   ### Consulta com PromQL
@@ -226,7 +237,7 @@ datasources:
 O Grafana acrescenta `/api/v1/query` ou `/api/v1/query_range` a esta URL base e adiciona `customQueryParameters` a cada solicitação.
 
 <Note>
-  Apenas os endpoints de consulta `/api/v1/query` e `/api/v1/query_range` estão implementados. Os endpoints de metadados usados por uma fonte de dados Prometheus no Grafana para navegar por rótulos, variáveis de Template e preenchimento automático no construtor de consultas (`/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`) não estão implementados e retornam um erro. Escreva expressões PromQL no modo de código em vez de usar o construtor de consultas.
+  Apenas os endpoints de consulta `/api/v1/query` e `/api/v1/query_range` e os endpoints de metadados `/api/v1/series`, `/api/v1/labels` e `/api/v1/metadata` estão implementados. `/api/v1/series` requer pelo menos um seletor de séries `match[]`, oferece suporte aos parâmetros opcionais `start`, `end` e `limit` e retorna a união das séries correspondentes a cada seletor. `/api/v1/labels` aceita os mesmos parâmetros, com `match[]` sendo opcional, e retorna os nomes de rótulos ordenados das séries correspondentes (ou de todas as séries quando nenhum seletor é informado). O endpoint de valores de rótulos (`/api/v1/label/<name>/values`), usado por uma fonte de dados Prometheus no Grafana para navegar por rótulos, variáveis de Template e preenchimento automático no construtor de consultas, não está implementado e retorna um erro. Escreva expressões PromQL no modo de código em vez de usar o construtor de consultas.
 </Note>
 
 <div id="sql-entry-points">
@@ -254,6 +265,28 @@ FROM prometheusQuery(
     'rate(http_requests_total[5m])',
     now()
 );
+```
+
+<div id="metadata">
+  ### Consultar metadados de métricas
+</div>
+
+O endpoint `/prometheus/api/v1/metadata` retorna os metadados das métricas armazenados na tabela de destino `Metrics` da tabela `TimeSeries`: o tipo, o texto de ajuda e a unidade de cada família de métricas. Ele aceita os seguintes parâmetros do Prometheus na string de consulta da URL:
+
+| Parâmetro          | Descrição                                                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric`           | Retorna metadados apenas para esta família de métricas.                                                                                   |
+| `limit`            | Limita o número de famílias de métricas retornadas. Um valor negativo significa sem limite; zero não retorna nenhuma família de métricas. |
+| `limit_per_metric` | Limita o número de objetos de metadados retornados para cada família de métricas. Valores zero e negativos significam sem limite.         |
+
+A tabela de destino `Metrics` padrão é uma `ReplacingMergeTree` ordenada pelo nome da família de métricas: ela mantém a entrada de metadados gravada mais recentemente para cada família de métricas. Várias entradas por família são retornadas apenas enquanto a tabela de destino as armazena — antes da mesclagem de suas partes ou quando a tabela é definida com um mecanismo que as preserva.
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
+  --data-urlencode "metric=http_requests_total" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
 ```
 
 <div id="remote-read">
