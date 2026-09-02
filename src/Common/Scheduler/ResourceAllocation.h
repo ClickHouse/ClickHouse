@@ -96,6 +96,7 @@ public:
         const UInt64 pending_increase = static_cast<UInt64>(increase_size);
         return current_allocation <= limit && pending_increase <= limit - current_allocation;
     }
+    bool hasSuctionAllocationCeiling() const { return memory_pressure_policy.suction_max_allocation_bytes != 0; }
     UInt64 getSuctionReservedBytes() const { return memory_pressure_policy.suction_reserved_bytes; }
     SuctionQueuePolicy getSuctionQueuePolicy() const { return memory_pressure_policy.suction_queue_policy; }
 

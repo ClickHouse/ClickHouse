@@ -672,6 +672,7 @@ void AllocationQueue::processActivation()
                 /// processor is forced to spill for this pressure epoch.
                 if (recovering.increasing_hook.is_linked()
                     && recovering.isGrowthRecoveryActive()
+                    && recovering.hasSuctionAllocationCeiling()
                     && recovering.canEnterSuction(recovering.increase.size))
                 {
                     recovering.memory_growth_recovery_pending = true;
