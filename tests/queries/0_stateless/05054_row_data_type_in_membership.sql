@@ -17,7 +17,7 @@ SELECT a, r IN (SELECT r FROM row_in WHERE a != 2) FROM row_in ORDER BY a;
 SELECT (1, 'b') IN (SELECT r FROM row_in);
 
 -- A Row column as a one-element set. The old analyzer reads a bare identifier on the right of IN
--- as a table name, so this needs the new analyzer.
+-- as a table name, so this needs the analyzer.
 SELECT a, r IN r, (1, 'a') IN r FROM row_in ORDER BY a SETTINGS enable_analyzer = 1;
 
 -- CAST from Row to the equivalent Tuple.
