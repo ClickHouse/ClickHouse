@@ -27,11 +27,10 @@ private:
     int fd = -1;
 };
 
-/// Keeps a directory open so that a mutation inside it can be persisted afterwards.
-/// Unlike LocalDirectorySyncGuard, the sync is explicit and propagates its failure, so a caller
-/// may refuse to acknowledge an operation whose directory entry it was unable to persist.
-/// The descriptor is opened by the constructor, so a caller that opens before mutating cannot
-/// commit the mutation and only then fail because the directory could not be opened.
+/// Keeps a directory open so a mutation inside it can be persisted afterwards.
+/// Unlike LocalDirectorySyncGuard, the sync is explicit and its failure propagates, so a caller
+/// can refuse to acknowledge a change whose directory entry it could not persist. The
+/// constructor opens the directory, so it can be held before the mutation it will persist.
 class CheckedDirectorySync
 {
 public:
@@ -52,10 +51,9 @@ private:
 };
 
 /// Creates `dir` and any missing ancestor of it. When `fsync` is set, each directory this call
-/// creates is persisted in its own parent, so an object stored in a lazily created directory
-/// cannot be lost together with that directory; failure to persist one throws.
-/// A file's own fsync does not persist its directory entry, which is why a parent directory has
-/// to be synced separately after any create, rename or remove inside it.
+/// creates is persisted in its own parent, and failure to persist one throws.
+/// A file's own fsync does not persist its directory entry, which is why the directory holding
+/// it is synced separately after any create, rename or remove inside it.
 void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec);
 
 /// Same, but reports a failure to create the directory by throwing instead of through `ec`.

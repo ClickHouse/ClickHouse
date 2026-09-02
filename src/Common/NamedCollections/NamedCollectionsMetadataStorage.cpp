@@ -538,14 +538,10 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
         }
         catch (const Exception & e)
         {
-            /// A single corrupt/torn local `.sql` file (e.g. a zero-byte file left by a power
-            /// loss with fsync_metadata=0) parses to a SYNTAX_ERROR. Skip and log it for plain
-            /// local storage instead of failing server startup, matching the UDF and workload
-            /// disk storages. Only unparseable content of plain local files is treated as
-            /// corruption: operational errors (I/O), every error on replicated storage, and
-            /// anything on encrypted storage (where a parse failure signals a wrong key, since
-            /// the key fingerprint is not validated before decryption) still propagate, so we
-            /// never silently drop a collection that is actually present.
+            /// Only unparseable content of a plain local file counts as corruption. On encrypted
+            /// storage a parse failure means a wrong key, since the fingerprint is not validated
+            /// before decryption, and on replicated storage the error is operational, so both
+            /// surface rather than dropping a collection that is present.
             if (storage->isReplicated() || storage->isEncrypted() || e.code() != ErrorCodes::SYNTAX_ERROR)
                 throw;
             LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),

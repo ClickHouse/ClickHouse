@@ -167,11 +167,9 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
     }
     catch (...)
     {
-        /// A directory left behind with an unpersisted entry in its parent would be seen as
-        /// already created by the next call, which would then never persist that entry, so an
-        /// object stored on a later attempt could still be lost together with the directory.
-        /// Undo what this call created, deepest first, and let a retry start over. A directory
-        /// that is no longer empty belongs to a concurrent writer: removing it fails, keeping it.
+        /// A directory kept here would be seen as already created by the next call, which would
+        /// then never persist its entry. Removal fails on one that is no longer empty, which
+        /// belongs to a concurrent writer.
         for (const auto & created : to_create)
         {
             std::error_code remove_ec;
