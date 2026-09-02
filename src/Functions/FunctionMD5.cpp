@@ -463,9 +463,13 @@ DECLARE_MD5_TARGET_CODE(
     }
 
     /// How many windows the column-level screen scores. A whole window holds every phase of every
-    /// period up to its own length, so scoring one cannot be misled by periodic row lengths the way
-    /// scoring scattered single batches can.
+    /// period up to its own length, so scoring one cannot be misled by periodic row lengths.
     constexpr size_t MD5_GROUP_PROBE_WINDOWS = 2;
+
+    /// A window that declines has still paid for its own scoring pass, and the column screen only
+    /// looked at two windows. Scoring stops once declining windows outrun grouped ones by this much,
+    /// which bounds the wasted pass by the grouped work instead of by the column length.
+    constexpr size_t MD5_GROUP_DECLINE_BUDGET = 8;
 
     /// Cheap column-level screen: score whole windows the way the windowed path scores them, and admit
     /// the column if any of them would group. Probes cannot see per-window heterogeneity elsewhere in
@@ -568,8 +572,18 @@ DECLARE_MD5_TARGET_CODE(
         /// Each grouped batch's largest true block count, accumulated as rows are placed.
         size_t batch_max_grouped[MD5_GROUP_WINDOW / N2];
 
+        size_t grouped_windows = 0;
+        size_t declined_windows = 0;
+
         for (size_t window_base = 0; window_base < input_rows_count; window_base += MD5_GROUP_WINDOW)
         {
+            if (declined_windows > grouped_windows + MD5_GROUP_DECLINE_BUDGET)
+            {
+                const size_t rest = input_rows_count - window_base;
+                md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, window_base, rest);
+                return;
+            }
+
             const size_t window_rows = std::min(MD5_GROUP_WINDOW, input_rows_count - window_base);
             const size_t window_batches = (window_rows + N2 - 1) / N2;
 
@@ -600,6 +614,7 @@ DECLARE_MD5_TARGET_CODE(
             /// Deciding before placing keeps a window that will not group from paying for one.
             if (!md5GroupingWorthIt(work_in_order, md5CappedGroupedWork(histogram, N2), window_rows, N2))
             {
+                ++declined_windows;
                 ProfileEvents::increment(ProfileEvents::MD5GroupingDeclinedRows, window_rows);
                 md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, window_base, window_rows);
                 continue;
@@ -630,10 +645,12 @@ DECLARE_MD5_TARGET_CODE(
 
             if (!md5GroupingWorthIt(work_in_order, work_grouped, window_rows, N2))
             {
+                ++declined_windows;
                 ProfileEvents::increment(ProfileEvents::MD5GroupingDeclinedRows, window_rows);
                 md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, window_base, window_rows);
                 continue;
             }
+            ++grouped_windows;
             ProfileEvents::increment(ProfileEvents::MD5GroupedRows, window_rows);
 
             for (size_t off = 0; off < window_rows; off += N2)

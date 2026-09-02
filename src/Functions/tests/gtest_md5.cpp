@@ -451,6 +451,7 @@ enum class ColumnShape
     Mixed, /// spread first half, constant second half: windows decide differently
     Periodic, /// one long row per window, all at the same offset: no window can gain
     AboveCapHalf, /// one-block first half, above-the-cap second half: the second half reaches stage 2
+    LeadingSpread, /// one spread window, then constant length: only the first window can gain
 };
 
 std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
@@ -461,7 +462,8 @@ std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
 
     for (size_t i = 0; i < rows; ++i)
     {
-        bool spread = shape == ColumnShape::Spread || (shape == ColumnShape::Mixed && i < rows / 2);
+        bool spread = shape == ColumnShape::Spread || (shape == ColumnShape::Mixed && i < rows / 2)
+            || (shape == ColumnShape::LeadingSpread && i < DB::TargetSpecific::Default::MD5_GROUP_WINDOW);
 
         size_t len = 64;
         if (spread)
@@ -559,6 +561,15 @@ TYPED_TEST(MD5MultiBufTest, ColumnGroupingDeclinedAfterPlacement)
     /// Rows above the histogram cap all tie, so the bound passes and the placement is the identity:
     /// these windows are declined on their exact score, which is the only path that reaches it.
     checkColumnMD5<TypeParam>(ColumnShape::AboveCapHalf, 8192, /*grouped*/ 0, /*declined*/ 8192);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnGroupingDeclineBudget)
+{
+    /// Only the first window gains: the screen admits the column on it, and the constant-length ones
+    /// each decline. The counters must sum to less than the 14300 rows, because scoring stops once
+    /// declining windows outrun grouped ones and the rest is hashed unscored. 14300 leaves that rest a
+    /// partial batch wide on the wider kernels, so its trailing short batch is covered too.
+    checkColumnMD5<TypeParam>(ColumnShape::LeadingSpread, 14300, /*grouped*/ 1024, /*declined*/ 10240);
 }
 
 } // anonymous namespace
