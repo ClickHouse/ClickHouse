@@ -45,6 +45,10 @@ public:
     /// rather than reusing this one, so that one object never resolves two different versions.
     bool isAbandonedWithoutWaiters() const;
 
+    /// False when a build is in flight with client options different from `client_options`:
+    /// this PR forwards query-level S3 timeouts, so such a query must not adopt that build.
+    bool canShareInflightLoad(const KernelClientOptions & client_options) const;
+
     std::optional<size_t> getTotalRows() const;
     std::optional<size_t> getTotalBytes() const;
 
@@ -96,6 +100,8 @@ private:
         KernelSnapshot snapshot;
         KernelScan scan;
         size_t snapshot_version;
+        /// Fingerprint of the credentials embedded into `engine`, taken when it was built.
+        DB::UInt128 credentials_fingerprint{};
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
     mutable DB::UInt128 kernel_state_credentials_fingerprint{};
@@ -120,6 +126,8 @@ private:
         /// Queries currently waiting for this load. A load some waiter gave up on is still
         /// healthy work for the others; only a load nobody waits for is considered dead.
         std::atomic<Int64> waiters{0};
+        /// Client options the build runs with; a query with different options does not share it.
+        KernelClientOptions client_options;
     };
     mutable std::shared_ptr<InflightSnapshotLoad> inflight_load TSA_GUARDED_BY(mutex);
 
@@ -179,7 +187,7 @@ private:
     /// before the launch, and returns the shared in-flight state for waiters. Never blocks on
     /// the kernel. Static, so that the scan iterator can rebuild through the same path.
     static std::shared_ptr<InflightSnapshotLoad> startKernelSnapshotLoad(
-        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build);
+        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const KernelClientOptions & client_options);
 
     /// Waits for an in-flight build, re-checking the query status on every poll: `KILL QUERY`,
     /// `max_execution_time` and `delta_lake_snapshot_load_timeout_ms` abort the wait for this

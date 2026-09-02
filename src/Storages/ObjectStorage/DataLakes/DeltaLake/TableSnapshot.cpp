@@ -283,7 +283,7 @@ public:
         /// apply on this scan thread too) rather than blocking in the kernel synchronously.
         kernel_snapshot_state = loadKernelSnapshotState(
             helper, std::optional<size_t>(kernel_snapshot_state->snapshot_version), log);
-        captured_credentials_fingerprint = post_fingerprint;
+        captured_credentials_fingerprint = kernel_snapshot_state->credentials_fingerprint;
         scan = KernelScan();
         scan_data_iterator = KernelScanDataIterator();
         return true;
@@ -721,6 +721,12 @@ bool TableSnapshot::isAbandonedWithoutWaiters() const
         && inflight_load->waiters.load() == 0;
 }
 
+bool TableSnapshot::canShareInflightLoad(const KernelClientOptions & client_options) const
+{
+    std::lock_guard lock(mutex);
+    return !inflight_load || inflight_load->client_options == client_options;
+}
+
 size_t TableSnapshot::getVersionUnlocked() const
 {
     return getKernelSnapshotState()->snapshot_version;
@@ -939,6 +945,10 @@ void TableSnapshot::initOrUpdateSnapshot() const
         log, "{}",
         kernel_snapshot_state ? "Rebuilding kernel snapshot state (credentials rotated)" : "Initializing snapshot");
 
+    /// Captured on the query thread; also part of the decision whether an in-flight build
+    /// may be shared, since this PR forwards query-level S3 timeouts into the kernel client.
+    const auto client_options = KernelClientOptions::fromCurrentQuery();
+
     for (size_t attempt = 0;; ++attempt)
     {
         /// One in-flight build is shared by every query which needs this snapshot: the first
@@ -953,9 +963,13 @@ void TableSnapshot::initOrUpdateSnapshot() const
         auto load = inflight_load;
         const bool given_up = load && load->state.load() == InflightSnapshotLoad::State::Abandoned
             && load->waiters.load() == 0;
-        if (!load || (given_up && version_to_build.has_value()))
+        const bool other_options = load && !(load->client_options == client_options);
+        /// For a first latest-version load the metadata layer already handed out a separate
+        /// object when the options differ (see canShareInflightLoad), so here only pinned
+        /// versions and rebuilds ever start a second load on the same object.
+        if (!load || (version_to_build.has_value() && (given_up || other_options)))
         {
-            load = startKernelSnapshotLoad(helper, version_to_build);
+            load = startKernelSnapshotLoad(helper, version_to_build, client_options);
             inflight_load = load;
         }
 
@@ -995,7 +1009,9 @@ void TableSnapshot::initOrUpdateSnapshot() const
         if (!is_current_load && kernel_snapshot_state)
             break;  /// Already installed by the registered load (or a sibling waiter): keep it.
         kernel_snapshot_state = built;
-        kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
+        /// The fingerprint of the credentials inside `built`, not of the helper's current client:
+        /// the client may have rotated while the load was in flight (or given up on).
+        kernel_state_credentials_fingerprint = built->credentials_fingerprint;
         kernel_state_needs_rebuild = false;
         break;
     }
@@ -1028,7 +1044,7 @@ namespace
 }
 
 std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelSnapshotLoad(
-    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build)
+    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const KernelClientOptions & client_options)
 {
     /// The kernel FFI is synchronous and has no cancellation hook: `snapshot_builder_build` reads
     /// `_delta_log` through the kernel's own object store client and blocks on a channel fed by
@@ -1066,11 +1082,10 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
             snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
     });
 
-    /// Captured here, on the query thread: the worker runs under a neutral thread group and
-    /// has no query context to take settings from.
-    const auto client_options = KernelClientOptions::fromCurrentQuery();
-
+    /// `client_options` were captured by the caller on the query thread: the worker runs under
+    /// a neutral thread group and has no query context to take settings from.
     auto load = std::make_shared<InflightSnapshotLoad>();
+    load->client_options = client_options;
     auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
         [kernel_helper, version_to_build, client_options]
         {
@@ -1166,7 +1181,7 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKern
 std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::loadKernelSnapshotState(
     KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
 {
-    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build);
+    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build, KernelClientOptions::fromCurrentQuery());
     waitForSnapshotLoad(*load, *kernel_helper, log);
     /// Rethrows the build error, if any.
     return load->future.get();
@@ -1190,6 +1205,8 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(
             "ExpiredToken: forced by delta_kernel_force_stale_token_error failpoint");
     });
 
+    /// Describes the credentials this engine is built with (the helper may rotate later).
+    credentials_fingerprint = helper_.getCredentialsFingerprint();
     auto * engine_builder = helper_.createBuilderWithOptions(client_options_);
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 

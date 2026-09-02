@@ -157,13 +157,17 @@ getSnapshotVersion(const Settings & settings)
 DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resolveLatestSnapshot() const
 {
     DeltaLake::TableSnapshotPtr snapshot;
+    const auto client_options = DeltaLake::KernelClientOptions::fromCurrentQuery();
     {
         std::lock_guard lock(snapshots_mutex);
         /// Concurrent callers share one TableSnapshot, and with it one in-flight kernel build,
         /// instead of each starting their own `snapshot_builder_build` for the same table.
         /// A latest-version load is never repeated on one object (it could resolve a different
-        /// version), so once every waiter gave up on the shared one, a fresh object takes over.
-        if (!latest_snapshot_in_flight || latest_snapshot_in_flight->isAbandonedWithoutWaiters())
+        /// version), so once every waiter gave up on the shared one — or when this query's
+        /// client options differ from the ones the shared build runs with — a fresh object
+        /// takes over.
+        if (!latest_snapshot_in_flight || latest_snapshot_in_flight->isAbandonedWithoutWaiters()
+            || !latest_snapshot_in_flight->canShareInflightLoad(client_options))
         {
             /// Constructor itself is lightweight.
             latest_snapshot_in_flight = std::make_shared<DeltaLake::TableSnapshot>(

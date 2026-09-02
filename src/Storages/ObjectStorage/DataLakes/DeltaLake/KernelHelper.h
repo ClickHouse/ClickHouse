@@ -36,6 +36,9 @@ struct KernelClientOptions
 
     /// Takes the settings changed in the current query, if there is one.
     static KernelClientOptions fromCurrentQuery();
+
+    /// Loads are shared only between queries with equal options.
+    bool operator==(const KernelClientOptions &) const = default;
 };
 
 /**
