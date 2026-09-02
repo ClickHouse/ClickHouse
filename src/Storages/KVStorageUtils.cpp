@@ -6,6 +6,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Utils.h>
 #include <Common/assert_cast.h>
 
@@ -31,6 +33,18 @@ extern const int LOGICAL_ERROR;
 
 namespace
 {
+
+/// The source type of a constant matters for layout-changing conversions (e.g. `UUID` -> `UUID2`, which share the
+/// `Field` representation but store the two 64-bit halves in a different order), so it has to be threaded into
+/// `convertFieldToType` as a hint: a key converted without it would be serialized into the wrong bytes and the
+/// direct `GetKeys` lookup would find no row even though the row exists.
+/// `Nullable` and `LowCardinality` wrappers are removed because `convertFieldToType` inspects the hint as-is.
+DataTypePtr getSourceTypeHint(const DataTypePtr & type)
+{
+    if (!type)
+        return nullptr;
+    return removeNullable(removeLowCardinality(type));
+}
 
 /// Helper function to create a Tuple field from multiple field values
 Field createTupleField(const std::vector<Field> & fields)
@@ -139,7 +153,8 @@ bool traverseDAGFilterSingleColumn(
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
-        auto converted_field = convertFieldToType(value->column->getField(), *primary_key_type);
+        auto value_type_hint = getSourceTypeHint(value->result_type);
+        auto converted_field = convertFieldToType(value->column->getField(), *primary_key_type, value_type_hint.get());
         if (!converted_field.isNull())
             res->push_back(converted_field);
         return true;
@@ -294,12 +309,19 @@ bool traverseDAGFilter(
             if (tuple_value.size() != primary_keys.size())
                 return false;
 
+            /// The element types of the right-hand tuple constant are the source types of the values.
+            auto right_type_hint = getSourceTypeHint(right->result_type);
+            const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_type_hint.get());
+            if (right_tuple_type && right_tuple_type->getElements().size() != tuple_value.size())
+                right_tuple_type = nullptr;
+
             // Convert each tuple element to the correct type
             std::vector<Field> converted_values;
             converted_values.reserve(tuple_value.size());
             for (size_t i = 0; i < tuple_value.size(); ++i)
             {
-                auto converted = convertFieldToType(tuple_value[i], *primary_key_types[i]);
+                auto element_type_hint = right_tuple_type ? getSourceTypeHint(right_tuple_type->getElement(i)) : nullptr;
+                auto converted = convertFieldToType(tuple_value[i], *primary_key_types[i], element_type_hint.get());
                 if (converted.isNull())
                     return false;
                 converted_values.push_back(converted);
@@ -367,6 +389,8 @@ bool traverseDAGFilter(
 
             // Extract all tuple values from the set
             const auto & set_elements = set->getSetElements();
+            /// The set element types are the source types of the values.
+            const auto & set_element_types = set->getElementsTypes();
 
             if (set_elements.empty())
                 return false;
@@ -383,7 +407,9 @@ bool traverseDAGFilter(
                 {
                     Field field;
                     set_elements[col]->get(row, field);
-                    auto converted = convertFieldToType(field, *primary_key_types[col]);
+                    auto element_type_hint
+                        = col < set_element_types.size() ? getSourceTypeHint(set_element_types[col]) : nullptr;
+                    auto converted = convertFieldToType(field, *primary_key_types[col], element_type_hint.get());
                     if (converted.isNull())
                     {
                         all_converted = false;

@@ -4,6 +4,7 @@
 #include <Formats/SchemaInferenceUtils.h>
 
 #include <Core/AccurateComparison.h>
+#include <Core/UUID.h>
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
 #endif
@@ -595,6 +596,8 @@ template <typename JSONParser>
 class UUIDNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
+    explicit UUIDNode(bool is_uuid2_ = false) : is_uuid2(is_uuid2_) { }
+
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
@@ -622,6 +625,9 @@ public:
             return false;
         }
 
+        /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+        if (is_uuid2)
+            uuid = UUIDHelpers::swapHalves(uuid);
         assert_cast<ColumnUUID &>(column).insert(uuid);
         return true;
     }
@@ -632,13 +638,16 @@ public:
         ReadBufferFromMemory buf(data);
         return tryReadUUIDText(uuid, buf) && buf.eof();
     }
+
+private:
+    bool is_uuid2;
 };
 
 template <typename JSONParser>
 class LowCardinalityUUIDNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    explicit LowCardinalityUUIDNode(bool is_nullable_) : is_nullable(is_nullable_) { }
+    explicit LowCardinalityUUIDNode(bool is_nullable_, bool is_uuid2_ = false) : is_nullable(is_nullable_), is_uuid2(is_uuid2_) { }
 
     bool insertResultToColumn(
         IColumn & column,
@@ -667,12 +676,16 @@ public:
             error = fmt::format("cannot parse UUID value here: {}", data);
             return false;
         }
+        /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+        if (is_uuid2)
+            uuid = UUIDHelpers::swapHalves(uuid);
         assert_cast<ColumnLowCardinality &>(column).insertData(reinterpret_cast<const char *>(&uuid), sizeof(uuid));
         return true;
     }
 
 private:
     bool is_nullable;
+    bool is_uuid2;
 };
 
 template <typename JSONParser, typename DateType, typename ColumnNumericType>
@@ -2587,6 +2600,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<FixedStringNode<JSONParser>>(assert_cast<const DataTypeFixedString &>(*type).getN());
         case TypeIndex::UUID:
             return std::make_unique<UUIDNode<JSONParser>>();
+        case TypeIndex::UUID2:
+            return std::make_unique<UUIDNode<JSONParser>>(/*is_uuid2=*/true);
         case TypeIndex::IPv4:
             return std::make_unique<IPv4Node<JSONParser>>();
         case TypeIndex::IPv6:
@@ -2656,6 +2671,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                     return std::make_unique<LowCardinalityFixedStringNode<JSONParser>>(is_nullable, assert_cast<const DataTypeFixedString &>(*dictionary_type).getN());
                 case TypeIndex::UUID:
                     return std::make_unique<LowCardinalityUUIDNode<JSONParser>>(is_nullable);
+                case TypeIndex::UUID2:
+                    return std::make_unique<LowCardinalityUUIDNode<JSONParser>>(is_nullable, /*is_uuid2=*/true);
                 default:
                     return std::make_unique<LowCardinalityNode<JSONParser>>(is_nullable, buildJSONExtractTree<JSONParser>(dictionary_type, source_for_exception_message));
             }

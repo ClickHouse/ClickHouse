@@ -9,12 +9,17 @@
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Disks/IVolume.h>
 
@@ -353,29 +358,156 @@ const ActionsDAG::Node * tryFindShardingKeyOutput(const ActionsDAG & sharding_ke
     return result;
 }
 
+/// `UUID` and `UUID2` share the `Field` representation but store the two 64-bit halves in the opposite
+/// order, so once a constant is folded into an untyped literal, nothing downstream can tell in which
+/// layout its bytes are. Detect the types whose constants would lose that information.
+bool typeContainsUUIDFamily(const IDataType & type)
+{
+    WhichDataType which(type);
+    if (which.isUUID() || which.isUUID2())
+        return true;
+    if (which.isNullable())
+        return typeContainsUUIDFamily(*assert_cast<const DataTypeNullable &>(type).getNestedType());
+    if (which.isLowCardinality())
+        return typeContainsUUIDFamily(*assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType());
+    if (which.isArray())
+        return typeContainsUUIDFamily(*assert_cast<const DataTypeArray &>(type).getNestedType());
+    if (which.isMap())
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(type);
+        return typeContainsUUIDFamily(*map_type.getKeyType()) || typeContainsUUIDFamily(*map_type.getValueType());
+    }
+    if (which.isTuple())
+    {
+        for (const auto & element : assert_cast<const DataTypeTuple &>(type).getElements())
+            if (typeContainsUUIDFamily(*element))
+                return true;
+    }
+    return false;
+}
+
+/// A type whose values can absorb a `String` as one of their alternatives: the text form of a
+/// `UUID`-family constant would then be stored as a string instead of being parsed back into the
+/// `UUID`/`UUID2` alternative, and the sharding expression would be evaluated over the wrong value.
+bool typeContainsVariantLike(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        result = result || which.isVariant() || which.isDynamic() || which.isObject();
+    };
+    check(type);
+    /// `forEachChild` walks the whole nested type tree.
+    type.forEachChild(check);
+    return result;
+}
+
+/// Re-encode `UUID`/`UUID2` values inside a folded constant as their text form. The text form is
+/// self-describing: parsing it into the type of the column the constant is compared with produces the
+/// value in the layout of that type, while the raw binary `Field` would have been taken verbatim by
+/// `convertFieldToType` and could be in the layout of the other type of the family.
+Field encodeUUIDFamilyAsText(const Field & value, const IDataType & type)
+{
+    if (value.isNull())
+        return value;
+
+    WhichDataType which(type);
+    if (which.isUUID() || which.isUUID2())
+    {
+        auto column = type.createColumn();
+        column->insert(value);
+        WriteBufferFromOwnString out;
+        type.getDefaultSerialization()->serializeText(*column, 0, out, FormatSettings{});
+        return Field(out.str());
+    }
+    if (which.isNullable())
+        return encodeUUIDFamilyAsText(value, *assert_cast<const DataTypeNullable &>(type).getNestedType());
+    if (which.isLowCardinality())
+        return encodeUUIDFamilyAsText(value, *assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType());
+    if (which.isArray() && value.getType() == Field::Types::Array)
+    {
+        const auto & nested_type = *assert_cast<const DataTypeArray &>(type).getNestedType();
+        const auto & src = value.safeGet<Array>();
+        Array res(src.size());
+        for (size_t i = 0; i < src.size(); ++i)
+            res[i] = encodeUUIDFamilyAsText(src[i], nested_type);
+        return Field(std::move(res));
+    }
+    if (which.isMap() && value.getType() == Field::Types::Map)
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(type);
+        const auto & src = value.safeGet<Map>();
+        Map res(src.size());
+        for (size_t i = 0; i < src.size(); ++i)
+        {
+            const auto & entry = src[i].safeGet<Tuple>();
+            Tuple new_entry(2);
+            new_entry[0] = encodeUUIDFamilyAsText(entry[0], *map_type.getKeyType());
+            new_entry[1] = encodeUUIDFamilyAsText(entry[1], *map_type.getValueType());
+            res[i] = std::move(new_entry);
+        }
+        return Field(std::move(res));
+    }
+    if (which.isTuple() && value.getType() == Field::Types::Tuple)
+    {
+        const auto & elements = assert_cast<const DataTypeTuple &>(type).getElements();
+        const auto & src = value.safeGet<Tuple>();
+        if (elements.size() != src.size())
+            return value;
+        Tuple res(src.size());
+        for (size_t i = 0; i < src.size(); ++i)
+            res[i] = encodeUUIDFamilyAsText(src[i], *elements[i]);
+        return Field(std::move(res));
+    }
+    return value;
+}
+
 class ReplacingConstantExpressionsMatcher
 {
 public:
-    using Data = Block;
+    struct Data
+    {
+        Block & block_with_constants;
+        /// Whether the table has a column that could absorb the text form of a `UUID`-family constant
+        /// into a `String` alternative instead of parsing it back (see `typeContainsVariantLike`).
+        bool text_encoding_is_ambiguous = false;
+    };
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &)
     {
         return true;
     }
 
-    static void visit(ASTPtr & node, Block & block_with_constants)
+    static void visit(ASTPtr & node, Data & data)
     {
         if (!node->as<ASTFunction>())
             return;
 
         std::string name = node->getColumnName();
-        if (block_with_constants.has(name))
+        if (data.block_with_constants.has(name))
         {
-            const auto & result = block_with_constants.getByName(name);
+            const auto & result = data.block_with_constants.getByName(name);
             if (!isColumnConst(*result.column))
                 return;
 
-            node = make_intrusive<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+            Field value = assert_cast<const ColumnConst &>(*result.column).getField();
+            /// An `ASTLiteral` carries no data type, and the value of a `UUID`-family constant is
+            /// ambiguous without one (`UUID` and `UUID2` differ by swapping the two 64-bit halves).
+            /// Re-encode such constants as text so that the later conversion to the compared column's
+            /// type (`analyzeEquals` in `evaluateExpressionOverConstantCondition`) restores the value
+            /// in the right layout.
+            if (result.type && typeContainsUUIDFamily(*result.type))
+            {
+                /// Both representations are ambiguous against a `Variant`/`Dynamic`/`JSON` column: the raw
+                /// binary is taken verbatim, and the text form is accepted into the `String` alternative.
+                /// Leave the expression unfolded, so that no shard is pruned instead of the wrong one.
+                if (data.text_encoding_is_ambiguous)
+                    return;
+                value = encodeUUIDFamilyAsText(value, *result.type);
+            }
+
+            node = make_intrusive<ASTLiteral>(std::move(value));
         }
     }
 };
@@ -390,7 +522,17 @@ void replaceConstantExpressions(
     auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, storage_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
-    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
+    ReplacingConstantExpressionsMatcher::Data data{block_with_constants, false};
+    for (const auto & column : columns)
+    {
+        if (column.type && typeContainsVariantLike(*column.type))
+        {
+            data.text_encoding_is_ambiguous = true;
+            break;
+        }
+    }
+
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(data);
     visitor.visit(node);
 }
 

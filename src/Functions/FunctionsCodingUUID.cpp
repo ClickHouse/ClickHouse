@@ -347,11 +347,11 @@ public:
     {
         checkArgumentCount(arguments, name);
 
-        if (!isUUID(arguments[0]))
+        if (!isUUID(arguments[0]) && !isUUID2(arguments[0]))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected UUID",
+                "Illegal type {} of first argument of function {}, expected UUID or UUID2",
                 arguments[0]->getName(),
                 getName());
         }
@@ -367,6 +367,8 @@ public:
         const ColumnPtr & column = col_type_name.column;
 
         const bool defaultFormat = (parseVariant(arguments) == UUIDSerializer::Variant::Default);
+        /// `UUID2` stores the value in the big-endian layout; convert to the logical `UUID` layout first.
+        const bool is_uuid2 = isUUID2(col_type_name.type);
 
         if (const auto * col_in = checkAndGetColumn<ColumnUUID>(column.get()))
         {
@@ -382,8 +384,9 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
-                uint64_t loBytes = DB::UUIDHelpers::getLowBytes(uuids[i]);
+                const UUID uuid = is_uuid2 ? DB::UUIDHelpers::swapHalves(uuids[i]) : uuids[i];
+                uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuid);
+                uint64_t loBytes = DB::UUIDHelpers::getLowBytes(uuid);
                 unalignedStoreBigEndian<uint64_t>(&vec_res[dst_offset], hiBytes);
                 unalignedStoreBigEndian<uint64_t>(&vec_res[dst_offset + sizeof(hiBytes)], loBytes);
                 if (!defaultFormat)
@@ -424,11 +427,11 @@ public:
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function {}: should be 1 or 2", getName());
 
-        if (!checkAndGetDataType<DataTypeUUID>(arguments[0].type.get()))
+        if (!isUUID(arguments[0].type) && !isUUID2(arguments[0].type))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected UUID",
+                "Illegal type {} of first argument of function {}, expected UUID or UUID2",
                 arguments[0].type->getName(),
                 getName());
         }
@@ -453,6 +456,9 @@ public:
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
 
+        /// `UUID2` stores the value in the big-endian layout; convert to the logical `UUID` layout first.
+        const bool is_uuid2 = isUUID2(col_type_name.type);
+
         if (const auto * col_in = checkAndGetColumn<ColumnUUID>(column.get()))
         {
             const auto & vec_in = col_in->getData();
@@ -463,7 +469,8 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
+                const UUID uuid = is_uuid2 ? DB::UUIDHelpers::swapHalves(uuids[i]) : uuids[i];
+                const uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuid);
                 const uint64_t ms = ((hiBytes & 0xf000) == 0x7000) ? (hiBytes >> 16) : 0;
 
                 vec_res[i] = DecimalUtils::dateTimeFromComponents(ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);

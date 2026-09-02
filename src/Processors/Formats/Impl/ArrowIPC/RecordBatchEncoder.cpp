@@ -448,13 +448,19 @@ void RecordBatchEncoder::encodeValues(
         case TypeIndex::IPv6: appendFixedWidth<ColumnVector<IPv6>>(*this, column, num_rows); return;
         case TypeIndex::Interval: appendFixedWidth<ColumnVector<Int64>>(*this, column, num_rows); return;
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
         {
             /// fixed_size_binary(16) with the two 64-bit halves byte-reversed, matching the library writer.
+            /// UUID2 stores the two 64-bit halves in the opposite order, so swap them first to emit the same
+            /// canonical bytes as UUID for the same textual value.
+            const bool is_uuid2 = which.idx == TypeIndex::UUID2;
             const auto & data = assert_cast<const ColumnVector<UUID> &>(column).getData();
             PODArray<char> out(num_rows * 16);
             for (size_t i = 0; i < num_rows; ++i)
             {
                 UUID value = data[i];
+                if (is_uuid2)
+                    value = UUIDHelpers::swapHalves(value);
                 auto * bytes = reinterpret_cast<uint8_t *>(&value);
                 std::reverse(bytes, bytes + 8);
                 std::reverse(bytes + 8, bytes + 16);

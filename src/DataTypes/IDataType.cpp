@@ -482,6 +482,7 @@ bool isFixedString(TYPE data_type) { return WhichDataType(data_type).isFixedStri
 bool isStringOrFixedString(TYPE data_type) { return WhichDataType(data_type).isStringOrFixedString(); } \
 \
 bool isUUID(TYPE data_type) { return WhichDataType(data_type).isUUID(); } \
+bool isUUID2(TYPE data_type) { return WhichDataType(data_type).isUUID2(); } \
 bool isIPv4(TYPE data_type) { return WhichDataType(data_type).isIPv4(); } \
 bool isIPv6(TYPE data_type) { return WhichDataType(data_type).isIPv6(); } \
 bool isArray(TYPE data_type) { return WhichDataType(data_type).isArray(); } \
@@ -497,7 +498,7 @@ bool isQBit(TYPE data_type) { return WhichDataType(data_type).isQBit(); } \
 bool isColumnedAsNumber(TYPE data_type) \
 { \
     WhichDataType which(data_type); \
-    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6(); \
+    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isUUID() || which.isUUID2() || which.isIPv4() || which.isIPv6(); \
 } \
 \
 bool isColumnedAsDecimal(TYPE data_type) \

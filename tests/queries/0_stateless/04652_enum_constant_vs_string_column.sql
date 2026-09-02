@@ -389,17 +389,15 @@ SELECT 'control_plain_string_constant', (SELECT groupArray(v) FROM pk_str WHERE 
 SELECT 'control_fixed_string_padding', (SELECT count() FROM pk_fixed10 WHERE key = '1'
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0) = 8;
 
--- An Enum element inside a container is still converted to the number, because the Array/Tuple/Map
--- recursion of convertFieldToType passes no element type hint down, and so does
--- createColumnFromConstantArray in the bloom filter condition. The cells below assert the current
--- (wrong) values rather than the desired ones, so the limitation is documented instead of hidden.
--- The hint propagation is added by https://github.com/ClickHouse/ClickHouse/pull/110084.
-SELECT 'known_limitation_array_element', (SELECT hex(x[1]) FROM values('x Array(String)', [CAST('7', 'Enum8(\'7\' = 3)')])) = '33';
+-- An Enum element inside a container carries the element type hint down through the Array/Tuple/Map
+-- recursion of convertFieldToType, and through createColumnFromConstantArray in the bloom filter
+-- condition, so such an element is converted to the name and not to the number.
+SELECT 'array_element_uses_name', (SELECT hex(x[1]) FROM values('x Array(String)', [CAST('7', 'Enum8(\'7\' = 3)')])) = '37';
 
--- hasAny and hasAll go through createColumnFromConstantArray, so their bloom filter lookup still uses
--- the number and over prunes. Unlike has, which converts the element with the hint and is fixed above.
-SELECT 'known_limitation_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [];
-SELECT 'known_limitation_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [];
+-- hasAny and hasAll go through createColumnFromConstantArray, which converts the element with the hint,
+-- the same as has above, so their bloom filter lookup agrees with the expression and does not over prune.
+SELECT 'bloom_filter_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [['7']];
+SELECT 'bloom_filter_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [['7']];
 
 DROP TABLE ref_str;
 DROP TABLE pk_str;

@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/UUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -104,6 +105,11 @@ namespace DB
                 }
                 case ValueType::vtUUID:
                     assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(string_value));
+                    break;
+                case ValueType::vtUUID2:
+                    /// `UUID2` stores the value in the canonical (big-endian) layout, while `parse<UUID>` produces the
+                    /// half-swapped `UUID` layout, so swap the halves back (matching `SerializationUUID2::deserializeText`).
+                    assert_cast<ColumnUUID &>(column).insertValue(UUIDHelpers::swapHalves(parse<UUID>(string_value)));
                     break;
                 default:
                     throw Exception(ErrorCodes::UNKNOWN_TYPE,

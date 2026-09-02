@@ -641,6 +641,27 @@ private:
     void checkValueNonZero() const;
 };
 
+/** The `uuid_type_version` setting: only 1 and 2 are meaningful.
+  *
+  * It is validated on assignment rather than at the point of use because it decides which concrete type a bare
+  * `UUID` is persisted as, so a typo in a profile or in a `SET` must not silently fall back to version 1 and
+  * create a table with the historical type.
+  */
+struct SettingFieldUUIDTypeVersion : public SettingFieldUInt64
+{
+public:
+    explicit SettingFieldUUIDTypeVersion(UInt64 x = 1);
+    explicit SettingFieldUUIDTypeVersion(const Field & f);
+
+    SettingFieldUUIDTypeVersion & operator=(UInt64 x);
+    SettingFieldUUIDTypeVersion & operator=(const Field & f);
+
+    void parseFromString(const String & str);
+
+private:
+    void checkValue() const;
+};
+
 bool stringToBool(const String & str);
 
 }

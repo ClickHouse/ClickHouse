@@ -73,14 +73,17 @@ public:
         is_restore_from_backup = is_restore_from_backup_;
     }
 
-    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable);
+    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable, UInt64 uuid_type_version = 1);
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     /// check_defaults_over_virtual_columns rejects DEFAULT/MATERIALIZED expressions over virtual columns;
     /// pass false for objects that never evaluate their own column defaults over an insert block
     /// (ordinary views and external-target materialized views).
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
+    /// materialize_uuid_type_version = false keeps the `uuid_type_version` setting out of the resolution of a bare
+    /// `UUID`; pass false when the columns list does not come from a user-issued `CREATE` but from an already
+    /// persisted definition, so that such a definition cannot change its types when the setting changes.
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true, bool materialize_uuid_type_version = true);
     static ConstraintsDescription
     getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 

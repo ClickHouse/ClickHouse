@@ -2115,11 +2115,29 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 
     const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
 
+    /// `UUID` and `UUID2` share the physical representation but keep the two 64-bit halves in the
+    /// opposite order, while matchKeyToIndex* below compare the raw representations. Bring a lookup
+    /// key of the "other" UUID flavor to the map's key layout first (the cast between them swaps the
+    /// halves and loses nothing), the same way `mapContains`/`has` already do for arrays.
+    ColumnWithTypeAndName key_argument = arguments[1];
+    {
+        const auto key_type_decayed = removeNullable(removeLowCardinality(type_map.getKeyType()));
+        const auto arg_type_decayed = removeNullable(removeLowCardinality(key_argument.type));
+        if ((isUUID(key_type_decayed) && isUUID2(arg_type_decayed)) || (isUUID2(key_type_decayed) && isUUID(arg_type_decayed)))
+        {
+            DataTypePtr target_type = key_argument.type->isNullable() || key_argument.type->isLowCardinalityNullable()
+                ? std::make_shared<DataTypeNullable>(key_type_decayed)
+                : key_type_decayed;
+            key_argument.column = castColumn(key_argument, target_type);
+            key_argument.type = std::move(target_type);
+        }
+    }
+
     /// A map with Enum keys can be indexed by the name of an enum value, e.g. `m['name']`.
     /// Cast the index to the key type, so it is matched by the numeric value of the enum.
-    ColumnPtr index_column = arguments[1].column;
-    if (isEnum(type_map.getKeyType()) && isStringOrFixedString(removeLowCardinality(arguments[1].type)))
-        index_column = castColumn(arguments[1], type_map.getKeyType());
+    ColumnPtr index_column = key_argument.column;
+    if (isEnum(type_map.getKeyType()) && isStringOrFixedString(removeLowCardinality(key_argument.type)))
+        index_column = castColumn(key_argument, type_map.getKeyType());
 
     /// At first step calculate indices in array of values for requested keys.
     auto indices_column = DataTypeNumber<UInt64>().createColumn();

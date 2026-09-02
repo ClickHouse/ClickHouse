@@ -24,6 +24,7 @@
 #endif
 
 #include <bit>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1151,6 +1152,21 @@ private:
                 column->getName(), getName());
     }
 
+    /// `UUID2` shares the `ColumnVector<UUID>` storage with `UUID`, but keeps the value in the big-endian,
+    /// correctly-sorting layout, which differs from the `UUID` layout only by swapping the two 64-bit halves
+    /// (see `UUIDHelpers::swapHalves`). Swap the halves back to the `UUID` layout before hashing so that
+    /// `hash(x::UUID2)` equals `hash(x::UUID)` for the same logical value, matching the parity the other `UUID2`
+    /// functions provide.
+    template <bool first>
+    void executeUUID2(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    {
+        auto swapped = IColumn::mutate(column->convertToFullColumnIfConst());
+        auto & data = assert_cast<ColumnUUID &>(*swapped).getData();
+        for (auto & value : data)
+            value = UUIDHelpers::swapHalves(value);
+        executeBigIntType<UUID, first>(key_cols, swapped.get(), vec_to);
+    }
+
     template <bool first>
     void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, const IDataType * type) const
     {
@@ -1449,6 +1465,7 @@ private:
         else if (which.isInt128()) executeBigIntType<Int128, first>(key_cols, icolumn, vec_to);
         else if (which.isInt256()) executeBigIntType<Int256, first>(key_cols, icolumn, vec_to);
         else if (which.isUUID()) executeBigIntType<UUID, first>(key_cols, icolumn, vec_to);
+        else if (which.isUUID2()) executeUUID2<first>(key_cols, icolumn, vec_to);
         else if (which.isIPv4()) executeIntType<IPv4, first>(key_cols, icolumn, vec_to);
         else if (which.isIPv6()) executeBigIntType<IPv6, first>(key_cols, icolumn, vec_to);
         else if (which.isEnum8()) executeIntType<Int8, first>(key_cols, icolumn, vec_to);

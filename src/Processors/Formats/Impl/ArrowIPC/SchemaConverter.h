@@ -143,6 +143,10 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema);
 /// Whether a fixed_size_binary(16) field is flagged as the Arrow UUID extension type.
 bool isUUIDField(const ArrowField & field);
 
+/// Whether a UUID field carries the ClickHouse-specific discriminator marking it as the correctly-sorting
+/// `UUID2` type (extra field-metadata key `ClickHouse:type` = `UUID2`). Implies `isUUIDField`.
+bool isUUID2Field(const ArrowField & field);
+
 /// A record-batch / dictionary-batch location inside an Arrow file.
 struct ArrowFileBlock
 {

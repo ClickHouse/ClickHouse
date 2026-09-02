@@ -9,6 +9,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
@@ -131,6 +132,25 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
             readBinaryBigEndian(uuid_number.items[1], valBuf);
 
             assert_cast<ColumnUUID &>(column).insertValue(UUID(std::move(uuid_number)));
+            break;
+        }
+        case TypeIndex::UUID2:
+        {
+            if (value.type() != bsoncxx::type::k_binary)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected uuid(binary subtype 4), got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+            if (value.get_binary().sub_type != bsoncxx::binary_sub_type::k_uuid || value.get_binary().size != 16)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Binary of type {} cannot be parsed to UUID2 for column {}",
+                    bsoncxx::to_string(value.get_binary().sub_type), name);
+
+            UInt128 uuid_number;
+            auto val_buf = ReadBufferFromMemory(value.get_binary().bytes, value.get_binary().size);
+            readBinaryBigEndian(uuid_number.items[0], val_buf);
+            readBinaryBigEndian(uuid_number.items[1], val_buf);
+
+            /// The bytes are the same 16 canonical big-endian bytes as for `UUID`; `UUID2` stores the two
+            /// 64-bit halves swapped relative to `UUID`, so convert to the `UUID2` layout before inserting.
+            assert_cast<ColumnUUID &>(column).insertValue(UUIDHelpers::swapHalves(UUID(std::move(uuid_number))));
             break;
         }
         case TypeIndex::String:

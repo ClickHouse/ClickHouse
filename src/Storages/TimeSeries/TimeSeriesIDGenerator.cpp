@@ -8,6 +8,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
@@ -68,6 +69,15 @@ namespace
         if (which.isUUID())
             return makeASTFunction("reinterpretAsUUID", makeHashFunctionCall("sipHash128", std::move(arguments)));
 
+        if (which.isUUID2())
+        {
+            /// There is no `reinterpretAsUUID2`, and the generated identifier is an opaque deterministic hash,
+            /// so reinterpret the hash as a `UUID` and cast it to `UUID2` to match the column type.
+            return makeASTFunction("_CAST",
+                makeASTFunction("reinterpretAsUUID", makeHashFunctionCall("sipHash128", std::move(arguments))),
+                make_intrusive<ASTLiteral>(String{"UUID2"}));
+        }
+
         if (which.isUInt128())
             return makeASTFunction("reinterpretAsUInt128", makeHashFunctionCall("sipHash128", std::move(arguments)));
 
@@ -105,7 +115,7 @@ ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const Stor
     throw Exception(ErrorCodes::INCORRECT_QUERY,
         "{}: An expression generating identifiers must be specified explicitly for the {} column of type {} - "
         "either as a DEFAULT expression of that column or in the 'id_generator' setting. "
-        "An expression can be chosen automatically only for types UInt64, UInt128, UUID, FixedString(16), "
+        "An expression can be chosen automatically only for types UInt64, UInt128, UUID, UUID2, FixedString(16), "
         "the same types wrapped in LowCardinality, and tuples of two of those types",
         table_id.getNameForLogs(), TimeSeriesColumnNames::ID, id_type->getName());
 }

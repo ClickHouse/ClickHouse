@@ -56,6 +56,8 @@ More specifically, UUIDv7 values consist of a timestamp in the first half and a 
 UUIDv7 sorting in sparse primary key indexes (i.e., the first values of each index granule) will therefore be by counter field.
 Assuming UUIDs were sorted by the first half (timestamp), then the primary key index analysis step at the beginning of queries is expected to prune all marks in all but one part.
 However, with sorting by the second half (counter), at least one mark is expected to be returned for all parts, leading to unnecessary disk accesses.
+
+The [UUID2](/reference/data-types/uuid2) data type fixes this: it is a variant of `UUID` that sorts by its textual (lexicographic) representation. The name `UUID` can be made to resolve to `UUID2` with the [`uuid_type_version`](/reference/settings/session-settings/other#uuid_type_version) setting.
 :::
 
 Example:
@@ -171,6 +173,11 @@ The UUID data type is not supported by arithmetic operations (for example, [abs]
             .syntax = "UUID",
             .related = {},
         });
+
+    /// `UUID1` is an explicit alias for the current `UUID` type (which sorts by the second half of the value).
+    /// The correctly-sorting variant is the separate `UUID2` type. The name `UUID` resolves to one of them
+    /// depending on the `uuid_type_version` setting (see `InterpreterCreateQuery`).
+    factory.registerAlias("UUID1", "UUID", DataTypeFactory::Case::Insensitive);
 }
 
 }

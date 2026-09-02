@@ -472,6 +472,9 @@ public:
                 case TypeIndex::UInt256:
                     return std::make_shared<AggregateFunctionMap<UInt256>>(nested_function, arguments);
                 case TypeIndex::UUID:
+                case TypeIndex::UUID2:
+                    /// `UUID2` reuses `ColumnVector<UUID>` storage, so the `UUID` state works verbatim;
+                    /// the map key type is taken from the argument, so the result stays `Map(UUID2, ...)`.
                     return std::make_shared<AggregateFunctionMap<UUID>>(nested_function, arguments);
                 case TypeIndex::IPv4:
                     return std::make_shared<AggregateFunctionMap<IPv4>>(nested_function, arguments);

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -424,6 +425,12 @@ namespace
             }
             case ValueType::vtUUID:
                 assert_cast<ColumnUUID &>(column).insert(parse<UUID>(value.data(), value.size()));
+                read_bytes_size += assert_cast<ColumnUUID &>(column).byteSize();
+                break;
+            case ValueType::vtUUID2:
+                /// `UUID2` stores the value in the canonical (big-endian) layout, while `parse<UUID>` produces the
+                /// half-swapped `UUID` layout, so swap the halves back (matching `SerializationUUID2::deserializeText`).
+                assert_cast<ColumnUUID &>(column).insert(UUIDHelpers::swapHalves(parse<UUID>(value.data(), value.size())));
                 read_bytes_size += assert_cast<ColumnUUID &>(column).byteSize();
                 break;
             case ValueType::vtDateTime64:[[fallthrough]];

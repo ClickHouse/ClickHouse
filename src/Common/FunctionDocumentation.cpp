@@ -64,6 +64,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/reference/data-types/enum)";
         else if (type == "UUID")
             result += "`](/reference/data-types/uuid)";
+        else if (type == "UUID2")
+            result += "`](/reference/data-types/uuid2)";
         else if (type == "Object")
             result += "`](/reference/data-types/newjson)";
         else if (type == "IPv4")

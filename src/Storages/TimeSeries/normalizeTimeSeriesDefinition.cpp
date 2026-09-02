@@ -23,8 +23,10 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
+#include <Common/StringUtils.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -44,6 +46,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUUIDTypeVersion uuid_type_version;
+}
 
 namespace TimeSeriesSetting
 {
@@ -104,6 +111,54 @@ namespace
     bool hasInnerUUID(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
     {
         return create_query.getTargetInnerUUID(kind) != UUIDHelpers::Nil;
+    }
+
+    /// Materializes the `uuid_type_version` setting into the declared inner-column types: a bare `UUID` becomes
+    /// `UUID2` when the setting is 2 (mirroring how the main columns are materialized in
+    /// InterpreterCreateQuery). Rewriting the AST here - before the types are resolved and before the inner
+    /// tables are created - keeps the samples and tags inner tables consistent about the `id` type and makes
+    /// any later normalization pass read the already-materialized types.
+    void materializeUUIDTypeVersionInInnerColumns(ASTCreateQuery & create_query, ViewTarget::Kind kind, UInt64 uuid_type_version)
+    {
+        auto * inner_columns = create_query.getTargetInnerColumns(kind);
+        if (!inner_columns || !inner_columns->columns)
+            return;
+        for (auto & column : inner_columns->columns->children)
+        {
+            if (auto * decl = column->as<ASTColumnDeclaration>())
+            {
+                if (auto type = decl->getType())
+                    decl->setType(applyUUIDTypeVersion(type, uuid_type_version));
+            }
+        }
+    }
+
+    /// Rewrites a bare `UUID` type name in the inner-column declarations to its explicit historical alias
+    /// `UUID1`. Called only under `uuid_type_version = 2`, after the setting has been materialized into the
+    /// declared inner columns and after the missing ones have been generated from the resolved types: every
+    /// bare `UUID` remaining at that point denotes a type that must stay historical (an explicitly declared
+    /// `UUID1`, or a column generated from such an id). Spelling it explicitly makes the normalized query
+    /// stable under a second materialization pass - `normalizeTimeSeriesDefinition` runs again over the
+    /// already-normalized query (see `StorageTimeSeries`) and `InterpreterCreateQuery` materializes the
+    /// setting over the whole `CREATE` AST afterwards - which would otherwise turn a generated `UUID` into
+    /// `UUID2` and make the samples and tags inner tables disagree about the `id` type.
+    bool pinHistoricalUUIDTypeName(IAST & ast)
+    {
+        bool pinned = false;
+
+        if (auto * data_type = ast.as<ASTDataType>(); data_type && equalsCaseInsensitive(data_type->name, "UUID"))
+        {
+            data_type->name = "UUID1";
+            pinned = true;
+        }
+
+        for (const auto & child : ast.children)
+        {
+            if (child)
+                pinned |= pinHistoricalUUIDTypeName(*child);
+        }
+
+        return pinned;
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -327,7 +382,8 @@ namespace
     ResolvedTimeSeriesTypes resolveTimeSeriesTypes(
         const ASTCreateQuery & create_query,
         const ContextPtr & context,
-        bool check_external_targets)
+        bool check_external_targets,
+        UInt64 uuid_type_version)
     {
         StorageID table_id{create_query.getDatabase(), create_query.getTable()};
 
@@ -362,8 +418,11 @@ namespace
         if (!scalar_type)
             scalar_type = std::make_shared<DataTypeFloat64>();
         if (!id_type)
-            id_type = std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())});
+            id_type = std::make_shared<DataTypeTuple>(DataTypes{
+                std::make_shared<DataTypeUInt64>(),
+                std::make_shared<DataTypeLowCardinality>(
+                    uuid_type_version == 2 ? DataTypePtr(std::make_shared<DataTypeUUID2>())
+                                           : DataTypePtr(std::make_shared<DataTypeUUID>()))});
 
         /// Validate types.
         {
@@ -1279,9 +1338,26 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     if (!create_query.as_table.empty())
         applyASClause(create_query, context);
 
+    /// A primary, user-issued CREATE materializes session settings into concrete stored column types - never on
+    /// ATTACH, restore, or an already-normalized DDL-worker query. Mirrors the same gate in
+    /// `InterpreterCreateQuery::getColumnsDescription`.
+    const bool normalize_on_create = mode < LoadingStrictnessLevel::SECONDARY_CREATE
+        && !context->isDDLOrOnClusterInternal()
+        && !is_restore_from_backup;
+    const UInt64 uuid_type_version = normalize_on_create ? context->getSettingsRef()[Setting::uuid_type_version] : 1;
+
+    /// Bake the `uuid_type_version` setting into the declared inner columns before the types are resolved,
+    /// so a bare `UUID` id declared in `TAGS`/`SAMPLES INNER COLUMNS` becomes `UUID2` consistently.
+    if (uuid_type_version == 2)
+    {
+        for (auto kind : getTargetKinds())
+            materializeUUIDTypeVersionInInnerColumns(create_query, kind, uuid_type_version);
+    }
+
     /// Resolve types timestamp_type, scalar_type, id_type.
     /// External targets are checked only at CREATE time; on ATTACH they may not be loaded yet.
-    ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(create_query, context, /*check_external_targets=*/ is_new_table);
+    ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(
+        create_query, context, /*check_external_targets=*/ is_new_table, uuid_type_version);
 
     /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
     if (is_new_table)
@@ -1338,12 +1414,20 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                 auto inner_columns = create_query.getTargetInnerColumns(kind)
                     ? boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone())
                     : make_intrusive<ASTColumns>();
-                if (normalizeInnerTableColumns(*inner_columns, kind, settings, resolved_types, table_id))
+                bool inner_columns_changed = normalizeInnerTableColumns(*inner_columns, kind, settings, resolved_types, table_id);
+                if (uuid_type_version == 2 && inner_columns->columns)
+                    inner_columns_changed |= pinHistoricalUUIDTypeName(*inner_columns->columns);
+                if (inner_columns_changed)
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
+                /// The `uuid_type_version` setting was already materialized into these column declarations above
+                /// (and into the types generated from `resolved_types`), so it must not be applied a second time
+                /// here - otherwise a bare `UUID` generated from a historical `UUID1` id would become `UUID2` and
+                /// fail the check against the resolved id type.
                 auto inner_columns_description = InterpreterCreateQuery::getColumnsDescription(
-                    *inner_columns->columns, context, mode);
+                    *inner_columns->columns, context, mode, /*is_restore_from_backup=*/ false,
+                    /*check_defaults_over_virtual_columns=*/ true, /*materialize_uuid_type_version=*/ false);
                 checkTargetTable(inner_columns_description, kind, settings, resolved_types, table_id);
 
                 if (!hasInnerEngine(create_query, kind))

@@ -527,9 +527,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return static_cast<IPv4>(convertNumericType<UInt32>(src, type, strict, convert_inexact_floats).safeGet<UInt32>());
         }
     }
-    else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
+    else if ((which_type.isUUID() || which_type.isUUID2()) && src.getType() == Field::Types::UUID)
     {
-        /// Already in needed type.
+        /// `UUID` and `UUID2` share the `Field` representation (`Field::Types::UUID`), but they store the value in
+        /// different layouts that differ only by swapping the two 64-bit halves: `UUID` keeps the historical layout,
+        /// while `UUID2` keeps the big-endian, correctly-sorting one. When the source constant came from the other
+        /// type - which we can tell only from `from_type_hint` - swap the halves so the value matches the destination
+        /// encoding; otherwise (same type, or no hint) it is expected to be already in the needed layout.
+        if ((which_type.isUUID() && which_from_type.isUUID2()) || (which_type.isUUID2() && which_from_type.isUUID()))
+            return UUIDHelpers::swapHalves(src.safeGet<UUID>());
         return src;
     }
     else if (which_type.isIPv6())
@@ -591,12 +597,30 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const Array & src_arr = src.safeGet<Array>();
             size_t src_arr_size = src_arr.size();
 
+            /// The source type of the elements matters for layout-changing conversions (e.g. `UUID` -> `UUID2`,
+            /// which share the `Field` representation but differ in the order of the two 64-bit halves), so thread
+            /// it into the recursion. The hint can also be a `Tuple` when a caller flattened a tuple constant into
+            /// an array (e.g. the list from `IN (...)` pushed down to external storages).
+            const IDataType * element_from_hint = nullptr;
+            const DataTypeTuple * tuple_from_hint = nullptr;
+            if (const auto * array_from_hint = typeid_cast<const DataTypeArray *>(from_type_hint))
+                element_from_hint = array_from_hint->getNestedType().get();
+            else if (const auto * maybe_tuple_hint = typeid_cast<const DataTypeTuple *>(from_type_hint);
+                     maybe_tuple_hint && maybe_tuple_hint->getElements().size() == src_arr_size)
+                tuple_from_hint = maybe_tuple_hint;
+
             const auto & element_type = *(type_array->getNestedType());
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(
+                    src_arr[i],
+                    element_type,
+                    tuple_from_hint ? tuple_from_hint->getElements()[i].get() : element_from_hint,
+                    format_settings,
+                    strict,
+                    convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -623,12 +647,23 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     dst_tuple_size,
                     src_tuple_size);
 
+            /// As for arrays above, thread the per-element source types into the recursion.
+            const auto * tuple_from_hint = typeid_cast<const DataTypeTuple *>(from_type_hint);
+            if (tuple_from_hint && tuple_from_hint->getElements().size() != src_tuple_size)
+                tuple_from_hint = nullptr;
+
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(
+                    src_tuple[i],
+                    element_type,
+                    tuple_from_hint ? tuple_from_hint->getElements()[i].get() : nullptr,
+                    format_settings,
+                    strict,
+                    convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -804,6 +839,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
+            /// As for arrays above, thread the source key/value types into the recursion.
+            const IDataType * key_from_hint = nullptr;
+            const IDataType * value_from_hint = nullptr;
+            if (const auto * map_from_hint = typeid_cast<const DataTypeMap *>(from_type_hint))
+            {
+                key_from_hint = map_from_hint->getKeyType().get();
+                value_from_hint = map_from_hint->getValueType().get();
+            }
+
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
@@ -820,12 +864,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, key_from_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, value_from_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 

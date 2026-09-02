@@ -436,6 +436,9 @@ private:
             case TypeIndex::UInt256:
                 return execute1<UInt256>(row_count, res_type, res_value_type, args);
             case TypeIndex::UUID:
+            case TypeIndex::UUID2:
+                /// `UUID2` shares the underlying `ColumnVector<UUID>` storage with `UUID`, so the same key
+                /// dispatch works; the result map key type is preserved verbatim via `res_type`.
                 return execute1<UUID>(row_count, res_type, res_value_type, args);
             case TypeIndex::FixedString:
             case TypeIndex::String:

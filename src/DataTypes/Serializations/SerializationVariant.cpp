@@ -837,6 +837,7 @@ const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap
 
             /// Types that can be parsed from strings.
             TypeIndex::UUID,
+            TypeIndex::UUID2,
             TypeIndex::IPv4,
             TypeIndex::IPv6,
 

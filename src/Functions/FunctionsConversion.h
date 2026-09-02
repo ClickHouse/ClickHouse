@@ -44,6 +44,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -893,6 +894,19 @@ struct FormatImpl
 };
 
 template <>
+struct FormatImpl<DataTypeUUID2>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeUUID2::FieldType x, WriteBuffer & wb, const DataTypeUUID2 *, const DateLUTImpl *)
+    {
+        /// `UUID2` stores the value in the big-endian (correctly-sorting) layout; convert to the logical `UUID`
+        /// layout before formatting to the canonical textual representation.
+        writeText(UUIDHelpers::swapHalves(x), wb);
+        return ReturnType(true);
+    }
+};
+
+template <>
 struct FormatImpl<DataTypeDate>
 {
     template <typename ReturnType = void>
@@ -1124,6 +1138,15 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
 }
 
 template <>
+inline void parseImpl<DataTypeUUID2>(DataTypeUUID2::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+{
+    UUID tmp;
+    readUUIDText(tmp, rb);
+    /// `UUID2` stores the value in the big-endian (correctly-sorting) layout.
+    x = UUIDHelpers::swapHalves(tmp);
+}
+
+template <>
 inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
 {
     IPv4 tmp;
@@ -1201,6 +1224,18 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
         return false;
 
     x = tmp.toUnderType();
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeUUID2>(DataTypeUUID2::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+{
+    UUID tmp;
+    if (!tryReadUUIDText(tmp, rb))
+        return false;
+
+    /// `UUID2` stores the value in the big-endian (correctly-sorting) layout.
+    x = UUIDHelpers::swapHalves(tmp);
     return true;
 }
 
@@ -1514,6 +1549,15 @@ struct ConvertThroughParsing
                                     break;
                                 }
                             }
+                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeUUID2>)
+                            {
+                                if (fixed_string_size == UUID_BINARY_LENGTH)
+                                {
+                                    /// The 16 bytes are the canonical (big-endian) byte order of the UUID.
+                                    readBinaryBigEndian(vec_to[i], read_buffer);
+                                    break;
+                                }
+                            }
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
                                 if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing))
@@ -1611,6 +1655,14 @@ struct ConvertThroughParsing
                             || (std::is_same_v<ToDataType, DataTypeUUID> && fixed_string_size == UUID_BINARY_LENGTH)))
                     {
                         readBinary(vec_to[i], read_buffer);
+                        parsed = true;
+                    }
+                    else if (
+                        std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeUUID2>
+                        && fixed_string_size == UUID_BINARY_LENGTH)
+                    {
+                        /// The 16 bytes are the canonical (big-endian) byte order of the UUID.
+                        readBinaryBigEndian(vec_to[i], read_buffer);
                         parsed = true;
                     }
                     else
@@ -2833,6 +2885,30 @@ struct ConvertImpl
                 RETURN_NULLABLE_IF_NEEDED(col_to);
             }
 
+            /// UUID2 <-> UInt128 conversions. `UUID2` stores the value as a plain big-endian integer equal to the
+            /// UInt128 value, so this is a bit-for-bit identity (unlike `UUID`, which needs a half-swap).
+            if constexpr (std::is_same_v<FromDataType, DataTypeUUID2> && std::is_same_v<ToDataType, DataTypeUInt128>)
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = vec_from[i].toUnderType();
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+            if constexpr (std::is_same_v<FromDataType, DataTypeUInt128> && std::is_same_v<ToDataType, DataTypeUUID2>)
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = ToFieldType(vec_from[i]);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
+            /// UUID <-> UUID2 conversions differ only by swapping the two 64-bit halves.
+            if constexpr ((std::is_same_v<FromDataType, DataTypeUUID> && std::is_same_v<ToDataType, DataTypeUUID2>)
+                || (std::is_same_v<FromDataType, DataTypeUUID2> && std::is_same_v<ToDataType, DataTypeUUID>))
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = UUIDHelpers::swapHalves(vec_from[i]);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
             /// IPv6 <-> UInt128 conversions
             if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
             {
@@ -2888,6 +2964,12 @@ struct ConvertImpl
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                                 "Conversion between numeric types and UUID is not supported. "
                                 "Probably the passed UUID is unquoted");
+            /// UUID2 <-> UInt128 and UUID2 <-> UUID are handled above (and return early); any other mix with a
+            /// non-UUID2 type is an unsupported numeric conversion.
+            else if constexpr (std::is_same_v<FromDataType, DataTypeUUID2> != std::is_same_v<ToDataType, DataTypeUUID2>)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Conversion between numeric types and UUID2 is not supported. "
+                                "Probably the passed UUID2 is unquoted");
             else if constexpr (
                 (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
                 && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeIPv6>
@@ -3620,6 +3702,11 @@ private:
                               (bad_right && std::is_same_v<LeftDataType, DataTypeUUID>))
                 {
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Wrong UUID conversion");
+                }
+                else if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID2>) ||
+                              (bad_right && std::is_same_v<LeftDataType, DataTypeUUID2>))
+                {
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Wrong UUID2 conversion");
                 }
                 else
                 {
@@ -4524,6 +4611,7 @@ struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
+struct NameToUUID2 { static constexpr auto name = "toUUID2"; };
 struct NameToIPv4 { static constexpr auto name = "toIPv4"; };
 struct NameToIPv6 { static constexpr auto name = "toIPv6"; };
 
@@ -4558,6 +4646,7 @@ extern template class FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDate
 extern template class FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity<DataTypeDateTime64>>;
 
 extern template class FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
+extern template class FunctionConvert<DataTypeUUID2, NameToUUID2, ToNumberMonotonicity<UInt128>>;
 extern template class FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 extern template class FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 extern template class FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
@@ -4599,6 +4688,7 @@ using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32,
 using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity<DataTypeDateTime64>>;
 
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
+using FunctionToUUID2 = FunctionConvert<DataTypeUUID2, NameToUUID2, ToNumberMonotonicity<UInt128>>;
 using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
@@ -4634,6 +4724,7 @@ template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTim
 template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
 
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
+template <> struct FunctionTo<DataTypeUUID2> { using Type = FunctionToUUID2; };
 template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
 template <> struct FunctionTo<DataTypeIPv6> { using Type = FunctionToIPv6; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
@@ -4674,6 +4765,7 @@ struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero";
 struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; };
 struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero"; };
 struct NameToUUIDOrZero { static constexpr auto name = "toUUIDOrZero"; };
+struct NameToUUID2OrZero { static constexpr auto name = "toUUID2OrZero"; };
 struct NameToIPv4OrZero { static constexpr auto name = "toIPv4OrZero"; };
 struct NameToIPv6OrZero { static constexpr auto name = "toIPv6OrZero"; };
 
@@ -4703,6 +4795,7 @@ extern template class FunctionConvertFromString<DataTypeDecimal<Decimal64>, Name
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeUUID, NameToUUIDOrZero, ConvertFromStringExceptionMode::Zero>;
+extern template class FunctionConvertFromString<DataTypeUUID2, NameToUUID2OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrZero, ConvertFromStringExceptionMode::Zero>;
 
@@ -4732,6 +4825,7 @@ using FunctionToDecimal64OrZero = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal128OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal256OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUUIDOrZero = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUUID2OrZero = FunctionConvertFromString<DataTypeUUID2, NameToUUID2OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToIPv4OrZero = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToIPv6OrZero = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrZero, ConvertFromStringExceptionMode::Zero>;
 
@@ -4761,6 +4855,7 @@ struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull";
 struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; };
 struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull"; };
 struct NameToUUIDOrNull { static constexpr auto name = "toUUIDOrNull"; };
+struct NameToUUID2OrNull { static constexpr auto name = "toUUID2OrNull"; };
 struct NameToIPv4OrNull { static constexpr auto name = "toIPv4OrNull"; };
 struct NameToIPv6OrNull { static constexpr auto name = "toIPv6OrNull"; };
 
@@ -4790,6 +4885,7 @@ extern template class FunctionConvertFromString<DataTypeDecimal<Decimal64>, Name
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
+extern template class FunctionConvertFromString<DataTypeUUID2, NameToUUID2OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrNull, ConvertFromStringExceptionMode::Null>;
 
@@ -4819,6 +4915,7 @@ using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUUID2OrNull = FunctionConvertFromString<DataTypeUUID2, NameToUUID2OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToIPv4OrNull = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToIPv6OrNull = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrNull, ConvertFromStringExceptionMode::Null>;
 

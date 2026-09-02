@@ -553,6 +553,12 @@ namespace
                      makeASTFunction("toUUID", make_intrusive<ASTLiteral>("ffffffff-ffff-ffff-ffff-ffffffffffff"))}};
         }
 
+        if (which.isUUID2())
+        {
+            return {{makeASTFunction("toUUID2", make_intrusive<ASTLiteral>("00000000-0000-0000-0000-000000000000")),
+                     makeASTFunction("toUUID2", make_intrusive<ASTLiteral>("ffffffff-ffff-ffff-ffff-ffffffffffff"))}};
+        }
+
         if (which.isFixedString() && (typeid_cast<const DataTypeFixedString &>(type).getN() == 16))
         {
             auto fixed_string_16 = [](char c)

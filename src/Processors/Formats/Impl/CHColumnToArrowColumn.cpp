@@ -4,6 +4,7 @@
 
 #include <Core/DecimalFunctions.h>
 #include <Core/AccurateComparison.h>
+#include <Core/UUID.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -449,7 +450,8 @@ namespace DB
         const String & format_name,
         arrow::ArrayBuilder * array_builder,
         size_t start,
-        size_t end)
+        size_t end,
+        bool is_uuid2 = false)
     {
         const auto * col_uuid = assert_cast<const ColumnVector<UUID> *>(column.get());
 
@@ -470,6 +472,10 @@ namespace DB
             }
 
             UUID res = uuid_data[i];
+            /// UUID2 stores the two 64-bit halves swapped relative to UUID; convert to the logical UUID value
+            /// at the column boundary so that the emitted bytes match UUID for the same textual value.
+            if (is_uuid2)
+                res = UUIDHelpers::swapHalves(res);
             auto * bytes = reinterpret_cast<uint8_t *>(&res);
 
             if constexpr (std::endian::native == std::endian::little)
@@ -1463,6 +1469,9 @@ namespace DB
             case TypeIndex::UUID:
                 fillArrowArrayWithUUIDColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
+            case TypeIndex::UUID2:
+                fillArrowArrayWithUUIDColumnData(column, null_bytemap, format_name, array_builder, start, end, /*is_uuid2=*/true);
+                break;
 #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
             case TypeIndex::CPP_NUMERIC_TYPE: \
                 fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
@@ -1550,6 +1559,36 @@ namespace DB
         return arrow::TimeUnit::NANO;
     }
 
+    /// Field metadata for a `UUID` / `UUID2` leaf (looked up through `Nullable` and `LowCardinality`),
+    /// or nullptr for any other type. Both UUID types share the `arrow.uuid` extension (same canonical
+    /// bytes on the wire). The correctly-sorting `UUID2` additionally carries a ClickHouse-specific
+    /// discriminator so that ClickHouse readers restore the exact type on a round-trip; other Arrow
+    /// implementations ignore the extra key and read the column as a regular UUID.
+    /// A dictionary-encoded (`LowCardinality`) column cannot carry the `arrow.uuid` extension keys:
+    /// the registered extension type rejects dictionary storage at read time, so such a column gets
+    /// only the ClickHouse-specific discriminator. It records both UUID types, since the Arrow reader
+    /// otherwise cannot recover a plain `UUID` from dictionary values represented as fixed binary.
+    static std::shared_ptr<arrow::KeyValueMetadata> getUUIDFieldMetadata(const DataTypePtr & column_type, const CHColumnToArrowColumn::Settings & settings)
+    {
+        auto leaf_type = removeNullable(removeLowCardinality(column_type));
+        if (!isUUID(leaf_type) && !isUUID2(leaf_type))
+            return nullptr;
+
+        if (column_type->lowCardinality() && settings.low_cardinality_as_dictionary)
+        {
+            return arrow::key_value_metadata({"ClickHouse:type"}, {isUUID2(leaf_type) ? "UUID2" : "UUID"});
+        }
+
+        std::vector<std::string> keys{"ARROW:extension:name", "ARROW:extension:metadata", "PARQUET:logical_type"};
+        std::vector<std::string> values{"arrow.uuid", "", "UUID"};
+        if (isUUID2(leaf_type))
+        {
+            keys.push_back("ClickHouse:type");
+            values.push_back("UUID2");
+        }
+        return arrow::key_value_metadata(std::move(keys), std::move(values));
+    }
+
     static std::shared_ptr<arrow::DataType> getArrowType(
         DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, const CHColumnToArrowColumn::Settings & settings, bool * out_is_column_nullable, bool for_builder)
     {
@@ -1606,7 +1645,7 @@ namespace DB
             auto nested_column = column ? assert_cast<const ColumnArray *>(column.get())->getDataPtr() : nullptr;
             bool is_item_nullable = false;
             auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, &is_item_nullable, for_builder);
-            return arrow::list(std::make_shared<arrow::Field>("item", nested_arrow_type, is_item_nullable));
+            return arrow::list(std::make_shared<arrow::Field>("item", nested_arrow_type, is_item_nullable, getUUIDFieldMetadata(nested_type, settings)));
         }
 
         if (isTuple(column_type))
@@ -1620,7 +1659,7 @@ namespace DB
             {
                 bool is_field_nullable = false;
                 auto nested_arrow_type = getArrowType(nested_types[i], tuple_column ? tuple_column->getColumnPtr(i) : nullptr, nested_names[i], format_name, settings, &is_field_nullable, for_builder);
-                nested_fields.push_back(std::make_shared<arrow::Field>(nested_names[i], nested_arrow_type, is_field_nullable));
+                nested_fields.push_back(std::make_shared<arrow::Field>(nested_names[i], nested_arrow_type, is_field_nullable, getUUIDFieldMetadata(nested_types[i], settings)));
             }
             return arrow::struct_(nested_fields);
         }
@@ -1628,6 +1667,16 @@ namespace DB
         if (column_type->lowCardinality())
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
+            /// A dictionary value type must not be an extension type (e.g. `arrow.uuid`): Arrow
+            /// records the extension name in the field metadata, and the registered extension type
+            /// rejects dictionary storage at read time. Dictionary-encode the storage type instead;
+            /// the exact ClickHouse type is recorded separately in the field metadata.
+            auto unwrap_extension = [](std::shared_ptr<arrow::DataType> value_type)
+            {
+                if (value_type->id() == arrow::Type::EXTENSION)
+                    return std::static_pointer_cast<arrow::ExtensionType>(value_type)->storage_type();
+                return value_type;
+            };
             if (column)
             {
                 const auto * lc_column = assert_cast<const ColumnLowCardinality *>(column.get());
@@ -1635,7 +1684,7 @@ namespace DB
                 const auto & indexes_column = lc_column->getIndexesPtr();
                 return arrow::dictionary(
                     getArrowTypeForLowCardinalityIndexes(indexes_column, settings),
-                    getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder));
+                    unwrap_extension(getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder)));
             }
             else
             {
@@ -1643,7 +1692,7 @@ namespace DB
                     (settings.use_signed_indexes_for_dictionary ? arrow::int64() : arrow::uint64()) :
                     (settings.use_signed_indexes_for_dictionary ? arrow::int32() : arrow::uint32());
                 auto arrow_type = getArrowType(nested_type, nullptr, column_name, format_name, settings, out_is_column_nullable, for_builder);
-                return arrow::dictionary(index_arrow_type, arrow_type);
+                return arrow::dictionary(index_arrow_type, unwrap_extension(arrow_type));
             }
         }
 
@@ -1666,9 +1715,11 @@ namespace DB
             bool is_val_nullable = false;
             auto val_arrow_type = getArrowType(val_type, value_column, column_name, format_name, settings, &is_val_nullable, for_builder);
 
-            return arrow::map(
-                key_arrow_type,
-                std::make_shared<arrow::Field>("value", val_arrow_type, is_val_nullable));
+            /// Build the key field explicitly (arrow::map would build a bare one) so that a
+            /// `UUID` / `UUID2` key carries its field metadata just like the value.
+            return std::make_shared<arrow::MapType>(
+                std::make_shared<arrow::Field>("key", key_arrow_type, /*nullable=*/false, getUUIDFieldMetadata(key_type, settings)),
+                std::make_shared<arrow::Field>("value", val_arrow_type, is_val_nullable, getUUIDFieldMetadata(val_type, settings)));
         }
 
         if (isDateTime64(column_type))
@@ -1761,7 +1812,7 @@ namespace DB
             }
         }
 
-        if (isUUID(column_type))
+        if (isUUID(column_type) || isUUID2(column_type))
             return for_builder ? arrow::fixed_size_binary(sizeof(UUID)) : std::make_shared<ArrowUUIDExtensionType>();
 
         if (isDate(column_type) && settings.output_date_as_uint16)
@@ -1829,15 +1880,10 @@ namespace DB
                 field_metadata = arrow::key_value_metadata({"PARQUET:field_id"}, {std::to_string(field_id)});
             }
 
-            // Inject our UUID metadata if it's a root UUID column
-            if (isUUID(removeNullable(header_column.type)))
-            {
-                auto ext_metadata = arrow::key_value_metadata(
-                    {"ARROW:extension:name", "ARROW:extension:metadata", "PARQUET:logical_type"},
-                    {"arrow.uuid", "", "UUID"}
-                );
-                field_metadata = field_metadata ? field_metadata->Merge(*ext_metadata) : ext_metadata;
-            }
+            // Inject our UUID metadata if it's a root UUID column (also under Nullable / LowCardinality:
+            // for a dictionary-encoded column the discriminator lives on the dictionary column's field)
+            if (auto uuid_metadata = getUUIDFieldMetadata(header_column.type, settings))
+                field_metadata = field_metadata ? field_metadata->Merge(*uuid_metadata) : uuid_metadata;
 
             if (field_metadata)
                 arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable, field_metadata));

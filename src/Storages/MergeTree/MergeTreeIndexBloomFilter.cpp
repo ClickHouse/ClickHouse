@@ -219,12 +219,16 @@ struct MapIndexInfo
     bool has_keys_index = false;
     bool has_values_index = false;
     Field key_field;
+    /// The type `key_field` was resolved with (e.g. `UUID` or `UUID2`), used to convert it to the
+    /// map's actual key type before hashing, since layout-changing conversions are not a no-op.
+    DataTypePtr key_field_type;
 };
 
 /// Try to resolve a Map column against the bloom filter index header by the map column name
 /// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
 /// is present in the index.
-std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
+std::optional<MapIndexInfo> tryResolveMapIndexInfo(
+    const String & map_column_name, const Field & key_field, const DataTypePtr & key_field_type, const Block & header)
 {
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
@@ -237,6 +241,7 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 
     MapIndexInfo info;
     info.key_field = key_field;
+    info.key_field_type = key_field_type;
     if (keys_position)
     {
         info.has_keys_index = true;
@@ -263,7 +268,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
 
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     if (!header.has(map_keys_index_column_name))
-        return tryResolveMapIndexInfo(map_column_name, {}, header);
+        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header);
 
     /// Deserialize the key from its text representation using the key type from the index header.
     size_t keys_position = header.getPositionByName(map_keys_index_column_name);
@@ -278,7 +283,8 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, header);
+    /// The key was deserialized using the index's own key type, so it is already in the actual layout.
+    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
@@ -298,7 +304,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
             if (!second_argument.tryGetConstant(constant_value, constant_type))
                 return std::nullopt;
 
-            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, header);
+            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, constant_type, header);
         }
     }
 
@@ -713,7 +719,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), map_info->key_field)));
+            auto converted_key_field = convertFieldToType(map_info->key_field, *actual_type, removeNullable(removeLowCardinality(map_info->key_field_type)).get());
+            if (converted_key_field.isNull())
+                return false;
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_key_field)));
         }
         else if (map_info->has_values_index)
         {
@@ -847,11 +856,13 @@ static ColumnPtr createColumnFromConstantArray(
         return nullptr;
 
     DataTypePtr element_type;
-    if (coerce_like_search_function && value_type)
+    if (value_type)
         if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
             element_type = value_array_type->getNestedType();
 
-    const bool coerce = element_type && searchFunctionCoercesConstant(element_type, actual_type);
+    const bool coerce = coerce_like_search_function && element_type && searchFunctionCoercesConstant(element_type, actual_type);
+    /// Keep the source element type for layout-changing conversions, such as `UUID` to `UUID2`.
+    const IDataType * element_type_hint = element_type ? removeNullable(removeLowCardinality(element_type)).get() : nullptr;
     const bool is_nullable = actual_type->isNullable();
     const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
     auto mutable_column = actual_type->createColumn();
@@ -873,7 +884,7 @@ static ColumnPtr createColumnFromConstantArray(
 
         Field converted = coerce
             ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
-            : convertFieldToType(f, *actual_type);
+            : convertFieldToType(f, *actual_type, element_type_hint);
         if (converted.isNull())
             return nullptr;
 
@@ -1081,7 +1092,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
             }
 
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertFieldToType(value_field, *actual_type, removeNullable(removeLowCardinality(value_type)).get());
             if (converted_field.isNull())
                 return false;
 
@@ -1147,7 +1158,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-
         /// Without the `Map` type the padded and the coerced form cannot be told apart.
         if (!element_type && searchFunctionCoercesConstant(value_type, actual_type))
             return false;
@@ -1204,16 +1214,19 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             size_t position = 0;
             Field const_value;
+            DataTypePtr const_value_type;
 
             if (map_info->has_keys_index)
             {
                 position = map_info->keys_index_position;
                 const_value = map_info->key_field;
+                const_value_type = map_info->key_field_type;
             }
             else if (map_info->has_values_index)
             {
                 position = map_info->values_index_position;
                 const_value = value_field;
+                const_value_type = value_type;
             }
             else
             {
@@ -1224,7 +1237,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
+            auto converted_const_value = convertFieldToType(const_value, *actual_type, removeNullable(removeLowCardinality(const_value_type)).get());
+            if (converted_const_value.isNull())
+                return false;
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_const_value)));
 
             return true;
         }
@@ -1323,7 +1339,7 @@ static void assertIndexColumnsType(const Block & header)
         WhichDataType which(actual_type);
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
-            !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID() &&
+            !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID() && !which.isUUID2() &&
             !which.isIPv4() && !which.isIPv6())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
     }

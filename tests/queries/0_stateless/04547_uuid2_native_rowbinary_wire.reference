@@ -1,0 +1,8 @@
+RowBinary wire bytes (UUID2):
+00112233445566778899AABBCCDDEEFF
+RowBinary wire bytes (UUID, half-swapped for contrast):
+7766554433221100FFEEDDCCBBAA9988
+RowBinary round-trip:
+00112233-4455-6677-8899-aabbccddeeff
+Native round-trip:
+UUID2	00112233-4455-6677-8899-aabbccddeeff

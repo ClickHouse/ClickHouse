@@ -9409,8 +9409,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                     partition_value_ast->getID());
             }
         }
-        /// Simple partition key, need to evaluate and cast
-        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        /// Simple partition key, need to evaluate and cast.
+        /// Keep the source type: `convertFieldToTypeOrThrow` needs it to convert between types that share the same
+        /// `Field` representation but a different value layout, e.g. a typed `UUID` constant targeting a `UUID2` key.
+        auto [partition_key_value, partition_key_value_type] = evaluateConstantExpression(partition_value_ast, local_context);
 
         /// A cast of a one-element tuple (e.g. a substituted query parameter of type `Tuple(T)`)
         /// evaluates to a tuple; unwrap it, unless the partition key column itself is a tuple.
@@ -9421,14 +9423,17 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                                 "Wrong number of fields in the partition expression: {}, must be: 1", tuple_value.size());
             partition_key_value = std::move(tuple_value[0]);
+
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_value_type.get());
+            partition_key_value_type = (tuple_type && tuple_type->getElements().size() == 1) ? tuple_type->getElements()[0] : nullptr;
         }
 
-        partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
+        partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type, partition_key_value_type.get());
     }
     else
     {
         /// Complex key, need to evaluate, untuple and cast
-        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        auto [partition_key_value, partition_key_value_type] = evaluateConstantExpression(partition_value_ast, local_context);
         if (partition_key_value.getType() != Field::Types::Tuple)
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                             "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
@@ -9438,8 +9443,15 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
+        /// Pass the source element types so conversions that depend on the source type keep working,
+        /// e.g. a typed `UUID` constant targeting a `UUID2` key column.
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_value_type.get());
+        if (tuple_type && tuple_type->getElements().size() != fields_count)
+            tuple_type = nullptr;
+
         for (size_t i = 0; i < fields_count; ++i)
-            partition_row[i] = convertFieldToTypeOrThrow(tuple[i], *key_sample_block.getByPosition(i).type);
+            partition_row[i] = convertFieldToTypeOrThrow(
+                tuple[i], *key_sample_block.getByPosition(i).type, tuple_type ? tuple_type->getElements()[i].get() : nullptr);
     }
 
     MergeTreePartition partition(std::move(partition_row));

@@ -15,6 +15,7 @@
 #    include <Columns/ColumnVector.h>
 #    include <Core/AccurateComparison.h>
 #    include <Core/DecimalComparison.h>
+#    include <Core/UUID.h>
 #    include <DataTypes/DataTypeAggregateFunction.h>
 #    include <DataTypes/DataTypeArray.h>
 #    include <DataTypes/DataTypeDateTime64.h>
@@ -1734,8 +1735,10 @@ namespace
         ProtobufSerializerUUID(
             std::string_view column_name_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
-            const ProtobufReaderOrWriter & reader_or_writer_)
+            const ProtobufReaderOrWriter & reader_or_writer_,
+            bool is_uuid2_ = false)
             : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
+            , is_uuid2(is_uuid2_)
         {
             setFunctions();
         }
@@ -1743,12 +1746,20 @@ namespace
         void writeRow(size_t row_num) override
         {
             const auto & column_vector = assert_cast<const ColumnVector<UUID> &>(*column);
-            write_function(column_vector.getElement(row_num));
+            UUID value = column_vector.getElement(row_num);
+            /// UUID2 stores the two 64-bit halves swapped relative to UUID; convert to the logical UUID
+            /// value at the column boundary so that the serialized text matches UUID for the same value.
+            if (is_uuid2)
+                value = UUIDHelpers::swapHalves(value);
+            write_function(value);
         }
 
         void readRow(size_t row_num) override
         {
             UUID value = read_function();
+            /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+            if (is_uuid2)
+                value = UUIDHelpers::swapHalves(value);
             auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
@@ -1761,7 +1772,10 @@ namespace
             auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
             if (row_num < column_vector.size())
                 return;
-            column_vector.insertDefault();
+            UUID value = default_function();
+            if (is_uuid2)
+                value = UUIDHelpers::swapHalves(value);
+            column_vector.insertValue(value);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -1801,6 +1815,7 @@ namespace
         std::function<UUID()> read_function;
         std::function<UUID()> default_function;
         String text_buffer;
+        const bool is_uuid2;
     };
 
     /// Serializes a ColumnVector<IPv6> containing IPv6s to a field of type TYPE_STRING or TYPE_BYTES.
@@ -3944,6 +3959,7 @@ namespace
                 case TypeIndex::Decimal128: return std::make_unique<ProtobufSerializerDecimal<Decimal128>>(column_name, assert_cast<const DataTypeDecimal<Decimal128> &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Decimal256: return std::make_unique<ProtobufSerializerDecimal<Decimal256>>(column_name, assert_cast<const DataTypeDecimal<Decimal256> &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::UUID: return std::make_unique<ProtobufSerializerUUID>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::UUID2: return std::make_unique<ProtobufSerializerUUID>(column_name, field_descriptor, reader_or_writer, /*is_uuid2=*/true);
                 case TypeIndex::IPv4: return std::make_unique<ProtobufSerializerIPv4>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::IPv6: return std::make_unique<ProtobufSerializerIPv6>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Interval: return std::make_unique<ProtobufSerializerInterval>(column_name, field_descriptor, reader_or_writer);

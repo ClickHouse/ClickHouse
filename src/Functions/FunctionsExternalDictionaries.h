@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -899,10 +900,21 @@ private:
         auto return_type = impl.getReturnTypeImpl(arguments);
 
         if (!return_type->equals(*result_type))
+        {
+            /// What a bare `UUID` in a dictionary definition resolves to depends on the `uuid_type_version` setting,
+            /// so the `UUID` and `UUID2` typed getters accept an attribute of either type and convert the result
+            /// (the conversion is lossless and preserves the textual value) instead of failing existing queries.
+            if ((isUUID(return_type) && isUUID2(result_type)) || (isUUID2(return_type) && isUUID(result_type)))
+            {
+                auto column = impl.executeImpl(arguments, return_type, input_rows_count);
+                return castColumn({column, return_type, {}}, result_type);
+            }
+
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Function {} dictionary attribute has different type {} expected {}",
                     getName(),
                     return_type->getName(),
                     result_type->getName());
+        }
 
         return impl.executeImpl(arguments, return_type, input_rows_count);
     }
@@ -926,6 +938,7 @@ struct NameDictGetFloat64 { static constexpr auto name = "dictGetFloat64"; };
 struct NameDictGetDate { static constexpr auto name = "dictGetDate"; };
 struct NameDictGetDateTime { static constexpr auto name = "dictGetDateTime"; };
 struct NameDictGetUUID { static constexpr auto name = "dictGetUUID"; };
+struct NameDictGetUUID2 { static constexpr auto name = "dictGetUUID2"; };
 struct NameDictGetIPv4 { static constexpr auto name = "dictGetIPv4"; };
 struct NameDictGetIPv6 { static constexpr auto name = "dictGetIPv6"; };
 struct NameDictGetString { static constexpr auto name = "dictGetString"; };
@@ -943,6 +956,7 @@ using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64, NameDictGetFloat
 using FunctionDictGetDate = FunctionDictGet<DataTypeDate, NameDictGetDate>;
 using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime, NameDictGetDateTime>;
 using FunctionDictGetUUID = FunctionDictGet<DataTypeUUID, NameDictGetUUID>;
+using FunctionDictGetUUID2 = FunctionDictGet<DataTypeUUID2, NameDictGetUUID2>;
 using FunctionDictGetIPv4 = FunctionDictGet<DataTypeIPv4, NameDictGetIPv4>;
 using FunctionDictGetIPv6 = FunctionDictGet<DataTypeIPv6, NameDictGetIPv6>;
 using FunctionDictGetString = FunctionDictGet<DataTypeString, NameDictGetString>;
@@ -963,6 +977,7 @@ struct NameDictGetFloat64OrDefault { static constexpr auto name = "dictGetFloat6
 struct NameDictGetDateOrDefault { static constexpr auto name = "dictGetDateOrDefault"; };
 struct NameDictGetDateTimeOrDefault { static constexpr auto name = "dictGetDateTimeOrDefault"; };
 struct NameDictGetUUIDOrDefault { static constexpr auto name = "dictGetUUIDOrDefault"; };
+struct NameDictGetUUID2OrDefault { static constexpr auto name = "dictGetUUID2OrDefault"; };
 struct NameDictGetIPv4OrDefault { static constexpr auto name = "dictGetIPv4OrDefault"; };
 struct NameDictGetIPv6OrDefault { static constexpr auto name = "dictGetIPv6OrDefault"; };
 struct NameDictGetStringOrDefault { static constexpr auto name = "dictGetStringOrDefault"; };
@@ -980,6 +995,7 @@ using FunctionDictGetFloat64OrDefault = FunctionDictGetOrDefault<DataTypeFloat64
 using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate, NameDictGetDateOrDefault>;
 using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime, NameDictGetDateTimeOrDefault>;
 using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID, NameDictGetUUIDOrDefault>;
+using FunctionDictGetUUID2OrDefault = FunctionDictGetOrDefault<DataTypeUUID2, NameDictGetUUID2OrDefault>;
 using FunctionDictGetIPv4OrDefault = FunctionDictGetOrDefault<DataTypeIPv4, NameDictGetIPv4OrDefault>;
 using FunctionDictGetIPv6OrDefault = FunctionDictGetOrDefault<DataTypeIPv6, NameDictGetIPv6OrDefault>;
 using FunctionDictGetStringOrDefault = FunctionDictGetOrDefault<DataTypeString, NameDictGetStringOrDefault>;

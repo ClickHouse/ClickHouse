@@ -3,6 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
+#include <Core/UUID.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
 
@@ -1805,6 +1806,26 @@ std::optional<Field> UUIDConverter::convertField(std::span<const char> data, boo
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
 
     return Field(decodeParquetUUID(data.data()));
+}
+
+void UUID2Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    auto & col_data = assert_cast<ColumnVector<UUID> &>(col).getData();
+    size_t old_size = col_data.size();
+    col_data.resize(old_size + num_values);
+
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        col_data[old_size + i] = UUIDHelpers::swapHalves(decodeParquetUUID(data.data() + i * 16));
+    }
+}
+
+std::optional<Field> UUID2Converter::convertField(std::span<const char> data, bool /*is_max*/) const
+{
+    if (data.size() != input_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
+
+    return Field(UUIDHelpers::swapHalves(decodeParquetUUID(data.data())));
 }
 
 std::optional<Field> FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const

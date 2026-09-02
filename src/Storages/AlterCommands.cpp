@@ -36,6 +36,7 @@
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -169,7 +170,7 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
 
 }
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, UInt64 uuid_type_version)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -185,7 +186,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_col_decl.name;
         if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.getType());
+            command.data_type = data_type_factory.get(applyUUIDTypeVersion(ast_col_decl.getType(), uuid_type_version));
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
             /// A stored column has to spell its state version out in the metadata the same way
             /// `CREATE TABLE` does (see `InterpreterCreateQuery::getColumnType`): an unversioned
@@ -195,7 +196,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getDefaultExpression())
         {
             command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.getDefaultExpression();
+            command.default_expression = applyUUIDTypeVersion(ast_col_decl.getDefaultExpression(), uuid_type_version);
         }
 
         if (ast_col_decl.getComment())
@@ -255,7 +256,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.getType());
+            command.data_type = data_type_factory.get(applyUUIDTypeVersion(ast_col_decl.getType(), uuid_type_version));
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
             /// Deliberately NOT pinning the current state version here, unlike ADD COLUMN above.
             /// `DataTypeAggregateFunction::equals` ignores the state version, so a version change is
@@ -271,7 +272,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getDefaultExpression())
         {
             command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.getDefaultExpression();
+            command.default_expression = applyUUIDTypeVersion(ast_col_decl.getDefaultExpression(), uuid_type_version);
         }
 
         if (ast_col_decl.getComment())

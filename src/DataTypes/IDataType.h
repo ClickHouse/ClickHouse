@@ -441,6 +441,7 @@ struct WhichDataType
     constexpr bool isStringOrFixedString() const { return isString() || isFixedString(); }
 
     constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
+    constexpr bool isUUID2() const { return idx == TypeIndex::UUID2; }
     constexpr bool isIPv4() const { return idx == TypeIndex::IPv4; }
     constexpr bool isIPv6() const { return idx == TypeIndex::IPv6; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
@@ -524,6 +525,7 @@ bool isFixedString(TYPE data_type); \
 bool isStringOrFixedString(TYPE data_type); \
 \
 bool isUUID(TYPE data_type); \
+bool isUUID2(TYPE data_type); \
 bool isIPv4(TYPE data_type); \
 bool isIPv6(TYPE data_type); \
 bool isArray(TYPE data_type); \

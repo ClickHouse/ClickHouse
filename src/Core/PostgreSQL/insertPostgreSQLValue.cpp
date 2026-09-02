@@ -8,6 +8,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/UUID.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -105,6 +106,11 @@ try
             break;
         case ExternalResultDescription::ValueType::vtUUID:
             assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.data(), value.size()));
+            break;
+        case ExternalResultDescription::ValueType::vtUUID2:
+            /// `UUID2` stores the value in the canonical (big-endian) layout, while `parse<UUID>` produces the
+            /// half-swapped `UUID` layout, so swap the halves back (matching `SerializationUUID2::deserializeText`).
+            assert_cast<ColumnUUID &>(column).insertValue(UUIDHelpers::swapHalves(parse<UUID>(value.data(), value.size())));
             break;
         case ExternalResultDescription::ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
@@ -272,6 +278,8 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return pqxx::from_string<double>(field); };
     else if (which.isUUID())
         parser = [](std::string & field) -> Field { return parse<UUID>(field); };
+    else if (which.isUUID2())
+        parser = [](std::string & field) -> Field { return UUIDHelpers::swapHalves(parse<UUID>(field)); };
     else if (which.isString() || which.isFixedString())
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -77,6 +78,7 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(std::make_shared<DataTypeDecimal128>(3, 6));
     check(std::make_shared<DataTypeDecimal256>(3, 6));
     check(std::make_shared<DataTypeUUID>());
+    check(std::make_shared<DataTypeUUID2>());
     check(DataTypeFactory::instance().get("Array(UInt32)"));
     check(DataTypeFactory::instance().get("Array(Array(Array(UInt32)))"));
     check(DataTypeFactory::instance().get("Tuple(UInt32, String, UUID)"));
@@ -89,6 +91,7 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("Nullable(UInt32)"));
     check(DataTypeFactory::instance().get("Nullable(Nothing)"));
     check(DataTypeFactory::instance().get("Nullable(UUID)"));
+    check(DataTypeFactory::instance().get("Nullable(UUID2)"));
     check(std::make_shared<DataTypeFunction>(
         DataTypes{
             std::make_shared<DataTypeInt8>(),

@@ -68,10 +68,11 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         /// max definition level from the schema, while the writer takes the level bit width from the
         /// state the data path builds, so the two would desynchronize.
         iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
-        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding(), iceberg_optionality);
+        schema = convertSchema(
+            *header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding(), iceberg_optionality, &uuid2_leaf_columns);
     }
     else
-        schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);
+        schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality, &uuid2_leaf_columns);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
@@ -198,7 +199,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
         writeFileHeader(file_state, out);
     }
     Block header = materializeBlock(getPort(PortKind::Main).getHeader());
-    writeFileFooter(file_state, schema, options, out, header);
+    writeFileFooter(file_state, schema, options, out, header, uuid2_leaf_columns);
     chassert(out.count() - base_offset == file_state.offset);
 }
 

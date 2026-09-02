@@ -21,7 +21,9 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypeObject.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
@@ -113,6 +115,28 @@ static bool isUUIDField(const arrow::Field & field)
     }
     return field.type()->id() == arrow::Type::EXTENSION &&
            std::static_pointer_cast<arrow::ExtensionType>(field.type())->extension_name() == "arrow.uuid";
+}
+
+/// Whether a field carries the ClickHouse-specific discriminator marking it as the correctly-sorting
+/// `UUID2` type. Arrow has a single UUID extension type, but ClickHouse has two UUID types (`UUID` with the
+/// historical half-swapped ordering and `UUID2`), so the writers record the exact type in an extra
+/// field-metadata key that other Arrow implementations ignore. The key is checked independently of
+/// `isUUIDField`: a dictionary-encoded (`LowCardinality`) column cannot carry the `arrow.uuid` extension
+/// (the registered extension type rejects dictionary storage), so it is written with this key alone.
+static bool isUUID2Field(const arrow::Field & field)
+{
+    if (!field.HasMetadata())
+        return false;
+    auto ch_type = field.metadata()->Get("ClickHouse:type");
+    return ch_type.ok() && *ch_type == "UUID2";
+}
+
+static bool isUUIDFieldWithClickHouseType(const arrow::Field & field)
+{
+    if (!field.HasMetadata())
+        return false;
+    auto ch_type = field.metadata()->Get("ClickHouse:type");
+    return ch_type.ok() && *ch_type == "UUID";
 }
 
 namespace
@@ -1212,7 +1236,8 @@ static ColumnWithTypeAndName readColumnWithDecimalData(const std::shared_ptr<arr
 static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     const std::string & column_name,
-    DataTypePtr type_hint)
+    DataTypePtr type_hint,
+    bool is_uuid2 = false)
 {
     auto column = type_hint->createColumn();
     auto & column_data = assert_cast<ColumnVector<UUID> &>(*column).getData();
@@ -1260,6 +1285,11 @@ static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
                     // Swap the first 8 bytes with the second 8 bytes.
                     std::swap_ranges(bytes, bytes + 8, bytes + 8);
                 }
+
+                /// At this point `res` is the logical UUID value. The UUID2 type stores the two
+                /// 64-bit halves swapped, so convert at the column boundary for a UUID2 target.
+                if (is_uuid2)
+                    res = UUIDHelpers::swapHalves(res);
 
                 column_data.emplace_back(res);
             }
@@ -1953,14 +1983,19 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         return readColumnWithBigIntegerFromFixedBinaryData<UInt256>(arrow_column, column_name, type_hint);
                     case TypeIndex::UUID:
                         return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, type_hint);
+                    case TypeIndex::UUID2:
+                        return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, type_hint, /*is_uuid2=*/true);
                     default:
                         break;
                 }
             }
 
-            /// Correctly triggers the UUID reader for metadata-flagged columns.
-            if (arrow_field && isUUIDField(*arrow_field))
+            /// Correctly triggers the UUID reader for metadata-flagged columns. A field flagged with the
+            /// ClickHouse-specific `UUID2` discriminator reads back as the correctly-sorting `UUID2` type.
+            if (arrow_field && (isUUIDField(*arrow_field) || isUUID2Field(*arrow_field) || isUUIDFieldWithClickHouseType(*arrow_field)))
             {
+                if (isUUID2Field(*arrow_field))
+                    return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, std::make_shared<DataTypeUUID2>(), /*is_uuid2=*/true);
                 return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, std::make_shared<DataTypeUUID>());
             }
 
@@ -2027,6 +2062,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
 
             auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column, column_name);
+            /// Recurse with the map's own entries field (not the parent field): the struct case below it
+            /// consults the key/value child fields, whose metadata distinguishes e.g. `UUID2` keys.
+            /// Prefer the schema field's type tree over the data one: the empty column built for schema
+            /// inference has its type tree rebuilt from storage types, which loses per-field metadata
+            /// and unwraps extension types, while the schema field keeps them.
+            const auto & arrow_map_type = (arrow_field && arrow_field->type()->id() == arrow::Type::MAP)
+                ? arrow_field->type()
+                : arrow_column->type();
+            auto arrow_entries_field = assert_cast<const arrow::MapType *>(arrow_map_type.get())->value_field();
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -2036,7 +2080,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 true /*is_map_nested_column*/,
                 geo_metadata,
                 settings,
-                arrow_field,
+                arrow_entries_field,
                 parquet_columns_to_clickhouse,
                 clickhouse_columns_to_parquet);
             if (!nested_column.column)
@@ -2139,6 +2183,27 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }();
 
+            /// Recurse with the list's own item field (not the parent field), so that leaf-level field
+            /// metadata (e.g. the `UUID2` discriminator) is visible when reading the nested column.
+            /// Prefer the schema field's type tree over the data one: the empty column built for schema
+            /// inference has its type tree rebuilt from storage types, which loses per-field metadata
+            /// and unwraps extension types, while the schema field keeps them.
+            const auto & arrow_list_like_type = (arrow_field && arrow_field->type()->id() == arrow_column->type()->id())
+                ? arrow_field->type()
+                : arrow_column->type();
+            auto arrow_item_field = [&]
+            {
+                switch (list_type)
+                {
+                    case ListType::LargeList:
+                        return assert_cast<const arrow::LargeListType *>(arrow_list_like_type.get())->value_field();
+                    case ListType::FixedSizeList:
+                        return assert_cast<const arrow::FixedSizeListType *>(arrow_list_like_type.get())->value_field();
+                    case ListType::List:
+                        return assert_cast<const arrow::ListType *>(arrow_list_like_type.get())->value_field();
+                }
+            }();
+
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -2148,7 +2213,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 false /*is_map_nested_column*/,
                 geo_metadata,
                 settings,
-                arrow_field,
+                arrow_item_field,
                 parquet_columns_to_clickhouse,
                 clickhouse_columns_to_parquet);
             if (!nested_column.column)
@@ -2209,6 +2274,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         {
             auto arrow_type = arrow_column->type();
             auto * arrow_struct_type = assert_cast<arrow::StructType *>(arrow_type.get());
+            /// Child fields to recurse with. Prefer the schema field's type tree over the data one:
+            /// the empty column built for schema inference has its type tree rebuilt from storage
+            /// types, which loses per-field metadata (e.g. the `UUID2` discriminator) and unwraps
+            /// extension types, while the schema field keeps them.
+            const auto * arrow_schema_struct_type
+                = (arrow_field && arrow_field->type()->id() == arrow::Type::STRUCT
+                   && assert_cast<const arrow::StructType *>(arrow_field->type().get())->num_fields() == arrow_struct_type->num_fields())
+                ? assert_cast<const arrow::StructType *>(arrow_field->type().get())
+                : arrow_struct_type;
             std::vector<arrow::ArrayVector> nested_arrow_columns(arrow_struct_type->num_fields());
             for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
             {
@@ -2288,6 +2362,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
 
                 auto nested_arrow_column = std::make_shared<arrow::ChunkedArray>(nested_arrow_columns[i]);
+                /// Recurse with the struct's own child field (not the parent field), so that leaf-level
+                /// field metadata (e.g. the `UUID2` discriminator) is visible when reading the member.
                 auto column_with_type_and_name = readColumnFromArrowColumn(nested_arrow_column,
                     field_name,
                     Nested::concatenateName(full_column_name, field_name),
@@ -2297,7 +2373,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     false /*is_map_nested_column*/,
                     geo_metadata,
                     settings,
-                    arrow_field,
+                    arrow_schema_struct_type->field(i),
                     parquet_columns_to_clickhouse,
                     clickhouse_columns_to_parquet);
                 if (!column_with_type_and_name.column)
@@ -2639,11 +2715,13 @@ static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(con
     if (type->id() == arrow::Type::MAP)
     {
         auto map_type = std::static_pointer_cast<arrow::MapType>(type);
+        auto key_field = map_type->key_field();
         auto item_field = map_type->item_field();
 
-        // arrow::map expects a DataType for the key (since keys cannot be nullable),
-        // but accepts a Field for the item to preserve custom nullability.
-        return arrow::map(unwrapArrowExtensionTypesRecursively(map_type->key_type()),
+        // Rebuild from the original key/item fields (WithType keeps name, nullability and custom
+        // metadata): arrow::map would rebuild a bare key field, dropping the key's field metadata.
+        return std::make_shared<arrow::MapType>(
+            key_field->WithType(unwrapArrowExtensionTypesRecursively(key_field->type())),
             item_field->WithType(unwrapArrowExtensionTypesRecursively(item_field->type())),
             map_type->keys_sorted()
         );

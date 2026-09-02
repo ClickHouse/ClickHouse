@@ -597,6 +597,8 @@ public:
             argument.type = recursiveRemoveLowCardinality(argument.type);
         }
 
+        castNeedleToElementLayout(new_arguments);
+
         return executeArrayImpl(new_arguments, result_type);
     }
 
@@ -614,6 +616,29 @@ private:
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
+    }
+
+    /// `UUID` and `UUID2` values share the physical representation but keep the two 64-bit halves in the
+    /// opposite order, while the paths below compare the raw representations (`Field`-wise or column-wise).
+    /// When the array elements and the needle are a mix of the two, bring the needle to the layout of the
+    /// elements (the cast between them swaps the halves and loses nothing).
+    static void castNeedleToElementLayout(ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return;
+
+        const auto inner_type_decayed = removeNullable(removeLowCardinality(array_type->getNestedType()));
+        const auto arg_decayed = removeNullable(removeLowCardinality(arguments[1].type));
+
+        if ((isUUID(inner_type_decayed) && isUUID2(arg_decayed)) || (isUUID2(inner_type_decayed) && isUUID(arg_decayed)))
+        {
+            DataTypePtr target_type = arguments[1].type->isNullable() || arguments[1].type->isLowCardinalityNullable()
+                ? std::make_shared<DataTypeNullable>(inner_type_decayed)
+                : inner_type_decayed;
+            arguments[1].column = castColumn(arguments[1], target_type);
+            arguments[1].type = std::move(target_type);
+        }
     }
 
     /** If one or both arguments passed to this function are nullable,
@@ -933,6 +958,8 @@ private:
             argument.column = recursiveRemoveLowCardinality(argument.column);
             argument.type = recursiveRemoveLowCardinality(argument.type);
         }
+
+        castNeedleToElementLayout(arguments_copy);
 
         return executeArrayImpl(arguments_copy, result_type);
     }

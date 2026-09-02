@@ -15,9 +15,12 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
 #include <array>
@@ -46,14 +49,28 @@ SchemaConverter::SchemaConverter(
 {
     if (precomputed_geo_columns.has_value())
         geo_columns = std::move(*precomputed_geo_columns);
-    else if (options.format.parquet.allow_geoparquet_parser)
+
+    for (const auto & kv : file_metadata.key_value_metadata)
     {
-        for (const auto & kv : file_metadata.key_value_metadata)
+        /// When precomputed_geo_columns has a value (including the empty-map case), the "geo"
+        /// key-value metadata must not be (re-)parsed here — see the constructor declaration.
+        if (kv.key == "geo" && !precomputed_geo_columns.has_value() && options.format.parquet.allow_geoparquet_parser && geo_columns.empty())
         {
-            if (kv.key == "geo")
+            geo_columns = parseGeoMetadataEncoding(&kv.value);
+        }
+        else if (kv.key == "ClickHouse:uuid2_leaf_columns")
+        {
+            /// ClickHouse-specific discriminator written by the ClickHouse parquet writer: comma-separated
+            /// indices (in parquet column order) of the leaf columns written from the correctly-sorting
+            /// `UUID2` type. See `writeFileFooter`.
+            ReadBufferFromString buf(kv.value);
+            while (!buf.eof())
             {
-                geo_columns = parseGeoMetadataEncoding(&kv.value);
-                break;
+                size_t idx = 0;
+                readIntText(idx, buf);
+                if (!buf.eof())
+                    assertChar(',', buf);
+                uuid2_leaf_columns.insert(idx);
             }
         }
     }
@@ -410,7 +427,10 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     PageDecoderInfo decoder;
     try
     {
-        processPrimitiveColumn(*node.element, primitive_type_hint, decoder, decoded_type, inferred_type, geo_metadata);
+        /// processSubtreePrimitive already advanced primitive_column_idx past this leaf.
+        processPrimitiveColumn(
+            *node.element, primitive_type_hint, decoder, decoded_type, inferred_type, geo_metadata,
+            /*uuid2_preferred=*/ uuid2_leaf_columns.contains(primitive_column_idx - 1));
     }
     catch (Exception & e)
     {
@@ -888,7 +908,8 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
 void SchemaConverter::processPrimitiveColumn(
     const parq::SchemaElement & element, DataTypePtr type_hint,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-    DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const
+    DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata,
+    bool uuid2_preferred) const
 {
     /// Inputs:
     ///  * Parquet Type ("physical type"),
@@ -1443,9 +1464,26 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
-        out_inferred_type = std::make_shared<DataTypeUUID>();
+        /// The converter must match the output type: `UUID` and `UUID2` layouts order differently,
+        /// so decoding min/max stats in the wrong layout would break filter pushdown.
+        /// Without a hint (schema inference), the file-level discriminator restores the exact type the
+        /// column was written from; an explicit hint always wins.
+        if (type_hint && WhichDataType(type_hint->getTypeId()).isUUID2())
+        {
+            out_inferred_type = type_hint;
+            out_decoder.fixed_size_converter = std::make_shared<UUID2Converter>();
+        }
+        else if (!type_hint && uuid2_preferred)
+        {
+            out_inferred_type = std::make_shared<DataTypeUUID2>();
+            out_decoder.fixed_size_converter = std::make_shared<UUID2Converter>();
+        }
+        else
+        {
+            out_inferred_type = std::make_shared<DataTypeUUID>();
+            out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+        }
         out_decoder.allow_stats = true; // UUIDs support min/max stats
-        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
         return;
     }
     else if (logical.__isset.FLOAT16)
@@ -1545,11 +1583,16 @@ void SchemaConverter::processPrimitiveColumn(
             {
                 WhichDataType which(type_hint->getTypeId());
 
-                /// Handle explicit UUID type hint (e.g. SELECT x::UUID)
-                if (which.isUUID() && element.type_length == 16)
+                /// Handle explicit UUID/UUID2 type hint (e.g. SELECT x::UUID).
+                /// The converter must match the output type: the two layouts order differently,
+                /// so decoding min/max stats in the wrong layout would break filter pushdown.
+                if ((which.isUUID() || which.isUUID2()) && element.type_length == 16)
                 {
                     out_inferred_type = type_hint;
-                    out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                    if (which.isUUID2())
+                        out_decoder.fixed_size_converter = std::make_shared<UUID2Converter>();
+                    else
+                        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
                     out_decoder.allow_stats = true;
                     return;
                 }
@@ -1564,11 +1607,20 @@ void SchemaConverter::processPrimitiveColumn(
             }
 
             /// Automatic Inference: If no hint is provided, but the Parquet
-            /// file metadata explicitly flags this column as a UUID.
+            /// file metadata explicitly flags this column as a UUID. The file-level discriminator
+            /// restores the exact ClickHouse type (`UUID` or the correctly-sorting `UUID2`).
             if (logical.__isset.UUID && element.type_length == 16)
             {
-                out_inferred_type = std::make_shared<DataTypeUUID>();
-                out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                if (uuid2_preferred)
+                {
+                    out_inferred_type = std::make_shared<DataTypeUUID2>();
+                    out_decoder.fixed_size_converter = std::make_shared<UUID2Converter>();
+                }
+                else
+                {
+                    out_inferred_type = std::make_shared<DataTypeUUID>();
+                    out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                }
                 out_decoder.allow_stats = true;
                 return;
             }

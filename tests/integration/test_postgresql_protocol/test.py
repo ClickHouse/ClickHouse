@@ -543,12 +543,14 @@ def test_python_client(started_cluster):
     cur.execute("CREATE DATABASE x")
     cur.execute("USE x")
     cur.execute(
-        "CREATE TEMPORARY TABLE tmp2 (ch Int8, i64 Int64, f64 Float64, str String, date Date, dec Decimal(19, 10), uuid UUID) ENGINE = Memory"
+        "CREATE TEMPORARY TABLE tmp2 (ch Int8, i64 Int64, f64 Float64, str String, date Date, dec Decimal(19, 10), uuid UUID, uuid2 UUID2) ENGINE = Memory"
     )
     cur.execute(
-        "insert into tmp2 (ch, i64, f64, str, date, dec, uuid) values (44, 534324234, 0.32423423, 'hello', '2019-01-23', 0.333333, '61f0c404-5cb3-11e7-907b-a6006ad3dba0')"
+        "insert into tmp2 (ch, i64, f64, str, date, dec, uuid, uuid2) values (44, 534324234, 0.32423423, 'hello', '2019-01-23', 0.333333, '61f0c404-5cb3-11e7-907b-a6006ad3dba0', '61f0c404-5cb3-11e7-907b-a6006ad3dba0')"
     )
     cur.execute("select * from tmp2")
+    # `UUID2` must be advertised to the client as the `uuid` type just like `UUID`, so psycopg2 decodes it as a
+    # `uuid.UUID` object rather than a plain string.
     assert cur.fetchall()[0] == (
         "44",
         534324234,
@@ -556,6 +558,7 @@ def test_python_client(started_cluster):
         "hello",
         datetime.date(2019, 1, 23),
         decimal.Decimal("0.3333330000"),
+        uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
         uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
     )
     cur.execute("DROP DATABASE x")

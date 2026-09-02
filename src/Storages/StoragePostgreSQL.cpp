@@ -454,7 +454,7 @@ public:
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
         else if (which.isDate32())                       nested_column = ColumnInt32::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
-        else if (which.isUUID())                         nested_column = ColumnUUID::create();
+        else if (which.isUUID() || which.isUUID2())      nested_column = ColumnUUID::create();
         else if (which.isDateTime64())
         {
             nested_column = ColumnDecimal<DateTime64>::create(0, 6);
