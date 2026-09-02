@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <condition_variable>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -76,38 +77,156 @@ struct AggregatingTransformParams
 
 struct ManyAggregatedData
 {
+    /// Throttle between input chunks, never while a producer owns a shard. The limit is a
+    /// high-water mark: producers may overshoot it by the chunks they are already processing.
+    struct DictionaryAggregationBackpressure : std::enable_shared_from_this<DictionaryAggregationBackpressure>
+    {
+        struct DictionaryRetention
+        {
+            explicit DictionaryRetention(std::shared_ptr<DictionaryAggregationBackpressure> backpressure_)
+                : backpressure(std::move(backpressure_))
+            {
+            }
+            ~DictionaryRetention();
+            DictionaryRetention(const DictionaryRetention &) = delete;
+            DictionaryRetention & operator=(const DictionaryRetention &) = delete;
+
+            std::shared_ptr<DictionaryAggregationBackpressure> backpressure;
+            Columns dictionaries;
+        };
+
+        DictionaryAggregationBackpressure();
+
+        std::shared_ptr<DictionaryRetention> retainDictionaries(const Columns & columns, const IColumn * grouping_dictionary);
+        void add(size_t bytes)
+        {
+            outstanding_bytes.fetch_add(bytes, std::memory_order_relaxed);
+        }
+        void release(size_t bytes);
+        bool wait();
+        void cancel();
+
+    private:
+        void releaseDictionaries(Columns & dictionaries);
+        struct DictionaryUsage
+        {
+            size_t references = 0;
+            size_t bytes = 0;
+        };
+        std::unordered_map<const IColumn *, DictionaryUsage> dictionary_usage;
+
+        /// Upper bound; `wait` also accounts for the query memory limit and current headroom.
+        size_t high_watermark = 256 << 20;
+        std::atomic<size_t> outstanding_bytes = 0;
+        std::atomic<size_t> num_waiters = 0;
+        std::atomic<bool> cancelled = false;
+        std::mutex mutex;
+        std::condition_variable cv;
+    };
+
+    struct DictionaryAggregationBlock
+    {
+        /// Shared by every fragment of one input chunk. Destroy columns before releasing its dictionaries.
+        std::shared_ptr<DictionaryAggregationBackpressure::DictionaryRetention> retained_dictionaries;
+        Columns columns;
+        size_t rows = 0;
+    };
+
+    struct DictionaryAggregationShard;
+
     struct DictionaryAggregationLease
     {
         AggregatedDataVariantsPtr variants;
-        std::unique_lock<std::mutex> lock;
+        DictionaryAggregationShard * shard = nullptr;
+        std::vector<DictionaryAggregationBlock> blocks;
+        size_t bytes = 0;
+
+        explicit operator bool() const { return shard != nullptr; }
+    };
+
+    struct DictionaryAggregationShard
+    {
+        AggregatedDataVariantsPtr variants;
+        /// Protects the queue and ownership flag, not aggregation itself. While `is_processing`
+        /// is set, exactly one producer owns `variants` and drains everything queued here.
+        /// The owner does not return from `consume` until the queue is empty, so the existing
+        /// producer finish barrier also guarantees that no queued blocks remain.
+        std::mutex mutex;
+        std::vector<DictionaryAggregationBlock> pending_blocks;
+        size_t pending_bytes = 0;
+        bool is_processing = false;
+    };
+
+    struct DictionaryAggregationShards
+    {
+        DictionaryAggregationShards(
+            ColumnPtr dictionary_, size_t max_shards, std::shared_ptr<std::atomic<size_t>> shard_budget_);
+        ~DictionaryAggregationShards();
+
+        ColumnPtr dictionary;
+        /// Keep the slots stable while producers own leases. New slots are initialized
+        /// before publishing a larger `num_shards`; unused slots remain null.
+        std::vector<std::unique_ptr<DictionaryAggregationShard>> shards;
+        std::atomic<size_t> num_shards = 1;
+        /// Number of producers retaining this as their current dictionary. Protected by
+        /// `dictionary_shards_mutex`; an owner keeps its registration until it drains all leases.
+        size_t num_users = 0;
+
+        /// Retain the reservation during retirement, until the tables have been destroyed.
+        const std::shared_ptr<std::atomic<size_t>> shard_budget;
     };
 
     ManyAggregatedDataVariants variants;
+    /// One lazy value-keyed table per producer for results from retired dictionaries.
+    /// Keep it separate from the initial local index table so that table can still pre-merge
+    /// by index if its dictionary reappears at the end of the input.
+    ManyAggregatedDataVariants dictionary_aggregation_results;
     std::atomic<UInt32> num_finished = 0;
 
     /// The number of producers that have to reach the finish barrier in
     /// `AggregatingTransform::initGenerate`, fixed at construction time.
-    /// `variants.size()` cannot be used instead: producers can append shared single-dictionary
-    /// shards while consuming, and the last finisher can append the adaptive aggregation's early-drain
-    /// routing table. Reading the size of a vector that is concurrently grown is a data race.
+    /// `variants.size()` cannot be used instead: the last finisher appends dictionary tables
+    /// and the adaptive aggregation's early-drain routing table.
     const size_t num_producers;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see
     /// `AdaptiveAggregationSession`); shared by all the participating transforms.
     AdaptiveAggregationSessionPtr adaptive_session;
 
+    const std::shared_ptr<DictionaryAggregationBackpressure> dictionary_backpressure
+        = std::make_shared<DictionaryAggregationBackpressure>();
+
     explicit ManyAggregatedData(size_t num_threads = 0)
         : variants(num_threads)
+        , dictionary_aggregation_results(num_threads)
         , num_producers(num_threads)
-        , num_dictionary_shards(std::bit_floor(std::max<size_t>(1, std::min(max_dictionary_shards, num_threads))))
+        , max_shards_per_dictionary(std::bit_floor(std::max<size_t>(1, std::min(max_dictionary_shards, num_threads))))
+        , dictionary_shard_budget(std::make_shared<std::atomic<size_t>>(max_shards_per_dictionary - 1))
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
     }
 
-    DictionaryAggregationLease acquireDictionaryAggregationShard(const ColumnPtr & dictionary, size_t shard);
+    DictionaryAggregationShards & acquireDictionaryAggregationShards(const ColumnPtr & dictionary);
 
-    size_t getNumDictionaryShards() const { return num_dictionary_shards; }
+    /// Drop a producer's registration after it has drained all its leases. The last user
+    /// takes exclusive ownership and retires the dictionary outside the registry mutex.
+    std::unique_ptr<DictionaryAggregationShards> releaseDictionaryAggregationShards(DictionaryAggregationShards & shards);
+
+    /// Called only after the producer finish barrier or from the destructor.
+    void collectDictionaryAggregationVariants();
+
+    DictionaryAggregationLease enqueueDictionaryAggregationBlock(
+        DictionaryAggregationShards & shards_for_dictionary,
+        size_t shard,
+        Columns columns,
+        size_t rows,
+        size_t bytes,
+        std::shared_ptr<DictionaryAggregationBackpressure::DictionaryRetention> retained_dictionaries);
+
+    bool continueDictionaryAggregationShard(DictionaryAggregationLease & lease);
+
+    void releaseDictionaryAggregationShard(DictionaryAggregationLease & lease);
 
     /// Once shards have been created, their sizes cannot serve as per-producer size hints.
     std::atomic<bool> has_created_dictionary_shards = false;
@@ -115,23 +234,14 @@ struct ManyAggregatedData
     ~ManyAggregatedData();
 
 private:
-    struct DictionaryAggregationShard
-    {
-        AggregatedDataVariantsPtr variants = std::make_shared<AggregatedDataVariants>();
-        std::mutex mutex;
-    };
-
-    struct DictionaryAggregationShards
-    {
-        ColumnPtr dictionary;
-        std::vector<std::unique_ptr<DictionaryAggregationShard>> shards;
-    };
-
     static constexpr size_t max_dictionary_shards = 64;
-    const size_t num_dictionary_shards;
+    const size_t max_shards_per_dictionary;
+    /// Each dictionary gets one shard. At most `num_producers` dictionaries are registered
+    /// or being retired, and extra shards share this budget instead of multiplying by it.
+    const std::shared_ptr<std::atomic<size_t>> dictionary_shard_budget;
 
     std::mutex dictionary_shards_mutex;
-    std::unordered_map<const IColumn *, DictionaryAggregationShards> dictionary_shards;
+    std::unordered_map<const IColumn *, std::unique_ptr<DictionaryAggregationShards>> dictionary_shards;
 };
 
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
@@ -152,7 +262,9 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform normally uses its own AggregatedDataVariants structure.
   * A transform aggregates a single-part `LowCardinality` dictionary into its local variant until
   * its input switches dictionaries. It then retains the local variant and uses bounded shared
-  * shards, independently of which transform receives later read tasks.
+  * shards, independently of which transform receives later read tasks. Each producer registers
+  * only its current dictionary; the last user of an abandoned dictionary merges its shards into
+  * a producer-local value table and releases them. Final dictionaries join the parallel merge.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
 class AggregatingTransform final : public IProcessor
@@ -186,6 +298,8 @@ protected:
 
 private:
     size_t getGeneratingStepGroup() const;
+    bool executeDictionaryAggregationLease(ManyAggregatedData::DictionaryAggregationLease lease);
+    bool retireCurrentDictionary();
 
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
@@ -204,9 +318,14 @@ private:
     bool no_more_keys = false;
 
     ManyAggregatedDataPtr many_data;
-    /// Non-owning: the pointee stays stable when `many_data->variants` grows, and completed
-    /// transforms must not extend its lifetime after releasing `many_data`.
+    /// `onCancel` can run concurrently with the reset of `many_data` after aggregation.
+    /// Keep only the wakeup state alive, not the aggregation tables.
+    const std::shared_ptr<ManyAggregatedData::DictionaryAggregationBackpressure> dictionary_backpressure;
+    /// Non-owning: completed transforms must not extend these tables' lifetimes after
+    /// releasing `many_data`.
     AggregatedDataVariants & variants;
+    AggregatedDataVariantsPtr & dictionary_aggregation_result;
+    ManyAggregatedData::DictionaryAggregationShards * current_dictionary_shards = nullptr;
     const IColumn * previous_single_dictionary = nullptr;
     bool dictionary_sharding_enabled = false;
     size_t dictionary_shard_offset = 0;

@@ -1044,9 +1044,11 @@ bool Aggregator::hasSparseArguments(const AggregateFunctionInstruction * aggrega
 ColumnPtr Aggregator::getSingleLowCardinalityDictionaryForBlock(
     const Columns & columns, size_t num_shards, IColumn::Selector & selector) const
 {
+    /// Keep Top-K queries producer-local: merging retired shard candidates does not prune them.
     if (!can_reorder_dictionary_aggregation
         || params.keys_size != 1
         || params.max_rows_to_group_by != 0
+        || params.top_k
         || params.overflow_row
         || !canUseSingleLowCardinalityDictionary(method_chosen))
         return {};
@@ -1061,6 +1063,20 @@ ColumnPtr Aggregator::getSingleLowCardinalityDictionaryForBlock(
     if (!low_cardinality_column || !low_cardinality_column->hasSingleDictionaryForPart())
         return {};
 
+    /// `ColumnAggregateFunction::index` retains source states and arenas that `byteSize` does not count.
+    /// Keep these inputs producer-local instead of queuing them under the dictionary-shard byte budget.
+    /// Inspect actual subcolumns as well: `Dynamic` can hide aggregate states from the input header.
+    for (const auto & column : columns)
+    {
+        bool has_aggregate_states = column->getDataType() == TypeIndex::AggregateFunction;
+        column->forEachSubcolumnRecursively([&](const IColumn & subcolumn)
+        {
+            has_aggregate_states |= subcolumn.getDataType() == TypeIndex::AggregateFunction;
+        });
+        if (has_aggregate_states)
+            return {};
+    }
+
     if (!std::has_single_bit(num_shards))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The number of dictionary aggregation shards must be a power of two");
 
@@ -1072,8 +1088,9 @@ ColumnPtr Aggregator::getSingleLowCardinalityDictionaryForBlock(
     const auto & indexes = low_cardinality_column->getIndexes();
     const char * positions = indexes.getRawData().data();
     const size_t shard_mask = num_shards - 1;
-    /// Use the same high hash bits as the two-level aggregation buckets. After a shard is
-    /// converted to two-level, its keys therefore occupy one contiguous range of buckets.
+    /// Use the same high hash bits as the two-level aggregation buckets, so each shard
+    /// receives a contiguous range of buckets. Growing the shard count may leave older
+    /// states outside that range; the dictionary pre-merge still combines their equal keys.
     const size_t shard_shift = 32 - std::countr_zero(num_shards);
     const bool is_constant = key_column->size() == 1 && rows != 1;
 

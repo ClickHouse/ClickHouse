@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <bit>
 #include <limits>
 #include <map>
@@ -18,10 +19,16 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/SourceFromChunks.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_register.h>
+#include <base/unaligned.h>
 
 using namespace DB;
 
@@ -562,6 +569,91 @@ TEST_F(AggregatorParallelPartitionMerge, LowCardinalityNormalizationPreservesFlo
                 check.template operator()<Float32, UInt32>(nullable, two_level, batch_size);
                 check.template operator()<Float64, UInt64>(nullable, two_level, batch_size);
             }
+}
+
+TEST_F(AggregatorParallelPartitionMerge, LowCardinalityRetirementPreservesFloatEncodings)
+{
+    auto check = []<typename Float, typename Bits>(bool nullable, bool two_level)
+    {
+        DataTypePtr dictionary_type = std::make_shared<DataTypeNumber<Float>>();
+        if (nullable)
+            dictionary_type = std::make_shared<DataTypeNullable>(dictionary_type);
+        const DataTypePtr lc_type = std::make_shared<DataTypeLowCardinality>(dictionary_type);
+        SCOPED_TRACE(::testing::Message() << lc_type->getName() << ", two_level=" << two_level);
+
+        auto header = std::make_shared<const Block>(makeHeader(lc_type));
+        auto params = makeParams({"k"}, {makeAggregate("sum", {"v"}, {uint64_type}), makeAggregate("uniqExact", {"v"}, {uint64_type})});
+        params.group_by_two_level_threshold = two_level ? 1 : 0;
+        params.max_block_size = 2;
+        auto transform_params = std::make_shared<AggregatingTransformParams>(header, params, /*final=*/true);
+        auto many_data = std::make_shared<ManyAggregatedData>(1);
+
+        using Key = std::pair<bool, Bits>;
+        using Result = std::map<Key, std::pair<UInt64, UInt64>>;
+        Result expected;
+        Chunks input;
+        /// The first dictionary stays producer-local; the next two retire on dictionary switches.
+        /// Build raw dictionaries because ordinary insertion canonicalizes the legacy `NaN` payloads.
+        for (size_t part = 0; part < 4; ++part)
+        {
+            const Bits nan = std::bit_cast<Bits>(std::numeric_limits<Float>::quiet_NaN());
+            std::vector<Float> values{Float{0}, -Float{0}, std::bit_cast<Float>(Bits(nan | 1)), std::bit_cast<Float>(Bits(nan | 2)), Float{1}};
+            if (nullable)
+                values.insert(values.begin(), Float{0});
+            if (part % 2)
+                std::reverse(values.begin() + (nullable ? 2 : 1), values.end());
+
+            auto keys = ColumnVector<Float>::create();
+            keys->getData().assign(values.begin(), values.end());
+            /// Include an unused entry so the output chunk does not cover the whole dictionary.
+            keys->getData().push_back(Float{42});
+            MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys));
+            auto indexes = ColumnUInt8::create();
+            auto arguments = ColumnUInt64::create();
+            for (size_t i = 0; i < values.size(); ++i)
+            {
+                for (size_t repeat = 0; repeat < 2; ++repeat)
+                {
+                    indexes->getData().push_back(static_cast<UInt8>(i));
+                    const UInt64 value = 100 * part + 2 * i + repeat;
+                    arguments->getData().push_back(value);
+                    auto & [sum, distinct] = expected[{nullable && i == 0, std::bit_cast<Bits>(values[i])}];
+                    sum += value;
+                    ++distinct;
+                }
+            }
+            auto key_column = ColumnLowCardinality::create(
+                std::move(dictionary), std::move(indexes), /*is_shared=*/true, /*has_single_dictionary_for_part=*/true);
+            input.emplace_back(Columns{std::move(key_column), std::move(arguments)}, 2 * values.size());
+        }
+
+        Pipe pipe(std::make_shared<SourceFromChunks>(header, std::move(input)));
+        pipe.addTransform(std::make_shared<AggregatingTransform>(
+            header, transform_params, many_data, /*current_variant=*/0, /*max_threads=*/1, /*temporary_data_merge_threads=*/1));
+        QueryPipeline pipeline(std::move(pipe));
+        PullingPipelineExecutor executor(pipeline);
+        Result actual;
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            const auto & columns = chunk.getColumns();
+            for (size_t row = 0; row < chunk.getNumRows(); ++row)
+            {
+                const bool is_null = columns[0]->isNullAt(row);
+                Key key{is_null, is_null ? Bits{0} : unalignedLoad<Bits>(columns[0]->getDataAt(row).data())};
+                EXPECT_TRUE(actual.emplace(key, std::pair{columns[1]->getUInt(row), columns[2]->getUInt(row)}).second);
+            }
+        }
+        EXPECT_TRUE(many_data->has_created_dictionary_shards.load());
+        EXPECT_EQ(actual, expected);
+    };
+
+    for (bool nullable : {false, true})
+        for (bool two_level : {false, true})
+        {
+            check.template operator()<Float32, UInt32>(nullable, two_level);
+            check.template operator()<Float64, UInt64>(nullable, two_level);
+        }
 }
 
 /// Heavy per-key states (`uniqExact`): first-seen keys adopt the state pointer, split keys go

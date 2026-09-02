@@ -1,0 +1,31 @@
+decoded_control
+\N	3	150	2	[30,40,80]	['alpha','alpha','beta']
+other	3	150	2	[20,60,70]	['alpha','alpha','beta']
+shared	6	480	3	[10,50,90,100,110,120]	['alpha','alpha','alpha','beta','beta','gamma']
+single_level
+\N	3	150	2	[30,40,80]	['alpha','alpha','beta']
+other	3	150	2	[20,60,70]	['alpha','alpha','beta']
+shared	6	480	3	[10,50,90,100,110,120]	['alpha','alpha','alpha','beta','beta','gamma']
+two_level
+\N	3	150	2	[30,40,80]	['alpha','alpha','beta']
+other	3	150	2	[20,60,70]	['alpha','alpha','beta']
+shared	6	480	3	[10,50,90,100,110,120]	['alpha','alpha','alpha','beta','beta','gamma']
+retired_result_spill
+\N	3	150	2	[30,40,80]	['alpha','alpha','beta']
+other	3	150	2	[20,60,70]	['alpha','alpha','beta']
+shared	6	480	3	[10,50,90,100,110,120]	['alpha','alpha','alpha','beta','beta','gamma']
+inline_count
+\N	3
+other	3
+shared	6
+keys_only
+\N
+other
+shared
+query paths: name, all parts selected, dictionary switches, two-level, spilled
+decoded_control	1	0	1	0
+inline_count	1	11	1	0
+keys_only	1	11	1	0
+retired_result_spill	1	11	1	1
+single_level	1	11	0	0
+two_level	1	11	1	0
