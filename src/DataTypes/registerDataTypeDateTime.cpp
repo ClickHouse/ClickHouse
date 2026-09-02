@@ -431,6 +431,31 @@ FROM dt64;
 └─────────────────────────┴─────────────────────────┘
 ```
 
+5. Parsing MongoDB's `ISODate(...)` syntax from JSON
+
+When inserting into a column that is declared as `DateTime64` from `JSONEachRow` (or another JSON-based format), ClickHouse also accepts the MongoDB shell's `ISODate("...")` and `new ISODate("...")` datetime constructor syntax, in addition to a plain string or a number.
+This covers JSON that was copied from, or produced in, the MongoDB shell's display syntax, so it can be inserted without preprocessing.
+
+```sql
+CREATE TABLE dt64_mongo (ts DateTime64(3, 'UTC')) ENGINE = Memory;
+
+INSERT INTO dt64_mongo FORMAT JSONEachRow {"ts": ISODate("2024-05-29T23:16:12.256Z")};
+INSERT INTO dt64_mongo FORMAT JSONEachRow {"ts": new ISODate("2024-05-29T23:16:12.256Z")};
+
+SELECT * FROM dt64_mongo;
+```
+
+```text
+┌──────────────────────ts─┐
+│ 2024-05-29 23:16:12.256 │
+│ 2024-05-29 23:16:12.256 │
+└─────────────────────────┘
+```
+
+The wrapper is understood only where the target type is already known to be `DateTime64`: a declared column, or a `DateTime64` variant of a `Variant`/`Nullable` type. It is deliberately not part of JSON schema inference, so a `DateTime64` type is never inferred from it, and it is not accepted by an auto-inferred schema, by the `Dynamic` and `JSON` data types, or by the `JSONExtract` functions, which return the default value for it. Feed those the datetime as a JSON string instead.
+
+This is also not the output format of the official MongoDB export tools: `mongodump` writes BSON, which is read by the [`BSONEachRow`](/interfaces/formats/BSONEachRow) format, and `mongoexport` writes Extended JSON, where a datetime is an object such as `{"$date": "..."}`, which is not accepted here.
+
 **See Also**
 
 - [Type conversion functions](/reference/functions/regular-functions/type-conversion-functions)
