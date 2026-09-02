@@ -17,6 +17,26 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
 }
 
+String HTTPUserDirectoryResponseParser::readBoundedBody(std::istream * body_stream)
+{
+    /// Bounded read: a compromised or broken helper must not force unbounded allocations.
+    static constexpr size_t max_response_body_size = 1 * 1024 * 1024;
+    String body;
+    if (!body_stream)
+        return body;
+
+    char buffer[8192];
+    while (body_stream->good())
+    {
+        body_stream->read(buffer, sizeof(buffer));
+        body.append(buffer, static_cast<size_t>(body_stream->gcount()));
+        if (body.size() > max_response_body_size)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "HTTP authentication server response body exceeds {} bytes", max_response_body_size);
+    }
+    return body;
+}
+
 HTTPUserDirectoryResponseParser::Result
 HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response, std::istream * body_stream) const
 {
@@ -24,6 +44,10 @@ HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response,
 
     if (status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
     {
+        /// A 404 is the routine "not my user" answer, so it is worth keeping the connection
+        /// reusable: the connection pool only keeps a connection whose response body was read
+        /// to the end. The body itself carries no information for us.
+        readBoundedBody(body_stream);
         Result result;
         result.status = Result::Status::UserNotFound;
         return result;
@@ -36,21 +60,7 @@ HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response,
     Result result;
     result.status = Result::Status::Ok;
 
-    /// Bounded read: a compromised or broken helper must not force unbounded allocations.
-    static constexpr size_t max_response_body_size = 1 * 1024 * 1024;
-    String body;
-    if (body_stream)
-    {
-        char buffer[8192];
-        while (body_stream->good())
-        {
-            body_stream->read(buffer, sizeof(buffer));
-            body.append(buffer, static_cast<size_t>(body_stream->gcount()));
-            if (body.size() > max_response_body_size)
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "HTTP authentication server response body exceeds {} bytes", max_response_body_size);
-        }
-    }
+    String body = readBoundedBody(body_stream);
 
     /// An empty or whitespace-only body is equivalent to an empty JSON object.
     if (Poco::trim(body).empty())

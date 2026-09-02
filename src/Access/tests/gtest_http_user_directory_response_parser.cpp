@@ -82,6 +82,22 @@ TEST(HTTPUserDirectoryResponseParser, NotFoundStatus)
     EXPECT_EQ(result.status, HTTPUserDirectoryResponseParser::Result::Status::UserNotFound);
 }
 
+TEST(HTTPUserDirectoryResponseParser, NotFoundBodyIsDrained)
+{
+    /// A 404 body is consumed to the end so the pooled connection stays reusable.
+    Poco::Net::HTTPResponse response;
+    response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+    std::istringstream body_stream(R"({"error": "no such user"})");
+    auto result = HTTPUserDirectoryResponseParser{}.parse(response, &body_stream);
+    EXPECT_EQ(result.status, HTTPUserDirectoryResponseParser::Result::Status::UserNotFound);
+    EXPECT_TRUE(body_stream.eof());
+}
+
+TEST(HTTPUserDirectoryResponseParser, OversizedNotFoundBodyThrows)
+{
+    EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_NOT_FOUND, std::string(2 * 1024 * 1024, 'x')), Exception);
+}
+
 TEST(HTTPUserDirectoryResponseParser, RejectedAndErrorStatusesThrow)
 {
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, ""), Exception);

@@ -41,6 +41,10 @@ public:
     };
 
     Result parse(const Poco::Net::HTTPResponse & response, std::istream * body_stream) const;
+
+private:
+    /// Reads the whole body (so the connection stays reusable), failing once it exceeds a fixed limit.
+    static String readBoundedBody(std::istream * body_stream);
 };
 
 }
