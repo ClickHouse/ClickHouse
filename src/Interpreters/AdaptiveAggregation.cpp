@@ -1,10 +1,11 @@
 #include <unordered_set>
 
+#include <Columns/ColumnsView.h>
 #include <Columns/IColumn.h>
+#include <Interpreters/AdaptiveAggregationImpl.h>
 #include <Common/Arena.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
 
 namespace ProfileEvents
 {

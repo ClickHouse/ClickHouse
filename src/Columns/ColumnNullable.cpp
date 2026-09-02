@@ -35,6 +35,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+const IColumn * getNullableNestedSourceColumn(const IColumn * source_column, const void *)
+{
+    return assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr().get();
+}
+
+}
 
 ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_)
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
@@ -803,19 +812,17 @@ size_t ColumnNullable::capacity() const
     return getNullMapData().capacity();
 }
 
-void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnNullable::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     size_t new_size = size();
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
-        new_size += source_nullable_column.size();
-        nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
-    }
+    source_columns.forEach(
+        [&](const IColumn * source_column)
+        {
+            const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
+            new_size += source_nullable_column.size();
+        });
 
-    nested_column->prepareForSquashing(nested_source_columns, factor);
+    nested_column->prepareForSquashing(source_columns.project(getNullableNestedSourceColumn), factor);
     getNullMapData().reserve(new_size * factor);
 }
 
@@ -1037,16 +1044,6 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
         start = next_none_null_index;
     }
     return res;
-}
-
-namespace
-{
-
-const IColumn * getNullableNestedSourceColumn(const IColumn * source_column, const void *)
-{
-    return assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr().get();
-}
-
 }
 
 void ColumnNullable::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)

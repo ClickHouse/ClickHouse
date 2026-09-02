@@ -1,13 +1,14 @@
 #include <utility>
 #include <vector>
-#include <Interpreters/Squashing.h>
-#include <Interpreters/InsertDeduplication.h>
-#include <Core/Block.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsView.h>
+#include <Core/Block.h>
+#include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/Squashing.h>
+#include <base/defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
 
 namespace DB
 {

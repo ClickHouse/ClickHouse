@@ -61,6 +61,28 @@ const SerializationPtr & getDynamicSerialization()
     return dynamic_serialization;
 }
 
+const IColumn * getObjectSharedDataSourceColumn(const IColumn * source_column, const void *)
+{
+    return assert_cast<const ColumnObject &>(*source_column).getSharedDataPtr().get();
+}
+
+const IColumn * getObjectTypedPathSourceColumn(const IColumn * source_column, const void * context)
+{
+    const auto & path = *static_cast<const String *>(context);
+    return assert_cast<const ColumnObject &>(*source_column).getTypedPaths().at(path).get();
+}
+
+const IColumn * getObjectDynamicPathSourceColumnIfExists(const IColumn * source_column, const void * context)
+{
+    const auto & path = *static_cast<const String *>(context);
+    const auto & dynamic_paths = assert_cast<const ColumnObject &>(*source_column).getDynamicPaths();
+    auto it = dynamic_paths.find(path);
+    if (it == dynamic_paths.end())
+        return nullptr;
+
+    return it->second.get();
+}
+
 struct ColumnObjectCheckpoint : public ColumnCheckpoint
 {
     using CheckpointsMap = UnorderedMapWithMemoryTracking<std::string_view, ColumnCheckpointPtr>;
@@ -1528,8 +1550,8 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
 VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_columns, const Selector & selector) const
 {
     VectorWithMemoryTracking<UnorderedMapWithMemoryTracking<String, MutableColumnPtr>> scattered_typed_paths(num_columns);
-    for (auto & typed_paths_ : scattered_typed_paths)
-        typed_paths_.reserve(typed_paths.size());
+    for (auto & scattered_paths : scattered_typed_paths)
+        scattered_paths.reserve(typed_paths.size());
 
     for (const auto & [path, column] : typed_paths)
     {
@@ -1539,8 +1561,8 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_colu
     }
 
     VectorWithMemoryTracking<UnorderedMapWithMemoryTracking<String, MutableColumnPtr>> scattered_dynamic_paths(num_columns);
-    for (auto & dynamic_paths_ : scattered_dynamic_paths)
-        dynamic_paths_.reserve(dynamic_paths_ptrs.size());
+    for (auto & scattered_paths : scattered_dynamic_paths)
+        scattered_paths.reserve(dynamic_paths_ptrs.size());
 
     for (const auto & [path, column] : dynamic_paths_ptrs)
     {
@@ -1848,7 +1870,7 @@ void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t en
     get(max_idx, max);
 }
 
-void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnObject::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1870,8 +1892,7 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         }
     };
 
-    for (const auto & source_column : source_columns)
-        add_dynamic_paths(assert_cast<const ColumnObject &>(*source_column));
+    source_columns.forEach([&](const IColumn * source_column) { add_dynamic_paths(assert_cast<const ColumnObject &>(*source_column)); });
 
     /// Add dynamic paths from this object column.
     add_dynamic_paths(*this);
@@ -1925,50 +1946,23 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     /// Now current object column has all resulting dynamic paths and we can call
     /// prepareForSquashing on them to preallocate the memory.
     /// Also we can preallocate memory for dynamic paths and shared data.
-    VectorWithMemoryTracking<ColumnPtr> shared_data_source_columns;
-    shared_data_source_columns.reserve(source_columns.size());
-    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<ColumnPtr>> typed_paths_source_columns;
-    typed_paths_source_columns.reserve(typed_paths.size());
-    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<ColumnPtr>> dynamic_paths_source_columns;
-    dynamic_paths_source_columns.reserve(dynamic_paths.size());
+    size_t total_size = size();
+    source_columns.forEach([&](const IColumn * source_column) { total_size += source_column->size(); });
 
-    for (const auto & [path, column] : typed_paths)
-        typed_paths_source_columns[path].reserve(source_columns.size());
+    shared_data->prepareForSquashing(source_columns.project(getObjectSharedDataSourceColumn), factor);
 
-    for (const auto & [path, column] : dynamic_paths)
-        dynamic_paths_source_columns[path].reserve(source_columns.size());
+    for (auto & [path, column] : typed_paths)
+        column->prepareForSquashing(source_columns.project(getObjectTypedPathSourceColumn, &path), factor);
 
-    size_t total_size = 0;
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
-        total_size += source_object_column.size();
-        shared_data_source_columns.push_back(source_object_column.shared_data);
-
-        for (const auto & [path, column] : source_object_column.typed_paths)
-            typed_paths_source_columns.at(path).push_back(column);
-
-        for (const auto & [path, column] : source_object_column.dynamic_paths)
-        {
-            if (dynamic_paths.contains(path))
-                dynamic_paths_source_columns.at(path).push_back(column);
-        }
-    }
-
-    shared_data->prepareForSquashing(shared_data_source_columns, factor);
-
-    for (const auto & [path, source_typed_columns] : typed_paths_source_columns)
-        typed_paths[path]->prepareForSquashing(source_typed_columns, factor);
-
-    for (const auto & [path, source_dynamic_columns] : dynamic_paths_source_columns)
+    for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         /// ColumnDynamic::prepareForSquashing may not preallocate enough memory for discriminators and offsets
         /// because source columns may not have this dynamic path (and so dynamic columns filled with nulls).
         /// For this reason we first call ColumnDynamic::reserve with resulting size to preallocate memory for
         /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
         /// for all variants inside Dynamic.
-        dynamic_paths_ptrs[path]->reserve(total_size * factor);
-        dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns, factor);
+        column->reserve(total_size * factor);
+        column->prepareVariantsForSquashing(source_columns.filterProject(getObjectDynamicPathSourceColumnIfExists, &path), factor);
     }
 }
 
@@ -1995,28 +1989,6 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     }
 
     return true;
-}
-
-namespace
-{
-
-const IColumn * getObjectTypedPathSourceColumn(const IColumn * source_column, const void * context)
-{
-    const auto & path = *static_cast<const String *>(context);
-    return assert_cast<const ColumnObject &>(*source_column).getTypedPaths().at(path).get();
-}
-
-const IColumn * getObjectDynamicPathSourceColumnIfExists(const IColumn * source_column, const void * context)
-{
-    const auto & path = *static_cast<const String *>(context);
-    const auto & dynamic_paths = assert_cast<const ColumnObject &>(*source_column).getDynamicPaths();
-    auto it = dynamic_paths.find(path);
-    if (it == dynamic_paths.end())
-        return nullptr;
-
-    return it->second.get();
-}
-
 }
 
 void ColumnObject::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)

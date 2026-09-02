@@ -31,6 +31,18 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+namespace
+{
+
+const IColumn * getVariantSourceColumnByGlobalDiscriminator(const IColumn * source_column, const void * context)
+{
+    return assert_cast<const ColumnVariant &>(*source_column)
+        .getVariantPtrByGlobalDiscriminator(*static_cast<const size_t *>(context))
+        .get();
+}
+
+}
+
 static void checkDiscriminatorValue(ColumnVariant::Discriminator discr, size_t num_variants, bool allow_logical_error)
 {
     if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= num_variants)
@@ -1526,20 +1538,16 @@ void ColumnVariant::reserve(size_t n)
     getOffsets().reserve_exact(n);
 }
 
-void ColumnVariant::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnVariant::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     size_t new_size = size();
-    for (const auto & source_column : source_columns)
-        new_size += source_column->size();
+    source_columns.forEach([&](const IColumn * source_column) { new_size += source_column->size(); });
     reserve(new_size * factor);
 
     for (size_t i = 0; i != variants.size(); ++i)
     {
-        VectorWithMemoryTracking<ColumnPtr> source_variant_columns;
-        source_variant_columns.reserve(source_columns.size());
-        for (const auto & source_column : source_columns)
-            source_variant_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
-        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
+        getVariantByGlobalDiscriminator(i).prepareForSquashing(
+            source_columns.project(getVariantSourceColumnByGlobalDiscriminator, &i), factor);
     }
 }
 
@@ -1946,26 +1954,13 @@ bool ColumnVariant::hasDynamicStructure() const
     return false;
 }
 
-namespace
-{
-
-const IColumn * getVariantSourceColumnByGlobalDiscriminator(const IColumn * source_column, const void * context)
-{
-    return assert_cast<const ColumnVariant &>(*source_column)
-        .getVariantPtrByGlobalDiscriminator(*static_cast<const size_t *>(context))
-        .get();
-}
-
-}
-
 void ColumnVariant::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     size_t num_variants = variants.size();
     for (size_t i = 0; i != num_variants; ++i)
     {
-        const size_t discriminator = i;
         getVariantByGlobalDiscriminator(i).chooseDynamicStructureForMerge(
-            source_columns.project(getVariantSourceColumnByGlobalDiscriminator, &discriminator), max_dynamic_subcolumns);
+            source_columns.project(getVariantSourceColumnByGlobalDiscriminator, &i), max_dynamic_subcolumns);
     }
 }
 
@@ -2032,9 +2027,8 @@ void ColumnVariant::takeOrCalculateStatisticsFrom(const ColumnsView & source_col
     /// so the destination variant must be too (local order may differ from global order).
     for (size_t i = 0; i != variants.size(); ++i)
     {
-        const size_t discriminator = i;
         getVariantByGlobalDiscriminator(i).takeOrCalculateStatisticsFrom(
-            source_columns.project(getVariantSourceColumnByGlobalDiscriminator, &discriminator));
+            source_columns.project(getVariantSourceColumnByGlobalDiscriminator, &i));
     }
 }
 

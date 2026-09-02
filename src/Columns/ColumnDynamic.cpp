@@ -66,6 +66,18 @@ const FormatSettings & getFormatSettings()
     return settings;
 }
 
+const IColumn * getDynamicVariantSourceColumnIfExists(const IColumn * source_column, const void * context)
+{
+    const auto & variant_name = *static_cast<const String *>(context);
+    const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
+    const auto & source_variant_info = source_dynamic_column.getVariantInfo();
+    auto it = source_variant_info.variant_name_to_discriminator.find(variant_name);
+    if (it == source_variant_info.variant_name_to_discriminator.end())
+        return nullptr;
+
+    return source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second).get();
+}
+
 }
 
 /// Shared variant will contain String values but we cannot use usual String type
@@ -1413,7 +1425,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     }
 }
 
-void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnDynamic::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1426,8 +1438,7 @@ void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr
 
     /// First, preallocate memory for variant discriminators and offsets.
     size_t new_size = size();
-    for (const auto & source_column : source_columns)
-        new_size += source_column->size();
+    source_columns.forEach([&](const IColumn * source_column) { new_size += source_column->size(); });
     auto & variant_col = getVariantColumn();
     variant_col.getLocalDiscriminators().reserve_exact(new_size * factor);
     variant_col.getOffsets().reserve_exact(new_size * factor);
@@ -1436,7 +1447,7 @@ void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr
     prepareVariantsForSquashing(source_columns, factor);
 }
 
-void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnDynamic::prepareVariantsForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
@@ -1468,8 +1479,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
         }
     };
 
-    for (const auto & source_column : source_columns)
-        add_variants(assert_cast<const ColumnDynamic &>(*source_column));
+    source_columns.forEach([&](const IColumn * source_column) { add_variants(assert_cast<const ColumnDynamic &>(*source_column)); });
 
     /// Add variants from this dynamic column.
     add_variants(*this);
@@ -1524,19 +1534,9 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
-        VectorWithMemoryTracking<ColumnPtr> source_variant_columns;
-        source_variant_columns.reserve(source_columns.size());
-        for (const auto & source_column : source_columns)
-        {
-            const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
-            const auto & source_variant_info = source_dynamic_column.getVariantInfo();
-            /// Try to find this variant in the current source column.
-            auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
-            if (it != source_variant_info.variant_name_to_discriminator.end())
-                source_variant_columns.push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
-        }
-
-        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
+        const auto & variant_name = variant_info.variant_names[i];
+        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(
+            source_columns.filterProject(getDynamicVariantSourceColumnIfExists, &variant_name), factor);
     }
 }
 
@@ -1547,23 +1547,6 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
             && variant_info.variant_name == rhs_concrete->variant_info.variant_name
             && variant_column->dynamicStructureEquals(*rhs_concrete->variant_column);
     return false;
-}
-
-namespace
-{
-
-const IColumn * getDynamicVariantSourceColumnIfExists(const IColumn * source_column, const void * context)
-{
-    const auto & variant_name = *static_cast<const String *>(context);
-    const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
-    const auto & source_variant_info = source_dynamic_column.getVariantInfo();
-    auto it = source_variant_info.variant_name_to_discriminator.find(variant_name);
-    if (it == source_variant_info.variant_name_to_discriminator.end())
-        return nullptr;
-
-    return source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second).get();
-}
-
 }
 
 void ColumnDynamic::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)

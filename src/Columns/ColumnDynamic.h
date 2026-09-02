@@ -298,9 +298,9 @@ public:
         return variant_column_ptr->capacity();
     }
 
-    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
+    void prepareForSquashing(const ColumnsView & source_columns, size_t factor) override;
     /// Prepare only variants but not discriminators and offsets.
-    void prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor);
+    void prepareVariantsForSquashing(const ColumnsView & source_columns, size_t factor);
 
     void shrinkToFit() override
     {

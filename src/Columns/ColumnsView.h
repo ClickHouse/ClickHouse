@@ -27,6 +27,8 @@ class ColumnsView
     Overloaded(Visitors...) -> Overloaded<Visitors...>;
 
 public:
+    /// Mappers are evaluated lazily and can run multiple times while traversing nested views.
+    /// They must be cheap and pure, and must not return pointers to temporary objects.
     using Mapper = const IColumn * (*)(const IColumn *, const void *);
 
     ColumnsView(const Columns & columns_) // NOLINT(google-explicit-constructor)
@@ -232,10 +234,10 @@ private:
         const IColumn * column = nullptr;
     };
 
-    template <bool filtered_>
+    template <bool is_filtered>
     struct ProjectedRange
     {
-        static constexpr bool filtered = filtered_;
+        static constexpr bool filtered = is_filtered;
 
         const ColumnsView * base;
         Mapper mapper;
@@ -244,8 +246,8 @@ private:
 
     using Storage = std::variant<RawPtrRange, ColumnPtrRange, SingleRawPtr, ProjectedRange<false>, ProjectedRange<true>>;
 
-    template <bool filtered>
-    explicit ColumnsView(ProjectedRange<filtered> projected_)
+    template <bool is_filtered>
+    explicit ColumnsView(ProjectedRange<is_filtered> projected_)
         : storage(projected_)
     {
     }

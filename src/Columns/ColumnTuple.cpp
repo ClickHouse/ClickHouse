@@ -29,6 +29,15 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
+namespace
+{
+
+const IColumn * getTupleElementSourceColumn(const IColumn * source_column, const void * context)
+{
+    return assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(*static_cast<const size_t *>(context)).get();
+}
+
+}
 
 std::string ColumnTuple::getName() const
 {
@@ -816,17 +825,11 @@ size_t ColumnTuple::capacity() const
     return getColumn(0).capacity();
 }
 
-void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnTuple::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-    {
-        VectorWithMemoryTracking<ColumnPtr> nested_columns;
-        nested_columns.reserve(source_columns.size() * factor);
-        for (const auto & source_column : source_columns)
-            nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
-        getColumn(i).prepareForSquashing(nested_columns, factor);
-    }
+        getColumn(i).prepareForSquashing(source_columns.project(getTupleElementSourceColumn, &i), factor);
 }
 
 void ColumnTuple::shrinkToFit()
@@ -975,30 +978,10 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-namespace
-{
-
-const IColumn * getTupleElementSourceColumn(const IColumn * source_column, const void * context)
-{
-    if (!source_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-    const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column);
-    if (!source_tuple)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
-
-    return source_tuple->getColumnPtr(*static_cast<const size_t *>(context)).get();
-}
-
-}
-
 void ColumnTuple::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     for (size_t i = 0; i != columns.size(); ++i)
-    {
-        const size_t index = i;
-        columns[i]->chooseDynamicStructureForMerge(source_columns.project(getTupleElementSourceColumn, &index), max_dynamic_subcolumns);
-    }
+        columns[i]->chooseDynamicStructureForMerge(source_columns.project(getTupleElementSourceColumn, &i), max_dynamic_subcolumns);
 }
 
 void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
@@ -1026,8 +1009,7 @@ void ColumnTuple::takeOrCalculateStatisticsFrom(const ColumnsView & source_colum
         if (!columns[i])
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
 
-        const size_t index = i;
-        columns[i]->takeOrCalculateStatisticsFrom(source_columns.project(getTupleElementSourceColumn, &index));
+        columns[i]->takeOrCalculateStatisticsFrom(source_columns.project(getTupleElementSourceColumn, &i));
     }
 }
 

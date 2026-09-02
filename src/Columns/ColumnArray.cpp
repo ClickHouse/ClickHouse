@@ -33,6 +33,16 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+namespace
+{
+
+const IColumn * getArrayNestedSourceColumn(const IColumn * source_column, const void *)
+{
+    return assert_cast<const ColumnArray &>(*source_column).getDataPtr().get();
+}
+
+}
+
 /** Obtaining array as Field can be slow for large arrays and consume vast amount of memory.
   * Just don't allow to do it.
   * You can increase the limit if the following query:
@@ -571,20 +581,18 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnArray::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     size_t new_size = size();
-    VectorWithMemoryTracking<ColumnPtr> source_data_columns;
-    source_data_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_array_column = assert_cast<const ColumnArray &>(*source_column);
-        new_size += source_array_column.size();
-        source_data_columns.push_back(source_array_column.getDataPtr());
-    }
+    source_columns.forEach(
+        [&](const IColumn * source_column)
+        {
+            const auto & source_array_column = assert_cast<const ColumnArray &>(*source_column);
+            new_size += source_array_column.size();
+        });
 
     getOffsets().reserve_exact(new_size * factor);
-    data->prepareForSquashing(source_data_columns, factor);
+    data->prepareForSquashing(source_columns.project(getArrayNestedSourceColumn), factor);
 }
 
 void ColumnArray::shrinkToFit()
@@ -1707,23 +1715,6 @@ size_t ColumnArray::getNumberOfDimensions() const
     if (!nested_array)
         return 1;
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
-}
-
-namespace
-{
-
-const IColumn * getArrayNestedSourceColumn(const IColumn * source_column, const void *)
-{
-    if (!source_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-    const auto * array_column = typeid_cast<const ColumnArray *>(source_column);
-    if (!array_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Array, but {}", source_column->getName());
-
-    return array_column->getDataPtr().get();
-}
-
 }
 
 void ColumnArray::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)

@@ -20,6 +20,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+const IColumn * getMapNestedSourceColumn(const IColumn * source_column, const void *)
+{
+    return assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr().get();
+}
+
+}
+
 ColumnMap::Ptr ColumnMap::create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets, const StatisticsPtr & statistics_)
 {
     auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
@@ -310,13 +320,9 @@ size_t ColumnMap::capacity() const
     return nested->capacity();
 }
 
-void ColumnMap::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnMap::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->prepareForSquashing(nested_source_columns, factor);
+    nested->prepareForSquashing(source_columns.project(getMapNestedSourceColumn), factor);
 }
 
 void ColumnMap::shrinkToFit()
@@ -458,23 +464,6 @@ void ColumnMap::Statistics::merge(const Statistics & other)
 
     avg = avg + (other.avg - avg) * static_cast<Float64>(other.count) / static_cast<Float64>(count + other.count);
     count += other.count;
-}
-
-namespace
-{
-
-const IColumn * getMapNestedSourceColumn(const IColumn * source_column, const void *)
-{
-    if (!source_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-    const auto * source_map = typeid_cast<const ColumnMap *>(source_column);
-    if (!source_map)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Map, but {}", source_column->getName());
-
-    return source_map->getNestedColumnPtr().get();
-}
-
 }
 
 void ColumnMap::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)

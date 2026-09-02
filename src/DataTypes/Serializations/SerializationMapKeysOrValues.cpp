@@ -1,8 +1,9 @@
-#include <DataTypes/Serializations/SerializationMapKeysOrValues.h>
-#include <DataTypes/Serializations/SerializationMap.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsView.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationMapKeysOrValues.h>
 #include <Common/SipHash.h>
 
 namespace DB
