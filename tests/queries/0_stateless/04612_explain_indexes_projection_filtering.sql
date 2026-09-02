@@ -1,5 +1,9 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN indexes output is missing on the initiator under parallel replicas.
 -- EXPLAIN indexes = 1 should surface projection filtering (index-only _part_offset
 -- projections), otherwise a pruned read looks like a full granule scan (#110947).
+-- Do not assert absolute granule totals: part format and adaptive index_granularity_bytes
+-- change them under MergeTreeSettingsRandomizer.
 
 SET enable_analyzer = 1;
 SET optimize_use_projections = 1;
@@ -20,14 +24,16 @@ INSERT INTO t_explain_proj_filter SELECT number, cityHash64(number), toString(nu
 ALTER TABLE t_explain_proj_filter ADD PROJECTION p_off (SELECT _part_offset ORDER BY k);
 ALTER TABLE t_explain_proj_filter MATERIALIZE PROJECTION p_off SETTINGS mutations_sync = 2;
 
--- indexes = 1 must list the Projection entry and the reduced granule count (not only PrimaryKey 13/13).
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT v FROM t_explain_proj_filter WHERE k = cityHash64(50000))
-WHERE trimLeft(explain) LIKE 'Projection'
-   OR trimLeft(explain) LIKE 'Name:%'
-   OR trimLeft(explain) LIKE 'Description:%'
-   OR trimLeft(explain) LIKE 'Granules:%'
-   OR trimLeft(explain) LIKE 'Search Algorithm:%';
+-- Projection entry is present and pruning reduces the read to a single granule.
+SELECT
+    countIf(line = 'Projection') AS projection_entry,
+    countIf(line = 'Name: p_off') AS named,
+    countIf(match(line, '^Granules: 1/\\d+$')) AS single_granule_read
+FROM
+(
+    SELECT trimLeft(explain) AS line
+    FROM (EXPLAIN indexes = 1 SELECT v FROM t_explain_proj_filter WHERE k = cityHash64(50000))
+);
 
 -- With filtering disabled, no Projection index entry.
 SELECT count()

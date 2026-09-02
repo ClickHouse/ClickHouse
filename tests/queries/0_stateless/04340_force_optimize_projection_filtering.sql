@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN projections output is missing on the initiator under parallel replicas.
 -- Index-only (_part_offset) projections used via projection filtering must satisfy
 -- force_optimize_projection / force_optimize_projection_name (see #110946).
 
