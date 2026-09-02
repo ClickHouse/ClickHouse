@@ -1,3 +1,5 @@
+import concurrent.futures
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -419,6 +421,103 @@ def test_rollback_unfinished_on_restart2(start_cluster):
     )
 
     node.query("DROP TABLE IF EXISTS mt2 SYNC")
+
+
+FAILPOINT = "merge_tree_commit_pause_before_removing_covered_parts"
+
+
+def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
+    """
+    A non-transactional DROP PARTITION makes its empty covering part durable before it stores the
+    removal TID of the parts it covers, and the two are separate writes.  Killing the server in
+    between leaves an Outdated part whose creation was committed by a transaction but whose removal
+    was never recorded; before the fix, loading it aborted the server on every subsequent start.
+
+    Refer: https://github.com/ClickHouse/ClickHouse/issues/71136
+    """
+    node.query("DROP TABLE IF EXISTS mt4 SYNC")
+    node.query(
+        "CREATE TABLE mt4 (n int, m int) ENGINE=MergeTree ORDER BY n PARTITION BY n % 2"
+        " SETTINGS remove_empty_parts = 0, old_parts_lifetime = 3600"
+    )
+    # The failpoint is global and background merges commit through the very same function, so a merge
+    # could consume the pause while DROP PARTITION is still waiting for merges to stop.
+    node.query("SYSTEM STOP MERGES mt4")
+
+    # Each committed transaction leaves one part with a real creation_tid, a committed creation_csn
+    # and an empty removal_tid.  Partition 0 (even n) is dropped below, partition 1 is the control.
+    for k in range(1, 5):
+        tx(k, "BEGIN TRANSACTION")
+        tx(k, f"INSERT INTO mt4 VALUES({k},{k})")
+        tx(k, "COMMIT")
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
+    # A mistyped name would otherwise only surface as BAD_ARGUMENTS on the waiting thread below.
+    assert (
+        node.query(
+            f"SELECT count() FROM system.fail_points WHERE name = '{FAILPOINT}' AND enabled"
+        ).strip()
+        == "1"
+    ), f"failpoint {FAILPOINT} is not enabled"
+
+    # DROP PARTITION never returns: it renames the empty covering part into place and then blocks at
+    # the failpoint, holding the parts lock.  The executor must outlive the assertion, because
+    # shutdown(wait=True) would block forever on a worker parked in the wait.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    drop_future = pool.submit(node.query, "ALTER TABLE mt4 DROP PARTITION 0")
+    wait_future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {FAILPOINT} PAUSE")
+
+    done, _ = concurrent.futures.wait([wait_future], timeout=60)
+    if not done:
+        pool.shutdown(wait=False, cancel_futures=True)
+        assert False, f"failpoint {FAILPOINT} not triggered within 60 s"
+    wait_future.result()
+    assert not drop_future.done(), "DROP PARTITION returned, so the commit was not paused"
+
+    # SIGKILL: the paused thread never rolls back, so the on-disk state is exactly the window state.
+    node.restart_clickhouse(kill=True)
+    pool.shutdown(wait=False, cancel_futures=True)
+    node.query("SYSTEM WAIT LOADING PARTS mt4")
+
+    assert node.query("SELECT n FROM mt4 ORDER BY n") == "1\n3\n"
+
+    empty_tid = "(0,0,'00000000-0000-0000-0000-000000000000')"
+    non_txn_tid = "(1,1,'00000000-0000-0000-0000-000000000000')"
+
+    # The empty covering parts survived the kill and were created without a transaction: DROP PARTITION
+    # covers each dropped part with one empty part of the same block range at the next level.  They are
+    # what makes the removal below a fact, and a non-transactional marker the truthful record of it.
+    covers = node.query(
+        "SELECT name FROM system.parts"
+        " WHERE database='default' AND table='mt4' AND active=1"
+        f"   AND creation_tid = {non_txn_tid} AND creation_csn = 1"
+        " ORDER BY name"
+    ).strip()
+    assert covers == "0_2_2_1\n0_4_4_1", f"unexpected covering parts: {covers}"
+
+    # The removal is now recorded exactly as a finished commit would have recorded it.  This is what
+    # distinguishes completing the removal from silencing the error.
+    recovered = node.query(
+        "SELECT name FROM system.parts"
+        " WHERE database='default' AND table='mt4' AND active=0"
+        f"   AND removal_tid = {non_txn_tid} AND removal_csn = 1"
+        " ORDER BY name"
+    ).strip()
+    assert recovered == "0_2_2_0\n0_4_4_0", f"unexpected recovered parts: {recovered}"
+
+    # In-range control: the partition-1 parts carry the same committed-creation / unrecorded-removal
+    # payload as the victims but are not covered, so they must be untouched.  Only a part covered by an
+    # active part gets a removal marker, so this is what shows the fix is not a blanket stamp.
+    control = node.query(
+        "SELECT name FROM system.parts"
+        " WHERE database='default' AND table='mt4' AND active=1"
+        f"   AND creation_tid != {non_txn_tid} AND creation_csn > 1"
+        f"   AND removal_tid = {empty_tid} AND removal_csn = 0"
+        " ORDER BY name"
+    ).strip()
+    assert control == "1_1_1_0\n1_3_3_0", f"unexpected control parts: {control}"
+
+    node.query("DROP TABLE IF EXISTS mt4 SYNC")
 
 
 def test_mutate_transaction_involved_parts(start_cluster):
