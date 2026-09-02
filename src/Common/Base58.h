@@ -13,6 +13,11 @@ namespace DB
 /// whose cost is quadratic in the input length. For large inputs this can run for a very long
 /// time, so they accept an optional `check_cancellation` callback that is invoked periodically;
 /// it is expected to throw if the query has been cancelled or exceeded its time limit.
+///
+/// `dst` also holds the conversion's intermediate state, which can be a few bytes longer than the
+/// output, so it must have room for `2 * src_length + 1` bytes to encode and `src_length` bytes to
+/// decode - the sizes `Base58EncodeTraits::getBufferSize` / `Base58DecodeTraits::getBufferSize`
+/// already provide.
 size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {});
 std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {});
 

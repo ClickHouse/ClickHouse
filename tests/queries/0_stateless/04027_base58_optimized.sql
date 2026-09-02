@@ -96,3 +96,12 @@ SELECT count() FROM (SELECT base58Decode(base58Encode(rs)) AS dec, rs FROM (SELE
 SELECT 'bulk round-trip with size hint';
 SELECT count() FROM (SELECT base58Decode(base58Encode(rs), 32) AS dec, rs FROM (SELECT unhex(hex(randomFixedString(32))) AS rs FROM numbers(100)) WHERE dec = rs);
 SELECT count() FROM (SELECT base58Decode(base58Encode(rs), 64) AS dec, rs FROM (SELECT unhex(hex(randomFixedString(64))) AS rs FROM numbers(100)) WHERE dec = rs);
+
+SELECT 'limb storage threshold';
+SELECT base58Decode(base58Encode(repeat('a', 232))) = repeat('a', 232);
+SELECT base58Decode(base58Encode(repeat('a', 233))) = repeat('a', 233);
+SELECT base58Decode(base58Encode(repeat('a', 234))) = repeat('a', 234);
+SELECT base58Encode(base58Decode(repeat('z', 346))) = repeat('z', 346);
+SELECT base58Encode(base58Decode(repeat('z', 347))) = repeat('z', 347);
+SELECT base58Encode(base58Decode(repeat('z', 348))) = repeat('z', 348);
+SELECT base58Decode(base58Encode(concat(unhex('00000000000000000000'), repeat('a', 233)))) = concat(unhex('00000000000000000000'), repeat('a', 233));

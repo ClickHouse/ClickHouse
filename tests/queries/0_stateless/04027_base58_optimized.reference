@@ -67,3 +67,11 @@ bulk round-trip
 bulk round-trip with size hint
 100
 100
+limb storage threshold
+1
+1
+1
+1
+1
+1
+1

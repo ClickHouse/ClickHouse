@@ -7,4 +7,9 @@
     <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(64))))</query>
     <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(32)), 32))</query>
     <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(64)), 64))</query>
+
+    <!-- Nothing above 64 bytes reaches the fixed-size codecs, and the generic conversion is quadratic,
+         so the row counts here are much lower than above for a comparable running time. -->
+    <query>SELECT count() FROM numbers(40000) WHERE NOT ignore(base58Decode(base58Encode(randomString(200))))</query>
+    <query>SELECT count() FROM numbers(1500) WHERE NOT ignore(base58Decode(base58Encode(randomString(1024))))</query>
 </test>
