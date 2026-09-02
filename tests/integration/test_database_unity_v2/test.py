@@ -305,6 +305,11 @@ def test_unreadable_table_is_hidden(started_cluster):
 
 def test_uniform_table_reads_as_delta(started_cluster):
     node = started_cluster.instances["node1"]
+    # The Delta kernel (Rust) is not built under Memory Sanitizer, so the DeltaLake engine is absent.
+    has_delta_lake = int(node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) > 0
+    if not has_delta_lake:
+        pytest.skip("Build does not support DeltaLake (Delta kernel is unavailable)")
+
     db_name = unique_name("v2_uniform")
     create_database(node, db_name)
 
