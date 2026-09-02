@@ -48,6 +48,14 @@ SELECT k, s FROM (
     SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
 ) ORDER BY k;
 
+-- `ASTWindowDefinition::frame_end_offset`, another child of that definition. A pair that varies the
+-- frame kind instead is already distinguished by the definition's own scalars.
+SELECT k, s FROM (
+    SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS w FROM numbers(4))
+    UNION ALL
+    SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 2 FOLLOWING) AS w FROM numbers(4))
+) ORDER BY k;
+
 -- `ASTWindowDefinition::partition_by`, another child of that definition.
 SELECT k, s FROM (
     SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (PARTITION BY number % 2 ORDER BY number) AS w FROM numbers(4))
