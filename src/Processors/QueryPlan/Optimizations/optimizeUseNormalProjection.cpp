@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
-#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -369,12 +368,6 @@ std::optional<String> optimizeUseNormalProjections(
     if (iter->node->step.get() == reading)
         return {};
 
-    /// Projection can be usable if it will satisfy requested order by.
-    const SortingStep * outer_sorting_step = nullptr;
-    if (auto * sort = typeid_cast<SortingStep *>(iter->node->step.get()))
-        if (sort->getType() == SortingStep::Type::Full)
-            outer_sorting_step = sort;
-
     const auto metadata = reading->getStorageMetadata();
     const auto & projections = metadata->projections;
 
@@ -511,20 +504,6 @@ std::optional<String> optimizeUseNormalProjections(
         return true;
     };
 
-    auto projection_sort_order_useful = [&](const ProjectionDescription * projection)
-    {
-        if (!outer_sorting_step)
-            return false;
-
-        if (!optimization_settings.read_in_order)
-            return false;
-
-        return wouldReadInOrderBeUseful(
-            *outer_sorting_step,
-            projection->metadata->getSortingKey(),
-            *iter->node->children[iter->next_child - 1]);
-    };
-
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
@@ -608,13 +587,12 @@ std::optional<String> optimizeUseNormalProjections(
         candidate.stat = &stat;
 
         size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-        bool sort_order_helps = projection_sort_order_useful(projection);
 
         /// Consider projections with equal read cost only if:
         /// - `force_optimize_projection` is enabled, or
-        /// - the parent reading's `selected_marks` becomes zero, or
-        /// - the projection's sort order matches the query's ORDER BY,
-        if (candidate.sum_marks > parent_reading_marks)
+        /// - the parent reading's `selected_marks` becomes zero
+        if (candidate.sum_marks > parent_reading_marks
+            || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection))
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -625,20 +603,8 @@ std::optional<String> optimizeUseNormalProjections(
             LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
-        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)
-        {
-            stat.description = fmt::format(
-                "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
-                candidate.projection->name,
-                candidate.sum_marks);
 
-            LOG_DEBUG(logger, "{}", stat.description);
-            continue;
-        }
-
-        if (best_candidate == nullptr
-            || candidate.sum_marks < best_candidate->sum_marks
-            || (candidate.sum_marks == best_candidate->sum_marks && sort_order_helps && !projection_sort_order_useful(best_candidate->projection)))
+        if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
             best_candidate = &candidate;
 
         /// All parts has been filtered out; no need to analyze further projections.
@@ -811,6 +777,10 @@ std::optional<String> optimizeUseNormalProjections(
         union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;
     }
+
+    /// Now the projection is used, re-do optimizeReadInOrder
+    if (optimization_settings.read_in_order && typeid_cast<SortingStep *>(iter->node->step.get()))
+        optimizeReadInOrder(*iter->node, nodes, optimization_settings);
 
     /// Here we remove last steps from stack to be able to optimize again.
     stack.resize(iter.base() - stack.begin());

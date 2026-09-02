@@ -410,7 +410,17 @@ void optimizeTreeSecondPass(
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
     traverseQueryPlan(stack, root,
-        [&](auto &) {},
+        [&](auto & frame_node)
+        {
+            /// Skip when Cascades is enabled: it treats sorting as a physical property and
+            /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
+            /// `FinishSorting` first.
+            if (optimization_settings.read_in_order && !cascades_active)
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.distinct_in_order && !cascades_active)
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+        },
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
@@ -528,20 +538,11 @@ void optimizeTreeSecondPass(
             if (optimization_settings.creating_set_partitions_independently)
                 optimizeCreatingSetPerPartition(frame_node, nodes, optimization_settings);
 
-            /// Skip when Cascades is enabled: it treats sorting as a physical property and
-            /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
-            /// `FinishSorting` first.
-            if (optimization_settings.read_in_order && !cascades_active)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
-
-            /// After `optimizeReadInOrder`: a window sorting converted to `FinishSorting` (see
-            /// `query_plan_reuse_storage_ordering_for_window_functions`) merges to a single stream and
-            /// must not request per-partition reading.
+            /// `optimizeReadInOrder` already ran in an earlier pass: a window sorting converted to
+            /// `FinishSorting` (see `query_plan_reuse_storage_ordering_for_window_functions`) merges to a
+            /// single stream and must not request per-partition reading.
             if (optimization_settings.window_partitions_independently)
                 optimizeWindowPerPartition(frame_node, nodes, optimization_settings);
-
-            if (optimization_settings.distinct_in_order && !cascades_active)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.limit_by_in_order)
                 optimizeLimitByInOrder(frame_node, nodes, optimization_settings);
