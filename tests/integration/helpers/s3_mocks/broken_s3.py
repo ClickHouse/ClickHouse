@@ -318,6 +318,7 @@ class _ServerRuntime:
                 request_handler.wfile.write(bytes(self.partial_data, "UTF-8"))
 
             time.sleep(1)
+            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -329,6 +330,7 @@ class _ServerRuntime:
             request_handler.rfile.read(50)
 
             time.sleep(1)
+            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -351,6 +353,7 @@ class _ServerRuntime:
             request_handler.log_message("timeout action: sleep")
             time.sleep(10)
             request_handler.log_message("timeout action: close connection")
+            request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
@@ -481,12 +484,21 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     throttler = _runtime.throttler
 
+    def write_body(self, data):
+        # A response to HEAD carries the headers of the equivalent GET, but never its body.
+        # Writing one leaves unread bytes on a keep-alive connection, and the client then reads
+        # them as the status line of the next response ("Invalid HTTP version string") or blocks
+        # waiting for the rest of it.
+        if self.command == "HEAD":
+            return
+        self.wfile.write(data)
+
     def _ok(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", "2")
         self.end_headers()
-        self.wfile.write(b"OK")
+        self.write_body(b"OK")
 
     def _ping(self):
         self._ok()
@@ -515,7 +527,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Location", url)
         self.send_header("Content-Length", "10")
         self.end_headers()
-        self.wfile.write(b"Redirected")
+        self.write_body(b"Redirected")
 
     def write_error(self, http_code, data, content_length=None):
         if content_length is None:
@@ -527,7 +539,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(content_length))
         self.end_headers()
         if data:
-            self.wfile.write(bytes(data, "UTF-8"))
+            self.write_body(bytes(data, "UTF-8"))
 
     def _fake_put_ok(self):
         self.log_message("fake put")
@@ -560,7 +572,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", len(data))
         self.end_headers()
 
-        self.wfile.write(bytes(data, "UTF-8"))
+        self.write_body(bytes(data, "UTF-8"))
 
     def _fake_post_ok(self, path):
         self.read_all_input()
@@ -584,7 +596,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", len(data))
         self.end_headers()
 
-        self.wfile.write(bytes(data, "UTF-8"))
+        self.write_body(bytes(data, "UTF-8"))
 
     def _mock_settings(self):
         parts = urllib.parse.urlsplit(self.path)
