@@ -1,9 +1,9 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "Premiers pas",
+  "item": "Get started",
   "pages": [
     {
-      "group": "Prise en main",
+      "group": "Get started",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "fr/get-started/index",
@@ -20,7 +20,7 @@
         },
         {
           "expanded": true,
-          "group": "Cas d’utilisation",
+          "group": "Use cases",
           "pages": [
             "fr/get-started/use-cases/overview",
             "fr/get-started/use-cases/real-time-analytics",
@@ -34,18 +34,18 @@
     },
     {
       "expanded": true,
-      "group": "Configuration",
+      "group": "Setup",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
         "fr/get-started/setup/install",
         "fr/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Auto-géré",
+          "group": "Self-managed",
           "pages": [
             "fr/get-started/setup/self-managed/overview",
             {
-              "group": "Développement local",
+              "group": "Local development",
               "pages": [
                 "fr/get-started/setup/self-managed/quick-install",
                 "fr/get-started/setup/self-managed/clickhousectl",
@@ -54,7 +54,7 @@
               ]
             },
             {
-              "group": "Serveur de production",
+              "group": "Production server",
               "pages": [
                 "fr/get-started/setup/self-managed/debian-ubuntu",
                 "fr/get-started/setup/self-managed/redhat",
@@ -68,13 +68,13 @@
     },
     {
       "expanded": true,
-      "group": "Jeux de données d’exemple",
+      "group": "Sample datasets",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "fr/get-started/sample-datasets/index",
         "fr/get-started/sample-datasets/playground",
         {
-          "group": "Tests de performance",
+          "group": "Benchmarks",
           "pages": [
             "fr/get-started/sample-datasets/amplab-benchmark",
             "fr/get-started/sample-datasets/brown-benchmark",
@@ -86,7 +86,7 @@
           ]
         },
         {
-          "group": "Recherche vectorielle et embeddings",
+          "group": "Vector search & embeddings",
           "pages": [
             "fr/get-started/sample-datasets/dbpedia",
             "fr/get-started/sample-datasets/hacker-news-vector-search",
@@ -95,7 +95,7 @@
           ]
         },
         {
-          "group": "Analytique web et réseaux sociaux",
+          "group": "Web & social analytics",
           "pages": [
             "fr/get-started/sample-datasets/amazon-reviews",
             "fr/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -107,7 +107,7 @@
           ]
         },
         {
-          "group": "Géo et lieux",
+          "group": "Geo & location",
           "pages": [
             "fr/get-started/sample-datasets/cell-towers",
             "fr/get-started/sample-datasets/foursquare-os-places",
@@ -115,7 +115,7 @@
           ]
         },
         {
-          "group": "Séries temporelles et capteurs",
+          "group": "Time series & sensors",
           "pages": [
             "fr/get-started/sample-datasets/environmental-sensors",
             "fr/get-started/sample-datasets/noaa",
@@ -124,7 +124,7 @@
           ]
         },
         {
-          "group": "Registres publics et données ouvertes",
+          "group": "Public records & open data",
           "pages": [
             "fr/get-started/sample-datasets/covid19",
             "fr/get-started/sample-datasets/menus",
@@ -137,7 +137,7 @@
     },
     {
       "expanded": true,
-      "group": "Migration",
+      "group": "Migrate",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "fr/get-started/migrate/overview",
@@ -146,7 +146,7 @@
           "pages": [
             "fr/get-started/migrate/postgres/overview",
             {
-              "group": "Guide de migration",
+              "group": "Migration guide",
               "pages": [
                 "fr/get-started/migrate/postgres/migration-guide/migration-guide-part1",
                 "fr/get-started/migrate/postgres/migration-guide/migration-guide-part2",
@@ -187,14 +187,14 @@
           ]
         },
         {
-          "group": "OSS vers Cloud",
+          "group": "OSS to Cloud",
           "pages": [
             "fr/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "fr/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
-          "group": "Autres méthodes",
+          "group": "Other methods",
           "pages": [
             "fr/get-started/migrate/other-methods/clickhouse-local-etl",
             "fr/get-started/migrate/other-methods/etl-tool-to-clickhouse",

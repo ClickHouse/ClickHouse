@@ -26,9 +26,9 @@ Returns the query string and fragment identifier of a URL.
 SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123#section');
         )",
         R"(
-┌─queryStringAnd⋯=123#section')─┐
-│ query=value&param=123#section │
-└───────────────────────────────┘
+┌─queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123#section')─┐
+│ query=value&param=123#section                                                       │
+└─────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

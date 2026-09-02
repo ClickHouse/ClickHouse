@@ -169,9 +169,9 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
         "Usage example",
         "SELECT splitByString(', ', '1, 2 3, 4,5, abcde');",
         R"(
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
         )"
     },
     {

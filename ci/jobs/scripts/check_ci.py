@@ -16,7 +16,7 @@ from ci.praktika.git import Git
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell
+from ci.praktika.utils import Shell, Utils
 from ci.settings.settings import CI_DB_READ_URL, CI_DB_READ_USER, TEST_FAILURE_PATTERNS
 
 
@@ -393,11 +393,26 @@ class CommitStatusCheck:
 
     @staticmethod
     def get_ci_praktika_result(pr_number, commit_sha):
+        # Reports live under the normalized workflow name, both as a path prefix
+        # and in the result file name:
+        #   PRs/<pr>/<sha>/<workflow>/result_<workflow>.json
+        #   REFs/master/<sha>/<workflow>/result_<workflow>.json
         if pr_number != 0:
-            report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/PRs/{pr_number}/{commit_sha}/result_pr.json"
+            workflow = Utils.normalize_string("PR")
+            ref_prefix = f"PRs/{pr_number}"
         else:
-            report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{commit_sha}/result_masterci.json"
-        _ = Shell.check(f"curl {report_url} -o /tmp/result_pr.json > /dev/null 2>&1")
+            workflow = Utils.normalize_string("MasterCI")
+            ref_prefix = "REFs/master"
+        report_url = (
+            f"https://s3.amazonaws.com/clickhouse-test-reports/"
+            f"{ref_prefix}/{commit_sha}/{workflow}/result_{workflow}.json"
+        )
+        # -f so a missing report fails here instead of downloading the S3 error
+        # body and blowing up later in Result.from_file with an opaque parse error.
+        if not Shell.check(
+            f"curl -f {report_url} -o /tmp/result_pr.json > /dev/null 2>&1"
+        ):
+            raise RuntimeError(f"Failed to fetch CI report from {report_url}")
         return Result.from_file("/tmp/result_pr.json")
 
     @staticmethod
@@ -552,9 +567,10 @@ class CommitStatusCheck:
     @staticmethod
     def get_sync_pr_result(sync_pr_number, sync_sha):
         """Fetch the CI result for a sync PR via the S3 proxy."""
+        workflow = Utils.normalize_string("PR")
         report_url = (
             f"{S3_PROXY_BASE_URL}/{S3_PRIVATE_REPORT_BUCKET}"
-            f"/PRs/{sync_pr_number}/{sync_sha}/result_pr.json"
+            f"/PRs/{sync_pr_number}/{sync_sha}/{workflow}/result_{workflow}.json"
         )
         if not Shell.check(
             f"curl -f {report_url} -o /tmp/result_sync_pr.json > /dev/null 2>&1"

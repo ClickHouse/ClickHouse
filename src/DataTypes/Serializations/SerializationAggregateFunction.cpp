@@ -22,7 +22,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -72,14 +71,14 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     try
     {
         function->deserialize(place, istr, version, &arena);
+        /// Inside the guard: `push_back` can throw, and until it succeeds nothing owns `place`.
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -94,13 +93,8 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     function->serializeBatch(vec, offset, end, ostr, version);
 }
 
-void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
-    if (rows_offset)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method deserializeBinaryBulk of SerializationAggregateFunction does not support cases where rows_offset {} is non-zero",
-                        rows_offset);
-
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container & vec = real_column.getData();
 
@@ -149,14 +143,14 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
                 function->getName(),
                 trailing_bytes);
         }
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn & column, const String & value_str, const FormatSettings & settings)
@@ -195,13 +189,14 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
                 columns_ptrs.push_back(col.get());
             function->add(place, columns_ptrs.data(), 0, &arena);
         }
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-    column_concrete.getData().push_back(place);
 }
 
 static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn & column, const String & array_str, const FormatSettings & settings)
@@ -250,14 +245,14 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
             tmp_column->popBack(1);
         }
         assertChar(']', buf);
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 SerializationPtr SerializationAggregateFunction::create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)

@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT distributed_plan_status_check_ree
 for _ in {1..3}; do
     $CLICKHOUSE_CLIENT -q "
         SELECT x, count() FROM t_dp_reenqueue GROUP BY x FORMAT Null
-        SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_execute_locally = 0,
+        SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 0,
             distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
             distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0
     " > /dev/null 2>&1
@@ -58,7 +58,7 @@ $CLICKHOUSE_CLIENT -q "
       AND toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START}
       AND logger_name LIKE '%TaskTracker::recordFailure%'
       AND message LIKE '%Injected re-enqueue fault%'
-    SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
+    SETTINGS enable_parallel_replicas = 0
 "
 
 # The point of the test: the server is still alive (the safety net: `~TaskTracker` swallows any rethrow

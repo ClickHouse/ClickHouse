@@ -317,9 +317,9 @@ SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
 ```
 
 ```response title=Response
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
+│                                                           999 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 **암시적 기본값으로 인한 변환 실패**
@@ -760,7 +760,7 @@ AS parseDateTime32BestEffort
 
 ```response title=Response
 ┌─parseDateTime32BestEffort─┐
-│       2015-07-07 12:04:41 │
+│       2010-09-10 06:51:25 │
 └───────────────────────────┘
 ```
 
@@ -798,7 +798,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -809,7 +809,7 @@ SELECT
 
 도입 버전: v20.9.0
 
-처리할 수 없는 날짜 포맷을 만나면 제로 날짜 또는 제로 날짜/시간을 반환한다는 점을 제외하면 [`parseDateTime32BestEffort`](#parseDateTime32BestEffort)와 동일합니다.
+처리할 수 없는 날짜 포맷을 만나면 제로 날짜 또는 제로 날짜 시간을 반환한다는 점을 제외하면 [`parseDateTime32BestEffort`](#parseDateTime32BestEffort)와 동일합니다.
 
 **구문**
 
@@ -837,7 +837,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -965,7 +965,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─┐
+┌───────────────────valid─┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -976,7 +976,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
 
 도입 버전: v20.1.0
 
-처리할 수 없는 날짜 포맷을 만나면 제로 날짜 또는 제로 날짜-시간 값을 반환한다는 점을 제외하면 [`parseDateTime64BestEffort`](#parseDateTime64BestEffort)와 동일합니다.
+처리할 수 없는 날짜 포맷을 만나면 제로 날짜 또는 제로 날짜 시간 값을 반환한다는 점을 제외하면 [`parseDateTime64BestEffort`](#parseDateTime64BestEffort)와 동일합니다.
 
 **구문**
 
@@ -1004,7 +1004,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─────────────────┐
+┌───────────────────valid─┬─────────────────invalid─┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1015,7 +1015,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
 
 도입 버전: v22.8.0
 
-[`parseDateTime64BestEffort`](#parseDateTime64BestEffort)와 동일하지만, 날짜가 모호한 경우에는 미국식 날짜 형식(`MM/DD/YYYY` 등)을 우선 적용합니다.
+[`parseDateTime64BestEffort`](#parseDateTime64BestEffort)와 동일하지만, 날짜가 모호한 경우에는 미국식 날짜 포맷(`MM/DD/YYYY` 등)을 우선 적용합니다.
 
 **구문**
 
@@ -1027,7 +1027,7 @@ parseDateTime64BestEffortUS(time_string [, precision [, time_zone]])
 
 * `time_string` — 변환할 날짜 또는 날짜와 시간이 들어 있는 문자열입니다. [`String`](/ko/reference/data-types/string)
 * `precision` — 선택 사항입니다. 필요한 정밀도입니다. 밀리초는 `3`, 마이크로초는 `6`입니다. 기본값: `3`입니다. [`UInt8`](/ko/reference/data-types/int-uint)
-* `time_zone` — 선택 사항입니다. 시간대입니다. 함수는 해당 시간대에 따라 `time_string`을 해석합니다. [`String`](/ko/reference/data-types/string)
+* `time_zone` — 선택 사항입니다. 시간대입니다. 함수는 해당 시간대에 따라 `time_string`을 파싱합니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -1043,7 +1043,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────────┬─fallback_to_standard────┐
+┌───────────────us_format─┬────fallback_to_standard─┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1054,7 +1054,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
 
 도입 버전: v22.8.0
 
-[`parseDateTime64BestEffort`](#parseDateTime64BestEffort)와 동일하지만, 이 함수는 날짜 형식이 모호할 때 미국식 날짜 형식(`MM/DD/YYYY` 등)을 우선 적용하며, 처리할 수 없는 날짜 형식을 만나면 `NULL`을 반환합니다.
+[`parseDateTime64BestEffort`](#parseDateTime64BestEffort)와 동일하지만, 이 함수는 날짜 포맷이 모호할 때 미국식 날짜 포맷(`MM/DD/YYYY` 등)을 우선 적용하며, 처리할 수 없는 날짜 포맷을 만나면 `NULL`을 반환합니다.
 
 **구문**
 
@@ -1070,7 +1070,7 @@ parseDateTime64BestEffortUSOrNull(time_string[, precision[, time_zone]])
 
 **반환 값**
 
-US 포맷 우선순위를 사용해 `time_string`을 [`DateTime64`](/ko/reference/data-types/datetime64)로 변환한 값을 반환합니다. 입력을 파싱할 수 없으면 `NULL`을 반환합니다. [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`NULL`](/ko/reference/syntax#null)
+미국식 포맷 우선순위를 사용해 `time_string`을 [`DateTime64`](/ko/reference/data-types/datetime64)로 변환한 값을 반환합니다. 입력을 파싱할 수 없으면 `NULL`을 반환합니다. [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`NULL`](/ko/reference/syntax#null)
 
 **예시**
 
@@ -1082,7 +1082,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─┐
+┌────────────────valid_us─┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -1093,7 +1093,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
 
 도입 버전: v22.8.0
 
-[`parseDateTime64BestEffort`](#parseDateTime64BestEffort)와 동일하지만, 날짜 형식이 모호할 때는 미국식 날짜 형식(`MM/DD/YYYY` 등)을 우선하며, 처리할 수 없는 날짜 포맷을 만나면 제로 날짜 또는 제로 날짜 시간(date time)을 반환합니다.
+[`parseDateTime64BestEffort`](#parseDateTime64BestEffort)와 동일하지만, 날짜 포맷이 모호할 때는 미국식 날짜 포맷(`MM/DD/YYYY` 등)을 우선하며, 처리할 수 없는 날짜 포맷을 만나면 제로 날짜 또는 제로 날짜 시간(date time)을 반환합니다.
 
 **구문**
 
@@ -1121,7 +1121,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─────────────────┐
+┌────────────────valid_us─┬─────────────────invalid─┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1406,11 +1406,11 @@ SELECT parseDateTimeBestEffort('1735689600') AS parseDateTimeBestEffort
 
 지원되는 비표준 포맷:
 
-* 9~10자리 Unix timestamp를 포함하는 문자열.
+* 9~10자리 Unix 타임스탬프를 포함하는 문자열.
 * 날짜 및 시간 component를 포함하는 문자열: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss` 등.
 * 날짜는 있지만 시간 component는 없는 문자열: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` 등.
 * 일과 시간이 포함된 문자열: `DD`, `DD hh`, `DD hh:mm`. 이 경우 `MM`은 `01`로 대체됩니다.
-* 날짜와 시간에 time zone 오프셋 정보까지 포함된 문자열: `YYYY-MM-DD hh:mm:ss ±h:mm` 등.
+* 날짜와 시간에 시간대 오프셋 정보까지 포함된 문자열: `YYYY-MM-DD hh:mm:ss ±h:mm` 등.
 * syslog timestamp: `Mmm dd hh:mm:ss`. 예: `Jun  9 14:20:32`.
 
 구분자가 있는 모든 포맷에서 이 함수는 월 이름 전체 또는 앞 3글자로 표기된 월 이름을 파싱합니다.
@@ -1441,7 +1441,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1457,11 +1457,11 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
 
 지원되는 비표준 포맷:
 
-* 9~10자리 Unix timestamp를 포함하는 문자열.
+* 9~10자리 Unix 타임스탬프를 포함하는 문자열.
 * 날짜와 시간 구성 요소를 포함하는 문자열: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss` 등.
 * 날짜는 있지만 시간 구성 요소는 없는 문자열: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` 등.
 * 일과 시간이 포함된 문자열: `DD`, `DD hh`, `DD hh:mm`. 이 경우 `MM`은 `01`로 대체됩니다.
-* 날짜와 시간에 time zone 오프셋 정보가 함께 포함된 문자열: `YYYY-MM-DD hh:mm:ss ±h:mm` 등.
+* 날짜와 시간에 시간대 오프셋 정보가 함께 포함된 문자열: `YYYY-MM-DD hh:mm:ss ±h:mm` 등.
 * syslog timestamp: `Mmm dd hh:mm:ss`. 예: `Jun  9 14:20:32`.
 
 구분자가 있는 모든 포맷에서 이 함수는 월 이름의 전체 표기 또는 앞 3글자로 표기된 월 이름을 파싱합니다.
@@ -1492,7 +1492,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1532,7 +1532,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────┬─fallback_to_standard─┐
+┌───────────us_format─┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
 ```
@@ -1572,7 +1572,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─┐
+┌────────────valid_us─┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1581,11 +1581,11 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
   ## parseDateTimeBestEffortUSOrZero
 </div>
 
-출시 버전: v1.1.0
+도입 버전: v1.1.0
 
 처리할 수 없는 날짜 포맷을 만나면 제로 날짜 (`1970-01-01`) 또는 시간이 포함된 제로 날짜 (`1970-01-01 00:00:00`)를 반환한다는 점을 제외하면 [`parseDateTimeBestEffortUS`](#parseDateTimeBestEffortUS) 함수와 동일합니다.
 
-이 함수는 ISO 날짜 포맷에서는 [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)와 동일하게 동작하지만, 모호한 경우에는 US date format을 우선 적용하며, 파싱 오류가 발생하면 제로 날짜 값을 반환합니다.
+이 함수는 ISO 날짜 포맷에서는 [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)와 동일하게 동작하지만, 모호한 경우에는 미국식 날짜 형식을 우선 적용하며, 파싱 오류가 발생하면 제로 날짜 값을 반환합니다.
 
 **구문**
 
@@ -1612,7 +1612,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─────────────┐
+┌────────────valid_us─┬─────────────invalid─┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1755,7 +1755,7 @@ parseDateTimeOrNull(time_string, format[, timezone])
 **인수**
 
 * `time_string` — DateTime으로 파싱할 문자열입니다. [`String`](/ko/reference/data-types/string)
-* `format` — `time_string`을 파싱하는 방법을 지정하는 포맷 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `format` — `time&#95;string`을 파싱하는 방법을 지정하는 포맷 문자열입니다. [`String`](/ko/reference/data-types/string)
 * `timezone` — 선택 사항입니다. 시간대입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
@@ -1772,7 +1772,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 ```response title=Response
 ┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                            2025-01-04 23:00:00  │
+│                                             2025-01-04 23:00:00 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1946,7 +1946,7 @@ SELECT reinterpretAsDateTime(65), reinterpretAsDateTime('A')
 
 ```response title=Response
 ┌─reinterpretAsDateTime(65)─┬─reinterpretAsDateTime('A')─┐
-│       1970-01-01 01:01:05 │        1970-01-01 01:01:05 │
+│       1970-01-01 00:01:05 │        1970-01-01 00:01:05 │
 └───────────────────────────┴────────────────────────────┘
 ```
 
@@ -1978,15 +1978,16 @@ reinterpretAsFixedString(x)
 **사용 예시**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsFixedString(toDate('1970-03-07'))
+    hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsFixedString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsFixedString(toDate('1970-03-07'))─┐
-│ A                                                           │ A                                              │
-└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+┌─hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsFixedString(toDate('1970-03-07')))─┐
+│ 510E0000                                                         │ 4100                                                │
+└──────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="reinterpretAsFloat32">
@@ -2338,15 +2339,16 @@ reinterpretAsString(x)
 **사용 예시**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsString(toDate('1970-03-07'))
+    hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
-│ A                                                      │ A                                         │
-└────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+┌─hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsString(toDate('1970-03-07')))─┐
+│ 510E                                                        │ 41                                             │
+└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
 ```
 
 **배열을 String으로 변환하는 예시**
@@ -2627,7 +2629,7 @@ reinterpretAsUUID(fixed_string)
 
 **반환 값**
 
-UUID 타입의 값입니다. [`UUID`](/ko/reference/data-types/uuid)
+UUID 유형의 값입니다. [`UUID`](/ko/reference/data-types/uuid)
 
 **예시**
 
@@ -2639,7 +2641,7 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
 
 ```response title=Response
 ┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+│ 08090a0b-0c0d-0e0f-0001-020304050607                                  │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2684,9 +2686,11 @@ FORMAT Vertical;
 ```
 
 ```response title=Response
-toBFloat16(toFloat32(42.7)): 42.5
-toBFloat16(t⋯32('42.7')):    42.5
-toBFloat16('42.7'):          42.5
+Row 1:
+──────
+toBFloat16(toFloat32(42.7)):   42.5
+toBFloat16(toFloat32('42.7')): 42.5
+toBFloat16('42.7'):            42.5
 ```
 
 <div id="toBFloat16OrNull">
@@ -2741,9 +2745,7 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-\N
-12.25
-12.3125
+\N	12.25	12.3125
 ```
 
 <div id="toBFloat16OrZero">
@@ -2781,7 +2783,7 @@ toBFloat16OrZero(x)
 
 **인수**
 
-* `x` — 숫자를 나타내는 `String`입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 숫자를 나타내는 문자열입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -2798,9 +2800,7 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-0
-12.25
-12.3125
+0	12.25	12.3125
 ```
 
 <div id="toBool">
@@ -2841,6 +2841,8 @@ FORMAT Vertical
 ```
 
 ```response title=Response
+Row 1:
+──────
 toBool(toUInt8(1)):      true
 toBool(toInt8(-1)):      true
 toBool(toFloat32(1.01)): true
@@ -2940,7 +2942,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           2025-01-01
+value:             2025-01-01
 toTypeName(value): Date32
 ```
 
@@ -2954,7 +2956,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1899-01-01
+value:             1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -3338,7 +3340,7 @@ SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName
 
 도입 버전: v20.1.0
 
-입력값을 [`DateTime64`](/ko/reference/data-types/datetime64) 타입의 값으로 변환합니다.
+입력값을 [`DateTime64`](/ko/reference/data-types/datetime64) 유형의 값으로 변환합니다.
 
 **구문**
 
@@ -3348,7 +3350,7 @@ toDateTime64(expr, scale[, timezone])
 
 **인수**
 
-* `expr` — 숫자 또는 숫자를 문자열로 표현한 값을 반환하는 표현식입니다. [`표현식`](/ko/reference/data-types/special-data-types/expression)
+* `expr` — 숫자 또는 숫자를 문자열 표현한 값을 반환하는 표현식입니다. [`표현식`](/ko/reference/data-types/special-data-types/expression)
 * `scale` — 틱 크기(정밀도)입니다: 10^(-scale)초. [`UInt8`](/ko/reference/data-types/int-uint)
 * `timezone` — 선택 사항입니다. 지정된 `DateTime64` 객체의 시간대입니다. [`String`](/ko/reference/data-types/string)
 
@@ -3365,23 +3367,26 @@ SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
-**precision이 지정된 Decimal로**
+**정밀도가 지정된 Decimal로**
 
 ```sql title=Query
 SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
--- 소수점이 없어도 값은 여전히 초 단위 Unix timestamp로 처리됩니다
+-- Without the decimal point the value is still treated as Unix Timestamp in seconds
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **시간대 지정**
@@ -3391,9 +3396,9 @@ SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)──────────────┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
 ```
 
 <div id="toDateTime64OrDefault">
@@ -3402,7 +3407,7 @@ SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 
 도입 버전: v21.11.0
 
-[toDateTime64](#toDateTime64)와 마찬가지로, 이 함수는 입력 값을 [DateTime64](/ko/reference/data-types/datetime64) 타입의 값으로 변환하지만,
+[toDateTime64](#toDateTime64)와 마찬가지로, 이 함수는 입력 값을 [DateTime64](/ko/reference/data-types/datetime64) 유형의 값으로 변환하지만,
 유효하지 않은 인수가 전달되면 [DateTime64](/ko/reference/data-types/datetime64)의 기본값
 또는 지정된 기본값을 반환합니다.
 
@@ -3421,7 +3426,7 @@ toDateTime64OrDefault(expr, scale[, timezone, default])
 
 **반환 값**
 
-성공하면 DateTime64 타입의 값을 반환합니다. 실패하면 전달된 경우 기본값을 반환하고, 전달되지 않은 경우 1970-01-01 00:00:00.000을 반환합니다. [`DateTime64`](/ko/reference/data-types/datetime64)
+성공하면 DateTime64 유형의 값을 반환합니다. 실패하면 전달된 경우 기본값을 반환하고, 전달되지 않은 경우 1970-01-01 00:00:00.000을 반환합니다. [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 
@@ -3442,7 +3447,7 @@ SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2
 ```
 
 ```response title=Response
-2000-12-31 23:00:00.000
+2001-01-01 00:00:00.000
 ```
 
 <div id="toDateTime64OrNull">
@@ -3828,7 +3833,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -3863,7 +3868,7 @@ toDecimal128OrZero(expr, S)
 
 **인수**
 
-* `expr` — 숫자 또는 숫자의 문자열 표현을 반환하는 표현식입니다. [`Expression`](/ko/reference/data-types/special-data-types/expression)
+* `expr` — 숫자 또는 숫자의 문자열 표현을 반환하는 표현식입니다. [`표현식`](/ko/reference/data-types/special-data-types/expression)
 * `S` — 숫자 소수부의 자릿수를 지정하는 0~38 범위의 스케일 매개변수입니다. [`UInt8`](/ko/reference/data-types/int-uint)
 
 **반환 값**
@@ -3880,7 +3885,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4015,7 +4020,7 @@ SELECT toDecimal256OrDefault('Inf', 0, CAST('-1', 'Decimal256(0)'))
 지원되지 않는 인수 (`NULL` 반환):
 
 * Float* 값 `NaN` 및 `Inf` 또는 이들의 문자열 표현(대소문자 구분 없음).
-* binary 및 hexadecimal 값의 문자열 표현.
+* 2진수 및 16진수 값의 문자열 표현.
 * `Decimal256`의 범위를 초과하는 값: `(-1 * 10^(76 - S), 1 * 10^(76 - S))`.
 
 관련 항목:
@@ -4049,7 +4054,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4107,7 +4112,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4242,7 +4247,7 @@ SELECT toDecimal32OrDefault('Inf', 0, CAST('-1', 'Decimal32(0)'))
 지원되지 않는 인수 (`NULL` 반환):
 
 * Float* 값 `NaN` 및 `Inf`의 값 또는 문자열 표현(대소문자 구분 없음).
-* binary 및 hexadecimal 값의 문자열 표현.
+* 2진수 및 16진수 값의 문자열 표현.
 * `Decimal32`의 범위를 벗어나는 값: `(-1*10^(9 - S), 1*10^(9 - S))`.
 
 관련 항목:
@@ -4276,7 +4281,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4328,7 +4333,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4393,11 +4398,11 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-a:      2.0
+a:      2
 type_a: Decimal(18, 1)
-b:      4.20
+b:      4.2
 type_b: Decimal(18, 2)
-c:      4.200
+c:      4.2
 type_c: Decimal(18, 3)
 ```
 
@@ -4498,7 +4503,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4556,7 +4561,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4656,13 +4661,14 @@ toFixedString(s, N)
 **사용 예시**
 
 ```sql title=Query
-SELECT toFixedString('foo', 8) AS s;
+-- The padding is made of null bytes, so the result is shown with `hex`.
+SELECT hex(toFixedString('foo', 8)) AS s;
 ```
 
 ```response title=Response
-┌─s─────────────┐
-│ foo\0\0\0\0\0 │
-└───────────────┘
+┌─s────────────────┐
+│ 666F6F0000000000 │
+└──────────────────┘
 ```
 
 <div id="toFloat32">
@@ -4829,7 +4835,7 @@ Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  \N
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat32OrZero">
@@ -5043,7 +5049,7 @@ Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  \N
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat64OrZero">
@@ -5261,7 +5267,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  \N
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt128OrZero">
@@ -5487,7 +5493,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): \N
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt16OrZero">
@@ -5526,7 +5532,7 @@ toInt16OrZero(x)
 
 **인수**
 
-* `x` — 숫자를 `String`으로 표현한 값입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 숫자의 문자열 표현입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -5546,7 +5552,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt16OrZero('16'): 16
+toInt16OrZero('16'):  16
 toInt16OrZero('abc'): 0
 ```
 
@@ -5697,7 +5703,7 @@ toInt256OrNull(x)
 
 **인수**
 
-* `x` — 숫자를 나타내는 String 형식의 값입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 숫자의 문자열 표현입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -5718,7 +5724,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  \N
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt256OrZero">
@@ -5923,7 +5929,7 @@ toInt32OrNull(x)
 
 **인수**
 
-* `x` — 숫자를 나타내는 String입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 숫자의 문자열 표현입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -5944,7 +5950,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): \N
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt32OrZero">
@@ -6003,7 +6009,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt32OrZero('32'): 32
+toInt32OrZero('32'):  32
 toInt32OrZero('abc'): 0
 ```
 
@@ -6179,7 +6185,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): \N
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt64OrZero">
@@ -6405,7 +6411,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): \N
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt8OrZero">
@@ -6464,7 +6470,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt8OrZero('8'): 8
+toInt8OrZero('8'):   8
 toInt8OrZero('abc'): 0
 ```
 
@@ -6510,7 +6516,7 @@ SELECT
 
 ```response title=Response
 ┌─seconds─┬─days─┬─months─┐
-│ 5       │ 3    │ 2      │
+│       5 │    3 │      2 │
 └─────────┴──────┴────────┘
 ```
 
@@ -7512,7 +7518,7 @@ SELECT toUInt128OrDefault('abc', CAST('0', 'UInt128'))
   ## toUInt128OrNull
 </div>
 
-지원 버전: v21.6.0
+도입 버전: v21.6.0
 
 이 함수는 [`toUInt128`](#toUInt128)와 마찬가지로 입력 값을 [`UInt128`](/ko/reference/data-types/int-uint) 타입의 값으로 변환하지만, 오류가 발생하면 `NULL`을 반환합니다.
 
@@ -7544,7 +7550,7 @@ toUInt128OrNull(x)
 
 **인수**
 
-* `x` — 숫자를 나타내는 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 숫자를 문자열로 표현한 값입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -7565,7 +7571,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): \N
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt128OrZero">
@@ -7747,7 +7753,7 @@ SELECT toUInt16OrDefault('abc', CAST('0', 'UInt16'))
   ## toUInt16OrNull
 </div>
 
-v1.1.0에 도입됨
+도입 버전: v1.1.0
 
 [`toUInt16`](#toUInt16)와 마찬가지로, 이 함수는 입력값을 [`UInt16`](/ko/reference/data-types/int-uint) 타입의 값으로 변환하지만 오류가 발생하면 `NULL`을 반환합니다.
 
@@ -7779,7 +7785,7 @@ toUInt16OrNull(x)
 
 **인수**
 
-* `x` — 숫자의 문자열 표현입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 숫자를 문자열로 표현한 값입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -7800,7 +7806,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): \N
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt16OrZero">
@@ -7980,7 +7986,7 @@ SELECT toUInt256OrDefault('abc', CAST('0', 'UInt256'))
 
 도입 버전: v20.8.0
 
-[`toUInt256`](#toUInt256)와 마찬가지로, 이 함수는 입력 값을 [`UInt256`](/ko/reference/data-types/int-uint) 타입의 값으로 변환하지만, 오류가 발생하면 `NULL`을 반환합니다.
+[`toUInt256`](#toUInt256)와 마찬가지로, 이 함수는 입력 값을 [`UInt256`](/ko/reference/data-types/int-uint) 유형의 값으로 변환하지만, 오류가 발생하면 `NULL`을 반환합니다.
 
 지원되는 인수:
 
@@ -8014,7 +8020,7 @@ toUInt256OrNull(x)
 
 **반환 값**
 
-`UInt256` 타입의 값을 반환합니다. 변환에 실패하면 `NULL`을 반환합니다. [`UInt256`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
+`UInt256` 유형의 값을 반환합니다. 변환에 실패하면 `NULL`을 반환합니다. [`UInt256`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
 
 **예시**
 
@@ -8031,7 +8037,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): \N
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt256OrZero">
@@ -8215,7 +8221,7 @@ SELECT toUInt32OrDefault('abc', CAST('0', 'UInt32'))
 
 도입 버전: v1.1.0
 
-[`toUInt32`](#toUInt32)와 마찬가지로, 이 함수는 입력 값을 [`UInt32`](/ko/reference/data-types/int-uint) 타입의 값으로 변환하지만 오류가 발생하면 `NULL`을 반환합니다.
+[`toUInt32`](#toUInt32)와 마찬가지로, 이 함수는 입력 값을 [`UInt32`](/ko/reference/data-types/int-uint) 유형의 값으로 변환하지만 오류가 발생하면 `NULL`을 반환합니다.
 
 지원되는 인수:
 
@@ -8249,7 +8255,7 @@ toUInt32OrNull(x)
 
 **반환 값**
 
-`UInt32` 타입의 값을 반환합니다. 변환에 실패하면 `NULL`을 반환합니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
+`UInt32` 유형의 값을 반환합니다. 변환에 실패하면 `NULL`을 반환합니다. [`UInt32`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
 
 **예시**
 
@@ -8266,7 +8272,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): \N
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt32OrZero">
@@ -8450,7 +8456,7 @@ SELECT toUInt64OrDefault('abc', CAST('0', 'UInt64'))
 
 도입 버전: v1.1.0
 
-[`toUInt64`](#toUInt64)와 마찬가지로, 이 함수는 입력 값을 [`UInt64`](/ko/reference/data-types/int-uint) 타입의 값으로 변환하지만, 오류가 발생하면 `NULL`을 반환합니다.
+[`toUInt64`](#toUInt64)와 마찬가지로, 이 함수는 입력 값을 [`UInt64`](/ko/reference/data-types/int-uint) 유형의 값으로 변환하지만, 오류가 발생하면 `NULL`을 반환합니다.
 
 지원되는 인수:
 
@@ -8484,7 +8490,7 @@ toUInt64OrNull(x)
 
 **반환 값**
 
-`UInt64` 타입의 값을 반환합니다. 변환에 실패하면 `NULL`을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
+`UInt64` 유형의 값을 반환합니다. 변환에 실패하면 `NULL`을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
 
 **예시**
 
@@ -8501,7 +8507,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): \N
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt64OrZero">
@@ -8685,7 +8691,7 @@ SELECT toUInt8OrDefault('abc', CAST('0', 'UInt8'))
 
 도입 버전: v1.1.0
 
-이 함수는 [`toUInt8`](#toUInt8)와 마찬가지로 입력 값을 [`UInt8`](/ko/reference/data-types/int-uint) 타입의 값으로 변환하지만, 오류가 발생하면 `NULL`을 반환합니다.
+이 함수는 [`toUInt8`](#toUInt8)와 마찬가지로 입력 값을 [`UInt8`](/ko/reference/data-types/int-uint) 유형의 값으로 변환하지만, 오류가 발생하면 `NULL`을 반환합니다.
 
 지원되는 인수:
 
@@ -8719,7 +8725,7 @@ toUInt8OrNull(x)
 
 **반환 값**
 
-UInt8 타입의 값을 반환하며, 변환에 실패하면 `NULL`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
+UInt8 유형의 값을 반환하며, 변환에 실패하면 `NULL`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
 
 **예시**
 
@@ -8736,7 +8742,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): \N
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt8OrZero">
@@ -8830,7 +8836,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
 ```response title=Response
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
 ```
@@ -9005,9 +9011,9 @@ SELECT toUnixTimestamp64Nano(dt64);
 ```
 
 ```response title=Response
-┌─toUnixTimestamp64Nano(dt64)────┐
-│            1739489491011123456 │
-└────────────────────────────────┘
+┌─toUnixTimestamp64Nano(dt64)─┐
+│         1739489491011123456 │
+└─────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Second">

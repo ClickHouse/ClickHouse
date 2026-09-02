@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
-#include <Common/logger_useful.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -42,39 +42,16 @@ SerializationPtr SerializationMapKeyValue::create(
 /// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key).
 struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::DeserializeBinaryBulkState
 {
-    /// Shared reading info state, cached at the substream path.
-    /// Contains `reading_full_map` flag set by `SerializationMap`.
-    ISerialization::DeserializeBinaryBulkStatePtr reading_info_state;
-    /// Total number of buckets in this Map column.
-    size_t buckets = 1;
     /// The specific bucket that contains the requested key (determined by hashing the key).
     size_t bucket = 0;
     /// Nested deserialization state for the selected bucket's sub-stream.
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
-    /// Cached deserialized nested column. Used to accumulate data across granules
-    /// when the full Map is also being read (for cache sharing with `SerializationMap`).
-    ColumnPtr nested_column;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapKeyValue>(*this);
-        new_state->reading_info_state = reading_info_state ? reading_info_state->clone() : nullptr;
         new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (nested_column)
-            callback(nested_column);
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (reading_info_state)
-            callback(reading_info_state);
-        if (nested_state)
-            callback(nested_state);
     }
 };
 
@@ -138,10 +115,6 @@ void SerializationMapKeyValue::deserializeBinaryBulkStatePrefix(
 {
     auto map_key_value_state = std::make_shared<DeserializeBinaryBulkStateMapKeyValue>();
 
-    /// Get or create the shared reading info state at the current substream path.
-    /// If `SerializationMap` has already initialized it, `reading_full_map` will be true.
-    map_key_value_state->reading_info_state = SerializationMap::deserializeMapReadingInfoStatePrefix(cache, settings.path);
-
     /// BASIC format has no bucketing, delegate directly.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
@@ -153,7 +126,6 @@ void SerializationMapKeyValue::deserializeBinaryBulkStatePrefix(
     /// Read the bucket count and determine which bucket the requested key belongs to.
     auto buckets_info_state = SerializationMap::deserializeBucketsInfoStatePrefix(settings, cache);
     const auto * buckets_info_state_concrete = checkAndGetState<SerializationMap::DeserializeBinaryBulkStateBucketsInfo>(buckets_info_state);
-    map_key_value_state->buckets = buckets_info_state_concrete->buckets;
     map_key_value_state->bucket = SerializationMap::getBucketForKey(key, 0, buckets_info_state_concrete->buckets);
 
     /// Only initialize the nested state for the single bucket containing our key.
@@ -166,8 +138,7 @@ void SerializationMapKeyValue::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -176,72 +147,31 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr nested_column;
     size_t num_read_rows = 0;
     auto * map_key_value_state = checkAndGetState<DeserializeBinaryBulkStateMapKeyValue>(state);
-    const auto * reading_info = checkAndGetState<SerializationMap::DeserializeBinaryBulkStateMapReadingInfo>(map_key_value_state->reading_info_state);
 
-    /// For the bucketed format, push the target bucket onto the path so that
-    /// the nested serialization and substreams cache use the correct sub-stream.
+    /// For the bucketed format, read only the bucket that contains our key.
     if (serialization_version == MergeTreeMapSerializationVersion::WITH_BUCKETS)
     {
         settings.path.push_back(SubstreamType::Bucket);
         settings.path.back().bucket = map_key_value_state->bucket;
     }
 
-    /// For BASIC format or single-bucket case, the whole Map is stored in a single stream.
-    /// Use the substreams cache to share the deserialized Map column with `SerializationMap`
-    /// (when the query reads both the full Map and a key subcolumn at the same time).
-    if (serialization_version == MergeTreeMapSerializationVersion::BASIC || map_key_value_state->buckets == 1)
+    /// Reuse the nested Map column from the cache if SerializationMap or another key-value subcolumn already read this range.
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
-        /// Try to get the already-deserialized Map column from the substreams cache.
-        if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
-        {
-            std::tie(nested_column, num_read_rows) = *cached_column_with_num_read_rows;
-        }
-        /// The full Map is also being read — accumulate data in the state so the
-        /// substreams cache can share the column with `SerializationMap`.
-        else if (reading_info->reading_full_map)
-        {
-            if (column->empty() || !map_key_value_state->nested_column)
-                map_key_value_state->nested_column = nested_type->createColumn();
-
-            size_t prev_size = map_key_value_state->nested_column->size();
-            auto settings_copy = settings;
-            /// In Compact part each granule is deserialized with new deserialize state,
-            /// so we always have empty nested_column. If we also read another subcolumn from the same Map
-            /// (like keys/values), we cannot use whole columns from substreams cache here, because we will
-            /// get wrong size for nested_column (substreams cache works per block, not per granule).
-            if (settings.data_part_type == MergeTreeDataPartType::Compact)
-                settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
-            map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(map_key_value_state->nested_column, rows_offset, limit, settings_copy, map_key_value_state->nested_state, cache);
-            num_read_rows = map_key_value_state->nested_column->size() - prev_size;
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, map_key_value_state->nested_column, num_read_rows);
-            nested_column = map_key_value_state->nested_column;
-        }
-        /// Only this subcolumn is being read. Deserialize into a fresh column
-        /// each time to avoid accumulating the full Map data in memory across granules.
-        else
-        {
-            nested_column = nested_type->createColumn();
-            auto settings_copy = settings;
-            /// We need only rows from current range to be inserted into temporary nested column.
-            settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
-            map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_column, rows_offset, limit, settings_copy, map_key_value_state->nested_state, cache);
-            num_read_rows = nested_column->size();
-            /// Add the whole Map to cache so other key-value subcolumns reuse it instead of re-reading the same range.
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_column, num_read_rows);
-        }
+        std::tie(nested_column, num_read_rows) = *cached_column_with_num_read_rows;
     }
-    /// Multiple buckets. Only the bucket containing our key was opened, so read it directly.
-    /// No caching is needed here because the bucket sub-stream is not shared with `SerializationMap`
-    /// (which reads all buckets).
+    /// Otherwise deserialize the whole nested Map and cache it for other key-value subcolumns.
     else
     {
-        nested_column = nested_type->createColumn();
-        map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_column, rows_offset, limit, settings, map_key_value_state->nested_state, cache);
-        num_read_rows = nested_column->size();
+        auto mutable_nested_column = nested_type->createColumn();
+        map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_nested_column, limit, settings, map_key_value_state->nested_state, cache);
+        num_read_rows = mutable_nested_column->size();
+        nested_column = std::move(mutable_nested_column);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_column, num_read_rows);
     }
 
     /// Extract the value for the requested key from the deserialized Map data.
-    extractKeyValueFromMap(*nested_column, *key, *column->assumeMutable(), nested_column->size() - num_read_rows, nested_column->size());
+    extractKeyValueFromMap(*nested_column, *key, column, nested_column->size() - num_read_rows, nested_column->size());
 
     if (serialization_version == MergeTreeMapSerializationVersion::WITH_BUCKETS)
         settings.path.pop_back();

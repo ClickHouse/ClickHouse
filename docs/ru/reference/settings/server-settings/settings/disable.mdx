@@ -18,7 +18,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-Отключает запросы `insert`/`alter`/`delete`. Этот параметр включают, когда нужны узлы только для чтения, чтобы вставка и мутации не влияли на производительность чтения. Вставки во внешние движки (S3, DataLake, MySQL, PostrgeSQL, Kafka и т. д.) разрешены, несмотря на этот параметр.
+Отключает запросы `INSERT`, `ALTER` и `DELETE`, чтобы реплики только для чтения не создавали части данных, мутации или операции слияния, влияющие на производительность чтения.
+
+Запись во внешнее хранилище через такие движки, как `S3`, `DataLake`, `MySQL`, `PostgreSQL` и `Kafka`, остаётся разрешённой. Фоновая потоковая обработка из таблиц `Kafka`, `RabbitMQ`, `NATS` и `S3Queue` в присоединённые materialized view отключена, поскольку она создаёт части `MergeTree` и операции слияния на этой реплике.
 
 <div id="disable_internal_dns_cache">
   ## disable_internal_dns_cache

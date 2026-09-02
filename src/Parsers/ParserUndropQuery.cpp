@@ -89,19 +89,89 @@ void registerStatementUndrop(StatementFactory & factory)
 {
     factory.registerStatement("UNDROP",
     {
-        .description = R"(
-Cancels the dropping of a table. A table of an `Atomic` database can be recovered during the period set by the server
-setting `database_atomic_delay_before_drop_table_sec` after `DROP TABLE` was issued. The tables which can still be
-recovered are listed in `system.dropped_tables`.
+        .description = R"DOCS_MD(
+Cancels the dropping of the table.
 
-**Examples**
+Beginning with ClickHouse version 23.3, you can recover a table in an `Atomic` database with `UNDROP TABLE`
+during the period set by [`database_atomic_delay_before_drop_table_sec`](/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) (8 minutes by default) after issuing `DROP TABLE`.
+Tables dropped from `Atomic` databases are listed in `system.dropped_tables`.
 
-**Recover a dropped table**
+For a `Shared` database in ClickHouse Cloud, this period is instead controlled by [`database_shared_drop_table_delay_seconds`](/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds), which defaults to 8 hours.
+Tables dropped from `Shared` databases aren't listed in `system.dropped_tables`.
 
-```sql title="Query"
-UNDROP TABLE tab;
+If you have a materialized view without a `TO` clause associated with the dropped table, then you will also have to UNDROP the inner table of that view.
+
+<Tip>
+Also see [DROP TABLE](/reference/statements/drop)
+</Tip>
+
+Syntax:
+
+```sql
+UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
 ```
-)",
+
+**Example**
+
+```sql
+CREATE TABLE tab
+(
+    `id` UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT *
+FROM system.dropped_tables
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+index:                 0
+database:              default
+table:                 tab
+uuid:                  aa696a1a-1d70-4e60-a841-4c80827706cc
+engine:                MergeTree
+metadata_dropped_path: /var/lib/clickhouse/metadata_dropped/default.tab.aa696a1a-1d70-4e60-a841-4c80827706cc.sql
+table_dropped_time:    2023-04-05 14:12:12
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```sql
+UNDROP TABLE tab;
+
+SELECT *
+FROM system.dropped_tables
+FORMAT Vertical;
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.001 sec.
+```
+
+```sql
+DESCRIBE TABLE tab
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+name:               id
+type:               UInt8
+default_type:
+default_expression:
+comment:
+codec_expression:
+ttl_expression:
+```
+)DOCS_MD",
         .syntax = R"(
 UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
 )",

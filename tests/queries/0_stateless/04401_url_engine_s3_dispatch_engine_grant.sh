@@ -24,8 +24,9 @@ S3_URL="s3://my-bucket/my-key.csv"
 
 # Attaching a full definition into an Atomic database (the default) requires an explicit UUID. Each
 # one is derived from the test's unique name plus a per-table suffix: two tables may never share a
-# UUID, and concurrent copies of this test must not collide with each other.
-attach_uuid() { ${CLICKHOUSE_CLIENT} -q "SELECT reinterpretAsUUID(MD5('${CLICKHOUSE_TEST_UNIQUE_NAME}_$1'))"; }
+# UUID, and concurrent copies of this test must not collide with each other. `sipHash128` rather
+# than `MD5`: `MD5` throws `SUPPORT_IS_DISABLED` in OpenSSL FIPS builds.
+attach_uuid() { ${CLICKHOUSE_CLIENT} -q "SELECT reinterpretAsUUID(sipHash128('${CLICKHOUSE_TEST_UNIQUE_NAME}_$1'))"; }
 
 # The denial assertions match the privilege sentence, not just the engine name: the client echoes the
 # failing query back, and that echo contains both the engine name and the word "grant" (it is in this
@@ -54,6 +55,8 @@ ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE, DROP TABLE ON ${CLICKHOUSE_DATABASE}.* TO ${USER}"
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON URL TO ${USER}"
+# The RESTORE arms below read from a Disk(...) locator, which requires the DISK source grant.
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO ${USER}"
 
 echo "--- TABLE ENGINE ON URL grant alone: ENGINE = URL('http://...') is allowed (URL engine) ---"
 # Dropped as the admin, so the precondition holds whatever the test user's grants are at this point.

@@ -331,6 +331,11 @@ public:
         return data->isDefaultAt(0) ? s : 0;
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return s == 0 || data->hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         if (!data->isDefaultAt(0))
@@ -356,6 +361,10 @@ public:
     IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
+
+    /// Replace the single broadcast value (the number of rows is unchanged). `value` must have exactly one row.
+    /// Only valid while building the column (uniquely owned), e.g. when a serialization fills the value it read.
+    void setValue(const ColumnPtr & value);
 
     Field getField() const { return getDataColumn()[0]; }
 
