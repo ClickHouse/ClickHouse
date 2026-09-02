@@ -384,135 +384,124 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # patch pushes its changelog to master; detect whether it is already there so a rerun is idempotent. The "new" bump self-checks the master version instead.
-    changelog_absent = False
-
-    def _detect_changelog_absent():
-        nonlocal changelog_absent
+    # patch generates its changelog and pushes it (with the version bump) to
+    # master, but only when it is not already there so a rerun is idempotent; the
+    # "new" bump self-checks the master version instead. Detection and both uses
+    # of the result live in this one step, so the state stays a local.
+    def _push_changelog_to_master():
         if args.dry_run:
             changelog_absent = not release_info.is_tag_pushed
+        else:
+            changelog_path = f"docs/changelogs/{release_info.release_tag}.md"
+            on_master = bool(
+                Shell.get_output(
+                    f"git ls-tree --name-only origin/master -- {shlex.quote(changelog_path)}"
+                ).strip()
+            )
+            changelog_absent = not on_master
+            print(
+                f"ChangeLog [{changelog_path}] on master: "
+                + ("yes — skipping" if on_master else "no — will push")
+            )
+        if not changelog_absent:
             return
-        changelog_path = f"docs/changelogs/{release_info.release_tag}.md"
-        on_master = bool(
-            Shell.get_output(
-                f"git ls-tree --name-only origin/master -- {shlex.quote(changelog_path)}"
-            ).strip()
+
+        uid = os.getuid()
+        gid = os.getgid()
+        for cmd in [
+            "echo 'List versions'",
+            "./utils/list-versions/list-versions.sh"
+            " > ./utils/list-versions/version_date.tsv",
+            "echo 'Update docker version'",
+            "./utils/list-versions/update-docker-version.sh",
+            "echo 'Generate ChangeLog'",
+            "docker pull clickhouse/style-test:latest",
+            # changelog.py runs in the container (no host gh session): the robot token goes in via -e GH_TOKEN / --gh-user-or-token, and the string carries $GH_TOKEN, not its value.
+            f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
+            f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+            f" clickhouse/style-test:latest"
+            f" ./tests/ci/changelog.py -v --debug-helpers"
+            f' --gh-user-or-token "$GH_TOKEN"'
+            f" --jobs=5"
+            f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
+            f"git add ./docs/changelogs/{release_info.release_tag}.md",
+            "echo 'Generate Security'",
+            "python3 ./utils/security-generator/generate_security.py"
+            " > SECURITY.md",
+            "git diff HEAD",
+        ]:
+            Shell.check(cmd, strict=True, verbose=True)
+
+        # A dry run generates the changelog but publishes nothing.
+        if args.dry_run:
+            return
+
+        commit_msg = f"Update version_date.tsv and changelogs after {release_info.release_tag}"
+        Shell.check(
+            "git config user.email robot-clickhouse@users.noreply.github.com"
+            " && git config user.name robot-clickhouse",
+            strict=True,
         )
-        changelog_absent = not on_master
-        print(
-            f"ChangeLog [{changelog_path}] on master: "
-            + ("yes — skipping" if on_master else "no — will push")
+        # The exact files the generation above touches; scanned vs HEAD + untracked.
+        pathspec = " ".join(
+            [
+                "utils/list-versions/version_date.tsv",
+                "docs/changelogs/" + shlex.quote(release_info.release_tag) + ".md",
+                "SECURITY.md",
+                "docker/keeper/Dockerfile",
+                "docker/keeper/Dockerfile.distroless",
+                "docker/server/Dockerfile.alpine",
+                "docker/server/Dockerfile.distroless",
+                "docker/server/Dockerfile.ubuntu",
+            ]
         )
+        changed = Shell.get_output(
+            f"git diff --name-only HEAD -- {pathspec}", strict=True
+        )
+        untracked = Shell.get_output(
+            f"git ls-files --others --exclude-standard -- {pathspec}", strict=True
+        )
+        artifact_files = sorted(
+            {f for f in changed.splitlines() + untracked.splitlines() if f.strip()}
+        )
+        assert artifact_files, "no changelog artifacts were generated"
+        # Back up the generated files; the checkout below discards the worktree.
+        backup_dir = tempfile.mkdtemp(prefix="changelog-artifacts-")
+        for f in artifact_files:
+            dst = os.path.join(backup_dir, f)
+            os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+            shutil.copy2(f, dst)
+        try:
+            Shell.check(
+                "git fetch --quiet origin master && git checkout -f FETCH_HEAD",
+                strict=True,
+            )
+            for f in artifact_files:
+                os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
+                shutil.copy2(os.path.join(backup_dir, f), f)
+            Shell.check(
+                "git add -- " + " ".join(shlex.quote(f) for f in artifact_files),
+                strict=True,
+            )
+            # Already on master (rerun) — nothing to push.
+            if Shell.check("git diff --cached --quiet"):
+                print("ChangeLog already on master — nothing to push")
+                return
+            Shell.check(f"git commit -m {shlex.quote(commit_msg)}", strict=True)
+            Git.push(
+                "ClickHouse/ClickHouse",
+                "HEAD:refs/heads/master",
+                strict=True,
+                retries=3,
+                rebase_retries=5,
+            )
+        finally:
+            shutil.rmtree(backup_dir, ignore_errors=True)
 
     if args.release_type == "patch":
         step(
-            name="Detect Changelog On Master",
-            command=_detect_changelog_absent,
-            workdir=REPO_PATH,
-        )
-
-    if args.release_type == "patch" and changelog_absent:
-        uid = os.getuid()
-        gid = os.getgid()
-        step(
-            name="Bump Docker Versions, Changelog, Security",
-            command=[
-                "echo 'List versions'",
-                "./utils/list-versions/list-versions.sh"
-                " > ./utils/list-versions/version_date.tsv",
-                "echo 'Update docker version'",
-                "./utils/list-versions/update-docker-version.sh",
-                "echo 'Generate ChangeLog'",
-                "docker pull clickhouse/style-test:latest",
-                # changelog.py runs inside the container, which cannot see the
-                # host gh session, so pass the robot token in via `-e GH_TOKEN`
-                # (inherited from the job-wide export) and `--gh-user-or-token`.
-                # The command string carries `$GH_TOKEN`, not its value, so
-                # verbose logging never prints the token.
-                f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
-                f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
-                f" clickhouse/style-test:latest"
-                f" ./tests/ci/changelog.py -v --debug-helpers"
-                f' --gh-user-or-token "$GH_TOKEN"'
-                f" --jobs=5"
-                f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
-                f"git add ./docs/changelogs/{release_info.release_tag}.md",
-                "echo 'Generate Security'",
-                "python3 ./utils/security-generator/generate_security.py"
-                " > SECURITY.md",
-                "git diff HEAD",
-            ],
-            workdir=REPO_PATH,
-        )
-
-    if args.release_type == "patch" and not args.dry_run and changelog_absent:
-
-        def push_changelog_to_master():
-            commit_msg = f"Update version_date.tsv and changelogs after {release_info.release_tag}"
-            Shell.check(
-                "git config user.email robot-clickhouse@users.noreply.github.com"
-                " && git config user.name robot-clickhouse",
-                strict=True,
-            )
-            # The exact files the generation step touches; scanned vs HEAD + untracked.
-            pathspec = " ".join(
-                [
-                    "utils/list-versions/version_date.tsv",
-                    "docs/changelogs/" + shlex.quote(release_info.release_tag) + ".md",
-                    "SECURITY.md",
-                    "docker/keeper/Dockerfile",
-                    "docker/keeper/Dockerfile.distroless",
-                    "docker/server/Dockerfile.alpine",
-                    "docker/server/Dockerfile.distroless",
-                    "docker/server/Dockerfile.ubuntu",
-                ]
-            )
-            changed = Shell.get_output(
-                f"git diff --name-only HEAD -- {pathspec}", strict=True
-            )
-            untracked = Shell.get_output(
-                f"git ls-files --others --exclude-standard -- {pathspec}", strict=True
-            )
-            artifact_files = sorted(
-                {f for f in changed.splitlines() + untracked.splitlines() if f.strip()}
-            )
-            assert artifact_files, "no changelog artifacts were generated"
-            # Back up the generated files; the checkout below discards the worktree.
-            backup_dir = tempfile.mkdtemp(prefix="changelog-artifacts-")
-            for f in artifact_files:
-                dst = os.path.join(backup_dir, f)
-                os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
-                shutil.copy2(f, dst)
-            try:
-                Shell.check(
-                    "git fetch --quiet origin master && git checkout -f FETCH_HEAD",
-                    strict=True,
-                )
-                for f in artifact_files:
-                    os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
-                    shutil.copy2(os.path.join(backup_dir, f), f)
-                Shell.check(
-                    "git add -- " + " ".join(shlex.quote(f) for f in artifact_files),
-                    strict=True,
-                )
-                # Already on master (rerun) — nothing to push.
-                if Shell.check("git diff --cached --quiet"):
-                    print("ChangeLog already on master — nothing to push")
-                    return
-                Shell.check(f"git commit -m {shlex.quote(commit_msg)}", strict=True)
-                Git.push(
-                    "ClickHouse/ClickHouse",
-                    "HEAD:refs/heads/master",
-                    strict=True,
-                    retries=3,
-                    rebase_retries=5,
-                )
-            finally:
-                shutil.rmtree(backup_dir, ignore_errors=True)
-
-        step(
-            name="Push ChangeLog to master",
-            command=push_changelog_to_master,
+            name="Bump Changelog and Push to master",
+            command=_push_changelog_to_master,
             workdir=REPO_PATH,
         )
 
