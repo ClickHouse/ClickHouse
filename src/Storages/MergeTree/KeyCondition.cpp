@@ -33,6 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -2382,16 +2383,19 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
-/// Whether the type is, or contains at any depth, a dynamically typed one. Such a type holds values of
-/// several types at once and compares them across types.
+/// Whether the type holds values of several types at once and compares them across types.
+static bool isDynamicallyTypedDomain(const IDataType & type)
+{
+    const WhichDataType which(type);
+    return which.isDynamic() || which.isVariant() || which.isObject();
+}
+
+
+/// Whether the type is, or contains at any depth, a dynamically typed one.
 static bool hasDynamicallyTypedComponent(const DataTypePtr & type)
 {
     bool result = false;
-    auto check = [&](const IDataType & child)
-    {
-        const WhichDataType which(child);
-        result = result || which.isDynamic() || which.isVariant() || which.isObject();
-    };
+    auto check = [&](const IDataType & child) { result = result || isDynamicallyTypedDomain(child); };
 
     check(*type);
     type->forEachChild(check);
@@ -2408,43 +2412,85 @@ static bool fieldIsZeroWrittenInAnyType(const Field & field)
 }
 
 
-/// Whether the value holds a zero at any depth. `any_spelling_of_zero` widens that to a zero written in
-/// another numeric type, or as a string that parses as one, which a dynamically typed domain compares
-/// equal to a stored `-0.`.
+/// Whether the value holds, at any depth, a zero the member holding it compares equal to a stored `-0.`:
+/// under a dynamically typed member any spelling of a zero, elsewhere only a `Float64` zero, since no other
+/// type has two spellings of zero. A value that does not have the shape of its own type cannot be read.
 /// Iterative because `Field`s nest inside `Field`s and a recursive walk overflows the native stack.
-static bool fieldHoldsZero(const Field & field, bool any_spelling_of_zero)
+static bool fieldHoldsZeroConflatedWithNegativeZero(const Field & field, const DataTypePtr & type)
 {
-    absl::InlinedVector<const Field *, 16> pending{&field};
+    /// A null type marks a value under a dynamically typed member.
+    absl::InlinedVector<std::pair<const Field *, DataTypePtr>, 16> pending{{&field, type}};
 
     while (!pending.empty())
     {
-        const Field * current = pending.back();
+        const auto [current, current_type] = pending.back();
         pending.pop_back();
+
+        DataTypePtr member_type;
+        if (current_type)
+        {
+            member_type = removeNullable(removeLowCardinality(current_type));
+            if (isDynamicallyTypedDomain(*member_type))
+                member_type = nullptr;
+        }
 
         switch (current->getType())
         {
-            case Field::Types::Float64:
-                if (current->safeGet<Float64>() == 0)
-                    return true;
-                break;
             case Field::Types::Array:
+            {
+                const auto * array_type = member_type ? typeid_cast<const DataTypeArray *>(member_type.get()) : nullptr;
+                if (member_type && !array_type)
+                    return true;
                 for (const Field & element : current->safeGet<Array>())
-                    pending.push_back(&element);
+                    pending.emplace_back(&element, array_type ? array_type->getNestedType() : nullptr);
                 break;
+            }
             case Field::Types::Tuple:
-                for (const Field & element : current->safeGet<Tuple>())
-                    pending.push_back(&element);
+            {
+                const Tuple & elements = current->safeGet<Tuple>();
+                const auto * tuple_type = member_type ? typeid_cast<const DataTypeTuple *>(member_type.get()) : nullptr;
+                if (member_type && (!tuple_type || tuple_type->getElements().size() != elements.size()))
+                    return true;
+                for (size_t i = 0; i < elements.size(); ++i)
+                    pending.emplace_back(&elements[i], tuple_type ? tuple_type->getElement(i) : nullptr);
                 break;
+            }
             case Field::Types::Map:
-                for (const Field & element : current->safeGet<Map>())
-                    pending.push_back(&element);
+            {
+                const auto * map_type = member_type ? typeid_cast<const DataTypeMap *>(member_type.get()) : nullptr;
+                if (member_type && !map_type)
+                    return true;
+                for (const Field & entry : current->safeGet<Map>())
+                {
+                    if (!map_type)
+                    {
+                        pending.emplace_back(&entry, nullptr);
+                        continue;
+                    }
+                    /// An entry of a `Map` value is a key and a value in a tuple.
+                    if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+                        return true;
+                    const Tuple & entry_elements = entry.safeGet<Tuple>();
+                    pending.emplace_back(&entry_elements[0], map_type->getKeyType());
+                    pending.emplace_back(&entry_elements[1], map_type->getValueType());
+                }
                 break;
+            }
             case Field::Types::Object:
+            {
+                if (member_type)
+                    return true;
                 for (const auto & entry : current->safeGet<Object>())
-                    pending.push_back(&entry.second);
+                    pending.emplace_back(&entry.second, nullptr);
                 break;
+            }
             default:
-                if (any_spelling_of_zero && fieldIsZeroWrittenInAnyType(*current))
+                if (member_type)
+                {
+                    if (current->getType() == Field::Types::Float64 && current->safeGet<Float64>() == 0)
+                        return true;
+                }
+                else if (fieldIsZeroWrittenInAnyType(*current))
                     return true;
                 break;
         }
@@ -2471,15 +2517,15 @@ static bool keyTransformCanSeparateEqualValues(
     /// that is where its equality class lives: `WHERE f = 0` over a `Float64` column compares two floats.
     const Field key_input_value = tryConvertFieldToType(value, *dag.input_type, value_type.get());
 
-    /// A stored `-0.` equals a zero written in any other type in such a domain, so every spelling of a
-    /// zero there stands for both zeros. A value that denotes no number stands for itself alone, and a
-    /// constant that does not reach the domain at all leaves nothing to reason about.
-    if (hasDynamicallyTypedComponent(dag.input_type))
-        return key_input_value.isNull() || fieldHoldsZero(key_input_value, /*any_spelling_of_zero=*/ true);
+    /// A constant that does not reach the domain at all leaves nothing to reason about, unless the domain
+    /// accepts values of any type, where a conversion that fails leaves the comparison unmodelled.
+    if (key_input_value.isNull())
+        return hasDynamicallyTypedComponent(dag.input_type);
 
-    /// A container holds one sign combination per zero inside it, so one sibling does not decide it.
-    if (key_input_value.getType() != Field::Types::Float64)
-        return fieldHoldsZero(key_input_value, /*any_spelling_of_zero=*/ false);
+    /// A container holds one sign combination per zero inside it, so one sibling does not decide it, and a
+    /// dynamically typed member reads every spelling of a zero as a number.
+    if (key_input_value.getType() != Field::Types::Float64 || hasDynamicallyTypedComponent(dag.input_type))
+        return fieldHoldsZeroConflatedWithNegativeZero(key_input_value, dag.input_type);
 
     const Float64 zero = key_input_value.safeGet<Float64>();
     if (zero != 0)

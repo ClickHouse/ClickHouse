@@ -26,6 +26,11 @@ dynamically typed domain	1
 dynamically typed domain, ground truth	1
 dynamically typed domain nested in a container	1
 dynamically typed domain nested in a container, ground truth	1
+zero on the dynamically typed member	1
+zero on the dynamically typed member, ground truth	1
+zero on a fixed-typed member beside a dynamically typed one	1
+zero on a fixed-typed member beside a dynamically typed one, ground truth	1
+zero on a fixed-typed member beside a dynamically typed one	Granules: 1/3
 variant domain	1
 variant domain, ground truth	1
 zero written as a string	1

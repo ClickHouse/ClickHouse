@@ -128,6 +128,33 @@ INSERT INTO t_signed_zero_dynamic_nested VALUES (tuple(-0.0::Float64));
 SELECT 'dynamically typed domain nested in a container', count() FROM t_signed_zero_dynamic_nested WHERE d = tuple(0);
 SELECT 'dynamically typed domain nested in a container, ground truth', countIf(d = tuple(0)) FROM t_signed_zero_dynamic_nested;
 
+-- A container can hold a dynamically typed member beside a fixed-typed one, and each member reads a zero
+-- inside it in its own domain.
+DROP TABLE IF EXISTS t_signed_zero_dynamic_sibling;
+CREATE TABLE t_signed_zero_dynamic_sibling (k Tuple(UInt64, Dynamic)) ENGINE = MergeTree ORDER BY toString(k)
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_dynamic_sibling VALUES ((1, toFloat64('-0')::Dynamic));
+
+SELECT 'zero on the dynamically typed member', count() FROM t_signed_zero_dynamic_sibling
+WHERE k = (1, toUInt64(0))::Tuple(UInt64, Dynamic);
+SELECT 'zero on the dynamically typed member, ground truth',
+    countIf(k = (1, toUInt64(0))::Tuple(UInt64, Dynamic)) FROM t_signed_zero_dynamic_sibling;
+
+-- A fixed-typed member has one spelling of a zero, so a zero there still names a single key value.
+DROP TABLE IF EXISTS t_signed_zero_dynamic_sibling_control;
+CREATE TABLE t_signed_zero_dynamic_sibling_control (k Tuple(UInt64, Dynamic)) ENGINE = MergeTree ORDER BY toString(k)
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_dynamic_sibling_control VALUES ((0, toUInt64(1))), ((0, toUInt64(2))), ((1, toUInt64(1)));
+
+SELECT 'zero on a fixed-typed member beside a dynamically typed one', count()
+FROM t_signed_zero_dynamic_sibling_control WHERE k = (0, toUInt64(1))::Tuple(UInt64, Dynamic);
+SELECT 'zero on a fixed-typed member beside a dynamically typed one, ground truth',
+    countIf(k = (0, toUInt64(1))::Tuple(UInt64, Dynamic)) FROM t_signed_zero_dynamic_sibling_control;
+SELECT 'zero on a fixed-typed member beside a dynamically typed one', extract(explain, 'Granules: \\d+/\\d+')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_signed_zero_dynamic_sibling_control
+    WHERE k = (0, toUInt64(1))::Tuple(UInt64, Dynamic))
+WHERE match(explain, 'Granules: \\d+/\\d+');
+
 -- `Variant` is a second such domain, and a constant there can sit on the integer alternative, so it
 -- carries no floating-point value at all while still standing for a stored `-0.`.
 DROP TABLE IF EXISTS t_signed_zero_variant;
@@ -172,6 +199,8 @@ DROP TABLE t_signed_zero_minmax;
 DROP TABLE t_signed_zero_minmax_control;
 DROP TABLE t_signed_zero_dynamic;
 DROP TABLE t_signed_zero_dynamic_nested;
+DROP TABLE t_signed_zero_dynamic_sibling;
+DROP TABLE t_signed_zero_dynamic_sibling_control;
 DROP TABLE t_signed_zero_variant;
 DROP TABLE t_signed_zero_dynamic_string;
 DROP TABLE t_signed_zero_dynamic_control;
