@@ -59,6 +59,12 @@ public:
 
     const char * getName() const override { return "Polyglot SQL Statement"; }
 
+    /// The input is foreign SQL handed to the transpiler as an opaque string: it may contain tokens
+    /// that the ClickHouse Lexer reports as errors (e.g. a bare `!` in `SELECT !0`). The generic
+    /// lexical checks of the original buffer must be skipped, otherwise the client would reject
+    /// statements that the server (which transpiles before parsing) executes fine.
+    bool consumesForeignText() const override { return true; }
+
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
