@@ -9,8 +9,9 @@ INSERT INTO t_signed_zero VALUES (-0);
 
 SELECT 'equals', count() FROM t_signed_zero WHERE f = 0;
 SELECT 'equals, ground truth', countIf(f = 0) FROM t_signed_zero;
--- An implicit projection can answer this count from part metadata, and the metadata is what the
--- wrong range describes, so both projection settings stay at their defaults for this row.
+-- An implicit projection may answer this count from part metadata when key analysis reports the
+-- filter always-true for a part, which is what the wrong range does here, so both projection
+-- settings stay at their defaults for this row.
 SELECT 'notEquals', count() FROM t_signed_zero WHERE f != 0
 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT 'notEquals, ground truth', countIf(f != 0) FROM t_signed_zero;
@@ -22,6 +23,17 @@ INSERT INTO t_signed_zero_tuple VALUES ((-0, 1));
 
 SELECT 'zero inside a tuple constant', count() FROM t_signed_zero_tuple WHERE k = (0., 1.);
 SELECT 'zero inside a tuple constant, ground truth', countIf(k = (0., 1.)) FROM t_signed_zero_tuple;
+
+-- A container constant with no zero inside it names a single key value, so its range still prunes.
+DROP TABLE IF EXISTS t_signed_zero_tuple_control;
+CREATE TABLE t_signed_zero_tuple_control (k Tuple(Float64, Float64)) ENGINE = MergeTree ORDER BY toString(k)
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_tuple_control VALUES ((1, 1)), ((2, 1)), ((3, 1));
+
+SELECT 'non-zero constant inside a tuple', count() FROM t_signed_zero_tuple_control WHERE k = (2., 1.);
+SELECT 'non-zero constant inside a tuple', extract(explain, 'Granules: \\d+/\\d+')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_signed_zero_tuple_control WHERE k = (2., 1.))
+WHERE match(explain, 'Granules: \\d+/\\d+');
 
 -- A non-zero constant names a single value, so its range still prunes.
 DROP TABLE IF EXISTS t_signed_zero_nonzero;
@@ -65,6 +77,17 @@ INSERT INTO t_signed_zero_partition VALUES (-0);
 SELECT 'partition key', count() FROM t_signed_zero_partition WHERE f = 0;
 SELECT 'partition key, ground truth', countIf(f = 0) FROM t_signed_zero_partition;
 
+-- A non-zero constant names one partition value, so the atom still reaches the partition pruner.
+DROP TABLE IF EXISTS t_signed_zero_partition_control;
+CREATE TABLE t_signed_zero_partition_control (f Float64) ENGINE = MergeTree PARTITION BY toString(f) ORDER BY tuple()
+SETTINGS index_granularity = 1, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_signed_zero_partition_control VALUES (1), (2);
+
+SELECT 'partition key, non-zero constant', count() FROM t_signed_zero_partition_control WHERE f = 2;
+SELECT 'partition key, non-zero constant, the pruner still gets the atom', count()
+FROM (EXPLAIN indexes = 1 SELECT f FROM t_signed_zero_partition_control WHERE f = 2)
+WHERE explain ILIKE '%Condition:%toString(f)%';
+
 DROP TABLE IF EXISTS t_signed_zero_minmax;
 CREATE TABLE t_signed_zero_minmax (f Float64, INDEX idx toString(f) TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple()
@@ -107,10 +130,12 @@ SELECT 'dynamically typed domain nested in a container, ground truth', countIf(d
 
 DROP TABLE t_signed_zero;
 DROP TABLE t_signed_zero_tuple;
+DROP TABLE t_signed_zero_tuple_control;
 DROP TABLE t_signed_zero_nonzero;
 DROP TABLE t_signed_zero_negate;
 DROP TABLE t_signed_zero_not_distinct;
 DROP TABLE t_signed_zero_partition;
+DROP TABLE t_signed_zero_partition_control;
 DROP TABLE t_signed_zero_minmax;
 DROP TABLE t_signed_zero_minmax_control;
 DROP TABLE t_signed_zero_dynamic;

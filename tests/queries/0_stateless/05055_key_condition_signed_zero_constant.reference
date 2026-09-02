@@ -4,6 +4,8 @@ notEquals	0
 notEquals, ground truth	0
 zero inside a tuple constant	1
 zero inside a tuple constant, ground truth	1
+non-zero constant inside a tuple	1
+non-zero constant inside a tuple	Granules: 2/3
 non-zero constant	1
 non-zero constant	Granules: 2/3
 zero constant, transform keeps the values equal	1
@@ -13,6 +15,8 @@ isNotDistinctFrom	1
 isNotDistinctFrom, ground truth	1
 partition key	1
 partition key, ground truth	1
+partition key, non-zero constant	1
+partition key, non-zero constant, the pruner still gets the atom	1
 minmax index	1
 minmax index, ground truth	1
 minmax index, non-zero constant	1
