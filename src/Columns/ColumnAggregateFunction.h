@@ -146,6 +146,8 @@ public:
         return false;
     }
 
+    bool hasOnlyTypeDefaults() const override { return false; }
+
     std::string_view getDataAt(size_t n) const override;
 
     void insertData(const char * pos, size_t length) override;
@@ -188,6 +190,12 @@ public:
     void updateHashFast(SipHash & hash) const override;
 
     size_t byteSize() const override;
+
+    /// Uncompressed size of the states as serialized into a data part. byteSize() cannot be used for this
+    /// because it intentionally ignores states living in shared arenas (see byteSize()). Fixed-layout states
+    /// are sized from sizeOfData() without serializing; variable-size states are serialized exactly so the
+    /// figure never underestimates a skewed column. Used to honor index_granularity_bytes at write time.
+    size_t serializedSizeEstimate() const;
 
     size_t byteSizeAt(size_t n) const override;
 

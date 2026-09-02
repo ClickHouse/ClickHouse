@@ -1,8 +1,15 @@
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
@@ -13,6 +20,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -89,16 +98,20 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         return ostr;
     };
 
-    auto print_database_table = [&]() -> WriteBuffer &
+    auto print_database_table = [&](bool force_quote = false) -> WriteBuffer &
     {
+        FormatSettings quoted_settings = settings;
+        quoted_settings.identifier_quoting_rule = IdentifierQuotingRule::Always;
+        const FormatSettings & id_settings = force_quote ? quoted_settings : settings;
+
         if (database)
         {
-            database->format(ostr, settings, state, frame);
+            database->format(ostr, id_settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->format(ostr, settings, state, frame);
+        table->format(ostr, id_settings, state, frame);
 
         if (if_exists)
             print_keyword(" IF EXISTS");
@@ -135,6 +148,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             print_keyword(" FROM DATABASE ");
             print_identifier(getDatabase());
+
+            if (with_tables)
+                print_keyword(" WITH TABLES");
         }
     };
 
@@ -218,6 +234,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
+        case Type::WAIT_QUERY_RUNNER:
         case Type::FLUSH_DISTRIBUTED:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
@@ -260,6 +277,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             break;
         }
         case Type::RELOAD_DICTIONARY:
+        case Type::UNLOAD_DICTIONARY:
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
@@ -479,6 +497,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_database_table();
             break;
         }
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+        {
+            ostr << ' ';
+            print_database_table(/*force_quote=*/true);
+            break;
+        }
         case Type::TEST_VIEW:
         {
             ostr << ' ';
@@ -493,7 +521,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 ostr << ' ';
                 print_keyword("SET FAKE TIME");
-                ostr << " '" << LocalDateTime(*fake_time_for_view) << "'";
+                ostr << " " << quoteString(*fake_time_for_view);
             }
             break;
         }
@@ -589,6 +617,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_INDEX_MARK_CACHE:
@@ -602,7 +631,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PAIMON_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
+        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
@@ -615,6 +646,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::REPLICA_READY:   /// Obsolete
         case Type::REPLICA_UNREADY: /// Obsolete
         case Type::RELOAD_DICTIONARIES:
+        case Type::UNLOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         case Type::RELOAD_MODELS:
         case Type::RELOAD_FUNCTIONS:
@@ -626,6 +658,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
         case Type::PAUSE_VIEWS:
+        case Type::STOP_ALL_BACKGROUND:
+        case Type::START_ALL_BACKGROUND:
+        case Type::PAUSE_ALL_BACKGROUND:
+        case Type::CANCEL_ALL_BACKGROUND:
+        case Type::REFRESH_ALL_BACKGROUND:
         case Type::CLEAR_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
@@ -646,6 +683,395 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
         formatOnCluster(ostr, settings);
+}
+
+void ASTSystemQuery::writeJSON(WriteBuffer & out) const
+{
+#if USE_XRAY
+    if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
+#endif
+    JSONObjectWriter w(out, "SystemQuery");
+    w.writeString("query_type", std::string(magic_enum::enum_name(type)));
+    w.writeChild("database", database);
+    w.writeChild("table", table);
+    if (if_exists)
+        w.writeBool("if_exists", true);
+    w.writeChild("query_settings", query_settings);
+    if (!target_model.empty())
+        w.writeString("target_model", target_model);
+    if (!target_function.empty())
+        w.writeString("target_function", target_function);
+    if (!replica.empty())
+        w.writeString("replica", replica);
+    if (!shard.empty())
+        w.writeString("shard", shard);
+    if (!zk_name.empty())
+        w.writeString("zk_name", zk_name);
+    if (!full_replica_zk_path.empty())
+        w.writeString("full_replica_zk_path", full_replica_zk_path);
+    if (!replica_zk_path.empty())
+        w.writeString("replica_zk_path", replica_zk_path);
+    if (is_drop_whole_replica)
+        w.writeBool("is_drop_whole_replica", true);
+    if (with_tables)
+        w.writeBool("with_tables", true);
+    if (!storage_policy.empty())
+        w.writeString("storage_policy", storage_policy);
+    if (!volume.empty())
+        w.writeString("volume", volume);
+    if (!disk.empty())
+        w.writeString("disk", disk);
+    if (seconds != 0)
+        w.writeUInt("seconds", seconds);
+    if (untracked_memory_size != 0)
+        w.writeUInt("untracked_memory_size", untracked_memory_size);
+    if (query_result_cache_tag.has_value())
+        w.writeString("query_result_cache_tag", *query_result_cache_tag);
+    if (!filesystem_cache_name.empty())
+        w.writeString("filesystem_cache_name", filesystem_cache_name);
+    if (!distributed_cache_server_id.empty())
+        w.writeString("distributed_cache_server_id", distributed_cache_server_id);
+    if (distributed_cache_drop_connections)
+        w.writeBool("distributed_cache_drop_connections", true);
+    if (!key_to_drop.empty())
+        w.writeString("key_to_drop", key_to_drop);
+    if (offset_to_drop.has_value())
+        w.writeUInt("offset_to_drop", *offset_to_drop);
+    if (!backup_name.empty())
+        w.writeString("backup_name", backup_name);
+    w.writeChild("backup_source", backup_source);
+    w.writeChild("scheduled_merge_parts", scheduled_merge_parts);
+    if (!schema_cache_storage.empty())
+        w.writeString("schema_cache_storage", schema_cache_storage);
+    if (!schema_cache_format.empty())
+        w.writeString("schema_cache_format", schema_cache_format);
+    if (!queue_path.empty())
+        w.writeString("queue_path", queue_path);
+    if (!fail_point_name.empty())
+        w.writeString("fail_point_name", fail_point_name);
+    if (fail_point_action != FailPointAction::UNSPECIFIED)
+        w.writeString("fail_point_action", std::string(magic_enum::enum_name(fail_point_action)));
+    if (!delta_kernel_tracing_level.empty())
+        w.writeString("delta_kernel_tracing_level", delta_kernel_tracing_level);
+    if (!coverage_test_name.empty())
+        w.writeString("coverage_test_name", coverage_test_name);
+    if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+        w.writeString("sync_replica_mode", std::string(magic_enum::enum_name(sync_replica_mode)));
+    if (!src_replicas.empty())
+    {
+        w.writeKey("src_replicas");
+        auto & buf = w.getOut();
+        buf << '[';
+        for (size_t i = 0; i < src_replicas.size(); ++i)
+        {
+            if (i > 0) buf << ',';
+            writeJSONString(src_replicas[i], buf, w.getFormatSettings());
+        }
+        buf << ']';
+    }
+    if (fake_time_for_view.has_value())
+        w.writeString("fake_time_for_view", *fake_time_for_view);
+    if (!tables.empty())
+    {
+        w.writeKey("tables");
+        auto & buf = w.getOut();
+        buf << '[';
+        for (size_t i = 0; i < tables.size(); ++i)
+        {
+            if (i > 0) buf << ',';
+            buf << "{\"database\":";
+            writeJSONString(tables[i].first, buf, w.getFormatSettings());
+            buf << ",\"table\":";
+            writeJSONString(tables[i].second, buf, w.getFormatSettings());
+            buf << '}';
+        }
+        buf << ']';
+    }
+    if (type == Type::STOP_LISTEN || type == Type::START_LISTEN)
+    {
+        w.writeKey("server_type");
+        auto & buf = w.getOut();
+        buf << "{\"type\":";
+        writeJSONString(magic_enum::enum_name(server_type.type), buf, w.getFormatSettings());
+        if (!server_type.custom_name.empty())
+        {
+            buf << ",\"custom_name\":";
+            writeJSONString(server_type.custom_name, buf, w.getFormatSettings());
+        }
+        if (!server_type.exclude_types.empty())
+        {
+            buf << ",\"exclude_types\":[";
+            bool first_excl = true;
+            for (auto t : server_type.exclude_types)
+            {
+                if (!first_excl) buf << ',';
+                first_excl = false;
+                writeJSONString(magic_enum::enum_name(t), buf, w.getFormatSettings());
+            }
+            buf << ']';
+        }
+        if (!server_type.exclude_custom_names.empty())
+        {
+            buf << ",\"exclude_custom_names\":[";
+            bool first_excl = true;
+            for (const auto & n : server_type.exclude_custom_names)
+            {
+                if (!first_excl) buf << ',';
+                first_excl = false;
+                writeJSONString(n, buf, w.getFormatSettings());
+            }
+            buf << ']';
+        }
+        buf << '}';
+    }
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+    w.writeChildren(children);
+}
+
+void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    if (!r.has("query_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'query_type' field in `SystemQuery` during AST JSON deserialization");
+    String query_type_str = r.getString("query_type");
+    auto query_type_opt = magic_enum::enum_cast<Type>(query_type_str);
+    if (!query_type_opt)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: '{}'", query_type_str);
+    type = *query_type_opt;
+#if USE_XRAY
+    if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
+#endif
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto`, so reject other node types here.
+    database = r.readIdentifierChild("database");
+    if (database)
+        children.push_back(database);
+    table = r.readIdentifierChild("table");
+    if (table)
+        children.push_back(table);
+    if_exists = r.getBool("if_exists");
+    /// `query_settings` is parser-produced as an `ASTSetQuery`; `InterpreterSystemQuery` reads it as
+    /// `query.query_settings->as<ASTSetQuery>()->changes`, so reject any other node type here.
+    query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
+    if (query_settings)
+        children.push_back(query_settings);
+    target_model = r.getString("target_model");
+    target_function = r.getString("target_function");
+    replica = r.getString("replica");
+    shard = r.getString("shard");
+    zk_name = r.getString("zk_name");
+    full_replica_zk_path = r.getString("full_replica_zk_path");
+    replica_zk_path = r.getString("replica_zk_path");
+    /// For `SYSTEM DROP REPLICA ... FROM ZKPATH` the parser derives `zk_name` and `replica_zk_path`
+    /// from `full_replica_zk_path`; they are a single invariant, not three independent inputs.
+    /// `formatImpl` prints `full_replica_zk_path`, while `InterpreterSystemQuery::dropReplica` /
+    /// `dropDatabaseReplica` operate on `replica_zk_path`/`zk_name`. Restoring them independently
+    /// would let `clickhouse_json` display one ZooKeeper path and execute against another, so
+    /// reject payloads where the derived fields disagree with (or appear without)
+    /// `full_replica_zk_path`.
+    if (!full_replica_zk_path.empty())
+    {
+        if (zk_name != zkutil::extractZooKeeperName(full_replica_zk_path)
+            || replica_zk_path != zkutil::extractZooKeeperPath(full_replica_zk_path, /*check_starts_with_slash*/ false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Inconsistent ZooKeeper path fields in `SystemQuery` during AST JSON deserialization: "
+                "'zk_name' and 'replica_zk_path' must be derived from 'full_replica_zk_path'");
+    }
+    else if (!zk_name.empty() || !replica_zk_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SystemQuery` carries 'zk_name'/'replica_zk_path' without 'full_replica_zk_path' during AST JSON deserialization");
+    is_drop_whole_replica = r.getBool("is_drop_whole_replica");
+    /// The parser sets `is_drop_whole_replica` only for `SYSTEM DROP [DATABASE] REPLICA 'r'` with no
+    /// `FROM DATABASE`/`FROM TABLE`/`FROM ZKPATH` target (the replica name itself and `FROM SHARD`
+    /// are still allowed). `InterpreterSystemQuery::dropReplica`/`dropDatabaseReplica` check
+    /// `is_drop_whole_replica` before the scoped ZooKeeper-path branch, so a `clickhouse_json`
+    /// payload combining it with a target would execute the whole-replica drop while `formatImpl`
+    /// prints the scoped form. Reject the parser-impossible combination.
+    if (is_drop_whole_replica
+        && (database || table || !full_replica_zk_path.empty() || !replica_zk_path.empty() || !zk_name.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'is_drop_whole_replica' cannot be combined with a database, table, or ZooKeeper-path target "
+            "during AST JSON deserialization");
+    with_tables = r.getBool("with_tables");
+    storage_policy = r.getString("storage_policy");
+    volume = r.getString("volume");
+    disk = r.getString("disk");
+    seconds = r.getUInt("seconds");
+    untracked_memory_size = r.getUInt("untracked_memory_size");
+    if (r.has("query_result_cache_tag"))
+        query_result_cache_tag = r.getString("query_result_cache_tag");
+    filesystem_cache_name = r.getString("filesystem_cache_name");
+    distributed_cache_server_id = r.getString("distributed_cache_server_id");
+    distributed_cache_drop_connections = r.getBool("distributed_cache_drop_connections");
+    key_to_drop = r.getString("key_to_drop");
+    if (r.has("offset_to_drop"))
+        offset_to_drop = r.getUInt("offset_to_drop");
+    backup_name = r.getString("backup_name");
+    backup_source = r.readChild("backup_source");
+    if (backup_source)
+        children.push_back(backup_source);
+    /// `scheduled_merge_parts` is a non-empty `ASTExpressionList` of string `ASTLiteral`s
+    /// (`SYSTEM SCHEDULE MERGE ... PARTS 'p1', ...`); `scheduleMerge` iterates its children and does
+    /// `child->as<ASTLiteral &>().value.safeGet<String>()`, so validate the node type, every child's
+    /// value category, and (for `SCHEDULE_MERGE`) that the list is present and non-empty.
+    scheduled_merge_parts = r.readChildOfType<ASTExpressionList>("scheduled_merge_parts");
+    if (scheduled_merge_parts)
+    {
+        for (const auto & part : scheduled_merge_parts->children)
+        {
+            const auto * literal = part ? part->as<ASTLiteral>() : nullptr;
+            if (!literal || literal->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`SystemQuery` 'scheduled_merge_parts' must contain only string literals during AST JSON deserialization");
+        }
+        children.push_back(scheduled_merge_parts);
+    }
+    if (type == Type::SCHEDULE_MERGE && (!scheduled_merge_parts || scheduled_merge_parts->children.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SYSTEM SCHEDULE MERGE` requires a non-empty 'scheduled_merge_parts' list during AST JSON deserialization");
+    schema_cache_storage = r.getString("schema_cache_storage");
+    schema_cache_format = r.getString("schema_cache_format");
+    queue_path = r.getString("queue_path");
+    fail_point_name = r.getString("fail_point_name");
+    if (r.has("fail_point_action"))
+    {
+        String action_str = r.getString("fail_point_action");
+        auto action_opt = magic_enum::enum_cast<FailPointAction>(action_str);
+        if (!action_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM fail_point_action: '{}'", action_str);
+        fail_point_action = *action_opt;
+    }
+    delta_kernel_tracing_level = r.getString("delta_kernel_tracing_level");
+    coverage_test_name = r.getString("coverage_test_name");
+    if (r.has("sync_replica_mode"))
+    {
+        String mode_str = r.getString("sync_replica_mode");
+        auto mode_opt = magic_enum::enum_cast<SyncReplicaMode>(mode_str);
+        if (!mode_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM sync_replica_mode: '{}'", mode_str);
+        sync_replica_mode = *mode_opt;
+    }
+    src_replicas = r.readStringArray("src_replicas");
+    if (r.has("fake_time_for_view"))
+        fake_time_for_view = r.getString("fake_time_for_view");
+    if (r.has("tables"))
+    {
+        auto arr = r.getArray("tables");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tables' is not a JSON array");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            /// `tables` is a non-AST array; count each entry against `max_ast_elements`.
+            countJSONDeserializationElement();
+            auto t_obj = arr->getObject(i);
+            if (!t_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'tables' array during AST JSON deserialization", i);
+            /// Read both scalars strictly so a non-string database/table is rejected rather than coerced.
+            JSONObjectReader t_reader(*t_obj);
+            tables.emplace_back(
+                t_reader.getString("database"),
+                t_reader.getString("table"));
+        }
+    }
+    /// Validate per-`type` required fields so the deserialized AST cannot reach
+    /// a null-dereference path in `formatImpl`.
+    switch (type)
+    {
+        case Type::SCHEDULE_MERGE:
+            if (!table)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'table' during AST JSON deserialization");
+            if (!scheduled_merge_parts)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'scheduled_merge_parts' during AST JSON deserialization");
+            break;
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
+        case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
+        case Type::TEST_VIEW:
+            if (!table)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'table' during AST JSON deserialization", typeToString(type));
+            break;
+        case Type::SYNC_DATABASE_REPLICA:
+            if (!database)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SYNC_DATABASE_REPLICA` requires 'database' during AST JSON deserialization");
+            break;
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+            /// `formatImpl` unconditionally reads `server_type.type` for these queries.
+            /// Without a 'server_type' field the AST would carry a default-constructed
+            /// `ServerType` and silently format as an unrelated server type, so require it.
+            if (!r.has("server_type"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'server_type' during AST JSON deserialization", typeToString(type));
+            break;
+        default:
+            break;
+    }
+
+    if (r.has("server_type"))
+    {
+        auto srv_obj = r.getNestedObject("server_type");
+        if (!srv_obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is not a JSON object");
+        /// Read the scalar fields strictly so wrong JSON scalar types are rejected with `BAD_ARGUMENTS`
+        /// instead of being coerced (e.g. a string parsed into the type enum, or a number into a name).
+        JSONObjectReader srv_reader(*srv_obj);
+        if (!srv_obj->has("type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is missing 'type' during AST JSON deserialization");
+        String srv_type_str = srv_reader.getString("type");
+        auto srv_type_opt = magic_enum::enum_cast<ServerType::Type>(srv_type_str);
+        if (!srv_type_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.type: '{}'", srv_type_str);
+        server_type.type = *srv_type_opt;
+        server_type.custom_name = srv_reader.getString("custom_name");
+        if (srv_obj->has("exclude_types"))
+        {
+            auto arr = srv_obj->getArray("exclude_types");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type.exclude_types' is not a JSON array");
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                /// Non-AST array: count each entry against `max_ast_elements`.
+                countJSONDeserializationElement();
+                /// Require a JSON string so a coerced value (e.g. a number or a boolean) is not accepted
+                /// as an enum name.
+                const auto elem = arr->get(i);
+                if (!elem.isString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'server_type.exclude_types[{}]' must be a string during AST JSON deserialization", i);
+                String v = arr->getElement<std::string>(i);
+                auto opt = magic_enum::enum_cast<ServerType::Type>(v);
+                if (!opt)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: '{}'", i, v);
+                server_type.exclude_types.insert(*opt);
+            }
+        }
+        if (srv_obj->has("exclude_custom_names"))
+        {
+            auto arr = srv_obj->getArray("exclude_custom_names");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type.exclude_custom_names' is not a JSON array");
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                /// Non-AST array: count each entry against `max_ast_elements`.
+                countJSONDeserializationElement();
+                /// Require a JSON string so a coerced number (e.g. `123`) is not accepted as a name.
+                const auto elem = arr->get(i);
+                if (!elem.isString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'server_type.exclude_custom_names[{}]' must be a string during AST JSON deserialization", i);
+                server_type.exclude_custom_names.insert(elem.extract<String>());
+            }
+        }
+    }
+    cluster = r.getString("cluster");
 }
 
 

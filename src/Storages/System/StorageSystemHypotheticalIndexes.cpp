@@ -1,11 +1,12 @@
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 
@@ -29,7 +30,7 @@ ColumnsDescription StorageSystemHypotheticalIndexes::getColumnsDescription()
 void StorageSystemHypotheticalIndexes::fillData(
     MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & store = context->getHypotheticalIndexStore();
+    const auto & store = context->getHypotheticalObjectStore();
     auto entries = store.getAll();
 
     for (const auto & entry : entries)
@@ -69,3 +70,6 @@ void StorageSystemHypotheticalIndexes::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemHypotheticalIndexes) }

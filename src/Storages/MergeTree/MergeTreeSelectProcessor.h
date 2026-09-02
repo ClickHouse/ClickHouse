@@ -39,9 +39,16 @@ public:
         String stream_id_
     );
 
-    void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const;
+    std::optional<InitialAllRangesAnnouncementResponse> sendInitialRequest(
+        CoordinationMode mode,
+        RangesInDataPartsDescription description,
+        size_t mark_segment_size,
+        size_t min_marks_per_request) const;
 
-    std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const;
+    std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request) const;
+
+    std::optional<ParallelReadResponse> sendReadInOrderRequest(
+        CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
     size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
@@ -56,7 +63,14 @@ private:
     const String stream_id;
 };
 
-using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
+/// Per-part inputs for read-time skip-index filtering; the part itself comes from the read task.
+struct SkipIndexReadInput
+{
+    MarkRanges ranges;
+    RangesInDataPartReadHints read_hints;
+    size_t part_starting_offset_in_query = 0;
+};
+using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
 using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;

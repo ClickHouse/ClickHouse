@@ -298,6 +298,11 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
     setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
+
+    /// Keep in sync with `attachSystemTables`: `system.user_query_log` is attached (and thus safe to grant
+    /// SELECT on implicitly) only when this is enabled. When disabled, the name is free for a regular table.
+    setUserQueryLogEnabled(config_.getBool("query_log.enable_user_query_log", true));
+
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setImpersonateUserAllowed(config_.getBool("access_control_improvements.allow_impersonate_user", config_.getBool("allow_impersonate_user", true)));
@@ -505,7 +510,7 @@ void AccessControl::addStoragesFromMainConfig(
 
     String config_dir = std::filesystem::path{config_path}.remove_filename().string();
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
-    String include_from_path = config.getString("include_from", "/etc/metrika.xml");
+    String include_from_path = config.getString("include_from", "");
     bool has_user_directories = config.has("user_directories");
 
     /// If path to users' config isn't absolute, try guess its root (current) dir.
@@ -557,11 +562,6 @@ scope_guard AccessControl::subscribeForChanges(const UUID & id, const OnChangedH
 scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
 {
     return changes_notifier->subscribeForChanges(ids, handler);
-}
-
-scope_guard AccessControl::subscribeForBatchFinished(const OnBatchFinishedHandler & handler) const
-{
-    return changes_notifier->subscribeForBatchFinished(handler);
 }
 
 bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
@@ -932,21 +932,29 @@ void AccessControl::allowAllSettings()
 void AccessControl::setAllowTierSettings(UInt32 value)
 {
     allow_experimental_tier_settings = value == 0;
-    allow_beta_tier_settings = value <= 1;
+    allow_private_preview_tier_settings = value <= 1;
+    allow_beta_tier_settings = value <= 2;
 }
 
 UInt32 AccessControl::getAllowTierSettings() const
 {
     if (allow_experimental_tier_settings)
         return 0;
-    if (allow_beta_tier_settings)
+    if (allow_private_preview_tier_settings)
         return 1;
-    return 2;
+    if (allow_beta_tier_settings)
+        return 2;
+    return 3;
 }
 
 bool AccessControl::getAllowExperimentalTierSettings() const
 {
     return allow_experimental_tier_settings;
+}
+
+bool AccessControl::getAllowPrivatePreviewTierSettings() const
+{
+    return allow_private_preview_tier_settings;
 }
 
 bool AccessControl::getAllowBetaTierSettings() const

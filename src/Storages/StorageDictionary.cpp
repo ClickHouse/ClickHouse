@@ -376,7 +376,8 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
+            bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")
+                .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
@@ -409,7 +410,7 @@ void registerStorageDictionary(StorageFactory & factory)
     {},
     Documentation{
         .description = R"DOCS_MD(
-The `Dictionary` engine displays the [dictionary](../../../sql-reference/statements/create/dictionary/overview.md) data as a ClickHouse table.
+The `Dictionary` engine displays the [dictionary](/reference/statements/create/dictionary) data as a ClickHouse table.
 
 ## Example {#example}
 
@@ -468,7 +469,7 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-You can use the [dictGet\*](/sql-reference/functions/ext-dict-functions) functions to get the dictionary data in this format.
+You can use the [dictGet\*](/reference/functions/regular-functions/ext-dict-functions) functions to get the dictionary data in this format.
 
 This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
 
@@ -484,7 +485,7 @@ Usage example:
 CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
 ```
 
-      Ok
+Ok
 
 Take a look at what's in the table.
 
@@ -500,7 +501,7 @@ SELECT * FROM products LIMIT 1;
 
 **See Also**
 
-- [Dictionary function](/sql-reference/table-functions/dictionary)
+- [Dictionary function](/reference/functions/table-functions/dictionary)
 )DOCS_MD",
         .syntax = "ENGINE = Dictionary(dictionary_name)"});
 }

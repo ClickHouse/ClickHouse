@@ -39,16 +39,25 @@ public:
         ObjectStorageRouterPtr object_storages_,
         DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        bool use_fake_transaction_ = true);
+        const String & config_prefix);
     ~DiskObjectStorage() override;
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
+    /// A shallow copy of this disk with a fresh writable in-memory metadata storage;
+    /// everything else is shared, no background threads are started.
+    DiskObjectStoragePtr wrapWithMemoryMetadata();
+
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
+    /// Keeper metadata replicates itself; in-memory metadata is transient and has no local
+    /// metadata files zero-copy could ship (see `getReplicatedFilesDescriptionForRemoteDisk`).
+    bool supportZeroCopyReplication() const override
+    {
+        return metadata_storage->getType() != MetadataStorageType::Keeper
+            && metadata_storage->getType() != MetadataStorageType::Memory;
+    }
 
     bool supportParallelWrite() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->supportParallelWrite(); }
 
@@ -185,6 +194,8 @@ public:
         ) override;
 
     void waitBlobsCleanup();
+    int64_t getDeadBlobsQueueEstimate() const;
+    int64_t getMissingBlobsQueueEstimate() const;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
@@ -200,8 +211,8 @@ public:
     bool isPlain() const override;
 
     /// Is object write-once?
-    /// For example: S3PlainObjectStorage is write once, this means that it
-    /// does support BACKUP to this disk, but does not support INSERT into
+    /// For example: S3ObjectStorage with MetadataStorageFromPlainObjectStorage is write once, this
+    /// means that it does support BACKUP to this disk, but does not support INSERT into
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
@@ -224,6 +235,7 @@ public:
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+    DiskObjectStorageConstPtr getWrappedDisk() const;
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -238,15 +250,17 @@ public:
 
 private:
 
+    /// Shallow-copy constructor for `wrapWithMemoryMetadata`.
+    DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_);
+
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
-    String getReadResourceName() const;
-    String getWriteResourceName() const;
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
+    void propagateResourceNamesNoLock() const;
 
     /// Points to wrapped disk in case of cache disk.
     DiskObjectStorageConstPtr wrapped_disk = nullptr;
@@ -271,8 +285,6 @@ private:
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
     mutable std::mutex resource_mutex;
-    String read_resource_name_from_config; // specified in disk config.xml read_resource element
-    String write_resource_name_from_config; // specified in disk config.xml write_resource element
     String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
     String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
@@ -280,7 +292,6 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
-    const bool use_fake_transaction;
     std::atomic<bool> wait_blob_removal;
     UInt64 remove_shared_recursive_file_limit;
 };

@@ -306,11 +306,12 @@ SELECT DISTINCT toTypeName(dt) FROM
 
 SELECT toDate('2024-01-15') - toTime('01:02:03'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTime('01:02:03') - toDate('2024-01-15'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toDateTime('2024-01-15 00:00:00') + toTime('01:02:03'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- DateTime[64] +- Time[64] is supported: Time is applied as an offset in seconds
+SELECT toDateTime('2024-01-15 00:00:00') + toTime('01:02:03');
 SELECT toDate('2024-01-15') - toTime64('01:02:03.456', 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toDateTime('2024-01-15 00:00:00') + toTime64('01:02:03.456', 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toDateTime64('2024-01-15 00:00:00.000', 3) + toTime('01:02:03'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toDateTime64('2024-01-15 00:00:00.000', 3) + toTime64('01:02:03.456', 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toDateTime('2024-01-15 00:00:00') + toTime64('01:02:03.456', 3);
+SELECT toDateTime64('2024-01-15 00:00:00.000', 3) + toTime('01:02:03');
+SELECT toDateTime64('2024-01-15 00:00:00.000', 3) + toTime64('01:02:03.456', 3);
 
 -- Overflow with throw (already the default from top of file)
 
@@ -323,10 +324,10 @@ SELECT toDate('2106-02-07') + toTime('06:28:16'); -- { serverError VALUE_IS_OUT_
 -- Date + Time -> DateTime: Date max far exceeds DateTime range
 SELECT toDate('2149-06-06') + toTime('00:00:00'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
--- Date32 + Time -> DateTime64(0): underflow below 1900
-SELECT toDate32('1900-01-01') + toTime(-1); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
--- Date32 + Time64 -> DateTime64: underflow below 1900
-SELECT toDate32('1900-01-01') + toTime64('-00:00:00.000001', 6); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- Date32 + Time -> DateTime64(0): below 1900 is now representable by the extended DateTime64 range
+SELECT toDate32('1900-01-01') + toTime(-1);
+-- Date32 + Time64 -> DateTime64: below 1900 is now representable by the extended DateTime64 range
+SELECT toDate32('1900-01-01') + toTime64('-00:00:00.000001', 6);
 
 -- DateTime64(9) specific boundary: lower limit (1900-01-01 midnight)
 SELECT toDate32('1900-01-01') + toTime64('00:00:00.000000000', 9) AS dt, toTypeName(dt);
@@ -403,10 +404,10 @@ DROP TABLE test_saturate_intermediate;
 
 SET date_time_overflow_behavior = 'throw';
 
--- Time values beyond the visible range display as saturated (999:59:59 or -999:59:59
--- depending on sign) but internally store their full numeric value. Date+Time uses
--- the internal value, so two Time values that print identically can produce different
--- DateTime results.
+-- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
+-- whatever the width of the source type is, so a value beyond the visible range is stored
+-- saturated instead of keeping its full numeric value. Date+Time uses the stored value,
+-- therefore two `Time` values that print identically also produce the same `DateTime`.
 SELECT
     toTime(9999999) AS t_raw,
     toTime(3599999) AS t_vis,

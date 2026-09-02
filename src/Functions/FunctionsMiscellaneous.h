@@ -92,6 +92,8 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     /// Example: SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), [])
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    /// The mix of full and replicated columns falls back to full materialization.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:
     ExpressionActionsPtr expression_actions;
@@ -173,6 +175,9 @@ public:
     /// Example: SELECT arrayMap(x -> [x, arrayElement(y, 0)], []), [] as y
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    /// Keep replicated captured columns (e.g. produced by lazy ARRAY JOIN) lazy:
+    /// they are stored in ColumnFunction and handled when the lambda is executed.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -211,7 +216,14 @@ public:
         }
         else
         {
-            return ColumnFunction::create(input_rows_count, std::move(function), arguments);
+            return ColumnFunction::create(
+                input_rows_count,
+                std::move(function),
+                arguments,
+                /*is_short_circuit_argument_=*/ false,
+                /*is_function_compiled_=*/ false,
+                /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+                /*allow_lazy_replicated_captures_=*/ expression_actions->getSettings().enable_lazy_columns_replication);
         }
     }
 

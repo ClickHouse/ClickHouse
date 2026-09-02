@@ -131,7 +131,8 @@ client_compwords_positive = [
     "uniqCombined64ForEach",
     # system.keywords
     "CHANGEABLE_IN_READONLY",
-    # FIXME: one may add separate case for suggestion_limit
+    # The words below come from contexts the client truncates to suggestion_limit rows
+    # ordered by word, so concurrent tests' tables can outrank them at the default bound.
     # system.databases
     # NOTE: Do not use "system" here because the prefix "sys" (3 chars) is too
     # short and matches many completions, causing timeouts under TSan.
@@ -157,6 +158,17 @@ local_compwords_positive = [
     "SimpleAggregateFunction",
 ]
 
+# With the window truncated to one row per context, a word that only exists as a column name
+# cannot be offered, while a word from an unlimited context still is.
+client_compwords_truncated_absent = [
+    # system.columns
+    "primary_key_bytes_in_memory_allocated",
+]
+client_compwords_truncated_present = [
+    # system.functions
+    "concatAssumeInjective",
+]
+
 
 if __name__ == "__main__":
     print("# clickhouse-client")
@@ -164,11 +176,31 @@ if __name__ == "__main__":
     args = shlex.split(clickhouse_client)
     args.append("--wait_for_suggestions_to_load")
     args.append("--highlight=0")
+    args.append("--suggestion_limit=1000000")
     [
         run_with_timeout(
             test_completion, [args[0], args, comp_word], COMPLETION_TIMEOUT_SECONDS
         )
         for comp_word in client_compwords_positive
+    ]
+
+    print("# clickhouse-client, suggestion limit 1")
+    # Derived from the argv above by replacing the pinned bound, so removing that pin breaks this
+    # run rather than silently leaving it to pass at the default.
+    high_limit_arg = "--suggestion_limit=1000000"
+    if high_limit_arg not in args:
+        raise AssertionError(f"expected {high_limit_arg} in the client argv")
+    truncated_args = [
+        "--suggestion_limit=1" if arg == high_limit_arg else arg for arg in args
+    ]
+    [
+        run_with_timeout(
+            test_completion,
+            [truncated_args[0], truncated_args, comp_word],
+            COMPLETION_TIMEOUT_SECONDS,
+        )
+        for comp_word in client_compwords_truncated_absent
+        + client_compwords_truncated_present
     ]
 
     print("# clickhouse-local")
