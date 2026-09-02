@@ -1953,23 +1953,28 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
             auto filter_column_name = filter_expression->getActionsDAG().getOutputs().at(0)->result_name;
-            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name)] (const auto& database_name, const auto& table_name)
+            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name), lc_string_type] (const auto& database_name, const auto& table_name)
             {
-                /// Build the block from the expression's own inputs rather than a fixed pair of
-                /// columns: an `indexHint` argument contributes a second input for the same virtual
-                /// column, and a block holding it once cannot satisfy both.
-                Block block;
-                for (const auto & input : filter->getRequiredColumnsWithTypes())
-                {
-                    MutableColumnPtr column = input.type->createColumn();
-                    if (input.name == "_database")
-                        column->insert(database_name);
-                    else
-                        column->insert(table_name);
-                    block.insert(ColumnWithTypeAndName(std::move(column), input.type, input.name));
-                }
+                MutableColumnPtr database_column = lc_string_type->createColumn();
+                MutableColumnPtr table_column = lc_string_type->createColumn();
+                database_column->insert(database_name);
+                table_column->insert(table_name);
+                Block block{
+                    ColumnWithTypeAndName(std::move(database_column), lc_string_type, "_database"),
+                    ColumnWithTypeAndName(std::move(table_column), lc_string_type, "_table")
+                };
 
-                filter->execute(block);
+                /// An `indexHint` argument contributes a second input for the same virtual column,
+                /// so the expression can ask for `_table` (or `_database`) more than once while the
+                /// block above holds it exactly once. Allow duplicate inputs to be bound to the same
+                /// block column - the value is the same for all of them. This is what every other
+                /// consumer of these split predicates does, see `filterBlockWithExpression`.
+                ///
+                /// The block must keep exactly one row, which the `getBool` below relies on. Deriving
+                /// it from the expression's own inputs instead would produce an empty block for a
+                /// predicate that needs no input at all, such as `indexHint(materialize(1))`, and a
+                /// filter evaluated over zero rows would read as false and deselect every table.
+                filter->execute(block, /*dry_run=*/false, /*allow_duplicates_in_input=*/true);
                 // Valid only when block has exactly one row.
                 return block.getByName(column_name).column->getBool(0);
             };
