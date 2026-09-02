@@ -242,7 +242,10 @@ void DataFileEntriesStream::run()
     if (!data_snapshot)
         return;
 
-    auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
+    /// Not the IO pool: a task here can block until the query consumes the entries it has
+    /// produced, while the delete manifest decode waits for its tasks on the IO pool before any
+    /// entry is consumed - sharing one pool could deadlock once it is saturated with blocked tasks.
+    auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIcebergManifestDecodeThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
 
     std::deque<std::future<void>> in_flight;
     /// The tasks capture `this`, so none of them may still be running when this function is left.

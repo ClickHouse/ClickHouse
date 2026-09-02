@@ -183,6 +183,17 @@ A value of `0` means unlimited.
     DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
 Maximum total number of threads to use for parsing input.
 )", 0) \
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(
+Maximum total number of threads to use for decoding Iceberg data manifest files.
+
+The pool is separate from the IO pool on purpose: a decode task can block until the query consumes the entries it has produced, while the delete manifest decode waits for its tasks on the IO pool before any entry is consumed - sharing one pool could deadlock.
+)", 0) \
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(
+Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files.
+)", 0) \
+    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
+The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+)", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
 )", 0) \
