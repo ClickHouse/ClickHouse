@@ -32,13 +32,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// `shared_data_buckets` in a V3 `Object` prefix is a raw count from a possibly-untrusted stream,
-/// later used to size per-bucket state vectors and `Columns` directly. Unlike the path / type
-/// counts, this one has a tight writer-side invariant: the number of buckets is chosen from the
-/// small MergeTree settings `object_shared_data_buckets_for_{compact,wide}_part`, which are non-zero
-/// and capped at `MAX_OBJECT_SHARED_DATA_BUCKETS`. So the only legitimate on-wire range is
-/// `1 .. MAX_OBJECT_SHARED_DATA_BUCKETS`; any value outside it can only be corruption and must be
-/// rejected before it is used to size the per-bucket state.
 void throwIfInvalidNumberOfBuckets(size_t num_buckets)
 {
     if (num_buckets == 0 || num_buckets > MAX_OBJECT_SHARED_DATA_BUCKETS)
