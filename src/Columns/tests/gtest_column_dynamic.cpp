@@ -25,6 +25,7 @@ TEST(ColumnDynamic, CreateEmpty)
 TEST(ColumnDynamic, InsertDefault)
 {
     auto column = ColumnDynamic::create(254);
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
     column->insertDefault();
     ASSERT_TRUE(column->size() == 1);
     ASSERT_EQ(column->getVariantInfo().variant_type->getName(), "Variant(SharedVariant)");
@@ -35,6 +36,10 @@ TEST(ColumnDynamic, InsertDefault)
     ASSERT_TRUE(column->getVariantColumn().getVariantByGlobalDiscriminator(0).empty());
     ASSERT_TRUE(column->isNullAt(0));
     ASSERT_EQ((*column)[0], Field(Null()));
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
+
+    column->insert(Field{42u});
+    ASSERT_FALSE(column->hasOnlyTypeDefaults());
 }
 
 TEST(ColumnDynamic, InsertFields)

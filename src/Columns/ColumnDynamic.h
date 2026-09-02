@@ -378,6 +378,11 @@ public:
         return variant_column_ptr->getNumberOfDefaultRows();
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return variant_column_ptr->hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         variant_column_ptr->getIndicesOfNonDefaultRows(indices, from, limit);
