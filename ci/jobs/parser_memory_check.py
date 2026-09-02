@@ -14,6 +14,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -70,7 +71,10 @@ def get_merge_base_profiler_url() -> str:
     for sha in commits:
         if not re.fullmatch(r"[0-9a-f]{40}", sha):
             continue
-        url = f"{MASTER_PROFILER_BASE_URL}/REFs/master/{sha}/build_arm_release/clickhouse-examples"
+        prefix = _Environment.get_s3_prefix_static(
+            pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+        )
+        url = f"{MASTER_PROFILER_BASE_URL}/{prefix}/build_arm_release/clickhouse-examples"
         if Shell.check(f"curl -sfI '{url}' > /dev/null"):
             print(f"Using master binary from commit {sha[:12]}")
             return url

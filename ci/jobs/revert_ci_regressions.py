@@ -2511,13 +2511,9 @@ def prepare(info: Info) -> bool:
 
 def connect() -> CIDB:
     info = Info()
-    url, user, password = (
-        info.get_secret(Settings.SECRET_CI_DB_URL)
-        .join_with(info.get_secret(Settings.SECRET_CI_DB_USER))
-        .join_with(info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
-        .get_value()
+    return CIDB.from_connection_secret(
+        info.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value()
     )
-    return CIDB(url=url, user=user, passwd=password)
 
 
 def table_exists(cidb: CIDB, table: str) -> bool:

@@ -1,0 +1,28 @@
+Target policy with the old analyzer
+[1,2]
+Target policy with the analyzer
+[1,2]
+Target policy through Merge with the old analyzer
+[1,2]
+Target policy through Merge with the analyzer
+[1,2]
+Combined policies with the old analyzer
+[1]
+Combined policies with the analyzer
+[1]
+Combined policies and trivial count disabled with the old analyzer
+1
+Combined policies and trivial count enabled with the old analyzer
+1
+Combined policies and trivial count disabled with the analyzer
+1
+Combined policies and trivial count enabled with the analyzer
+1
+Alias policy with the old analyzer
+[1,3]
+Alias policy with the analyzer
+[1,3]
+Alias policy and text-index count optimization disabled
+2
+Alias policy and text-index count optimization enabled
+2
