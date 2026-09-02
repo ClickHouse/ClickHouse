@@ -1,0 +1,95 @@
+---
+title: 'ClickHouse 문서 MCP 서버 설정'
+sidebarTitle: '문서 MCP 서버 설정'
+slug: /resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server
+description: 'Model Context Protocol을 통해 AI 도구를 ClickHouse 문서에 연결합니다.'
+doc_type: 'guide'
+date: 2026-08-20
+tags: ['Tools and Utilities']
+keywords: ['MCP', 'Model Context Protocol', 'AI 도구', '문서']
+---
+
+<Info>
+이 페이지에서는 ClickHouse 문서를 검색하는 MCP 서버를 설정합니다. ClickHouse 데이터를 쿼리하려면 [오픈 소스 ClickHouse MCP 서버](/ko/guides/use-cases/ai-ml/MCP) 또는 [ClickHouse Cloud 원격 MCP 서버](/ko/products/cloud/features/ai-ml/remote-mcp)를 사용하세요.
+</Info>
+
+Model Context Protocol(MCP)을 사용하여 AI 도구에서 ClickHouse 문서를 직접 조회합니다.
+
+## AI 도구 연결 {#connect-your-ai-tool}
+
+<Tabs>
+<Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+
+터미널에서 실행하세요:
+
+```bash
+claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user
+```
+
+</Tab>
+<Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
+
+`claude_desktop_config.json`에 추가하세요:
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    }
+  }
+}
+```
+
+</Tab>
+<Tab title="Codex" icon="/images/logo-codex.svg">
+
+터미널에서 실행하세요:
+
+```bash
+codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp
+```
+
+</Tab>
+<Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
+
+`.cursor/mcp.json`에 추가하세요:
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    }
+  }
+}
+```
+
+</Tab>
+<Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+
+`~/.codeium/windsurf/mcp_config.json`에 추가하세요:
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    }
+  }
+}
+```
+
+</Tab>
+</Tabs>
+
+## 코딩 에이전트에 ClickHouse 스킬 추가 {#add-clickhouse-skills}
+
+에이전트에 ClickHouse 전문 지식과 모범 사례를 제공하려면 ClickHouse 스킬을 설치하세요:
+
+```bash
+npx skills add https://clickhouse.com
+```

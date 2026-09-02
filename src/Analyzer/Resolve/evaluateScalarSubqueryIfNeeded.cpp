@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnTuple.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -104,9 +105,20 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// CREATE TABLE t ENGINE = MergeTree ORDER BY () AS
     /// WITH (SELECT path FROM table_with_paths) AS path SELECT * FROM s3(path, NOSIGN);
     /// or a default (empty) value substituted for a parameterized view parameter.
-    const bool only_analyze_subquery = only_analyze
-        && !table_function_arguments_in_resolve_process
-        && !parameterized_view_arguments_in_resolve_process;
+    /// Early short-circuit inference is different: it must never execute speculative work. If a
+    /// table function or view needs the actual scalar value, resolution fails and the optimization
+    /// falls back to the regular analyzer.
+    const bool only_analyze_subquery = early_short_circuit_type_inference_in_process
+        || (only_analyze
+            && !table_function_arguments_in_resolve_process
+            && !parameterized_view_arguments_in_resolve_process);
+
+    if (early_short_circuit_type_inference_in_process && (execute_for_exists || !query_node))
+    {
+        /// Type-only analysis cannot validate scalar cardinality or determine the runtime value
+        /// of EXISTS. Keep resolving the clone for its type, but prevent the early fold.
+        early_short_circuit_type_inference_failed = true;
+    }
 
     Block scalar_block;
 
@@ -118,7 +130,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
 
-    auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
+    auto & scalars_cache = early_short_circuit_type_inference_in_process
+        ? scalar_subquery_to_scalar_value_type_only
+        : (can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local);
 
     if (scalars_cache.contains(node_with_hash))
     {
@@ -368,6 +382,18 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     const auto & scalar_column_with_type = scalar_block.safeGetByPosition(0);
     const auto & scalar_type = scalar_column_with_type.type;
 
+    if (early_short_circuit_type_inference_in_process && !execute_for_exists)
+    {
+        /// During early short-circuit type inference the scalar value is intentionally not
+        /// executed, so do not expose the arbitrary default from the sample block as a constant.
+        /// A non-constant placeholder preserves the real type. Functions that require the actual
+        /// constant value will reject it, causing the optimization to fall back to normal analysis.
+        node = std::make_shared<ColumnNode>(
+            NameAndTypePair{"_subquery_" + std::to_string(subquery_counter - 1), scalar_type},
+            TableExpressionNodeWeakPtr{});
+        return;
+    }
+
     const auto * scalar_type_name = scalar_block.safeGetByPosition(0).type->getFamilyName();
     static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
     auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -375,8 +401,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// Always convert to literals when there is no query context, or when resolving a
     /// parameterized view argument (its value must fold to a literal to be matched against
     /// the view's query parameters, see `parameterized_view_arguments_in_resolve_process`).
-    if (!context->getSettingsRef()[Setting::enable_scalar_subquery_optimization] || !useless_literal_types.contains(scalar_type_name)
-        || !context->hasQueryContext() || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
+    /// The EXISTS caller also requires a ConstantNode. In type-only analysis its sample value is
+    /// only a placeholder; `early_short_circuit_type_inference_failed` prevents folding from it.
+    if (execute_for_exists || !context->getSettingsRef()[Setting::enable_scalar_subquery_optimization]
+        || !useless_literal_types.contains(scalar_type_name) || !context->hasQueryContext()
+        || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);

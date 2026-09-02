@@ -1479,7 +1479,7 @@ Prometheus 端点服务器中的线程数。注意：Prometheus 端点也可以�
   ### ReaderExecutorModeledCostMsPerRequestedMiB
 </div>
 
-Experimental ReaderExecutor 读取路径效率指标：在最近一个更新时间间隔内，实例范围内每 MiB 请求字节的建模成本 (毫秒) ——即 ProfileEvents ReaderExecutorModeledCostMicroseconds 与 ReaderExecutorRequestedBytes 增量的比值。越低越好：带宽下限约为 20 (源数据读取正常时) ，缓存命中时趋近于 0，过度拉取和未完成的连接会使其升高。0 表示该时间间隔内没有 executor 读取操作。
+Experimental ReaderExecutor 读取路径效率指标：在最近一个更新时间间隔内，实例范围内每 MiB 请求字节的建模成本 (毫秒) ——即 ProfileEvents ReaderExecutorModeledCostMicroseconds 与 ReaderExecutorDeliveredBytes 增量的比值。越低越好：带宽下限约为 20 (源数据读取正常时) ，缓存命中时趋近于 0，过度拉取和未完成的连接会使其升高。0 表示该时间间隔内没有 executor 读取操作。
 
 <div id="replicasmaxabsolutedelay">
   ### ReplicasMaxAbsoluteDelay

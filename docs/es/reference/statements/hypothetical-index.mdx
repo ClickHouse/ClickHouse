@@ -79,7 +79,7 @@ Estimation:
 Para omitir el escaneo empírico en memoria y estimar a partir de las [estadísticas de columnas](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), primero defínelas en las columnas pertinentes (están desactivadas de forma predeterminada), espera a que termine la mutación de materialización y, a continuación, desactiva la ruta empírica:
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;

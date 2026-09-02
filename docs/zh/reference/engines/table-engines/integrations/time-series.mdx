@@ -114,7 +114,7 @@ CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSer
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 如果在同一条 `CREATE TABLE` 语句中同时使用这两种形式，则声明的类型必须一致。
@@ -143,14 +143,14 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 *samples* 表必须包含以下列：
 
-| 名称          | 必填？ | 默认类型                  | 可选类型                  | 描述                 |
+| 名称          | 必填？ | 默认类型                  | 可能的类型                  | 描述                 |
 | ----------- | --- | --------------------- | --------------------- | ------------------ |
 | `id`        | [x] | `Tuple(UInt64, UUID)` | any                   | 标识一组指标名称和标签的组合     |
 | `timestamp` | [x] | `DateTime64(3)`       | `DateTime64(X)`       | 一个时间点              |
 | `value`     | [x] | `Float64`             | `Float32` 或 `Float64` | 与 `timestamp` 关联的值 |
 
 引擎自行创建的列会使用时间序列压缩编解码器：
-`timestamp CODEC(DoubleDelta, ZSTD(1))` 和 `value CODEC(Gorilla, ZSTD(1))`。近乎单调的时间戳使用通用编解码器时几乎无法
+`timestamp CODEC(DoubleDelta, ZSTD(1))` 和 `value CODEC(ZSTD(3))`。近乎单调的时间戳使用通用编解码器时几乎无法
 压缩，因而可能会占据 samples 表磁盘存储空间的大部分。
 另请参阅[调整列的类型](#adjusting-column-types)。
 
@@ -215,7 +215,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla, ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
@@ -249,7 +249,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -305,7 +305,7 @@ SETTINGS index_granularity = 8192
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 未指定内部列的编解码器时，将使用默认编解码器：

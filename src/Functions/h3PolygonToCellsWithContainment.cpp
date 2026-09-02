@@ -298,7 +298,8 @@ public:
                             "Failed to compute H3 polygon to cells in function {}: {}",
                             getName(), describeH3Error(fill_err));
 
-                    dst_data.reserve(dst_data.size() + vec_size);
+                    /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
+                    dst_data.getData().reserve(dst_data.size() + vec_size);
                     for (auto hindex : hindex_vec)
                     {
                         if (hindex != 0)

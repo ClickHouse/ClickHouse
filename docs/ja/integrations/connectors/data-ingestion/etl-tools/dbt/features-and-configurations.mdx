@@ -64,7 +64,7 @@ your_profile_name:
   ### スキーマとデータベース
 </div>
 
-dbt の model relation 識別子 `database.schema.table` は、ClickHouse では `schema` がサポートされていないため、互換性がありません。
+dbt の モデル relation 識別子 `database.schema.table` は、ClickHouse では `schema` がサポートされていないため、互換性がありません。
 そのため、`schema.table` という簡略化した形式を使用します。ここでの `schema` は ClickHouse のデータベースを指します。`default` データベースの使用は推奨されません。
 
 <div id="set-statement-warning">
@@ -166,25 +166,25 @@ dbt は、insert 後に読み取り結果の整合性が保たれることを前
   ### s3Source ヘルパーマクロ
 </div>
 
-`s3source` マクロは、ClickHouse の S3 table
-function を使って S3 から ClickHouse のデータを直接選択する処理を簡単にします。これは、
-名前付きの設定辞書から S3 table function のパラメーターを
+`s3source` マクロは、ClickHouse の S3 テーブル関数
+を使って S3 から ClickHouse のデータを直接選択する処理を簡単にします。これは、
+名前付きの設定辞書から S3 テーブル関数 のパラメーターを
 埋めることで動作します (辞書名は
 `s3` で終わっている必要があります) 。このマクロは
-まず profile の `vars` から辞書を探し、次に model configuration を確認します。辞書には、
-S3 table function のパラメーターを設定するための、以下の
+まず プロファイル の `vars` から辞書を探し、次に model configuration を確認します。辞書には、
+S3 テーブル関数 のパラメーターを設定するための、以下の
 キーを任意に含めることができます。
 
-| Argument Name                     | Description                                                                                                                                                 |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| bucket                            | `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi` のような、bucket のベースURL。protocol が指定されていない場合は `https://` が使われます。                           |
-| path                              | `/trips_4.gz` のような、table クエリで使用する S3 path。S3 wildcards をサポートしています。                                                                                          |
-| fmt                               | 参照先の S3 object に対して想定される ClickHouse input format (`TSV` や `CSVWithNames` など) 。                                                                              |
-| structure                         | bucket 内の data のカラム構造。`['id UInt32', 'date DateTime', 'value String']` のような、名前とデータ型の組のリストです。指定しない場合、ClickHouse が構造を推定します。                                   |
-| aws&#95;access&#95;key&#95;id     | S3 access key id。                                                                                                                                           |
-| aws&#95;secret&#95;access&#95;key | S3 secret key。                                                                                                                                              |
-| role&#95;arn                      | S3 object に安全にアクセスするために使用する ClickhouseAccess IAM role の ARN。詳細は、この[documentation](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely)を参照してください。 |
-| compression                       | S3 object で使われる圧縮方式。指定しない場合、ClickHouse はファイル名に基づいて圧縮を判定しようとします。                                                                                             |
+| Argument Name                     | Description                                                                                                                         |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| bucket                            | `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi` のような、bucket のベースURL。protocol が指定されていない場合は `https://` が使われます。   |
+| path                              | `/trips_4.gz` のような、table クエリで使用する S3 path。S3 wildcards をサポートしています。                                                                  |
+| fmt                               | 参照先の S3 object に対して想定される ClickHouse input フォーマット (`TSV` や `CSVWithNames` など) 。                                                      |
+| structure                         | bucket 内の data のカラム構造。`['id UInt32', 'date DateTime', 'value String']` のような、名前とデータ型の組のリストです。指定しない場合、ClickHouse が構造を推定します。           |
+| aws&#95;access&#95;key&#95;id     | S3 access key id。                                                                                                                   |
+| aws&#95;secret&#95;access&#95;key | S3 secret key。                                                                                                                      |
+| role&#95;arn                      | 安全な S3 アクセスのために作成された IAM role の ARN。詳細は、この[documentation](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely)を参照してください。 |
+| compression                       | S3 object で使われる圧縮方式。指定しない場合、ClickHouse はファイル名に基づいて圧縮を判定しようとします。                                                                     |
 
 このマクロの使用例については、
 [S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)

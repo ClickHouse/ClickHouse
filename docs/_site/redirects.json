@@ -1,5 +1,21 @@
 [
   {
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data"
+  },
+  {
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data/index"
+  },
+  {
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion"
+  },
+  {
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion/index"
+  },
+  {
     "destination": "/products/cloud/features/backups/overview",
     "source": "/products/cloud/features/backups/faq"
   },
@@ -1404,7 +1420,7 @@
     "source": "/cloud/connect"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/cloud/data-ingestion"
   },
   {
@@ -1496,8 +1512,12 @@
     "source": "/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/ask-ai",
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
     "source": "/cloud/features/ai-ml/ask-ai"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "source": "/products/cloud/features/ai-ml/ask-ai"
   },
   {
     "destination": "/products/cloud/features/ai-ml/langfuse",
@@ -1612,8 +1632,16 @@
     "source": "/cloud/get-started/sql-console"
   },
   {
-    "destination": "/products/cloud/guides",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides/index"
   },
   {
     "destination": "/products/cloud/guides/security/data-masking",
@@ -2016,8 +2044,16 @@
     "source": "/cloud/overview"
   },
   {
-    "destination": "/products/cloud/reference",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference/index"
   },
   {
     "destination": "/products/cloud/reference/architecture",
@@ -2294,6 +2330,10 @@
   {
     "destination": "/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
     "source": "/cloud/security/saml-setup"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+    "source": "/cloud/security/jwt-authentication-setup"
   },
   {
     "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup",
@@ -4356,7 +4396,7 @@
     "source": "/integrations/data-ingestion"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/integrations/data-ingestion-overview"
   },
   {
@@ -4896,6 +4936,10 @@
     "source": "/integrations/metabase"
   },
   {
+    "destination": "/integrations/connectors/data-integrations/integrations/microsoft-fabric",
+    "source": "/integrations/microsoft-fabric"
+  },
+  {
     "destination": "/integrations/connectors/data-integrations/integrations/middleware",
     "source": "/integrations/middleware"
   },
@@ -5022,6 +5066,10 @@
   {
     "destination": "/integrations/connectors/data-visualization/powerbi-and-clickhouse",
     "source": "/integrations/powerbi"
+  },
+  {
+    "destination": "/integrations/connectors/sql-clients/probedeck",
+    "source": "/integrations/probedeck"
   },
   {
     "destination": "/products/cloud/features/monitoring/prometheus",
@@ -5158,6 +5206,10 @@
   {
     "destination": "/integrations/connectors/sql-clients/jupysql",
     "source": "/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/integrations/connectors/sql-clients/probedeck",
+    "source": "/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/integrations/connectors/sql-clients/qstudio",
@@ -9864,6 +9916,10 @@
     "source": "/jp/integrations/powerbi"
   },
   {
+    "destination": "/ja/integrations/connectors/sql-clients/probedeck",
+    "source": "/jp/integrations/probedeck"
+  },
+  {
     "destination": "/ja/products/cloud/features/monitoring/prometheus",
     "source": "/jp/integrations/prometheus"
   },
@@ -9998,6 +10054,10 @@
   {
     "destination": "/ja/integrations/connectors/sql-clients/jupysql",
     "source": "/jp/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ja/integrations/connectors/sql-clients/probedeck",
+    "source": "/jp/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ja/integrations/connectors/sql-clients/qstudio",
@@ -14404,7 +14464,7 @@
     "source": "/jp/sql-reference/statements/use"
   },
   {
-    "destination": "/ja/reference/statements/watch",
+    "destination": "/ja/reference/statements/create/view",
     "source": "/jp/sql-reference/statements/watch"
   },
   {
@@ -20616,6 +20676,10 @@
     "source": "/ko/integrations/powerbi"
   },
   {
+    "destination": "/ko/integrations/connectors/sql-clients/probedeck",
+    "source": "/ko/integrations/probedeck"
+  },
+  {
     "destination": "/ko/products/cloud/features/monitoring/prometheus",
     "source": "/ko/integrations/prometheus"
   },
@@ -20750,6 +20814,10 @@
   {
     "destination": "/ko/integrations/connectors/sql-clients/jupysql",
     "source": "/ko/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ko/integrations/connectors/sql-clients/probedeck",
+    "source": "/ko/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ko/integrations/connectors/sql-clients/qstudio",
@@ -25156,7 +25224,7 @@
     "source": "/ko/sql-reference/statements/use"
   },
   {
-    "destination": "/ko/reference/statements/watch",
+    "destination": "/ko/reference/statements/create/view",
     "source": "/ko/sql-reference/statements/watch"
   },
   {
@@ -32724,6 +32792,10 @@
     "source": "/ru/integrations/powerbi"
   },
   {
+    "destination": "/ru/integrations/connectors/sql-clients/probedeck",
+    "source": "/ru/integrations/probedeck"
+  },
+  {
     "destination": "/ru/products/cloud/features/monitoring/prometheus",
     "source": "/ru/integrations/prometheus"
   },
@@ -32858,6 +32930,10 @@
   {
     "destination": "/ru/integrations/connectors/sql-clients/jupysql",
     "source": "/ru/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ru/integrations/connectors/sql-clients/probedeck",
+    "source": "/ru/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ru/integrations/connectors/sql-clients/qstudio",
@@ -37264,7 +37340,7 @@
     "source": "/ru/sql-reference/statements/use"
   },
   {
-    "destination": "/ru/reference/statements/watch",
+    "destination": "/ru/reference/statements/create/view",
     "source": "/ru/sql-reference/statements/watch"
   },
   {
@@ -39164,6 +39240,10 @@
     "source": "/sql-reference/aggregate-functions/reference/flame_graph"
   },
   {
+    "destination": "/reference/functions/aggregate-functions/gini",
+    "source": "/sql-reference/aggregate-functions/reference/gini"
+  },
+  {
     "destination": "/reference/functions/aggregate-functions/groupArray",
     "source": "/sql-reference/aggregate-functions/reference/grouparray"
   },
@@ -40556,7 +40636,7 @@
     "source": "/sql-reference/statements/use"
   },
   {
-    "destination": "/reference/statements/watch",
+    "destination": "/reference/statements/create/view",
     "source": "/sql-reference/statements/watch"
   },
   {
@@ -41780,7 +41860,7 @@
     "source": "/use-cases/observability/clickstack/getting-started/telemetrygen"
   },
   {
-    "destination": "/clickstack/ingesting-data",
+    "destination": "/clickstack/ingesting-data/overview",
     "source": "/use-cases/observability/clickstack/ingesting-data"
   },
   {
@@ -46284,6 +46364,10 @@
     "source": "/zh/integrations/powerbi"
   },
   {
+    "destination": "/zh/integrations/connectors/sql-clients/probedeck",
+    "source": "/zh/integrations/probedeck"
+  },
+  {
     "destination": "/zh/products/cloud/features/monitoring/prometheus",
     "source": "/zh/integrations/prometheus"
   },
@@ -46418,6 +46502,10 @@
   {
     "destination": "/zh/integrations/connectors/sql-clients/jupysql",
     "source": "/zh/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/zh/integrations/connectors/sql-clients/probedeck",
+    "source": "/zh/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/zh/integrations/connectors/sql-clients/qstudio",
@@ -50824,7 +50912,7 @@
     "source": "/zh/sql-reference/statements/use"
   },
   {
-    "destination": "/zh/reference/statements/watch",
+    "destination": "/zh/reference/statements/create/view",
     "source": "/zh/sql-reference/statements/watch"
   },
   {
@@ -54364,8 +54452,12 @@
     "source": "/cloud/reference/byoc/reference/security-shared-responsibility"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
     "source": "/cloud/guides/security/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+    "source": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles"
   },
   {
     "destination": "/ar/concepts/features/interfaces/prometheus",
@@ -54426,5 +54518,77 @@
   {
     "destination": "/pt-BR/reference/functions/table-functions/prometheusQueryRange",
     "source": "/pt-BR/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/reference/statements/create/view",
+    "source": "/reference/statements/watch"
+  },
+  {
+    "destination": "/ar/reference/statements/create/view",
+    "source": "/ar/reference/statements/watch"
+  },
+  {
+    "destination": "/es/reference/statements/create/view",
+    "source": "/es/reference/statements/watch"
+  },
+  {
+    "destination": "/fr/reference/statements/create/view",
+    "source": "/fr/reference/statements/watch"
+  },
+  {
+    "destination": "/ja/reference/statements/create/view",
+    "source": "/ja/reference/statements/watch"
+  },
+  {
+    "destination": "/ko/reference/statements/create/view",
+    "source": "/ko/reference/statements/watch"
+  },
+  {
+    "destination": "/pt-BR/reference/statements/create/view",
+    "source": "/pt-BR/reference/statements/watch"
+  },
+  {
+    "destination": "/ru/reference/statements/create/view",
+    "source": "/ru/reference/statements/watch"
+  },
+  {
+    "destination": "/zh/reference/statements/create/view",
+    "source": "/zh/reference/statements/watch"
+  },
+  {
+    "destination": "/reference/settings/session-settings",
+    "source": "/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ar/reference/settings/session-settings",
+    "source": "/ar/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/es/reference/settings/session-settings",
+    "source": "/es/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/fr/reference/settings/session-settings",
+    "source": "/fr/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ja/reference/settings/session-settings",
+    "source": "/ja/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ko/reference/settings/session-settings",
+    "source": "/ko/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/pt-BR/reference/settings/session-settings",
+    "source": "/pt-BR/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ru/reference/settings/session-settings",
+    "source": "/ru/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/zh/reference/settings/session-settings",
+    "source": "/zh/reference/settings/session-settings/window-view"
   }
 ]

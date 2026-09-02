@@ -16,7 +16,7 @@ doc_type: 'reference'
 時系列データをタイムスタンプと値のペアとして受け取り、開始タイムスタンプ、終了タイムスタンプ、step で定義される一定間隔の時間グリッド上で、このデータから [PromQL の `changes` に似た計算](https://prometheus.io/docs/prometheus/latest/querying/functions/#changes) を計算する集約関数です。グリッド上の各ポイントでは、`changes` の計算対象となるサンプルとして、指定された時間範囲内のものが考慮されます。
 
 <Note>
-  この関数は実験的です。`allow_experimental_ts_to_grid_aggregate_function=true` を設定して有効にしてください。
+  この関数は実験的です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効にしてください。
 </Note>
 
 **構文**
@@ -27,7 +27,10 @@ timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
 
 **パラメータ**
 
-* `start_timestamp` — グリッドの開始時刻を指定します。 - `end_timestamp` — グリッドの終了時刻を指定します。 - `grid_step` — グリッドの間隔を秒単位で指定します。 - `staleness` — 対象とするサンプルの最大&quot;staleness&quot;を秒単位で指定します。
+* `start_timestamp` — グリッドの開始時刻を指定します。タイムスタンプ引数が `DateTime64` の場合は、小数値、数値を含む文字列、または日時テキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `end_timestamp` — グリッドの終了時刻を指定します。タイムスタンプ引数が `DateTime64` の場合は、小数値、数値を含む文字列、または日時テキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `grid_step` — グリッドの間隔を秒単位で指定します。タイムスタンプ引数が `DateTime64` の場合は、小数値、数値を含む文字列、または &#39;15s&#39; や &#39;1m&#39; のような期間を含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `staleness` — 対象とするサンプルの最大&quot;staleness&quot;を秒単位で指定します。タイムスタンプ引数が `DateTime64` の場合は、小数値、数値を含む文字列、または &#39;15s&#39; や &#39;1m&#39; のような期間を含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
 
 **引数**
 

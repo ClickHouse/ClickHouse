@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "Organização",
     "pages": [
       {
-        "group": "Organization",
+        "group": "Organização",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -19,14 +19,15 @@
         ]
       },
       {
-        "group": "Billing",
+        "group": "Faturamento",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
-          "products/cloud/api-reference/billing/active-balances-get"
+          "products/cloud/api-reference/billing/active-balances-get",
+          "products/cloud/api-reference/billing/credit-balances-get"
         ]
       },
       {
-        "group": "User management",
+        "group": "Gerenciamento de usuários",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -39,7 +40,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "Gerenciamento de funções",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -68,11 +69,12 @@
     ]
   },
   {
-    "group": "Service",
+    "group": "Serviço",
     "pages": [
       {
-        "group": "Service",
+        "group": "Serviço",
         "pages": [
+          "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
           "POST /v1/organizations/{organizationId}/services",
           "GET /v1/organizations/{organizationId}/services/{serviceId}",
@@ -128,7 +130,7 @@
   {
     "group": "Prometheus",
     "pages": [
-      "GET /v1/organizations/{organizationId}/prometheus",
+      "products/cloud/api-reference/prometheus/organization-prometheus-get",
       "products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
       "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",

@@ -84,6 +84,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -140,7 +142,7 @@ ALTER TABLE table
 
 ```
 
-Si vous ajoutez un index à une table existante, nous vous recommandons de matérialiser l’index pour les parts de la table existantes (sinon, la recherche sur les parts sans index reviendra à des balayages exhaustifs lents).
+Si vous ajoutez un index à une table existante, nous vous recommandons de matérialiser l’index pour les parts de la table existantes (sinon, la recherche sur les parts sans index basculera vers des balayages exhaustifs lents).
 
 ```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
@@ -160,6 +162,8 @@ ALTER TABLE table DROP INDEX text_idx;
   Notez que chaque chaîne peut être composée de plusieurs caractères (`', '` dans l&#39;exemple).
   La liste de séparateurs par défaut, si elle n&#39;est pas explicitement spécifiée (par exemple `tokenizer = splitByString`), est un seul espace `[' ']`.
 * `asciiCJK` divise les chaînes en tokens selon les règles de délimitation des mots Unicode (comme dans [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). Les caractères ASCII alphanumériques et les traits de soulignement forment des tokens avec des connecteurs (ASCII `:` pour les lettres, `.` et `'` pour les caractères de même type). Les caractères Unicode non ASCII, y compris les caractères [CJK](https://en.wikipedia.org/wiki/CJK_characters), deviennent des tokens d&#39;un seul caractère.
+* `chinese[(granularity)]` segmente le texte chinois en mots à l’aide d’un dictionnaire et d’un modèle de Markov caché (l’algorithme suit [jieba](https://github.com/fxsjy/jieba) ; les données du dictionnaire et du modèle intégrés sont dérivées de [cppjieba](https://github.com/yanyiwu/cppjieba)). Contrairement à `asciiCJK`, qui traite chaque caractère non ASCII comme un token d’un seul caractère, `chinese` regroupe les caractères chinois consécutifs en mots (par exemple, `北京大学` devient un seul token `北京大学` plutôt que quatre tokens d’un seul caractère). Cela produit des tokens plus significatifs pour le texte chinois et améliore la qualité de recherche. Pour le texte général ou mixte, utilisez `asciiCJK` ; pour le texte exclusivement chinois, utilisez `chinese`. L’argument facultatif `granularity` est soit `'coarse_grained'` (la valeur par défaut s’il n’est pas spécifié), soit `'fine_grained'`. Ce dernier répertorie également les sous-mots qui se chevauchent ; par exemple, `北京邮电大学` produit également `北京`, `邮电`, `大学`. La tokenisation fine améliore le rappel au prix d’un index plus volumineux.
+  Recherchez dans un index de texte `chinese` avec [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens) (qui tokenisent le needle avec le tokenizer `chinese`), et non avec `hasToken` (qui divise uniquement selon les séparateurs ASCII).
 * `icu(locale)` divise les chaînes en tokens de mots à l’aide de la segmentation des mots Unicode (UAX #29) de la bibliothèque [ICU](https://icu.unicode.org/). Pour les écritures qui ne séparent pas les mots par des espaces (p. ex. le chinois, le japonais, le thaï), ICU applique une segmentation fondée sur un dictionnaire : contrairement à `asciiCJK`, ce texte est donc divisé en mots significatifs de plusieurs caractères plutôt qu’en caractères uniques. Ici, « dictionnaire » désigne les listes de mots intégrées d’ICU pour ces écritures (voir [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)) ; ICU choisit le découpage le plus probable parmi ces mots.
   `locale` correspond aux paramètres régionaux ICU transmis au segmenteur ; la segmentation est principalement déterminée par l’écriture et le dictionnaire, et les paramètres régionaux sélectionnent les adaptations propres à ICU. Il s’agit d’un paramètre obligatoire, par exemple `tokenizer = icu('ja')` ou `tokenizer = icu('zh')`.
   Les paramètres régionaux disponibles peuvent être répertoriés avec `SELECT * FROM system.collations`.
@@ -266,6 +270,7 @@ Les index de texte peuvent être construits à partir de données textuelles dan
 Pour le texte non ASCII, le tokenizer `asciiCJK` est recommandé, car il gère correctement les limites de mots Unicode, y compris les caractères CJK.
 Pour les langues qui ne séparent pas les mots par des espaces (par exemple le chinois, le japonais ou le thaï), le tokenizer `icu(locale)` produit des tokens de mots significatifs comportant plusieurs caractères grâce à la segmentation des mots d’ICU basée sur un dictionnaire.
 Pour le japonais en particulier, le tokenizer `japanese` (MeCab) segmente le texte en mots plutôt qu’en caractères uniques et donne généralement de meilleurs résultats de recherche.
+Pour le chinois en particulier, le tokenizer `chinese` (jieba) segmente le texte en mots plutôt qu’en caractères uniques et donne généralement de meilleurs résultats de recherche.
 
 <a id="preprocessor-argument-optional" />**Argument de préprocesseur (facultatif)**. Le préprocesseur désigne une expression appliquée à la chaîne d’entrée avant la tokenisation.
 
@@ -1462,6 +1467,40 @@ Le mécanisme de repli est contrôlé par deux paramètres :
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/fr/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Cette optimisation ne prend en charge que les fonctions `like` et `ilike`.
+
+<div id="count-queries-perf">
+  ### Requêtes de comptage simples
+</div>
+
+Requête qui compte uniquement les lignes correspondant à un prédicat de recherche textuelle
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+est traitée à partir de l’index de texte, sans lire les lignes correspondantes.
+ClickHouse récupère le décompte à partir de la cardinalité des listes de postings de l’index, sans avoir à lire la colonne virtuelle qui marque les lignes correspondantes ni à effectuer l’agrégation sur celle-ci. Un seul token ne nécessite que la cardinalité de son dictionnaire, aucune liste de postings n’est donc lue ; les prédicats portant sur plusieurs tokens lisent les postings uniquement pour les unir (`hasAnyTokens`) ou les intersecter (`hasAllTokens`). Comme un index de texte couvre l’intégralité de la part, le décompte est exact et reste rapide même pour de très grandes parts.
+
+L’optimisation s’applique à un simple `count()` filtré par un unique prédicat `hasToken`, `hasAnyTokens` ou `hasAllTokens` (ou un équivalent `Array`/`Map`). Des prédicats combinés avec `AND`/`OR`/`NOT`, un filtre supplémentaire (par ex. `... AND id > 10`), un prédicat en mode indice tel que `m['key'] = 'value'`, la sélection d’un élément autre que le décompte, ou une recherche d’expression ou par `LIKE`/motif obligent la requête à lire les lignes. Les parts sans index matérialisé sont toujours comptées correctement en lisant leurs lignes.
+
+Pour confirmer que l’optimisation est activée, vérifiez la présence de `ReadFromTextIndexCount` dans le plan de requête :
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+L’optimisation est contrôlée par [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (activée par défaut). Elle repose sur la [lecture directe](#direct-read) ; [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use&#95;skip&#95;indexes](/fr/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) et [optimize&#95;trivial&#95;count&#95;query](/fr/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) doivent donc également être activés (ils le sont tous par défaut).
 
 <div id="caching">
   ### Mise en cache

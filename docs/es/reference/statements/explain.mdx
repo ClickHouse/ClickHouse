@@ -124,6 +124,7 @@ Configuración:
 * `oneline` – Imprime la consulta en una sola línea. Valor predeterminado: `0`.
 * `run_query_tree_passes` – Ejecuta las pasadas del árbol de consulta antes de volcar el árbol de consulta. Valor predeterminado: `0`.
 * `query_tree_passes` – Si se establece `run_query_tree_passes`, especifica cuántas pasadas se ejecutan. Si no se especifica `query_tree_passes`, se ejecutan todas las pasadas.
+* `single_record` – Devuelve la consulta reformateada como un único registro multilínea en lugar de un registro por línea. Valor predeterminado: `1` (controlado por la configuración `explain_syntax_single_record`). Establézcalo en `0` para restaurar la salida histórica de un registro por línea, o establezca `explain_syntax_single_record = 0` (globalmente o en `SETTINGS` por consulta), o establezca `compatibility` en cualquier versión anterior a `26.8`.
 
 Ejemplos:
 

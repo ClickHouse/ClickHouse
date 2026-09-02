@@ -181,7 +181,7 @@ seeds:
 | structure                         | بنية الأعمدة للبيانات في الحاوية، على شكل قائمة من أزواج الاسم/نوع البيانات، مثل `['id UInt32', 'date DateTime', 'value String']` وإذا لم يتم توفيرها، فسيستنتج ClickHouse البنية تلقائيًا. |
 | aws&#95;access&#95;key&#95;id     | معرّف مفتاح الوصول إلى S3.                                                                                                                                                                  |
 | aws&#95;secret&#95;access&#95;key | المفتاح السري لـ S3.                                                                                                                                                                        |
-| role&#95;arn                      | معرّف ARN لدور IAM باسم ClickhouseAccess لاستخدامه في الوصول الآمن إلى كائنات S3. راجع هذه [الوثائق](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لمزيد من المعلومات.    |
+| role&#95;arn                      | معرّف ARN لدور IAM الذي تم إنشاؤه للوصول الآمن إلى S3. راجع هذه [الوثائق](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لمزيد من المعلومات.                               |
 | compression                       | طريقة الضغط المستخدمة مع كائنات S3. وإذا لم يتم توفيرها، فسيحاول ClickHouse تحديد الضغط استنادًا إلى اسم الملف.                                                                             |
 
 راجع

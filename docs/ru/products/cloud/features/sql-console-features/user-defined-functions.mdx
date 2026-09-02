@@ -11,10 +11,12 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Пользовательские функции (UDF) позволяют расширять возможности ClickHouse сверх того, что доступно в более чем тысяче готовых [функций](/ru/reference/functions/regular-functions/overview).
 
-В ClickHouse Cloud есть два способа создать пользовательские функции:
+В ClickHouse Cloud есть несколько способов создавать пользовательские функции и управлять ими:
 
 1. С помощью SQL
 2. С помощью интерфейса и собственного кода (публичная бета)
+3. С помощью [Cloud API](#manage-udfs-with-the-cloud-api) (бета)
+4. С помощью [Terraform](#manage-udfs-with-terraform) (альфа)
 
 <div id="sql-udfs">
   ## Пользовательские функции SQL
@@ -186,3 +188,80 @@ ClickHouse Cloud позволяет создавать пользователь�
     Вы успешно добавили свою первую пользовательскую функцию через интерфейс, убедились, что она выполняется, и узнали, как при необходимости создать для нее новую версию.
   </Step>
 </Steps>
+
+<div id="manage-udfs-with-the-cloud-api">
+  ## Управление пользовательскими функциями (UDF) через Cloud API
+</div>
+
+<BetaBadge />
+
+Всё, что доступно в интерфейсе, также доступно программно через [ClickHouse Cloud API](/ru/products/cloud/features/admin-features/api/api-overview).
+Конечные точки UDF позволяют автоматизировать весь жизненный цикл UDF: загрузку исходных архивов, создание функций и версий, их подключение к сервисам и удаление.
+
+<Note>
+  Эти конечные точки находятся на стадии бета-тестирования, и контракт API может измениться.
+</Note>
+
+Типичный процесс создания и развертывания UDF через API:
+
+1. [Создайте URL для загрузки](/ru/products/cloud/api-reference/udf/udf-upload-session-create), чтобы получить предварительно подписанный URL для загрузки `application/zip`, а затем загрузите по нему ZIP-архив. Каждый ID загрузки можно использовать только для одной попытки создания UDF или её версии; при повторной попытке запросите новый URL для загрузки.
+2. [Создайте UDF](/ru/products/cloud/api-reference/udf/udf-create) из загруженного архива, указав имя функции, среду выполнения, аргументы и возвращаемый тип.
+3. [Подключите UDF к сервису](/ru/products/cloud/api-reference/udf/udf-attach). Если версия не указана, подключается последняя готовая версия. Сервис должен быть запущен; бездействующие сервисы можно предварительно активировать.
+
+Полный список конечных точек:
+
+| Конечная точка                                                                              | Описание                                                                                                  |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| [Создать URL для загрузки UDF](/ru/products/cloud/api-reference/udf/udf-upload-session-create) | Создаёт предварительно подписанный URL для загрузки `application/zip`, действующий в пределах организации |
+| [Создать UDF](/ru/products/cloud/api-reference/udf/udf-create)                                 | Создаёт новую UDF из загруженного архива                                                                  |
+| [Получить список UDF](/ru/products/cloud/api-reference/udf/udf-list)                           | Возвращает последнюю версию каждой UDF в организации                                                      |
+| [Получить UDF](/ru/products/cloud/api-reference/udf/udf-get)                                   | Возвращает последнюю версию UDF                                                                           |
+| [Удалить UDF](/ru/products/cloud/api-reference/udf/udf-delete)                                 | Удаляет все версии UDF и отключает её от всех сервисов                                                    |
+| [Создать версию UDF](/ru/products/cloud/api-reference/udf/udf-version-create)                  | Принимает исходный архив, назначает версию и запускает сборку UDF                                         |
+| [Получить список версий UDF](/ru/products/cloud/api-reference/udf/udf-version-list)            | Возвращает все версии UDF                                                                                 |
+| [Удалить версию UDF](/ru/products/cloud/api-reference/udf/udf-version-delete)                  | Удаляет версию UDF, не подключённую ни к одному сервису                                                   |
+| [Подключить UDF к сервису](/ru/products/cloud/api-reference/udf/udf-attach)                    | Подключает одну версию UDF к сервису, при необходимости заменяя текущую версию                            |
+| [Получить список подключений UDF](/ru/products/cloud/api-reference/udf/udf-attachment-list)    | Возвращает текущие подключения UDF к сервисам                                                             |
+| [Получить подключение UDF](/ru/products/cloud/api-reference/udf/udf-attachment-get)            | Возвращает текущее подключение UDF к одному сервису                                                       |
+| [Отключить UDF от сервиса](/ru/products/cloud/api-reference/udf/udf-detach)                    | Отключает UDF от сервиса                                                                                  |
+
+См. [справочник API UDF](/ru/products/cloud/api-reference/udf/udf-create) со схемами запросов и ответов.
+
+<div id="manage-udfs-with-terraform">
+  ## Управление UDF с помощью Terraform
+</div>
+
+Официальный [Terraform-провайдер ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) включает два ресурса для управления UDF в рамках подхода «инфраструктура как код»:
+
+* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) управляет самой функцией. Он принимает ZIP-архив с исходным кодом функции и публикует новую версию при изменении хеша архива, дожидаясь завершения сборки.
+* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) подключает версию UDF к сервису. К сервису можно одновременно подключить не более одной версии функции. Можно закрепить конкретный номер версии или сослаться на `clickhouse_udf.<name>.version`, чтобы автоматически обновлять сервисы до последней версии.
+
+<Note>
+  Эти ресурсы доступны начиная с версии провайдера 3.24.0. Они имеют статус альфа, и их поведение может измениться в будущих версиях провайдера.
+</Note>
+
+Например, чтобы развернуть с помощью Terraform UDF `isBusinessHours` из предыдущего примера:
+
+```terraform
+resource "clickhouse_udf" "is_business_hours" {
+  function_name = "isBusinessHours"
+  runtime       = "python3.11"
+  type          = "executable_pool"
+  return_type   = "Bool"
+
+  arguments = [
+    { name = "timestamp", type = "DateTime" },
+  ]
+
+  source_archive_path = "${path.module}/is_business_hours.zip"
+  source_archive_hash = filebase64sha256("${path.module}/is_business_hours.zip")
+}
+
+resource "clickhouse_udf_attachment" "production" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+```
+
+Подключение возможно только для версий в состоянии готовности и может занять несколько минут; бездействующие сервисы запускаются автоматически. При удалении ресурса `clickhouse_udf` удаляются все версии функции, и она отключается от всех сервисов.
