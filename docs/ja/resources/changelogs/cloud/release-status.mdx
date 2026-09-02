@@ -11,9 +11,7 @@ import ReleaseSchedule from "/snippets/ja/components/ReleaseSchedule/ReleaseSche
 
 ClickHouse Cloud は、安定性、新機能へのアクセス、アップグレード時期の予測しやすさに関するさまざまなニーズに対応するため、複数のリリースチャネルを提供しています。各チャネルにはそれぞれ異なるアップグレードスケジュールが設定されており、新しいリリースをすぐに利用したいユーザーから、最も安定したバージョンを確実に利用できるようアップグレードを遅らせたいユーザーまで、さまざまなユースケースに対応することを目的としています。
 
-<div id="release-channel-details">
-  ## リリースチャネルの詳細
-</div>
+## リリースチャネルの詳細 {#release-channel-details}
 
 <Accordion title="リリースチャネルの詳細を見る">
   | チャネル名             | 説明                                                                                                               | 主な考慮事項                                                                | 対応ティア                                    |
@@ -33,9 +31,7 @@ ClickHouse Cloud は、安定性、新機能へのアクセス、アップグレ
 
 Enterprise ティアのサービスでは、すべてのリリースチャネルでスケジュールされたアップグレードウィンドウを利用できます。この機能により、アップグレードを実施する時間帯を曜日ごとに設定できます。
 
-<div id="release-schedule">
-  ## リリーススケジュール
-</div>
+## リリーススケジュール {#release-schedule}
 
 <Warning>
   **リリース日の見方**
@@ -52,12 +48,25 @@ Enterprise ティアのサービスでは、すべてのリリースチャネル
 <ReleaseSchedule
   releases={[
   {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
+   version: '26.6',
+   fast_start_date: '2026-09-07',
+   fast_end_date: '未定',
+   regular_start_date: '未定',
+   regular_end_date: '未定',
+   slow_start_date: '未定',
+   slow_end_date: '未定',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
    changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
    version: '26.4',
    fast_start_date: '2026-06-22',
    fast_end_date: '2026-07-16',
    regular_start_date: '2026-08-03',
-   regular_end_date: '未定',
+   regular_end_date: '2026-09-07',
    slow_start_date: '未定',
    slow_end_date: '未定',
    fast_progress: 'green',
@@ -67,35 +76,6 @@ Enterprise ティアのサービスでは、すべてのリリースチャネル
   {
    changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
    version: '26.2',
-   fast_start_date: '2026-04-03',
-   fast_end_date: '2026-04-14',
-   regular_start_date: '2026-05-06',
-   regular_end_date: '2026-06-17',
-   slow_start_date: '2026-07-22',
-   slow_end_date: '2026-07-22',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-   fast_delay_note: 'アップグレードウィンドウが設定されているサービスは、2026-04-15 からアップグレードされます。',
-  },
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
-   version: '25.12',
-   fast_start_date: '2026-02-10',
-   fast_end_date: '2026-02-11',
-   regular_start_date: '2026-03-09',
-   regular_end_date: '2026-03-18',
-   slow_start_date: '2026-04-07',
-   slow_end_date: '2026-04-09',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-   regular_delay_note: 'スケジュールされたアップグレードウィンドウが設定されているサービスには、3 月 23 日の翌週の予定されたウィンドウ内に 25.12 が適用されます',
-   slow_delay_note: 'スケジュールされたアップグレードウィンドウが設定されているサービスには、4 月 13 日の翌週の予定されたウィンドウ内に 25.12 が適用されます',
- },
- {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
-   version: '25.10',
    fast_start_date: 'Completed',
    fast_end_date: 'Completed',
    regular_start_date: 'Completed',
@@ -105,19 +85,19 @@ Enterprise ティアのサービスでは、すべてのリリースチャネル
    fast_progress: 'green',
    regular_progress: 'green',
    slow_progress: 'green',
- },
- {
-  changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
-  version: '25.8',
-  fast_start_date: 'Completed',
-  fast_end_date: 'Completed',
-  regular_start_date: 'Completed',
-  regular_end_date: 'Completed',
-  slow_start_date: 'Completed',
-  slow_end_date: 'Completed',
-  fast_progress: 'green',
-  regular_progress: 'green',
-  slow_progress: 'green',
-}
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+   version: '25.12',
+   fast_start_date: 'Completed',
+   fast_end_date: 'Completed',
+   regular_start_date: 'Completed',
+   regular_end_date: 'Completed',
+   slow_start_date: 'Completed',
+   slow_end_date: 'Completed',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
 ]}
 />
