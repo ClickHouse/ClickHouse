@@ -1,0 +1,17 @@
+Initial definition
+CREATE TABLE default.histogram_stats\n(\n    `id` UInt64,\n    `x` Float64 STATISTICS(histogram(8)),\n    `n` Nullable(Int32) STATISTICS(histogram(4))\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS auto_statistics_types = \'\', index_granularity = 8192
+id	[[]]
+n	[['Histogram']]
+x	[['Histogram']]
+Query-scope estimate
+          Prewhere filter column: and(greater(x, 1000000_UInt32), greaterOrEquals(n, 10_UInt8), lessOrEquals(n, 15_UInt8)) (removed)
+Range predicates
+4250
+1500
+2500
+Definition after rematerialization
+CREATE TABLE default.histogram_stats\n(\n    `id` UInt64,\n    `x` Float64 STATISTICS(histogram(16)),\n    `n` Nullable(Int32) STATISTICS(histogram(4))\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS auto_statistics_types = \'\', index_granularity = 8192
+id	[[]]
+n	[['Histogram']]
+x	[['Histogram']]
+4250

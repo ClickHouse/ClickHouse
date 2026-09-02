@@ -82,6 +82,9 @@ public:
     /// (e.g. the value cannot be converted to the column type).
     virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
+    virtual std::optional<Float64> estimateLessOrEqual(const Field & val) const;
+    virtual std::optional<Float64> estimateGreater(const Field & val) const;
+    virtual std::optional<Float64> estimateGreaterOrEqual(const Field & val) const;
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
@@ -125,12 +128,12 @@ public:
     void merge(const ColumnStatisticsPtr & other);
 
     UInt64 getNumRows() const { return rows; }
-    /// Total NULL rows for a Nullable column when `Basic` statistics are present; 0 otherwise.
+    /// Total NULL rows when a statistic carrying non-NULL row count (`Basic` or `Histogram`) is present; 0 otherwise.
     /// Callers should consult `hasNullCount` first.
     UInt64 getNullCount() const;
     /// Returns `rows - getNullCount()` when null-count tracking is available, else `rows`.
     UInt64 getNonNullRowCount() const;
-    /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
+    /// True iff null-count tracking is available for this column (via `Basic` or `Histogram`).
     bool hasNullCount() const;
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
@@ -148,7 +151,9 @@ public:
     Float64 estimateIsNotNull() const;
 
     std::optional<Float64> estimateLess(const Field & val) const;
+    std::optional<Float64> estimateLessOrEqual(const Field & val) const;
     std::optional<Float64> estimateGreater(const Field & val) const;
+    std::optional<Float64> estimateGreaterOrEqual(const Field & val) const;
     std::optional<Float64> estimateEqual(const Field & val) const;
     std::optional<Float64> estimateRange(const Range & range) const;
 

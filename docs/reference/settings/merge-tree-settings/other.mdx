@@ -63,7 +63,7 @@ Before enabling, check that all replicas support UUID version 4.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "Enable auto statistics by default"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "New setting"}]}]}/>
 
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
-Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
+Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2, and parameterized `histogram(N)`.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 
 ## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}

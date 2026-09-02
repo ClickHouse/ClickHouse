@@ -8,12 +8,14 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
+#include <Storages/Statistics/StatisticsHistogram.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
@@ -256,6 +258,21 @@ std::optional<Float64> IStatistics::estimateLess(const Field & /*val*/) const
     return std::nullopt;
 }
 
+std::optional<Float64> IStatistics::estimateLessOrEqual(const Field & /*val*/) const
+{
+    return std::nullopt;
+}
+
+std::optional<Float64> IStatistics::estimateGreater(const Field & /*val*/) const
+{
+    return std::nullopt;
+}
+
+std::optional<Float64> IStatistics::estimateGreaterOrEqual(const Field & /*val*/) const
+{
+    return std::nullopt;
+}
+
 Float64 IStatistics::estimateRange(const Range & /*range*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Range estimation is not implemented for this type of statistics");
@@ -279,6 +296,11 @@ std::optional<Float64> ColumnStatistics::estimateLess(const Field & val) const
     if (val.isNaN())
         return 0;
 
+#if USE_DATASKETCHES
+    if (stats.contains(StatisticsType::Histogram))
+        if (auto result = stats.at(StatisticsType::Histogram)->estimateLess(val))
+            return result;
+#endif
     if (stats.contains(StatisticsType::TDigest))
         if (auto result = stats.at(StatisticsType::TDigest)->estimateLess(val))
             return result;
@@ -291,14 +313,47 @@ std::optional<Float64> ColumnStatistics::estimateLess(const Field & val) const
     return std::nullopt;
 }
 
+std::optional<Float64> ColumnStatistics::estimateLessOrEqual(const Field & val) const
+{
+    if (val.isNaN())
+        return 0;
+
+#if USE_DATASKETCHES
+    if (auto it = stats.find(StatisticsType::Histogram); it != stats.end())
+        if (auto result = it->second->estimateLessOrEqual(val))
+            return result;
+#endif
+    /// Existing statistics do not model endpoint mass reliably. Preserve their
+    /// previous fuzzy behavior by treating <= like < when no histogram is present.
+    return estimateLess(val);
+}
+
 std::optional<Float64> ColumnStatistics::estimateGreater(const Field & val) const
 {
     /// Comparisons with NaN are always false, so `x > NaN` has zero selectivity.
     if (val.isNaN())
         return 0;
 
+    for (const auto & [_, statistic] : stats)
+        if (auto result = statistic->estimateGreater(val))
+            return result;
+
+    if (auto less_or_equal = estimateLessOrEqual(val))
+        return std::max(0.0, static_cast<Float64>(getNonNullRowCount()) - *less_or_equal);
+    return std::nullopt;
+}
+
+std::optional<Float64> ColumnStatistics::estimateGreaterOrEqual(const Field & val) const
+{
+    if (val.isNaN())
+        return 0;
+
+    for (const auto & [_, statistic] : stats)
+        if (auto result = statistic->estimateGreaterOrEqual(val))
+            return result;
+
     if (auto less = estimateLess(val))
-        return static_cast<Float64>(getNonNullRowCount()) - *less;
+        return std::max(0.0, static_cast<Float64>(getNonNullRowCount()) - *less);
     return std::nullopt;
 }
 
@@ -311,6 +366,12 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
         if (auto estimate = it->second->estimateEqual(val))
             return estimate;
+
+#if USE_DATASKETCHES
+    if (auto it = stats.find(StatisticsType::Histogram); it != stats.end())
+        if (auto estimate = it->second->estimateEqual(val))
+            return estimate;
+#endif
 
     const IStatistics * uniq_stats = findUniqStats(stats);
     if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
@@ -352,16 +413,16 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
         return estimateEqual(range.left);
 
     if (range.left.isNegativeInfinity())
-        return estimateLess(range.right);
+        return range.right_included ? estimateLessOrEqual(range.right) : estimateLess(range.right);
 
     if (range.right.isPositiveInfinity())
-        return estimateGreater(range.left);
+        return range.left_included ? estimateGreaterOrEqual(range.left) : estimateGreater(range.left);
 
-    auto right_count = estimateLess(range.right);
-    auto left_count = estimateLess(range.left);
+    auto right_count = range.right_included ? estimateLessOrEqual(range.right) : estimateLess(range.right);
+    auto left_count = range.left_included ? estimateLess(range.left) : estimateLessOrEqual(range.left);
     if (!right_count || !left_count)
         return std::nullopt;
-    return *right_count - *left_count;
+    return std::clamp(*right_count - *left_count, 0.0, static_cast<Float64>(getNonNullRowCount()));
 }
 
 bool ColumnStatistics::hasCardinality() const
@@ -383,7 +444,11 @@ bool ColumnStatistics::hasNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
         return assert_cast<const StatisticsBasic &>(*it->second).hasNullCount();
+#if USE_DATASKETCHES
+    return stats.contains(StatisticsType::Histogram);
+#else
     return false;
+#endif
 }
 
 bool ColumnStatistics::hasMinMax() const
@@ -403,6 +468,13 @@ UInt64 ColumnStatistics::getNullCount() const
         if (basic.hasNullCount())
             return basic.getNullCount();
     }
+#if USE_DATASKETCHES
+    if (auto it = stats.find(StatisticsType::Histogram); it != stats.end())
+    {
+        const UInt64 non_null_count = assert_cast<const StatisticsHistogram &>(*it->second).getNonNullCount();
+        return non_null_count <= rows ? rows - non_null_count : 0;
+    }
+#endif
     return 0;
 }
 
@@ -608,7 +680,19 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                         consumed,
                         stat_size);
 
-                auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
+                ASTPtr ast;
+#if USE_DATASKETCHES
+                if (type == StatisticsType::Histogram)
+                {
+                    const auto & histogram = assert_cast<const StatisticsHistogram &>(*stat_ptr);
+                    ast = makeASTFunction("histogram", make_intrusive<ASTLiteral>(histogram.getBucketCount()));
+                    ast->as<ASTFunction &>().setKind(ASTFunction::Kind::STATISTICS);
+                }
+                else
+#endif
+                {
+                    ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
+                }
                 result->stats_desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, ast, false));
                 result->stats[type] = std::move(stat_ptr);
             }
@@ -765,6 +849,9 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerCreator(StatisticsType::UniqV2, uniqV2StatisticsCreator);
 
 #if USE_DATASKETCHES
+    registerValidator(StatisticsType::Histogram, histogramStatisticsValidator);
+    registerCreator(StatisticsType::Histogram, histogramStatisticsCreator);
+
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
     registerCreator(StatisticsType::CountMinSketch, countMinSketchStatisticsCreator);
 #endif
@@ -830,7 +917,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
         if (it == creators.end())
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
+                "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'histogram', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
 
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
@@ -850,7 +937,7 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
         if (it == validators.end())
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
+                "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'histogram', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));

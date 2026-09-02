@@ -2536,6 +2536,21 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
+- `histogram(N)`
+
+    An approximate equi-depth (equi-height) histogram for numeric columns. Its boundaries target
+    the quantiles `0/N, 1/N, ..., N/N`, so each non-degenerate bucket represents approximately
+    the same number of rows. ClickHouse persists a mergeable KLL quantile sketch in each part,
+    merges the sketches for the selected parts, and derives the histogram boundaries from the
+    merged state. Repeated boundaries are collapsed because equal values cannot be split between
+    ordered buckets.
+
+    `N` is required and must be between `2` and `1024`. The statistic improves estimates for
+    `<`, `<=`, `>`, `>=`, and bounded range predicates. Estimates are approximate and use a
+    `Float64` projection in the current implementation, so adjacent integers above `2^53` and
+    similarly large decimal values can lose precision. This statistic is available in builds
+    compiled with `ENABLE_DATASKETCHES`.
+
 ### Supported data types {#supported-data-types}
 
 |          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
@@ -2546,6 +2561,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 | tdigest  | ✔                                                  | ✗    | ✗                     | ✗              |
 | uniq     | ✔                                                  | ✔    | ✔                     | ✗              |
 | uniq_v2  | ✔                                                  | ✔    | ✔                     | ✗              |
+| histogram | ✔                                                  | ✔    | ✗                     | ✗              |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 
@@ -2559,6 +2575,7 @@ All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers 
 | tdigest  | ✗                        | ✔ (numeric columns only)       |
 | uniq     | ✔                        | ✗                              |
 | uniq_v2  | ✔                        | ✗                              |
+| histogram | ✔ (frequent values only) | ✔                              |
 
 `basic` answers an equality filter exactly only when the compared value matches the column's
 internal storage default (raw integer `0` for numeric types, `''` / N zero bytes for `String` /

@@ -18,6 +18,8 @@ enum class StatisticsType : UInt8
     MinMax = 3,
     Basic = 4,
     UniqV2 = 5,
+    /// Value 6 is reserved for the companion MCV statistic.
+    Histogram = 7,
 
     Max = 63,
 };

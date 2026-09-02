@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -59,8 +60,11 @@ StatisticsType stringToStatisticsType(String type)
         return StatisticsType::Basic;
     if (type == "uniq_v2")
         return StatisticsType::UniqV2;
+    /// Histogram is a persisted V4 statistic type; keep its numeric enum value stable.
+    if (type == "histogram")
+        return StatisticsType::Histogram;
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'histogram', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
 }
 
 String statisticsTypeToString(StatisticsType type)
@@ -79,13 +83,17 @@ String statisticsTypeToString(StatisticsType type)
             return "basic";
         case StatisticsType::UniqV2:
             return "uniq_v2";
+        case StatisticsType::Histogram:
+            return "histogram";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'histogram', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
     }
 }
 
 String SingleStatisticsDescription::getTypeName() const
 {
+    if (type == StatisticsType::Histogram && ast && ast->as<ASTFunction>())
+        return ast->formatForErrorMessage();
     return statisticsTypeToString(type);
 }
 
@@ -95,7 +103,25 @@ SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, A
 
 bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription & other) const
 {
-    return type == other.type && is_implicit == other.is_implicit;
+    if (type != other.type || is_implicit != other.is_implicit)
+        return false;
+    if (type != StatisticsType::Histogram)
+        return true;
+
+    auto get_histogram_parameter = [](const ASTPtr & description_ast) -> std::optional<UInt64>
+    {
+        if (!description_ast)
+            return std::nullopt;
+        const auto * function = description_ast->as<ASTFunction>();
+        if (!function || !function->arguments || function->arguments->children.size() != 1)
+            return std::nullopt;
+        const auto * literal = function->arguments->children.front()->as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::UInt64)
+            return std::nullopt;
+        return literal->value.safeGet<UInt64>();
+    };
+
+    return get_histogram_parameter(ast) == get_histogram_parameter(other.ast);
 }
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
