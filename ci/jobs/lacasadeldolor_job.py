@@ -50,6 +50,12 @@ STOP_FAILED_MESSAGE = "is still running after stop command"
 # leaves any other trace in the log, so without this marker they are `good_exit = False`
 # reasons the wrapper cannot see, and a benign OOM in the same run would pass them off.
 EXIT_UNACCOUNTED_MESSAGE = "Exit code unaccounted for"
+# Third sibling of the two above: no pid, no exec, and no recorded code at all - `dolor.py`
+# never even gets to the "how did it exit" checks that log `EXIT_UNACCOUNTED_MESSAGE`. It is
+# only ever collapsed into `server_died` (for the OOM heuristic) unless it is also treated as
+# an unaccounted exit here, so a node that vanished this way never vetoes a benign OOM
+# downgrade coming from a *different* node's 137 in the same multi-node run.
+SERVER_GONE_MESSAGE = "is unexpectedly gone"
 
 
 def collapse_server_exit_code(
@@ -881,7 +887,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             # all, so this is the only evidence it died (dolor.py checks the pid first).
             # Only the stable part of that message is matched, because the tail naming
             # what was missing has already been reworded once.
-            r"|is unexpectedly gone"
+            rf"|{SERVER_GONE_MESSAGE}"
         )
         # `dolor.py` inspects the ClickHouse exec of every node on shutdown and logs
         # "The server node0 exited with code: 137". Collect those codes so the sanitizer
@@ -910,6 +916,12 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                 if FORCED_STOP_MESSAGE in line:
                     forced_stop = True
                 if EXIT_UNACCOUNTED_MESSAGE in line:
+                    exit_unaccounted = True
+                # Same failure class as `EXIT_UNACCOUNTED_MESSAGE`: no way to know how this
+                # node exited. Feeding it into the same flag makes `_classify_failed_run`
+                # override a benign OOM downgrade caused by a *different* node's 137, instead
+                # of only ever showing up as `server_died` for the OOM heuristic.
+                if SERVER_GONE_MESSAGE in line:
                     exit_unaccounted = True
                 if STOP_FAILED_MESSAGE in line:
                     stop_failed = True
