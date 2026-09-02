@@ -70,10 +70,11 @@ def query_with_connect_retry(node, sql, retries=20, sleep_time=0.5, **kwargs):
         try:
             return node.query(sql, **kwargs)
         except QueryRuntimeException as ex:
+            error = str(ex)
             if (
                 ex.returncode == 210
-                and "Connection refused" in str(ex)
-                and endpoint in str(ex)
+                and "Connection refused" in error
+                and endpoint in error
                 and attempt + 1 < retries
             ):
                 print(f"Connection refused from {node.name}, retry {attempt + 1}: {ex}")
