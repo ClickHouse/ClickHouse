@@ -229,7 +229,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
 
         if (array)
         {
-            /// The array is owned by this callback; importing it passes that ownership to Arrow.
+            /// The array is borrowed for the duration of this callback; importing it moves the
+            /// data out and marks the struct released, which is how it is handed back.
             auto batch = arrow::ImportRecordBatch(array, scan_schema);
             throwFromArrowStatusIfFailed(batch.status());
 
@@ -257,7 +258,11 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
     }
     catch (...)
     {
-        setBackgroundException(std::current_exception());
+        /// Returning non-zero is what stops the scan here, and it is reported back through
+        /// `onScanFinish`. Cancelling instead would suppress that report, and the first chunks can
+        /// arrive before `vortex_ffi_scan_create` has handed the scan over, so there is not even a
+        /// handle to cancel with yet.
+        setBackgroundException(std::current_exception(), /* cancel_scan */ false);
         return 1;
     }
 }

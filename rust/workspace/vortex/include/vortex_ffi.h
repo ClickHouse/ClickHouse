@@ -199,9 +199,11 @@ struct FFI_VortexScanOptions
 };
 
 /// The callbacks a scan reports to. Both run on the caller's own threads, possibly several at a
-/// time. The only calls back into the library they may make are `vortex_ffi_scan_cancel`, which is
-/// allowed from either of them, and `vortex_ffi_scan_release`, which is not allowed from
-/// `on_chunk`.
+/// time. Neither of them may call back into the library. `on_chunk` has no handle to call with in
+/// the first place - the scan is only handed over once `vortex_ffi_scan_create` returns, and chunks
+/// can arrive before that - so it stops the scan by returning non-zero instead. `on_finish` runs
+/// inside the scan's own driver task, which `vortex_ffi_scan_cancel` would drop from under itself.
+/// `vortex_ffi_scan_cancel` and `vortex_ffi_scan_release` are for the other threads of the caller.
 struct FFI_VortexScanCallbacks
 {
     void * context;
@@ -209,13 +211,16 @@ struct FFI_VortexScanCallbacks
     /// of its split in the file. The array is borrowed for the duration of the call - the callback
     /// takes the data out of it (or releases it) before returning, and must not keep the pointer.
     /// A null array means the split matched no rows; it is still reported so that the caller can
-    /// restore the file order. Returning non-zero stops the scan and surfaces from `on_finish` as
-    /// an error.
+    /// restore the file order. Returning non-zero stops the scan; it is the only way `on_chunk` has
+    /// to stop it, and it surfaces from `on_finish` as an error.
     int32_t (*on_chunk)(void * context, struct ArrowArray * array, uint64_t split_index);
     /// Reports the end of the scan, exactly once: nullptr if every split was delivered, otherwise
-    /// a message that is only valid for the duration of the call. Never called for a scan that was
-    /// cancelled. After a failure a split task already in flight can still reach `on_chunk`, so the
-    /// context has to outlive the caller's last pass over the queues.
+    /// a message that is only valid for the duration of the call. Every other outcome - a failed
+    /// split, a non-zero return from `on_chunk`, a panic in the driver - is reported here; the one
+    /// scan that reports nothing is one the caller cancelled, and a `vortex_ffi_scan_cancel` from
+    /// another thread can land at any point, so a cancelling caller must not wait for this. After a
+    /// failure a split task already in flight can still reach `on_chunk`, so the context has to
+    /// outlive the caller's last pass over the queues.
     void (*on_finish)(void * context, const char * error);
 };
 

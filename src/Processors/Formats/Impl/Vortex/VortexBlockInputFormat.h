@@ -144,7 +144,8 @@ private:
 
     /// Stores the first failure, so that `read` rethrows it, and wakes `read` up. Also stops the
     /// scan, unless `cancel_scan` is false - which is needed where stopping it would re-enter this
-    /// reader through the notification callback.
+    /// reader through the notification callback, and inside the scan's own callbacks, which are not
+    /// allowed to call back into the library.
     void setBackgroundException(std::exception_ptr exception, bool cancel_scan = true) noexcept;
 
     std::unique_ptr<ArrowColumnToCHColumn> createConverter() const;

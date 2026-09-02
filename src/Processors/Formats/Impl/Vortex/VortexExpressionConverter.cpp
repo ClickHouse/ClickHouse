@@ -208,10 +208,12 @@ bool VortexExpressionConverter::typesMatchForFilterPushdown(const DataTypePtr & 
         case arrow::Type::DOUBLE: return which.isFloat64();
         /// A boolean file column always reads as {0, 1}, whatever UInt8 flavor the header uses.
         case arrow::Type::BOOL: return which.isUInt8();
-        /// The day numbers are copied 1:1 - except under `Saturate`, where out-of-range days are
+        /// The day numbers are copied 1:1 into either header type - a `Date` header is the same
+        /// day numbering, only narrower - except under `Saturate`, where out-of-range days are
         /// clamped onto the bounds and an equality on a bound would match rows it should not.
         case arrow::Type::DATE32:
-            return which.isDate32() && format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Saturate;
+            return (which.isDate32() || which.isDate())
+                && format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Saturate;
         /// The ticks are copied 1:1 when the scales agree; the header's time zone only affects
         /// rendering, not the stored ticks. Any other scale makes the decoder rescale the values.
         case arrow::Type::TIMESTAMP: {
@@ -313,10 +315,18 @@ VortexExpressionPtr VortexExpressionConverter::makeLiteral(
 
     auto make_date = [&]() -> VortexExpressionPtr
     {
-        /// `Date32` values are day numbers in an `Int64` field.
-        if (converted.getType() != Field::Types::Int64)
-            return nullptr;
-        return VortexExpressionPtr(vortex_ffi_expr_literal_date(FFI_VortexTimeUnit::Days, converted.safeGet<Int64>()));
+        /// `Date32` values are day numbers in an `Int64` field, `Date` values day numbers in a
+        /// `UInt64` one; the file column counts days from the same epoch either way.
+        if (converted.getType() == Field::Types::Int64)
+            return VortexExpressionPtr(vortex_ffi_expr_literal_date(FFI_VortexTimeUnit::Days, converted.safeGet<Int64>()));
+        if (converted.getType() == Field::Types::UInt64)
+        {
+            UInt64 day_number = converted.safeGet<UInt64>();
+            if (day_number > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
+                return nullptr;
+            return VortexExpressionPtr(vortex_ffi_expr_literal_date(FFI_VortexTimeUnit::Days, static_cast<Int64>(day_number)));
+        }
+        return nullptr;
     };
 
     auto make_timestamp = [&]() -> VortexExpressionPtr
