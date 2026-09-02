@@ -4622,6 +4622,12 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         dst_size_before = dst.size();
         input_keys = dst_size_before + first_src_size + remaining_src_sizes;
 
+        /// The reservations run ahead of the source loop's own cancellation check; a bucket
+        /// that is about to be abandoned must not add its reservation to the peak memory of
+        /// the unwinding query.
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            return;
+
         /// Reserve up front from the completed buckets' ratio (see `merged_buckets_input_keys`);
         /// the first buckets, merged while nothing has completed yet, use the in-loop estimate.
         /// The counters are published input-first with the result released, and read here
@@ -4662,7 +4668,11 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         if constexpr (can_reserve)
         {
             if (!seen_input_keys && result_num == 1 && remaining_src_sizes)
+            {
+                if (is_cancelled.load(std::memory_order_seq_cst))
+                    return;
                 dst.reserve(reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes));
+            }
         }
     }
 
