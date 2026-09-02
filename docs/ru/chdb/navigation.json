@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Начало работы",
+      "group": "Get started",
       "pages": [
         "ru/chdb/index",
         "ru/chdb/getting-started"
       ]
     },
     {
-      "group": "Интеграции для языков программирования",
+      "group": "Language integrations",
       "pages": [
         "ru/chdb/install/index",
         "ru/chdb/install/python",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "group": "Конфигурация",
+      "group": "Configuration",
       "pages": [
         "ru/chdb/configuration/index",
         "ru/chdb/configuration/execution-engine",
@@ -45,7 +45,7 @@
       ]
     },
     {
-      "group": "Отладка",
+      "group": "Debugging",
       "pages": [
         "ru/chdb/debugging/index",
         "ru/chdb/debugging/explain",
@@ -54,7 +54,7 @@
       ]
     },
     {
-      "group": "Руководства для разработчиков",
+      "group": "Developer guides",
       "pages": [
         "ru/chdb/guides/index",
         "ru/chdb/guides/jupysql",
@@ -73,7 +73,7 @@
       ]
     },
     {
-      "group": "Технический справочник",
+      "group": "Technical reference",
       "pages": [
         "ru/chdb/reference/index",
         "ru/chdb/reference/data-formats",
