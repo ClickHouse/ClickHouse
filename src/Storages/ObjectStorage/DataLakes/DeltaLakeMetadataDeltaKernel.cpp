@@ -201,6 +201,16 @@ bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadat
     return getTableSnapshot()->getVersion() == delta_lake_metadata.getTableSnapshot()->getVersion();
 }
 
+bool DeltaLakeMetadataDeltaKernel::hasLoadedTableState() const
+{
+    std::lock_guard lock(snapshots_mutex);
+    if (!latest_snapshot_version.has_value())
+        return false;
+
+    auto snapshot = snapshots.get(latest_snapshot_version.value());
+    return snapshot && snapshot->hasLoadedState();
+}
+
 std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context) const
 {
     const auto & settings = context->getSettingsRef();

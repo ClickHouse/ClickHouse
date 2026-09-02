@@ -22,11 +22,14 @@ CREATE="DROP TABLE IF EXISTS ${TABLE};
         CREATE TABLE ${TABLE} ENGINE = DeltaLakeLocal('${DELTA_DIR}')"
 $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 --multiquery "$CREATE"
 
-# total_rows is served only when the delta kernel is enabled.
+# total_rows is served only when the delta kernel is enabled. `system.tables` answers from the
+# metadata that is already loaded and never fetches it, so a query that reaches `update` has to
+# republish the metadata under the kernel-enabled setting first.
 $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 \
     -q "SELECT total_rows IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
-$CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=1 \
-    -q "SELECT total_rows IS NOT NULL FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
+$CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=1 --multiquery \
+    -q "DESCRIBE TABLE ${TABLE} FORMAT Null;
+        SELECT total_rows IS NOT NULL FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
 
 # The probe above cached delta-kernel metadata, whose `supportsUpdate` is true, so further
 # queries refresh it in place instead of reassigning the pointer. Re-creating under the
@@ -62,5 +65,6 @@ done
 
 echo "$(cat "$OUT_DIR"/reads-* | wc -l) $(cat "$OUT_DIR"/counts-* | wc -l)"
 
-$CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=1 \
-    -q "SELECT total_rows > 0 FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
+$CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=1 --multiquery \
+    -q "DESCRIBE TABLE ${TABLE} FORMAT Null;
+        SELECT total_rows > 0 FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"

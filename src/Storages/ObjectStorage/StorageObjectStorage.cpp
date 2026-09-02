@@ -580,7 +580,7 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
 
     if (is_table_function)
         configuration->lazyInitializeIfNeeded(object_storage, query_context);
-    else if (!configuration->hasLoadedMetadata())
+    else if (!configuration->hasLoadedTableState())
         return std::nullopt;
 
     return configuration->totalRows(query_context);
@@ -596,7 +596,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 
     if (is_table_function)
         configuration->lazyInitializeIfNeeded(object_storage, query_context);
-    else if (!configuration->hasLoadedMetadata())
+    else if (!configuration->hasLoadedTableState())
         return std::nullopt;
 
     return configuration->totalBytes(query_context);

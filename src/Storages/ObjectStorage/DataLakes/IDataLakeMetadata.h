@@ -106,6 +106,10 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
+    /// Whether the table state is already resolved in memory, so that `totalRows` and
+    /// `totalBytes` can answer without going to the storage.
+    virtual bool hasLoadedTableState() const { return true; }
+
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
