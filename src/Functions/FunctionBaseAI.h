@@ -52,7 +52,7 @@ using AIParamValues = std::map<String, Field, std::less<>>; // STYLE_CHECK_ALLOW
 class FunctionBaseAI : public IFunction
 {
 public:
-    explicit FunctionBaseAI(ContextPtr context_);
+    explicit FunctionBaseAI(ContextPtr context_) : context(context_) {}
 
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }

@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
+            {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
