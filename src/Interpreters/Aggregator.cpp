@@ -36,6 +36,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
+#include <AggregateFunctions/MergeWaveStats.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
@@ -4635,6 +4636,18 @@ void NO_INLINE Aggregator::mergeBucketMultiWayImpl(
         src = nullptr;
     };
 
+    /// Phase timers (`log_per_bucket_merge_timings`): wall of phase 1 (the routing) and of the
+    /// pairwise fallback merges of phase 2, logged once per bucket. The conversion of the merged
+    /// bucket into a block happens at the caller's site (`mergeAndConvertOneBucketToChunk`), not
+    /// here, so the line carries no convert_us; the existing PerBucketMergeTiming line covers the
+    /// whole bucket including that conversion.
+    const bool log_timings = params.log_per_bucket_merge_timings;
+    std::optional<Stopwatch> phase_watch;
+    if (log_timings)
+        phase_watch.emplace();
+    UInt64 route_us = 0;
+    UInt64 pairwise_us = 0;
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         /// Stop routing further variants on cancellation: their tables keep their states and the
@@ -4651,8 +4664,15 @@ void NO_INLINE Aggregator::mergeBucketMultiWayImpl(
         table_src.clearAndShrink();
     }
 
+    if (log_timings)
+        route_us = phase_watch->elapsedMicroseconds();
+
     if (groups.empty())
+    {
+        if (log_timings)
+            LOG_DEBUG(log, "MergePhaseTiming: bucket={} route_us={} pairwise_us=0", bucket, route_us);
         return;
+    }
 
     /// The wave needs enough sources for the bucket-parallel merge to beat the pairwise fold;
     /// below that the pairwise path is the wave's own internal fallback anyway.
@@ -4687,10 +4707,40 @@ void NO_INLINE Aggregator::mergeBucketMultiWayImpl(
                 for (const auto & src : group_src_places)
                     wave_places.push_back(src + offset);
 
-                if (aggregate_function->isParallelizeMergePrepareNeeded())
-                    aggregate_function->parallelizeMergePrepare(wave_places, *thread_pool, is_cancelled);
+                auto run_wave = [&]
+                {
+                    if (aggregate_function->isParallelizeMergePrepareNeeded())
+                        aggregate_function->parallelizeMergePrepare(wave_places, *thread_pool, is_cancelled);
 
-                aggregate_function->parallelizeMergeMulti(wave_places, *thread_pool, is_cancelled, arena);
+                    aggregate_function->parallelizeMergeMulti(wave_places, *thread_pool, is_cancelled, arena);
+                };
+
+                if (log_timings)
+                {
+                    /// One wave = this group's prepare + multi. The pooled tasks account their
+                    /// thread-CPU time and worker identity to the ambient sink (see
+                    /// `MergeWaveStats`); the wall clock runs from the wave's construction to its
+                    /// barrier. cpu_us counts pooled tasks only, so a wave whose work degrades to
+                    /// the coordinating thread (the serial single-level fallback inside
+                    /// `parallelizeMergeMulti`) shows cpu_us ~ 0 and workers=0 under a non-trivial
+                    /// wall_us - exactly the signature of a wave that did not spread out.
+                    MergeWaveStats wave_stats;
+                    MergeWaveStatsScope stats_scope(&wave_stats);
+                    Stopwatch wave_watch;
+                    run_wave();
+                    LOG_DEBUG(
+                        log,
+                        "MergeWaveTiming: bucket={} group_sources={} cpu_us={} wall_us={} workers={}",
+                        bucket,
+                        group.num_sources,
+                        wave_stats.cpu_ns.load(std::memory_order_relaxed) / 1000,
+                        wave_watch.elapsedMicroseconds(),
+                        wave_stats.distinctWorkers());
+                }
+                else
+                {
+                    run_wave();
+                }
 
                 /// Mandatory memory guard: the k merged source sub-states die now, per key. On
                 /// exception the wave rethrows after its barrier and nothing is destroyed here.
@@ -4701,6 +4751,8 @@ void NO_INLINE Aggregator::mergeBucketMultiWayImpl(
             {
                 group_dst_places.clear();
                 group_dst_places.resize_fill(group.num_sources, group.dst);
+                if (log_timings)
+                    phase_watch->restart();
                 aggregate_function->mergeAndDestroyBatch(
                     group_dst_places.data(),
                     group_src_places.data(),
@@ -4709,9 +4761,14 @@ void NO_INLINE Aggregator::mergeBucketMultiWayImpl(
                     *thread_pool,
                     is_cancelled,
                     arena);
+                if (log_timings)
+                    pairwise_us += phase_watch->elapsedMicroseconds();
             }
         }
     }
+
+    if (log_timings)
+        LOG_DEBUG(log, "MergePhaseTiming: bucket={} route_us={} pairwise_us={}", bucket, route_us, pairwise_us);
 }
 
 template <typename Method>

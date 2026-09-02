@@ -1,5 +1,7 @@
 #pragma once
 
+#include <AggregateFunctions/MergeWaveStats.h>
+
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
@@ -142,12 +144,17 @@ public:
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
         if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
+            /// Wave diagnostics (`log_per_bucket_merge_timings`): the coordinating thread set the
+            /// sink before dispatching this wave; the pooled tasks account their thread-CPU time
+            /// and worker identity to it.
+            MergeWaveStats * wave_stats = current_merge_wave_stats;
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
+                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, wave_stats, thread_group = getCurrentThreadGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
+                    MergeWaveTaskTimer task_timer(wave_stats);
 
                     while (true)
                     {
@@ -234,13 +241,19 @@ public:
         /// workers start mutating it (summing sub-table sizes mid-merge would race them).
         const bool prefetch_merge = first_two_level.getBufferSizeInBytes() > getL2CacheSize();
 
+        /// Wave diagnostics (`log_per_bucket_merge_timings`), same sink as in
+        /// `parallelizeMergePrepare`. The pairwise fallback above needs no read of its own: it
+        /// runs `merge` on this same thread, which reads the sink at its pooled section.
+        MergeWaveStats * wave_stats = current_merge_wave_stats;
         ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_MERGER);
         try
         {
             auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-            auto thread_func = [&two_level_ptrs, &first_two_level, prefetch_merge, next_bucket_to_merge, &is_cancelled]()
+            auto thread_func = [&two_level_ptrs, &first_two_level, prefetch_merge, next_bucket_to_merge, &is_cancelled, wave_stats]()
             {
+                MergeWaveTaskTimer task_timer(wave_stats);
+
                 while (true)
                 {
                     if (is_cancelled.load(std::memory_order_seq_cst))
@@ -337,13 +350,19 @@ public:
             {
 
                 /// Usage of lhs and rhs is fine. The references belong to *this and will outlive `runner`, so the order of destruction is ok
+                /// Wave diagnostics (`log_per_bucket_merge_timings`): non-null only when this
+                /// merge runs inside a multi-way wave (the internal pairwise fallback of
+                /// `parallelizeMergeMulti`), whose coordinating thread set the sink.
+                MergeWaveStats * wave_stats = current_merge_wave_stats;
                 ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    auto thread_func = [&lhs, &rhs, prefetch_merge, next_bucket_to_merge, is_cancelled]()
+                    auto thread_func = [&lhs, &rhs, prefetch_merge, next_bucket_to_merge, is_cancelled, wave_stats]()
                     {
+                        MergeWaveTaskTimer task_timer(wave_stats);
+
                         while (true)
                         {
                             if (is_cancelled->load())
