@@ -41,6 +41,7 @@
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -933,10 +934,12 @@ void TableSnapshot::initOrUpdateSnapshot() const
     for (size_t attempt = 0;; ++attempt)
     {
         /// One in-flight build is shared by every query which needs this snapshot: the first
-        /// waiter starts it, later waiters (and later queries, if every waiter gave up before
-        /// the kernel call returned) adopt it.
+        /// waiter starts it and later waiters adopt it. A load that some waiter already gave up
+        /// on is not adopted, though: it may be stuck for good, and adopting it would poison
+        /// this snapshot forever. A fresh (permit-bounded) load is started instead, so the
+        /// table recovers once the object store does; the stuck worker just drops its result.
         auto load = inflight_load;
-        if (!load)
+        if (!load || load->state.load() == InflightSnapshotLoad::State::Abandoned)
         {
             load = startKernelSnapshotLoad(helper, version_to_build);
             inflight_load = load;
@@ -984,10 +987,17 @@ namespace
     /// whether still serving waiters or already given up by them. The permit is reserved
     /// BEFORE the worker is launched (a post-facto counter would let any number of concurrent
     /// loads pass the check together) and released by the worker itself when the kernel call
-    /// returns, so stuck workers can never exceed this cap. The cap stays far above realistic
-    /// concurrent snapshot loads (builds are shared per table snapshot) and far below
-    /// `max_thread_pool_size` (default 10000), each stuck worker occupying one pool thread.
-    constexpr Int64 MAX_SNAPSHOT_LOAD_WORKERS = 128;
+    /// returns, so stuck workers can never exceed this cap.
+    /// Each stuck worker occupies one `GlobalThreadPool` thread, so the cap is derived from the
+    /// pool's actual size (`max_thread_pool_size`, configurable): a small share of it, at most
+    /// 128 (reached with the default pool of 10000), so that a dead object store can never
+    /// starve unrelated tasks even on installations with a small pool. Builds are shared per
+    /// table snapshot, so this stays far above realistic concurrent snapshot loads.
+    Int64 maxSnapshotLoadWorkers()
+    {
+        const auto pool_size = static_cast<Int64>(GlobalThreadPool::instance().getMaxThreads());
+        return std::clamp<Int64>(pool_size / 8, 1, 128);
+    }
     std::atomic<Int64> snapshot_load_worker_permits{0};
 }
 
@@ -1004,7 +1014,8 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
     /// waiter; it keeps the kernel handles alive and releases them when the kernel call returns.
 
     /// Reserve a permit before launching, so the bound holds under concurrency.
-    if (snapshot_load_worker_permits.fetch_add(1, std::memory_order_relaxed) >= MAX_SNAPSHOT_LOAD_WORKERS)
+    const Int64 max_workers = maxSnapshotLoadWorkers();
+    if (snapshot_load_worker_permits.fetch_add(1, std::memory_order_relaxed) >= max_workers)
     {
         snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
         throw DB::Exception(
@@ -1012,7 +1023,7 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
             "Refusing to load the snapshot of the Delta Lake table at {}: {} snapshot-load workers are "
             "already running or stuck inside delta-kernel ({} of them were given up by their queries, "
             "see the DeltaLakeSnapshotLoadsStuck metric); not starting another one until a worker returns",
-            kernel_helper->getTableLocation(), MAX_SNAPSHOT_LOAD_WORKERS,
+            kernel_helper->getTableLocation(), max_workers,
             CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck));
     }
 
@@ -1026,12 +1037,23 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
         });
     load->future = task->get_future().share();
 
+    /// The build is shared by unrelated queries, so it must not run under the starting query's
+    /// thread group: its `max_memory_usage`, quota and accounting would silently apply to every
+    /// waiter. Give the worker a neutral group derived from the global context instead.
+    DB::ThreadGroupPtr thread_group;
+    if (auto global_context = DB::Context::getGlobalContextInstance())
+    {
+        thread_group = std::make_shared<DB::ThreadGroup>(global_context, /* os_threads_nice_value */ 0);
+        thread_group->memory_tracker.setDescription("Delta Lake snapshot load");
+    }
+    else
+        thread_group = DB::CurrentThread::getGroup();
+
     try
     {
         ThreadFromGlobalPool thread(
-            [task, load, thread_group = DB::CurrentThread::getGroup()]
+            [task, load, thread_group]
             {
-                /// Attach to the query thread group to keep memory accounting and the query id in logs.
                 DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
                 (*task)();
                 /// If every waiter already gave up, undoing the stuck-load accounting is ours to do.
@@ -1095,7 +1117,7 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKern
                     "the worker thread keeps running until the kernel call returns "
                     "(stuck loads: {}, snapshot-load workers are capped at {})",
                     kernel_helper.getTableLocation(), watch.elapsedMilliseconds(),
-                    CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck), MAX_SNAPSHOT_LOAD_WORKERS);
+                    CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck), maxSnapshotLoadWorkers());
             }
             throw;
         }

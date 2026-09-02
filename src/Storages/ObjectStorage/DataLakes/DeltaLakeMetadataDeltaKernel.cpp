@@ -184,8 +184,10 @@ DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resol
     if (!latest_snapshot_version.has_value() || version >= latest_snapshot_version.value())
         latest_snapshot_version = version;
 
-    auto [cached, created] = snapshots.getOrSet(version, [&]() { return snapshot; });
-    return LatestSnapshot{.snapshot = cached, .version = version, .created = created};
+    /// Replace rather than prefer an existing entry: a cached object for this version may be
+    /// poisoned by a still-stuck in-flight load, while this one has just loaded successfully.
+    snapshots.set(version, snapshot);
+    return LatestSnapshot{.snapshot = snapshot, .version = version, .created = true};
 }
 
 DeltaLake::TableSnapshotPtr
