@@ -11,6 +11,6 @@ INSERT INTO t_lightweight (d, e) VALUES ('2018-01-02', 'bar');
 UPDATE t_lightweight SET e = CAST('foo', 'Enum8(\'foo\' = 1, \'bar\' = 2)') WHERE d = '2018-01-02';
 
 SELECT e FROM t_lightweight ORDER BY d;
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' ORDER BY name;
 
 DROP TABLE t_lightweight;

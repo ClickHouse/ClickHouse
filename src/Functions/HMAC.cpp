@@ -239,9 +239,9 @@ Supported hash algorithms:
 SELECT hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', 'secret_key'));
             )",
             R"(
-┌─hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', 'secret_key'))─┐
-│ 31FD15FA0F61FD40DC09D919D4AA5B4141A0B27C1D51E74A6789A890AAAA187C                 │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌─hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', [HIDDEN id: 1]))─┐
+│ 31FD15FA0F61FD40DC09D919D4AA5B4141A0B27C1D51E74A6789A890AAAA187C                   │
+└────────────────────────────────────────────────────────────────────────────────────┘
             )"
         },
         {
