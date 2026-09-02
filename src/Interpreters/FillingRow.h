@@ -47,15 +47,6 @@ public:
     bool isNull() const;
 
     int getDirection(size_t index) const { return sort_description[index].direction; }
-
-    /// Whether the ORDER BY places a NULL after every value for this fill key. Comparison over Field
-    /// leaves a NULL unordered, so a caller that has to place a generated row relative to a NULL
-    /// original value needs this instead.
-    bool isNullsLast(size_t index) const
-    {
-        return sort_description[index].nulls_direction == sort_description[index].direction;
-    }
-
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
     const FillColumnDescription & getFillDescription(size_t index) const { return sort_description[index].fill_description; }
 

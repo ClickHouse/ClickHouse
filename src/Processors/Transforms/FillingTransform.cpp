@@ -236,12 +236,12 @@ static SortDescription deduplicateSortDescription(const SortDescription & sort_d
     return result;
 }
 
-static bool areFillKeysNullsLast(const SortDescription & fill_description)
+/// A `NULL` is unordered for the `Field` comparison `FillingRow` uses but has a definite position
+/// under `nulls_direction`, and placing a generated row relative to it is decidable only for a
+/// single fill key: with more, partial-`NULL` rows sort between the all-real and all-`NULL` rows.
+static bool isSingleNullsLastFillKey(const SortDescription & fill_description)
 {
-    for (const auto & desc : fill_description)
-        if (desc.nulls_direction != desc.direction)
-            return false;
-    return true;
+    return fill_description.size() == 1 && fill_description[0].nulls_direction == fill_description[0].direction;
 }
 
 FillingTransform::FillingTransform(
@@ -258,7 +258,7 @@ FillingTransform::FillingTransform(
     , filling_row(fill_description_)
     , next_row(fill_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
-    , fill_keys_nulls_last(areFillKeysNullsLast(fill_description_))
+    , single_nulls_last_fill_key(isSingleNullsLastFillKey(fill_description_))
     , process_list_element(std::move(process_list_element_))
 {
     if (interpolate_description)
@@ -599,8 +599,7 @@ bool FillingTransform::generateSuffixIfNeeded(
 
     /// Determines if we should insert filling row before start generating next rows
     bool should_insert_first = (next_row < filling_row && !filling_row_inserted)
-        || (no_original_rows_seen && !filling_row.isNull())
-        || (!fill_keys_nulls_last && next_row.isNull() && !filling_row.isNull());
+        || (next_row.isNull() && !filling_row.isNull() && (no_original_rows_seen || !single_nulls_last_fill_key));
     logDebug("should_insert_first", should_insert_first);
 
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
@@ -755,7 +754,7 @@ void FillingTransform::transformRange(
             {
                 filling_row.initUsingFrom(i);
                 filling_row_inserted = false;
-                if (current_value.isNull() ? filling_row.isNullsLast(i)
+                if (current_value.isNull() ? single_nulls_last_fill_key
                                            : less(fill_from, current_value, filling_row.getDirection(i)))
                 {
                     interpolate(result_columns, interpolate_block);
@@ -801,7 +800,7 @@ void FillingTransform::transformRange(
         /// and there are row(s) in current range with value(s) < then in the filling row.
         /// It can happen only once for a range.
         if (should_insert_first
-            && (filling_row < next_row || (next_row.isNull() && !filling_row.isNull() && fill_keys_nulls_last))
+            && (filling_row < next_row || (next_row.isNull() && !filling_row.isNull() && single_nulls_last_fill_key))
             && filling_row.isConstraintsSatisfied())
         {
             interpolate(result_columns, interpolate_block);

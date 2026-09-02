@@ -110,7 +110,7 @@ private:
     Columns last_range_sort_prefix;
     bool all_chunks_processed = false;    /// flag to determine if we have already processed all chunks
     const bool use_with_fill_by_sorting_prefix;
-    const bool fill_keys_nulls_last;
+    const bool single_nulls_last_fill_key;
 
     /// Used to enforce max_execution_time (and observe KILL QUERY) while generating filling rows,
     /// because a single WITH FILL range can expand into billions of rows within one transform() call
