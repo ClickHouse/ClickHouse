@@ -75,6 +75,24 @@ namespace
             ostr << backQuoteIfNeed(table_name.second);
         }
     }
+    void formatExceptDataTables(const std::set<DatabaseAndTableName> & except_data_tables, WriteBuffer & ostr, const IAST::FormatSettings &, bool only_table_names=false)
+    {
+        if (except_data_tables.empty())
+            return;
+
+        ostr << " EXCEPT DATA FROM " << (except_data_tables.size() == 1 ? "TABLE" : "TABLES") << " ";
+
+        bool need_comma = false;
+        for (const auto & table_name : except_data_tables)
+        {
+            if (std::exchange(need_comma, true))
+                ostr << ", ";
+
+            if (!table_name.first.empty() && !only_table_names)
+                ostr << backQuoteIfNeed(table_name.first) << ".";
+            ostr << backQuoteIfNeed(table_name.second);
+        }
+    }
 
     void formatElement(const Element & element, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
@@ -126,6 +144,7 @@ namespace
                 }
 
                 formatExceptTables(element.except_tables, ostr, format, /*only_table_names*/true);
+                formatExceptDataTables(element.except_data_tables, ostr, format, /*only_table_names*/true);
                 break;
             }
 
@@ -134,6 +153,7 @@ namespace
                 ostr << "ALL";
                 formatExceptDatabases(element.except_databases, ostr, format);
                 formatExceptTables(element.except_tables, ostr, format);
+                formatExceptDataTables(element.except_data_tables, ostr, format);
                 break;
             }
         }
@@ -241,6 +261,19 @@ void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database
             {
                 except_tables.emplace(DatabaseAndTableName{current_database, except_table.second});
                 it = except_tables.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+        for (auto it = except_data_tables.begin(); it != except_data_tables.end();)
+        {
+            const auto & except_data_table = *it;
+            if (except_data_table.first.empty())
+            {
+                except_data_tables.emplace(DatabaseAndTableName{current_database, except_data_table.second});
+                it = except_data_tables.erase(it);
             }
             else
             {
@@ -416,6 +449,22 @@ namespace
             }
             out << ']';
         }
+        if (!e.except_data_tables.empty())
+        {
+            out << ",\"except_data_tables\":[";
+            bool first = true;
+            for (const auto & [db, tbl] : e.except_data_tables)
+            {
+                if (!first) out << ',';
+                first = false;
+                out << "{\"database\":";
+                writeJSONString(db, out, fs);
+                out << ",\"table\":";
+                writeJSONString(tbl, out, fs);
+                out << '}';
+            }
+            out << ']';
+        }
         if (!e.except_databases.empty())
         {
             out << ",\"except_databases\":[";
@@ -495,6 +544,24 @@ namespace
                 e.except_tables.emplace(std::move(db), std::move(tbl));
             }
         }
+        if (elem_obj.has("except_data_tables"))
+        {
+            auto arr = elem_obj.getArray("except_data_tables");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_data_tables' is not a JSON array at element index {} during AST JSON deserialization", element_index);
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                /// Count each non-AST entry against the element budget (memory guard).
+                countJSONDeserializationElement();
+                auto t_obj = arr->getObject(i);
+                if (!t_obj)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'except_data_tables' array at element index {} during AST JSON deserialization", i, element_index);
+                JSONObjectReader t_reader(*t_obj);
+                String db = t_reader.getString("database");
+                String tbl = t_reader.getString("table");
+                e.except_data_tables.emplace(std::move(db), std::move(tbl));
+            }
+        }
         if (elem_obj.has("except_databases"))
         {
             auto arr = elem_obj.getArray("except_databases");
@@ -531,6 +598,7 @@ namespace
                 if (e.table_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
                 reject_field("except_tables", "TABLE");
+                reject_field("except_data_tables", "TABLE");
                 reject_field("except_databases", "TABLE");
                 break;
             case ElementType::TEMPORARY_TABLE:
@@ -542,10 +610,11 @@ namespace
                 reject_field("new_database_name", "TEMPORARY_TABLE");
                 reject_field("partitions", "TEMPORARY_TABLE");
                 reject_field("except_tables", "TEMPORARY_TABLE");
+                reject_field("except_data_tables", "TEMPORARY_TABLE");
                 reject_field("except_databases", "TEMPORARY_TABLE");
                 break;
             case ElementType::DATABASE:
-                /// Valid: database_name, new_database_name, except_tables.
+                /// Valid: database_name, new_database_name, except_tables, except_data_tables.
                 if (e.database_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'database_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
                 reject_field("table_name", "DATABASE");
@@ -554,7 +623,7 @@ namespace
                 reject_field("except_databases", "DATABASE");
                 break;
             case ElementType::ALL:
-                /// Valid: except_databases, except_tables.
+                /// Valid: except_databases, except_tables, except_data_tables.
                 reject_field("table_name", "ALL");
                 reject_field("database_name", "ALL");
                 reject_field("new_table_name", "ALL");

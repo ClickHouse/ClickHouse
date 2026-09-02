@@ -375,7 +375,8 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     /* throw_if_table_not_found= */ true,
                     element.partitions,
                     /* all_tables= */ false,
-                    /* except_table_names= */ {});
+                    /* except_table_names= */ {},
+                    /* except_data_table_names= */ {});
                 break;
             }
 
@@ -389,7 +390,8 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     /* throw_if_table_not_found= */ true,
                     element.partitions,
                     /* all_tables= */ false,
-                    /* except_table_names= */ {});
+                    /* except_table_names= */ {},
+                    /* except_data_table_names= */ {});
                 break;
             }
 
@@ -403,7 +405,8 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     /* throw_if_table_not_found= */ false,
                     /* partitions= */ {},
                     /* all_tables= */ true,
-                    /* except_table_names= */ element.except_tables);
+                    /* except_table_names= */ element.except_tables,
+                    /* except_data_table_names= */ element.except_data_tables);
                 break;
             }
 
@@ -421,7 +424,8 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                             /* throw_if_table_not_found= */ false,
                             /* partitions= */ {},
                             /* all_tables= */ true,
-                            /* except_table_names= */ element.except_tables);
+                            /* except_table_names= */ element.except_tables,
+                            /* except_data_table_names= */ element.except_data_tables);
                     }
                 }
                 break;
@@ -438,7 +442,8 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
     bool throw_if_table_not_found,
     const std::optional<ASTs> & partitions,
     bool all_tables,
-    const std::set<DatabaseAndTableName> & except_table_names)
+    const std::set<DatabaseAndTableName> & except_table_names,
+    const std::set<DatabaseAndTableName> & except_data_table_names)
 {
     checkIsQueryCancelled();
 
@@ -520,6 +525,9 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         for (const auto & except_table_name : except_table_names)
             if (except_table_name.first == database_name)
                 database_info.except_table_names.emplace(except_table_name.second);
+        for (const auto & except_data_table_name : except_data_table_names)
+            if (except_data_table_name.first == database_name)
+                database_info.except_data_table_names.emplace(except_data_table_name.second);
     }
 }
 
@@ -904,7 +912,24 @@ bool BackupEntriesCollector::shouldBackupTableData(
         LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
         return false;
     }
+
+    if (isTableDataExcluded(table_name))
+    {
+        LOG_TRACE(log, "Skipping table data for {} (excluded via EXCEPT DATA FROM TABLE)", table_name.getFullName());
+        return false;
+    }
+
     return true;
+}
+
+bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & table_name) const
+{
+    auto it = database_infos.find(table_name.database);
+    if (it == database_infos.end())
+        return false;
+
+    const auto & database_info = it->second;
+    return database_info.except_data_table_names.contains(table_name.table);
 }
 
 void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)

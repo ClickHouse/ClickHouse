@@ -68,6 +68,11 @@ public:
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
 
+    /// Returns true if the table's data is excluded via EXCEPT DATA FROM TABLE.
+    /// Used by delegated storages (MaterializedView, TimeSeries, MaterializedPostgreSQL) to check
+    /// the OUTER table's exclusion state before delegating backupData() to inner/nested tables.
+    bool isTableDataExcluded(const QualifiedTableName & table_name) const;
+
 private:
     void calculateRootPathInBackup();
 
@@ -86,7 +91,8 @@ private:
         bool throw_if_table_not_found,
         const std::optional<ASTs> & partitions,
         bool all_tables,
-        const std::set<DatabaseAndTableName> & except_table_names);
+        const std::set<DatabaseAndTableName> & except_table_names,
+        const std::set<DatabaseAndTableName> & except_data_table_names);
 
     void gatherTablesMetadata();
     std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
@@ -161,6 +167,7 @@ private:
 
         bool all_tables = false;
         std::unordered_set<String> except_table_names;
+        std::unordered_set<String> except_data_table_names;
     };
 
     struct TableInfo

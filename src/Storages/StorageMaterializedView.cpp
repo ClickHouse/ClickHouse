@@ -990,6 +990,19 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
     /// We backup the target table's data only if it's inner.
     if (hasInnerTable() && fixed_uuid)
     {
+        /// Check if the OUTER materialized view's data is excluded via EXCEPT DATA FROM TABLE.
+        /// The BACKUP query never names the inner table directly (it's filtered from enumeration),
+        /// so we check the MV's own StorageID against the exclusion list.
+        auto outer_storage_id = getStorageID();
+        QualifiedTableName outer_name{outer_storage_id.database_name, outer_storage_id.table_name};
+        if (backup_entries_collector.isTableDataExcluded(outer_name))
+        {
+            LOG_TRACE(getLogger("StorageMaterializedView"),
+                      "Skipping inner table data for materialized view {} (outer table excluded via EXCEPT DATA FROM TABLE)",
+                      outer_storage_id.getNameForLogs());
+            return;
+        }
+
         if (auto table = tryGetTargetTable())
         {
             table->backupData(backup_entries_collector, data_path_in_backup, partitions);

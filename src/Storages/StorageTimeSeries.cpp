@@ -611,6 +611,17 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
     if (!hasInnerTables())
         return;
 
+    /// Check if the OUTER TimeSeries table's data is excluded via EXCEPT DATA FROM TABLE.
+    auto outer_storage_id = getStorageID();
+    QualifiedTableName outer_name{outer_storage_id.database_name, outer_storage_id.table_name};
+    if (backup_entries_collector.isTableDataExcluded(outer_name))
+    {
+        LOG_TRACE(getLogger("StorageTimeSeries"),
+                  "Skipping inner tables data for TimeSeries table {} (outer table excluded via EXCEPT DATA FROM TABLE)",
+                  outer_storage_id.getNameForLogs());
+        return;
+    }
+
     for (auto target_kind : getTargetKinds())
     {
         /// We backup the target table's data only if it's inner.

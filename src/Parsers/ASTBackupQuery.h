@@ -69,6 +69,7 @@ public:
         String new_database_name; /// usually the same as `database_name`, can be different in case of using AS <new_name>
         std::optional<ASTs> partitions;
         std::set<DatabaseAndTableName> except_tables;
+        std::set<DatabaseAndTableName> except_data_tables;
         std::set<String> except_databases;
 
         void setCurrentDatabase(const String & current_database);

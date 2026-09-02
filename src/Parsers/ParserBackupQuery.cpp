@@ -109,6 +109,43 @@ namespace
         });
     }
 
+    bool parseExceptDataTables(IParser::Pos & pos, Expected & expected, const std::optional<String> & database_name, std::set<DatabaseAndTableName> & except_data_tables)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).ignore(pos, expected) && !ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).ignore(pos, expected))
+                return false;
+
+            std::set<DatabaseAndTableName> result;
+            auto parse_list_element = [&]
+            {
+                DatabaseAndTableName table_name;
+
+                if (!parseDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
+                    return false;
+
+                if (database_name && table_name.first.empty())
+                    table_name.first = *database_name;
+
+                if (database_name && table_name.first != *database_name)
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "Database name in EXCEPT DATA FROM TABLES clause doesn't match the database name in DATABASE clause: {} != {}",
+                        table_name.first,
+                        *database_name
+                    );
+
+                result.emplace(std::move(table_name));
+                return true;
+            };
+            if (!ParserList::parseUtil(pos, expected, parse_list_element, false))
+                return false;
+
+            except_data_tables = std::move(result);
+            return true;
+        });
+    }
+
     bool parseElement(IParser::Pos & pos, Expected & expected, Element & element)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -172,6 +209,7 @@ namespace
                 }
 
                 parseExceptTables(pos, expected, element.database_name, element.except_tables);
+                parseExceptDataTables(pos, expected, element.database_name, element.except_data_tables);
                 return true;
             }
 
@@ -180,6 +218,7 @@ namespace
                 element.type = ElementType::ALL;
                 parseExceptDatabases(pos, expected, element.except_databases);
                 parseExceptTables(pos, expected, {}, element.except_tables);
+                parseExceptDataTables(pos, expected, {}, element.except_data_tables);
                 return true;
             }
 

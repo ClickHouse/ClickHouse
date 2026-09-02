@@ -417,6 +417,17 @@ void StorageMaterializedPostgreSQL::backupData(
             "backup with table metadata but no data.",
             getStorageID().getNameForLogs());
 
+    /// Check if the OUTER MaterializedPostgreSQL table's data is excluded via EXCEPT DATA FROM TABLE.
+    auto outer_storage_id = getStorageID();
+    QualifiedTableName outer_name{outer_storage_id.database_name, outer_storage_id.table_name};
+    if (backup_entries_collector.isTableDataExcluded(outer_name))
+    {
+        LOG_TRACE(getLogger("StorageMaterializedPostgreSQL"),
+                  "Skipping nested table data for MaterializedPostgreSQL table {} (outer table excluded via EXCEPT DATA FROM TABLE)",
+                  outer_storage_id.getNameForLogs());
+        return;
+    }
+
     nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
 }
 
