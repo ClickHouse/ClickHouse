@@ -121,3 +121,12 @@ SELECT extract('aXb', '^a\\wb');
 SELECT extract('A', '^\\x41$');
 SELECT extract('ab', '^a\\x62$');
 SELECT extract('a\tb', '^a\\tb$');
+
+SELECT 'A column haystack with an escaped literal, where the first row matches';
+
+SELECT match(s, '^a\\ b') FROM (SELECT arrayJoin(['a b', 'xa b', 'a bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, 'a\\ b$') FROM (SELECT arrayJoin(['a b', 'xa b', 'a bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, '^a\\ b$') FROM (SELECT arrayJoin(['a b', 'xa b', 'a bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, '^a\\%b') FROM (SELECT arrayJoin(['a%b', 'xa%b', 'a%bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, '^a\\:b$') FROM (SELECT arrayJoin(['a:b', 'xa:b', 'a:bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(f, '^a\\ b') FROM (SELECT toFixedString(s, 5) AS f FROM (SELECT arrayJoin(['a b', 'xa b', 'a bx']) AS s)) ORDER BY f;
