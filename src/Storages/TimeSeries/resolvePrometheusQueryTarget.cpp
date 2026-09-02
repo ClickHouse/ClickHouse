@@ -13,8 +13,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -30,10 +28,7 @@
 
 #include <fmt/ranges.h>
 
-#include <chrono>
-#include <mutex>
 #include <set>
-#include <unordered_map>
 
 
 namespace DB
@@ -118,13 +113,6 @@ bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query)
 
 namespace
 {
-    /// Keyed on cluster, remote table, the wrapper's `time_series` type and the fleet's own
-    /// addresses; a verdict also expires, so shard-side DDL under an unchanged key is re-probed.
-    constexpr auto shard_targets_revalidation_period = std::chrono::minutes{1};
-    std::mutex validated_shard_targets_mutex;
-    std::unordered_map<String, std::chrono::steady_clock::time_point> validated_shard_targets
-        TSA_GUARDED_BY(validated_shard_targets_mutex);
-
     /// Parsed as the planner parses it: a literal true, which isAlwaysTrue() exempts for a row policy, restricts nothing.
     bool isRestrictiveFilter(const String & filter, const ContextPtr & context)
     {
@@ -139,8 +127,8 @@ namespace
         return !(tryGetLiteralBool(ast.get(), value) && value);
     }
 
-    /// Asks every replica itself, not one per shard as cluster() would: load balancing, failover or the sink may
-    /// reach any of them later. A replica unreachable or without the table is skipped or refused as the caller says.
+    /// Asks every replica itself, not one per shard as cluster() would, and afresh on every request: a verdict kept
+    /// for later would let a same-schema table swapped in under the name meanwhile take a write unchecked.
     void checkShardTargets(
         const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, bool refuse_unavailable)
     {
@@ -148,29 +136,6 @@ namespace
         const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
         const auto metadata = storage.getInMemoryMetadataPtr(context, false);
         const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
-
-        /// Raw fields: the remote database is legitimately empty when shards use their own defaults.
-        WriteBufferFromOwnString key_buf;
-        writeStringBinary(target.cluster_name, key_buf);
-        writeStringBinary(remote_id.database_name, key_buf);
-        writeStringBinary(remote_id.table_name, key_buf);
-        writeStringBinary(time_series_type, key_buf);
-        for (const auto & shard : cluster->getShardsAddresses())
-            for (const auto & replica : shard)
-            {
-                writeStringBinary(replica.host_name, key_buf);
-                writeIntBinary(replica.port, key_buf);
-                writeStringBinary(replica.default_database, key_buf);
-            }
-        const auto key = key_buf.str();
-
-        {
-            std::lock_guard lock(validated_shard_targets_mutex);
-            auto it = validated_shard_targets.find(key);
-            if (it != validated_shard_targets.end()
-                && std::chrono::steady_clock::now() - it->second < shard_targets_revalidation_period)
-                return;
-        }
 
         /// Sent as text over each replica's own connection, so an undeclared remote database resolves
         /// to that replica's configured default, exactly as the sink's and the rewrite's queries do.
@@ -248,25 +213,12 @@ namespace
                 storage.getStorageID().getNameForLogs(), wrong_type_replicas, backQuoteIfNeed(remote_id.table_name),
                 TimeSeriesColumnNames::TimeSeries, fmt::join(wrong_types, ", "), time_series_type);
 
-        if (!unavailable_replicas.empty())
-        {
-            /// Samples the sink queued for such a replica would be delivered later without any check.
-            if (refuse_unavailable)
-                throw Exception(
-                    ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-                    "Remote write over table {} is refused while it has no verified target on {}: retry once it has one",
-                    storage.getStorageID().getNameForLogs(), fmt::join(unavailable_replicas, ", "));
-
-            /// A skipped replica may come back as anything: no verdict outlives it.
-            return;
-        }
-
-        std::lock_guard lock(validated_shard_targets_mutex);
-        const auto now = std::chrono::steady_clock::now();
-        /// Expired verdicts go when a new one is stored, so the map holds at most one entry per key probed within a period.
-        std::erase_if(
-            validated_shard_targets, [&](const auto & entry) { return now - entry.second >= shard_targets_revalidation_period; });
-        validated_shard_targets[key] = now;
+        /// Samples the sink queued for such a replica would be delivered later without any check.
+        if (refuse_unavailable && !unavailable_replicas.empty())
+            throw Exception(
+                ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                "Remote write over table {} is refused while it has no verified target on {}: retry once it has one",
+                storage.getStorageID().getNameForLogs(), fmt::join(unavailable_replicas, ", "));
     }
 }
 
