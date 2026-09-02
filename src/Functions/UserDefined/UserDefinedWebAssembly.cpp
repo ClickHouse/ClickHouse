@@ -708,6 +708,14 @@ bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) co
     return registry.contains(function_name);
 }
 
+void UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(const ContextPtr & context)
+{
+    /// `getWasmModuleManager` always throws `SUPPORT_IS_DISABLED` here, and it is the single place that
+    /// words the difference between the engine being turned off and being absent from the build.
+    if (!context->hasWasmModuleManager())
+        context->getWasmModuleManager();
+}
+
 FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name, ContextPtr context)
 {
     std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = nullptr;

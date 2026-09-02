@@ -1505,10 +1505,14 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    /// This one lambda reports every way the parse below can fail - a non-digit where a digit belongs, a
+    /// delimiter that is not allowed, or the value ending early - so it must not claim a particular one.
+    /// `toDate('yesterday')` used to be reported as "value is too short".
     auto error = []
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date: value is too short");
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE,
+                "Cannot parse date: expected a date in the YYYY-MM-DD or YYYYMMDD format");
         return ReturnType(false);
     };
 
@@ -2069,6 +2073,29 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
 }
 
 
+/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
+/// to the declared size first, so that a size declared by the peer cannot become an allocation on
+/// its own when the payload never follows.
+static void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
+{
+    size_t size = 0;
+    readVarUInt(size, buf);
+
+    if (size > max_string_size)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+    s.clear();
+    while (s.size() < size)
+    {
+        if (buf.eof())
+            throwReadAfterEOF();
+
+        const size_t bytes_to_copy = std::min(size - s.size(), buf.available());
+        s.append(buf.position(), bytes_to_copy);
+        buf.position() += bytes_to_copy;
+    }
+}
+
 Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
 {
     int code = 0;
@@ -2078,9 +2105,11 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     bool has_nested = false;    /// Obsolete
 
     readBinaryLittleEndian(code, buf);
-    readBinary(name, buf);
-    readBinary(message, buf);
-    readBinary(stack_trace, buf);
+    /// This is the first thing read from a server during the handshake, and the sizes of these
+    /// strings come from the other side, so read them without preallocating the declared size.
+    readStringBinaryGrowing(name, buf);
+    readStringBinaryGrowing(message, buf);
+    readStringBinaryGrowing(stack_trace, buf);
     readBinary(has_nested, buf);
 
     WriteBufferFromOwnString out;
