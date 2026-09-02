@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+message TestMessage {
+  int64 id = 1;
+  uint32 blockNo = 2;
+  string val1 = 3;
+  float  val2 = 4;
+  uint32 val3 = 5;
+};

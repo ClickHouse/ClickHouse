@@ -1,0 +1,16 @@
+-- HTTP ?filter= with a query-parameter placeholder is substituted (number < 3 -> 0,1,2)
+0
+1
+2
+-- HTTP in-query SETTINGS filter with a query-parameter placeholder (param_n=3)
+0
+1
+2
+-- HTTP ?select= snippet with a query-parameter placeholder (number + 100)
+100
+101
+102
+-- native client: in-query SETTINGS filter with --param_n=3
+0
+1
+2

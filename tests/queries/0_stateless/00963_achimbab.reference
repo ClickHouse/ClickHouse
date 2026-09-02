@@ -1,0 +1,57 @@
+{
+	"meta":
+	[
+		{
+			"name": "total",
+			"type": "Nullable(UInt8)"
+		},
+		{
+			"name": "arrayElement(k, 1)",
+			"type": "Nullable(UInt16)"
+		},
+		{
+			"name": "arrayElement(k, 2)",
+			"type": "Nullable(UInt16)"
+		}
+	],
+
+	"data":
+	[
+		{
+			"total": 1,
+			"arrayElement(k, 1)": null,
+			"arrayElement(k, 2)": 1
+		},
+		{
+			"total": 1,
+			"arrayElement(k, 1)": null,
+			"arrayElement(k, 2)": 2
+		},
+		{
+			"total": 1,
+			"arrayElement(k, 1)": null,
+			"arrayElement(k, 2)": 3
+		},
+		{
+			"total": 1,
+			"arrayElement(k, 1)": null,
+			"arrayElement(k, 2)": 4
+		},
+		{
+			"total": 1,
+			"arrayElement(k, 1)": null,
+			"arrayElement(k, 2)": 5
+		}
+	],
+
+	"totals":
+	{
+		"total": 1,
+		"arrayElement(k, 1)": null,
+		"arrayElement(k, 2)": null
+	},
+
+	"rows": 5,
+
+	"rows_before_limit_at_least": 1000000
+}

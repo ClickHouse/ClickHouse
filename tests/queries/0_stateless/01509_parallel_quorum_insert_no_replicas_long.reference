@@ -1,0 +1,12 @@
+insert to two replicas works
+1
+1
+insert to single replica works
+3
+3
+deduplication works
+3
+3
+insert happened
+4
+4

@@ -1,0 +1,9 @@
+A
+B
+numbers
+one
+A	1	TinyLog	CREATE TABLE default.A (`A` UInt8) ENGINE = TinyLog
+B	1	TinyLog	CREATE TABLE default.B (`A` UInt8) ENGINE = TinyLog
+test_temporary_table
+['default']	['test_materialized']
+0

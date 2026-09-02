@@ -1,0 +1,14 @@
+<test>
+    <create_query>CREATE TABLE test1(d DateTime) ENGINE Memory</create_query>
+    <create_query>CREATE TABLE test2(d DateTime64) ENGINE Memory</create_query>
+    <fill_query>INSERT INTO test1 SELECT toDateTime('2023-03-16 11:22:33') + number from numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO test2 SELECT toDateTime64('2023-03-16 11:22:33', 3) + number from numbers(10000000)</fill_query>
+
+    <query tag="ToUtcTimestampDateTime">select count(1) from test1 where to_utc_timestamp(d, 'Etc/GMT+1') > '1990-01-01 12:00:00' SETTINGS max_threads=1</query>
+    <query tag="FromUtcTimestampDateTime">select count(1) from test1 where from_utc_timestamp(d, 'Etc/GMT+1') > '1990-01-01 12:00:00' SETTINGS max_threads=1</query>
+    <query tag="ToUtcTimestampDateTime64">select count(1) from test2 where to_utc_timestamp(d, 'Etc/GMT+1') > '1990-01-01 12:00:00' SETTINGS max_threads=1</query>
+    <query tag="FromUtcTimestampDateTime64">select count(1) from test2 where from_utc_timestamp(d, 'Etc/GMT+1') > '1990-01-01 12:00:00' SETTINGS max_threads=1</query>
+
+    <drop_query>DROP TABLE IF EXISTS test1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test2</drop_query>
+</test>

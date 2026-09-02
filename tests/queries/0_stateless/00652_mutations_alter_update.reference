@@ -1,0 +1,24 @@
+*** Test expected failures ***
+Updating partition key should fail
+Updating primary key should fail
+Updating MATERIALIZED column should fail
+Updating with non-UInt8 predicate should fail
+*** Test updating according to a predicate ***
+2000-01-01	123	aaa	101
+2000-01-01	234	cde	2
+*** Test several UPDATE commands with common subexpressions ***
+2000-01-01	123	abc	26
+*** Test predicates with IN operator ***
+2000-01-01	234	cdeccc	20
+2000-01-01	345	fghccc	30
+2000-01-01	456	iii	40
+*** Test UPDATE of columns that DELETE depends on ***
+2000-01-01	234	cde	30
+*** Test complex mixture of UPDATEs and DELETEs ***
+2000-01-01	456	ijk_materialized_47	40
+*** Test updating columns that MATERIALIZED columns depend on ***
+Updating column that MATERIALIZED key column depends on should fail
+17	materialized_24
+27	materialized_34
+30	materialized_37
+40	materialized_47

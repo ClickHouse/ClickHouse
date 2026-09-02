@@ -1,0 +1,30 @@
+<test>
+    <create_query>
+        CREATE TABLE test(
+            t UInt64,
+            q1 AggregateFunction(quantilesTiming(0.50, 0.75, 0.90, 0.99), Float64),
+            q2 AggregateFunction(quantilesTiming(0.50, 0.75, 0.90, 0.99), Float64),
+            q3 AggregateFunction(quantilesTiming(0.50, 0.75, 0.90, 0.99), Float64),
+            q4 AggregateFunction(quantilesTiming(0.50, 0.75, 0.90, 0.99), Float64),
+            q5 AggregateFunction(quantilesTiming(0.50, 0.75, 0.90, 0.99), Float64)
+        ) ENGINE=SummingMergeTree()
+        ORDER BY t
+    </create_query>
+
+    <create_query>
+        INSERT INTO test
+        SELECT
+            number / 10 as t,
+            quantilesTimingState(0.50, 0.75, 0.90, 0.99)(number/1000) as q1,
+            quantilesTimingState(0.50, 0.75, 0.90, 0.99)(number/1000) as q2,
+            quantilesTimingState(0.50, 0.75, 0.90, 0.99)(number/1000) as q3,
+            quantilesTimingState(0.50, 0.75, 0.90, 0.99)(number/1000) as q4,
+            quantilesTimingState(0.50, 0.75, 0.90, 0.99)(number/1000) as q5
+        FROM numbers(1000 * 1000)
+        GROUP BY t
+    </create_query>
+
+    <query>OPTIMIZE TABLE test FINAL</query>
+
+    <drop_query>DROP TABLE test</drop_query>
+</test>

@@ -1,0 +1,19 @@
+------------------- Distributed ------------------
+1
+---------- merge() over distributed --------------
+2
+---------- merge() over local --------------------
+1
+1
+1
+---------- remote() over Merge -------------------
+2
+---------- Distributed over Merge ----------------
+1
+---------- remote() over Merge -------------------
+2
+---------- Merge over Distributed -----------------
+1
+1
+1
+2

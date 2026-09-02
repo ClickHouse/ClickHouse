@@ -1,0 +1,7 @@
+/// Only edit the `.in` file, as it is the source for autogeneration by CMake
+
+#pragma once
+
+#cmakedefine01 ENABLE_CLICKHOUSE_KEEPER
+#cmakedefine01 ENABLE_CLICKHOUSE_KEEPER_CLIENT
+#cmakedefine01 ENABLE_CLICKHOUSE_KEEPER_CONVERTER

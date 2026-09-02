@@ -1,0 +1,5 @@
+<clickhouse>
+    <total_memory_tracker_sample_probability>1</total_memory_tracker_sample_probability>
+    <total_memory_profiler_sample_min_allocation_size>4096</total_memory_profiler_sample_min_allocation_size>
+    <total_memory_profiler_sample_max_allocation_size>8192</total_memory_profiler_sample_max_allocation_size>
+</clickhouse>

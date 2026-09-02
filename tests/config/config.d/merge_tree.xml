@@ -1,0 +1,8 @@
+<clickhouse>
+    <merge_tree>
+        <enable_the_endpoint_id_with_zookeeper_name_prefix>1</enable_the_endpoint_id_with_zookeeper_name_prefix>
+        <number_of_free_entries_in_pool_to_execute_mutation>8</number_of_free_entries_in_pool_to_execute_mutation>
+        <max_cleanup_delay_period>60</max_cleanup_delay_period>
+        <cleanup_thread_preferred_points_per_iteration>10</cleanup_thread_preferred_points_per_iteration>
+    </merge_tree>
+</clickhouse>

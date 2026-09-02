@@ -1,0 +1,14 @@
+Syntax error
+101
+102
+1
+2;
+3
+4
+7
+8
+9
+InsertQuery   (children 1)
+ Identifier TEST2
+InsertQuery   (children 1)
+ Identifier TEST1

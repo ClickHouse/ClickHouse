@@ -1,0 +1,76 @@
+--- numeric OrZero / OrNull / OrDefault on valid + invalid input ---
+42	0
+42	\N
+42	-1
+--- accurateCast family ---
+\N
+0
+100
+--- toDecimal32 / OrZero / OrNull ---
+1.5
+0
+\N
+--- toDecimal64 / OrZero / OrNull ---
+3.14
+0
+\N
+--- toDecimal128 / OrZero / OrNull ---
+2.718
+0
+\N
+--- toDecimal256 ---
+1.2345
+0
+\N
+--- toDate32 / OrZero / OrNull ---
+2023-01-02
+1900-01-01
+\N
+--- toDateTime64 / OrZero / OrNull ---
+2023-01-02 03:04:05.123
+1970-01-01 00:00:00.000
+\N
+--- UUID: OrZero / OrNull / OrDefault ---
+00000000-0000-0000-0000-000000000000
+\N
+11111111-1111-1111-1111-111111111111
+--- IPv4: OrZero / OrNull / OrDefault ---
+0.0.0.0
+\N
+1.2.3.4
+--- IPv6: OrZero / OrNull ---
+::
+\N
+--- IPv4 <-> IPv6 conversions ---
+::ffff:1.2.3.4
+1.2.3.4
+--- FixedString: conversions and length errors ---
+abc\0\0
+exact
+--- big-integer conversions ---
+123456789012345678901234567890
+12345678901234567890123456789012345
+340282366920938463463374607431768211455
+1234567890123456789012345678901234567890
+--- Date / DateTime numeric constructors ---
+2024-01-01
+2023-01-01 00:00:00
+2023-01-01 00:00:00.000
+--- Conversions that yield NULL with tryCast ---
+\N	\N	\N
+\N	\N	\N
+--- explicit casts using CAST(value, type) ---
+1.5
+1970-01-01
+127.0.0.1
+::1
+--- String to array / tuple via CAST ---
+[1,2,3]
+(1,'a')
+--- Number to String ---
+1	1	1.5
+2023-01-02	2023-01-02 03:04:05
+1.2.3.4	::1
+00000000-0000-0000-0000-000000000001
+--- tryCast that fails returns NULL; CAST throws ---
+\N

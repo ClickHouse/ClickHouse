@@ -1,0 +1,272 @@
+-- {echoOn }
+
+select compareSubstrings('abc', 'abc', 0, 0, 3);
+0
+select compareSubstrings('abd', 'abc', 0, 0, 3);
+1
+select compareSubstrings('abb', 'abc', 0, 0, 3);
+-1
+select compareSubstrings('abc', 'abd', 1, 1, 3);
+-1
+select compareSubstrings('abc', 'abc', 4, 0, 3);
+-1
+select compareSubstrings('abc', 'abc', 3, 4, 3);
+0
+select compareSubstrings('ab1', 'abc', 0, 0, 0);
+0
+select s, compareSubstrings(s, 'ab3', 0, 0, 3) from (select cast(s as FixedString(6)) as s from (select concat('ab', number % 6, 'cde') as s from numbers(8)));
+ab0cde	-1
+ab1cde	-1
+ab2cde	-1
+ab3cde	0
+ab4cde	1
+ab5cde	1
+ab0cde	-1
+ab1cde	-1
+select s, compareSubstrings(s, 'ab3', 6, 0, 3) from (select cast(s as FixedString(6)) as s from (select concat('ab', number % 6, 'cde') as s from numbers(8)));
+ab0cde	-1
+ab1cde	-1
+ab2cde	-1
+ab3cde	-1
+ab4cde	-1
+ab5cde	-1
+ab0cde	-1
+ab1cde	-1
+select s, compareSubstrings(s, 'ab3', 0, 3, 3) from (select cast(s as FixedString(6)) as s from (select concat('ab', number % 6, 'cde') as s from numbers(8)));
+ab0cde	1
+ab1cde	1
+ab2cde	1
+ab3cde	1
+ab4cde	1
+ab5cde	1
+ab0cde	1
+ab1cde	1
+select s, compareSubstrings(s, 'ab3', 6, 3, 3) from (select cast(s as FixedString(6)) as s from (select concat('ab', number % 6, 'cde') as s from numbers(8)));
+ab0cde	0
+ab1cde	0
+ab2cde	0
+ab3cde	0
+ab4cde	0
+ab5cde	0
+ab0cde	0
+ab1cde	0
+select s, compareSubstrings('ab3', s, 0, 0, 3) from (select cast(s as FixedString(6)) as s from (select concat('ab', number % 6, 'cde') as s from numbers(8)));
+ab0cde	1
+ab1cde	1
+ab2cde	1
+ab3cde	0
+ab4cde	-1
+ab5cde	-1
+ab0cde	1
+ab1cde	1
+select s, compareSubstrings('ab3', s, 3, 0, 3) from (select cast(s as FixedString(6)) as s from (select concat('ab', number % 6, 'cde') as s from numbers(8)));
+ab0cde	-1
+ab1cde	-1
+ab2cde	-1
+ab3cde	-1
+ab4cde	-1
+ab5cde	-1
+ab0cde	-1
+ab1cde	-1
+select s, compareSubstrings('ab3', s, 0, 6, 3) from (select cast(s as FixedString(6)) as s from (select concat('ab', number % 6, 'cde') as s from numbers(8)));
+ab0cde	1
+ab1cde	1
+ab2cde	1
+ab3cde	1
+ab4cde	1
+ab5cde	1
+ab0cde	1
+ab1cde	1
+select s, compareSubstrings('ab3', s, 3, 6, 3) from (select cast(s as FixedString(6)) as s from (select concat('ab', number % 6, 'cde') as s from numbers(8)));
+ab0cde	0
+ab1cde	0
+ab2cde	0
+ab3cde	0
+ab4cde	0
+ab5cde	0
+ab0cde	0
+ab1cde	0
+select s, compareSubstrings(s, 'ab3', 0, 0, 3) from (select concat('ab', number % 6, 'cde') as s from numbers(8));
+ab0cde	-1
+ab1cde	-1
+ab2cde	-1
+ab3cde	0
+ab4cde	1
+ab5cde	1
+ab0cde	-1
+ab1cde	-1
+select s, compareSubstrings(s, 'ab3', 6, 0, 3) from (select concat('ab', number % 6, 'cde') as s from numbers(8));
+ab0cde	-1
+ab1cde	-1
+ab2cde	-1
+ab3cde	-1
+ab4cde	-1
+ab5cde	-1
+ab0cde	-1
+ab1cde	-1
+select s, compareSubstrings(s, 'ab3', 0, 3, 3) from (select concat('ab', number % 6, 'cde') as s from numbers(8));
+ab0cde	1
+ab1cde	1
+ab2cde	1
+ab3cde	1
+ab4cde	1
+ab5cde	1
+ab0cde	1
+ab1cde	1
+select s, compareSubstrings(s, 'ab3', 6, 3, 3) from (select concat('ab', number % 6, 'cde') as s from numbers(8));
+ab0cde	0
+ab1cde	0
+ab2cde	0
+ab3cde	0
+ab4cde	0
+ab5cde	0
+ab0cde	0
+ab1cde	0
+select s, compareSubstrings('ab3', s, 0, 0, 3) from (select concat('ab', number % 6, 'cde') as s from numbers(8));
+ab0cde	1
+ab1cde	1
+ab2cde	1
+ab3cde	0
+ab4cde	-1
+ab5cde	-1
+ab0cde	1
+ab1cde	1
+select s, compareSubstrings('ab3', s, 3, 0, 3) from (select concat('ab', number % 6, 'cde') as s from numbers(8));
+ab0cde	-1
+ab1cde	-1
+ab2cde	-1
+ab3cde	-1
+ab4cde	-1
+ab5cde	-1
+ab0cde	-1
+ab1cde	-1
+select s, compareSubstrings('ab3', s, 0, 6, 3) from (select concat('ab', number % 6, 'cde') as s from numbers(8));
+ab0cde	1
+ab1cde	1
+ab2cde	1
+ab3cde	1
+ab4cde	1
+ab5cde	1
+ab0cde	1
+ab1cde	1
+select s, compareSubstrings('ab3', s, 3, 6, 3) from (select concat('ab', number % 6, 'cde') as s from numbers(8));
+ab0cde	0
+ab1cde	0
+ab2cde	0
+ab3cde	0
+ab4cde	0
+ab5cde	0
+ab0cde	0
+ab1cde	0
+select s1, s2, compareSubstrings(s1, s2, 0, 0, 4) from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6));
+ab0	ab0	0
+ab1	ab1	0
+ab2	ab2	0
+ab0	ab3	-1
+ab1	ab0	1
+ab2	ab1	1
+select s1, s2, compareSubstrings(s1, s2, 3, 0, 4) from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6));
+ab0	ab0	-1
+ab1	ab1	-1
+ab2	ab2	-1
+ab0	ab3	-1
+ab1	ab0	-1
+ab2	ab1	-1
+select s1, s2, compareSubstrings(s1, s2, 0, 3, 4) from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6));
+ab0	ab0	1
+ab1	ab1	1
+ab2	ab2	1
+ab0	ab3	1
+ab1	ab0	1
+ab2	ab1	1
+select s1, s2, compareSubstrings(s1, s2, 4, 4, 4) from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6));
+ab0	ab0	0
+ab1	ab1	0
+ab2	ab2	0
+ab0	ab3	0
+ab1	ab0	0
+ab2	ab1	0
+select s1, s2, compareSubstrings(s1, s2, 0, 0, 4) from (select cast(s1 as FixedString(3)) as s1, s2 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	0
+ab1	ab1	0
+ab2	ab2	0
+ab0	ab3	-1
+ab1	ab0	1
+ab2	ab1	1
+select s1, s2, compareSubstrings(s1, s2, 3, 0, 4) from (select cast(s1 as FixedString(3)) as s1, s2 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	-1
+ab1	ab1	-1
+ab2	ab2	-1
+ab0	ab3	-1
+ab1	ab0	-1
+ab2	ab1	-1
+select s1, s2, compareSubstrings(s1, s2, 0, 3, 4) from (select cast(s1 as FixedString(3)) as s1, s2 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	1
+ab1	ab1	1
+ab2	ab2	1
+ab0	ab3	1
+ab1	ab0	1
+ab2	ab1	1
+select s1, s2, compareSubstrings(s1, s2, 4, 4, 4) from (select cast(s1 as FixedString(3)) as s1, s2 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	0
+ab1	ab1	0
+ab2	ab2	0
+ab0	ab3	0
+ab1	ab0	0
+ab2	ab1	0
+select s1, s2, compareSubstrings(s1, s2, 0, 0, 4) from (select cast(s2 as FixedString(3)) as s2, s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	0
+ab1	ab1	0
+ab2	ab2	0
+ab0	ab3	-1
+ab1	ab0	1
+ab2	ab1	1
+select s1, s2, compareSubstrings(s1, s2, 3, 0, 4) from (select cast(s2 as FixedString(3)) as s2, s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	-1
+ab1	ab1	-1
+ab2	ab2	-1
+ab0	ab3	-1
+ab1	ab0	-1
+ab2	ab1	-1
+select s1, s2, compareSubstrings(s1, s2, 0, 3, 4) from (select cast(s2 as FixedString(3)) as s2, s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	1
+ab1	ab1	1
+ab2	ab2	1
+ab0	ab3	1
+ab1	ab0	1
+ab2	ab1	1
+select s1, s2, compareSubstrings(s1, s2, 4, 4, 4) from (select cast(s2 as FixedString(3)) as s2, s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	0
+ab1	ab1	0
+ab2	ab2	0
+ab0	ab3	0
+ab1	ab0	0
+ab2	ab1	0
+select s1, s2, compareSubstrings(s1, s2, 0, 0, 4) from (select cast(s2 as FixedString(3)) as s2, cast(s1 as FixedString(3)) as s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	0
+ab1	ab1	0
+ab2	ab2	0
+ab0	ab3	-1
+ab1	ab0	1
+ab2	ab1	1
+select s1, s2, compareSubstrings(s1, s2, 3, 0, 4) from (select cast(s2 as FixedString(3)) as s2, cast(s1 as FixedString(3)) as s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	-1
+ab1	ab1	-1
+ab2	ab2	-1
+ab0	ab3	-1
+ab1	ab0	-1
+ab2	ab1	-1
+select s1, s2, compareSubstrings(s1, s2, 0, 3, 4) from (select cast(s2 as FixedString(3)) as s2, cast(s1 as FixedString(3)) as s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	1
+ab1	ab1	1
+ab2	ab2	1
+ab0	ab3	1
+ab1	ab0	1
+ab2	ab1	1
+select s1, s2, compareSubstrings(s1, s2, 4, 4, 4) from (select cast(s2 as FixedString(3)) as s2, cast(s1 as FixedString(3)) as s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+ab0	ab0	0
+ab1	ab1	0
+ab2	ab2	0
+ab0	ab3	0
+ab1	ab0	0
+ab2	ab1	0

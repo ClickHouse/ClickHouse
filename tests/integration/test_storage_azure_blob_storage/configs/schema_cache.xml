@@ -1,0 +1,3 @@
+<clickhouse>
+    <schema_inference_cache_max_elements_for_azure>2</schema_inference_cache_max_elements_for_azure>
+</clickhouse>

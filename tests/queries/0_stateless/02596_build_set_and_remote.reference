@@ -1,0 +1,35 @@
+-- {echoOn}
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM system.one;
+1
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM remote('127.0.0.{2,3}', system.one);
+1
+1
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM remote('127.0.0.{2,3}');
+1
+1
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM remote('127.0.0.{2,3}', system.one) GROUP BY NULL;
+1
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM remote('127.0.0.{2,3}') GROUP BY NULL;
+1
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM remote('127.0.0.{2,3}', system.one) GROUP BY 1;
+1
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM remote('127.0.0.{2,3}') GROUP BY 1;
+1
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM remote('127.0.0.{2,3}', system.one) GROUP BY 'A';
+1
+SELECT arrayExists(x -> (x IN (SELECT '2')), [2]) FROM remote('127.0.0.{2,3}') GROUP BY 'A';
+1
+SELECT 1 IN ( SELECT 1 ) FROM remote('127.0.0.{1,2}', system.one) GROUP BY dummy;
+1
+SELECT 1 IN ( SELECT 1 ) FROM remote('127.0.0.{1,2}') GROUP BY dummy;
+1
+SELECT 1000.0001, toUInt64(arrayJoin([NULL, 257, 65536, NULL])), arrayExists(x -> (x IN (SELECT '2.55')), [-9223372036854775808]) FROM remote('127.0.0.{1,2}', system.one) GROUP BY NULL, NULL, NULL, NULL;
+1000.0001	\N	0
+1000.0001	257	0
+1000.0001	65536	0
+1000.0001	\N	0
+SELECT 1000.0001, toUInt64(arrayJoin([NULL, 257, 65536, NULL])), arrayExists(x -> (x IN (SELECT '2.55')), [-9223372036854775808]) FROM remote('127.0.0.{1,2}') GROUP BY NULL, NULL, NULL, NULL;
+1000.0001	\N	0
+1000.0001	257	0
+1000.0001	65536	0
+1000.0001	\N	0

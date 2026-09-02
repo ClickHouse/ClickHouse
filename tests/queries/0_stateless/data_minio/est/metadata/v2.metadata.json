@@ -1,0 +1,78 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "a5920f9f-12d0-4773-87fc-569c00676258",
+  "location" : "s3a://test/est",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1740666694866,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "order_number",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "product_code",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "divanik",
+    "option.format-version" : "2",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 3858160944799047644,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 3858160944799047644,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 3858160944799047644,
+    "timestamp-ms" : 1740666694866,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1740666666602",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "701",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "701",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://test/est/metadata/snap-3858160944799047644-1-83521e92-07a7-450d-ba44-3a179b730c85.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1740666694866,
+    "snapshot-id" : 3858160944799047644
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1740666685851,
+    "metadata-file" : "s3a://test/est/metadata/v1.metadata.json"
+  } ]
+}

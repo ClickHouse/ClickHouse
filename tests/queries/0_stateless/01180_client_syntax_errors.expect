@@ -1,0 +1,42 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+# Make a query with syntax error
+send -- "select \r"
+expect "Syntax error: failed at position 7 (end of query):"
+expect "Expected one of: "
+
+# Make another query with syntax error
+send -- "CREATE TABLE t4 UUID '57f27aa5-141c-47c5-888a-9563681717f5' AS t1 (`rowNumberInAllBlocks()` UInt64, `toLowCardinality(arrayJoin(\['exchange', 'tables'\]))` LowCardinality(String)) ENGINE = MergeTree \r"
+expect "Syntax error: failed at position 93 (UInt64):*"
+
+# Make a query with unmatched parentheses
+send -- "select (1, 2\r"
+expect "Syntax error: failed at position 8 (():"
+expect "Unmatched parentheses: ("
+expect ":) "
+
+send -- "\4"
+expect eof

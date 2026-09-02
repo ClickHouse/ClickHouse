@@ -1,0 +1,19 @@
+auto_minmax_index_a	minmax()	a	Implicit	1
+auto_minmax_index_b	minmax()	b	Implicit	1
+auto_minmax_index_a	minmax()	a	Implicit	1
+auto_minmax_index_b	minmax()	b	Implicit	1
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_alter)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 2/2
+        Granules: 2/2
+      Skip
+        Name: auto_minmax_index_b
+        Description: minmax GRANULARITY 1
+        Condition: (b in [\'2\', \'2\'])
+        Parts: 1/2
+        Granules: 1/2
+      Ranges: 1

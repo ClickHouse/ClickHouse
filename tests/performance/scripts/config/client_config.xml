@@ -1,0 +1,17 @@
+<!--
+    This config is used to upload test results to a public ClickHouse instance.
+    It has bad certificates so we ignore them.
+-->
+<config>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>  <!-- For tests only-->
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</config>

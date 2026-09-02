@@ -1,0 +1,4 @@
+<clickhouse>
+    <async_load_databases>true</async_load_databases>
+    <startup_mv_delay_ms>4000</startup_mv_delay_ms>
+</clickhouse>

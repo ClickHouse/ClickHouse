@@ -1,0 +1,44 @@
+Test with default NULL behavior
+Test with one const argument
+\N	\N
+Test with two const arguments
+1	1
+1	1
+1.1	1.1
+1.1	1.1
+a	a
+a	a
+Test with one non-const argument
+\N	\N
+Test with two non-const arguments
+1	1
+1	1
+1.1	1.1
+1.1	1.1
+a	a
+a	a
+Special cases
+2	1
+1	1
+Repeat above tests with legacy NULL behavior
+Test with one const argument
+\N	\N
+Test with two const arguments
+\N	\N
+\N	\N
+\N	\N
+\N	\N
+\N	\N
+\N	\N
+Test with one non-const argument
+\N	\N
+Test with two non-const arguments
+\N	\N
+\N	\N
+\N	\N
+\N	\N
+\N	\N
+\N	\N
+Special cases
+2	1
+\N	\N

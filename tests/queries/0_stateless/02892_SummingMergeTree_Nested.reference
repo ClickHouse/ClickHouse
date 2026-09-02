@@ -1,0 +1,11 @@
+-- { echo }
+select * from nested_smt order by val;
+2023-10-05	1	[1,2,3]	[10,20,30]
+2023-10-05	2	[1,2,3]	[1,1,1]
+select * from nested_smt final;
+2023-10-05	3	[1,2,3]	[11,21,31]
+system start merges nested_smt;
+optimize table nested_smt final;
+select * from nested_smt;
+2023-10-05	3	[1,2,3]	[11,21,31]
+drop table nested_smt;

@@ -1,0 +1,5 @@
+CREATE TABLE default.dist_tbl\n(\n    `key` UInt32,\n    `value` UInt32 DEFAULT 42\n)\nENGINE = Distributed(\'test_shard_localhost\', \'default\', \'local_tbl\', rand())
+local_tbl
+99	42
+dist_tbl
+99	42

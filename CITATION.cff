@@ -1,0 +1,31 @@
+# This CITATION.cff file was generated with cffinit.
+
+cff-version: 1.2.0
+title: "ClickHouse"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: "Milovidov"
+    given-names: "Alexey"
+repository-code: 'https://github.com/ClickHouse/ClickHouse'
+url: 'https://clickhouse.com'
+license: Apache-2.0
+preferred-citation:
+  type: article
+  authors:
+  - family-names: "Schulze"
+    given-names: "Robert"
+  - family-names: "Schreiber"
+    given-names: "Tom"
+  - family-names: "Yatsishin"
+    given-names: "Ilya"
+  - family-names: "Dahimene"
+    given-names: "Ryadh"
+  - family-names: "Milovidov"
+    given-names: "Alexey"
+  journal: "Proceedings of the VLDB Endowment"
+  title: "ClickHouse - Lightning Fast Analytics for Everyone"
+  year: 2024
+  volume: 17
+  issue: 12
+  doi: 10.14778/3685800.3685802

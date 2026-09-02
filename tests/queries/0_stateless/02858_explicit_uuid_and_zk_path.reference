@@ -1,0 +1,10 @@
+2
+3
+m1
+m2
+rmt1
+rmt2
+02858000-1000-4000-8000-000000000
+0
+CREATE TABLE default.rmt1\n(\n    `n` Int32\n)\nENGINE = ReplicatedMergeTree(\'/test/02858_explicit_uuid_and_zk_path_default/rmt/{shard}\', \'_{replica}\')\nORDER BY n\nSETTINGS index_granularity = 8192
+CREATE TABLE default.rmt2\n(\n    `n` Int32\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/{uuid}/{shard}\', \'{replica}\')\nORDER BY n\nSETTINGS index_granularity = 8192

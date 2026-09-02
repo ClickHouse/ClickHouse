@@ -1,0 +1,2 @@
+SET SQL_AUTO_IS_NULL = 0;
+SELECT getSetting('SQL_AUTO_IS_NULL');

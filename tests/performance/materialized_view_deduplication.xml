@@ -1,0 +1,33 @@
+<test>
+    <settings>
+        <deduplicate_blocks_in_dependent_materialized_views>1</deduplicate_blocks_in_dependent_materialized_views>
+    </settings>
+    <create_query>
+        CREATE TABLE dst (`key` Int64, `value` String)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS non_replicated_deduplication_window=1000;
+    </create_query>
+    <create_query>
+        CREATE TABLE mv_dst (`key` Int64, `value` String)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS non_replicated_deduplication_window=1000;
+    </create_query>
+    <create_query>
+        CREATE MATERIALIZED VIEW mv_first TO mv_dst
+        AS SELECT 0 AS key, value AS value FROM dst;
+    </create_query>
+    <create_query>
+        CREATE MATERIALIZED VIEW mv_second TO mv_dst
+        AS SELECT 0 AS key, value AS value FROM dst;
+    </create_query>
+    <fill_query>INSERT INTO dst SELECT number as key, toString(number) from numbers(1000);</fill_query>
+
+    <query>
+        INSERT INTO dst SELECT number as key, toString(number) from numbers(1000);
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS dst</drop_query>
+    <drop_query>DROP TABLE IF EXISTS mv_dst</drop_query>
+    <drop_query>DROP TABLE IF EXISTS mv_first</drop_query>
+    <drop_query>DROP TABLE IF EXISTS mv_second</drop_query>
+</test>

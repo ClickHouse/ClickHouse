@@ -1,0 +1,10 @@
+Creating 50 tables
+150	1	1
+150	1	1
+150	1	1
+150	1	1
+Making 100 requests to system.replicas
+Query system.replicas while waiting for other concurrent requests to finish
+0
+150
+1

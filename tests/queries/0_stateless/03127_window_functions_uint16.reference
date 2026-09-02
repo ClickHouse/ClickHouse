@@ -1,0 +1,34 @@
+-- { echo }
+
+SELECT tumbleStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, 'US/Samoa');
+2020-01-06
+SELECT toDateTime(tumbleStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, 'US/Samoa'), 'US/Samoa');
+2020-01-06 00:00:00
+SELECT toDateTime(tumbleStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, 'US/Samoa'), 'US/Samoa');
+2020-01-06 00:00:00
+SELECT tumbleStart(tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, 'US/Samoa'));
+2020-01-06
+SELECT tumbleEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, 'US/Samoa');
+2020-01-13
+SELECT toDateTime(tumbleEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, 'US/Samoa'), 'US/Samoa');
+2020-01-13 00:00:00
+SELECT toDateTime(tumbleEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, 'US/Samoa'), 'US/Samoa');
+2020-01-13 00:00:00
+SELECT tumbleEnd(tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, 'US/Samoa'));
+2020-01-13
+SELECT hopStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, INTERVAL '3' WEEK, 'US/Samoa');
+2019-12-23
+SELECT toDateTime(hopStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, INTERVAL '3' WEEK, 'US/Samoa'), 'US/Samoa');
+2019-12-23 00:00:00
+SELECT toDateTime(hopStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, INTERVAL '3' WEEK, 'US/Samoa'), 'US/Samoa');
+2019-12-23 00:00:00
+SELECT hopStart(hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, INTERVAL '3' WEEK, 'US/Samoa'));
+2019-12-23
+SELECT hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, INTERVAL '3' WEEK, 'US/Samoa');
+2020-01-13
+SELECT toDateTime(hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, INTERVAL '3' WEEK, 'US/Samoa'), 'US/Samoa');
+2020-01-13 00:00:00
+SELECT toDateTime(hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, INTERVAL '3' WEEK, 'US/Samoa'), 'US/Samoa');
+2020-01-13 00:00:00
+SELECT hopEnd(hop(toDateTime('2019-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' WEEK, INTERVAL '3' WEEK, 'US/Samoa'));
+2019-01-14

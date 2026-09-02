@@ -1,0 +1,23 @@
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+
+    <quotas>
+        <default>
+        </default>
+    </quotas>
+</clickhouse>

@@ -1,0 +1,36 @@
+ALTER TABLE t (EXECUTE expire_snapshots( \'2024-06-01 00:00:00\'))
+ALTER TABLE db.t (EXECUTE expire_snapshots( \'2024-06-01 00:00:00\'))
+ALTER TABLE t (EXECUTE expire_snapshots( expire_before = \'2024-06-01 00:00:00\'))
+ALTER TABLE t (EXECUTE expire_snapshots( ))
+ALTER TABLE t (EXECUTE expire_snapshots( retention_period = \'3d\'))
+ALTER TABLE t (EXECUTE expire_snapshots( retain_last = 100))
+ALTER TABLE t (EXECUTE expire_snapshots( snapshot_ids = [1, 2, 3]))
+ALTER TABLE t (EXECUTE expire_snapshots( dry_run = 1))
+ALTER TABLE t (EXECUTE expire_snapshots( dry_run = \'True\'))
+ALTER TABLE t (EXECUTE expire_snapshots( retention_period = \'1h\', dry_run = 1))
+ALTER TABLE t (EXECUTE expire_snapshots( \'2024-06-01 00:00:00\', dry_run = 1))
+ALTER TABLE t (EXECUTE compact( ))
+ALTER TABLE t (EXECUTE optimize_manifests( ))
+ALTER TABLE t (EXECUTE some_future_command( \'arg1\', 42))
+ALTER TABLE t (EXECUTE no_args_command( ))
+ALTER TABLE t (EXECUTE cmd1( )), (EXECUTE cmd2( ))
+ALTER TABLE t (EXECUTE cmd( 1 + 2))
+AlterQuery  t (children 2)
+ ExpressionList (children 1)
+  AlterCommand EXECUTE_COMMAND (children 1)
+   ExpressionList (children 1)
+    Literal \'2024-06-01 00:00:00\'
+ Identifier t
+AlterQuery  t (children 2)
+ ExpressionList (children 1)
+  AlterCommand EXECUTE_COMMAND (children 1)
+   ExpressionList
+ Identifier t
+AlterQuery  t (children 2)
+ ExpressionList (children 1)
+  AlterCommand EXECUTE_COMMAND (children 1)
+   ExpressionList (children 3)
+    Literal \'a\'
+    Literal UInt64_42
+    Literal Float64_3.14
+ Identifier t

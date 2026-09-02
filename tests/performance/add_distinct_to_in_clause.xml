@@ -1,0 +1,59 @@
+<test>
+    <settings>
+        <allow_experimental_analyzer>1</allow_experimental_analyzer>
+        <prefer_localhost_replica>0</prefer_localhost_replica>
+        <prefer_global_in_and_join>1</prefer_global_in_and_join>
+        <distributed_product_mode>global</distributed_product_mode>
+        <max_rows_to_read>1000000000000</max_rows_to_read>
+        <read_overflow_mode>break</read_overflow_mode>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- two distributed tables that point to system.numbers on every shard -->
+    <create_query>
+        create table local_table_1 (id int) engine = MergeTree order by id
+    </create_query>
+
+    <create_query>
+        create table local_table_2 (id int) engine = MergeTree order by id
+    </create_query>
+
+    <create_query>
+        create table distributed_table_1 (id int) engine = Distributed(test_cluster_two_shard_three_replicas_localhost, currentDatabase(), local_table_1)
+    </create_query>
+
+    <create_query>
+        create table distributed_table_2 (id int) engine = Distributed(test_cluster_two_shard_three_replicas_localhost, currentDatabase(), local_table_2)
+    </create_query>
+
+    <fill_query>
+        insert into local_table_1 select number from numbers(100000000)
+    </fill_query>
+
+    <fill_query>
+        insert into local_table_2 select 1 from numbers(100000000)
+    </fill_query>
+
+    <fill_query>
+        insert into local_table_2 select 2 from numbers(100000000);
+    </fill_query>
+
+    <fill_query>
+        insert into local_table_2 select 3 from numbers(100000000);
+    </fill_query>
+
+    <!-- 1.  optimisation OFF  -->
+    <query>
+        select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 0
+    </query>
+
+    <!-- 2.  optimisation ON  -->
+    <query>
+        select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS distributed_table_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS distributed_table_2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS local_table_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS local_table_2</drop_query>
+</test> 

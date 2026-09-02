@@ -1,0 +1,99 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <!-- For handling errors like: './store/790/7903ca0d-bcd4-4f8e-ae91-1b92a1c5203b/data.Avro already exists and data cannot
+        be appended to this file as the Avro format doesn't support appends.' -->
+        <engine_file_allow_create_multiple_files>1</engine_file_allow_create_multiple_files>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>format</name>
+            <values>
+                <value>TabSeparatedWithNames</value>
+                <value>CSVWithNames</value>
+                <value>JSONEachRow</value>
+                <value>Avro</value>
+                <value>ORC</value>
+                <value>Parquet</value>
+                <value>Arrow</value>
+                <value>Native</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- First create source table with nullable columns for various column types, fill it with test data and then use it to create test tables for each format -->
+    <create_query>
+        CREATE TABLE IF NOT EXISTS source_table
+        (
+        id UInt32,
+        col_int8 Nullable(Int8),
+        col_uint8 Nullable(UInt8),
+        col_int16 Nullable(Int16),
+        col_uint16 Nullable(UInt16),
+        col_int32 Nullable(Int32),
+        col_uint32 Nullable(UInt32),
+        col_int64 Nullable(Int64),
+        col_uint64 Nullable(UInt64),
+        col_float32 Nullable(Float32),
+        col_float64 Nullable(Float64),
+        col_string Nullable(String),
+        col_fixed_string Nullable(FixedString(10)),
+        col_date Nullable(Date),
+        col_datetime Nullable(DateTime),
+        col_datetime64 Nullable(DateTime64(3)),
+        col_decimal32 Nullable(Decimal32(5)),
+        col_decimal64 Nullable(Decimal64(10)),
+        col_decimal128 Nullable(Decimal128(20)),
+        col_array Array(Nullable(UInt32)),
+        col_low_cardinality LowCardinality(Nullable(String))
+        ) ENGINE = MergeTree()
+        ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO source_table
+        SELECT
+        number AS id,
+        if(number % 3 = 0, NULL, toInt8(number % 100)) AS col_int8,
+        if(number % 4 = 0, NULL, toUInt8(number % 200)) AS col_uint8,
+        if(number % 5 = 0, NULL, toInt16(number % 10000)) AS col_int16,
+        if(number % 6 = 0, NULL, toUInt16(number % 20000)) AS col_uint16,
+        if(number % 7 = 0, NULL, toInt32(number)) AS col_int32,
+        if(number % 8 = 0, NULL, toUInt32(number)) AS col_uint32,
+        if(number % 9 = 0, NULL, toInt64(number)) AS col_int64,
+        if(number % 10 = 0, NULL, toUInt64(number)) AS col_uint64,
+        if(number % 11 = 0, NULL, toFloat32(number / 10.0)) AS col_float32,
+        if(number % 12 = 0, NULL, toFloat64(number / 100.0)) AS col_float64,
+        if(number % 13 = 0, NULL, concat('String', toString(number % 1000))) AS col_string,
+        if(number % 14 = 0, NULL, toFixedString(concat('F', toString(number % 100)), 10)) AS col_fixed_string,
+        if(number % 15 = 0, NULL, toDate('1970-01-01') + number % 1000) AS col_date,
+        if(number % 16 = 0, NULL, toDateTime('1970-01-01 00:00:00') + number % 100000) AS col_datetime,
+        if(number % 17 = 0, NULL, toDateTime64('1970-01-01 00:00:00.000', 3) + number % 100000 / 1000.0) AS col_datetime64,
+        if(number % 18 = 0, NULL, toDecimal32(number % 10000, 5)) AS col_decimal32,
+        if(number % 19 = 0, NULL, toDecimal64(number % 1000000, 10)) AS col_decimal64,
+        if(number % 20 = 0, NULL, toDecimal128(number % 1000000, 20)) AS col_decimal128,
+        [if(number % 3 = 0, NULL, number % 10000), if(number % 5 = 0, NULL, (number % 10000)+1), if(number % 7 = 0, NULL, (number % 10000)+2)] AS col_array,
+        if(number % 22 = 0, NULL, concat('LC', toString(number % 1000))) AS col_low_cardinality
+        FROM numbers(1000000)
+    </fill_query>
+
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format}_with_nullable_columns ENGINE = File({format}) AS SELECT * FROM source_table</create_query>
+
+    <fill_query>INSERT INTO table_{format}_with_nullable_columns SELECT * FROM source_table</fill_query>
+
+    <query>SELECT * FROM table_{format}_with_nullable_columns LIMIT 1000 FORMAT Null</query>
+    <query>SELECT count() FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT avg(col_int32) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT sum(if(col_int8 IS NULL, 1, 0)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT length(arrayFilter(x -> x IS NOT NULL, groupArray(100)(col_string))) FROM table_{format}_with_nullable_columns GROUP BY intDiv(id, 100000) FORMAT Null</query>
+    <query>SELECT countIf(isNull(col_decimal64)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT min(if(isNull(col_float32), 0, col_float32)), max(if(isNull(col_float32), 0, col_float32)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT toYear(if(isNull(col_datetime), toDateTime('2000-01-01'), col_datetime)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE length(arrayFilter(x -> x IS NULL, col_array)) > 0 FORMAT Null</query>
+    <query>SELECT count(DISTINCT col_low_cardinality) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT sum(ifNull(col_int32, 0)), avg(ifNull(col_float64, 0)) FROM table_{format}_with_nullable_columns GROUP BY intDiv(id, 1000000) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS table_{format}_with_nullable_columns</drop_query>
+    <drop_query>DROP TABLE IF EXISTS source_table</drop_query>
+</test>

@@ -1,0 +1,43 @@
+<clickhouse>
+    <users>
+        <another>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT SHOW ON *.*</query>
+                <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+                <query>GRANT SELECT ON system.*</query>
+                <query>REVOKE CREATE ON system.*</query>
+            </grants>
+        </another>
+        <admin_user>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT admin_role</query>
+            </grants>
+        </admin_user>
+    </users>
+    <roles>
+        <test_role>
+            <grants>
+                <query>GRANT SHOW ON *.*</query>
+                <query>REVOKE SHOW ON system.*</query>
+                <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+            </grants>
+        </test_role>
+        <admin_role>
+            <grants>
+                <query>GRANT ALL ON *.* WITH GRANT OPTION</query>
+            </grants>
+        </admin_role>
+    </roles>
+</clickhouse>

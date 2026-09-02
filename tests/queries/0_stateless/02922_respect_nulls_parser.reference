@@ -1,0 +1,5 @@
+SELECT first_value(number) RESPECT NULLS\nFROM numbers(1)
+SELECT first_value(number) IGNORE NULLS\nFROM numbers(1)
+SELECT any(number) RESPECT NULLS\nFROM numbers(1)
+SELECT LAST_VALUE(number) RESPECT NULLS\nFROM numbers(1)
+SELECT sum(number) RESPECT NULLS\nFROM numbers(1)

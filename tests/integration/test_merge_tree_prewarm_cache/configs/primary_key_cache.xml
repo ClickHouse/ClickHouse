@@ -1,0 +1,4 @@
+<clickhouse>
+    <primary_index_cache_size>1500</primary_index_cache_size>
+    <primary_index_cache_prewarm_ratio>0.8</primary_index_cache_prewarm_ratio>
+</clickhouse>

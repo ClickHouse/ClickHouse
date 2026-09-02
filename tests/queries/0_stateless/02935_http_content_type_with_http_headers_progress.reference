@@ -1,0 +1,24 @@
+TSV
+ Content-Type: text/tab-separated-values; charset=UTF-8
+TabSeparatedWithNamesAndTypes
+ Content-Type: text/tab-separated-values; charset=UTF-8
+CSV
+ Content-Type: text/csv; charset=UTF-8; header=absent
+CSVWithNames
+ Content-Type: text/csv; charset=UTF-8; header=present
+Null
+ Content-Type: text/plain; charset=UTF-8
+Native
+ Content-Type: application/octet-stream
+RowBinary
+ Content-Type: application/octet-stream
+JSONStrings
+ Content-Type: application/json; charset=UTF-8
+JSON
+ Content-Type: application/json; charset=UTF-8
+JSONEachRow
+ Content-Type: application/x-ndjson; charset=UTF-8
+Values
+ Content-Type: text/plain; charset=UTF-8
+Vertical
+ Content-Type: text/plain; charset=UTF-8
