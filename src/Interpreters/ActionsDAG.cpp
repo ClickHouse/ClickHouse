@@ -304,6 +304,48 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, 
     if (function)
         hash_state.update(function->getName());
 
+    /// A lambda's body is not in this node: `function_base->getName()` is only `FunctionCapture`, and the
+    /// composed `result_name` that does carry it - `arrayExists(lambda(tuple(v), greater(v, 5)), a)` -
+    /// is dropped in build-independent mode. Without this, `v -> v > 5` and `v -> v < 5` hash alike and
+    /// one predicate's statistics are served to the other. So hash the capture and the body, mirroring
+    /// what `serialize` writes. Only in build-independent mode: an exact hash still has the name, and
+    /// `optimizeJoin` reads exact hashes back for its own statistics.
+    if (build_independent)
+    {
+        const auto hash_capture = [&](const LambdaCapture & capture, const ActionsDAG & lambda_dag)
+        {
+            hash_state.update(normalizeGeneratedTableQualifiers(capture.return_name));
+            hash_state.update(capture.return_type->getName());
+            for (const auto & captured_name : capture.captured_names)
+                hash_state.update(normalizeGeneratedTableQualifiers(captured_name));
+            for (const auto & captured_type : capture.captured_types)
+                hash_state.update(captured_type->getName());
+            /// The lambda's own argument names are written by the user, so they are the same in every build.
+            for (const auto & argument : capture.lambda_arguments)
+            {
+                hash_state.update(argument.name);
+                hash_state.update(argument.type->getName());
+            }
+            lambda_dag.updateHash(hash_state, build_independent, input_header);
+        };
+
+        if (const auto * function_capture = typeid_cast<const FunctionCapture *>(function_base.get()))
+            hash_capture(function_capture->getCapture(), function_capture->getAcionsDAG());
+
+        /// The same lambda can arrive as the value of a constant column instead of as the node's function.
+        if (column && result_type && WhichDataType(result_type).isFunction())
+        {
+            const IColumn * inner = column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(inner))
+                inner = &column_const->getDataColumn();
+            if (const auto * column_function = typeid_cast<const ColumnFunction *>(inner))
+            {
+                if (const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+                    hash_capture(function_expression->getCapture(), function_expression->getAcionsDAG());
+            }
+        }
+    }
+
     hash_state.update(is_function_compiled);
     hash_state.update(is_deterministic_constant);
 
