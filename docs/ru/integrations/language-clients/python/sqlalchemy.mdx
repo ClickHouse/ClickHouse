@@ -84,13 +84,17 @@ engine = create_engine(
 )
 ```
 
-В этом режиме каждому привязанному значению должен соответствовать SQLAlchemy-тип, совместимый с ClickHouse. Поддерживаемые списки `IN` преобразуются в типизированные параметры ClickHouse `Array`. Компилятор выдаёт `CompileError`, если не может определить совместимый тип или безопасно обработать привязку.
+В этом режиме каждому связанному значению должен соответствовать SQLAlchemy-тип, совместимый с ClickHouse. Поддерживаемые списки `IN` преобразуются в типизированные параметры ClickHouse `Array`. Компилятор выдаёт `CompileError`, если не может определить совместимый тип или безопасно обработать привязку.
+
+Имена привязок должны быть ASCII-именами ClickHouse типа BareWord. Имена, которые начинаются и заканчиваются на `$`, отклоняются, поскольку основной драйвер резервирует их для параметров запроса в виде необработанных двоичных данных.
 
 <div id="sqlalchemy-core-queries">
   ## Основные запросы
 </div>
 
-Диалект поддерживает запросы `SELECT` в SQLAlchemy Core с JOIN, фильтрами, сортировкой, ограничением и смещением, а также `DISTINCT`.
+Диалект поддерживает запросы `SELECT` в SQLAlchemy Core с JOIN, фильтрами, сортировкой, ограничением и смещением, а также `DISTINCT` и составные SELECT.
+
+SQLAlchemy `union()`, `intersect()` и `except_()` компилируются в ClickHouse `UNION DISTINCT`, `INTERSECT DISTINCT` и `EXCEPT DISTINCT`. Их аналоги `union_all()`, `intersect_all()` и `except_all()` компилируются в соответствующие операторы `ALL`. Это явное сопоставление сохраняет семантику дубликатов SQLAlchemy независимо от настроек по умолчанию для операций над множествами в ClickHouse.
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -120,6 +124,12 @@ stmt = delete(users).where(users.c.name.like("%temporary%"))
 with engine.connect() as conn:
     conn.execute(stmt)
 ```
+
+<div id="sqlalchemy-literal-rendering">
+  ### Подстановка литералов
+</div>
+
+Когда SQLAlchemy подставляет связанное значение в запрос через `literal_binds` или `literal_execute`, диалект использует правила экранирования ClickHouse для общих строковых типов и типов ClickHouse. Это также относится к обёрткам `TypeDecorator` и вариантам, выбранным с помощью `with_variant()`. Строковые значения сохраняют знаки процента и обратные косые черты, даже если другие связанные параметры не подставляются.
 
 <div id="sqlalchemy-json-subcolumns">
   ### Подстолбцы JSON
@@ -199,6 +209,20 @@ stmt = (
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                               |
 | `.ch_join(...)`                          | JOIN в ClickHouse с параметрами `strictness`, `distribution`, `using` и `cross` |
 | `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                               |
+
+`Select.with_hint()` в SQLAlchemy — это API подсказок для таблиц. Диалект ClickHouse не формирует подсказки для таблиц. Подходящая подсказка с wildcard или подсказка `clickhousedb` вызывает `SAWarning` и не изменяет сгенерированный SQL. Для этих секций ClickHouse используйте `final()`, `sample()`, `prewhere()` или `limit_by()`.
+
+`Select.with_statement_hint()` — это API для необработанных завершающих директив. Он добавляет переданный текст в конец `SELECT` без проверки, специфичной для ClickHouse. Этот API по-прежнему доступен для доверенного статического SQL, такого как `SETTINGS max_threads=1`:
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+Для настроек ClickHouse рекомендуется использовать параметры выполнения, чтобы драйвер обрабатывал их отдельно от текста SQL:
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
 
 Например, `GLOBAL ANY LEFT JOIN` в ClickHouse можно вызывать по цепочке без вложения пользовательского `FromClause`:
 
@@ -310,6 +334,8 @@ with engine.connect() as conn:
 ```
 
 Отражённые столбцы содержат `server_default` для выражений `DEFAULT`, а также специфичные для диалекта атрибуты, такие как `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized` и `clickhouse_alias`, если они заданы.
+
+Для строковых значений в секциях `DEFAULT`, `MATERIALIZED`, `ALIAS` и `TTL` используется экранирование строк ClickHouse. Такое же экранирование применяется к комментариям таблиц, словарей и столбцов, включая комментарии, создаваемые Alembic.
 
 Аргументы ключа MergeTree, такие как `order_by`, `partition_by`, `primary_key`, `sample_by` и `ttl`, принимают столбцы SQLAlchemy, SQL-выражения, а также обычные строки.
 
