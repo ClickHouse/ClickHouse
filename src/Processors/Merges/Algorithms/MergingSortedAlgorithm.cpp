@@ -68,7 +68,7 @@ static void checkVirtualRowCoversSortDescription(const Block & pk_block, const S
     {
         if (!pk_block.has(column_description.column_name))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Virtual row does not cover sort column '{}'."
+                "Virtual row does not cover sort column '{}'. "
                 "Virtual row columns: {}, sort description [{}]",
                 column_description.column_name, pk_block.dumpNames(),
                 fmt::join(description | std::views::transform([](const auto & d) { return d.column_name; }), ", "));
