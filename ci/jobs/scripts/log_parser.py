@@ -18,6 +18,16 @@ class FuzzerLogParser:
         ", Stack trace (when copying this message, always include the lines below):"
     )
     MAX_INLINE_REPRODUCE_COMMANDS = 20
+    UNRECOGNIZED_FATAL_CONTEXT_LINES = 10
+    # ClickHouse log line: "2024.01.15 12:34:56.789 [ 123 ] {id} <Level>"
+    CLICKHOUSE_LOG_LINE_PATTERN = re.compile(
+        r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\["
+    )
+    # A whole `<Fatal>` record start: query text logged at other levels can itself
+    # contain `<Fatal>`, so matching the level alone picks the wrong record.
+    FATAL_RECORD_PATTERN = (
+        r"^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\[ \d+ \]\s+\{[^}]*\}\s+<Fatal>"
+    )
     SANITIZER_ERROR_PATTERN = (
         r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
         r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
@@ -186,6 +196,28 @@ class FuzzerLogParser:
                 return ""
         return ""
 
+    def find_unrecognized_fatal(self):
+        # `LOG_FATAL` writes multi-line messages, so the matched line alone can omit the
+        # reason; the lines after it belong to this record only until the next record
+        # starts, and the matched line is itself a record - hence the scan starts at 1.
+        for log_file, pattern in (
+            (self.server_log, self.FATAL_RECORD_PATTERN),
+            (self.stderr_log, r"\w+Sanitizer:"),
+        ):
+            if not log_file:
+                continue
+            output = Shell.get_output(
+                f"rg --text -m1 -A {self.UNRECOGNIZED_FATAL_CONTEXT_LINES}"
+                f" '{pattern}' {log_file}"
+            )
+            if output:
+                lines = output.splitlines()
+                for i, line in enumerate(lines[1:], start=1):
+                    if self.CLICKHOUSE_LOG_LINE_PATTERN.match(line):
+                        return "\n".join(lines[:i])
+                return output
+        return ""
+
     def parse_failure(self):
         files = []
         is_logical_error = False
@@ -237,6 +269,16 @@ class FuzzerLogParser:
                 break
 
         if not error_output:
+            # The name stays `UNKNOWN_ERROR`: `stress_job` treats any other name as a
+            # definitive failure and stops looking at the remaining replicas, and
+            # `revert_ci_regressions` matches this exact string.
+            unrecognized_fatal = self.find_unrecognized_fatal()
+            if unrecognized_fatal:
+                return (
+                    self.UNKNOWN_ERROR,
+                    f"Unrecognized fatal message:\n{unrecognized_fatal}\n",
+                    files,
+                )
             return (
                 self.UNKNOWN_ERROR,
                 "Lost connection to server. See the logs.\n",
@@ -429,10 +471,7 @@ class FuzzerLogParser:
                 r"\b\w+Sanitizer: CHECK failed:|: runtime error: "
             )
             summary_pattern = re.compile(r"SUMMARY: \w+Sanitizer:")
-            # ClickHouse log line: "2024.01.15 12:34:56.789 [ 123 ] {id} <Level>"
-            clickhouse_log_line = re.compile(
-                r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\["
-            )
+            clickhouse_log_line = self.CLICKHOUSE_LOG_LINE_PATTERN
 
             with open(log_file, "r", errors="replace") as file:
                 all_lines = file.readlines()
