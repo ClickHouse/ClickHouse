@@ -79,9 +79,9 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    bool isDeterministic() const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return to_year->getArgumentsThatAreAlwaysConstant(); }
+    bool isDeterministic() const override { return false; }
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
