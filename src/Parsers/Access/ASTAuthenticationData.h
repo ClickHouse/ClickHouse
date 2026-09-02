@@ -25,6 +25,8 @@ public:
 
     ASTPtr clone() const override;
 
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     bool hasSecretParts() const override;
 
     std::optional<String> getPassword() const;

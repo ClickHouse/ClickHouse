@@ -1,0 +1,24 @@
+alter named collection exact: rejected
+alter named collection different name: not rejected
+alter named collection different value: not rejected
+alter named collection different key: not rejected
+alter named collection extra overridable: not rejected
+alter named collection extra if exists: not rejected
+alter named collection delete instead of set: not rejected
+create workload exact: rejected
+create workload different name: not rejected
+create workload extra if not exists: not rejected
+create workload extra or replace: not rejected
+create workload extra settings: not rejected
+create workload settings exact: rejected
+create workload different setting value: not rejected
+create workload extra for resource: not rejected
+create resource exact: rejected
+create resource different name: not rejected
+create resource different mode: not rejected
+create resource different disk: not rejected
+create resource extra operation: not rejected
+create resource extra if not exists: not rejected
+create resource extra or replace: not rejected
+create resource any disk exact: rejected
+create resource specific disk: not rejected

@@ -905,6 +905,14 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         if (should_replace)
         {
+            /// `replacement_query` is ClickHouse SQL synthesized by this handler for a MySQL wire
+            /// command (`SHOW WARNINGS`, `SHOW TABLE STATUS LIKE`, `SHOW VARIABLES`, `KILL QUERY`,
+            /// a mapped `SET` variable, ...); the client never submitted that SQL, so the session's
+            /// `query_rules` must not rewrite or reject it. Direct user SQL (the `else` branch)
+            /// keeps the setting. The context is private to this query, so clearing the setting
+            /// does not affect anything else.
+            query_context->setSetting("query_rules", String{});
+
             ReadBufferFromString replacement(replacement_query);
             executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
         }

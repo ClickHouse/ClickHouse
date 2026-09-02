@@ -2156,6 +2156,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "named_collections",
         "named_collections_storage",
 
+        /// Query rewrite rules
+        "rewrite_rules_storage",
+
         /// SQL-defined HTTP handlers
         "query_rules_storage",
 

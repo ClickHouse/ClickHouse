@@ -3,6 +3,8 @@
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
+#include <Parsers/ASTDatabaseOrNone.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -299,6 +301,107 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
 
     if (reset_authentication_methods_to_new)
         ostr << " RESET AUTHENTICATION METHODS TO NEW";
+}
+
+
+namespace
+{
+    void updateHashWithHosts(SipHash & hash_state, const std::optional<AllowedClientHosts> & hosts)
+    {
+        /// The formatter emits a `HOST` clause only when the optional holds a value (and `HOST NONE`
+        /// for an empty value), so fold the presence flag and the individual, formatter-emitted
+        /// host descriptors (`address` / `subnet` are folded as their `toString`, mirroring the
+        /// formatter).
+        hash_state.update(hosts.has_value());
+        if (!hosts)
+            return;
+
+        hash_state.update(hosts->containsAnyHost());
+        hash_state.update(hosts->containsLocalHost());
+
+        const auto & addresses = hosts->getAddresses();
+        hash_state.update(addresses.size());
+        for (const auto & address : addresses)
+            hash_state.update(address.toString());
+
+        const auto & subnets = hosts->getSubnets();
+        hash_state.update(subnets.size());
+        for (const auto & subnet : subnets)
+            hash_state.update(subnet.toString());
+
+        auto update_strings = [&](const std::vector<String> & values)
+        {
+            hash_state.update(values.size());
+            for (const auto & value : values)
+                hash_state.update(value);
+        };
+        update_strings(hosts->getNames());
+        update_strings(hosts->getNameRegexps());
+        update_strings(hosts->getLikePatterns());
+    }
+}
+
+
+void ASTCreateUserQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+
+    hash_state.update(alter);
+    hash_state.update(attach);
+    hash_state.update(if_exists);
+    hash_state.update(if_not_exists);
+    hash_state.update(or_replace);
+    hash_state.update(reset_authentication_methods_to_new);
+    hash_state.update(add_identified_with);
+    /// `replace_authentication_methods` is intentionally not folded: it is not emitted by the
+    /// formatter, so folding it would break the format -> parse round-trip.
+
+    hash_state.update(storage_name);
+    hash_state.update(cluster);
+
+    hash_state.update(new_name.has_value());
+    if (new_name)
+        hash_state.update(*new_name);
+
+    /// `authentication_methods` and `global_valid_until` are kept in `children` and are already
+    /// hashed by the base `IAST::updateTreeHashImpl`, but the deadline expression alone cannot
+    /// distinguish `VALID UNTIL <timestamp>` from `VALID FOR <interval>`, so fold the flag too.
+    hash_state.update(global_valid_until_is_interval);
+
+    /// Everything below is kept outside `children`.
+    /// Fold a presence flag before each optional member so that, for example, `CREATE USER u ROLE r`
+    /// and `CREATE USER u GRANTEES r` (both a single `ASTRolesOrUsersSet`) cannot collide.
+    hash_state.update(static_cast<bool>(names));
+    if (names)
+        names->updateTreeHash(hash_state, ignore_aliases);
+
+    updateHashWithHosts(hash_state, hosts);
+    updateHashWithHosts(hash_state, add_hosts);
+    updateHashWithHosts(hash_state, remove_hosts);
+
+    hash_state.update(static_cast<bool>(default_database));
+    if (default_database)
+        default_database->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(static_cast<bool>(roles));
+    if (roles)
+        roles->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(static_cast<bool>(default_roles));
+    if (default_roles)
+        default_roles->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(static_cast<bool>(settings));
+    if (settings)
+        settings->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(static_cast<bool>(alter_settings));
+    if (alter_settings)
+        alter_settings->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(static_cast<bool>(grantees));
+    if (grantees)
+        grantees->updateTreeHash(hash_state, ignore_aliases);
 }
 
 }

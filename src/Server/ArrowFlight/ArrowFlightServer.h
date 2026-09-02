@@ -63,7 +63,10 @@ public:
         std::unique_ptr<arrow::flight::ResultStream> * result) override;
 
 private:
-    using DecodeResult = std::tuple<std::string, ArrowFlight::SchemaModifier, ArrowFlight::BlockModifier, std::shared_ptr<arrow::Table>>;
+    /// The last element tells whether the SQL was synthesized by the server from a non-SQL command
+    /// (see `ArrowFlight::SQLSet::sql_is_synthesized`).
+    using DecodeResult
+        = std::tuple<std::string, ArrowFlight::SchemaModifier, ArrowFlight::BlockModifier, std::shared_ptr<arrow::Table>, bool>;
 
     [[nodiscard]] arrow::Result<DecodeResult> decodeDescriptor(
         const arrow::flight::FlightDescriptor & descriptor,

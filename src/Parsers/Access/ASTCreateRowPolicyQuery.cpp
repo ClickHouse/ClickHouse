@@ -2,7 +2,9 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <boost/container/flat_set.hpp>
 
 
@@ -138,6 +140,52 @@ ASTPtr ASTCreateRowPolicyQuery::clone() const
     }
 
     return res;
+}
+
+
+void ASTCreateRowPolicyQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `getID` is constant and `children` is empty for this query, so every `CREATE`/`ALTER ROW
+    /// POLICY` collides in the base tree hash. The rewrite-rule matcher uses the tree hash for
+    /// semantic equality, so fold every semantic field the formatter emits (and only those, so
+    /// the hash survives the debug-build format -> parse -> format consistency check).
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+
+    hash_state.update(alter);
+    hash_state.update(attach);
+    hash_state.update(if_exists);
+    hash_state.update(if_not_exists);
+    hash_state.update(or_replace);
+    hash_state.update(cluster);
+    hash_state.update(storage_name);
+    hash_state.update(new_short_name);
+
+    hash_state.update(is_restrictive.has_value());
+    if (is_restrictive)
+        hash_state.update(*is_restrictive);
+
+    hash_state.update(static_cast<bool>(names));
+    if (names)
+        names->updateTreeHash(hash_state, ignore_aliases);
+
+    /// The `USING` / `WITH CHECK` filter expressions live in `filters`, outside `children`, and
+    /// the formatter groups commands that share a condition and reorders them, so folding
+    /// `filters` in stored order would not survive the format -> parse round-trip. Fold exactly
+    /// the text the formatter emits for the FOR clauses instead (this also folds the filter
+    /// expression subtrees themselves).
+    {
+        const IAST::FormatSettings format_settings(/*one_line=*/ true);
+        WriteBufferFromOwnString buf;
+        formatForClauses(filters, alter, buf, format_settings);
+        hash_state.update(buf.str());
+    }
+
+    /// The formatter emits `roles` only when it is non-empty or this is an `ALTER`, so collapse
+    /// "present but empty and not alter" to the same hash as absent.
+    const bool roles_emitted = roles && (!roles->empty() || alter);
+    hash_state.update(roles_emitted);
+    if (roles_emitted)
+        roles->updateTreeHash(hash_state, ignore_aliases);
 }
 
 

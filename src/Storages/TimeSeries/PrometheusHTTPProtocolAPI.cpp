@@ -185,6 +185,12 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
+    /// Every endpoint of this API synthesizes its SQL from the Prometheus request (a PromQL
+    /// expression, `match[]` selectors, a metric name); the user never submitted that SQL, so the
+    /// session's `query_rules` must not rewrite or reject it (rules apply once, to the initial user
+    /// query only, and a Prometheus request carries no SQL to apply them to). The context is
+    /// private to this HTTP request, so clearing the setting does not affect anything else.
+    getContext()->setSetting("query_rules", String{});
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;

@@ -33,6 +33,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RewriteRules/RewriteRules.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
@@ -1122,6 +1123,7 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
+        RewriteRules::instance().shutdown();
         SQLDefinedHandlersFactory::instance().shutdown();
 
         std::unique_ptr<ThreadPool> delete_background_query_pool;

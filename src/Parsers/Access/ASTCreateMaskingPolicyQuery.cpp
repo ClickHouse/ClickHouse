@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -105,6 +106,43 @@ void ASTCreateMaskingPolicyQuery::formatImpl(WriteBuffer & ostr, const FormatSet
 
     if (priority != 0)
         formatPriority(priority, ostr, settings);
+}
+
+
+void ASTCreateMaskingPolicyQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic fields kept outside `children`. See the header comment for why the
+    /// rewrite-rule matcher needs this. Only formatter-emitted state is folded — in particular
+    /// `roles` is folded exactly when the formatter emits the `TO` clause — so the hash survives
+    /// the format -> parse round-trip that the debug-build AST consistency check requires.
+    hash_state.update(alter);
+    hash_state.update(attach);
+    hash_state.update(if_exists);
+    hash_state.update(if_not_exists);
+    hash_state.update(or_replace);
+
+    hash_state.update(name);
+    hash_state.update(database);
+    hash_state.update(table_name);
+    hash_state.update(cluster);
+    hash_state.update(storage_name);
+    hash_state.update(new_name);
+
+    hash_state.update(static_cast<bool>(update_assignments));
+    if (update_assignments)
+        update_assignments->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(static_cast<bool>(where_condition));
+    if (where_condition)
+        where_condition->updateTreeHash(hash_state, ignore_aliases);
+
+    const bool emits_roles = roles && (!roles->empty() || alter);
+    hash_state.update(emits_roles);
+    if (emits_roles)
+        roles->updateTreeHash(hash_state, ignore_aliases);
+
+    hash_state.update(priority);
 }
 
 

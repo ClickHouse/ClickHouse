@@ -251,6 +251,13 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
     auto * queue = context->tryGetAsynchronousInsertQueue();
     const bool async_insert = queue && context->getSettingsRef()[Setting::async_insert];
 
+    /// The `INSERT` below is synthesized from the protobuf payload of a Prometheus remote-write
+    /// request; the user never submitted that SQL, so the session's `query_rules` must not rewrite
+    /// or reject it (rules apply once, to the initial user query only, and a remote-write request
+    /// carries no SQL to apply them to). The context is private to this HTTP request, so clearing
+    /// the setting does not affect anything else.
+    context->setSetting("query_rules", String{});
+
     auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), context);
     try
     {

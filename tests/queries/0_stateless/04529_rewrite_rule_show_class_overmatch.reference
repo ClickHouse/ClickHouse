@@ -1,0 +1,10 @@
+setting exact: rejected
+setting other: not rejected
+indexes exact: rejected
+indexes vs columns: not rejected
+columns exact: rejected
+columns other pattern: not rejected
+columns ilike-empty exact: rejected
+columns ilike-empty vs plain: not rejected
+functions exact: rejected
+functions other pattern: not rejected

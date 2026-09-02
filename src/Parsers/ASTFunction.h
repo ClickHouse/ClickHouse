@@ -20,7 +20,7 @@ class ASTFunction : public ASTWithAlias
     struct ASTFunctionFlags
     {
         using ParentFlags = ASTWithAlias::ASTWithAliasFlags;
-        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 12;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 13;
 
         UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
         UInt32 is_operator : 1;
@@ -30,9 +30,10 @@ class ASTFunction : public ASTWithAlias
         UInt32 prefer_subquery_to_function_formatting : 1;
         UInt32 no_empty_args : 1;
         UInt32 is_compound_name : 1;
+        UInt32 is_query_parameter_substitution : 1;
         UInt32 nulls_action : 2; /// 2 bits for NullsAction (3 values)
         UInt32 kind : 3; /// 3 bits for Kind (8 values)
-        UInt32 unused : 19;
+        UInt32 unused : 18;
     };
 
 public:
@@ -112,6 +113,15 @@ public:
     /// This is used for parameterized view, to identify if name is 'db.view'
     bool isCompoundName() const { return flags<ASTFunctionFlags>().is_compound_name; }
     void setIsCompoundName(bool value) { flags<ASTFunctionFlags>().is_compound_name = value; }
+
+    /// True only for the `_CAST(<literal>, '<type>')` wrapper synthesized for a typed query
+    /// parameter by `ReplaceQueryParameterVisitor` (`makeASTForQueryParameter`). A user can also
+    /// write `_CAST(...)` directly, and such a call must not be confused with a substituted
+    /// parameter (the rewrite-rule matcher unwraps only the synthesized wrappers). Not part of
+    /// the formatted text or the tree hash; false after a format/re-parse round trip, which is
+    /// the safe direction (a wrapper that loses the mark is simply not unwrapped).
+    bool isQueryParameterSubstitution() const { return flags<ASTFunctionFlags>().is_query_parameter_substitution; }
+    void setIsQueryParameterSubstitution(bool value) { flags<ASTFunctionFlags>().is_query_parameter_substitution = value; }
 
     bool hasSecretParts() const override;
 

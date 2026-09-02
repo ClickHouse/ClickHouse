@@ -69,6 +69,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RewriteRules/RewriteRules.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/createServer.h>
 #include <Server/socketBindListen.h>
@@ -2649,6 +2650,7 @@ try
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
+    RewriteRules::instance().loadIfNot();
     SQLDefinedHandlersFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
@@ -3125,6 +3127,7 @@ try
             CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
             NamedCollectionFactory::instance().reloadFromConfig(config());
             FileCacheFactory::instance().updateSettingsFromConfig(config());
+            RewriteRules::instance().reload();
 
             HTTPConnectionPools::instance().setLimits(
                 HTTPConnectionPools::Limits{

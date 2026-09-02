@@ -1,6 +1,7 @@
 #include <Parsers/Access/ASTAuthenticationData.h>
 
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/Operators.h>
 
@@ -92,6 +93,32 @@ std::optional<String> ASTAuthenticationData::getSalt() const
     }
 
     return {};
+}
+
+void ASTAuthenticationData::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+
+    /// The base hash covers `children` (password / hash / salt / server name / realm / scheme /
+    /// certificate subjects / keys). Everything below is kept outside `children`, yet drives the
+    /// formatted text: without it `IDENTIFIED WITH no_password` and `IDENTIFIED WITH ldap SERVER`
+    /// minus its children — or `sha256_password` vs `sha256_hash` — could collide.
+    hash_state.update(type.has_value());
+    if (type)
+        hash_state.update(static_cast<UInt8>(*type));
+
+    hash_state.update(contains_password);
+    hash_state.update(contains_hash);
+    hash_state.update(jwt_use_authenticator);
+
+    hash_state.update(ssl_cert_subject_type.has_value());
+    if (ssl_cert_subject_type)
+        hash_state.update(*ssl_cert_subject_type);
+
+    /// `valid_until` is registered in `children` (see `setValidUntil`), so the base hash already
+    /// covers the deadline expression; fold the flag that distinguishes `VALID UNTIL <timestamp>`
+    /// from `VALID FOR <interval>` - the expression child alone cannot.
+    hash_state.update(valid_until_is_interval);
 }
 
 void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const

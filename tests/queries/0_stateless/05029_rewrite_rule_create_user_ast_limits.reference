@@ -1,0 +1,12 @@
+bare CREATE USER (baseline, must fit):
+not rejected
+CREATE USER settings:
+TOO_BIG_AST
+ALTER USER settings:
+TOO_BIG_AST
+CREATE USER default role:
+TOO_BIG_AST
+CREATE USER grantees:
+TOO_BIG_AST
+CREATE USER default database:
+TOO_BIG_AST

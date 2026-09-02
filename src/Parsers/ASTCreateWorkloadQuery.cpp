@@ -1,5 +1,6 @@
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -25,6 +26,27 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
     res->changes = changes;
 
     return res;
+}
+
+void ASTCreateWorkloadQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic fields kept outside `children`. See the header comment for why the
+    /// rewrite-rule matcher needs this. Each field is produced by the formatter, so it survives
+    /// the format -> parse round-trip that the debug-build AST consistency check requires.
+    hash_state.update(or_replace);
+    hash_state.update(if_not_exists);
+    hash_state.update(cluster);
+
+    hash_state.update(changes.size());
+    for (const auto & change : changes)
+    {
+        hash_state.update(change.name);
+        /// Fold exactly what the formatter emits for the value so different values do not collide
+        /// and the hash stays stable across the format -> parse round-trip.
+        hash_state.update(applyVisitor(FieldVisitorToString(), change.value));
+        hash_state.update(change.resource);
+    }
 }
 
 void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const

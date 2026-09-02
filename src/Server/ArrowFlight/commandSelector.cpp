@@ -574,7 +574,8 @@ static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol
         return arrow::Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
     if (command.query().empty())
         return arrow::Status::Invalid("CommandStatementQuery: query must not be empty");
-    return SQLSet{command.query(), {}, {}};
+    /// The client submitted this SQL itself, so query rewrite rules apply to it.
+    return SQLSet{command.query(), {}, {}, /* sql_is_synthesized= */ false};
 }
 
 static CommandSelectorResult commandStatementUpdate(const arrow::flight::protocol::sql::CommandStatementUpdate & command)
@@ -583,7 +584,8 @@ static CommandSelectorResult commandStatementUpdate(const arrow::flight::protoco
         return arrow::Status::NotImplemented("CommandStatementUpdate: transaction_id is not supported");
     if (command.query().empty())
         return arrow::Status::Invalid("CommandStatementUpdate: query must not be empty");
-    return SQLSet{command.query(), {}, {}};
+    /// The client submitted this SQL itself, so query rewrite rules apply to it.
+    return SQLSet{command.query(), {}, {}, /* sql_is_synthesized= */ false};
 }
 
 static CommandSelectorResult commandStatementIngest(const arrow::flight::protocol::sql::CommandStatementIngest & command)
@@ -702,7 +704,9 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
             return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
         if (command.prepared_statement_handle().empty())
             return arrow::Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
-        return SQLSet{command.prepared_statement_handle(), {}, {}};
+        /// A handle, not SQL — it is resolved to the query text the client passed to
+        /// `CreatePreparedStatement`, which is the client's own SQL.
+        return SQLSet{command.prepared_statement_handle(), {}, {}, /* sql_is_synthesized= */ false};
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementUpdate>())
     {
@@ -711,7 +715,8 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
             return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementUpdate failed.");
         if (command.prepared_statement_handle().empty())
             return arrow::Status::Invalid("CommandPreparedStatementUpdate: prepared_statement_handle must not be empty");
-        return SQLSet{command.prepared_statement_handle(), {}, {}};
+        /// A handle, not SQL — see `CommandPreparedStatementQuery` above.
+        return SQLSet{command.prepared_statement_handle(), {}, {}, /* sql_is_synthesized= */ false};
     }
     else
     {
@@ -731,7 +736,8 @@ CommandSelectorResult commandSelector(const std::string & cmd, bool schema_only)
     if (google::protobuf::Any any_msg; any_msg.ParseFromArray(cmd.data(), static_cast<int>(cmd.size())))
         if (auto result = commandSelectorImpl(any_msg, schema_only))
             return *result;
-    return SQLSet{cmd, {}, {}};
+    /// A descriptor that is not an Arrow Flight SQL command is the plain SQL text of the client.
+    return SQLSet{cmd, {}, {}, /* sql_is_synthesized= */ false};
 }
 
 }

@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -606,6 +607,10 @@ void PostgreSQLHandler::cancelRequest()
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
+    /// The `KILL QUERY` text is synthesized by the server for the wire-protocol `CancelRequest`;
+    /// the user never submitted that SQL, so the session's `query_rules` must not rewrite or
+    /// reject it. The context is private to this request.
+    query_context->setSetting("query_rules", String{});
     executeQuery(std::move(replacement), *out, query_context, {});
 }
 
@@ -714,6 +719,28 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         copy_query_parsed.reset();
     }
 
+    /// The `COPY` statement itself is SQL the client submitted, so it is subject to the session's
+    /// `query_rules` gate like any other user query. Only the `INSERT` / `SELECT` this handler
+    /// synthesizes below to implement the wire protocol is exempt (that is what the
+    /// `setSetting("query_rules", String{})` calls in the branches below are for). Without this
+    /// call the gate would be skipped entirely for `COPY`, because `processCopyQuery` returns
+    /// before the parsed statement ever reaches `executeQuery` / `astTraversal`: even
+    /// `SET query_rules = 'no_such_rule'; COPY t TO STDOUT;` would succeed, while every other
+    /// user-submitted statement fails with `REWRITE_RULE_DOESNT_EXIST`.
+    ///
+    /// `ASTCopyQuery` is not an allowed rule-template source (`findUnauditedTemplateNode` rejects
+    /// it at `CREATE RULE` time), so no rule can ever match a `COPY` and the traversal cannot
+    /// rewrite it — `gated_copy_query` is a separate `ASTPtr` so that even a future matching rule
+    /// could not silently swap the statement this handler goes on to execute. What the call does
+    /// enforce is the rest of the `query_rules` contract, in particular that every listed rule
+    /// must exist.
+    if (copy_query_parsed)
+    {
+        ASTPtr gated_copy_query = copy_query_parsed;
+        std::vector<String> applied_rules;
+        astTraversal(gated_copy_query, session->sessionContext(), applied_rules);
+    }
+
 
     /* The Postgres protocol for a copy query is different from simple queries such as SELECT.
      * In the case of a COPY FROM request, the server sends CopyInResponse - a sign of readiness to receive data from the client.
@@ -738,6 +765,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             columns_to_insert = "(" + columns_to_insert + ")";
         }
 
+        /// The `INSERT` text is synthesized by the server to implement the wire-protocol
+        /// `COPY ... FROM STDIN`; the user never submitted that SQL, so the session's
+        /// `query_rules` must not rewrite or reject it. The context is private to this statement.
+        query_context->setSetting("query_rules", String{});
         auto [ast, io] = executeQuery(fmt::format("INSERT INTO `{}` {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
@@ -835,6 +866,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         }
 
         auto select_query = fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name);
+        /// The `SELECT` text is synthesized by the server to implement the wire-protocol
+        /// `COPY ... TO STDOUT`; the user never submitted that SQL, so the session's
+        /// `query_rules` must not rewrite or reject it. The context is private to this statement.
+        query_context->setSetting("query_rules", String{});
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));

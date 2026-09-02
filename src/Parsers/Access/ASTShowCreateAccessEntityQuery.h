@@ -38,6 +38,14 @@ public:
     std::optional<std::pair<String, String>> database_and_table_name;
 
     String getID(char) const override;
+
+    /// `getID` covers only `type` (and the singular/plural keyword), while `names`,
+    /// `row_policy_names`, `short_name` and `database_and_table_name` are plain members outside
+    /// `children`. Fold them into the hash so the rewrite-rule matcher, which treats an equal tree
+    /// hash as semantic equality, does not over-match e.g. `SHOW CREATE USER a` and
+    /// `SHOW CREATE USER b`.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     ASTPtr clone() const override;
 
     void replaceEmptyDatabase(const String & current_database);

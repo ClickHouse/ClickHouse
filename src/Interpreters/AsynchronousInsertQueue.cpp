@@ -1317,11 +1317,12 @@ try
             /*log_as_internal=*/ internal,
             query_database,
             query_table,
-            async_insert);
+            async_insert,
+            /*applied_rewrite_rules*/ {});
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal, /*applied_rewrite_rules*/ {});
 
         if (async_insert_log)
         {

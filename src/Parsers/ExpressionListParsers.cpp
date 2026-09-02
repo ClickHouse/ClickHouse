@@ -4018,20 +4018,26 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (asterisk_parser.parse(pos, tmp, expected)
             || columns_matcher_parser.parse(pos, tmp, expected))
         {
+            /// Keep the qualifying expression in `children` too, in the same front position as
+            /// `clone` puts it: the tree hash follows `children`, so leaving it out would make
+            /// `f().*` and `g().*` (and an AST and its clone) hash differently or collide.
             if (auto * asterisk = tmp->as<ASTAsterisk>())
             {
                 if (!layers.back()->popOperand(asterisk->expression))
                     return Action::NONE;
+                tmp->children.insert(tmp->children.begin(), asterisk->expression);
             }
             else if (auto * columns_list_matcher = tmp->as<ASTColumnsListMatcher>())
             {
                 if (!layers.back()->popOperand(columns_list_matcher->expression))
                     return Action::NONE;
+                tmp->children.insert(tmp->children.begin(), columns_list_matcher->expression);
             }
             else if (auto * columns_regexp_matcher = tmp->as<ASTColumnsRegexpMatcher>())
             {
                 if (!layers.back()->popOperand(columns_regexp_matcher->expression))
                     return Action::NONE;
+                tmp->children.insert(tmp->children.begin(), columns_regexp_matcher->expression);
             }
 
             layers.back()->pushOperand(std::move(tmp));

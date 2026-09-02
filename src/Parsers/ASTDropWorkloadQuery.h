@@ -18,6 +18,14 @@ public:
 
     ASTPtr clone() const override;
 
+    /// `getID` returns a constant string that does not distinguish the dropped object, and
+    /// `workload_name` / `if_exists` / the `ON CLUSTER` name are plain members, not part of
+    /// `children` (this AST has none). Without folding them into the hash, `DROP WORKLOAD a` and
+    /// `DROP WORKLOAD b` would share one tree hash. The rewrite-rule matcher treats an equal tree
+    /// hash as semantic equality, so a rule template for one `DROP WORKLOAD` would over-match an
+    /// unrelated one.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropWorkloadQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }

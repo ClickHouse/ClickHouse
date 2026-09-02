@@ -1,4 +1,5 @@
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -16,6 +17,23 @@ namespace
         else
             ostr << backQuoteIfNeed(str);
     }
+}
+
+void ASTRolesOrUsersSet::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic fields kept outside `children`. See the header comment. Each field is
+    /// produced by the formatter, so it survives the format -> parse round-trip that the debug-build
+    /// AST consistency check requires.
+    hash_state.update(all);
+    hash_state.update(current_user);
+    hash_state.update(except_current_user);
+    hash_state.update(names.size());
+    for (const auto & name : names)
+        hash_state.update(name);
+    hash_state.update(except_names.size());
+    for (const auto & name : except_names)
+        hash_state.update(name);
 }
 
 void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
