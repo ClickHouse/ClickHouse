@@ -72,8 +72,26 @@
     document.head.appendChild(style);
   }
 
+  function updateLabels(container) {
+    var locale = getLocale();
+    var signInLink = container.querySelector('.ch-sign-in');
+    var signInLabel = SIGN_IN_LABELS[locale] || 'Sign in';
+    if (signInLink && signInLink.textContent !== signInLabel) {
+      signInLink.textContent = signInLabel;
+    }
+    var ctaLink = container.querySelector('.ch-cta-btn');
+    var ctaLabel = GET_STARTED_LABELS[locale] || 'Get Started';
+    if (ctaLink && ctaLink.textContent !== ctaLabel) {
+      ctaLink.textContent = ctaLabel;
+    }
+  }
+
   function injectCta() {
-    if (document.getElementById(CTA_ID)) return true;
+    var existing = document.getElementById(CTA_ID);
+    if (existing) {
+      updateLabels(existing);
+      return true;
+    }
 
     var mapleNav = document.getElementById('navbar-transition-maple');
     if (!mapleNav) return false;
@@ -95,7 +113,6 @@
     var signInLink = document.createElement('a');
     signInLink.className = 'ch-sign-in';
     signInLink.href = SIGN_IN_HREF;
-    signInLink.textContent = SIGN_IN_LABELS[getLocale()] || 'Sign in';
     container.appendChild(signInLink);
 
     var ctaLink = document.createElement('a');
@@ -103,7 +120,6 @@
     ctaLink.href = CTA_HREF;
     ctaLink.target = '_blank';
     ctaLink.rel = 'noopener noreferrer';
-    ctaLink.textContent = GET_STARTED_LABELS[getLocale()] || 'Get Started';
     ctaLink.onclick = function () {
       if (window.galaxy && typeof window.galaxy.track === 'function') {
         window.galaxy.track('docs.navbar.get-started', {
@@ -113,6 +129,7 @@
       }
     };
     container.appendChild(ctaLink);
+    updateLabels(container);
 
     mapleNav.appendChild(container);
 

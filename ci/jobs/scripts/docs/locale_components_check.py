@@ -265,21 +265,31 @@ def check_navbar_sign_in_labels(docs_root):
         violations.append(
             (rel, locale_pattern, "missing-navbar-locale-detection", None)
         )
-    label_assignment = (
-        "signInLink.textContent = SIGN_IN_LABELS[getLocale()] || 'Sign in';"
-    )
+    label_assignment = "var signInLabel = SIGN_IN_LABELS[locale] || 'Sign in';"
     if source.count(label_assignment) != 1:
         violations.append(
             (rel, label_assignment, "missing-localized-sign-in", None)
         )
     cta_assignment = (
-        "ctaLink.textContent = GET_STARTED_LABELS[getLocale()] || "
-        "'Get Started';"
+        "var ctaLabel = GET_STARTED_LABELS[locale] || 'Get Started';"
     )
     if source.count(cta_assignment) != 1:
         violations.append(
             (rel, cta_assignment, "missing-localized-get-started", None)
         )
+    spa_update_markers = (
+        "var locale = getLocale();",
+        "if (signInLink && signInLink.textContent !== signInLabel) {",
+        "if (ctaLink && ctaLink.textContent !== ctaLabel) {",
+        "var existing = document.getElementById(CTA_ID);",
+        "updateLabels(existing);",
+        "updateLabels(container);",
+    )
+    for marker in spa_update_markers:
+        if source.count(marker) != 1:
+            violations.append(
+                (rel, marker, "missing-navbar-spa-label-refresh", None)
+            )
     attributed_hrefs = (
         "var SIGN_IN_HREF = 'https://console.clickhouse.cloud/signIn?loc=docs-nav-signIn-cta';",
         "var CTA_HREF = 'https://clickhouse.cloud/signUp?loc=docs-nav-signUp-cta';",
