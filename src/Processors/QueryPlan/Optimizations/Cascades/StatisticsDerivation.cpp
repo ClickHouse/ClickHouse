@@ -648,13 +648,16 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
     return result_statistics;
 }
 
-/// NDV of a group key in the input; without stats, assume it is 10% of the input rows.
+/// Fraction of the input rows assumed distinct for a key column without statistics.
+static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
+
+/// NDV of a group key in the input; without stats, fall back to `DEFAULT_DISTINCT_VALUES_RATIO`.
 static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
 {
     auto column_stats = input_statistics.column_statistics.find(column);
     if (column_stats != input_statistics.column_statistics.end())
         return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
-    return 0.1 * input_statistics.estimated_row_count;
+    return DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count;
 }
 
 /// Estimated and maximum count of distinct value combinations of the given columns: the
