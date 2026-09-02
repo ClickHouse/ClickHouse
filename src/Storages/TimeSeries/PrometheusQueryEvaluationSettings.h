@@ -33,8 +33,8 @@ struct PrometheusQueryEvaluationSettings
     String cluster_name;
     StorageID remote_time_series_storage_id = StorageID::createEmpty();
 
-    /// The read context's shard-skipping semantics, pinned into the generated cluster() read:
-    /// cluster table functions otherwise force skip_unavailable_shards = 1 (IStorageCluster).
+    /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
+    /// generated cluster() call's own declaration so a caller's query-level setting still overrides them.
     bool skip_unavailable_shards = false;
     String skip_unavailable_shards_mode;
 

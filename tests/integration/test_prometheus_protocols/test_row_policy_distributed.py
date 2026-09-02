@@ -1,16 +1,5 @@
-"""A row policy on a Distributed target does not change the PromQL answer.
-
-PromQL reads a TimeSeries table through its selector, which does not apply a row policy attached
-to the table - that is how a single-node TimeSeries table already behaves. The distributed path
-inherits it, so both answers are the unfiltered ones and stay equal to each other.
-
-This is a deliberate contract, not an accident: the tests below pin both halves of it, that the
-policy really is in force (it empties an ordinary SELECT) and that the PromQL answer over the
-wrapper is nevertheless the same as over the equivalent local TimeSeries table.
-
-The metadata endpoints are the exception: they read the inner tables directly, could apply neither
-a row policy nor an `additional_table_filters` entry, and so refuse a table that has one.
-"""
+"""A row policy changes no PromQL answer, on one node or through the wrapper, as the selector applies none;
+the metadata endpoints refuse a table under a policy or additional_table_filters."""
 
 import contextlib
 import json

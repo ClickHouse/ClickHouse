@@ -126,10 +126,8 @@ DROP TABLE ts_dead_skip;
 DROP TABLE ts_dead;
 
 SELECT '--- row policies and additional_table_filters: distributed answers as the local table does ---';
--- PromQL reads a TimeSeries table through its selector, which does not apply a row policy or an
--- additional_table_filters entry attached to the table itself - that is how a single-node
--- TimeSeries table already behaves. The distributed path inherits it, so both answers are the
--- unfiltered ones and stay equal to each other.
+-- PromQL reads through the selector, which applies neither a row policy nor additional_table_filters
+-- on a single node either; the distributed path inherits it, so both answers are the unfiltered ones.
 CREATE ROW POLICY p_05055_dist ON ts_dist USING metric_name = 'nothing_matches' TO ALL;
 CREATE ROW POLICY p_05055_all ON ts_all USING metric_name = 'nothing_matches' TO ALL;
 SELECT (SELECT count() FROM prometheusQuery(ts_dist, 'm', 140)) = (SELECT count() FROM prometheusQuery(ts_all, 'm', 140));

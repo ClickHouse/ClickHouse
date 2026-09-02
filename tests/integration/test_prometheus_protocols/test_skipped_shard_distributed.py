@@ -1,12 +1,5 @@
-"""The shard-target check asks every replica, and never vouches for one it could not reach.
-
-A passing verdict is kept for a minute. A read served while one replica is down passes too, but
-it has seen nothing of that replica, which may come back as anything: only a verdict that saw
-every replica is kept, so the first request after the replica returns is checked again.
-
-A write is refused outright while a replica is unreachable. The sink would queue the samples for
-it and the background sender would deliver them once it is back, without any check of its own.
-"""
+"""The shard-target check asks every replica and keeps a passing verdict for a minute, but never one that
+missed one; with a replica down a read still passes, a write is refused, not queued."""
 
 import json
 

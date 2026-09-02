@@ -1,10 +1,5 @@
-"""PromQL over a Distributed target through the Prometheus HTTP API.
-
-The HTTP twin of tests/queries/0_stateless/05055_promql_over_distributed.sql: the same data,
-the same oracle. Raw samples are selected on every shard and the PromQL is evaluated on the
-initiator, so every answer must equal the one a single local TimeSeries table holding the union
-of the shard data gives for the same query.
-"""
+"""The HTTP twin of 05055_promql_over_distributed.sql: raw samples are read on every shard and
+PromQL runs on the initiator, so every answer must equal a single local table's."""
 
 import json
 
@@ -35,9 +30,8 @@ LOCAL = "/local/api/v1"
 
 EVALUATION_TIME = 140
 
-# The same five series, tags and timestamps as 05055. Sharded on the `host` tag, not on the
-# metric name: `h1` and `h2` hash to one shard and `h3`, `h4`, `h5` to the other, so both jobs
-# of `m` straddle the two shards and no single shard can answer an aggregation on its own.
+# The same five series as 05055, sharded on the `host` tag: h1,h2 hash to one shard and h3..h5 to
+# the other, so both jobs of `m` straddle the shards and no single shard can answer an aggregation.
 INSERT_TEST_DATA = """
 INSERT INTO ts_dist (metric_name, tags, time_series) VALUES
     ('m', map('job', 'a', 'host', 'h1'),
@@ -83,11 +77,8 @@ def start_cluster():
 
 
 def keyed_result(data_json):
-    """Keys the series of a query result by their labels.
-
-    Only range queries come back ordered by tags, so an instant result has to be keyed before
-    the distributed and the local answers can be compared.
-    """
+    """Keys the series of a query result by their labels: only range queries come back
+    ordered by tags, so an instant result is keyed before the answers are compared."""
     data = json.loads(data_json)
     keyed = {
         tuple(sorted(series["metric"].items())): (

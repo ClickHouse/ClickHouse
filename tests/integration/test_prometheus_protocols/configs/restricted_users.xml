@@ -1,7 +1,6 @@
 <clickhouse>
     <users>
-        <!-- Everything except SELECT: the read surfaces must refuse this user before they
-             disclose anything about the target table. -->
+        <!-- INSERT only, no SELECT: the read surfaces must refuse this user before they disclose anything. -->
         <prom_no_select>
             <password></password>
             <profile>default</profile>
@@ -10,8 +9,7 @@
                 <query>GRANT INSERT ON *.*</query>
             </grants>
         </prom_no_select>
-        <!-- Everything except INSERT: remote write must refuse this user. SELECT is granted on
-             every database so the read surfaces work through the shards as well. -->
+        <!-- SELECT only, no INSERT: remote write must refuse this user. -->
         <prom_no_insert>
             <password></password>
             <profile>default</profile>

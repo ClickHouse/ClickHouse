@@ -58,15 +58,29 @@ def start_cluster():
             "time_series Array(Tuple(DateTime64(0), Float64))) "
             "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
         )
+        # Two shards and no sharding key: the sink refuses this unless the caller picks a shard.
+        node.query(
+            "CREATE TABLE prom_dist_keyless AS shard_0.ts_local "
+            "ENGINE = Distributed(two_shards_dist, '', ts_local)"
+        )
         yield cluster
     finally:
         cluster.shutdown()
 
 
+def count_on_the_shards(wrapper, metric_name):
+    node.query(f"SYSTEM FLUSH DISTRIBUTED {wrapper}")
+    return int(
+        node.query(
+            f"SELECT (SELECT count() FROM timeSeriesTags(shard_0.ts_local) WHERE metric_name = '{metric_name}')"
+            f" + (SELECT count() FROM timeSeriesTags(shard_1.ts_local) WHERE metric_name = '{metric_name}')"
+        )
+    )
+
+
 def test_remote_write_rejects_non_timeseries_shards():
     """The wrapper declares no remote database, so each shard resolves `mt_bad` in its own default
-    database - the case the initiator cannot answer with its own `currentDatabase()`.
-    """
+    database - the case the initiator cannot answer with its own `currentDatabase()`."""
     time_series = [({"__name__": "bad_metric", "host": "h0"}, {START_TIME: 1.0})]
     protobuf = convert_time_series_to_protobuf(time_series)
     response = get_response_to_remote_write(node.ip_address, 9093, "/bad/write", protobuf)
@@ -90,13 +104,7 @@ def test_remote_write_rejects_a_mismatching_time_series_type():
     # The refusal names both types, and nothing was written to either shard.
     assert "Array(Tuple(DateTime64(0), Float64))" in response.text
     assert "Array(Tuple(DateTime64(3), Float64))" in response.text
-    assert (
-        node.query(
-            "SELECT (SELECT count() FROM timeSeriesTags(shard_0.ts_local) WHERE metric_name = 'coarse_metric')"
-            " + (SELECT count() FROM timeSeriesTags(shard_1.ts_local) WHERE metric_name = 'coarse_metric')"
-        ).strip()
-        == "0"
-    )
+    assert count_on_the_shards("prom_dist_coarse", "coarse_metric") == 0
 
 
 def test_remote_write_over_distributed():
@@ -128,3 +136,70 @@ def test_remote_write_over_distributed():
         node.ip_address, 9093, "/api/v1/query", "count(dist_metric)", evaluation_time
     )
     assert f'"{len(HOSTS)}"' in http_result
+
+
+def test_remote_write_refuses_insert_shard_id():
+    """A plain INSERT with insert_shard_id = 1 sends the batch to shard 1 whatever the key says; the
+    endpoint refuses it instead, so a 204 always means the wrapper's own placement."""
+    time_series = [
+        ({"__name__": "pinned_metric", "host": host}, {START_TIME + i: float(i)})
+        for i, host in enumerate(HOSTS)
+    ]
+    protobuf = convert_time_series_to_protobuf(time_series)
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/dist/write?insert_shard_id=1", protobuf
+    )
+    assert response.status_code == 400
+    assert "BAD_ARGUMENTS" in response.text
+    assert "does not accept insert_shard_id" in response.text
+    assert count_on_the_shards("prom_dist", "pinned_metric") == 0
+
+
+def test_remote_write_refuses_insert_shard_id_from_the_profile():
+    """The same refusal when the setting comes from the profile rather than the URL."""
+    node.query(
+        "CREATE USER prom_pinned IDENTIFIED WITH no_password SETTINGS insert_shard_id = 1"
+    )
+    node.query("GRANT INSERT ON default.prom_dist TO prom_pinned")
+    try:
+        time_series = [
+            ({"__name__": "profile_metric", "host": host}, {START_TIME + i: float(i)})
+            for i, host in enumerate(HOSTS)
+        ]
+        protobuf = convert_time_series_to_protobuf(time_series)
+        response = get_response_to_remote_write(
+            node.ip_address, 9093, "/dist/write?user=prom_pinned&password=", protobuf
+        )
+        assert response.status_code == 400
+        assert "does not accept insert_shard_id" in response.text
+        assert count_on_the_shards("prom_dist", "profile_metric") == 0
+    finally:
+        node.query("DROP USER prom_pinned")
+
+
+def test_remote_write_refuses_one_random_shard_on_a_keyless_wrapper():
+    time_series = [
+        ({"__name__": "random_metric", "host": host}, {START_TIME + i: float(i)})
+        for i, host in enumerate(HOSTS)
+    ]
+    protobuf = convert_time_series_to_protobuf(time_series)
+    # Without a shard choice the sink itself refuses a keyless multi-shard wrapper...
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/keyless/write", protobuf
+    )
+    assert response.status_code >= 400
+    assert "no sharding key provided" in response.text
+    # ...and the setting that would let it scatter whole batches over random shards is refused first.
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/keyless/write?insert_distributed_one_random_shard=1",
+        protobuf,
+    )
+    assert response.status_code == 400
+    assert "BAD_ARGUMENTS" in response.text
+    assert (
+        "does not accept insert_shard_id or insert_distributed_one_random_shard"
+        in response.text
+    )
+    assert count_on_the_shards("prom_dist_keyless", "random_metric") == 0

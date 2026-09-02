@@ -3,6 +3,7 @@
 #include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
@@ -15,7 +16,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/Progress.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -303,8 +303,8 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
 {
     /// Grant before existence: a probe without the right must not learn whether the name exists.
     context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
-    /// Written through the wrapper's own sink on the caller's settings, like any other INSERT.
-    /// The sink itself would accept shard targets no prometheus read surface can answer from.
+    /// Written through the wrapper's own sink, which would accept shard targets no prometheus read
+    /// surface can answer from, and a caller's own shard choice: both are refused before it runs.
     checkPrometheusQueryDistributedWrite(*time_series_storage, context_);
 }
 

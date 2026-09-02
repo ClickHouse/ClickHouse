@@ -1,13 +1,5 @@
-"""Privileges on the Prometheus surfaces of a Distributed target.
-
-Every read surface, SQL table functions included, checks the SELECT grant on the target before it
-looks at the table at all, and remote write checks the INSERT grant the same way. So a caller
-without the right learns nothing else: not the engine behind the name, and not whether the name
-exists.
-
-The privileged caller runs each request first, so what the restricted caller is denied is always
-something that would otherwise have happened.
-"""
+"""Every Prometheus surface of a Distributed target checks its grant (SELECT to read, INSERT
+to write) before it looks at the table, so a denied caller learns nothing else."""
 
 import json
 
