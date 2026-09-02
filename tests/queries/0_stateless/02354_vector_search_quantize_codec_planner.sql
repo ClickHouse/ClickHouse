@@ -4,9 +4,9 @@
 -- A vector column carrying a `Quantized(...)` codec makes the query planner automatically rewrite
 -- ORDER BY distance LIMIT into a two-stage shortlist (over the small quantized codes subcolumn) + rescore
 -- (against the full-precision vector), reading the heavy vector column lazily for the shortlisted rows only.
--- The codec is gated behind `allow_experimental_codecs`.
+-- The codec is gated behind `enable_quantized_codec`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 -- Lazy materialization (LazilyReadFromMergeTree) is an analyzer-only plan optimization, so the plan-shape assertion
 -- below needs the analyzer (the old-analyzer CI config does not produce the lazy read).

@@ -69,7 +69,7 @@ Valores posibles:
 
 Controla si se usan índices de omisión al ejecutar una consulta con el modificador FINAL.
 
-Los índices de omisión pueden excluir filas (gránulos) que contienen los datos más recientes, lo que podría producir resultados incorrectos en una consulta con el modificador FINAL. Cuando esta configuración está habilitada, los índices de omisión se aplican incluso con el modificador FINAL, lo que puede mejorar el rendimiento, pero con el riesgo de omitir actualizaciones recientes. Esta configuración debe habilitarse junto con la configuración use&#95;skip&#95;indexes&#95;if&#95;final&#95;exact&#95;mode (habilitada de forma predeterminada).
+Los índices de omisión pueden excluir filas (gránulos) que contienen los datos más recientes, lo que podría producir resultados incorrectos en una consulta con el modificador FINAL. Cuando esta configuración está habilitada, los índices de omisión se aplican incluso con el modificador FINAL, lo que puede mejorar el rendimiento. Los resultados correctos siguen dependiendo de la configuración `use_skip_indexes_if_final_exact_mode`, que está habilitada de forma predeterminada y examina las partes adicionales que se superponen con los rangos devueltos por el índice de omisión. El riesgo de omitir actualizaciones recientes solo existe si esa configuración está deshabilitada.
 
 Valores posibles:
 
