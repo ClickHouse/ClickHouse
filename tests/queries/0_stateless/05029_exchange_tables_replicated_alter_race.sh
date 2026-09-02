@@ -24,16 +24,16 @@ function thread_exchange()
     done
 }
 
-# SharedMergeTree serializes metadata alters: one racing an unfinished mutation fails with a
-# retryable CANNOT_ASSIGN_ALTER "Previous mutation query is not finished yet", which is expected.
+# SharedMergeTree serializes metadata alters: a racing alter can be rejected with a retryable
+# CANNOT_ASSIGN_ALTER whose message says to retry, which is expected and filtered out below.
 function thread_comment()
 {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     local i=0
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         i=$((i + 1))
-        ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t1_05029 COMMENT COLUMN x 'c${i}'" 2>&1 | grep -Fa "Exception: " | grep -Fav "Previous mutation query is not finished yet" ||:
-        ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t2_05029 COMMENT COLUMN x 'c${i}'" 2>&1 | grep -Fa "Exception: " | grep -Fav "Previous mutation query is not finished yet" ||:
+        ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t1_05029 COMMENT COLUMN x 'c${i}'" 2>&1 | grep -Fa "Exception: " | grep -Fav "retry this" ||:
+        ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t2_05029 COMMENT COLUMN x 'c${i}'" 2>&1 | grep -Fa "Exception: " | grep -Fav "retry this" ||:
     done
 }
 
@@ -41,8 +41,8 @@ function thread_columns()
 {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t1_05029 ADD COLUMN IF NOT EXISTS y UInt8" 2>&1 | grep -Fa "Exception: " | grep -Fav "Previous mutation query is not finished yet" ||:
-        ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t1_05029 DROP COLUMN IF EXISTS y" 2>&1 | grep -Fa "Exception: " | grep -Fav "Previous mutation query is not finished yet" ||:
+        ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t1_05029 ADD COLUMN IF NOT EXISTS y UInt8" 2>&1 | grep -Fa "Exception: " | grep -Fav "retry this" ||:
+        ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t1_05029 DROP COLUMN IF EXISTS y" 2>&1 | grep -Fa "Exception: " | grep -Fav "retry this" ||:
     done
 }
 
