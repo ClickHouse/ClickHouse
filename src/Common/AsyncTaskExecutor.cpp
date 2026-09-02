@@ -26,14 +26,15 @@ AsyncTaskExecutor::AsyncTaskExecutor(
 
 bool AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
 {
+    std::lock_guard guard(span_attributes_mutex);
     try
     {
-        std::lock_guard guard(span_attributes_mutex);
         span_attributes.push_back(std::move(attribute));
         return true;
     }
     catch (...) /// Ok: noexcept, allocation failure
     {
+        /// so we can handle MEMORY_LIMIT_EXCEEDED or any other exception without failing
         return false;
     }
 }

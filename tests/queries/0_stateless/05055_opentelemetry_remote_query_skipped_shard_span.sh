@@ -63,14 +63,16 @@ check_skipped_shard_span "$trace_id" "%skip_unavailable_shards%" \
     "no-connection skip on sync path marks span ERROR" || exit 1
 
 # Ignored remote exception packet: the shard terminates the query with an exception before
-# producing any data, and `skip_unavailable_shards_mode` tolerates it. The query succeeds
-# (prints 0), but the span must carry the remote exception text.
+# producing any data, and `skip_unavailable_shards_mode` tolerates it. The query succeeds with
+# an empty result (the only shard was skipped), but the span must carry the remote exception text.
+# `throwIf` must feed the aggregate: a `count()` over it never evaluates the column at all.
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 ${CLICKHOUSE_CLIENT} \
     --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
     --skip_unavailable_shards=1 \
     --skip_unavailable_shards_mode='unavailable_or_exception_before_processing' \
     --use_hedged_requests=0 \
-    --query "select count() from remote('127.0.0.2', view(select throwIf(1) from system.one))" 2>/dev/null
+    --query "select sum(throwIf(1)) from remote('127.0.0.2', system.one)" 2>/dev/null \
+    && echo "query with ignored remote exception succeeded"
 check_skipped_shard_span "$trace_id" "%throwIf%" \
     "ignored remote exception marks span ERROR" || exit 1
