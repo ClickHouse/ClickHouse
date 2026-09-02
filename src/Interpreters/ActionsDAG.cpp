@@ -385,7 +385,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state, bool build_independent) const
+void ActionsDAG::updateHash(SipHash & hash_state, bool build_independent, const Block * input_header) const
 {
     struct Frame
     {
@@ -402,7 +402,7 @@ void ActionsDAG::updateHash(SipHash & hash_state, bool build_independent) const
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state, build_independent);
+            frame.node->updateHash(hash_state, build_independent, input_header);
             stack.pop();
         }
         else
@@ -4273,14 +4273,26 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
 }
 
 
-static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out)
+static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
-    writeStringBinary(capture.return_name, out);
+    /// `return_name` and the captured names are composed by `calculateActionNodeName`, so they carry the
+    /// analyzer's table qualifiers: a lambda capturing `__table1.a` in one plan build captures
+    /// `__table2.a` in the other. The lambda's own argument names below are written by the user and are
+    /// the same in every build, so they are left alone. See `writeCacheKeyColumnName`.
+    const auto write_name = [&](const String & name)
+    {
+        if (for_cache_key)
+            writeCacheKeyColumnName(name, input_header, out);
+        else
+            writeStringBinary(name, out);
+    };
+
+    write_name(capture.return_name);
     encodeDataType(capture.return_type, out);
 
     writeVarUInt(capture.captured_names.size(), out);
     for (const auto & name : capture.captured_names)
-        writeStringBinary(name, out);
+        write_name(name);
 
     writeVarUInt(capture.captured_types.size(), out);
     for (const auto & type : capture.captured_types)
@@ -4383,7 +4395,10 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected FunctionExpression for ColumnFunction. Got {}", function->getName());
 
-        serializeCapture(function_expression->getCapture(), out);
+        /// A captured lambda held in a constant column: its names are composed the same way, so they are
+        /// normalized too. There is no input header at hand here (this is reached from a constant's value,
+        /// not from a step's payload), so the names are discriminated by their normalized text alone.
+        serializeCapture(function_expression->getCapture(), out, registry.for_cache_key, /*input_header=*/nullptr);
         function_expression->getAcionsDAG().serialize(out, registry);
 
         const auto & captured_columns = column_function->getCapturedColumns();
@@ -4598,8 +4613,8 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
             writeStringBinary(node.function_base->getName(), out);
             if (function_capture)
             {
-                serializeCapture(function_capture->getCapture(), out);
-                function_capture->getAcionsDAG().serialize(out, registry);
+                serializeCapture(function_capture->getCapture(), out, registry.for_cache_key, input_header);
+                function_capture->getAcionsDAG().serialize(out, registry, input_header);
             }
         }
         else if (node.type == ActionType::ARRAY_JOIN)

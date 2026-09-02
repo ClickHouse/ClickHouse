@@ -566,7 +566,7 @@ public:
     /// `build_independent` leaves out anything that differs between two builds of the same query -
     /// column names and prepared-set values - so the result identifies what the DAG computes rather
     /// than how this particular plan named it. See `Node::updateHash`.
-    void updateHash(SipHash & hash_state, bool build_independent = false) const;
+    void updateHash(SipHash & hash_state, bool build_independent = false, const Block * input_header = nullptr) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 

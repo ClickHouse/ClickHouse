@@ -198,6 +198,15 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
         auto [op, lhs, rhs] = condition.asBinaryPredicate();
         if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
         {
+            /// A join-condition node is named by `calculateActionNodeName`, so its name is branch-local
+            /// (`__table1.k` in one plan build, `__table2.k` in the other) and this contribution is not
+            /// equal across builds. It is hashed exactly all the same, because it also keys the
+            /// hash-table-size statistics that `optimizeJoin` reads back when it chooses a build side -
+            /// it recomputes this very value after reordering. Dropping the names there makes two
+            /// structurally identical joins over different tables share one entry:
+            /// `03279_join_choose_build_table` catches it, sizing the swapped-operand query from the
+            /// other one's sample and picking the wrong build table. Making this build-independent for
+            /// Auto-PR needs the two consumers separated first.
             if (side == JoinTableSide::Left && lhs.fromLeft())
                 lhs.getNode()->updateHash(hash);
             if (side == JoinTableSide::Left && rhs.fromLeft())
@@ -374,8 +383,10 @@ void calculateHashTableCacheKeys(
             if (table_join.strictness() == JoinStrictness::Asof)
                 frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
             frame.hash.update(table_join.joinUseNulls());
+            /// The residual on-clause predicate is a DAG whose node names come from
+            /// `calculateActionNodeName` and are therefore branch-local; hash what it computes instead.
             if (const auto & mixed = table_join.getMixedJoinExpression())
-                mixed->getActionsDAG().updateHash(frame.hash);
+                mixed->getActionsDAG().updateHash(frame.hash, /*build_independent=*/true);
             /// Mix in the join's output column TYPES. The join produces its `required_output` columns
             /// directly, so two joins over the same inputs/keys that project a different number/types of
             /// columns have different output headers and different `output_bytes` when the join result
