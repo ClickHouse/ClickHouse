@@ -3,6 +3,7 @@ import concurrent.futures
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -451,32 +452,52 @@ def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
         tx(k, f"INSERT INTO mt4 VALUES({k},{k})")
         tx(k, "COMMIT")
 
+    # `SYSTEM STOP MERGES` only installs the merge blockers: a merge already past its last
+    # cancellation check still commits, and any merge does remove covered parts, so it would
+    # satisfy the wait below instead of the DROP.  A merge holds its `system.merges` entry until
+    # after that commit, so an empty `system.merges` is what makes the DROP the only consumer.
+    assert_eq_with_retry(
+        node, "SELECT count() FROM system.merges", "0", retry_count=60, sleep_time=1
+    )
+
     node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
-    # A mistyped name would otherwise only surface as BAD_ARGUMENTS on the waiting thread below.
-    assert (
-        node.query(
-            f"SELECT count() FROM system.fail_points WHERE name = '{FAILPOINT}' AND enabled"
-        ).strip()
-        == "1"
-    ), f"failpoint {FAILPOINT} is not enabled"
 
     # DROP PARTITION never returns: it renames the empty covering part into place and then blocks at
     # the failpoint, holding the parts lock.  The executor must outlive the assertion, because
     # shutdown(wait=True) would block forever on a worker parked in the wait.
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-    drop_future = pool.submit(node.query, "ALTER TABLE mt4 DROP PARTITION 0")
-    wait_future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {FAILPOINT} PAUSE")
+    try:
+        # A mistyped name would otherwise only surface as BAD_ARGUMENTS on the waiting thread below.
+        assert (
+            node.query(
+                f"SELECT count() FROM system.fail_points WHERE name = '{FAILPOINT}' AND enabled"
+            ).strip()
+            == "1"
+        ), f"failpoint {FAILPOINT} is not enabled"
 
-    done, _ = concurrent.futures.wait([wait_future], timeout=60)
-    if not done:
+        drop_future = pool.submit(node.query, "ALTER TABLE mt4 DROP PARTITION 0")
+        wait_future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {FAILPOINT} PAUSE")
+
+        done, _ = concurrent.futures.wait([wait_future], timeout=60)
+        if not done:
+            assert False, f"failpoint {FAILPOINT} not triggered within 60 s"
+        wait_future.result()
+        assert not drop_future.done(), "DROP PARTITION returned, so the commit was not paused"
+        assert (
+            node.query("SELECT count() FROM system.merges").strip() == "0"
+        ), "a merge is parked at the failpoint, so the paused commit is not the DROP's"
+
+        # SIGKILL: the paused thread never rolls back, so the on-disk state is exactly the window state.
+        node.restart_clickhouse(kill=True)
+    finally:
+        # Only the kill clears the armed failpoint and the merge stop, so a failure before it would
+        # leave every later commit that removes covered parts parked at the failpoint for the rest
+        # of the module.  Disabling also resumes a thread already parked, and is a no-op once the
+        # restart has cleared it.
+        node.query_and_get_answer_with_error(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
+        node.query_and_get_answer_with_error("SYSTEM START MERGES")
         pool.shutdown(wait=False, cancel_futures=True)
-        assert False, f"failpoint {FAILPOINT} not triggered within 60 s"
-    wait_future.result()
-    assert not drop_future.done(), "DROP PARTITION returned, so the commit was not paused"
 
-    # SIGKILL: the paused thread never rolls back, so the on-disk state is exactly the window state.
-    node.restart_clickhouse(kill=True)
-    pool.shutdown(wait=False, cancel_futures=True)
     node.query("SYSTEM WAIT LOADING PARTS mt4")
 
     assert node.query("SELECT n FROM mt4 ORDER BY n") == "1\n3\n"
