@@ -30,11 +30,10 @@ guide):
    its output. The working tree is restored afterwards; the failure message
    names the exact command to run.
 
-3. Localized homepage links. The localized link helper must use the page's
-   locale during server-side rendering, every `QuickstartPill` must contain a
-   static locale path, and both Cloud links in the main `HeroCard` must route
-   through that helper. This keeps middle-click, copied links, and no-JavaScript
-   clients from falling back to English.
+3. Homepage links. English and localized homepages must render the canonical
+   `/docs` mount during server-side rendering. Localized links must also use the
+   page's locale before hydration. This keeps middle-click, copied links, and
+   no-JavaScript clients on the final published destination.
 
 4. Install-page Cloud banner parity. The English and localized install pages
    must render the same recommended Cloud banner, attributed signup link, and
@@ -345,11 +344,12 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
 
 
 def check_localized_homepage_links(docs_root: Path) -> list:
-    """Ensure localized homepage links are correct before hydration."""
+    """Ensure homepage links include the docs mount and locale before hydration."""
     component = re.compile(
         r"export const QuickstartPill = \(\{ children \}\) => \{"
         r".*?const path = ['\"](?P<path>[^'\"]+)['\"];"
-        r".*?href=\{path\}",
+        r".*?const href = withDocsBase\(path\);"
+        r".*?href=\{href\}",
         re.DOTALL,
     )
     helper = re.compile(
@@ -375,11 +375,64 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         r".*?const path = localizeHref\("
         r"['\"]/resources/support-center/knowledge-base/setup-installation/"
         r"set-up-clickhouse-documentation-mcp-server['\"]\);"
+        r".*?const href = withDocsBase\(path\);"
         r".*?href=\{href\}",
         re.DOTALL,
     )
+    docs_base_helper = (
+        "export const withDocsBase = (href) => {\n"
+        "    if (!href || !href.startsWith('/')) return href;\n"
+        "    const base = typeof window === 'undefined' || "
+        "window.location.pathname.startsWith('/docs') ? '/docs' : '';\n"
+        "    return base + href;\n"
+        "};"
+    )
+    docs_base_requirements = {
+        "const resolvedHref = withDocsBase(href);": 1,
+        "href={resolvedHref}": 2,
+        "href={withDocsBase(link.href)}": 1,
+        "window.location.href = withDocsBase(link.href);": 1,
+        "const href = withDocsBase(localizeHref('/integrations/home'));": 1,
+        "const href = withDocsBase(path);": 2,
+    }
     cloud_link = 'localizeHref("/get-started/setup/cloud")'
     errors = []
+
+    for locale in [None, *LOCALES]:
+        prefix = f"{locale}/" if locale else ""
+        page = docs_root / prefix / "index.mdx"
+        source = page.read_text(encoding="utf-8")
+        name = page.relative_to(docs_root)
+
+        if source.count(docs_base_helper) != 1:
+            errors.append(
+                f"{name}: withDocsBase must default to the canonical `/docs` "
+                "mount during server-side rendering"
+            )
+        for marker, count in docs_base_requirements.items():
+            if source.count(marker) != count:
+                errors.append(
+                    f"{name}: expected {count} occurrence(s) of {marker!r} "
+                    "so rendered homepage anchors include `/docs`"
+                )
+
+        expected_path = "/get-started/setup/cloud"
+        if locale:
+            expected_path = f"/{locale}{expected_path}"
+        component_match = component.search(source)
+        if not component_match:
+            errors.append(
+                f"{name}: could not find a static QuickstartPill path "
+                "resolved through withDocsBase"
+            )
+        elif component_match.group("path") != expected_path:
+            errors.append(
+                f"{name}: QuickstartPill path is "
+                f"{component_match.group('path')!r}; expected "
+                f"{expected_path!r}, which resolves to "
+                f"{f'/docs{expected_path}'!r} during server rendering"
+            )
+
     for locale in LOCALES:
         page = docs_root / locale / "index.mdx"
         source = page.read_text(encoding="utf-8")
@@ -425,21 +478,6 @@ def check_localized_homepage_links(docs_root: Path) -> list:
             errors.append(
                 f"{page.relative_to(docs_root)}: McpLink must route its "
                 "knowledge-base path through localizeHref"
-            )
-
-        expected = f"/{locale}/get-started/setup/cloud"
-        component_match = component.search(source)
-        if not component_match:
-            errors.append(
-                f"{page.relative_to(docs_root)}: could not find a static "
-                "QuickstartPill path and href"
-            )
-        elif component_match.group("path") != expected:
-            errors.append(
-                f"{page.relative_to(docs_root)}: QuickstartPill path is "
-                f"{component_match.group('path')!r}; expected {expected!r} "
-                "so the "
-                "server-rendered link preserves the locale"
             )
 
         hero_match = hero_card.search(source)
