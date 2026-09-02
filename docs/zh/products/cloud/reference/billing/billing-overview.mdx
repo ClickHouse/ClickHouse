@@ -17,7 +17,7 @@ ClickHouse Cloud 按计算、存储、[数据传输](/zh/products/cloud/referenc
 
 <Note>
   * 价格按 AWS us-east-1 区域的定价计算。
-  * 适用的数据传输费用和 ClickPipes 费用请参见[此处](/zh/products/cloud/reference/billing/network-data-transfer)。
+  * 适用的数据传输费用请参见[此处](/zh/products/cloud/reference/billing/network-data-transfer)。
 </Note>
 
 <div id="basic-from-6652-per-month">
@@ -276,7 +276,7 @@ WHERE name = <your table name>
 </div>
 
 ClickHouse 查询日志会记录可用于估算在 ClickHouse Cloud 中运行工作负载成本的[关键指标](/zh/reference/system-tables/query_log)。
-有关从自管理迁移到 ClickHouse Cloud 的详细信息，请参阅[迁移文档](/zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)；如果您还有其他问题，请联系 [ClickHouse Cloud 支持团队](https://console.clickhouse.cloud/support)。
+要从自管理 ClickHouse 迁移到 ClickHouse Cloud，请使用 [`remoteSecure`](/zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) 或 [`BACKUP` 和 `RESTORE`](/zh/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore)。如果您还有其他问题，请联系 [ClickHouse Cloud 支持团队](https://console.clickhouse.cloud/support)。
 
 <div id="what-billing-options-are-available-for-clickhouse-cloud">
   ### ClickHouse Cloud 有哪些可用的计费方式？
@@ -351,8 +351,7 @@ ClickHouse Cloud 支持以下计费方式：
   ### 如果我在试用期结束、试用额度失效前添加信用卡并升级，还会被收费吗？
 </div>
 
-如果用户在 30 天试用期结束前从试用转为付费，且试用赠送额度仍有剩余，
-我们会在最初 30 天试用期内继续优先扣减试用额度，之后才会向信用卡收费。
+用户在试用期间添加信用卡后，我们会继续扣减试用额度，直至额度用尽或失效，以先发生者为准。即使已添加付款方式，试用额度仍会在 30 天试用期结束时失效。试用额度用尽或失效后，费用将从已登记的信用卡中扣除。您可以在 ClickHouse Cloud 控制台的 Billing 页面确认试用额度的失效日期。
 
 <div id="how-can-i-keep-track-of-my-spending">
   ### 如何跟踪我的支出？
@@ -492,4 +491,4 @@ ClickHouse Cloud 预付费额度 (无论是直接通过 ClickHouse 购买，还�
   ## ClickPipes 定价
 </div>
 
-有关 ClickPipes 计费的信息，请参阅专门的[“ClickPipes 计费”章节](/zh/products/cloud/reference/billing/clickpipes/index)。
+有关 ClickPipes 计费的信息，请参阅专门的[“ClickPipes”章节](/zh/products/cloud/reference/billing/clickpipes/index)。

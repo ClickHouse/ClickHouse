@@ -320,7 +320,7 @@ Kafka 엔진 테이블을 삭제한 후 새 설정으로 다시 생성하는 것
 Kafka는 흔히 데이터의 &quot;잡동사니 저장소&quot;처럼 사용됩니다. 그 결과 하나의 토픽에 서로 다른 메시지 포맷과 일관되지 않은 필드 이름이 뒤섞여 들어가는 경우가 있습니다. 이런 방식은 피하고, Kafka에 삽입하기 전에 메시지가 올바른 형식과 일관성을 갖추도록 Kafka Streams나 ksqlDB 같은 Kafka 기능을 활용하십시오. 이러한 방법을 사용할 수 없다면, ClickHouse에서 도움이 될 수 있는 몇 가지 기능이 있습니다.
 
 * 메시지 필드를 문자열로 취급하십시오. 필요한 경우 materialized view 구문에서 함수를 사용해 정제와 CAST를 수행할 수 있습니다. 이는 운영 환경용 해결책으로 보기는 어렵지만, 일회성 수집에는 도움이 될 수 있습니다.
-* 토픽에서 JSON을 읽고 JSONEachRow 포맷을 사용하는 경우 [`input_format_skip_unknown_fields`](/ko/reference/settings/formats#input_format_skip_unknown_fields) 설정을 사용하십시오. 데이터를 쓸 때 ClickHouse는 기본적으로 입력 데이터에 대상 테이블(target table)에 없는 컬럼이 포함되어 있으면 예외를 발생시킵니다. 하지만 이 옵션을 활성화하면 이러한 초과 컬럼은 무시됩니다. 다시 말해, 이 역시 운영 환경 수준의 해결책은 아니며 다른 사용자를 혼란스럽게 할 수 있습니다.
+* 토픽에서 JSON을 읽고 JSONEachRow 포맷을 사용하는 경우 [`input_format_skip_unknown_fields`](/ko/reference/settings/formats/input-format#input_format_skip_unknown_fields) 설정을 사용하십시오. 데이터를 쓸 때 ClickHouse는 기본적으로 입력 데이터에 대상 테이블(target table)에 없는 컬럼이 포함되어 있으면 예외를 발생시킵니다. 하지만 이 옵션을 활성화하면 이러한 초과 컬럼은 무시됩니다. 다시 말해, 이 역시 운영 환경 수준의 해결책은 아니며 다른 사용자를 혼란스럽게 할 수 있습니다.
 * `kafka_skip_broken_messages` 설정도 고려하십시오. 이 설정을 사용하려면 잘못된 형식의 메시지에 대해 block당 허용 수준을 지정해야 하며, 이는 `kafka_max_block_size`를 기준으로 판단됩니다. 이 허용치를 초과하면(절대 메시지 수 기준) 일반적인 예외 동작으로 돌아가며, 다른 메시지는 건너뛰게 됩니다.
 
 <div id="delivery-semantics-and-challenges-with-duplicates">
@@ -333,7 +333,7 @@ Kafka 테이블 엔진은 at-least-once 시맨틱을 따릅니다. 중복은 몇
   ##### 쿼럼 기반 삽입
 </div>
 
-ClickHouse에서 더 높은 전달 보장이 필요한 경우 [쿼럼 기반 삽입](/ko/reference/settings/session-settings#insert_quorum)을 사용해야 할 수 있습니다. 이는 materialized view나 대상 테이블에는 설정할 수 없습니다. 하지만 예를 들어 사용자 프로필에는 설정할 수 있습니다.
+ClickHouse에서 더 높은 전달 보장이 필요한 경우 [쿼럼 기반 삽입](/ko/reference/settings/session-settings/insert-quorum#insert_quorum)을 사용해야 할 수 있습니다. 이는 materialized view나 대상 테이블에는 설정할 수 없습니다. 하지만 예를 들어 사용자 프로필에는 설정할 수 있습니다.
 
 ```xml
 <profiles>
@@ -501,11 +501,11 @@ Kafka 컨슈머 그룹을 통해 여러 ClickHouse 인스턴스가 동일한 토
 
 Kafka Engine 테이블의 처리량 성능을 높이려면 다음 사항을 고려하십시오.
 
-* 성능은 메시지 크기, 포맷, 대상 테이블 유형에 따라 달라집니다. 단일 테이블 엔진에서 초당 10만 행은 달성 가능한 수준으로 볼 수 있습니다. 기본적으로 메시지는 블록 단위로 읽으며, 이는 `kafka_max_block_size` 매개변수로 제어됩니다. 이 값의 기본값은 [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings#max_insert_block_size)이며, 기본 설정은 1,048,576입니다. 메시지가 극히 크지 않다면 이 값은 거의 항상 늘리는 편이 좋습니다. 500k~1M 범위의 값도 흔히 사용됩니다. 처리량에 미치는 영향을 테스트하고 평가하십시오.
+* 성능은 메시지 크기, 포맷, 대상 테이블 유형에 따라 달라집니다. 단일 테이블 엔진에서 초당 10만 행은 달성 가능한 수준으로 볼 수 있습니다. 기본적으로 메시지는 블록 단위로 읽으며, 이는 `kafka_max_block_size` 매개변수로 제어됩니다. 이 값의 기본값은 [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size)이며, 기본 설정은 1,048,576입니다. 메시지가 극히 크지 않다면 이 값은 거의 항상 늘리는 편이 좋습니다. 500k~1M 범위의 값도 흔히 사용됩니다. 처리량에 미치는 영향을 테스트하고 평가하십시오.
 * 테이블 엔진의 컨슈머 수는 `kafka_num_consumers`로 늘릴 수 있습니다. 그러나 기본적으로 `kafka_thread_per_consumer`를 기본값 1에서 변경하지 않으면 삽입은 단일 스레드에서 직렬화됩니다. 플러시가 병렬로 수행되도록 하려면 이 값을 1로 설정하십시오. 또한 컨슈머가 N개인 Kafka 엔진 테이블(`kafka_thread_per_consumer=1`)을 생성하는 것은, 각각 materialized view가 있고 `kafka_thread_per_consumer=0`인 Kafka 엔진 N개를 생성하는 것과 논리적으로 동일합니다.
-* 컨슈머 수를 늘리는 데에는 비용이 따릅니다. 각 컨슈머는 자체 버퍼와 스레드를 유지하므로 서버 오버헤드가 증가합니다. 따라서 가능하면 먼저 클러스터 전반으로 선형 확장하고, 컨슈머로 인한 오버헤드를 함께 고려하십시오.
+* 컨슈머 수를 늘리는 데에는 비용이 따릅니다. 각 컨슈머는 자체 버퍼와 스레드를 유지하므로 서버 오버헤드가 증가합니다. 따라서 가능하면 먼저 클러스터 전반으로 선형 확장하고, 컨슈머로 인한 오버헤드도 함께 고려하십시오.
 * Kafka 메시지 처리량의 변동이 크고 지연이 허용된다면, 더 큰 블록이 플러시되도록 `stream_flush_interval_ms`를 늘리는 것을 고려하십시오.
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ko/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)는 백그라운드 작업을 수행하는 스레드 수를 설정합니다. 이 스레드들은 Kafka streaming에 사용됩니다. 이 설정은 ClickHouse 서버 시작 시 적용되며 사용자 세션에서는 변경할 수 없고, 기본값은 16입니다. 로그에서 timeout이 보인다면 이 값을 늘리는 것이 적절할 수 있습니다.
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ko/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)는 백그라운드 작업을 수행하는 스레드 수를 설정합니다. 이 스레드들은 Kafka streaming에 사용됩니다. 이 설정은 ClickHouse 서버 시작 시 적용되며 사용자 세션에서는 변경할 수 없고, 기본값은 16입니다. 로그에서 timeout이 보인다면 이 값을 늘리는 것이 적절할 수 있습니다.
 * Kafka와 통신할 때는 `librdkafka` 라이브러리를 사용하며, 이 라이브러리도 자체적으로 스레드를 생성합니다. 따라서 Kafka 테이블이나 컨슈머 수가 많아지면 context switch도 크게 늘어날 수 있습니다. 가능하다면 이 부하를 클러스터 전체에 분산하고 대상 테이블만 복제하거나, 여러 토픽을 읽는 하나의 테이블 엔진을 사용하는 것도 고려하십시오. 값 목록이 지원됩니다. 하나의 테이블에서 여러 materialized view가 읽을 수 있으며, 각각 특정 토픽의 데이터만 필터링할 수 있습니다.
 
 모든 설정 변경 사항은 반드시 테스트해야 합니다. 적절히 확장되었는지 확인하려면 Kafka consumer lag를 모니터링하는 것을 권장합니다.
@@ -516,7 +516,7 @@ Kafka Engine 테이블의 처리량 성능을 높이려면 다음 사항을 고�
 
 위에서 설명한 설정 외에 다음 항목도 참고할 수 있습니다:
 
-* [Kafka&#95;max&#95;wait&#95;ms](/ko/reference/settings/session-settings#kafka_max_wait_ms) - 재시도하기 전에 Kafka에서 메시지를 읽기 위해 대기하는 시간을 밀리초 단위로 지정합니다. 사용자 프로필 수준에서 설정하며 기본값은 5000입니다.
+* [kafka&#95;max&#95;wait&#95;ms](/ko/reference/settings/session-settings/kafka#kafka_max_wait_ms) - 재시도 전에 Kafka에서 메시지를 읽기 위해 대기하는 시간을 밀리초 단위로 지정합니다. 사용자 프로필 수준에서 설정하며 기본값은 5000입니다.
 
 기본 librdkafka의 [모든 설정 ](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)도 ClickHouse 설정 파일의 *kafka* 요소 안에 지정할 수 있습니다. 설정 이름은 마침표를 밑줄로 바꾼 XML 요소여야 합니다. 예:
 

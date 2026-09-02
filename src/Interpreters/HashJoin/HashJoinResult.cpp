@@ -375,6 +375,7 @@ HashJoinResult::HashJoinResult(
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
     IColumn::Offsets && matched_rows_,
+    size_t matched_right_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -384,6 +385,7 @@ HashJoinResult::HashJoinResult(
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
     , matched_rows(std::move(matched_rows_))
+    , matched_right_rows(matched_right_rows_)
 {
 }
 

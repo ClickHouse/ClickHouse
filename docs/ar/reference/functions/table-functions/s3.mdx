@@ -41,20 +41,20 @@ s3(named_collection[, option=value [,..]])
 
 تدعم دالة الجدول `s3` المعلمات البسيطة التالية:
 
-| Parameter                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                                   | URL حاوية التخزين مع المسار إلى الملف. يدعم أحرف البدل التالية في وضع `readonly`: `*` و`**` و`?` و`{abc,def}` و`{N..M}`، حيث إن `N` و`M` رقمان، و`'abc'` و`'def'` سلسلتان نصيتان. لمزيد من المعلومات، راجع [هنا](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).                                                                                                                                                                 |
-| `NOSIGN`                                | إذا جرى تمرير هذه الكلمة المفتاحية بدلًا من بيانات الاعتماد، فلن تُوقَّع أي من الطلبات.                                                                                                                                                                                                                                                                                                                                                               |
-| `access_key_id` and `secret_access_key` | مفاتيح تحدد بيانات الاعتماد المطلوب استخدامها مع نقطة النهاية المحددة. اختيارية.                                                                                                                                                                                                                                                                                                                                                                      |
-| `session_token`                         | رمز جلسة لاستخدامه مع المفاتيح المحددة. وهو اختياري عند تمرير المفاتيح.                                                                                                                                                                                                                                                                                                                                                                               |
-| `format`                                | [التنسيق](/ar/reference/formats/index) الخاص بالملف.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `structure`                             | بنية الجدول. بالتنسيق `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                  |
-| `compression_method`                    | هذه المعلمة اختيارية. القيم المدعومة: `none` و`gzip` أو `gz` و`brotli` أو `br` و`xz` أو `LZMA` و`zstd` أو `zst`. افتراضيًا، سيُكتشَف أسلوب الضغط تلقائيًا من امتداد الملف.                                                                                                                                                                                                                                                                            |
-| `headers`                               | هذه المعلمة اختيارية. تتيح تمرير الترويسات في طلب S3. مرّرها بالتنسيق `headers(key=value)`، مثل `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                       |
-| `partition_strategy`                    | هذه المعلمة اختيارية. القيم المدعومة: `wildcard` أو `hive`. تتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. أما `hive` فلا تسمح بأحرف البدل، وتفترض أن المسار هو جذر الجدول، وتُنشئ أدلة partition بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. القيمة الافتراضية هي الإعداد `file_like_engine_default_partition_strategy` (`wildcard` ضمن إعدادات `compatibility` الأقدم من `26.6`، و`hive` بخلاف ذلك). |
-| `partition_columns_in_data_file`        | هذه المعلمة اختيارية. تُستخدم فقط مع استراتيجية التقسيم من نوع `hive`. وتُخبر ClickHouse ما إذا كان ينبغي توقّع كتابة أعمدة partition داخل ملف البيانات. والقيمة الافتراضية هي `false`.                                                                                                                                                                                                                                                               |
-| `extra_credentials`                     | هذه المعلمة اختيارية. تُستخدم لتمرير `role_arn` من أجل الوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.                                                                                                                                                                                                                                             |
-| `storage_class_name`                    | هذه المعلمة اختيارية. القيم المدعومة: `STANDARD` و`REDUCED_REDUNDANCY` و`STANDARD_IA` و`ONEZONE_IA` و`INTELLIGENT_TIERING` و`GLACIER_IR` و`EXPRESS_ONEZONE`. لا تُدعَم إلا فئات تخزين S3 التي تتيح الاسترجاع الفوري (أما الفئات الأرشيفية مثل `GLACIER` و`DEEP_ARCHIVE` فليست مدعومة). وتتيح تحديد [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). والقيمة الافتراضية هي `STANDARD`.                    |
+| Parameter                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                   | URL حاوية التخزين مع المسار إلى الملف. يدعم أحرف البدل التالية في وضع `readonly`: `*` و`**` و`?` و`{abc,def}` و`{N..M}`، حيث إن `N` و`M` رقمان، و`'abc'` و`'def'` سلسلتان نصيتان. لمزيد من المعلومات، راجع [هنا](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).                                                                                                                                                                                                                                                                                                                                                                       |
+| `NOSIGN`                                | إذا جرى تمرير هذه الكلمة المفتاحية بدلًا من بيانات الاعتماد، فلن تُوقَّع أي من الطلبات.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `access_key_id` and `secret_access_key` | مفاتيح تحدد بيانات الاعتماد المطلوب استخدامها مع نقطة النهاية المحددة. اختيارية.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `session_token`                         | رمز جلسة لاستخدامه مع المفاتيح المحددة. وهو اختياري عند تمرير المفاتيح.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `format`                                | [التنسيق](/ar/reference/formats/index) الخاص بالملف.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `structure`                             | بنية الجدول. بالتنسيق `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `compression_method`                    | هذه المعلمة اختيارية. القيم المدعومة: `none` و`gzip` أو `gz` و`brotli` أو `br` و`xz` أو `LZMA` و`zstd` أو `zst`. افتراضيًا، سيُكتشَف طريقة الضغط تلقائيًا من امتداد الملف.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `headers`                               | هذه المعلمة اختيارية. تتيح تمرير الترويسات في طلب S3. مرّرها بالتنسيق `headers(key=value)`، مثل `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `partition_strategy`                    | هذه المعلمة اختيارية. القيم المدعومة: `wildcard` أو `hive`. تتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. أما `hive` فلا تسمح بأحرف البدل، وتفترض أن المسار هو جذر الجدول، وتُنشئ أدلة partition بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. من دون استراتيجية صريحة، يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard`. أما المسار الذي يحتوي على glob آخر فلا يستخدم أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. ويستخدم المسار الذي لا يحتوي على glob استراتيجية `hive` عندما تكون قيمة `file_like_engine_default_partition_strategy` هي `hive`؛ وإلا فلا يستخدم أي استراتيجية تقسيم. |
+| `partition_columns_in_data_file`        | هذه المعلمة اختيارية. تُستخدم فقط مع استراتيجية التقسيم من نوع `hive`. وتُخبر ClickHouse ما إذا كان ينبغي توقّع كتابة أعمدة التقسيم داخل ملف البيانات. والقيمة الافتراضية هي `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `extra_credentials`                     | هذه المعلمة اختيارية. تُستخدم لتمرير `role_arn` من أجل الوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `storage_class_name`                    | هذه المعلمة اختيارية. القيم المدعومة: `STANDARD` و`REDUCED_REDUNDANCY` و`STANDARD_IA` و`ONEZONE_IA` و`INTELLIGENT_TIERING` و`GLACIER_IR` و`EXPRESS_ONEZONE`. لا تُدعَم إلا فئات تخزين S3 التي تتيح الاسترجاع الفوري (أما الفئات الأرشيفية مثل `GLACIER` و`DEEP_ARCHIVE` فليست مدعومة). وتتيح تحديد [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). والقيمة الافتراضية هي `STANDARD`.                                                                                                                                                                                                                          |
 
 <Info>
   **GCS**
@@ -68,7 +68,7 @@ s3(named_collection[, option=value [,..]])
   وليس ~~https://storage.cloud.google.com~~.
 </Info>
 
-يمكن أيضًا تمرير الوسيطات باستخدام [named collections](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، تعمل `url` و`access_key_id` و`secret_access_key` و`format` و`structure` و`compression_method` بالطريقة نفسها، كما تتوفر بعض المعلمات الإضافية المدعومة:
+يمكن أيضًا تمرير الوسيطات باستخدام [named collections](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، تعمل `url` و`access_key_id` و`secret_access_key` و`format` و`structure` و`compression_method` بالطريقة نفسها، وتكون بعض المعلمات الإضافية مدعومة:
 
 | الوسيطة                       | الوصف                                                                                                                                                                                                                  |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -77,7 +77,7 @@ s3(named_collection[, option=value [,..]])
 | `no_sign_request`             | مُعطَّل افتراضيًا.                                                                                                                                                                                                     |
 | `expiration_window_seconds`   | القيمة الافتراضية هي 120.                                                                                                                                                                                              |
 
-<div id="returned_value">
+<div id="returned-value">
   ## القيمة المعادة
 </div>
 
@@ -93,6 +93,7 @@ s3(named_collection[, option=value [,..]])
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -114,7 +115,8 @@ LIMIT 5;
   ```sql
   SELECT *
   FROM s3(
-     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
+     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+     NOSIGN
   )
   LIMIT 5;
   ```
@@ -157,7 +159,7 @@ LIMIT 5;
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -170,7 +172,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -183,11 +185,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
   إذا كانت قائمة ملفاتك تتضمن نطاقات رقمية تبدأ بأصفار بادئة، فاستخدم الصيغة التي تحتوي على أقواس لكل رقم على حدة، أو استخدم `?`.
 </Tip>
 
-احسب العدد الإجمالي للصفوف في الملفات المسماة `file-000.csv`، `file-001.csv`، ... ، `file-999.csv`:
+احسب العدد الإجمالي للصفوف في الملفات المسماة `file-1.csv`، ...، `file-4.csv`:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -210,27 +212,27 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-يمكن استخدام `**` في Glob للاجتياز التعاودي للمجلدات. انظر المثال أدناه، إذ سيجلب جميع الملفات من مجلد `my-test-bucket-768` بشكل تعاودي:
+يمكن استخدام `**` في Glob للاجتياز التعاودي للأدلة. انظر المثال أدناه، إذ سيجلب جميع الملفات من دليل `my-test-bucket-768` بشكل تعاودي:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-يجلب ما يلي البيانات من جميع ملفات `test-data.csv.gz` الموجودة في أي مجلد داخل دليل `my-test-bucket` بشكل تعاودي:
+يجلب ما يلي البيانات من جميع ملفات `test-data.csv.gz` الموجودة في أي دليل داخل دليل `my-test-bucket` بشكل تعاودي:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 ملاحظة. يمكن تحديد محوّلات URL مخصصة في ملف تكوين الخادم. مثال:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-سيتم استبدال URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` بـ `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
+سيُستبدل URL ‏`'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` بـ `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
 
-يمكن إضافة mapper مخصّص إلى `config.xml`:
+يمكن إضافة محوّل مخصّص إلى `config.xml`:
 
 ```xml
 <url_scheme_mappers>
@@ -267,7 +269,9 @@ FROM s3(creds, url='https://s3-object-url.csv')
 
 مدعومة فقط لاستعلامات INSERT.
 
-`wildcard`: يستبدل حرف البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. يُحدَّد افتراضيًا فقط عندما يكون الإعداد `compatibility` أقدم من `26.6`. وعندما يُضبط `compatibility` على `26.6` أو إصدار أحدث، أو عند تطبيق القيم الافتراضية الحالية، تكون القيمة الافتراضية هي `hive`، لذا يجب على المسارات التي تحتوي على `{_partition_id}` تعيين `partition_strategy='wildcard'` صراحةً (راجع الإعداد `file_like_engine_default_partition_strategy`).
+`wildcard`: يستبدل حرف البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. ويُحدَّد افتراضيًا عندما يحتوي المسار على `{_partition_id}`.
+
+عند عدم تعيين `partition_strategy`، لا يستخدم المسار الذي يحتوي على نمط glob آخر أي استراتيجية للتقسيم ويتجاهل `PARTITION BY`. ويستخدم المسار الذي لا يحتوي على glob استراتيجية `hive` عندما تكون قيمة `file_like_engine_default_partition_strategy` هي `hive`؛ وإلا فلا يستخدم أي استراتيجية للتقسيم.
 
 `hive` يطبّق التقسيم بنمط Hive على عمليات القراءة والكتابة. ويُنشئ الملفات باستخدام التنسيق التالي: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -368,7 +372,8 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -429,13 +434,29 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
+<div id="resolving-relative-urls">
+  ## تحليل عناوين URL النسبية
+</div>
+
+يتيح الإعداد [s3&#95;base](/ar/reference/settings/session-settings/s3#s3_base) تمرير عنوان URL نسبي إلى الدالة `s3`. عند تعيين `s3_base` وعدم احتواء وسيطة الدالة على مخطط، يُحل عنوان URL بالاستناد إلى عنوان URL الأساسي وفقًا لـ [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)، باستخدام القواعد نفسها التي يستخدمها الإعداد [url&#95;base](/ar/reference/settings/session-settings/url#url_base) في الدالة [url](/ar/reference/functions/table-functions/url#resolving-relative-urls). وتُمرَّر عناوين URL المطلقة دون تغيير.
+
+ينطبق هذا الإعداد أيضًا على محرك الجدول [S3](/ar/reference/engines/table-engines/integrations/s3) ودوال الجدول التي تشترك في تهيئة `s3` (`s3Cluster` و`gcs` و`oss`). بالنسبة إلى محرك الجدول `S3`، يُجسَّد عنوان URL المحلول ضمن تعريف الجدول المخزَّن، لذا لا يعتمد الجدول على قيمة `s3_base` بعد إنشائه.
+
+**مثال**
+
+```sql
+SET s3_base = 's3://clickhouse-public-datasets/';
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
+```
+
 <div id="storage-settings">
   ## إعدادات التخزين
 </div>
 
-* [s3&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings#s3_truncate_on_insert) - يتيح تفريغ الملف قبل الإدراج فيه. معطّل افتراضيًا.
-* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings#s3_create_new_file_on_insert) - يتيح إنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. معطّل افتراضيًا.
-* [s3&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings#s3_skip_empty_files) - يتيح تخطي الملفات الفارغة أثناء القراءة. مفعّل افتراضيًا.
+* [s3&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings/s3#s3_truncate_on_insert) - يتيح تفريغ الملف قبل الإدراج فيه. معطّل افتراضيًا.
+* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - يتيح إنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. معطّل افتراضيًا.
+* [s3&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings/s3#s3_skip_empty_files) - يتيح تخطي الملفات الفارغة أثناء القراءة. مفعّل افتراضيًا.
+* [s3&#95;base](/ar/reference/settings/session-settings/s3#s3_base) - عنوان URL الأساسي لحل عناوين URL النسبية المُمرَّرة إلى الدالة `s3`. فارغ (معطّل) افتراضيًا.
 
 <div id="nested-avro-schemas">
   ## مخططات Avro المتداخلة
@@ -467,10 +488,13 @@ SELECT
     data
 FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
-
-## Related           
-
-- [S3 engine](/reference/engines/table-engines/integrations/s3)
-- [Integrating S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
-{/*AUTOGENERATED_END*/}
 ```
+
+<div id="related">
+  ## Related
+</div>
+
+* [S3 engine](/ar/reference/engines/table-engines/integrations/s3)
+* [Integrating S3 with ClickHouse](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
+
+{/*AUTOGENERATED_END*/}

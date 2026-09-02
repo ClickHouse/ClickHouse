@@ -234,7 +234,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **인수**
 
 * `uuid` — UUID 버전 7 값입니다. [`String`](/ko/reference/data-types/string)
-* `timezone` — 선택 사항입니다. 반환 값에 사용할 [시간대 이름](/ko/reference/settings/server-settings/settings#timezone)입니다. [`String`](/ko/reference/data-types/string)
+* `timezone` — 선택 사항입니다. 반환 값에 사용할 [시간대 이름](/ko/reference/settings/server-settings/settings/other#timezone)입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -250,7 +250,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 15:30:29.048 │
+│                                          2024-04-22 12:30:29.048 │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -298,7 +298,7 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 ```
 
 ```response title=Response
-6832626394434895872
+6832626392367104000
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -342,13 +342,9 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 도입 버전: v25.8.0
 
-지정된 시점의 [DateTime](/ko/reference/data-types/datetime) 값을 [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7)로 변환합니다.
+[RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)에 정의된 방식으로 지정된 시점의 [DateTime](/ko/reference/data-types/datetime) 값을 [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562)로 변환합니다.
 
 UUID 구조, 카운터 관리, 동시성 보장에 대한 자세한 내용은 [&quot;UUIDv7 생성&quot;](#uuidv7-generation) 섹션을 참조하십시오.
-
-<Note>
-  2025년 9월 기준으로 버전 7 UUID는 초안 상태이며, 향후 내부 레이아웃이 변경될 수 있습니다.
-</Note>
 
 <Note>
   이 함수는 비결정적이므로 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
@@ -362,7 +358,7 @@ dateTimeToUUIDv7(value)
 
 **인수**
 
-* `value` — 시간이 포함된 날짜/시간 값. [`DateTime`](/ko/reference/data-types/datetime)
+* `value` — 시간이 포함된 날짜. [`DateTime`](/ko/reference/data-types/datetime)
 
 **반환 값**
 
@@ -532,13 +528,9 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 도입 버전: v24.5.0
 
-[버전 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](/ko/reference/data-types/uuid)를 생성합니다.
+[RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)에 정의된 [버전 7](https://www.rfc-editor.org/rfc/rfc9562) [UUID](/ko/reference/data-types/uuid)를 생성합니다.
 
 UUID 구조, 카운터 관리, 동시성 보장에 관한 자세한 내용은 [&quot;UUIDv7 생성&quot;](#uuidv7-generation) 섹션을 참조하십시오.
-
-<Note>
-  2025년 9월 기준으로 버전 7 UUID는 초안 상태이며, 향후 레이아웃이 변경될 수 있습니다.
-</Note>
 
 <Note>
   이 함수는 비결정적입니다. 즉, 같은 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
@@ -604,11 +596,11 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID입니다. [`UInt64`](/ko/reference/data-types/int-uint)
 * `epoch` — 선택 사항입니다. 1970-01-01 이후 경과한 밀리초 단위의 Snowflake ID epoch입니다. 기본값은 0(1970-01-01)입니다. Twitter/X epoch(2015-01-01)의 경우 1288834974657을 지정하십시오. [`UInt*`](/ko/reference/data-types/int-uint)
-* `time_zone` — 선택 사항입니다. [시간대](/ko/reference/settings/server-settings/settings#timezone)입니다. 함수는 `time_string`을 시간대에 따라 해석합니다. [`String`](/ko/reference/data-types/string)
+* `time_zone` — 선택 사항입니다. [시간대](/ko/reference/settings/server-settings/settings/other#timezone)입니다. 함수는 `time_string`을 시간대에 따라 해석합니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
-`value`의 timestamp 구성 요소를 반환합니다. [`DateTime`](/ko/reference/data-types/datetime)
+`value`의 타임스탬프 구성 요소를 반환합니다. [`DateTime`](/ko/reference/data-types/datetime)
 
 **예시**
 
@@ -642,7 +634,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/ko/reference/data-types/int-uint)
 * `epoch` — 선택 사항입니다. 1970-01-01부터 경과한 밀리초 단위의 Snowflake ID epoch입니다. 기본값은 0(1970-01-01)입니다. Twitter/X epoch(2015-01-01)를 사용하려면 1288834974657을 지정하십시오. [`UInt*`](/ko/reference/data-types/int-uint)
-* `time_zone` — 선택 사항입니다. [시간대](/ko/reference/settings/server-settings/settings#timezone)입니다. 이 함수는 `time_string`을 해당 시간대에 따라 파싱합니다. [`String`](/ko/reference/data-types/string)
+* `time_zone` — 선택 사항입니다. [시간대](/ko/reference/settings/server-settings/settings/other#timezone)입니다. 이 함수는 `time_string`을 해당 시간대에 따라 파싱합니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -657,9 +649,9 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 ```
 
 ```response title=Response
-┌─────────────────res─┐
-│ 2024-06-06 10:59:58 │
-└─────────────────────┘
+┌─────────────────────res─┐
+│ 2024-06-06 10:59:58.851 │
+└─────────────────────────┘
 ```
 
 <div id="toUUIDOrDefault">
@@ -760,7 +752,7 @@ SELECT
 
 ```response title=Response
 ┌─valid_uuid───────────────────────────┬─invalid_uuid─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │         ᴺᵁᴸᴸ │
+│ 550e8400-e29b-41d4-a716-446655440000 │ ᴺᵁᴸᴸ         │
 └──────────────────────────────────────┴──────────────┘
 ```
 

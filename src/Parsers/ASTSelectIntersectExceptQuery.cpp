@@ -1,6 +1,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -23,6 +24,14 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
 
     res->final_operator = final_operator;
     return res;
+}
+
+void ASTSelectIntersectExceptQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The operator joining the selects is not a child either, so `a EXCEPT b` and `a INTERSECT b`
+    /// would otherwise hash equally.
+    hash_state.update(final_operator);
+    ASTSelectQuery::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

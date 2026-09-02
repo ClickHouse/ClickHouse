@@ -3,7 +3,7 @@
 #if defined(OS_LINUX)
 
 #include <Client/IConnections.h>
-#include <Common/Fiber.h>
+#include <Common/StackfulCoroutine.h>
 #include <Common/Epoll.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/AsyncTaskExecutor.h>
@@ -12,7 +12,7 @@ namespace DB
 {
 
 /// Class for nonblocking packet receiving. It runs connection->receivePacket
-/// in fiber and sets special read callback which is called when
+/// in coroutine and sets special read callback which is called when
 /// reading from socket blocks. When read callback is called,
 /// socket and receive timeout are added in epoll and execution returns to the main program.
 /// So, you can poll this epoll file descriptor to determine when to resume
@@ -74,7 +74,7 @@ private:
     /// in epoll, so we can return epoll file descriptor outside for polling.
     Epoll epoll;
 
-    /// If and exception occurred in fiber resume, we save it and rethrow.
+    /// If and exception occurred in coroutine resume, we save it and rethrow.
     std::exception_ptr exception;
 
     bool is_read_in_process = false;

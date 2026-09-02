@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/clickhouse-integration
-sidebarTitle: 'ClickHouse integration'
-title: 'ClickHouse integration'
+sidebarTitle: 'Synchroniser avec ClickHouse'
+title: 'Synchroniser avec ClickHouse'
 description: 'Répliquez vos données Postgres dans ClickHouse grâce aux fonctionnalités CDC intégrées'
 keywords: ['postgres', 'ClickHouse integration', 'cdc', 'réplication', 'ClickPipes', 'synchronisation des données']
 doc_type: 'guide'
@@ -12,14 +12,14 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
-Chaque instance Managed Postgres dispose de capacités CDC intégrées vers n’importe lequel de vos services ClickHouse. Cela vous permet de transférer tout ou partie des données de votre instance Postgres vers ClickHouse, et de répercuter de façon continue et quasi en temps réel dans ClickHouse les modifications apportées aux données dans Postgres. Cette fonctionnalité s’appuie sur [ClickPipes](/fr/integrations/clickpipes/home) en arrière-plan.
+Chaque instance ClickHouse Managed Postgres dispose de capacités CDC intégrées vers n’importe lequel de vos services ClickHouse. Cela vous permet de transférer tout ou partie des données de votre instance Postgres vers ClickHouse, et de répercuter de façon continue et quasi en temps réel dans ClickHouse les modifications apportées aux données dans Postgres. Cette fonctionnalité s’appuie sur [ClickPipes](/fr/integrations/clickpipes/home) en arrière-plan.
 
-Pour y accéder, cliquez sur **ClickHouse Integration** dans la barre latérale de votre instance Postgres.
+Pour y accéder, cliquez sur **Synchroniser avec ClickHouse** dans la barre latérale de votre instance Postgres.
 
 <Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="Page d’accueil de ClickHouse integration montrant l’option d’intégration dans la barre latérale" size="md" border />
 
 <Note>
-  Avant de continuer, assurez-vous que votre service Postgres est accessible au service ClickPipes. Cela devrait être le cas par défaut, mais si vous avez restreint l’accès par IP, vous devrez peut-être autoriser certaines adresses IP sources figurant dans [cette](/fr/integrations/clickpipes/home#list-of-static-ips) liste, en fonction de la région où se trouve votre **service ClickHouse**.
+  Avant de continuer, assurez-vous que votre service Postgres est accessible au service ClickPipes. Cela devrait être le cas par défaut, mais si vous avez restreint l’accès par IP, vous devrez peut-être autoriser certaines adresses IP sources figurant dans [cette](/fr/integrations/clickpipes/networking/static-ips) liste, en fonction de la région où se trouve votre **service ClickHouse**.
 </Note>
 
 Cliquez sur **Répliquer les données dans ClickHouse** pour commencer à configurer votre ClickPipe.

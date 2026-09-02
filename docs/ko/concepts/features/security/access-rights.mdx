@@ -89,7 +89,7 @@ ClickHouse를 이제 막 사용하기 시작했다면 다음 시나리오를 고
 1. 사용자 계정 설정.
 2. 사용자 계정의 기본 역할에 대한 설정. 하나의 설정이 일부 역할에 구성되어 있으면, 해당 설정의 적용 순서는 정의되어 있지 않습니다.
 3. 사용자 또는 해당 사용자의 기본 역할에 할당된 설정 프로필의 설정. 하나의 설정이 일부 프로필에 구성되어 있으면, 설정 적용 순서는 정의되어 있지 않습니다.
-4. 전체 서버에 기본적으로 적용되는 설정 또는 [default profile](/ko/reference/settings/server-settings/settings#default_profile)의 설정.
+4. 전체 서버에 기본적으로 적용되는 설정 또는 [default profile](/ko/reference/settings/server-settings/settings/default#default_profile)의 설정.
 
 <div id="role-management">
   ### 역할
@@ -120,6 +120,8 @@ ClickHouse를 이제 막 사용하기 시작했다면 다음 시나리오를 고
 </div>
 
 행 정책(Row policy)은 사용자 또는 역할이 접근할 수 있는 행을 정의하는 필터입니다. 행 정책에는 특정 테이블에 대한 필터와 함께, 이 행 정책을 적용해야 하는 역할 및/또는 사용자 목록이 포함됩니다.
+
+행 정책은 테이블 데이터를 로컬에서 읽는 위치에 적용됩니다. [분산](/ko/reference/engines/table-engines/special/distributed) 테이블이나 읽기를 원격 서버에 위임하는 다른 테이블에서는 각 서버의 기본 테이블에 정책을 정의하십시오. 원격 서버 기반 테이블 자체에 정의한 정책은 전송된 쿼리에 적용할 수 없으므로, 이를 통한 읽기는 거부됩니다. 개시자가 이미 생성된 읽기 계획을 전송하는 경우 기본 테이블의 이러한 정책은 적용되지 않습니다. 따라서 행 정책을 적용해야 하는 사용자는 [`serialize_query_plan = 0`](/ko/reference/settings/session-settings/serialize#serialize_query_plan)을 유지하십시오([issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891) 참조).
 
 <Note>
   행 정책은 readonly 권한이 있는 경우에만 의미가 있습니다. 테이블을 수정하거나 테이블 간에 파티션을 복사할 수 있으면 행 정책의 제한은 무력화됩니다.
@@ -170,7 +172,7 @@ ClickHouse를 이제 막 사용하기 시작했다면 다음 시나리오를 고
 
 * 구성을 저장할 디렉터리를 설정합니다.
 
-  ClickHouse는 [access&#95;control&#95;path](/ko/reference/settings/server-settings/settings#access_control_path) 서버 구성 매개변수에 지정된 폴더에 액세스 엔터티 구성을 저장합니다.
+  ClickHouse는 [access&#95;control&#95;path](/ko/reference/settings/server-settings/settings/access-control#access_control_path) 서버 구성 매개변수에 지정된 폴더에 액세스 엔터티 구성을 저장합니다.
 
 * 최소 1개의 사용자 계정에 대해 SQL 기반 액세스 제어 및 계정 관리를 활성화합니다.
 

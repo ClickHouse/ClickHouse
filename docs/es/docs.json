@@ -4,7 +4,7 @@
       "pages": [
         "es/index"
       ],
-      "tab": "Inicio"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -21,7 +21,7 @@
           "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Base de datos"
+      "tab": "Database"
     },
     {
       "menu": [
@@ -37,9 +37,6 @@
           "$ref": "./products/managed-postgres/navigation.json"
         },
         {
-          "$ref": "./clickstack/navigation.json"
-        },
-        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
           "item": "Langfuse"
@@ -47,7 +44,10 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Código abierto"
+          "item": "Open source"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "$ref": "./products/agentic-data-stack/navigation.json"
@@ -57,19 +57,17 @@
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
-        },
-        {
-          "$ref": "./products/clickhouse-private/navigation.json"
         }
       ],
-      "tab": "Soluciones"
+      "tab": "Solutions"
     },
     {
       "menu": [
         {
-          "item": "Ecosistema",
+          "item": "Ecosystem",
           "pages": [
-            "es/integrations/home"
+            "es/integrations/home",
+            "es/integrations/data-catalogs"
           ]
         },
         {
@@ -82,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integraciones"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -99,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Recursos"
+      "tab": "Resources"
     }
   ]
 }

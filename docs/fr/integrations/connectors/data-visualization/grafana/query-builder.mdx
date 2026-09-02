@@ -17,15 +17,15 @@ import { ClickHouseSupportedBadge } from "/snippets/fr/components/ClickHouseSupp
 <ClickHouseSupportedBadge />
 
 N’importe quelle requête peut être exécutée avec le plugin ClickHouse.
-Le query builder est une option pratique pour les requêtes simples, mais pour les requêtes plus complexes, vous devrez utiliser le [SQL Editor](#sql-editor).
+Le constructeur de requêtes est une option pratique pour les requêtes simples, mais pour les requêtes plus complexes, vous devrez utiliser le [SQL Editor](#sql-editor).
 
-Toutes les requêtes du query builder ont un [type de requête](#query-types) et nécessitent la sélection d’au moins une colonne.
+Toutes les requêtes du constructeur de requêtes ont un [type de requête](#query-types) et nécessitent la sélection d’au moins une colonne.
 
 Les types de requête disponibles sont les suivants :
 
 * [Table](#table) : le type de requête le plus simple pour afficher les données sous forme de tableau. Il convient aussi bien aux requêtes simples qu’aux requêtes complexes contenant des fonctions d’agrégation.
 * [Logs](#logs) : optimisé pour créer des requêtes sur les logs. Fonctionne le mieux dans la vue Explore avec les [valeurs par défaut configurées](/fr/integrations/connectors/data-visualization/grafana/config#logs).
-* [Time Series](#time-series) : particulièrement adapté à la création de requêtes de séries temporelles. Permet de sélectionner une colonne de temps dédiée et d’ajouter des fonctions d’agrégation.
+* [séries temporelles](#time-series) : particulièrement adapté à la création de requêtes de séries temporelles. Permet de sélectionner une colonne de temps dédiée et d’ajouter des fonctions d’agrégation.
 * [Traces](#traces) : optimisé pour rechercher et afficher les traces. Fonctionne le mieux dans la vue Explore avec les [valeurs par défaut configurées](/fr/integrations/connectors/data-visualization/grafana/config#traces).
 * [SQL Editor](#sql-editor) : le SQL Editor peut être utilisé lorsque vous souhaitez garder un contrôle total sur la requête. Dans ce mode, toute requête SQL peut être exécutée.
 

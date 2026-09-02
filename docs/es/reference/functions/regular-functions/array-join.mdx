@@ -20,6 +20,8 @@ Todos los valores de las columnas se copian sin más, excepto los de la columna 
   Para devolver una sola fila que contenga el valor predeterminado del tipo de array, puede envolverlo con [emptyArrayToSingle](/es/reference/functions/regular-functions/array-functions#emptyArrayToSingle), por ejemplo: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (desde la versión 26.5) es un alias de `arrayJoin` que no distingue entre mayúsculas y minúsculas y se usa como llamada a función (`SELECT unnest(arr)`). La sintaxis de PostgreSQL como fuente de tabla no es compatible (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` y `LATERAL`). Use la cláusula [`ARRAY JOIN`](/es/reference/statements/select/array-join) para esas consultas.
+
 Por ejemplo:
 
 ```sql title="Query"
@@ -50,6 +52,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 │           2 │
 └─────────────┘
 ```
+
+Hay una excepción: `arrayJoin`, incluido a través de su alias `unnest`, no se permite en una condición `JOIN ON` que se evalúa durante el JOIN, porque dicha condición debe conservar el número de filas y se evalúa por separado para cada lote de filas del JOIN. Una condición que se aplica solo a uno de los lados, así como una clave de igualdad basada en `arrayJoin`, se extraen antes del JOIN y no se ven afectadas. Una condición no disyuntiva de `ALL INNER JOIN` tampoco se ve afectada, ya que en ese caso la condición se aplica después del JOIN. Cuando la expansión depende solo de un lado, muévala a un `ARRAY JOIN` en una subconsulta antes del JOIN; una condición cuyo argumento de `arrayJoin` lee columnas de ambos lados debe reestructurarse.
 
 Una consulta puede usar varias funciones `arrayJoin`. En este caso, la transformación se realiza varias veces y las filas se multiplican.
 Por ejemplo:

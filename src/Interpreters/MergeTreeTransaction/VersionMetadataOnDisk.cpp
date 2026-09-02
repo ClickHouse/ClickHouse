@@ -34,12 +34,14 @@ namespace MergeTreeSetting
 extern const MergeTreeSettingsBool fsync_part_directory;
 }
 
-VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_)
+VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_, PartDirIntent intent)
     : VersionMetadata(merge_tree_data_part_)
     , can_write_metadata(merge_tree_data_part->storage.supportsTransactions() && !merge_tree_data_part->getDataPartStorage().isReadonly())
 {
     log = ::getLogger("VersionMetadataOnDisk");
-    is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
+    /// A `CreateFresh` directory is clean, so it reads nothing and keeps the member default (true).
+    if (intent == PartDirIntent::OpenExisting)
+        is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
     LOG_TEST(
         log, "Object {}, can_write_metadata {}, is_persist_deferrable {}", getObjectName(), can_write_metadata, is_persist_deferrable);
 }

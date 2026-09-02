@@ -195,22 +195,20 @@ private:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, size_t current_task_last_mark_, IMergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
         /// NOTE: have to return number of rows because block has broken invariant:
         ///       some columns may have different size (for example, default columns may be zero size).
-        size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
+        size_t read(MutableColumns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
         size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
-        size_t finalize(Columns & columns);
+        size_t finalize(MutableColumns & columns);
 
         bool isFinished() const { return is_finished; }
-
-        size_t currentTaskLastMark() const { return current_task_last_mark; }
 
     private:
         size_t current_mark = 0;
@@ -218,8 +216,6 @@ private:
         size_t current_offset = 0;
         /// Num of rows we have to read
         size_t num_delayed_rows = 0;
-        /// Last mark from all ranges of current task.
-        size_t current_task_last_mark = 0;
 
         /// Actual reader of data from disk
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -229,7 +225,7 @@ private:
 
         /// Current position from the beginning of file in rows
         size_t position() const;
-        size_t readRows(Columns & columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, size_t num_rows);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -238,11 +234,11 @@ private:
     {
     public:
         Stream() = default;
-        Stream(size_t from_mark, size_t to_mark, size_t current_task_last_mark, IMergeTreeReader * merge_tree_reader);
+        Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
-        size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
-        size_t finalize(Columns & columns);
+        size_t read(MutableColumns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+        size_t finalize(MutableColumns & columns);
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
@@ -275,7 +271,7 @@ private:
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
         void checkNoDelayedRows() const;
 
-        size_t readRows(Columns & columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
     };
@@ -327,8 +323,6 @@ public:
         using RangesInfo = std::vector<RangeInfo>;
 
         explicit ReadResult(LoggerPtr log_) : log(log_) {}
-
-        static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
 
         /// Populate @rows_per_granule and @granule_offsets. See comments below.
         void addGranule(size_t num_rows_, GranuleOffset granule_offset);
