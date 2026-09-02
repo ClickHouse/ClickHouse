@@ -80,6 +80,32 @@ bool shardContains(
     return data.shard_info.shard_num == shard_num;
 }
 
+/// Collect the names of the `IN` expressions that are reachable without going through a filtering
+/// clause. `WHERE` may be the only place that computes a column which a later stage - `LIMIT BY`, for
+/// example - then consumes by name, so rewriting the filter alone can still make the shard's block
+/// disagree with the header the initiator expects.
+void collectInNamesUsedOutsideFilters(const ASTPtr & node, std::unordered_set<String> & names)
+{
+    if (const auto * select = node->as<ASTSelectQuery>())
+    {
+        for (const auto & child : select->children)
+        {
+            if (child == select->where() || child == select->prewhere())
+                continue;
+
+            collectInNamesUsedOutsideFilters(child, names);
+        }
+
+        return;
+    }
+
+    if (const auto * function = node->as<ASTFunction>(); function && function->name == "in")
+        names.insert(function->getColumnName());
+
+    for (const auto & child : node->children)
+        collectInNamesUsedOutsideFilters(child, names);
+}
+
 }
 
 namespace DB
@@ -117,6 +143,10 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
     /// in the filter would either rename the column the initiator binds, or leave two different
     /// expressions behind the same alias (`MULTIPLE_EXPRESSIONS_FOR_ALIAS`).
     if (!function.tryGetAlias().empty())
+        return;
+
+    /// The same expression is used outside the filters, where its name reaches the initiator.
+    if (data.in_names_used_outside_filters && data.in_names_used_outside_filters->contains(function.getColumnName()))
         return;
 
     auto * left = function.arguments->children.front().get();
@@ -240,6 +270,16 @@ void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRe
 {
     OptimizeShardingKeyRewriteIn visitor(std::move(data), std::move(context));
     visitor.visit(node);
+}
+
+void optimizeShardingKeyRewriteIn(ASTPtr & query, OptimizeShardingKeyRewriteInMatcher::Data data)
+{
+    std::unordered_set<String> in_names_used_outside_filters;
+    collectInNamesUsedOutsideFilters(query, in_names_used_outside_filters);
+    data.in_names_used_outside_filters = &in_names_used_outside_filters;
+
+    OptimizeShardingKeyRewriteInVisitor visitor(data);
+    visitor.visit(query);
 }
 
 }

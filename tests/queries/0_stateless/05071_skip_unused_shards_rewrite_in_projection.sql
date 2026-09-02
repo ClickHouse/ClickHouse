@@ -20,7 +20,11 @@ DROP TABLE IF EXISTS dist_05071;
 CREATE TABLE dist_05071 AS system.one ENGINE = Distributed(test_cluster_two_shards, system, one, intHash64(dummy));
 
 -- intHash64(0) % 2 = 0 and intHash64(2) % 2 = 1, so both shards are queried and each one prunes the
--- set in its `WHERE` down to a single element.
+-- set in its `WHERE` down to a single element - unless the same expression also occurs outside the
+-- filters. The old analyzer binds the remote columns by name and `WHERE` can be the only place that
+-- computes one of them, so there the rewrite is skipped for such shapes and both shards keep their
+-- row; the analyzer resolves the columns by node and still prunes. Hence the two blocks below differ
+-- in the number of rows, not in whether the queries work.
 
 SET enable_analyzer = 0;
 SELECT 'old analyzer';

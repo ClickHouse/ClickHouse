@@ -4,6 +4,8 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Cluster.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -34,6 +36,10 @@ struct OptimizeShardingKeyRewriteInMatcher
         const Cluster::ShardInfo & shard_info;
         /// weight -> shard mapping
         const Cluster::SlotToShard & slots;
+        /// Names of the `IN` expressions that also occur outside the filtering clauses of the query.
+        /// Rewriting those would rename a column that the initiator binds by name, see
+        /// `optimizeShardingKeyRewriteIn`.
+        const std::unordered_set<String> * in_names_used_outside_filters = nullptr;
     };
 
     static bool needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/);
@@ -44,5 +50,6 @@ struct OptimizeShardingKeyRewriteInMatcher
 using OptimizeShardingKeyRewriteInVisitor = InDepthNodeVisitor<OptimizeShardingKeyRewriteInMatcher, true>;
 
 void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, ContextPtr context);
+void optimizeShardingKeyRewriteIn(ASTPtr & query, OptimizeShardingKeyRewriteInMatcher::Data data);
 
 }
