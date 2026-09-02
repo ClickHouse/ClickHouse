@@ -19,6 +19,10 @@
 namespace
 {
 
+using StrChars = DB::ColumnString::Chars;
+using StrOffsets = DB::ColumnString::Offsets;
+using FixedChars = DB::ColumnFixedString::Chars;
+
 std::string digestToHex(const uint8_t * digest)
 {
     std::ostringstream oss;
@@ -129,6 +133,11 @@ struct ScalarMD5Trait
     {
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
+
+    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    {
+        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
+    }
 };
 
 #if defined(__AVX2__)
@@ -143,6 +152,11 @@ struct AVX2MD5Trait
     static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
     {
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
+    }
+
+    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    {
+        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
     }
 };
 
@@ -165,6 +179,11 @@ struct AVX512MD5Trait
     {
         DB::TargetSpecific::x86_64_v4::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
+
+    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    {
+        DB::TargetSpecific::x86_64_v4::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
+    }
 };
 
 #endif
@@ -181,6 +200,11 @@ struct ASIMDMD5Trait
     static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
     {
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
+    }
+
+    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    {
+        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
     }
 };
 
@@ -411,6 +435,86 @@ TYPED_TEST(MD5MultiBufTest, StressRandom)
                 FAIL() << oss.str();
             }
         }
+    }
+}
+
+
+// ============================================================
+// Driver-level test. The driver groups rows by block count inside a window, and only a gtest can
+// reach every Ops width from one host.
+// ============================================================
+
+enum class ColumnShape
+{
+    Spread, /// wide block-count spread: profitable in every window
+    Flat, /// constant length: the column-level gate declines
+    Mixed, /// spread first half, constant second half: windows decide differently
+};
+
+std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
+{
+    std::mt19937_64 rng(0x5eed5eed5eed5eedULL);
+    std::vector<std::string> out;
+    out.reserve(rows);
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        bool spread = shape == ColumnShape::Spread || (shape == ColumnShape::Mixed && i < rows / 2);
+
+        size_t len = 64;
+        if (spread)
+        {
+            /// 0 / 1..40 / 200..500 / 4000..4200 bytes is 1 / 1..2 / 4..9 / 63..66 blocks, so rows on
+            /// both sides of the 64-block histogram cap are present.
+            switch (rng() % 10)
+            {
+                case 0: len = 0; break;
+                case 1: case 2: case 3: case 4: case 5: case 6: len = 1 + rng() % 40; break;
+                case 7: case 8: len = 200 + rng() % 301; break;
+                default: len = 4000 + rng() % 201; break;
+            }
+        }
+
+        std::string s(len, '\0');
+        for (size_t k = 0; k < len; ++k)
+            s[k] = static_cast<char>('a' + (rng() % 26));
+        out.push_back(std::move(s));
+    }
+
+    return out;
+}
+
+template <typename Trait>
+void checkColumnMD5(ColumnShape shape, size_t rows)
+{
+    const auto inputs = makeTestColumn(shape, rows);
+
+    auto col = DB::ColumnString::create();
+    for (const auto & s : inputs)
+        col->insertData(s.data(), s.size());
+
+    FixedChars digests;
+    digests.resize(rows * 16);
+    Trait::computeColumn(col->getChars(), col->getOffsets(), digests, rows);
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const std::string expected = referenceMD5Hex(inputs[i]);
+        const std::string got = digestToHex(reinterpret_cast<const uint8_t *>(digests.data()) + i * 16);
+        if (expected != got)
+            FAIL() << "\nrow " << i << " of " << rows << ", length " << inputs[i].size() << "\n  expected: " << expected
+                   << "\n  got:      " << got;
+    }
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnBlockCountGrouping)
+{
+    /// 8192 rows clears the column-level gate's row minimum at every Ops width, and Mixed's halves are
+    /// window-aligned, so its windows split into grouped and declining ones.
+    for (auto shape : {ColumnShape::Spread, ColumnShape::Flat, ColumnShape::Mixed})
+    {
+        SCOPED_TRACE("column shape " + std::to_string(static_cast<int>(shape)));
+        checkColumnMD5<TypeParam>(shape, 8192);
     }
 }
 

@@ -404,20 +404,100 @@ DECLARE_MD5_TARGET_CODE(
     }
 
 
-    /// Batch process ColumnString data using multi-buffer MD5.
+    /// A batch runs in lockstep until its longest row retires, so it costs the batch maximum of
+    /// numMD5Blocks per lane. Ordering a window of rows by block count makes a batch's lanes retire
+    /// together; the window is bounded so the string bytes it touches stay cache-resident.
+    constexpr size_t MD5_GROUP_WINDOW = 1024;
+    /// Rows of at least this many blocks share one histogram bucket, so above it the candidate order is
+    /// only near-optimal. It is scored against column order below, so the cap can forfeit a gain but
+    /// cannot cause a loss.
+    constexpr size_t MD5_GROUP_MAX_KEY = 64;
+    /// Reordering costs a fixed amount of integer work per row, so it pays only above a saving per row.
+    /// Measured break-even is around 69 saved batch-iterations per 1024 rows; this is set at twice that,
+    /// because nearer the break-even the modelled saving stops predicting the measured one.
+    constexpr size_t MD5_GROUP_MIN_SAVED_ITERS_PER_1K_ROWS = 128;
+
+    static_assert(MD5_GROUP_WINDOW <= 65536, "row indices within a window are stored as uint16_t");
+
+    /// `work_*` are modelled kernel block-iterations for `rows` rows in each candidate order.
+    static bool md5GroupingWorthIt(size_t work_in_order, size_t work_grouped, size_t rows)
+    {
+        /// Not merely an early exit: a capped key can order a window worse than column order, and the
+        /// unsigned difference below would then wrap to a value clearing any floor.
+        if (work_grouped >= work_in_order)
+            return false;
+
+        const size_t saved = work_in_order - work_grouped;
+        return work_grouped * 10 < work_in_order * 9 && saved * 1024 >= MD5_GROUP_MIN_SAVED_ITERS_PER_1K_ROWS * rows;
+    }
+
+    /// Whether any window of this column can gain from grouping. The sample pools rows across the
+    /// column, so its grouped side is optimistic: it can forfeit a gain but never admit a loss, and the
+    /// per-window test below is exact for the rows it decides. Keeps columns with nothing to gain -
+    /// every row one block, or constant length - off the windowed path at O(1) cost.
     template <typename Ops>
-    static void md5BatchColumnString(
+    static bool md5GroupingPays(const ColumnString::Offsets & offsets, size_t input_rows_count)
+    {
+        constexpr size_t N2 = 2 * Ops::lanes;
+        constexpr size_t sample_batches = 16;
+        constexpr size_t sample_rows = sample_batches * N2;
+
+        if (input_rows_count < sample_rows * 8)
+            return false;
+
+        const size_t batch_stride = input_rows_count / sample_batches;
+
+        uint32_t histogram[MD5_GROUP_MAX_KEY + 2] = {};
+        size_t work_in_order = 0;
+
+        for (size_t b = 0; b < sample_batches; ++b)
+        {
+            size_t batch_max = 0;
+            for (size_t j = 0; j < N2; ++j)
+            {
+                const size_t row = b * batch_stride + j;
+                const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
+                const size_t key = std::min(numMD5Blocks(offsets[row] - begin), MD5_GROUP_MAX_KEY);
+                ++histogram[key];
+                batch_max = std::max(batch_max, key);
+            }
+            work_in_order += batch_max;
+        }
+
+        /// Cost of the sampled rows sorted by key: the key at each batch's last sorted position.
+        size_t work_grouped = 0;
+        size_t placed = 0;
+        size_t next_boundary = N2;
+        for (size_t key = 0; key <= MD5_GROUP_MAX_KEY; ++key)
+        {
+            placed += histogram[key];
+            while (placed >= next_boundary)
+            {
+                work_grouped += key;
+                next_boundary += N2;
+            }
+        }
+
+        return md5GroupingWorthIt(work_in_order, work_grouped, sample_rows);
+    }
+
+    /// Batch process `rows` rows of ColumnString data starting at `first_row`, in column order.
+    template <typename Ops>
+    static void md5BatchColumnStringInOrder(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnFixedString::Chars & chars_to,
-        size_t input_rows_count)
+        size_t first_row,
+        size_t rows)
     {
         constexpr size_t N2 = 2 * Ops::lanes;
+        const size_t end_row = first_row + rows;
 
-        ColumnString::Offset current_offset = 0;
-        for (size_t base = 0; base < input_rows_count; base += N2)
+        /// PaddedPODArray zero-initialises its -1th element, so first_row == 0 needs no special case.
+        ColumnString::Offset current_offset = offsets[static_cast<ssize_t>(first_row) - 1];
+        for (size_t base = first_row; base < end_row; base += N2)
         {
-            size_t batch = std::min(N2, input_rows_count - base);
+            size_t batch = std::min(N2, end_row - base);
 
             const uint8_t * inputs[N2];
             size_t lengths[N2];
@@ -436,6 +516,123 @@ DECLARE_MD5_TARGET_CODE(
 
             md5MultiBufCompute<Ops>(inputs, lengths, reinterpret_cast<uint8_t *>(&chars_to[base * MD5_DIGEST_LEN]), batch);
         }
+    }
+
+    /// Batch process ColumnString data, grouping each window's rows by MD5 block count.
+    template <typename Ops>
+    static void md5BatchColumnStringGrouped(
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        ColumnFixedString::Chars & chars_to,
+        size_t input_rows_count)
+    {
+        constexpr size_t N2 = 2 * Ops::lanes;
+        /// Windows must hold whole batches, or a window's batch boundaries would differ from the
+        /// boundaries the in-order path uses and work_in_order below would not model its cost.
+        static_assert(MD5_GROUP_WINDOW % N2 == 0);
+
+        size_t window_blocks[MD5_GROUP_WINDOW];
+        uint16_t grouped_rows[MD5_GROUP_WINDOW];
+        uint32_t histogram[MD5_GROUP_MAX_KEY + 2];
+
+        for (size_t window_base = 0; window_base < input_rows_count; window_base += MD5_GROUP_WINDOW)
+        {
+            const size_t window_rows = std::min(MD5_GROUP_WINDOW, input_rows_count - window_base);
+
+            std::memset(histogram, 0, sizeof(histogram));
+            size_t work_in_order = 0;
+            size_t batch_max = 0;
+            for (size_t i = 0; i < window_rows; ++i)
+            {
+                const size_t row = window_base + i;
+                const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
+                const size_t blocks = numMD5Blocks(offsets[row] - begin);
+                window_blocks[i] = blocks;
+                ++histogram[std::min(blocks, MD5_GROUP_MAX_KEY)];
+                batch_max = std::max(batch_max, blocks);
+                if ((i + 1) % N2 == 0 || i + 1 == window_rows)
+                {
+                    work_in_order += batch_max;
+                    batch_max = 0;
+                }
+            }
+
+            /// Counting sort by capped key; the histogram becomes the per-key placement cursor.
+            uint32_t placed = 0;
+            for (size_t key = 0; key <= MD5_GROUP_MAX_KEY; ++key)
+            {
+                const uint32_t count = histogram[key];
+                histogram[key] = placed;
+                placed += count;
+            }
+            for (size_t i = 0; i < window_rows; ++i)
+                grouped_rows[histogram[std::min(window_blocks[i], MD5_GROUP_MAX_KEY)]++] = static_cast<uint16_t>(i);
+
+            /// Both candidate orders are scored on true block counts, so the order actually chosen is
+            /// never one the model rates worse than column order.
+            size_t work_grouped = 0;
+            batch_max = 0;
+            for (size_t i = 0; i < window_rows; ++i)
+            {
+                batch_max = std::max(batch_max, window_blocks[grouped_rows[i]]);
+                if ((i + 1) % N2 == 0 || i + 1 == window_rows)
+                {
+                    work_grouped += batch_max;
+                    batch_max = 0;
+                }
+            }
+
+            if (!md5GroupingWorthIt(work_in_order, work_grouped, window_rows))
+            {
+                md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, window_base, window_rows);
+                continue;
+            }
+
+            for (size_t off = 0; off < window_rows; off += N2)
+            {
+                size_t batch = std::min(N2, window_rows - off);
+
+                const uint8_t * inputs[N2];
+                size_t lengths[N2];
+
+                for (size_t j = 0; j < batch; ++j)
+                {
+                    const size_t row = window_base + grouped_rows[off + j];
+                    const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
+                    inputs[j] = reinterpret_cast<const uint8_t *>(&data[begin]);
+                    lengths[j] = offsets[row] - begin;
+                }
+                for (size_t j = batch; j < N2; ++j)
+                {
+                    inputs[j] = &md5_dummy_lane_byte;
+                    lengths[j] = 0;
+                }
+
+                alignas(64) uint8_t digests[N2 * MD5_DIGEST_LEN];
+                md5MultiBufCompute<Ops>(inputs, lengths, digests, batch);
+
+                /// Each digest goes to its own row's slot, so the result does not depend on the grouping.
+                for (size_t j = 0; j < batch; ++j)
+                    std::memcpy(
+                        &chars_to[(window_base + grouped_rows[off + j]) * MD5_DIGEST_LEN],
+                        digests + j * MD5_DIGEST_LEN,
+                        MD5_DIGEST_LEN);
+            }
+        }
+    }
+
+    /// Batch process ColumnString data using multi-buffer MD5.
+    template <typename Ops>
+    static void md5BatchColumnString(
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        ColumnFixedString::Chars & chars_to,
+        size_t input_rows_count)
+    {
+        if (md5GroupingPays<Ops>(offsets, input_rows_count))
+            md5BatchColumnStringGrouped<Ops>(data, offsets, chars_to, input_rows_count);
+        else
+            md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, 0, input_rows_count);
     }
 
     /// Batch process ColumnFixedString / ColumnIPv6 data (uniform row length).
