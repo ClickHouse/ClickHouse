@@ -81,7 +81,7 @@ explain pipeline select * from (select * from numbers_mt(1e8) group by number) o
 (Expression)
 ExpressionTransform
   (Sorting)
-  MergingSortedTransform 36 → 1
+  MergingSortedTransform × 4 16 → 1
     MergeSortingTransform × 36
       LimitsCheckingTransform × 36
         PartialSortingTransform × 36
@@ -130,7 +130,7 @@ explain pipeline select * from (select * from numbers_mt(1e8) group by number) o
 (Expression)
 ExpressionTransform
   (Sorting)
-  MergingSortedTransform 48 → 1
+  MergingSortedTransform × 4 16 → 1
     MergeSortingTransform × 48
       LimitsCheckingTransform × 48
         PartialSortingTransform × 48
@@ -179,7 +179,7 @@ explain pipeline select * from (select * from numbers_mt(1e8) group by number) o
 (Expression)
 ExpressionTransform
   (Sorting)
-  MergingSortedTransform 49 → 1
+  MergingSortedTransform × 5 16 → 1
     MergeSortingTransform × 49
       LimitsCheckingTransform × 49
         PartialSortingTransform × 49
