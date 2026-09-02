@@ -106,9 +106,16 @@ def series_count(metric_name, table="ts_local"):
 
 
 def test_a_shard_table_swapped_after_a_passing_check_is_refused_by_the_next_write():
-    # A write the check passed, delivered to node2's TimeSeries table.
+    # A write the check passed is on node2 before the 204: delivered by the INSERT itself, never
+    # queued on node1 to be replayed after the check.
     assert write("before_swap").status_code == 204
-    assert_eq_with_retry(node2, series_count("before_swap"), "1")
+    assert node2.query(series_count("before_swap")).strip() == "1"
+    assert (
+        node1.query(
+            "SELECT sum(data_files) FROM system.distribution_queue WHERE table = 'prom_dist'"
+        ).strip()
+        == "0"
+    )
 
     # The same name, the same outer schema, a MergeTree table: the very next write is refused
     # on its own check, not accepted on the strength of the one that just passed.
