@@ -489,7 +489,7 @@ struct ReplaceRegexpImpl
             }
 
             const UInt64 result_start = res_offset;
-            bool row_matched;
+            bool row_matched = false;
 
             if (map_enabled)
             {
