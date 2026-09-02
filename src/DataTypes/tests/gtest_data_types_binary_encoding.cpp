@@ -140,5 +140,5 @@ GTEST_TEST(DataTypesCache, GetSerializationFromDeepType)
     for (size_t i = 0; i < 301; ++i)
         type = std::make_shared<DataTypeArray>(type);
 
-    EXPECT_NE(getDataTypesCache().getSerialization(type), nullptr);
+    EXPECT_NE(getDataTypesCache().getSerialization(type->getName(), type), nullptr);
 }
