@@ -1045,13 +1045,9 @@ String documentationAnchor(const String & name)
     result.reserve(name.size());
     for (const char character : name)
     {
-        if (isAlphaNumericASCII(character))
+        if (isAlphaNumericASCII(character) || character == '_')
             result += toLowerIfAlphaASCII(character);
-        else if (result.empty() || result.back() != '-')
-            result += '-';
     }
-    while (!result.empty() && result.back() == '-')
-        result.pop_back();
     return result;
 }
 

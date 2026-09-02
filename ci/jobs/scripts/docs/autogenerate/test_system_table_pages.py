@@ -29,6 +29,9 @@ NON_LITERAL_ATTACH_DOCUMENTATION_SOURCES = {
 ASYNC_METRIC_DOCUMENTATION_CATALOG = (
     SOURCE_ROOT / "Common" / "AsynchronousMetricDocumentation.inc"
 )
+ASYNC_METRICS_PAGE = (
+    REPO_ROOT / "docs" / "reference" / "system-tables" / "asynchronous_metrics.mdx"
+)
 
 EXPECTED_DOCUMENTATION_COUNT = 169
 EXPECTED_ATTACH_DOCUMENTATION_COUNT = 139
@@ -351,8 +354,8 @@ This entry came from live runtime state.
     )
     assert metric_count > 200
     asynchronous_metrics_body = asynchronous_metrics_page["asynchronous_metrics"]
-    assert async_metrics_generator.documentation_anchor("jemalloc.epoch") == "jemalloc-epoch"
-    assert async_metrics_generator.documentation_anchor("metric_name") == "metric-name"
+    assert async_metrics_generator.documentation_anchor("jemalloc.epoch") == "jemallocepoch"
+    assert async_metrics_generator.documentation_anchor("metric_name") == "metric_name"
     try:
         async_metrics_generator.render_markdown(
             [
@@ -375,7 +378,22 @@ This entry came from live runtime state.
     )
     assert "Source-backed introduction." in asynchronous_metrics_body
     assert "### AsynchronousMetricsUpdateInterval" in asynchronous_metrics_body
-    assert "### jemalloc.epoch {#jemalloc-epoch}" in asynchronous_metrics_body
+    assert "### jemalloc.epoch {#jemallocepoch}" in asynchronous_metrics_body
+    published_metric_anchors = dict(
+        re.findall(
+            r"(?m)^### (.+) \{#([^}\n]+)\}$",
+            ASYNC_METRICS_PAGE.read_text(encoding="utf-8"),
+        )
+    )
+    generated_metric_anchors = dict(
+        re.findall(r"(?m)^### (.+) \{#([^}\n]+)\}$", asynchronous_metrics_body)
+    )
+    common_metric_names = published_metric_anchors.keys() & generated_metric_anchors.keys()
+    assert len(common_metric_names) > 200
+    assert all(
+        generated_metric_anchors[name] == published_metric_anchors[name]
+        for name in common_metric_names
+    )
     for metric_name in (
         "MemoryThreadStacksCount",
         "MemoryThreadStacksResident",

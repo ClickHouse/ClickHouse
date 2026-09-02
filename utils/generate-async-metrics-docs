@@ -443,16 +443,8 @@ def extract_metrics_from_source(text, macros, source_path):
 
 
 def documentation_anchor(name):
-    """Match `documentationAnchor` in `StorageSystemDocumentation.cpp`."""
-    result = []
-    for character in name:
-        if character.isascii() and character.isalnum():
-            result.append(character.lower())
-        elif not result or result[-1] != "-":
-            result.append("-")
-    while result and result[-1] == "-":
-        result.pop()
-    return "".join(result)
+    """Preserve the published asynchronous-metric fragment convention."""
+    return re.sub(r"[^a-z0-9_]+", "", name.lower())
 
 
 def unique_metric_descriptions(metrics):
