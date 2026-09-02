@@ -147,11 +147,10 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
     allocation.memory_growth_suspension_attempted = true;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
-        /// A query already below the suction ceiling does not pay for a forced spill. A query above
-        /// it stays in the eviction queue until its spill pass finishes or releases enough memory
-        /// to become eligible.
-        if (allocation.canEnterSuction(allocation.increase.size)
-            || allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
+        /// The query setting decides whether entering the eviction queue starts a forced spill.
+        /// The suction ceiling may end that spill early after reconciliation, but it must not bypass
+        /// an explicitly forced spill before the query-side controller gets the request.
+        if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
             allocation.memory_growth_recovery_pending = true;
         allocation.memory_growth_eviction_order = ++last_eviction_order;
         if (!suspended_growth)

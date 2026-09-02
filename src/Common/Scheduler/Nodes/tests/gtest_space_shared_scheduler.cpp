@@ -660,9 +660,10 @@ private: // interaction with the scheduler thread
         GrowthPressureAction action;
         {
             std::unique_lock lock(mutex);
-            ++total_pressure_events;
             recovery_active = has_recovery_controller;
             action = has_recovery_controller ? GrowthPressureAction::Yield : GrowthPressureAction::Protect;
+            if (recovery_active)
+                ++total_pressure_events;
             callback = std::move(next_pressure_callback);
             cv.notify_all();
         }
@@ -803,9 +804,7 @@ TEST(SchedulerSpaceShared, PendingAllocationsRunWhileBlockedGrowthIsSuspended)
     AllocationQueue * queue = r.addQueue("/queue");
     r.registerResource();
 
-    ResourceAllocation::MemoryPressurePolicy spill_before_suction;
-    spill_before_suction.suction_max_allocation_bytes = 1;
-    ManualAllocation heavy(queue, "heavy", 8000, true, spill_before_suction);
+    ManualAllocation heavy(queue, "heavy", 8000);
     heavy.protectAfterPressureRounds(2);
 
     /// Park the scheduler so both requests are visible in the queue at once. `AllocationQueue` normally
@@ -2721,7 +2720,6 @@ TEST(SchedulerSpaceShared, SuctionEligibleAllocationSkipsForcedSpill)
     ResourceAllocation::MemoryPressurePolicy policy;
     policy.suction_max_allocation_bytes = 5000;
     ManualAllocation requester(queue, "requester", 3000, true, policy);
-    requester.protectAfterPressureRounds(1);
     auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 7000, true, policy);
 
     requester.increaseAsync(2000);
