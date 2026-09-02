@@ -110,7 +110,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "CREATE TABLE url_nc_file_62352 (x String) ENGINE = URL(${NC_ENGINE})" 2>&1 | grep -c 'does not support http_method'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS url_nc_file_62352; DROP NAMED COLLECTION ${NC_ENGINE}"
 # A full-definition ATTACH with inline http_method also delegates with the key ignored.
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE url_attach_full_62352 UUID '${UUID_ATTACH}' (x String) ENGINE = URL('file:///nonexistent_62352.csv', CSV, http_method='POST')"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE url_attach_full_62352 UUID '${UUID_ATTACH}' (x String) ENGINE = URL('file:///nonexistent_62352.csv', CSV, http_method='POST')" 2>&1 | grep -o -m1 'DATABASE_ACCESS_DENIED'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS url_attach_full_62352"
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE url_attach_wild_62352 UUID '${UUID_WILD}' (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV)" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 # The delegated engine's TABLE_ENGINE privilege is enforced for full-definition ATTACH too:
