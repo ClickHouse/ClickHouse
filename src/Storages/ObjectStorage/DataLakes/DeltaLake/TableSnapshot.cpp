@@ -718,30 +718,35 @@ size_t TableSnapshot::getVersionUnlocked() const
 
 TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
 {
-    if (snapshot_stats.has_value())
-        return snapshot_stats.value();
+    for (size_t attempt = 0;; ++attempt)
+    {
+        /// Builds the kernel state (or rebuilds it after a credentials refresh) through the
+        /// interruptible shared load, with the mutex released while waiting.
+        initOrUpdateSnapshot();
 
-    const auto pre_fingerprint = kernel_state_credentials_fingerprint;
-    try
-    {
-        snapshot_stats = getSnapshotStatsImpl();
+        std::lock_guard lock(mutex);
+        if (snapshot_stats.has_value())
+            return snapshot_stats.value();
+
+        const auto pre_fingerprint = kernel_state_credentials_fingerprint;
+        try
+        {
+            snapshot_stats = getSnapshotStatsImpl();
+        }
+        catch (const DB::Exception & e)
+        {
+            if (attempt > 0 || !tryRefreshAfterStaleTokenError(e, pre_fingerprint, "stats scan"))
+                throw;
+            /// Fresh credentials: let the next `initOrUpdateSnapshot` rebuild the engine (still
+            /// killable, mutex released) and re-run the stats scan against it.
+            kernel_state_needs_rebuild = true;
+            continue;
+        }
+        LOG_TEST(
+            log, "Updated statistics for snapshot version {}",
+            getVersionUnlocked());
+        return snapshot_stats.value();
     }
-    catch (const DB::Exception & e)
-    {
-        if (!tryRefreshAfterStaleTokenError(e, pre_fingerprint, "stats scan"))
-            throw;
-        /// Rebuild with the freshened credentials, then re-run the stats scan against the
-        /// new engine. This rare re-auth path builds synchronously while holding the mutex;
-        /// the assignment is direct so `kernel_snapshot_state` is never left null unlocked.
-        auto load = startKernelSnapshotLoad(kernel_snapshot_state->snapshot_version);
-        kernel_snapshot_state = load->future.get();
-        kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
-        snapshot_stats = getSnapshotStatsImpl();
-    }
-    LOG_TEST(
-        log, "Updated statistics for snapshot version {}",
-        getVersionUnlocked());
-    return snapshot_stats.value();
 }
 
 TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
@@ -866,15 +871,11 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
 std::optional<size_t> TableSnapshot::getTotalRows() const
 {
-    initOrUpdateSnapshot();
-    std::lock_guard lock(mutex);
     return getSnapshotStats().total_rows;
 }
 
 std::optional<size_t> TableSnapshot::getTotalBytes() const
 {
-    initOrUpdateSnapshot();
-    std::lock_guard lock(mutex);
     return getSnapshotStats().total_bytes;
 }
 
@@ -913,7 +914,8 @@ void TableSnapshot::initOrUpdateSnapshot() const
 
     /// Rebuild when credentials rotate so the engine never outlives its embedded STS token.
     auto current_credentials_fingerprint = helper->getCredentialsFingerprint();
-    if (kernel_snapshot_state && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
+    if (kernel_snapshot_state && !kernel_state_needs_rebuild
+        && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
         return;
 
     /// Pin rebuilds to the already-resolved version so cached latest snapshots don't drift.
@@ -966,6 +968,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
             continue;
         }
         kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
+        kernel_state_needs_rebuild = false;
         break;
     }
 

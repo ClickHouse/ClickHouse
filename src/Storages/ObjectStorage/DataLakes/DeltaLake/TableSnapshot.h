@@ -93,6 +93,9 @@ private:
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
     mutable DB::UInt128 kernel_state_credentials_fingerprint{};
+    /// Set after a credentials refresh whose fingerprint may not have changed, so that the next
+    /// `initOrUpdateSnapshot` rebuilds the engine anyway (without ever leaving the state null).
+    mutable bool kernel_state_needs_rebuild = false;
 
     /// One in-flight kernel snapshot build, shared between the worker thread that runs the
     /// kernel call and every query waiting for its result. Waiters poll the future outside
@@ -146,7 +149,9 @@ private:
     void initOrUpdateSnapshot() const TSA_NO_THREAD_SAFETY_ANALYSIS;
     void initOrUpdateSchemaIfChanged() const TSA_REQUIRES(mutex);
 
-    SnapshotStats getSnapshotStats() const TSA_REQUIRES(mutex);
+    /// Acquires `mutex` itself: a stale-credentials retry rebuilds the engine through
+    /// `initOrUpdateSnapshot` (killable, mutex released) instead of blocking under the lock.
+    SnapshotStats getSnapshotStats() const;
     SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);
 
     /// One-shot recovery from `DELTA_KERNEL_ERROR` with `ExpiredToken`/`InvalidToken`:
