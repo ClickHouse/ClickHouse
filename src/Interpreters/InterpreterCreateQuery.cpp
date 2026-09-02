@@ -3710,6 +3710,25 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
                 new_user->setName(definer_name);
                 new_user->authentication_methods.clear();
                 new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
+
+                /// The stored entity of an ephemeral user may not carry all of its effective access:
+                /// an external user directory (e.g. the `http` directory) attaches roles to the
+                /// authentication only, as external roles of the session, and never as grants on the
+                /// entity. The persistent shadow must keep the access rights the definer actually had
+                /// when creating the view, so grant those roles to it. Only the current user's own
+                /// external roles are known here, so this applies only when the definer is the
+                /// current user, never when another ephemeral user is named as DEFINER.
+                if (user->getName() == current_user_name)
+                {
+                    auto external_roles = context_->getExternalRoles();
+                    if (!external_roles.empty())
+                    {
+                        new_user->granted_roles.grant(external_roles);
+                        if (!new_user->default_roles.all)
+                            new_user->default_roles.add(external_roles);
+                    }
+                }
+
                 access_control.insertOrReplace(new_user);
             }
         }
