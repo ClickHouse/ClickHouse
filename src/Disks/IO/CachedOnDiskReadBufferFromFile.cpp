@@ -7,6 +7,8 @@
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
+#include <Common/Scheduler/CurrentCPULease.h>
+#include <optional>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -1198,6 +1200,15 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         SCOPE_EXIT({
             state->buf->set(nullptr, 0);
         });
+
+        /// Park the CPU lease across a blocking remote fetch (S3 / distributed cache) so the CPU
+        /// slot is released while this thread waits on I/O and another thread can use the CPU.
+        /// Only for remote read types — a CACHED (local) read may be a userspace page-cache
+        /// memcpy that is not worth parking (see the IO-aware CPU lease design; issue #95727).
+        std::optional<CPULeaseParkGuard> cpu_park;
+        if (state->read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE
+            || state->read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+            cpu_park.emplace();
 
         size = readFromFileSegment(
             file_segment,

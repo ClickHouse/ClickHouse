@@ -110,6 +110,8 @@ private:
         ~Lease() override;
         void startConsumption() override;
         bool renew() override;
+        void park() override;
+        void unpark() override;
         void reset();
 
     private:
@@ -202,6 +204,22 @@ private:
     void setPreempted(size_t thread_num);
     void resetPreempted(size_t thread_num);
 
+    /// Park/unpark a thread that voluntarily stops using CPU for a non-CPU wait (I/O or idle).
+    /// `parkLease` moves the thread running -> parked (like `setPreempted`, but a distinct state
+    /// and lighter: no clock read) and, since a parked thread lowers the query's slot demand,
+    /// actively gives one held quantum back to the scheduler so its semaphore unit frees at once.
+    /// `unparkLease` restores the thread (borrowing a slot, never blocking) and kicks a re-request.
+    void parkLease(Lease & lease);
+    void unparkLease(Lease & lease);
+
+    /// Max slots we should currently request from the scheduler: the pipeline ceiling
+    /// `current_max_slots` minus the number of parked threads (whose demand is temporarily gone).
+    /// Clamped at 0 (SlotCount is unsigned; `parked_count` can transiently exceed the ceiling).
+    SlotCount effectiveMaxSlots() const
+    {
+        return parked_count >= current_max_slots ? 0 : current_max_slots - parked_count;
+    }
+
     /// Resource request failed.
     void failed(const std::exception_ptr & ptr);
 
@@ -253,19 +271,26 @@ private:
     ///    - thread execution stop voluntary (query is done/aborted/canceled)
     /// IMPORTANT: `CPULeaseAllocation` does not provide one-to-one a mapping between slots and threads because
     /// IMPORTANT: a thread does not have an associated slot during preemption. On resuming, it gets a new slot.
+    ///  * parked: lease object does not own a CPU slot, but (unlike preempted) it is not waiting
+    ///    for a grant — the thread is doing a non-CPU wait (I/O or idle) and will `unpark` itself.
     struct Threads
     {
         explicit Threads(size_t max_threads_)
             : leased(max_threads_)
             , preempted(max_threads_)
+            , parked(max_threads_)
             , wake(max_threads_)
         {}
-        boost::dynamic_bitset<> leased; /// Thread lease object status bitmask (0=released; 1=preempted|running)
-        boost::dynamic_bitset<> preempted; /// Preempted threads bitmask (0=running|released; 1=preempted)
+        boost::dynamic_bitset<> leased; /// Thread lease object status bitmask (0=released; 1=preempted|parked|running)
+        boost::dynamic_bitset<> preempted; /// Preempted threads bitmask (0=running|parked|released; 1=preempted)
+        boost::dynamic_bitset<> parked; /// Parked threads bitmask (0=running|preempted|released; 1=parked for I/O or idle)
         std::vector<std::condition_variable> wake; /// To wake specific preempted thread
 
-        // For optimization (could be computed based on leased and preempted fields)
-        size_t running_count = 0; /// Number of currently running threads (leased & !preempted)
+        /// A thread is "running" (holds a slot and is on CPU) iff leased and neither preempted nor parked.
+        bool isRunning(size_t thread_num) const { return leased[thread_num] && !preempted[thread_num] && !parked[thread_num]; }
+
+        // For optimization (could be computed based on leased, preempted and parked fields)
+        size_t running_count = 0; /// Number of currently running threads (leased & !preempted & !parked)
         size_t last_running = boost::dynamic_bitset<>::npos; /// Highest thread num of a running threads
     } threads;
 
@@ -281,6 +306,11 @@ private:
     /// eager default). Raised/lowered at runtime by `setMax`. `schedule()` stops issuing
     /// new requests once `allocated >= current_max_slots`.
     SlotCount current_max_slots = 0;
+
+    /// Number of threads currently parked for a non-CPU wait (I/O or idle). Lowers the effective
+    /// scheduling cap to `current_max_slots - parked_count` (see `effectiveMaxSlots`) so a parked
+    /// thread's slot demand is dropped and its semaphore unit can be freed for other queries.
+    SlotCount parked_count = 0;
 
     /// Scheduling control (for interaction with resource scheduler)
     /// A size-limited cyclic buffer of requests that are sent to the scheduler.
@@ -335,6 +365,10 @@ private:
     /// Introspection
     CurrentMetrics::Increment acquired_increment;
     CurrentMetrics::Increment scheduled_increment;
+    /// Current number of threads parked for a non-CPU wait. A member Increment (not a raw
+    /// metric add/sub) so a residual is auto-subtracted if the allocation is destroyed while
+    /// threads are still parked (query cancelled mid-wait).
+    CurrentMetrics::Increment parked_increment;
     /// Stable counters for wait_timer. We cannot use CurrentThread::getProfileEvents() in
     /// schedule() because it returns the calling thread's counters, which may be destroyed
     /// before the timer is flushed — storing a Timer with a dangling Counters& causes UAF.

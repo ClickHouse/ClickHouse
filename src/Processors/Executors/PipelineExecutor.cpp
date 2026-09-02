@@ -8,6 +8,7 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Stopwatch.h>
@@ -369,6 +370,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 #endif
 
     WorkloadResources resources(std::move(resources_));
+
+    /// Publish this thread's CPU lease so blocking I/O deep in a processor's `work()` and the
+    /// executor's idle wait can park it (release the CPU slot while not using CPU) via
+    /// `CPULeaseParkGuard`. No-op when there is no lease (concurrency-control / non-lease paths).
+    CurrentCPULeaseScope cpu_lease_scope(resources.lease);
 
     auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;
