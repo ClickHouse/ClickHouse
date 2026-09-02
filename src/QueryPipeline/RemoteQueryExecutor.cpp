@@ -510,6 +510,21 @@ void RemoteQueryExecutor::finishFragmentSpanWithCurrentException() noexcept
     finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
 }
 
+void RemoteQueryExecutor::finishFragmentSpanForSkippedShard(String status_message) noexcept
+{
+    /// `skip_unavailable_shards` lets the query tolerate this failure, but the fragment itself
+    /// failed: record it as ERROR so failed shards stay discoverable by `status_code` in
+    /// `system.opentelemetry_span_log`.
+    if (OpenTelemetry::CurrentContext().isTraceEnabled())
+    {
+        if (sync_fragment_span)
+            sync_fragment_span->addAttribute("clickhouse.shard_skipped", 1);
+        else if (read_context)
+            read_context->addSpanAttribute({"clickhouse.shard_skipped", 1});
+    }
+    finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, std::move(status_message));
+}
+
 void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
     /// Query cannot be canceled in the middle of the send query,
@@ -543,9 +558,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (sent_query || was_cancelled)
         return;
 
-    /// On the asynchronous sending path this code runs inside the read context fiber, and the fiber
-    /// span (`RemoteQueryExecutor::execute`) covers the whole fragment execution. On the synchronous
-    /// path there is no fiber, so open a span here and keep it alive in a member until `EndOfStream.
+    /// Syncronous path: Open a span here and keep it alive in a member until `EndOfStream.
     if (!read_context && OpenTelemetry::CurrentContext().isTraceEnabled())
     {
         const auto & trace_context = OpenTelemetry::CurrentContext();
@@ -596,7 +609,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     }
 
     const auto & settings = context->getSettingsRef();
-    if (isReplicaUnavailable() || needToSkipUnavailableShard())
+    const bool replica_unavailable = isReplicaUnavailable();
+    if (replica_unavailable || needToSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
@@ -610,7 +624,12 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
             extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
         }
 
-        finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
+        /// An unavailable parallel replica is not a failed fragment: the coordinator reassigns
+        /// its work and no data is lost.
+        if (replica_unavailable)
+            finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
+        else
+            finishFragmentSpanForSkippedShard("Shard is unavailable: no replicas to connect to (skipped because of `skip_unavailable_shards`)");
         return;
     }
 
@@ -887,7 +906,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
             read_context->resume();
 
-            if (isReplicaUnavailable() || needToSkipUnavailableShard())
+            const bool replica_unavailable = isReplicaUnavailable();
+            if (replica_unavailable || needToSkipUnavailableShard())
             {
                 /// We need to tell the coordinator not to wait for this replica.
                 /// But at this point it may lead to an incomplete result set, because
@@ -898,6 +918,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
                     extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
                 }
 
+                /// Same split as in sendQueryUnlocked: only the `skip_unavailable_shards` case is
+                /// a tolerated fragment failure; an unavailable parallel replica is reassigned.
+                if (!replica_unavailable)
+                    finishFragmentSpanForSkippedShard("Shard is unavailable: lost all replica connections (skipped because of `skip_unavailable_shards`)");
                 return ReadResult(Block());
             }
 
@@ -984,7 +1008,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 /// The server terminated the query with this exception and will not send `EndOfStream`,
                 /// so mark the executor finished to signal end of data.
                 finished = true;
-                finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
+                finishFragmentSpanForSkippedShard(packet.exception->message());
                 return ReadResult(Block{});
             }
 
@@ -1242,7 +1266,10 @@ void RemoteQueryExecutor::finishUnlocked()
                     reportShardSkipped();
 
                     /// Stop draining: the server terminated the query with this exception.
+                    /// Record it before the enclosing `SCOPE_EXIT` backstop stamps the span OK
+                    /// (both finish paths are write-once, so the first recorded outcome wins).
                     finished = true;
+                    finishFragmentSpanForSkippedShard(packet.exception->message());
                     break;
                 }
 

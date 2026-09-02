@@ -434,6 +434,11 @@ private:
 
     /// Record the in-flight exception as this fragment's failure. Must be called from a catch block.
     void finishFragmentSpanWithCurrentException() noexcept;
+
+    /// Record a shard failure tolerated by `skip_unavailable_shards` as ERROR on the fragment
+    /// span, tagged with the `clickhouse.shard_skipped` attribute. The query keeps going, but the
+    /// fragment failed, and it must stay discoverable by `status_code` in the span log.
+    void finishFragmentSpanForSkippedShard(String status_message) noexcept;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);

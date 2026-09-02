@@ -61,16 +61,12 @@ public:
         UInt64 initial_span_start_time_us_ = 0,
         UInt64 initial_span_id_ = 0);
 
-    /// Add an attribute to the span covering the current (and any future) execution of the task.
-    /// Best-effort like `Span::addAttribute`: returns false if the attribute could not be buffered
-    /// (e.g. allocation failure), because losing a span attribute must not fail the task itself.
-    /// Thread-safe: can be called both from inside the fiber and from other threads.
+    /// Add an attribute to the span covering the current (and any future) execution of the task in a thread-safe way.
+    /// return false for any allocation failure, because losing a span attribute must not fail the task itself.
     bool addSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept;
 
-    /// Record the outcome of the current task execution on its span. The status is buffered and
-    /// applied to the span when the routine exits (normally or by unwinding).
-    /// Write-once: the first recorded outcome is the task's outcome, later backstops don't overwrite it.
-    /// Thread-safe: can be called both from inside the fiber and from other threads.
+    /// Record the outcome of the current task execution on its span in a thread-safe way. The status is buffered and
+    /// applied to the span when the routine exits.
     void setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept;
 
     /// Resume task execution. This method returns when task is completed or suspended.
@@ -139,8 +135,7 @@ private:
 
     void createCoroutine();
     void destroyCoroutine();
-    /// make sure we flush current span data (attributes and buffered status) to the span
-    /// in case of unwind or a cancelled fiber
+    /// makes sure we flush current span data (attributes and buffered status) to the span in case of unwind or a cancelled fiber
     void flushSpanData(OpenTelemetry::Span & span) noexcept;
 
     CoroutineStack coroutine_stack;
@@ -160,15 +155,13 @@ private:
 
     /// Guards span_attributes. A dedicated mutex, making sure addSpanAttribute can be called from inside the fiber
     std::mutex span_attributes_mutex;
-    /// Attributes for the span covering one execution of the task. Copied onto the span when the routine exits
-    /// restart() runs the task again under a new span that must get them too
+    /// Attributes for the span covering one execution of the task. Copied onto the span when the routine exits.
     OpenTelemetry::SpanAttributes span_attributes;
     /// Buffered outcome of the current task execution, applied to the span when the routine exits.
-    /// Unlike the attributes it is consumed one-shot: a task rerun after restart() starts with no status.
     OpenTelemetry::SpanStatus span_status = OpenTelemetry::SpanStatus::UNSET;
     String span_status_message;
     /// Start time of a span handed over by the caller, adopted by the span of the first task
-    /// A task rerun after restart() gets a fresh span. Only accessed from inside the fiber after construction, mp sync needed.
+    /// A task rerun after restart() gets a fresh span.
     UInt64 initial_span_start_time_us = 0;
     /// Id of a span handed over by the caller, adopted by the span of the first task execution.
     /// Consumed one-shot: a task rerun after restart() gets a freshly generated span id.
