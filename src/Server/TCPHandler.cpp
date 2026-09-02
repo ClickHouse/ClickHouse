@@ -1883,7 +1883,7 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 
     size_t prev_bytes_written_out = out->count();
     size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
-    size_t prev_flush_count_out = out->getFlushCount();
+    size_t prev_offset_out = out->offset();
 
     try
     {
@@ -1897,7 +1897,7 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
     }
     catch (...)
     {
-        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_flush_count_out);
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
         throw;
     }
 }
@@ -1912,7 +1912,7 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 
     size_t prev_bytes_written_out = out->count();
     size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
-    size_t prev_flush_count_out = out->getFlushCount();
+    size_t prev_offset_out = out->offset();
 
     try
     {
@@ -1926,7 +1926,7 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
     }
     catch (...)
     {
-        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_flush_count_out);
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
         throw;
     }
 }
@@ -1945,7 +1945,7 @@ void TCPHandler::sendProfileEvents(QueryState & state)
 
         size_t prev_bytes_written_out = out->count();
         size_t prev_bytes_written_compressed_out = state.maybe_compressed_out ? state.maybe_compressed_out->count() : 0;
-        size_t prev_flush_count_out = out->getFlushCount();
+        size_t prev_offset_out = out->offset();
 
         try
         {
@@ -1960,7 +1960,7 @@ void TCPHandler::sendProfileEvents(QueryState & state)
         }
         catch (...)
         {
-            rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_flush_count_out);
+            rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
             throw;
         }
 
@@ -3244,7 +3244,7 @@ bool TCPHandler::rollbackPartialPacket(
     std::shared_ptr<TCPHandlerPocoChunkedWriter> & out,
     size_t prev_bytes_written_out,
     size_t prev_bytes_written_compressed_out,
-    size_t prev_flush_count_out)
+    size_t prev_offset_out)
 {
     /// offset() covers everything written since the snapshot only while none of it was flushed
     /// (next() zeroes offset() and moves the amount into count()), and only then is it undoable.
@@ -3267,11 +3267,21 @@ bool TCPHandler::rollbackPartialPacket(
     }
 
     /// Only out writes to the socket, the compressed buffer writes through it, so only out can
-    /// tell whether any of this packet is beyond recall. A flush since the snapshot also reserves
-    /// a chunk header that count() counts, which the byte arithmetic alone would rewind over.
+    /// tell whether any of this packet is beyond recall.
     bool restored = true;
     if (out)
-        restored = out->getFlushCount() == prev_flush_count_out && rewind(*out, prev_bytes_written_out);
+    {
+        /// Bytes leave the buffer oldest first, so while no more of them went out than was
+        /// already pending at the snapshot, none of this packet did and it can still be undone.
+        size_t flushed_out = (out->count() - out->offset()) - (prev_bytes_written_out - prev_offset_out);
+        /// A flush starts the buffer over, so the packet then begins after the chunk header the
+        /// writer reserves there rather than after whatever had been pending before it.
+        size_t packet_begins_at = flushed_out ? out->reservedChunkHeaderSize() : prev_offset_out;
+
+        restored = flushed_out <= prev_offset_out && out->offset() >= packet_begins_at;
+        if (restored)
+            out->position() -= out->offset() - packet_begins_at;
+    }
 
     if (!restored)
         state.cancelOut(out);
@@ -3288,7 +3298,7 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
 
     size_t prev_bytes_written_out = out->count();
     size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
-    size_t prev_flush_count_out = out->getFlushCount();
+    size_t prev_offset_out = out->offset();
 
     try
     {
@@ -3334,7 +3344,7 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
-        if (!rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_flush_count_out))
+        if (!rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out))
             LOG_WARNING(log, "Part of the data packet has already been sent and cannot be rolled back. Closing the connection.");
 
         throw;
@@ -3351,7 +3361,7 @@ void TCPHandler::sendLogData(
 
     size_t prev_bytes_written_out = out->count();
     size_t prev_bytes_written_compressed_out = state.maybe_compressed_out ? state.maybe_compressed_out->count() : 0;
-    size_t prev_flush_count_out = out->getFlushCount();
+    size_t prev_offset_out = out->offset();
 
     try
     {
@@ -3367,7 +3377,7 @@ void TCPHandler::sendLogData(
     }
     catch (...)
     {
-        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_flush_count_out);
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
         throw;
     }
 }
@@ -3379,7 +3389,7 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
     /// creates it is rolled back on the uncompressed buffer alone, which is where its bytes are.
     size_t prev_bytes_written_out = out->count();
     size_t prev_bytes_written_compressed_out = state.maybe_compressed_out ? state.maybe_compressed_out->count() : 0;
-    size_t prev_flush_count_out = out->getFlushCount();
+    size_t prev_offset_out = out->offset();
 
     try
     {
@@ -3408,7 +3418,7 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
     }
     catch (...)
     {
-        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_flush_count_out);
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
         throw;
     }
 }
