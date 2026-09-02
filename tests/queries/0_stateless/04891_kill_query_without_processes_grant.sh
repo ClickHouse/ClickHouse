@@ -96,10 +96,12 @@ $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own2$SUFFIX' SY
 gone "own2$SUFFIX"; echo "2 alive=$(alive "own2$SUFFIX")"
 reset_arm
 
-# 3: a query of another user is ignored rather than reported as an error.
+# 3: a query of another user is ignored rather than reported as an error. "exception" is what
+# distinguishes being ignored from being refused; "alive" alone holds either way.
 start_victim "$U2" "foreign3$SUFFIX"
-echo -n "3 killed="
-$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'foreign3$SUFFIX' SYNC" 2>&1 | killed "foreign3$SUFFIX"
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'foreign3$SUFFIX' SYNC" 2>&1)
+echo "3 killed=$(printf '%s\n' "$out" | killed "foreign3$SUFFIX")"
+echo "3 exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
 echo "3 alive=$(alive "foreign3$SUFFIX")"
 reset_arm
 
@@ -132,8 +134,9 @@ reset_arm
 # 7: the caller's row policy on system.processes decides which of their queries they can see.
 policy_on_u1 "query_id != 'own7$SUFFIX'"
 start_victim "$U1" "own7$SUFFIX"
-echo -n "7 hidden killed="
-$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own7$SUFFIX' SYNC" 2>&1 | killed "own7$SUFFIX"
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own7$SUFFIX' SYNC" 2>&1)
+echo "7 hidden killed=$(printf '%s\n' "$out" | killed "own7$SUFFIX")"
+echo "7 hidden exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
 echo "7 hidden alive=$(alive "own7$SUFFIX")"
 $CLICKHOUSE_CLIENT -q "DROP ROW POLICY $P_U1 ON system.processes"
 echo -n "7 admitted killed="
@@ -201,6 +204,17 @@ echo -n "16 killed="
 $CLICKHOUSE_CLIENT --user "$U1" --max_columns_to_read=3 --max_expanded_ast_elements=100 \
     -q "KILL QUERY WHERE query_id = 'own16$SUFFIX' SYNC" 2>&1 | killed "own16$SUFFIX"
 gone "own16$SUFFIX"; echo "16 alive=$(alive "own16$SUFFIX")"
+reset_arm
+
+# 17: a grant covering exactly the columns the statement reads is enough to keep the caller on the
+# unchanged path, where a match that names only another user's query is still refused. This is what
+# distinguishes the per-column grant check from a table-wide one, which would divert this caller.
+$CLICKHOUSE_CLIENT -q "GRANT SELECT(query_id, user, query) ON system.processes TO $U1"
+start_victim "$U2" "foreign17$SUFFIX"
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'foreign17$SUFFIX' SYNC" 2>&1)
+echo "17 killed=$(printf '%s\n' "$out" | killed "foreign17$SUFFIX")"
+echo "17 exception=$(printf '%s\n' "$out" | matched "attempts to kill query created by")"
+echo "17 alive=$(alive "foreign17$SUFFIX")"
 reset_arm
 
 $CLICKHOUSE_CLIENT -q "DROP USER $U1, $U2"
