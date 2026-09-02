@@ -1065,6 +1065,8 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
 
     if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
     {
+        const size_t prev_num_rows = column_object.size();
+
         settings.path.push_back(Substream::ObjectData);
         for (const auto & path : sorted_typed_paths)
         {
@@ -1072,6 +1074,14 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().object_path_name = path;
             typed_paths_serializations.at(path)->deserializeBinaryBulkWithMultipleStreams(*typed_paths[path], limit, settings, object_state->typed_path_states[path], cache);
             settings.path.pop_back();
+
+            if (typed_paths[path]->size() != prev_num_rows + limit)
+                throw Exception(
+                    settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected size of typed path {} in flattened Object column: {}. Expected size {}",
+                    path,
+                    typed_paths[path]->size() - prev_num_rows,
+                    limit);
         }
 
         MutableColumns flattened_paths_columns;
@@ -1083,6 +1093,14 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             flattened_paths_columns.emplace_back(dynamic_type->createColumn());
             dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*flattened_paths_columns.back(), limit, settings, object_state->dynamic_path_states[path], cache);
             settings.path.pop_back();
+
+            if (flattened_paths_columns.back()->size() != limit)
+                throw Exception(
+                    settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected size of flattened path {} in flattened Object column: {}. Expected size {}",
+                    path,
+                    flattened_paths_columns.back()->size(),
+                    limit);
         }
 
         settings.path.pop_back();

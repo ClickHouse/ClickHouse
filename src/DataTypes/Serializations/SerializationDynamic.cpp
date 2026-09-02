@@ -643,6 +643,13 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         /// First, read indexes.
         auto indexes_serialization = flattened_column.indexes_type->getDefaultSerialization();
         indexes_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_indexes_column, limit, settings, dynamic_state->flattened_indexes_state, cache);
+        if (mutable_indexes_column->size() != limit)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Mismatch in flattened Dynamic column: {} rows are expected, but the indexes stream contains only {} rows",
+                limit,
+                mutable_indexes_column->size());
+
         flattened_column.indexes_column = std::move(mutable_indexes_column);
         /// Second, read data of all flattened types in corresponding order.
         auto flattened_limits = getLimitsForFlattenedDynamicColumn(*flattened_column.indexes_column, flattened_column.types.size());
