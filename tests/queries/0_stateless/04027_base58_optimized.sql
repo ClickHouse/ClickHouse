@@ -104,7 +104,7 @@ SELECT base58Decode(base58Encode(unhex('010203040506070809'))) = unhex('01020304
 SELECT base58Decode('jpXCZedGfVR') = unhex('010000000000000000');
 SELECT base58Decode('zzzzzzzzzzz') = unhex('015AC264554F0327FF');
 
-SELECT 'limb storage threshold';
+SELECT 'word storage threshold';
 SELECT base58Decode(base58Encode(repeat('a', 232))) = repeat('a', 232);
 SELECT base58Decode(base58Encode(repeat('a', 233))) = repeat('a', 233);
 SELECT base58Decode(base58Encode(repeat('a', 234))) = repeat('a', 234);

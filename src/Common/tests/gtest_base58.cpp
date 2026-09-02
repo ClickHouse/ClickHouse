@@ -387,8 +387,8 @@ TEST(Base58, GenericElevenCharacterBoundary)
 }
 
 /// The callback fires on accumulated inner-loop work, so how often it fires must not depend on how many
-/// input elements one iteration consumes. Each pass adds `limb_count * CHUNK * <limb width>` to a counter
-/// that resets to zero on reaching the threshold, discarding the overshoot: an exact integer function of
+/// input elements one iteration consumes. Each pass adds `word_count * <elements per pass> * <word width>`
+/// to a counter that resets on reaching the threshold, discarding the overshoot: an exact integer function of
 /// the body length, asserted exactly, so retuning the accounting or `work_per_check` must update it.
 TEST(Base58, GenericCancellationInterval)
 {
@@ -435,7 +435,7 @@ TEST(Base58, DecodeInvalid)
     uint8_t out64[64] = {};
 
     /// The generic decoder must reject an invalid character wherever it appears, including inside the
-    /// short leading chunk and at a chunk boundary.
+    /// short leading pass and at a pass boundary.
     for (size_t length = 1; length <= 12; ++length)
         for (size_t position = 0; position < length; ++position)
             for (char bad : {'0', 'O', 'I', 'l', ' ', '\0', '\x7F', '\xFF'})

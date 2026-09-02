@@ -676,42 +676,40 @@ constexpr UInt64 power58(size_t exponent)
 }
 
 /// The same 58^5 the fixed-size codecs above use as their intermediate radix (`R1div`).
-constexpr UInt32 BASE58_ENCODE_LIMB_RADIX = 656356768;
-constexpr UInt64 BASE58_DECODE_CHUNK_RADIX = 656356768;
-constexpr size_t BASE58_ENCODE_LIMB_DIGITS = 5;
+constexpr size_t BASE58_ENCODE_WORD_DIGITS = 5;
+constexpr UInt32 BASE58_ENCODE_WORD_RADIX = static_cast<UInt32>(power58(BASE58_ENCODE_WORD_DIGITS));
 
-/// Input elements per outer pass. Encode takes 4 bytes, not 7: `limb * 2^(8 * CHUNK) + carry` must fit
-/// `UInt64` and a radix-58^5 limb is below 2^30, so `8 * CHUNK` must stay below 34. Decode takes 5
-/// characters, not 9: `limb * 58^CHUNK + carry` must fit `UInt64`, and 58^5 < 2^30 does, 58^6 > 2^35 not.
-constexpr size_t BASE58_ENCODE_CHUNK = 4;
-constexpr size_t BASE58_DECODE_CHUNK = 5;
+/// Input elements per outer pass, `n` below. Encode takes 4 bytes, not 7: `word * 2^(8 * n) + carry` must
+/// fit `UInt64` and a radix-58^5 word is below 2^30, so `8 * n` must stay below 34. Decode takes 5
+/// characters, not 9: `word * 58^n + carry` must fit `UInt64`, and 58^5 < 2^30 does, 58^6 > 2^35 not.
+constexpr size_t BASE58_ENCODE_BYTES_PER_PASS = 4;
+constexpr size_t BASE58_DECODE_CHARS_PER_PASS = 5;
+constexpr UInt64 BASE58_DECODE_PASS_MULTIPLIER = power58(BASE58_DECODE_CHARS_PER_PASS);
 
-static_assert(BASE58_ENCODE_LIMB_RADIX == power58(BASE58_ENCODE_LIMB_DIGITS));
-static_assert(BASE58_DECODE_CHUNK_RADIX == power58(BASE58_DECODE_CHUNK));
-static_assert(BASE58_ENCODE_LIMB_RADIX < (1ULL << 30));
+static_assert(BASE58_ENCODE_WORD_RADIX < (1ULL << 30));
 
-/// Upper bounds on the limb count: 1366/1000 exceeds 8/log2(58) and 733/1000 exceeds log2(58)/8.
-constexpr size_t base58EncodeLimbs(size_t body)
+/// Upper bounds on the word count: 1366/1000 exceeds 8/log2(58) and 733/1000 exceeds log2(58)/8.
+constexpr size_t base58EncodeWords(size_t body)
 {
-    return (body * 1366 / 1000 + 2 + BASE58_ENCODE_LIMB_DIGITS - 1) / BASE58_ENCODE_LIMB_DIGITS;
+    return (body * 1366 / 1000 + 2 + BASE58_ENCODE_WORD_DIGITS - 1) / BASE58_ENCODE_WORD_DIGITS;
 }
 
-constexpr size_t base58DecodeLimbs(size_t body)
+constexpr size_t base58DecodeWords(size_t body)
 {
     return (body * 733 / 1000 + 2 + sizeof(UInt32) - 1) / sizeof(UInt32);
 }
 
-/// The limbs live in the destination buffer, except for bodies so short that they would not fit the
+/// The words live in the destination buffer, except for bodies so short that they would not fit the
 /// documented output bound (2n+1 encode, n decode) - so this choice is a correctness requirement, not
 /// an optimisation. The constants are the largest body that still fits, pinned on both sides below.
-constexpr size_t BASE58_STACK_LIMBS = 64;
+constexpr size_t BASE58_STACK_WORDS = 64;
 constexpr size_t BASE58_ENCODE_STACK_MAX_BODY = 233;
 constexpr size_t BASE58_DECODE_STACK_MAX_BODY = 347;
 
-static_assert(base58EncodeLimbs(BASE58_ENCODE_STACK_MAX_BODY) <= BASE58_STACK_LIMBS);
-static_assert(base58EncodeLimbs(BASE58_ENCODE_STACK_MAX_BODY + 1) > BASE58_STACK_LIMBS);
-static_assert(base58DecodeLimbs(BASE58_DECODE_STACK_MAX_BODY) <= BASE58_STACK_LIMBS);
-static_assert(base58DecodeLimbs(BASE58_DECODE_STACK_MAX_BODY + 1) > BASE58_STACK_LIMBS);
+static_assert(base58EncodeWords(BASE58_ENCODE_STACK_MAX_BODY) <= BASE58_STACK_WORDS);
+static_assert(base58EncodeWords(BASE58_ENCODE_STACK_MAX_BODY + 1) > BASE58_STACK_WORDS);
+static_assert(base58DecodeWords(BASE58_DECODE_STACK_MAX_BODY) <= BASE58_STACK_WORDS);
+static_assert(base58DecodeWords(BASE58_DECODE_STACK_MAX_BODY + 1) > BASE58_STACK_WORDS);
 
 /// The short-path bounds. Eight bytes is the largest body a `UInt64` holds; eleven characters is the
 /// encoded length of eight bytes, and the only length that can exceed one, since 58^10 <= 2^64 - 1 < 58^11.
@@ -721,21 +719,21 @@ constexpr size_t BASE58_SHORT_DECODE_MAX_BODY = 11;
 static_assert(power58(BASE58_SHORT_DECODE_MAX_BODY - 1) <= std::numeric_limits<UInt64>::max());
 static_assert(power58(BASE58_SHORT_DECODE_MAX_BODY - 1) > std::numeric_limits<UInt64>::max() / 58);
 
-/// `decodeBase58` hands the limb array's bytes back as its own output, so the layout is part of the
+/// `decodeBase58` hands the word array's bytes back as its own output, so the layout is part of the
 /// algorithm and is little-endian on every host, not just the ones where that is the native order.
-/// Unaligned because the limbs may live in a byte buffer.
-UInt32 loadLimb(const UInt8 * limbs, size_t i)
+/// Unaligned because the words may live in a byte buffer.
+UInt32 loadWord(const UInt8 * words, size_t i)
 {
-    return unalignedLoadLittleEndian<UInt32>(limbs + i * sizeof(UInt32));
+    return unalignedLoadLittleEndian<UInt32>(words + i * sizeof(UInt32));
 }
 
-void storeLimb(UInt8 * limbs, size_t i, UInt32 value)
+void storeWord(UInt8 * words, size_t i, UInt32 value)
 {
-    unalignedStoreLittleEndian<UInt32>(limbs + i * sizeof(UInt32), value);
+    unalignedStoreLittleEndian<UInt32>(words + i * sizeof(UInt32), value);
 }
 
 
-/// A body that fits a `UInt64` needs none of the limb apparatus above: the conversion is repeated divmod
+/// A body that fits a `UInt64` needs none of the word apparatus above: the conversion is repeated divmod
 /// in a register. The digits are written least significant first and then reversed through the alphabet
 /// in place, exactly as the general path does, so at most 11 digits land inside the `2 * body + 1` bound.
 size_t encodeBase58Short(const UInt8 * src, size_t body_length, UInt8 * dst, const char * alphabet)
@@ -832,20 +830,20 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
     if (body_length <= BASE58_SHORT_ENCODE_MAX_BODY)
         return zeros + encodeBase58Short(src, body_length, dst, base58_encoding_alphabet);
 
-    /// The accumulator is the input so far as `UInt32` limbs of radix 58^5, least significant limb first.
-    UInt32 stack_limbs[BASE58_STACK_LIMBS];
-    UInt8 * limbs = body_length > BASE58_ENCODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_limbs);
-    size_t limb_count = 0;
+    /// The accumulator is the input so far as `UInt32` words of radix 58^5, least significant word first.
+    UInt32 stack_words[BASE58_STACK_WORDS];
+    UInt8 * words = body_length > BASE58_ENCODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_words);
+    size_t word_count = 0;
 
     /// The total work is quadratic, so the cancellation check is driven by accumulated inner-loop work
     /// rather than by outer iterations: the time limit and `KILL QUERY` stay prompt even with the size
     /// limit disabled. The unit counted is one (input element, accumulator element) pair, and one
-    /// iteration covers `BASE58_ENCODE_CHUNK * BASE58_ENCODE_LIMB_DIGITS` of them, hence the scaling.
+    /// iteration covers `BASE58_ENCODE_BYTES_PER_PASS * BASE58_ENCODE_WORD_DIGITS` of them, hence the scaling.
     size_t work_since_check = 0;
     static constexpr size_t work_per_check = 1ULL << 20;
 
-    /// A short leading chunk goes first, so every chunk below is exactly `BASE58_ENCODE_CHUNK` bytes.
-    if (size_t head = body_length % BASE58_ENCODE_CHUNK)
+    /// A short leading pass goes first, so every pass below reads exactly `BASE58_ENCODE_BYTES_PER_PASS` bytes.
+    if (size_t head = body_length % BASE58_ENCODE_BYTES_PER_PASS)
     {
         UInt64 carry = 0;
         for (size_t i = 0; i < head; ++i)
@@ -855,9 +853,9 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
 
         while (carry > 0)
         {
-            storeLimb(limbs, limb_count, static_cast<UInt32>(carry % BASE58_ENCODE_LIMB_RADIX));
-            ++limb_count;
-            carry /= BASE58_ENCODE_LIMB_RADIX;
+            storeWord(words, word_count, static_cast<UInt32>(carry % BASE58_ENCODE_WORD_RADIX));
+            ++word_count;
+            carry /= BASE58_ENCODE_WORD_RADIX;
         }
     }
 
@@ -865,7 +863,7 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
     {
         if (check_cancellation)
         {
-            work_since_check += limb_count * BASE58_ENCODE_CHUNK * BASE58_ENCODE_LIMB_DIGITS;
+            work_since_check += word_count * BASE58_ENCODE_BYTES_PER_PASS * BASE58_ENCODE_WORD_DIGITS;
             if (work_since_check >= work_per_check)
             {
                 check_cancellation();
@@ -874,35 +872,35 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
         }
 
         UInt64 carry = 0;
-        for (size_t i = 0; i < BASE58_ENCODE_CHUNK; ++i)
+        for (size_t i = 0; i < BASE58_ENCODE_BYTES_PER_PASS; ++i)
             carry = (carry << 8) | src[i];
-        src += BASE58_ENCODE_CHUNK;
-        processed += BASE58_ENCODE_CHUNK;
+        src += BASE58_ENCODE_BYTES_PER_PASS;
+        processed += BASE58_ENCODE_BYTES_PER_PASS;
 
-        for (size_t j = 0; j < limb_count; ++j)
+        for (size_t j = 0; j < word_count; ++j)
         {
-            const UInt64 cur = (static_cast<UInt64>(loadLimb(limbs, j)) << (8 * BASE58_ENCODE_CHUNK)) + carry;
-            const UInt64 quotient = cur / BASE58_ENCODE_LIMB_RADIX;
-            storeLimb(limbs, j, static_cast<UInt32>(cur - quotient * BASE58_ENCODE_LIMB_RADIX));
+            const UInt64 cur = (static_cast<UInt64>(loadWord(words, j)) << (8 * BASE58_ENCODE_BYTES_PER_PASS)) + carry;
+            const UInt64 quotient = cur / BASE58_ENCODE_WORD_RADIX;
+            storeWord(words, j, static_cast<UInt32>(cur - quotient * BASE58_ENCODE_WORD_RADIX));
             carry = quotient;
         }
 
         while (carry > 0)
         {
-            storeLimb(limbs, limb_count, static_cast<UInt32>(carry % BASE58_ENCODE_LIMB_RADIX));
-            ++limb_count;
-            carry /= BASE58_ENCODE_LIMB_RADIX;
+            storeWord(words, word_count, static_cast<UInt32>(carry % BASE58_ENCODE_WORD_RADIX));
+            ++word_count;
+            carry /= BASE58_ENCODE_WORD_RADIX;
         }
     }
 
-    /// The most significant limb is never zero: multiplying a non-zero accumulator by 2^32 always carries
-    /// past one radix-58^5 limb, so a pass that would zero the top limb appends a non-zero one above it.
-    /// Expanding top-down, reading each limb before writing over it, is what keeps this safe while the
-    /// limbs are IN `dst`: limbs 0 .. i-1 occupy `dst[0, 4 * i)` and limb i's digits start at 5 * i.
-    if (limb_count)
+    /// The most significant word is never zero: multiplying a non-zero accumulator by 2^32 always carries
+    /// past one radix-58^5 word, so a pass that would zero the top word appends a non-zero one above it.
+    /// Expanding top-down, reading each word before writing over it, is what keeps this safe while the
+    /// words are IN `dst`: words 0 .. i-1 occupy `dst[0, 4 * i)` and word i's digits start at 5 * i.
+    if (word_count)
     {
-        UInt32 top = loadLimb(limbs, limb_count - 1);
-        const size_t top_base = BASE58_ENCODE_LIMB_DIGITS * (limb_count - 1);
+        UInt32 top = loadWord(words, word_count - 1);
+        const size_t top_base = BASE58_ENCODE_WORD_DIGITS * (word_count - 1);
         size_t top_digits = 0;
         do
         {
@@ -913,14 +911,14 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
         } while (top > 0);
         idx = top_base + top_digits;
 
-        for (size_t i = limb_count - 1; i-- > 0;)
+        for (size_t i = word_count - 1; i-- > 0;)
         {
-            UInt32 limb = loadLimb(limbs, i);
-            for (size_t d = 0; d < BASE58_ENCODE_LIMB_DIGITS; ++d)
+            UInt32 word = loadWord(words, i);
+            for (size_t d = 0; d < BASE58_ENCODE_WORD_DIGITS; ++d)
             {
-                const UInt32 quotient = limb / 58;
-                dst[BASE58_ENCODE_LIMB_DIGITS * i + d] = static_cast<UInt8>(limb - quotient * 58);
-                limb = quotient;
+                const UInt32 quotient = word / 58;
+                dst[BASE58_ENCODE_WORD_DIGITS * i + d] = static_cast<UInt8>(word - quotient * 58);
+                word = quotient;
             }
         }
     }
@@ -987,19 +985,19 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
             return zeros + *bytes;
     }
 
-    /// The accumulator is the characters so far as `UInt32` limbs of base 2^32, least significant first -
+    /// The accumulator is the characters so far as `UInt32` words of base 2^32, least significant first -
     /// byte for byte the little-endian form the result needs, so only the byte reversal is left at the end.
-    UInt32 stack_limbs[BASE58_STACK_LIMBS];
-    UInt8 * limbs = body_length > BASE58_DECODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_limbs);
-    size_t limb_count = 0;
+    UInt32 stack_words[BASE58_STACK_WORDS];
+    UInt8 * words = body_length > BASE58_DECODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_words);
+    size_t word_count = 0;
 
     /// As in `encodeBase58`, the check is driven by accumulated inner-loop work, and one iteration
-    /// covers `BASE58_DECODE_CHUNK * sizeof(UInt32)` of the pairs that unit counts.
+    /// covers `BASE58_DECODE_CHARS_PER_PASS * sizeof(UInt32)` of the pairs that unit counts.
     size_t work_since_check = 0;
     static constexpr size_t work_per_check = 1ULL << 20;
 
-    /// A short leading chunk goes first, so every chunk below is exactly `BASE58_DECODE_CHUNK` characters.
-    if (size_t head = body_length % BASE58_DECODE_CHUNK)
+    /// A short leading pass goes first, so every pass below reads exactly `BASE58_DECODE_CHARS_PER_PASS` characters.
+    if (size_t head = body_length % BASE58_DECODE_CHARS_PER_PASS)
     {
         UInt64 carry = 0;
         for (size_t i = 0; i < head; ++i)
@@ -1014,8 +1012,8 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
 
         while (carry > 0)
         {
-            storeLimb(limbs, limb_count, static_cast<UInt32>(carry));
-            ++limb_count;
+            storeWord(words, word_count, static_cast<UInt32>(carry));
+            ++word_count;
             carry >>= 32;
         }
     }
@@ -1024,7 +1022,7 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
     {
         if (check_cancellation)
         {
-            work_since_check += limb_count * BASE58_DECODE_CHUNK * sizeof(UInt32);
+            work_since_check += word_count * BASE58_DECODE_CHARS_PER_PASS * sizeof(UInt32);
             if (work_since_check >= work_per_check)
             {
                 check_cancellation();
@@ -1033,42 +1031,42 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         }
 
         UInt64 carry = 0;
-        for (size_t i = 0; i < BASE58_DECODE_CHUNK; ++i)
+        for (size_t i = 0; i < BASE58_DECODE_CHARS_PER_PASS; ++i)
         {
             const Int8 digit = map_digits[src[i]];
             if (digit < 0)
                 return {};
             carry = carry * 58 + static_cast<UInt64>(digit);
         }
-        src += BASE58_DECODE_CHUNK;
-        processed += BASE58_DECODE_CHUNK;
+        src += BASE58_DECODE_CHARS_PER_PASS;
+        processed += BASE58_DECODE_CHARS_PER_PASS;
 
-        for (size_t j = 0; j < limb_count; ++j)
+        for (size_t j = 0; j < word_count; ++j)
         {
-            const UInt64 cur = static_cast<UInt64>(loadLimb(limbs, j)) * BASE58_DECODE_CHUNK_RADIX + carry;
-            storeLimb(limbs, j, static_cast<UInt32>(cur));
+            const UInt64 cur = static_cast<UInt64>(loadWord(words, j)) * BASE58_DECODE_PASS_MULTIPLIER + carry;
+            storeWord(words, j, static_cast<UInt32>(cur));
             carry = cur >> 32;
         }
 
         while (carry > 0)
         {
-            storeLimb(limbs, limb_count, static_cast<UInt32>(carry));
-            ++limb_count;
+            storeWord(words, word_count, static_cast<UInt32>(carry));
+            ++word_count;
             carry >>= 32;
         }
     }
 
-    /// The most significant limb is never zero: a pass rewrites a top limb `t >= 1` as
-    /// `t * 58^CHUNK + carry >= 58^CHUNK`, so it either stays non-zero in place or carries, and the
-    /// last limb the append loop above stores is the final non-zero `carry`.
-    if (limb_count)
+    /// The most significant word is never zero: a pass rewrites a top word `t >= 1` as
+    /// `t * 58^n + carry >= 58^n`, so it either stays non-zero in place or carries, and the
+    /// last word the append loop above stores is the final non-zero `carry`.
+    if (word_count)
     {
         size_t top_bytes = 1;
-        for (UInt32 rest = loadLimb(limbs, limb_count - 1) >> 8; rest; rest >>= 8)
+        for (UInt32 rest = loadWord(words, word_count - 1) >> 8; rest; rest >>= 8)
             ++top_bytes;
-        idx = sizeof(UInt32) * (limb_count - 1) + top_bytes;
-        if (limbs != dst)
-            memcpy(dst, limbs, idx);
+        idx = sizeof(UInt32) * (word_count - 1) + top_bytes;
+        if (words != dst)
+            memcpy(dst, words, idx);
     }
 
     size_t c_idx = idx >> 1;
