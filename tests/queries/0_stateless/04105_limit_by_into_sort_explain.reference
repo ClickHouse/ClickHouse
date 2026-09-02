@@ -343,35 +343,33 @@ ExpressionTransform
     (Expression)
     ExpressionTransform
       (Sorting)
-      MergingSortedTransform 12 → 1
-        LimitBySortedStreamTransform × 12
-          MergeSortingTransform × 12
-            LimitsCheckingTransform × 12
-              PartialSortingTransform × 12
-                (Expression)
-                ExpressionTransform × 12
-                  (Expression)
-                  ExpressionTransform × 12
-                    (Join)
-                    MergeJoinTransform 2 → 1
-                      (Sorting)
-                      MergingSortedTransform 2 → 1
-                        BufferChunks × 2
-                          (Expression)
-                          ExpressionTransform × 2
-                            (Expression)
-                            ExpressionTransform × 2
-                              (ReadFromMergeTree)
-                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                      (Sorting)
-                      MergingSortedTransform 2 → 1
-                        BufferChunks × 2
-                          (Expression)
-                          ExpressionTransform × 2
-                            (Expression)
-                            ExpressionTransform × 2
-                              (ReadFromMergeTree)
-                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+      FinishSortingTransform
+        PartialSortingTransform
+          MergingSortedTransform 12 → 1
+            (Expression)
+            ExpressionTransform × 12
+              (Expression)
+              ExpressionTransform × 12
+                (Join)
+                MergeJoinTransform 2 → 1
+                  (Sorting)
+                  MergingSortedTransform 2 → 1
+                    BufferChunks × 2
+                      (Expression)
+                      ExpressionTransform × 2
+                        (Expression)
+                        ExpressionTransform × 2
+                          (ReadFromMergeTree)
+                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                  (Sorting)
+                  MergingSortedTransform 2 → 1
+                    BufferChunks × 2
+                      (Expression)
+                      ExpressionTransform × 2
+                        (Expression)
+                        ExpressionTransform × 2
+                          (ReadFromMergeTree)
+                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
 DROP TABLE test_join_a;
 DROP TABLE test_join_b;
 -- The optimization is not applied when a `WindowStep` separates `LimitByStep` from

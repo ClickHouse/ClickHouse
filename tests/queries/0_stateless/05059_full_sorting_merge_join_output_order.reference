@@ -1,0 +1,30 @@
+inner chain plan	0	4
+inner chain pipeline	0	2
+left chain plan	0	4
+right chain plan	0	4
+left chain other side plan	1	3
+full chain plan	1	3
+order by plan	0	3
+order by result	1400	1
+unsorted keys chain plan	3	1
+parallel unsorted keys chain pipeline	4	4	0
+inner	936	683928	359464	235376
+inner	936	683928	359464	235376
+inner	936	683928	359464	235376
+left	2869	2116765	719032	366010	1013	1443
+left	2869	2116765	719032	366010	1013	1443
+left	2869	2116765	719032	366010	1013	1443
+right	1002	683928	385798	262832	78
+right	1002	683928	385798	262832	78
+right	1002	683928	385798	262832	78
+left use nulls	2869	2116765	719032	366010	1001	1431
+left use nulls	2869	2116765	719032	366010	1001	1431
+unsorted keys	600	179700	259400	269100
+unsorted keys	600	179700	259400	269100
+unsorted keys	600	179700	259400	269100
+pk range sharding mixed plan	1
+pk range sharding mixed	1300	923700	506850	551100
+pk range sharding mixed	1300	923700	506850	551100
+pk range sharding sorted subquery	1300	363700	551100
+pk range sharding sorted subquery	1300	363700	551100
+pk range sharding sorted subquery	1300	363700	551100
