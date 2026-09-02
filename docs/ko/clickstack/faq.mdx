@@ -43,9 +43,7 @@ keywords: ['ClickStack', 'FAQ', '알림', '대시보드', '드릴다운', '메�
 </div>
 
 <Accordion title="ClickStack은 매개변수화된 대시보드 또는 대시보드 변수를 지원합니까?">
-  ClickStack은 ClickHouse에서 쿰리한 데이터로 채워지는 대시보드용 사용자 지정 드롭다운 필터를 지원합니다. 이러한 필터를 사용하면 대시보드의 모든 타일을 특정 값(예: 서비스 이름, 환경 또는 호스트)에 맞춰 동적으로 한정할 수 있습니다.
-
-  현재 ClickStack은 Grafana 템플릿 변수와 같은 방식의 재사용 가능한 대시보드 변수는 지원하지 않습니다. ClickStack은 데이터 소스로 ClickHouse만 사용하므로, 변수 추상화 계층 없이도 드릴다운 및 필터링 기능을 네이티브하게 제공할 수 있습니다.
+  예, ClickStack은 ClickHouse에서 쿼리한 데이터로 채워지는 사용자 지정 필터와 변수로 매개변수화된 대시보드를 지원합니다. 이러한 필터를 사용하면 대시보드의 일부 또는 모든 타일을 특정 값(예: 서비스 이름, 환경 또는 호스트)으로 동적으로 범위를 지정할 수 있습니다.
 
   대시보드를 만들고 필터를 적용하는 방법에 대한 자세한 내용은 [대시보드](/ko/clickstack/features/dashboards/overview)를 참조하십시오.
 </Accordion>
@@ -56,7 +54,7 @@ keywords: ['ClickStack', 'FAQ', '알림', '대시보드', '드릴다운', '메�
   * [대시보드 수준 필터링](/ko/clickstack/features/dashboards/overview#filter-dashboards): 대시보드 수준에서 적용한 Lucene 또는 SQL 필터와 시간 범위 조정이 모든 타일에 반영됩니다.
   * 사용자 지정 대시보드 필터: 사용자 지정 대시보드는 데이터의 값으로 채워지는 명시적 필터 컨트롤을 지원하므로, 사용자가 쿼리를 직접 작성하지 않고도 모든 타일을 원하는 범위로 한정할 수 있습니다.
   * 클릭하여 이벤트 보기: 대시보드 타일의 데이터를 클릭한 뒤 **View Events**를 선택하면 로그 및 트레이스 데이터에 대한 관련 필터가 적용된 [검색](/ko/clickstack/features/search) 페이지로 이동합니다.
-  * [테이블 행 클릭 드릴다운](/ko/clickstack/features/dashboards/row-click-drilldowns): table tile은 행을 클릭하면 검색 페이지 또는 다른 대시보드가 열리고, 해당 행의 값을 필터로 전달하도록 구성할 수 있습니다. 이를 통해 서비스 인벤토리에서 서비스별 상세 대시보드로 드릴다운하는 것과 같은 다단계 워크플로를 지원합니다.
+  * [테이블 행 클릭 드릴다운](/ko/clickstack/features/dashboards/row-click-drilldowns): 테이블 타일은 행을 클릭하면 검색 페이지 또는 다른 대시보드가 열리고, 해당 행의 값을 필터로 전달하도록 구성할 수 있습니다. 이를 통해 서비스 인벤토리에서 서비스별 상세 대시보드로 드릴다운하는 것과 같은 다단계 워크플로를 지원합니다.
   * [사전 구성된 대시보드 드릴다운](/ko/clickstack/features/dashboards/overview#presets): [Services](/ko/clickstack/features/dashboards/overview#services-dashboard), [ClickHouse](/ko/clickstack/features/dashboards/overview#clickhouse-dashboard), [Kubernetes](/ko/clickstack/features/dashboards/overview#kubernetes-dashboard) 대시보드에는 탭 전반에 걸쳐 더 풍부한 기본 제공 드릴다운 탐색 기능이 포함되어 있습니다.
 
   <Note>
