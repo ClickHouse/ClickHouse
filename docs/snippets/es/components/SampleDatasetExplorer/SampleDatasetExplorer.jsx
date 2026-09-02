@@ -233,20 +233,50 @@ export const SampleDatasetExplorer = ({ categories }) => {
   const cats = (categories || CATEGORIES).slice().sort((a, b) => categoryOrder.indexOf(a.id) - categoryOrder.indexOf(b.id))
 
   const [selectedId, setSelectedId] = useState(null)
+  const [isDark, setIsDark] = useState(null)
   const selected = cats.find((c) => c.id === selectedId) || null
 
-  // Theme visibility is handled by explicit `.dark` descendant selectors in the
-  // <style> block below (Mintlify's class strategy — same approach as
-  // IntegrationGrid). Tailwind `dark:` utilities are NOT reliable here: they
-  // compile against the OS media query, so they'd ignore the in-app light/dark
-  // toggle. Note the reversed-colour scheme: light mode shows the *dark* (black)
-  // banner art, dark mode shows the *light* (yellow) art.
-  const Banner = ({ cat, className }) => (
-    <>
-      <img className={`sde-img-dark ${className || ""}`} src={withBase(cat.imgDark)} alt={cat.title} />
-      <img className={`sde-img-light ${className || ""}`} src={withBase(cat.imgLight)} alt={cat.title} />
-    </>
+  useEffect(() => {
+    const checkTheme = () => setIsDark(document.documentElement.classList.contains("dark"))
+    checkTheme()
+
+    const observer = new MutationObserver(checkTheme)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+    return () => observer.disconnect()
+  }, [])
+
+  // The colour scheme is intentionally reversed: light mode shows the dark
+  // artwork and dark mode shows the light artwork. The responsive SSR fallback
+  // emits an image immediately while still downloading only one WebP variant.
+  const webpFor = (path) => withBase(path.replace(/\.jpg$/, ".webp"))
+  const imageForTheme = (item) => webpFor(isDark ? item.imgLight : item.imgDark)
+  const ThemeImage = ({ item, className }) => (
+    isDark === null ? (
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcSet={webpFor(item.imgLight)} />
+        <img
+          className={className || ""}
+          src={webpFor(item.imgDark)}
+          alt={item.title}
+          width="640"
+          height="494"
+          loading="lazy"
+          decoding="async"
+        />
+      </picture>
+    ) : (
+      <img
+        className={className || ""}
+        src={imageForTheme(item)}
+        alt={item.title}
+        width="640"
+        height="494"
+        loading="lazy"
+        decoding="async"
+      />
+    )
   )
+  const Banner = ({ cat, className }) => <ThemeImage item={cat} className={className} />
 
   return (
     <div className="sde-root my-8">
@@ -262,12 +292,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           to   { opacity: 1; }
         }
         .sde-view { animation: sde-fade 0.25s ease both; }
-        /* Reversed scheme: dark (black) art in light mode, light (yellow) art in dark mode.
-           Use explicit .dark selectors — Tailwind dark: utilities follow the OS here. */
-        .sde-root .sde-img-dark { display: block; }
-        .sde-root .sde-img-light { display: none; }
-        .dark .sde-root .sde-img-dark { display: none; }
-        .dark .sde-root .sde-img-light { display: block; }
         .sde-tile {
           display: block;
           width: 100%;
@@ -413,8 +437,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
             {selected.datasets.map((ds, i) => (
               <a key={ds.href} href={ds.href} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
                 <span className="sde-tile-media">
-                  {ds.imgDark && <img className="sde-img-dark" src={withBase(ds.imgDark)} alt={ds.title} />}
-                  {ds.imgLight && <img className="sde-img-light" src={withBase(ds.imgLight)} alt={ds.title} />}
+                  {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">
                     <span className="sde-explore">
                       Ver conjunto de datos

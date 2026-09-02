@@ -123,13 +123,27 @@ export const SampleDatasetExplorer = ({ categories }) => {
   // artwork and dark mode shows the light artwork. Render only the active image
   // so the browser does not download both variants. The WebP assets are sized
   // for the largest rendered card at 2x pixel density.
-  const imageForTheme = (item) => withBase((isDark ? item.imgLight : item.imgDark).replace(/\.jpg$/, '.webp'));
-  const Banner = ({ cat, className }) => (
-    isDark !== null && (
+  const webpFor = (path) => withBase(path.replace(/\.jpg$/, '.webp'));
+  const imageForTheme = (item) => webpFor(isDark ? item.imgLight : item.imgDark);
+  const ThemeImage = ({ item, className }) => (
+    isDark === null ? (
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcSet={webpFor(item.imgLight)} />
+        <img
+          className={className || ''}
+          src={webpFor(item.imgDark)}
+          alt={item.title}
+          width="640"
+          height="494"
+          loading="lazy"
+          decoding="async"
+        />
+      </picture>
+    ) : (
       <img
         className={className || ''}
-        src={imageForTheme(cat)}
-        alt={cat.title}
+        src={imageForTheme(item)}
+        alt={item.title}
         width="640"
         height="494"
         loading="lazy"
@@ -137,6 +151,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
       />
     )
   );
+  const Banner = ({ cat, className }) => <ThemeImage item={cat} className={className} />;
 
   return (
     <div className="sde-root my-8">
@@ -305,16 +320,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <span className="sde-tile-media">
-                  {isDark !== null && ds.imgDark && ds.imgLight && (
-                    <img
-                      src={imageForTheme(ds)}
-                      alt={ds.title}
-                      width="640"
-                      height="494"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  )}
+                  {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">
                     <span className="sde-explore">
                       View dataset
