@@ -18,6 +18,8 @@ DROP TABLE IF EXISTS t_stats_pruning_cache_bypass;
 CREATE TABLE t_stats_pruning_cache_bypass (a UInt64, b UInt64) ENGINE = MergeTree PARTITION BY intDiv(a, 1000) ORDER BY a
 SETTINGS auto_statistics_types = 'basic', refresh_statistics_interval = 0;
 
+SET materialize_statistics_on_insert = 1;
+
 INSERT INTO t_stats_pruning_cache_bypass SELECT number, number % 7 FROM numbers(1000);
 INSERT INTO t_stats_pruning_cache_bypass SELECT number + 1000, number % 11 FROM numbers(1000);
 

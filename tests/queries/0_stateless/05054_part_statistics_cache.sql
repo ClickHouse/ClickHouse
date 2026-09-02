@@ -13,6 +13,8 @@ SETTINGS auto_statistics_types = 'basic, uniq_v2', refresh_statistics_interval =
 
 SYSTEM STOP MERGES t_part_stats_cache;
 
+SET materialize_statistics_on_insert = 1;
+
 INSERT INTO t_part_stats_cache SELECT number, number % 7 FROM numbers(1000);
 INSERT INTO t_part_stats_cache SELECT number + 1000, number % 11 FROM numbers(1000);
 

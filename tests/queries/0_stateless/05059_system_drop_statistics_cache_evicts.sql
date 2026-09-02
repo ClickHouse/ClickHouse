@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 -- Tag no-parallel: `SYSTEM DROP STATISTICS CACHE` clears the server-wide statistics caches.
 
 -- Checks that `SYSTEM DROP STATISTICS CACHE` evicts both the part statistics cache and the
@@ -14,6 +14,8 @@ CREATE TABLE t_stats_cache_drop (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY
 SETTINGS auto_statistics_types = 'basic, uniq_v2', refresh_statistics_interval = 0;
 
 SYSTEM STOP MERGES t_stats_cache_drop;
+
+SET materialize_statistics_on_insert = 1;
 
 INSERT INTO t_stats_cache_drop SELECT number, number % 7 FROM numbers(1000);
 INSERT INTO t_stats_cache_drop SELECT number + 1000, number % 11 FROM numbers(1000);
