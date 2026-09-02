@@ -1571,6 +1571,72 @@ def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 
+def test_overlay_facade_keeps_unresolvable_rows_for_authorized_user(started_cluster):
+    """
+    Regression test for the source-side SHOW TABLES gate of a read-only Overlay facade in
+    system.tables.
+
+    A hint-aware source (DataLakeCatalog) keeps a table whose metadata is unresolvable as a
+    name-only row with a null storage object. Such a row carries no storage to recover the
+    owning source from, so the facade's snapshot iterator must remember which source
+    contributed it: a user who is authorized per source (no global grant) and has SHOW TABLES
+    on both the facade and the underlying source must still see the row through the facade
+    (as they do listing the source directly), while a user granted only on the facade must
+    not.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_overlay_unresolvable"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "broken_table"
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    facade = "ov_facade_unresolvable"
+    user_dual = "user_86768_dual"
+    user_facade_only = "user_86768_facade_only"
+    node.query(f"DROP DATABASE IF EXISTS {facade}")
+    node.query(f"CREATE DATABASE {facade} ENGINE = Overlay('{CATALOG_NAME}')")
+    node.query(f"DROP USER IF EXISTS {user_dual}, {user_facade_only}")
+    node.query(f"CREATE USER {user_dual} NOT IDENTIFIED")
+    node.query(f"CREATE USER {user_facade_only} NOT IDENTIFIED")
+    ## No global grants, so system.tables takes the per-source authorization path.
+    node.query(f"GRANT SELECT ON system.tables TO {user_dual}, {user_facade_only}")
+    node.query(f"GRANT SHOW TABLES ON {facade}.* TO {user_dual}, {user_facade_only}")
+    node.query(f"GRANT SHOW TABLES ON {CATALOG_NAME}.* TO {user_dual}")
+
+    settings = (
+        "SETTINGS show_data_lake_catalogs_in_system_tables = 1, "
+        "show_remote_databases_in_system_tables = 1"
+    )
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        ## `engine` needs the opened storage, so the scan takes the slow path where the
+        ## broken table is a null-storage row. Dual-granted user: the row stays listed.
+        result = node.query(
+            f"SELECT name, engine FROM system.tables WHERE database = '{facade}' {settings}",
+            user=user_dual,
+        )
+        assert f"{namespace}.{table_name}" in result, result
+
+        ## Facade-only user: the row's owning source is not granted, the row stays hidden.
+        result = node.query(
+            f"SELECT name, engine FROM system.tables WHERE database = '{facade}' {settings}",
+            user=user_facade_only,
+        )
+        assert f"{namespace}.{table_name}" not in result, result
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+        node.query(f"DROP USER IF EXISTS {user_dual}, {user_facade_only}")
+        node.query(f"DROP DATABASE IF EXISTS {facade}")
+        node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
 def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_cluster):
     """
     Regression test for the StorageMerge consumer of DatabaseDataLake::getTablesIterator.

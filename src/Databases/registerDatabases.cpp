@@ -14,6 +14,7 @@ void registerDatabaseMemory(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseURL(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory);
+void registerDatabaseOverlay(DatabaseFactory & factory);
 #if CLICKHOUSE_CLOUD
 void registerDatabaseShared(DatabaseFactory & factory);
 #endif
@@ -58,6 +59,7 @@ void registerDatabases()
     registerDatabaseFilesystem(factory);
     registerDatabaseURL(factory);
     registerDatabaseReplicated(factory);
+    registerDatabaseOverlay(factory);
     registerDatabaseRemote(factory);
 #if CLICKHOUSE_CLOUD
     registerDatabaseShared(factory);

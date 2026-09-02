@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <rocksdb/statistics.h>
 
 namespace DB
@@ -54,6 +55,13 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
+            continue;
+
+        /// A read-only `Overlay` facade exposes the tables of its underlying source databases,
+        /// which this loop already visits directly; walking the facade too would report each
+        /// physical table a second time and would gate the rows only by the facade-side grant,
+        /// letting the facade widen metadata visibility over the source table's counters.
+        if (DatabaseOverlay::isReadonlyFacade(db.second.get()))
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);

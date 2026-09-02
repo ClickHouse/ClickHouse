@@ -1,4 +1,5 @@
 #include <mutex>
+#include <Databases/DatabaseOverlay.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <Core/Field.h>
@@ -200,6 +201,12 @@ void StorageSystemIcebergHistory::fillData(
             = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
         if (!lock)
             // Table was dropped while acquiring the lock, skipping table
+            continue;
+
+        /// A table reached through a read-only `Overlay` facade also requires `SHOW_TABLES`
+        /// on the underlying source table: the facade must not widen metadata visibility.
+        /// This runs regardless of the facade-side per-database grant shortcut.
+        if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, database_name, table_name, storage))
             continue;
 
         if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))

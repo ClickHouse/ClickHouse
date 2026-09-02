@@ -9,6 +9,7 @@
 #include <Core/UUID.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/IDatabase.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadHelpers.h>
@@ -2483,6 +2484,33 @@ bool TableNameHints::isHintNameVisible(const String & name) const
 
     const auto access = context->getAccess();
     const String & database_name = database->getDatabaseName();
+
+    /// Through a read-only `Overlay` facade a facade-side grant alone must not reveal source table
+    /// names - the facade must not widen metadata visibility, and `EXISTS` / `SHOW TABLES` already
+    /// mask such names - so a hint would otherwise become the remaining oracle for them. Require
+    /// the corresponding source-side grant too, from a fail-closed resolution that never loads the
+    /// source table. The facade-side grants are still checked below, as for any database.
+    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(database.get()))
+    {
+        bool source_visible = false;
+        try
+        {
+            if (access->isGranted(AccessType::SHOW_TABLES, database_name, name))
+                source_visible = facade->isSourceTableVisibleNoLoad(name, context, AccessType::SHOW_TABLES);
+            else if (access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, name))
+                source_visible = facade->isSourceTableVisibleNoLoad(name, context, AccessType::SHOW_DICTIONARIES);
+        }
+        catch (...)
+        {
+            /// Ok to swallow: the probe rethrows a broken remote source's error only for a caller
+            /// granted on that source name. Even then it must not surface here: this runs while
+            /// formatting a hint, and must never replace the original `UNKNOWN_TABLE` with an
+            /// unrelated error.
+            source_visible = false;
+        }
+        if (!source_visible)
+            return false;
+    }
 
     /// Fast path: a name the user may `SHOW TABLES` is always safe to suggest, without any load.
     if (access->isGranted(AccessType::SHOW_TABLES, database_name, name))

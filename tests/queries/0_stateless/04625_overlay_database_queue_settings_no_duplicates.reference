@@ -1,0 +1,4 @@
+Each setting of the source queue table is listed exactly once (no duplicate rows through the facade)
+1
+No queue settings are listed under the facade database name
+0

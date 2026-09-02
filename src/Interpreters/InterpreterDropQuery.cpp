@@ -27,6 +27,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
@@ -175,6 +176,30 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     }
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
+
+    /// A read-only `Overlay` facade owns no storage of its own and rejects `DROP`/`DETACH`/`TRUNCATE
+    /// TABLE` in its own `dropTable`/`detachTable`. But the resolve-then-reject flow below reaches that
+    /// rejection only when the facade name resolves to a real source table: `DROP TABLE IF EXISTS
+    /// ov.<name>` then throws `TABLE_IS_PERMANENTLY_READ_ONLY` for an existing source table and silently
+    /// succeeds for a missing one, turning a facade-scoped drop/detach grant into a source-table
+    /// existence oracle; and for a resolved table the interpreter would already have called
+    /// `flushAndShutdown` on the real underlying table before the facade rejects. Reject up front by
+    /// the database name, before the lookup, mirroring `InterpreterCreateQuery`'s pre-existence-check
+    /// reject. (`DROP`/`DETACH DATABASE` of the facade itself go through `executeToDatabaseImpl` and
+    /// stay allowed; a read-only Overlay's `shouldBeEmptyOnDetach()` is false, so that path never
+    /// recurses back here.)
+    if (const auto database_maybe_overlay = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name))
+    {
+        if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database_maybe_overlay.get()); overlay && overlay->isReadOnly())
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run {} in the underlying database that owns the table",
+                backQuote(table_id.database_name),
+                query.kind == ASTDropQuery::Kind::Truncate ? "TRUNCATE TABLE"
+                    : query.kind == ASTDropQuery::Kind::Detach ? "DETACH TABLE"
+                    : "DROP TABLE");
+    }
 
     /// If table was already dropped by anyone, an exception will be thrown
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
@@ -477,6 +502,20 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     bool drop = query.kind == ASTDropQuery::Kind::Drop;
     bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
+
+    /// `TRUNCATE DATABASE`/`TRUNCATE TABLES FROM` on a read-only `Overlay` facade would otherwise
+    /// expand to per-table truncation that targets the underlying source tables. Reject it up front
+    /// — the facade owns no tables, so truncation must be run against the underlying databases.
+    /// (`DROP`/`DETACH DATABASE` of the facade itself are allowed: they only remove its definition.)
+    if (truncate)
+    {
+        if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run TRUNCATE in the underlying database that owns the tables",
+                backQuote(database_name));
+    }
 
     getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 

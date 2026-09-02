@@ -1,0 +1,4 @@
+The source table is checked exactly once (no duplicate row through the facade)
+SRC	t	1
+No rows are reported under the facade database name
+0

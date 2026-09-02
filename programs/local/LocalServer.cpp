@@ -519,7 +519,7 @@ void deferSystemDatabaseTables(ContextPtr context, IDatabase & system_database)
 
 DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
+    auto overlay = std::make_shared<DatabaseOverlay>(name_, context, false);
 
     UUID default_database_uuid;
 

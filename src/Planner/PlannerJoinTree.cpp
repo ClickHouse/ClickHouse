@@ -85,6 +85,8 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Access/EnabledRowPolicies.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -191,6 +193,17 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A table written as `overlay_db.t` is resolved to the underlying source table `source_db.t`.
+/// When `written_id` names a read-only `Overlay` facade and the storage actually belongs to a
+/// different table, return that underlying source id so access can be required on it as well as on
+/// the facade. Restricting this to `Overlay` keeps unrelated cases where the written and resolved
+/// ids can differ (temporary tables, a concurrent rename) unaffected. A parameterized view
+/// reached through a facade is recognized by the source id carried on the synthesized storage.
+std::optional<StorageID> overlaySourceIdToAlsoCheck(const StorageID & written_id, const StoragePtr & storage)
+{
+    return DatabaseOverlay::getSourceTableIdForReadonlyFacade(written_id, storage);
+}
 
 /// Recursively find the first TableNode whose storage matches `target`.
 QueryTreeNodePtr findTableNodeByStorage(const QueryTreeNodePtr & node, const StoragePtr & target)
@@ -344,6 +357,15 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
     if (typeid_cast<const StorageDummy *>(storage.get()))
         return {};
 
+    /// `storage_id` is the table as written in the query. When a table is reached through a
+    /// read-only `Overlay` facade, that is the facade name, while the storage itself belongs to
+    /// the underlying source database. Reading through the facade requires a grant on *both* the
+    /// facade database and the underlying source database, so collect both ids and check each.
+    /// For a plain table the two ids coincide and only one check is performed.
+    std::vector<StorageID> ids_to_check{storage_id};
+    if (auto source_id = overlaySourceIdToAlsoCheck(storage_id, storage))
+        ids_to_check.push_back(*source_id);
+
     if (column_names.empty())
     {
         NameSet accessible_columns;
@@ -354,9 +376,18 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
         const auto * alias = storage->as<StorageAlias>();
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
+            /// The column is accessible only if it is granted through every id (facade + source).
+            bool granted_everywhere = true;
+            for (const auto & id : ids_to_check)
+            {
+                if (!access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
+                {
+                    granted_everywhere = false;
+                    break;
+                }
+            }
             /// An `Alias` also requires access to the selected column of its target table.
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
+            if (granted_everywhere && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 
@@ -373,8 +404,11 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
     // In case of cross-replication we don't know what database is used for the table.
     // `storage_id.hasDatabase()` can return false only on the initiator node.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    if (storage_id.hasDatabase())
-        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    for (const auto & id : ids_to_check)
+    {
+        if (id.hasDatabase())
+            query_context->checkAccess(AccessType::SELECT, id, column_names);
+    }
 
     return {};
 }
@@ -392,6 +426,10 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
         const auto & storage_id = table_node.getStorageID();
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
+
+        /// A read-only `Overlay` facade also requires access to the underlying source table.
+        if (auto source_id = overlaySourceIdToAlsoCheck(storage_id, table_node.getStorage()))
+            query_context->checkAccess(AccessType::SELECT, *source_id);
     }
 }
 
@@ -523,13 +561,31 @@ bool hasTrivialCountIncompatibleModifiers(
 /// table has no row policies for the current user or the combined filter is
 /// always-true. Mirrors the effective-filter check used by
 /// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
+RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const StorageID & as_written_id, const ContextPtr & query_context)
 {
     auto storage_id = storage->getStorageID();
     if (!storage_id.hasDatabase())
         return nullptr;
     auto row_policy_filter = query_context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    /// When the table is reached through a read-only `Overlay` facade, access requires a grant on
+    /// the facade as well as on the source, so both names' row policies must apply. Combine the
+    /// facade's SELECT policies with the source's (a row must pass both). For a plain table the
+    /// storage id above is the source and the facade name is combined here; for a parameterized
+    /// view the synthesized storage keeps the facade name, so the source id (carried on the
+    /// storage) is combined instead.
+    if (auto source_id = overlaySourceIdToAlsoCheck(as_written_id, storage))
+    {
+        const auto & other_id
+            = (source_id->database_name == storage_id.database_name && source_id->table_name == storage_id.table_name)
+            ? as_written_id
+            : *source_id;
+        auto other_filter = query_context->getRowPolicyFilter(
+            other_id.getDatabaseName(), other_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(row_policy_filter, other_filter);
+    }
+
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
     return row_policy_filter;
@@ -559,7 +615,7 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -686,7 +742,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -927,6 +983,7 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
 }
 
 std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
+    const StorageID & as_written_id,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context,
     std::set<std::string> & used_row_policies,
@@ -934,7 +991,7 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, as_written_id, query_context);
     if (!row_policy_filter)
         return {};
 
@@ -1288,7 +1345,8 @@ void pushOrderByIntoView(
     /// `StorageView` does not support prewhere), so pushing `LIMIT` would
     /// truncate before the row-policy filter runs and could return fewer rows
     /// than expected.
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    const auto * row_policy_table_node = table_expression->as<TableNode>();
+    if (getEffectiveRowPolicyFilter(storage, row_policy_table_node ? row_policy_table_node->getStorageID() : storage->getStorageID(), query_context))
         return;
 
     /// Skip when `additional_table_filters` matches this view: the additional
@@ -1728,7 +1786,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// planning further down: the trivial-LIMIT optimization must be disabled
             /// whenever those filters actually apply, so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(storage, query_context);
+                || !!getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context);
             if (!has_additional_filters)
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
@@ -1934,7 +1992,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
 
                 auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(
-                    storage, table_expression_query_info, planner_context, used_row_policies, std::move(row_policy_required_names));
+                    storage,
+                    table_node ? table_node->getStorageID() : storage->getStorageID(),
+                    table_expression_query_info,
+                    planner_context,
+                    used_row_policies,
+                    std::move(row_policy_required_names));
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());

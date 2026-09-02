@@ -41,6 +41,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
@@ -3151,11 +3152,39 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         }
     }
 
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    /// The written name can resolve to a parameterized view through a read-only `Overlay`
+    /// facade. The lookup below would load the underlying source view before any source-side
+    /// grant is proven, so a fail-closed visibility precheck runs first: without `SHOW_TABLES`
+    /// on the source name the branch is skipped and the name falls through to the
+    /// table-function factory (`UNKNOWN_FUNCTION`), exactly as for a missing name — a denied
+    /// name, a missing name, and a hidden broken source stay indistinguishable. The precise
+    /// `SELECT` grant on the resolved source view is checked below, after the load.
+    bool parameterized_view_source_visible = true;
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database_name))
+        parameterized_view_source_visible
+            = facade->isSourceTableVisibleNoLoad(table_name, getQueryContext(), AccessType::SHOW_TABLES);
+
+    StoragePtr table;
+    if (parameterized_view_source_visible)
+        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
+            /// Through a read-only `Overlay` facade the view that actually runs is the
+            /// underlying source view, so `SELECT` is required on both the facade name and the
+            /// source name: the facade must not widen access. Both are checked here because the
+            /// interpreters skip the `SELECT` check for table functions (a parameterized view is
+            /// resolved as one), so for a facade read nothing downstream is guaranteed to check
+            /// either name — in particular, without the analyzer none of them is ever checked.
+            auto overlay_source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(
+                StorageID{database_name, table_name}, table);
+            if (overlay_source_id)
+            {
+                getQueryContext()->checkAccess(AccessType::SELECT, StorageID{database_name, table_name});
+                getQueryContext()->checkAccess(AccessType::SELECT, *overlay_source_id);
+            }
+
             auto view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
             auto query = view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
@@ -3179,6 +3208,11 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
                                                      /* comment */ "",
                                                      /* is_parameterized_view */ true);
+            /// The synthesized view keeps the facade name as its own id, so record the source
+            /// view id on it: the downstream access checks and row policies must apply to both
+            /// (see `DatabaseOverlay::getSourceTableIdForReadonlyFacade`).
+            if (overlay_source_id)
+                res->setOverlaySourceTableId(*overlay_source_id);
             res->startup();
             function->setPreferSubqueryToFunctionFormatting(true);
             return res;
@@ -3436,12 +3470,34 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     if (table_name.empty())
         return nullptr;
 
+    /// Same fail-closed precheck as in `executeTableFunction`: through a read-only `Overlay`
+    /// facade the lookup below loads the underlying source view, so without `SHOW_TABLES` on
+    /// the source name the view is treated as missing — a denied name, a missing name, and a
+    /// hidden broken source stay indistinguishable.
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database_name))
+        if (!facade->isSourceTableVisibleNoLoad(table_name, getQueryContext(), AccessType::SHOW_TABLES))
+            return nullptr;
+
     StoragePtr original_view = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (!original_view || !original_view->isView())
         return nullptr;
     auto * storage_view = original_view->as<StorageView>();
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
+
+    /// Through a read-only `Overlay` facade the view that actually runs is the underlying
+    /// source view, so `SELECT` is required on both the facade name and the source name: the
+    /// facade must not widen access. The planner re-checks the facade side with column
+    /// precision against the synthesized storage (which keeps the facade name) and the source
+    /// side through the id carried on it, but resolution alone can already reveal the view's
+    /// schema (e.g. `EXPLAIN QUERY TREE`), so both names are gated here, before wrapping.
+    auto overlay_source_id
+        = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, original_view);
+    if (overlay_source_id)
+    {
+        getQueryContext()->checkAccess(AccessType::SELECT, StorageID{database_name, table_name});
+        getQueryContext()->checkAccess(AccessType::SELECT, *overlay_source_id);
+    }
 
     auto original_view_metadata = original_view->getInMemoryMetadataPtr(getQueryContext(), false);
     auto query = original_view_metadata->getSelectQuery().inner_query->clone();
@@ -3463,6 +3519,11 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
                                                 ColumnsDescription(sample_block->getNamesAndTypesList()),
             /* comment */ "",
             /* is_parameterized_view */ true);
+    /// The synthesized view keeps the facade name as its own id, so record the source view id
+    /// on it: the downstream access checks and row policies must apply to both
+    /// (see `DatabaseOverlay::getSourceTableIdForReadonlyFacade`).
+    if (overlay_source_id)
+        res->setOverlaySourceTableId(*overlay_source_id);
     res->startup();
     return res;
 }

@@ -1,0 +1,8 @@
+1
+2
+3
+CREATE DATABASE db_ov_face2\nENGINE = Overlay(\'db_ov_src2\')
+1
+2
+3
+3

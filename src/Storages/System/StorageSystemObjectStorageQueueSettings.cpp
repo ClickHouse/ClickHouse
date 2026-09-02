@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -63,6 +64,13 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         for (const auto & db : databases)
         {
+            /// A read-only `Overlay` facade exposes the tables of its underlying source databases,
+            /// which this loop already visits directly; walking the facade too would list each
+            /// physical queue table twice (once under its owner database and once under the facade name),
+            /// even though queue settings cannot be managed through the facade.
+            if (DatabaseOverlay::isReadonlyFacade(db.second.get()))
+                continue;
+
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();

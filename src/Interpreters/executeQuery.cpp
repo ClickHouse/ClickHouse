@@ -62,8 +62,10 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -2825,6 +2827,15 @@ static BlockIO executeQueryImpl(
 
             if (insert_query->table_id)
             {
+                /// Fail-closed source-side visibility precheck for a table reached through a
+                /// read-only `Overlay` facade: this async-insert probe resolves and loads the
+                /// underlying source table before the interpreter proves any source-side grant,
+                /// and for a source backed by a remote catalog the resolution itself can surface
+                /// the hidden source's own connection error (see the identical precheck in
+                /// `InterpreterInsertQuery::getTable`).
+                if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(insert_query->table_id.database_name))
+                    facade->checkSourceTableAccess(insert_query->table_id.table_name, context, AccessType::SHOW_TABLES);
+
                 insert_table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context);
                 if (insert_table)
                     async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();

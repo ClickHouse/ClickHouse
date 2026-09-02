@@ -1,7 +1,9 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Databases/DatabaseOverlay.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -243,6 +245,11 @@ StoragePtr JoinedTables::getLeftTableStorage()
         table_id = StorageID("system", "one");
     }
 
+    /// Remember the id exactly as written in the query (the `Overlay` facade name for tables
+    /// reached through a facade), so the access check can verify the grant on the facade as well
+    /// as on the underlying source database.
+    left_table_id = table_id;
+
     if (auto view_source = context->getViewSource())
     {
         const auto & storage_values = static_cast<const StorageValues &>(*view_source);
@@ -253,6 +260,17 @@ StoragePtr JoinedTables::getLeftTableStorage()
             return context->getViewSource();
         }
     }
+
+    /// Fail-closed source-side visibility precheck for a table reached through a read-only
+    /// `Overlay` facade: it must run before the catalog lookup below resolves and loads the
+    /// underlying source table, because loading can surface the hidden source's own startup /
+    /// metadata / remote error to a user with no grant on the source, turning the facade into an
+    /// oracle for hidden broken sources. `SHOW_TABLES` is checked (not `SELECT`) because any
+    /// grant on the source table implies it, so users holding only column-level `SELECT` grants
+    /// are not over-denied here; the precise column-level `SELECT` on both the facade and the
+    /// source is still verified against the loaded storage in `checkAccessRightsForSelect`,
+    /// which also closes the resolution race.
+    DatabaseOverlay::checkSourceTableAccessIfFacade(table_id, context, AccessType::SHOW_TABLES);
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
     return DatabaseCatalog::instance().getTable(table_id, context);
@@ -343,6 +361,10 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
+        /// The right-hand side of the join is looked up here to recognize the special storages
+        /// (`Join`, `Dictionary`, key-value): the same fail-closed source-side precheck as for the
+        /// left table must run before this lookup can load a table behind a read-only `Overlay`.
+        DatabaseOverlay::checkSourceTableAccessIfFacade(joined_table_id, context, AccessType::SHOW_TABLES);
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (storage)
         {

@@ -1,3 +1,4 @@
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
@@ -203,6 +204,18 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         StorageID local_table_id(query.getDatabase(), query.getTable());
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
+
+    /// Fail-closed source-side visibility precheck for a table reached through a read-only
+    /// `Overlay` facade: it must run before the lookup below resolves and loads the underlying
+    /// source table. Without it, `INSERT INTO` a facade name could surface a hidden broken
+    /// source's own startup / metadata / remote error — and `getSampleBlock` would derive the
+    /// column list from the source metadata — before any source-side grant is proven.
+    /// `SHOW_TABLES` is checked (not `INSERT`) because any grant on the source table implies it,
+    /// so users holding only column-level `INSERT` grants are not over-denied here; the
+    /// column-level `INSERT` on both the facade and the source is still verified against the
+    /// loaded storage afterwards, which also closes the resolution race.
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(query.table_id.database_name))
+        facade->checkSourceTableAccess(query.table_id.table_name, current_context, AccessType::SHOW_TABLES);
 
     return DatabaseCatalog::instance().getTable(query.table_id, current_context);
 }
@@ -1290,7 +1303,25 @@ BlockIO InterpreterInsertQuery::execute()
     /// front by the caller, so re-authorizing `INSERT` on the meaningless temporary name would be a
     /// spurious `ACCESS_DENIED` for table-scoped grants. Source `SELECT` access is still checked below.
     if (!query.table_function && !skip_target_insert_access_check)
-        context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
+    {
+        const auto target_database = DatabaseCatalog::instance().tryGetDatabase(query.table_id.getDatabaseName());
+        if (const auto * overlay = typeid_cast<const DatabaseOverlay *>(target_database.get());
+            overlay && overlay->isReadOnly())
+        {
+            /// INSERT through an Overlay facade resolves to a table owned by an underlying
+            /// database. Writing through the facade requires a grant on *both* the facade database
+            /// and the underlying source database: a grant on the Overlay cannot be used to write
+            /// into a source the user has no INSERT privilege on, and a grant on the source alone
+            /// cannot be used to write through a facade the user was not granted.
+            const auto source_table_id = table->getStorageID();
+            context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
+            context->checkAccess(AccessType::INSERT, source_table_id, query_sample_block.getNames());
+        }
+        else
+        {
+            context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
+        }
+    }
 
     /// Access the storage itself guards the write with (e.g. the source access of a table of a
     /// `URL` database). It is also checked when the sink is created, but that happens in a

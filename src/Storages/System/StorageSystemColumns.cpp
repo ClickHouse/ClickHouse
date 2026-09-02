@@ -16,6 +16,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
 #include <Interpreters/Context.h>
@@ -147,10 +148,16 @@ protected:
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
+            /// Set when the table is reached through a read-only `Overlay` facade: the id of the
+            /// underlying source table, on which the privileges must be granted as well (the
+            /// facade must not widen visibility).
+            std::optional<StorageID> overlay_source_id;
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
             const auto * alias = storage->as<StorageAlias>();
 
             {
+                overlay_source_id
+                    = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, storage);
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
 
                 if (table_lock == nullptr)
@@ -200,16 +207,28 @@ protected:
             }
 
             /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
-            if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+            /// For a table reached through a read-only `Overlay` facade the privilege is required
+            /// on the underlying source table too.
+            if (need_to_check_access_for_tables
+                && !(access->isGranted(AccessType::SHOW_TABLES, database_name, table_name)
+                     && (!overlay_source_id
+                         || access->isGranted(AccessType::SHOW_TABLES, overlay_source_id->database_name, overlay_source_id->table_name))))
                 continue;
 
-            bool need_to_check_access_for_columns = need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+            bool need_to_check_access_for_columns = need_to_check_access_for_tables
+                && !(access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
+                     && (!overlay_source_id
+                         || access->isGranted(AccessType::SHOW_COLUMNS, overlay_source_id->database_name, overlay_source_id->table_name)));
 
             size_t position = 0;
             for (const auto & column : columns)
             {
                 ++position;
-                if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
+                if (need_to_check_access_for_columns
+                    && !(access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name)
+                         && (!overlay_source_id
+                             || access->isGranted(
+                                 AccessType::SHOW_COLUMNS, overlay_source_id->database_name, overlay_source_id->table_name, column.name))))
                     continue;
 
                 if (alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))

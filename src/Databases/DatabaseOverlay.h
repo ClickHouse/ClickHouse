@@ -1,10 +1,16 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
 #include <Storages/IStorage_fwd.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/StorageID.h>
+
+#include <unordered_map>
 
 namespace DB
 {
+
+class ContextAccessWrapper;
 
 /**
  * Implements the IDatabase interface and combines multiple other databases
@@ -16,10 +22,21 @@ namespace DB
 class DatabaseOverlay : public IDatabase, protected WithContext
 {
 public:
-    DatabaseOverlay(const String & name_, ContextPtr context_);
+    DatabaseOverlay(const String & name_, ContextPtr context_, bool readonly_ = false);
 
-    /// Not thread-safe. Use only as factory to initialize database
+    /// Register an underlying database directly. Used by `clickhouse-local`
+    /// (non-readonly mode), where the underlying databases are owned by the
+    /// `Overlay` itself and are not registered in `DatabaseCatalog`.
+    /// Not thread-safe. Use only as factory to initialize database.
     DatabaseOverlay & registerNextDatabase(DatabasePtr database);
+
+    /// Register an underlying database by name. Used by `registerDatabaseOverlay`
+    /// (server-side, readonly mode). The database is resolved lazily via
+    /// `DatabaseCatalog` on each operation, so the Overlay does not depend on
+    /// startup ordering during `loadMetadata`. Missing sources are skipped at
+    /// access time, allowing the Overlay to come up before its sources do.
+    /// Not thread-safe. Use only as factory to initialize database.
+    DatabaseOverlay & registerNextDatabaseByName(const String & source_name);
 
     String getEngineName() const override { return "Overlay"; }
 
@@ -34,8 +51,6 @@ public:
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
-    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
-        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void renameTable(
         ContextPtr current_context,
@@ -61,7 +76,59 @@ public:
 
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
 
+    /// Snapshot iterator of an `Overlay` that remembers, for every collected name, the source
+    /// database that contributed it. A reader that must authorize a row against the underlying
+    /// source (`system.tables` behind a read-only facade) recovers the owner from the row's
+    /// storage object, but a hint-aware source (`DataLakeCatalog`) can legitimately keep an
+    /// unresolvable table as a name-only row with a null storage; the owner of such a row can
+    /// only be answered by the facade itself.
+    class TablesSnapshotIterator : public DatabaseTablesSnapshotIterator
+    {
+    public:
+        TablesSnapshotIterator(Tables && tables_, String && database_name_, std::unordered_map<String, String> && table_sources_)
+            : DatabaseTablesSnapshotIterator(std::move(tables_), std::move(database_name_)), table_sources(std::move(table_sources_))
+        {
+        }
+
+        /// Name of the source database that contributed `table_name`; empty when unknown.
+        String getSourceDatabaseName(const String & table_name) const
+        {
+            auto it = table_sources.find(table_name);
+            return it == table_sources.end() ? String{} : it->second;
+        }
+
+    private:
+        std::unordered_map<String, String> table_sources;
+    };
+
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
+    /// The `Overlay` forwards the listing hint to every source database, so a source that can push
+    /// it down to an external catalog (`DataLake`) keeps doing so behind the facade, and a source
+    /// whose hint-aware iterator tolerates unresolvable tables keeps that behaviour too. Without
+    /// these overrides the facade fell back to the plain, heavyweight `getTablesIterator` of each
+    /// source: the hint was dropped and one unreadable source table aborted the whole listing,
+    /// even though listing that source database directly succeeded.
+    DatabaseTablesIteratorPtr getTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const override;
+
+    std::vector<LightWeightTableDetails> getLightweightTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
+    std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const override;
+
+    /// `IDatabase` answers with `NOT_IMPLEMENTED` by default, but whole-server scans of detached
+    /// tables (`system.detached_tables`, `system.tables` with `is_detached`) walk every database, so
+    /// an `Overlay` must answer instead of aborting those queries.
+    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     bool empty() const override;
 
@@ -69,6 +136,10 @@ public:
 
     /// Return false if at least one underlying database is not external, otherwise return true
     bool isExternal() const override;
+
+    /// A server-side (read-only) Overlay is reported as a remote database; the `clickhouse-local`
+    /// (non-read-only) Overlay is not. See the definition for the rationale.
+    bool isRemoteDatabase() const override;
 
     void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
     bool supportsLoadingInTopologicalOrder() const override;
@@ -101,13 +172,131 @@ public:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
     void checkMetadataFilenameAvailability(const String & table_name) const override;
+    bool isReadOnly() const override;
+
+    /// In read-only (facade) mode the underlying databases own the tables, so DROP DATABASE on the
+    /// Overlay must not try to iterate and drop them via this facade.
+    bool shouldBeEmptyOnDetach() const override { return !readonly; }
+
+    /// Returns true when `database` is a read-only `Overlay` facade (the server-side variant).
+    /// Accepts a null pointer for convenience of callers holding a `tryGetDatabase` result.
+    static bool isReadonlyFacade(const IDatabase * database);
+
+    /// Returns `database` typed as a read-only `Overlay` facade, or nullptr when it is not one.
+    /// Accepts a null pointer for convenience of callers holding a `tryGetDatabase` result.
+    static const DatabaseOverlay * asReadonlyFacade(const IDatabase * database);
+
+    /// Resolves `database_name` in the catalog and returns it as a read-only `Overlay` facade, or
+    /// nullptr when the name is empty (an unqualified name with no current database), unknown, or
+    /// not a facade. Every call site that has a written database name uses this instead of
+    /// resolving the name itself: an empty name must not reach the catalog, which asserts on it,
+    /// and the returned pointer owns the database, so it stays alive while the caller uses it.
+    static std::shared_ptr<const DatabaseOverlay> tryGetReadonlyFacade(const String & written_database_name);
+
+    /// Fail-closed source-side visibility check for `EXISTS`-style queries through the facade:
+    /// returns true only when `table_name` resolves to a source table (the first listed source
+    /// database whose metadata contains the name) AND `access_to_check` is granted on that source
+    /// name. The resolution never loads the source table, and even the metadata existence probe
+    /// itself is fenced: for source engines backed by a remote catalog (`MySQL`, `PostgreSQL`,
+    /// data-lake catalogs) `isTableExist` can throw the source's own error, so a failed probe is
+    /// rethrown only when `access_to_check` is granted on the probed source name — otherwise the
+    /// answer is a masked `false`, exactly as for a hidden or missing name. This keeps the facade
+    /// from acting as an oracle for hidden broken sources: a user without the source-side grant
+    /// must not observe the source's own exception.
+    bool isSourceTableVisibleNoLoad(const String & table_name, ContextPtr context, AccessType access_to_check) const;
+
+    /// Fail-closed source-side grant check for metadata queries that must throw on denial
+    /// (`SHOW CREATE`, `DESCRIBE`): resolves `table_name` through the facade's sources without
+    /// loading the table and throws `ACCESS_DENIED` unless `access_to_check` is granted on the
+    /// resolved source name; returns silently when no source has the name (the caller's own
+    /// lookup then reports it as missing). Callers run this *before* any lookup that would load
+    /// the source table. The metadata probe is fenced the same way as in
+    /// `isSourceTableVisibleNoLoad`: a probe failure on a remote source is rethrown only when
+    /// `access_to_check` is granted on that source name, and is otherwise remasked as the same
+    /// `ACCESS_DENIED` a resolved-but-denied name would produce, so a broken hidden source and a
+    /// denied healthy one stay indistinguishable.
+    void checkSourceTableAccess(const String & table_name, ContextPtr context, AccessType access_to_check) const;
+
+    /// Convenience wrapper of `checkSourceTableAccess` for the catalog-lookup sites: when
+    /// `table_id` names a table reached through a read-only `Overlay` facade, requires
+    /// `access_to_check` on the underlying source name before the caller resolves and loads the
+    /// source table; does nothing for plain databases and temporary tables. Every lookup that can
+    /// load a table behind a facade must run this first, otherwise the source's own startup /
+    /// metadata / remote error reaches a user with no grant on the source.
+    static void checkSourceTableAccessIfFacade(const StorageID & table_id, ContextPtr context, AccessType access_to_check);
+
+    /// When `written_id` refers to a table reached through a read-only `Overlay` facade — the
+    /// database of `written_id` is a read-only `Overlay` while `storage` belongs to a different
+    /// table (the underlying source) — returns the id of that source table, so the caller can
+    /// require a privilege on both the facade name and the source (the facade must not widen
+    /// access). Returns `std::nullopt` for plain databases, temporary tables, and null `storage`.
+    static std::optional<StorageID> getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage);
+
+    /// Shared gate for iterator-based `system.*` readers (`system.parts`, `system.mutations`,
+    /// `system.replicas`, queue/consumer tables, ...): returns true when `storage`, reached under
+    /// the facade name `database_name`.`table_name` through a read-only `Overlay`, must stay
+    /// hidden because `SHOW_TABLES` is not granted on the underlying source table — the facade
+    /// must not widen metadata visibility. The check must run regardless of any facade-side
+    /// per-database grant shortcut, since such a shortcut does not cover the source database.
+    static bool isSourceTableHiddenFromShow(
+        const ContextAccessWrapper & access, const String & written_database_name, const String & written_table_name, const StoragePtr & storage);
+
+    /// True when the current user may see the facade's own definition. The definition of a
+    /// read-only facade is `Overlay('db_a', 'db_b', ...)` — it names every source database, so
+    /// formatting it for a user who is not granted on those databases would disclose their names
+    /// through the facade, bypassing the source-database visibility model. `SHOW DATABASES` on
+    /// every source name is required, the same privilege that makes a database visible directly.
+    /// Always true for the non-readonly (`clickhouse-local`) variant, whose definition names no
+    /// source databases.
+    bool areSourceDatabaseNamesVisible(const ContextPtr & context) const;
+
+    /// True when this database is a read-only facade that lists `source_database_name` among its
+    /// sources.
+    /// Used when a new read-only `Overlay` is created or attached, to reject nesting from the other
+    /// side: the new facade must not take the place of a source of an existing one.
+    bool usesSourceDatabase(const String & source_database_name) const;
+
+    /// Throwing form of `areSourceDatabaseNamesVisible` for the database-metadata queries that
+    /// report a denial (`SHOW CREATE DATABASE`, `BACKUP DATABASE`). The message names only the
+    /// facade, never a source, so a denied user learns nothing about which sources are hidden.
+    void checkSourceDatabaseNamesVisible(const ContextPtr & context) const;
     void checkTableNameLength(const String & table_name) const override;
 
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 
+    /// Returns the current snapshot of underlying databases, preserving
+    /// registration order. In readonly mode, each call resolves source names via
+    /// `DatabaseCatalog::tryGetDatabase` (lazy), so updates to the catalog become
+    /// visible without re-registering the Overlay. Missing sources are skipped, and
+    /// so is a source that is itself a read-only `Overlay` (nesting facades would let
+    /// access checks and row policies bypass the intermediate facade; it is rejected
+    /// up front by `CREATE`/`ATTACH`, see the definition for the rest).
+    /// In non-readonly mode (clickhouse-local), returns the directly-registered
+    /// databases stored in `databases`.
+    std::vector<DatabasePtr> resolveDatabases() const;
+
+    /// Runs `collect` for every source database with the read-only facade's fail-closed fencing:
+    /// opening a source's iterator can reach a remote catalog and throw that source's own error
+    /// before any source-side grant is proven, so the error propagates only to a caller granted
+    /// `SHOW TABLES` on the whole source database, and is otherwise swallowed (a failing source
+    /// contributes nothing, indistinguishable from an empty or a denied one). Shared by all the
+    /// listing entry points so they cannot drift apart.
+    void collectFromSourceDatabases(ContextPtr context, const std::function<void(const DatabasePtr &)> & collect) const;
+
+    /// Directly registered underlying databases (clickhouse-local non-readonly mode).
+    /// Empty in readonly mode.
     std::vector<DatabasePtr> databases;
+
+    /// Source database names for lazy resolution (server-side readonly mode).
+    /// Empty in non-readonly mode.
+    std::vector<String> source_names;
+
+    /// Guards the one-shot warning about a source that is itself a read-only `Overlay`.
+    mutable std::atomic_flag nested_source_warning_logged;
+
     LoggerPtr log;
+    const bool readonly;
 };
 
 }

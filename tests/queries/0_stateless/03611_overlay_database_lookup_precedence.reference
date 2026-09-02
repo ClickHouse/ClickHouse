@@ -1,0 +1,4 @@
+listed-first-wins	1	first
+reversed-order-wins	2	second
+CREATE DATABASE db_overlay_precedence\nENGINE = Overlay(\'db_src_first\', \'db_src_second\')
+dedup-first-occurrence-wins	1	first

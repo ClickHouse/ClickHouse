@@ -1,0 +1,46 @@
+Sanity: default user sees both source tables through the facade
+t_a
+t_b
+Facade-only SHOW grant: SHOW TABLES through the facade lists nothing
+0
+Facade-only SHOW grant: EXISTS reports an existing source table as nonexistent, same as a missing one
+0
+0
+Facade-only SHOW grant: SHOW CREATE TABLE is denied
+ACCESS_DENIED
+Facade-only SHOW grant: DESCRIBE is denied
+ACCESS_DENIED
+Facade-only SHOW grant: SHOW COLUMNS lists nothing
+0
+Facade-only SHOW grant: system.tables and system.columns list nothing for the facade
+0
+0
+Facade-only SHOW grant: system.data_skipping_indices, system.projections and system.constraints list nothing for the facade
+0
+0
+0
+Facade-only SHOW grant: SHOW INDEXES exposes no secondary index
+0
+Dual SHOW grants: SHOW TABLES lists only the tables of the granted source
+t_a
+Dual SHOW grants: EXISTS sees the granted source table but not the non-granted one
+1
+0
+Dual SHOW grants: SHOW CREATE TABLE works for the granted source table
+Access granted
+Dual SHOW grants: SHOW CREATE TABLE is denied for the non-granted source table
+ACCESS_DENIED
+Dual SHOW grants: DESCRIBE works for the granted source table
+Access granted
+Dual SHOW grants: DESCRIBE is denied for the non-granted source table
+ACCESS_DENIED
+Dual SHOW grants: SHOW COLUMNS lists the columns of the granted table only
+2
+0
+Dual SHOW grants: system.data_skipping_indices, system.projections and system.constraints show the granted source only
+t_a	idx
+t_a	proj
+t_a	cnstr
+Dual SHOW grants: SHOW INDEXES exposes the granted source index but not the non-granted one
+1
+0

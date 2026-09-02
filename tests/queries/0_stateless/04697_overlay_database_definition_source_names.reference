@@ -1,0 +1,15 @@
+Sanity: the default user sees the full definition
+CREATE DATABASE db_ovl\nENGINE = Overlay(\'db_a\', \'db_b\')
+Overlay(\'db_a\', \'db_b\')
+Facade-only grant: SHOW CREATE DATABASE is denied
+denied
+Facade-only grant: system.databases still lists the facade, with the source names redacted
+engine_full: Overlay
+One source granted out of two: still denied, and still redacted
+denied
+engine_full: Overlay
+All sources granted: the definition is shown
+definition with the source names
+Overlay(\'db_a\', \'db_b\')
+The scan of system.databases does not fail for a restricted user
+1

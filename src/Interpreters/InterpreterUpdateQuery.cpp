@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/IDatabase.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -23,6 +24,7 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/quoteString.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 
 
@@ -116,6 +118,19 @@ BlockIO InterpreterUpdateQuery::execute()
     auto resolved_table_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
     if (resolved_table_id)
     {
+        /// Reject UPDATE through a read-only Overlay facade by the database name alone, before the
+        /// best-effort table lookup of the `_row_exists` prepass: resolving the table through the
+        /// facade would load the underlying source table, so a lookup-first order would surface the
+        /// source's own startup or connection error - or answer differently for a missing name vs.
+        /// an existing one - turning the facade into a source-table existence oracle (the same
+        /// ordering rule as in InterpreterDropQuery).
+        if (DatabaseOverlay::tryGetReadonlyFacade(resolved_table_id.database_name))
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run UPDATE in an underlying database",
+                backQuote(resolved_table_id.database_name));
+
         /// The database has to be pinned before the access rights and the distributed dispatch are built
         /// from it: otherwise they are expanded to the configured default database of each host, so the
         /// rights that are checked and the table that is updated can name different databases.
@@ -168,6 +183,8 @@ BlockIO InterpreterUpdateQuery::execute()
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     update_query.setDatabase(table_id.database_name);
 
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (table->isStaticStorage())
@@ -176,7 +193,6 @@ BlockIO InterpreterUpdateQuery::execute()
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());

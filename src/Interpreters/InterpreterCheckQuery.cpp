@@ -19,6 +19,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <Databases/DatabaseOverlay.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
@@ -105,15 +107,36 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
     return Chunk(std::move(columns), 1);
 }
 
+/// Resolves the table for `CHECK TABLE`, first running the fail-closed source-side visibility
+/// precheck for a name reached through a read-only `Overlay` facade: the lookup itself resolves
+/// and loads the underlying source table, which can surface a hidden source's own error to a
+/// user with no grant on the source (see the identical precheck in
+/// `JoinedTables::getLeftTableStorage`). The `CHECK` privilege on both the facade and the source
+/// is still verified against the loaded storage in the `TableCheckTask` constructor, which also
+/// closes the resolution race.
+StoragePtr resolveTableToCheck(const StorageID & table_id, const ContextPtr & context)
+{
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
+        facade->checkSourceTableAccess(table_id.table_name, context, AccessType::SHOW_TABLES);
+    return DatabaseCatalog::instance().getTable(table_id, context);
+}
+
 class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
     TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
-        : table(DatabaseCatalog::instance().getTable(table_id, context))
+        : table(resolveTableToCheck(table_id, context))
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
         chassert(context);
         context->checkAccess(AccessType::CHECK, table_id);
+
+        /// When the table is reached through a read-only `Overlay` facade, `table_id` is the
+        /// facade name while the check runs against the underlying source table; also require
+        /// the grant there, so the facade cannot widen access (mirrors the dual-grant `SELECT`
+        /// contract of the read path).
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, table))
+            context->checkAccess(AccessType::CHECK, *source_id);
     }
 
     TableCheckTask(StoragePtr table_, ContextPtr context)
@@ -405,10 +428,19 @@ static Strings getAllDatabases(const ContextPtr & context)
     Strings res;
     const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     res.reserve(databases.size());
-    for (const auto & [database_name, _] : databases)
+    for (const auto & [database_name, database] : databases)
     {
         if (DatabaseCatalog::isPredefinedDatabase(database_name))
             continue;
+
+        /// A read-only `Overlay` facade owns no tables: its iterator returns the underlying
+        /// source tables, which this scan already visits through their own databases. Walking
+        /// the facade too would check every overlay-backed table a second time and emit
+        /// duplicate result rows under the source table's name (the all-tables output reports
+        /// the storage's own id, not the facade name).
+        if (DatabaseOverlay::isReadonlyFacade(database.get()))
+            continue;
+
         context->checkAccess(AccessType::SHOW_DATABASES, database_name);
         res.emplace_back(database_name);
     }

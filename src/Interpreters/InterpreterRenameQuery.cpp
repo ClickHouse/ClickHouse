@@ -11,7 +11,9 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -26,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -90,6 +93,26 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 
     for (const auto & elem : descriptions)
     {
+        /// A read-only `Overlay` facade owns no storage of its own and rejects `renameTable`. But the
+        /// generic pre-checks below run first: `RENAME TABLE IF EXISTS ov.t TO ...` only throws once
+        /// `ov.t` resolves through the facade (`isTableExist`), and `RENAME ... TO ov.t` fails with
+        /// `TABLE_ALREADY_EXISTS` when `t` exists in a source (`assertTableDoesntExist`) — both leak
+        /// source-table existence through a facade-scoped rename grant. Reject up front when either the
+        /// source or the destination database is a read-only Overlay, before those existence probes,
+        /// mirroring `InterpreterCreateQuery`'s pre-existence-check reject.
+        for (const auto & database_name : {elem.from_database_name, elem.to_database_name})
+        {
+            if (const auto database_maybe_overlay = database_catalog.tryGetDatabase(database_name))
+            {
+                if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database_maybe_overlay.get()); overlay && overlay->isReadOnly())
+                    throw Exception(
+                        ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                        "Database {} is an Overlay facade (read-only). "
+                        "Run RENAME in the underlying database that owns the table",
+                        backQuoteIfNeed(database_name));
+            }
+        }
+
         if (elem.if_exists)
         {
             chassert(!rename.exchange);

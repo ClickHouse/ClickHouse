@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
@@ -710,6 +711,15 @@ protected:
             const String & database_name = databases_cursor.getDatabaseName();
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
+            /// A read-only `Overlay` facade lists tables owned by its underlying source databases,
+            /// and a table is visible through the facade only when `SHOW_TABLES` is granted on the
+            /// underlying source table as well as on the facade name (the facade must not widen
+            /// visibility). A database-wide grant on the facade name is therefore not enough to
+            /// skip per-table checks, and the names-only fast path below (which never resolves the
+            /// source storage) cannot be taken.
+            const bool need_to_check_access_for_overlay_sources
+                = need_to_check_access_for_databases && DatabaseOverlay::isReadonlyFacade(databases_cursor.getDatabase().get());
+
             /// This is for queries similar to 'show tables', where only name of the table is needed
             auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
             bool needs_one_column = (needed_columns.size() == 1 && needed_columns[0].name == "name");
@@ -720,7 +730,7 @@ protected:
 
             /// A database whose iterator survived a block boundary was started on the
             /// slow path and must be finished there, not re-emitted whole.
-            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables && !databases_cursor.hasTablesIterator())
+            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables && !need_to_check_access_for_overlay_sources && !databases_cursor.hasTablesIterator())
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
@@ -753,6 +763,32 @@ protected:
                 /// -- so a single broken table neither drops itself from the listing nor aborts the
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
+
+                if (need_to_check_access_for_overlay_sources)
+                {
+                    /// The storage returned by the facade's iterator belongs to the underlying
+                    /// source database; require `SHOW_TABLES` on it too. A name-only row (null
+                    /// storage: a source such as `DataLakeCatalog` keeps a table whose metadata
+                    /// is unresolvable in the listing) carries no storage to recover the owner
+                    /// from, so ask the facade's iterator, which remembers the contributing
+                    /// source; a direct source listing keeps such rows, and the facade must not
+                    /// drop them for an authorized caller. When the owner cannot be named at
+                    /// all, fail close and skip the row.
+                    String source_database_name;
+                    String source_table_name = table_name;
+                    if (table)
+                    {
+                        const auto source_id = table->getStorageID();
+                        source_database_name = source_id.database_name;
+                        source_table_name = source_id.table_name;
+                    }
+                    else if (const auto * facade_snapshot = dynamic_cast<const DatabaseOverlay::TablesSnapshotIterator *>(&tables_it))
+                        source_database_name = facade_snapshot->getSourceDatabaseName(table_name);
+
+                    if (source_database_name.empty()
+                        || !access->isGranted(AccessType::SHOW_TABLES, source_database_name, source_table_name))
+                        continue;
+                }
 
                 const auto * alias = table ? table->as<StorageAlias>() : nullptr;
                 const bool can_expose_metadata

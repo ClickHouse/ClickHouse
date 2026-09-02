@@ -11,6 +11,8 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
+#include <Access/Common/AccessType.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/Context.h>
@@ -304,6 +306,21 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     StorageID storage_id(database_name, table_name);
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+
+    /// Fail-closed source-side visibility precheck for a table reached through a read-only
+    /// `Overlay` facade: it must run before the catalog lookups below resolve and load the
+    /// underlying source table, because loading can surface the hidden source's own startup /
+    /// metadata / remote error to a user with no grant on the source, turning the facade into an
+    /// oracle for hidden broken sources. `SHOW_TABLES` is checked (not the operation's own
+    /// access type) because any grant on the source table implies it, so users holding only
+    /// column-level grants are not over-denied here; the precise operation grant on both the
+    /// facade and the source is still verified against the loaded storage at planning time
+    /// (`checkAccessRights` in `PlannerJoinTree`), which also closes the resolution race.
+    if (!is_temporary_table)
+    {
+        if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(storage_id.getDatabaseName()))
+            facade->checkSourceTableAccess(storage_id.getTableName(), context, AccessType::SHOW_TABLES);
+    }
 
     StoragePtr storage;
     TableLockHolder storage_lock;
