@@ -101,7 +101,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// execution limits after deserialization.
 /// Version 11 appends the aggregate-tree frame threshold to `WindowStep`. Below this version the field
 /// is absent on both sides: a peer that old has no aggregate tree, so the legacy layout maps exactly to
-/// its recompute semantics, and a newer reader disables the tree for such a step.
+/// its recompute semantics, a newer writer refuses a step that could use the tree, and a newer reader
+/// disables the tree for such a step.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 11;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front

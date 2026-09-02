@@ -279,6 +279,17 @@ else \
         demangle(typeid(*column).name())); \
 }
 
+bool WindowTransform::aggregateFunctionSupportsFrameTree(const IAggregateFunction & function)
+{
+    // Zero-sized states (the Nothing placeholders for only-NULL arguments) would
+    // make every segment slot alias the same address, and functions with a
+    // constant-time batch add re-aggregate any frame for free; both keep the
+    // recompute path.
+    return function.sizeOfData() != 0
+        && function.mergeIsEquivalentToAddingRows()
+        && !function.addBatchSinglePlaceIsConstant();
+}
+
 WindowTransform::WindowTransform(SharedHeader input_header_,
         SharedHeader output_header_,
         const WindowDescription & window_description_,
@@ -345,13 +356,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     {
         if (workspaces[i].window_function_impl)
             continue;
-        // Zero-sized states (the Nothing placeholders for only-NULL arguments) would
-        // make every segment slot alias the same address, and functions with a
-        // constant-time batch add re-aggregate any frame for free; both keep the
-        // recompute path.
-        workspace_frame_trees[i].merge_equivalent = workspaces[i].aggregate_function->sizeOfData() != 0
-            && workspaces[i].aggregate_function->mergeIsEquivalentToAddingRows()
-            && !workspaces[i].aggregate_function->addBatchSinglePlaceIsConstant();
+        workspace_frame_trees[i].merge_equivalent = aggregateFunctionSupportsFrameTree(*workspaces[i].aggregate_function);
         workspace_frame_trees[i].has_trivial_destructor = workspaces[i].aggregate_function->hasTrivialDestructor();
         any_workspace_supports_frame_tree |= workspace_frame_trees[i].merge_equivalent;
     }

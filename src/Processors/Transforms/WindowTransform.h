@@ -69,6 +69,10 @@ public:
 
     ~WindowTransform() override;
 
+    /// Whether a sliding frame over `function` may be evaluated with the frame aggregate tree
+    /// (see `FrameAggregateTree`) instead of re-aggregating the whole frame for every row.
+    static bool aggregateFunctionSupportsFrameTree(const IAggregateFunction & function);
+
     String getName() const override
     {
         return "WindowTransform";
