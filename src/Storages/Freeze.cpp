@@ -338,7 +338,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(
         {
             bool has_parts = false;
             for (auto it = disk->iterateDirectory(table_directory); it->isValid() && !has_parts; it->next())
-                has_parts = it->name().find('_') != std::string::npos;
+                has_parts = it->name().contains('_');
 
             if (!has_parts)
             {
