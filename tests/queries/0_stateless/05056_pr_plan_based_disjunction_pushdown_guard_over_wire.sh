@@ -36,14 +36,20 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, text_log"
 
 # The initiator pushes the two partial predicates once while planning; the replicas, which receive that
-# plan already optimized, must add none. Counted over the secondary queries only, so the answer does not
-# depend on how many replicas the query ended up using.
+# plan already optimized, must add none. `on_initiator` is there so the test fails loudly if the log
+# message is ever renamed rather than quietly reporting zero pushes everywhere.
+#
+# The secondary queries of the plan-based path are logged with `current_database` = `default` rather than
+# the database of the query they belong to, so only the initiator row can be pinned to `currentDatabase()`.
 $CLICKHOUSE_CLIENT -q "
-    SELECT count()
+    SELECT
+        countIf(query_id = '$query_id') AS on_initiator,
+        countIf(query_id != '$query_id') AS on_replicas
     FROM system.text_log
     WHERE message LIKE '%Pushed down partial filter%'
       AND query_id IN (
           SELECT query_id FROM system.query_log
-          WHERE initial_query_id = '$query_id' AND query_id != initial_query_id)
+          WHERE initial_query_id = '$query_id'
+            AND (current_database = currentDatabase() OR NOT is_initial_query))
     SETTINGS enable_parallel_replicas = 0
 "
