@@ -22,7 +22,10 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/prometheus.xml"],
-    user_configs=["configs/allow_experimental_time_series_table.xml"],
+    user_configs=[
+        "configs/allow_experimental_time_series_table.xml",
+        "configs/prometheus_timeout_profile.xml",
+    ],
     handle_prometheus_remote_read=(9093, "/read"),
     handle_prometheus_remote_write=(9093, "/write"),
 )
@@ -156,6 +159,118 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
         1,
     )
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
+
+
+def assert_query_timeout_setting(query_id, expected_max_execution_time):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        "SELECT toFloat64(Settings['max_execution_time']) = "
+        f"{expected_max_execution_time}, mapContains(Settings, 'timeout') "
+        f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+        "1\t0\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+
+
+def assert_prometheus_timeout_response(response):
+    assert response.status_code == 503, response.text
+    response_json = response.json()
+    assert response_json["status"] == "error"
+    assert response_json["errorType"] == "timeout"
+
+
+def test_query_timeout_is_applied_to_instant_and_range_queries():
+    for path, time_params in (
+        ("/api/v1/query", "time=1000"),
+        ("/api/v1/query_range", "start=999&end=1002&step=1"),
+    ):
+        query_id = f"promql-timeout-{uuid.uuid4()}"
+        url = (
+            f"http://{node.ip_address}:9093{path}"
+            f"?query=post_body_metric&{time_params}&timeout=500ms"
+        )
+        response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+        extract_data_from_http_api_response(response)
+
+        assert_query_timeout_setting(query_id, "0.5")
+
+
+def test_query_timeout_does_not_loosen_a_stricter_query_limit():
+    query_id = f"promql-timeout-{uuid.uuid4()}"
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query"
+        f"?query=post_body_metric&time=1000&max_execution_time=5&timeout=10s"
+    )
+    response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+    extract_data_from_http_api_response(response)
+
+    assert_query_timeout_setting(query_id, "5.0")
+
+
+def test_query_timeout_is_applied_to_post_query():
+    query_id = f"promql-timeout-{uuid.uuid4()}"
+    response = requests.post(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        data={"query": "post_body_metric", "time": "1000", "timeout": "500ms"},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-ClickHouse-Query-Id": query_id,
+        },
+    )
+    extract_data_from_http_api_response(response)
+
+    assert_query_timeout_setting(query_id, "0.5")
+
+
+def test_query_timeout_does_not_loosen_a_stricter_profile_limit():
+    query_id = f"promql-timeout-{uuid.uuid4()}"
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query"
+        f"?query=post_body_metric&time=1000&user=prometheus_timeout_user"
+        f"&max_execution_time=20&timeout=10s"
+    )
+    response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+    extract_data_from_http_api_response(response)
+
+    assert_query_timeout_setting(query_id, "5.0")
+
+
+@pytest.mark.parametrize("overflow_mode", ["throw", "break"])
+def test_query_timeout_returns_a_prometheus_timeout_error(overflow_mode):
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        f"?query=stream_error&start=100&end=200&step=10"
+        f"&timeout=0.000001&timeout_overflow_mode={overflow_mode}&max_block_size=1"
+    )
+    response = requests.get(url)
+    assert_prometheus_timeout_response(response)
+
+
+@pytest.mark.parametrize("timeout", ["0", "0s", "-1"])
+def test_query_timeout_with_an_expired_duration_returns_a_prometheus_timeout_error(timeout):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        params={"query": "post_body_metric", "time": "1000", "timeout": timeout},
+    )
+    assert_prometheus_timeout_response(response)
+
+
+@pytest.mark.parametrize("timeout", ["-1s", "+1s", "banana"])
+def test_query_timeout_rejects_malformed_values(timeout):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        params={"query": "post_body_metric", "time": "1000", "timeout": timeout},
+    )
+    assert response.status_code == 400, response.text
+    response_json = response.json()
+    assert response_json["status"] == "error"
+    assert response_json["errorType"] == "bad_data"
+    assert (
+        "timeout" in response_json["error"].lower()
+        or "duration" in response_json["error"].lower()
+    )
 
 
 def test_query_lookback_delta():
