@@ -28,15 +28,18 @@ CREATE TABLE db_05072_pair.a ENGINE = Alias('db_05072_paired', 'b');
 CREATE TABLE db_05072_pair.b ENGINE = Alias('db_05072_paired', 'a');
 RENAME DATABASE db_05072_pair TO db_05072_paired; -- { serverError INFINITE_LOOP }
 
--- A cycle that runs through a third database is rejected too: before the rename `db_05072_cross_to.t`
--- is only a placeholder node in the dependency graph, and the rename merges the renamed table into it.
+-- A cycle that runs through a third database and does not involve `Alias` at all is rejected too:
+-- before the rename `db_05072_cross_to.d` is only a placeholder node in the dependency graph, and the
+-- rename merges the renamed dictionary into it.
 DROP DATABASE IF EXISTS db_05072_keep;
 DROP DATABASE IF EXISTS db_05072_cross;
 DROP DATABASE IF EXISTS db_05072_cross_to;
 CREATE DATABASE db_05072_keep;
-CREATE TABLE db_05072_keep.u ENGINE = Alias('db_05072_cross_to', 't');
+CREATE DICTIONARY db_05072_keep.u (x UInt64, y UInt64) PRIMARY KEY x
+SOURCE(CLICKHOUSE(db 'db_05072_cross_to' table 'd')) LAYOUT(FLAT()) LIFETIME(0);
 CREATE DATABASE db_05072_cross;
-CREATE TABLE db_05072_cross.t ENGINE = Alias('db_05072_keep', 'u');
+CREATE DICTIONARY db_05072_cross.d (x UInt64, y UInt64) PRIMARY KEY x
+SOURCE(CLICKHOUSE(db 'db_05072_keep' table 'u')) LAYOUT(FLAT()) LIFETIME(0);
 RENAME DATABASE db_05072_cross TO db_05072_cross_to; -- { serverError INFINITE_LOOP }
 
 -- A rename that does not create a cycle still works.
