@@ -62,4 +62,19 @@ SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
 SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'hello world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%Deferred prewhere filter column%';
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'hello world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%Name: idx%';
 
+SELECT '= a deferred prewhere does not borrow the preprocessor from a sibling where =';
+
+-- The deferred predicate is excluded from index analysis, so it must run raw: mixed case on disk against a
+-- lower-case needle matches nothing, even though the sibling WHERE makes the index useful.
+SELECT count() FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'world')
+SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
+
+-- Control: the same sibling WHERE with a raw-matching deferred prewhere counts both rows, so the zero above
+-- comes from the prewhere and not from the where.
+SELECT count() FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'World') WHERE hasPhrase(text, 'world')
+SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
+
+-- The deferred filter keeps the tokenizer rewrite but not the preprocessor.
+SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%Deferred prewhere filter column%' AND explain LIKE '%lower(%';
+
 DROP TABLE t_text_defer_final_pp;

@@ -148,13 +148,13 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 (si tienes problemas de memoria u otros problemas en tu servidor, elimina la parte `-P $(nproc)`)
 
 <div id="import-from-a-saved-copy">
-  ## Importar desde una copia guardada
+  ## Importar a partir de una copia guardada
 </div>
 
-Como alternativa, puedes importar datos desde una copia guardada mediante la siguiente consulta:
+Como alternativa, puedes importar datos a partir de una copia guardada mediante la siguiente consulta:
 
 ```sql
-INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', CSVWithNames) SETTINGS max_insert_threads = 40;
+INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', NOSIGN, CSVWithNames) SETTINGS max_insert_threads = 40;
 ```
 
 La instantánea se creó el 2022-05-29.
