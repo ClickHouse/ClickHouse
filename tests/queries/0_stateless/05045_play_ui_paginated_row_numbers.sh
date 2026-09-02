@@ -20,5 +20,17 @@ echo "$page" | grep -oF "createTextNode(this._rowNumberOffset() + this._row_idx)
 echo '--- the offset is the number of rows the server skipped for the page: size * (page - 1)'
 echo "$page" | grep -oE '^ *return size \* \(page - 1\);$' | head -n1
 
-echo '--- no page selected is the unpaginated first page, which starts at 1 (a zero offset)'
-echo "$page" | grep -oE '^ *if \(!\(page >= 1\) \|\| !\(size >= 1\)\) \{ return 0; \}$' | head -n1
+echo '--- no page selected is the unpaginated first page, whose offset is the zero-initialized skipped-row count'
+echo "$page" | grep -oE '^ *if \(!\(page >= 1\) \|\| !\(size >= 1\)\) \{ return this\._skipped_rows; \}$' | head -n1
+echo "$page" | grep -cE '^ *this\._skipped_rows = 0;$'
+
+# A failed run drops the tab's page (its controls are not on screen), but the rows that streamed before
+# the failure were numbered from that page's offset. The offset is taken before the page is dropped and
+# saved with the failure snapshot, and the replay of the snapshot numbers the rows from it again.
+echo '--- the offset is captured before the failed run drops the page, and persisted with the snapshot'
+echo "$page" | grep -oE '^ *const skipped_rows = el\._rowNumberOffset\(\);$' | head -n1
+echo "$page" | grep -oE '^ *skipped_rows: skipped_rows,$' | head -n1
+echo "$page" | grep -oE '^ *skipped_rows: stateData\.skipped_rows \?\? 0,$' | head -n1
+
+echo '--- the replay of a failed snapshot numbers its rows from the persisted offset'
+echo "$page" | grep -oE '^ *el\._skipped_rows = Number\.isFinite\(skipped_rows\) && skipped_rows > 0 \? skipped_rows : 0;$' | head -n1
