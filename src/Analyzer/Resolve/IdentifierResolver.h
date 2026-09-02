@@ -67,6 +67,12 @@ public:
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
+    /** If the resolved expression is a column (possibly wrapped into a subcolumn or `Nested` accessor function) of a subquery,
+      * union or table function that has neither an alias nor a CTE name, return that table expression.
+      * Columns of such a table expression cannot be qualified with a name. Otherwise return nullptr.
+      */
+    static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionSource(const QueryTreeNodePtr & resolved_expression);
+
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context);

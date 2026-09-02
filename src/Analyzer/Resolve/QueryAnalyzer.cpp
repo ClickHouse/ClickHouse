@@ -887,36 +887,6 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
     }
 }
 
-void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
-{
-    if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
-        return;
-
-    bool table_expression_has_alias = table_expression_node->hasAlias();
-    if (table_expression_has_alias)
-        return;
-
-    if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() == JoinKind::Paste)
-        return;
-
-    auto * query_node = table_expression_node->as<QueryNode>();
-    auto * union_node = table_expression_node->as<UnionNode>();
-    if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
-        return;
-
-    auto table_expression_node_type = table_expression_node->getNodeType();
-
-    if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
-        table_expression_node_type == QueryTreeNodeType::QUERY ||
-        table_expression_node_type == QueryTreeNodeType::UNION)
-        throw Exception(ErrorCodes::ALIAS_REQUIRED,
-                        "JOIN {} no alias for subquery or table function {}. "
-                        "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
-                        join_node->formatASTForErrorMessage(),
-                        table_expression_node->formatASTForErrorMessage(),
-                        scope.scope_node->formatASTForErrorMessage());
-}
-
 std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
 {
     checkStackSize();
@@ -2418,6 +2388,66 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 }
 
 
+/** Columns matched from different table expressions of a join that end up with the same projection name can be told apart
+  * only when the matcher qualifies them with the name or alias of their table expression (see qualifyColumnNodesWithProjectionNames).
+  * A subquery, union or table function without an alias has no such name, so with `joined_subquery_requires_alias` enabled
+  * a duplicate projection name coming from it is reported as a missing alias.
+  *
+  * Example: SELECT * FROM test_table, (SELECT 1 AS id);
+  */
+void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
+    const QueryTreeNodePtr & matcher_node,
+    const QueryTreeNodes & matched_nodes,
+    const ProjectionNames & matched_projection_names,
+    const IdentifierResolveScope & scope)
+{
+    if (matched_nodes.size() < 2 || !scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
+        return;
+
+    /// `PASTE JOIN` concatenates the operands positionally and allows equally named columns. Its duplicate column names are
+    /// validated separately (see checkDuplicateTableNamesOrAliasForPasteJoin).
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    const auto * nearest_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+    if (!nearest_query_node || !nearest_query_node->getJoinTreeNode())
+        return;
+
+    for (const auto & table_expression : buildTableExpressionsStack(nearest_query_node->getJoinTreeNode()))
+    {
+        if (const auto * join_node = table_expression->as<JoinNode>(); join_node && join_node->getKind() == JoinKind::Paste)
+            return;
+    }
+
+    std::unordered_set<std::string_view> unique_projection_names;
+    std::unordered_set<std::string_view> duplicate_projection_names;
+    for (const auto & projection_name : matched_projection_names)
+    {
+        if (!unique_projection_names.emplace(projection_name).second)
+            duplicate_projection_names.emplace(projection_name);
+    }
+
+    if (duplicate_projection_names.empty())
+        return;
+
+    size_t matched_nodes_size = matched_nodes.size();
+    for (size_t i = 0; i < matched_nodes_size; ++i)
+    {
+        if (!duplicate_projection_names.contains(matched_projection_names[i]))
+            continue;
+
+        auto unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(matched_nodes[i]);
+        if (!unaliased_table_expression)
+            continue;
+
+        throw Exception(ErrorCodes::ALIAS_REQUIRED,
+            "Matcher {} produces several columns named '{}' and they cannot be qualified: no alias for subquery or table function {}. "
+            "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
+            matcher_node->formatASTForErrorMessage(),
+            matched_projection_names[i],
+            unaliased_table_expression->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
+}
+
 /** Resolve query tree matcher. Check MatcherNode.h for detailed matcher description. Check ColumnTransformers.h for detailed transformers description.
   *
   * 1. Populate matched expression nodes resolving qualified or unqualified matcher.
@@ -2706,6 +2736,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         else
             result_projection_names.pop_back();
     }
+
+    validateMatchedColumnsFromJoinCanBeQualified(matcher_node, list->getNodes(), result_projection_names, scope);
 
     for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)
     {
@@ -5220,10 +5252,7 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     auto & expressions = cross_join_node_typed.getTableExpressions();
 
     for (auto & expr : expressions)
-    {
         resolveQueryJoinTreeNode(expr, scope, expressions_visitor);
-        validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
-    }
 }
 
 static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
@@ -5387,10 +5416,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     auto & join_node_typed = join_node->as<JoinNode &>();
 
     resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpressionNode(), scope, expressions_visitor);
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpressionNode(), scope);
-
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpressionNode(), scope, expressions_visitor);
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpressionNode(), scope);
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpressionNode()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
