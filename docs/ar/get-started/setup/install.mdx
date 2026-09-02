@@ -25,7 +25,11 @@ export const withDocsBase = (href) => {
     <a className="ch-install-cloud-cta" href="https://clickhouse.cloud/signUp?loc=docs-install-page-banner">
       ابدأ مجانًا
     </a>
-    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href={withDocsBase('/ar/get-started/setup/cloud')}>
+    <a
+      className="ch-install-cloud-cta ch-install-cloud-cta-secondary"
+      href="https://clickhouse.com/docs/ar/get-started/setup/cloud"
+      onClick={(event) => { event.preventDefault(); window.location.href = withDocsBase('/ar/get-started/setup/cloud'); }}
+    >
       اقرأ البرنامج التعليمي للبدء السريع
     </a>
   </div>
