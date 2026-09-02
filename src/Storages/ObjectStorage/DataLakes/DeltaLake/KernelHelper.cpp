@@ -51,20 +51,6 @@ namespace DB::FailPoints
 namespace DeltaLake
 {
 
-KernelClientOptions KernelClientOptions::fromCurrentQuery()
-{
-    KernelClientOptions options;
-    if (auto query_context = DB::CurrentThread::tryGetQueryContext())
-    {
-        const auto & settings = query_context->getSettingsRef();
-        if (settings[DB::Setting::s3_connect_timeout_ms].changed)
-            options.s3_connect_timeout_ms = settings[DB::Setting::s3_connect_timeout_ms];
-        if (settings[DB::Setting::s3_request_timeout_ms].changed)
-            options.s3_request_timeout_ms = settings[DB::Setting::s3_request_timeout_ms];
-    }
-    return options;
-}
-
 namespace
 {
 
@@ -171,10 +157,34 @@ public:
         return object_storage->tryRefreshCredentialsViaCallback();
     }
 
+    KernelClientOptions resolveClientOptions() const override
+    {
+        /// Effective values, so that they can serve as the sharing key of a build: the storage's
+        /// live settings (reapplied by `applyNewSettings`; the accessor is virtual, so wrappers
+        /// such as CachedObjectStorage forward it to the S3 storage inside), overridden by what
+        /// the current query changed. The constructor-time values remain as the last resort.
+        UInt64 connect = connect_timeout_ms;
+        UInt64 request = request_timeout_ms;
+        if (const auto live_settings = object_storage->tryGetS3StorageSettings())
+        {
+            connect = live_settings->auth_settings[DB::S3AuthSetting::connect_timeout_ms];
+            request = live_settings->auth_settings[DB::S3AuthSetting::request_timeout_ms];
+        }
+        if (auto query_context = DB::CurrentThread::tryGetQueryContext())
+        {
+            const auto & settings = query_context->getSettingsRef();
+            if (settings[DB::Setting::s3_connect_timeout_ms].changed)
+                connect = settings[DB::Setting::s3_connect_timeout_ms];
+            if (settings[DB::Setting::s3_request_timeout_ms].changed)
+                request = settings[DB::Setting::s3_request_timeout_ms];
+        }
+        return KernelClientOptions{.s3_connect_timeout_ms = connect, .s3_request_timeout_ms = request};
+    }
+
     ffi::EngineBuilder * createBuilder() const override
     {
         DB::UInt128 credentials_fingerprint;
-        return createBuilderWithOptions(KernelClientOptions::fromCurrentQuery(), credentials_fingerprint);
+        return createBuilderWithOptions(resolveClientOptions(), credentials_fingerprint);
     }
 
     ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions & options, DB::UInt128 & credentials_fingerprint) const override
@@ -238,20 +248,11 @@ public:
         /// (`applyNewSettings`), so a query-level `SETTINGS s3_request_timeout_ms = ...` must
         /// reach the kernel client as well: the options captured on the query thread take
         /// precedence over the values captured when this helper was created.
-        /// The fallbacks come from the object storage's live settings — `applyNewSettings`
-        /// reapplies config/endpoint settings on every update — rather than from the values
-        /// captured when this helper was created, so a reloaded configuration reaches the
-        /// kernel client the same way it reaches the server's own S3 client. The accessor is
-        /// virtual, so wrappers such as CachedObjectStorage forward it to the S3 storage inside.
-        UInt64 fallback_connect_timeout_ms = connect_timeout_ms;
-        UInt64 fallback_request_timeout_ms = request_timeout_ms;
-        if (const auto live_settings = object_storage->tryGetS3StorageSettings())
-        {
-            fallback_connect_timeout_ms = live_settings->auth_settings[DB::S3AuthSetting::connect_timeout_ms];
-            fallback_request_timeout_ms = live_settings->auth_settings[DB::S3AuthSetting::request_timeout_ms];
-        }
-        const UInt64 effective_connect_timeout_ms = options.s3_connect_timeout_ms.value_or(fallback_connect_timeout_ms);
-        const UInt64 effective_request_timeout_ms = options.s3_request_timeout_ms.value_or(fallback_request_timeout_ms);
+        /// `options` carry the effective values resolved by `resolveClientOptions` on the query
+        /// thread (the storage's live settings overridden by the query); the constructor-time
+        /// values only remain as a fallback for options which were not resolved through it.
+        const UInt64 effective_connect_timeout_ms = options.s3_connect_timeout_ms.value_or(connect_timeout_ms);
+        const UInt64 effective_request_timeout_ms = options.s3_request_timeout_ms.value_or(request_timeout_ms);
 
         if (effective_connect_timeout_ms)
             set_option("connect_timeout", fmt::format("{}ms", effective_connect_timeout_ms));

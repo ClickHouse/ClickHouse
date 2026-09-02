@@ -26,18 +26,17 @@ struct ConnectionParams;
 namespace DeltaLake
 {
 
-/// Client options resolved on the query thread for one kernel engine build. The worker which
-/// performs the build runs under a neutral thread group and has no query context of its own,
-/// so anything taken from the query's settings must be captured beforehand.
+/// The effective client options of one kernel engine build, resolved on the query thread by
+/// IKernelHelper::resolveClientOptions (the worker which performs the build has no query
+/// context of its own). They are also the key under which an in-flight build may be shared:
+/// two queries share one only if the builder would be filled identically, so the values here
+/// are the effective ones — the storage's live settings overridden by the query — never a
+/// mere "the query changed this setting" bit.
 struct KernelClientOptions
 {
     std::optional<UInt64> s3_connect_timeout_ms;
     std::optional<UInt64> s3_request_timeout_ms;
 
-    /// Takes the settings changed in the current query, if there is one.
-    static KernelClientOptions fromCurrentQuery();
-
-    /// Loads are shared only between queries with equal options.
     bool operator==(const KernelClientOptions &) const = default;
 };
 
@@ -73,6 +72,11 @@ public:
         credentials_fingerprint = getCredentialsFingerprint();
         return createBuilder();
     }
+
+    /// The effective client options a build started by the current query would use (see
+    /// KernelClientOptions). Must be called on the query thread. Empty for helpers whose
+    /// client does not depend on query settings.
+    virtual KernelClientOptions resolveClientOptions() const { return {}; }
 
     /// Hash of current credentials; override for providers with rotating sessions.
     virtual DB::UInt128 getCredentialsFingerprint() const { return {}; }

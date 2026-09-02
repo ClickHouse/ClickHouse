@@ -157,7 +157,7 @@ getSnapshotVersion(const Settings & settings)
 DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resolveLatestSnapshot() const
 {
     DeltaLake::TableSnapshotPtr snapshot;
-    const auto client_options = DeltaLake::KernelClientOptions::fromCurrentQuery();
+    const auto client_options = kernel_helper->resolveClientOptions();
     {
         std::lock_guard lock(snapshots_mutex);
         /// Concurrent callers share one TableSnapshot, and with it one in-flight kernel build,

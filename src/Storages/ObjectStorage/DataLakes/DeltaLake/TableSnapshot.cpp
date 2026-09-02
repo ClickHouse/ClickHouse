@@ -962,9 +962,9 @@ void TableSnapshot::initOrUpdateSnapshot() const
         log, "{}",
         kernel_snapshot_state ? "Rebuilding kernel snapshot state (credentials rotated)" : "Initializing snapshot");
 
-    /// Captured on the query thread; also part of the decision whether an in-flight build
-    /// may be shared, since this PR forwards query-level S3 timeouts into the kernel client.
-    const auto client_options = KernelClientOptions::fromCurrentQuery();
+    /// Resolved on the query thread; also the key deciding whether an in-flight build may be
+    /// shared, since query-level S3 timeouts are forwarded into the kernel client.
+    const auto client_options = helper->resolveClientOptions();
 
     for (size_t attempt = 0;; ++attempt)
     {
@@ -1228,7 +1228,7 @@ void TableSnapshot::markAbandoned(InflightSnapshotLoad & load, const IKernelHelp
 std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::loadKernelSnapshotState(
     KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
 {
-    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build, KernelClientOptions::fromCurrentQuery());
+    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build, kernel_helper->resolveClientOptions());
     try
     {
         waitForSnapshotLoad(*load, *kernel_helper);
