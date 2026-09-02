@@ -70,11 +70,13 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    /// The engine of the TimeSeries table and the name of its target are read below, so reaching them
-    /// requires what describing that table requires.
+    /// The engine of the TimeSeries table, the name of its target and that target's own engine are read
+    /// below, so reaching them requires what describing those two tables requires. The target's engine
+    /// also selects the source privilege this table function is checked against.
     checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
-
-    target_table_type_name = getTargetTable(context)->getName();
+    auto target_table = getTargetTable(context);
+    checkAccessToTimeSeriesTargetTable(target_table, context, AccessType::SHOW_COLUMNS);
+    target_table_type_name = target_table->getName();
 }
 
 

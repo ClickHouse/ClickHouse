@@ -35,6 +35,10 @@ CREATE TABLE $db.ts_samples_alias ENGINE = Alias('$db', 'ts_samples_hidden');
 CREATE TABLE $db.ts_via_alias ENGINE = TimeSeries
     DATA $db.ts_samples_alias TAGS $db.ts_tags METRICS $db.ts_metrics;
 
+CREATE TABLE $db.f_samples (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = File(TSV);
+CREATE TABLE $db.ts_file ENGINE = TimeSeries
+    DATA $db.f_samples TAGS $db.ts_tags METRICS $db.ts_metrics;
+
 DROP USER IF EXISTS $user;
 CREATE USER $user;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
@@ -49,6 +53,7 @@ ${CLIENT_USER} -q "DESCRIBE timeSeriesTags($db.ts) FORMAT Null; -- { serverError
 ${CLIENT_USER} -q "DESCRIBE timeSeriesMetrics($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }"
 ${CLIENT_USER} -q "DESCRIBE timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORMAT Null; -- { serverError ACCESS_DENIED }"
 ${CLIENT_USER} -q "DESCRIBE prometheusQuery($db.ts, 'up', 1000) FORMAT Null; -- { serverError ACCESS_DENIED }"
+${CLIENT_USER} -q "DESCRIBE prometheusQueryRange($db.ts, 'up', 1000, 2000, 60) FORMAT Null; -- { serverError ACCESS_DENIED }"
 ${CLIENT_USER} -q "SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }"
 ${CLIENT_USER} -q "INSERT INTO FUNCTION timeSeriesSamples($db.ts) SELECT toUInt64(2), toDateTime64('2026-01-01 00:00:02.000', 3), toFloat64(7); -- { serverError ACCESS_DENIED }"
 
@@ -104,6 +109,13 @@ ${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts) SETTINGS describe_include_
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON $db.ts_via_alias TO $user"
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON $db.ts_samples_alias TO $user"
 ${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts_via_alias) FORMAT Null; -- { serverError ACCESS_DENIED }"
+
+# A target's engine selects the source privilege the call is checked against, so the target is checked
+# before that engine is read: nothing here ever grants on f_samples, and the denial names it rather than
+# the source privilege its File engine would ask for.
+${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON $db.ts_file TO $user"
+echo 'denial for a File target names the target, not its source privilege'
+${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts_file) FORMAT Null" 2>&1 | grep -c 'READ ON FILE' || true
 
 # With both tables granted, every function works as before.
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON $db.ts_samples TO $user"
