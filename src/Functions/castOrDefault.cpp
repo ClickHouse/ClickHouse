@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,15 +11,18 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -36,6 +38,20 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+/// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr
+/// when the column cannot hold NULLs. Dynamic/Variant encode NULLs with their
+/// null discriminator instead of a separate null map.
+static ColumnPtr getSourceNullMap(const IColumn & source_column)
+{
+    if (const auto * source_nullable = checkAndGetColumn<ColumnNullable>(&source_column))
+        return source_nullable->getNullMapColumnPtr();
+    if (const auto * source_dynamic = checkAndGetColumn<ColumnDynamic>(&source_column))
+        return source_dynamic->getVariantColumn().createNullMap();
+    if (const auto * source_variant = checkAndGetColumn<ColumnVariant>(&source_column))
+        return source_variant->createNullMap();
+    return nullptr;
+}
+
 class FunctionCastOrDefault final : public IFunction
 {
 public:
@@ -46,7 +62,11 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
+        , cast_or_null_resolver(createCastOverloadResolver(context_, CastType::accurateOrNull, {}))
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -78,9 +98,23 @@ public:
                 getName(),
                 arguments[1].type->getName());
 
-        DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        /// Delegate type determination to the cast resolver. This ensures that
+        /// DataTypeValidationSettings and timezone substitution are applied
+        /// consistently between getReturnTypeImpl and executeImpl.
+        ColumnsWithTypeAndName cast_args{arguments[0], arguments[1]};
+        DataTypePtr result_type = removeNullable(cast_or_null_resolver->getReturnType(cast_args));
 
-        if (keep_nullable && arguments.front().type->isNullable())
+        /// The resolver uses CastType::accurateOrNull which wraps non-Nullable
+        /// targets in Nullable (to detect cast failures via NULL). We strip that
+        /// wrapper above. But when the user explicitly requested a Nullable target
+        /// type, the resolver didn't add the Nullable wrapper — the target was
+        /// already Nullable — so removeNullable incorrectly stripped the
+        /// user-requested Nullable. Restore it.
+        auto user_target_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        if (user_target_type->isNullable())
+            result_type = makeNullable(result_type);
+
+        if (keep_nullable && canContainNull(*arguments.front().type) && result_type->canBeInsideNullable())
             result_type = makeNullable(result_type);
 
         if (arguments.size() == 3)
@@ -128,20 +162,35 @@ public:
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
         ColumnWithTypeAndName column_to_cast_non_const{non_const_column_to_cast, column_to_cast.type, column_to_cast.name};
 
-        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
+        ColumnsWithTypeAndName cast_args
+        {
+            column_to_cast_non_const,
+            {
+                DataTypeString().createColumnConst(non_const_column_to_cast->size(), return_type->getName()),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+        auto probe_type = cast_or_null_resolver->getReturnType(cast_args);
+        auto cast_func = cast_or_null_resolver->build(cast_args);
+        auto cast_result = cast_func->execute(cast_args, probe_type, non_const_column_to_cast->size(), false);
+        auto cast_result_full = cast_result->convertToFullColumnIfLowCardinality();
+        auto cast_null_map_column = getSourceNullMap(*cast_result_full);
+        auto source_column_full = non_const_column_to_cast->convertToFullColumnIfLowCardinality();
+        auto source_null_map_column = getSourceNullMap(*source_column_full);
+        const auto * cast_null_map_data = cast_null_map_column
+            ? &assert_cast<const ColumnUInt8 &>(*cast_null_map_column).getData()
+            : nullptr;
+        const auto * source_null_map_data = source_null_map_column
+            ? &assert_cast<const ColumnUInt8 &>(*source_null_map_column).getData()
+            : nullptr;
+        if (!cast_null_map_data)
+            return cast_result;
 
-        const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
-        const auto & null_map_data = cast_result_nullable.getNullMapData();
-        size_t null_map_data_size = null_map_data.size();
-        const auto & nested_column = cast_result_nullable.getNestedColumn();
         auto result = return_type->createColumn();
-        result->reserve(null_map_data_size);
+        result->reserve(cast_result->size());
 
-        ColumnNullable * result_nullable = nullptr;
-        if (result->isNullable())
-            result_nullable = assert_cast<ColumnNullable *>(&*result);
-
-        size_t start_insert_index = 0;
+        const auto * cast_result_nullable = checkAndGetColumn<ColumnNullable>(cast_result.get());
 
         Field default_value;
         ColumnPtr default_column;
@@ -160,19 +209,24 @@ public:
             default_value = return_type->getDefault();
         }
 
-        for (size_t i = 0; i < null_map_data_size; ++i)
+        /// For a Nullable cast result and a non-Nullable target the values live in the nested column.
+        const IColumn & cast_values = cast_result_nullable && !result->isNullable()
+            ? cast_result_nullable->getNestedColumn()
+            : *cast_result;
+
+        const bool return_type_can_contain_null = canContainNull(*return_type);
+        const size_t rows = cast_result->size();
+        size_t start_insert_index = 0;
+
+        for (size_t i = 0; i < rows; ++i)
         {
-            bool is_current_index_null = null_map_data[i];
-            if (!is_current_index_null)
+            const bool is_source_null = source_null_map_data && (*source_null_map_data)[i];
+            const bool cast_failed = (*cast_null_map_data)[i] && (!is_source_null || !return_type_can_contain_null);
+            if (!cast_failed)
                 continue;
 
             if (i != start_insert_index)
-            {
-                if (result_nullable)
-                    result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, i - start_insert_index);
-                else
-                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
-            }
+                result->insertRangeFrom(cast_values, start_insert_index, i - start_insert_index);
 
             if (default_column)
                 result->insertFrom(*default_column, i);
@@ -182,20 +236,15 @@ public:
             start_insert_index = i + 1;
         }
 
-        if (null_map_data_size != start_insert_index)
-        {
-            if (result_nullable)
-                result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, null_map_data_size - start_insert_index);
-            else
-                result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
-        }
+        if (rows != start_insert_index)
+            result->insertRangeFrom(cast_values, start_insert_index, rows - start_insert_index);
 
         return result;
     }
 
 private:
-
     bool keep_nullable;
+    FunctionOverloadResolverPtr cast_or_null_resolver;
 };
 
 class FunctionCastOrDefaultTyped final : public IFunction
@@ -376,9 +425,9 @@ SELECT accurateCastOrDefault(42, 'String')
 SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
         )",
         R"(
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
+│                                                           999 │
+└───────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -774,7 +823,7 @@ or the provided default if an invalid argument is received.
     FunctionDocumentation::ReturnedValue toDateTime64OrDefault_returned_value = {"Value of type DateTime64 if successful, otherwise returns the default value if passed or 1970-01-01 00:00:00.000 if not.", {"DateTime64"}};
     FunctionDocumentation::Examples toDateTime64OrDefault_examples = {
         {"Successful conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00.30', 3)", "1976-10-18 00:00:00.300"},
-        {"Failed conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3))", "2000-12-31 23:00:00.000"}
+        {"Failed conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3))", "2001-01-01 00:00:00.000"}
     };
     FunctionDocumentation::Category toDateTime64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDateTime64OrDefault_introduced_in = {21, 11};
@@ -943,9 +992,9 @@ SELECT
     toIPv4OrDefault(malformed_string, toIPv4('8.8.8.8')) AS provided_default;
         )",
         R"(
-┌─valid─────────┬─default_value─┬─provided_default─┐
-│ 192.168.1.1   │ 0.0.0.0       │ 8.8.8.8          │
-└───────────────┴───────────────┴──────────────────┘
+┌─valid───────┬─default_value─┬─provided_default─┐
+│ 192.168.1.1 │ 0.0.0.0       │ 8.8.8.8          │
+└─────────────┴───────────────┴──────────────────┘
         )"
     }
     };
@@ -981,9 +1030,9 @@ SELECT
     toIPv6OrDefault(malformed_string, toIPv6('::1')) AS provided_default;
         )",
         R"(
-┌─valid──────────────────────────────────┬─default_value─┬─provided_default─┐
-│ 2001:db8:85a3::8a2e:370:7334           │ ::            │ ::1              │
-└────────────────────────────────────────┴───────────────┴──────────────────┘
+┌─valid────────────────────────┬─default_value─┬─provided_default─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ::            │ ::1              │
+└──────────────────────────────┴───────────────┴──────────────────┘
         )"
     }
     };

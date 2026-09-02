@@ -7,4 +7,4 @@ SET enable_analyzer = 1;
 
 SELECT (SELECT arrayMap(x -> c0, [1])) FROM (SELECT 1 AS c0);
 SELECT (SELECT arrayMap(x -> c0 + x, [1, 2, 3])) FROM (SELECT 10 AS c0);
-SELECT (SELECT arrayMap(x -> c0 * x, [1, 2])) FROM (SELECT number AS c0 FROM numbers(3));
+SELECT (SELECT arrayMap(x -> c0 * x, [1, 2])) FROM (SELECT number AS c0 FROM numbers(3)) ORDER BY c0;

@@ -30,8 +30,6 @@ public:
     using S3CredentialsRefreshCallback = ReadBufferFromS3::S3CredentialsRefreshCallback;
 
 private:
-    friend class S3PlainObjectStorage;
-
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,

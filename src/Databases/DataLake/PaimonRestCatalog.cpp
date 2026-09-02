@@ -15,6 +15,7 @@
 #include <vector>
 #include <Core/Names.h>
 #include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -128,7 +129,7 @@ void PaimonRestCatalog::loadConfig()
     }
 }
 
-void PaimonRestCatalog::createAuthHeaders(
+String PaimonRestCatalog::createAuthHeaders(
     DB::HTTPHeaderEntries & current_headers,
     const String & resource_path,
     const std::unordered_map<String, String> & query_params,
@@ -137,12 +138,13 @@ void PaimonRestCatalog::createAuthHeaders(
 {
     if (!token.has_value())
     {
-        return;
+        return "";
     }
     if (token->token_provider == "bearer")
     {
-        current_headers.emplace_back("Authorization", fmt::format("Bearer {}", token->bearer_token));
-        return;
+        /// The bearer token is applied by `create` (it fills the `Authorization` header), so it is
+        /// returned rather than spliced into `current_headers` here.
+        return token->bearer_token;
     }
     else if (token->token_provider == "dlf")
     {
@@ -258,7 +260,9 @@ void PaimonRestCatalog::createAuthHeaders(
         {
             current_headers.emplace_back(entry.first, entry.second);
         }
-        return;
+        /// The `dlf` provider signs the request with its own `Authorization` header (added above), so
+        /// there is no bearer token for `create`.
+        return "";
     }
     throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown token provider: {}", token->token_provider);
 }
@@ -279,8 +283,8 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             query_parameters_map.emplace(entry.first, entry.second);
         }
         DB::HTTPHeaderEntries request_headers(headers);
-        createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
-
+        const String bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
+        validateBearerToken(context, bearer_token);
 
         DB::WriteBufferFromOwnString headers_string;
         headers_string << "{";
@@ -299,7 +303,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             .withHeaders(request_headers)
             .withDelayInit(false)
             .withSkipNotFound(false)
-            .create(credentials);
+            .createWithBearerToken(bearer_token);
     };
 
     LOG_TRACE(log, "Requesting endpoint: {}", endpoint);

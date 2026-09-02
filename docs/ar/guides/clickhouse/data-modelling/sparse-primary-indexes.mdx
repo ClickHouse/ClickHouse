@@ -400,7 +400,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  يعيد `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` على جهاز الاختبار.
+  يعيد `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` على جهاز الاختبار.
 
   **الخطوة 2: الحصول على user&#95;files&#95;path**
 
@@ -408,12 +408,12 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 
   وعلى Linux يمكنك التحقق مما إذا كانت قد تغيّرت: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  على جهاز الاختبار، المسار هو `/Users/tomschreiber/Clickhouse/user_files/`
+  على جهاز الاختبار، المسار هو `/Users/tomschreiber/ClickHouse/user_files/`
 
   **الخطوة 3: نسخ ملف الفهرس الأساسي إلى user&#95;files&#95;path**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   يمكننا الآن فحص محتوى الفهرس الأساسي عبر SQL:
