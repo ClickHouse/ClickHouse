@@ -47,3 +47,28 @@ the optimization is applied
 0
 1	1	1
 1	1	1
+dictionary runs
+50000	899832052474290032
+0	0
+0	a long run without the substring
+1	a long run without the substring
+50000	899832052474290032
+0	0
+0	a long run without the substring
+1	a long run without the substring
+0	0
+100000	3149559028874075904
+0	the only value of the column
+1	the only value of the column
+0	0
+100000	3149559028874075904
+0	the only value of the column
+1	the only value of the column
+the optimization is applied to the runs
+0
+0
+05055_string_filter_applied_one_value	1	1	1
+05055_string_filter_applied_rle	1	1	1
+dictionary pruning does not disable the filter
+2
+1

@@ -142,15 +142,15 @@ FILE_PRUNE="${CLICKHOUSE_DATABASE}/t_string_filter_prune.parquet"
 
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO FUNCTION file('$FILE_PRUNE', Parquet, 'id UInt32, s String')
-SELECT number, if(number < 70000, 'needle ' || toString(number), 'an ordinary value')
-FROM numbers(200000)
+SELECT number, if(number % 3 = 0, 'needle ' || toString(number), 'an ordinary value')
+FROM numbers(210000)
 SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 16777216;
 "
 
 echo 'dictionary pruning does not disable the filter'
 $CLICKHOUSE_CLIENT -q "
 SELECT count() FROM file('$FILE_PRUNE', Parquet)
-PREWHERE s IN ('needle 5', 'needle 7') AND s LIKE '%needle%'
+PREWHERE s IN ('needle 6', 'needle 9') AND s LIKE '%needle%'
 SETTINGS apply_string_filters_during_scan = 1, input_format_parquet_dictionary_filter_push_down = 16777216,
     log_comment = '05055_string_filter_pruning'"
 
