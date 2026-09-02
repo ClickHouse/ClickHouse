@@ -990,13 +990,14 @@ namespace
     /// returns, so stuck workers can never exceed this cap.
     /// Each stuck worker occupies one `GlobalThreadPool` thread, so the cap is derived from the
     /// pool's actual size (`max_thread_pool_size`, configurable): a small share of it, at most
-    /// 128 (reached with the default pool of 10000), so that a dead object store can never
-    /// starve unrelated tasks even on installations with a small pool. Builds are shared per
-    /// table snapshot, so this stays far above realistic concurrent snapshot loads.
+    /// 128 (reached with the default pool of 10000), and always leaving at least two workers
+    /// free for unrelated tasks and for shutdown. On a pool too small for that the cap is 0:
+    /// snapshot loads then fail fast with a clear error instead of occupying the last worker.
+    /// Builds are shared per table snapshot, so this stays far above realistic concurrency.
     Int64 maxSnapshotLoadWorkers()
     {
         const auto pool_size = static_cast<Int64>(GlobalThreadPool::instance().getMaxThreads());
-        return std::clamp<Int64>(pool_size / 8, 1, 128);
+        return std::clamp<Int64>(std::min<Int64>(pool_size / 8, pool_size - 2), 0, 128);
     }
     std::atomic<Int64> snapshot_load_worker_permits{0};
 }
@@ -1015,6 +1016,12 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
 
     /// Reserve a permit before launching, so the bound holds under concurrency.
     const Int64 max_workers = maxSnapshotLoadWorkers();
+    if (max_workers == 0)
+        throw DB::Exception(
+            DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
+            "Refusing to load the snapshot of the Delta Lake table at {}: the global thread pool is too small "
+            "(max_thread_pool_size = {}) to run a snapshot-load worker without starving other tasks",
+            kernel_helper->getTableLocation(), GlobalThreadPool::instance().getMaxThreads());
     if (snapshot_load_worker_permits.fetch_add(1, std::memory_order_relaxed) >= max_workers)
     {
         snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);

@@ -38,6 +38,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 namespace FailPoints
@@ -259,6 +262,18 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context
     {
         return getTableSnapshot(snapshot_version)->getTotalRows();
     }
+    catch (const Exception & e)
+    {
+        /// Cancellation, the snapshot-load timeout and the worker cap are control flow, not
+        /// "statistics unavailable": swallowing them would make the query fall back to the read
+        /// path and wait through a second full snapshot load (#117431).
+        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK)
+            throw;
+        DB::tryLogCurrentException(
+            log, "Failed to get total rows for Delta Lake table at location " + kernel_helper->getTableLocation());
+        return std::nullopt;
+    }
     catch (...)
     {
         DB::tryLogCurrentException(
@@ -281,6 +296,18 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
     try
     {
         return getTableSnapshot(snapshot_version)->getTotalBytes();
+    }
+    catch (const Exception & e)
+    {
+        /// Cancellation, the snapshot-load timeout and the worker cap are control flow, not
+        /// "statistics unavailable": swallowing them would make the query fall back to the read
+        /// path and wait through a second full snapshot load (#117431).
+        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK)
+            throw;
+        DB::tryLogCurrentException(
+            log, "Failed to get total bytes for Delta Lake table at location " + kernel_helper->getTableLocation());
+        return std::nullopt;
     }
     catch (...)
     {
