@@ -19,3 +19,14 @@ do
                 -q "SELECT toString(c1), toString(c2), toString(c3), toString(c4) FROM table FORMAT CSV"
     done
 done
+
+# The decision is cached per header column, while a field is read in the order the file lists it, so
+# `CSVWithNames` with a reordered header is the case where the two indices differ. Here the file
+# starts with the `Int32` column while the header of the table starts with the `String` one: the
+# whitespace has to be skipped for the former and kept for the latter, and looking the cache up by
+# the position of the field in the file rather than in the header would get both of them wrong.
+echo '--- trim=0 CSVWithNames, header reordered'
+printf 'n,s\n 42, padded \n' \
+    | $CLICKHOUSE_LOCAL -S 's Nullable(String), n Int32' \
+        --input-format=CSVWithNames --input_format_csv_trim_whitespaces=0 \
+        -q "SELECT n, toString(s) FROM table FORMAT CSV"

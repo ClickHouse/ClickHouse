@@ -6,3 +6,5 @@
 "padded",\N,"\N","unpadded"
 --- trim=1 Nullable(FixedString(24))
 "padded",\N,"\N","unpadded"
+--- trim=0 CSVWithNames, header reordered
+42," padded "
