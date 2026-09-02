@@ -262,3 +262,90 @@ def test_mutation_max_streams(started_cluster):
         assert node3.query("SELECT count() FROM t_mutations") == "9999999\n"
     finally:
         node3.query("DROP TABLE IF EXISTS t_mutations")
+
+
+def test_legacy_mutation_file_partition_scope_upgrade(started_cluster):
+    """
+    A legacy `mutation_*.txt` file (written before the partition scope of the commands was
+    pinned to `IN PARTITION ID`) is rewritten when it is loaded. Without that rewrite, every
+    load resolves the `IN PARTITION` literal through the current partition key again, so a
+    key-safe partition key type change (e.g. `Enum8 -> Int8`) made after the load would still
+    leave the table unloadable on the next restart. The legacy shape is fabricated by turning
+    the pinned `IN PARTITION ID '1'` of a freshly written mutation file back into the original
+    `IN PARTITION 'a'` literal. Note that the file keeps the shape it always had, so a
+    rewritten file is still readable by a binary without this feature.
+
+    This has to be an integration test rather than a stateless one: it edits a real local
+    `mutation_*.txt` file of a plain `MergeTree` table, and the stateless suite runs against
+    arbitrary server configurations where that file either does not exist or does not mean
+    what the test assumes.
+    """
+    name = "test_legacy_mutation_file"
+
+    def count_pinned_scopes(path):
+        return int(
+            node1.exec_in_container(
+                ["bash", "-c", f"grep -c -F \"IN PARTITION ID \" {path} || true"]
+            ).strip()
+        )
+
+    try:
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node1.query(
+            f"CREATE TABLE {name} (p Enum8('a' = 1, 'b' = 2), n Int64) "
+            "ENGINE = MergeTree PARTITION BY p ORDER BY tuple()"
+        )
+        node1.query(f"INSERT INTO {name} VALUES ('a', 1), ('b', 2)")
+
+        # The mutation file of a finished mutation is kept on disk and is read back by
+        # `loadMutations` on every ATTACH, exactly like the file of a pending one, so the
+        # mutation does not have to be kept pending for the loading path under test.
+        node1.query(
+            f"ALTER TABLE {name} UPDATE n = n + 100 IN PARTITION 'a' WHERE 1",
+            settings={"mutations_sync": "2"},
+        )
+
+        data_dir = node1.query(
+            "SELECT data_paths[1] FROM system.tables "
+            f"WHERE database = currentDatabase() AND name = '{name}'"
+        ).strip()
+        mutation_file = node1.exec_in_container(
+            ["bash", "-c", f"ls {data_dir}mutation_*.txt"]
+        ).strip()
+
+        node1.query(f"DETACH TABLE {name}")
+
+        # Fabricate the legacy format: turn the pinned partition id back into the original
+        # literal. The command text of the file quotes the literals, so the partition id
+        # appears as `ID \'1\'`.
+        sed_program = r"s|IN PARTITION ID \\'1\\'|IN PARTITION \\'a\\'|"
+        node1.exec_in_container(["sed", "-i", sed_program, mutation_file])
+        assert count_pinned_scopes(mutation_file) == 0
+
+        # Loading the legacy file resolves the scope through the (unchanged) partition key
+        # and rewrites the file with the scope pinned.
+        node1.query(f"ATTACH TABLE {name}")
+        assert count_pinned_scopes(mutation_file) == 1
+
+        # A key-safe metadata change of the partition key column: `Enum8 -> Int8` keeps the
+        # numeric on-disk partition id, but re-parsing the literal 'a' as `Int8` would throw.
+        node1.query(
+            f"ALTER TABLE {name} MODIFY COLUMN p Int8", settings={"alter_sync": "2"}
+        )
+
+        # Without the upgrade this reattach would fail to load the table: the legacy file
+        # would come through the fallback again and re-parse the stale literal against the
+        # new key type.
+        node1.query(f"DETACH TABLE {name}")
+        node1.query(f"ATTACH TABLE {name}")
+
+        assert node1.query(f"SELECT p, n FROM {name} ORDER BY p, n") == "1\t101\n2\t2\n"
+        assert (
+            node1.query(
+                "SELECT count() FROM system.mutations "
+                f"WHERE database = currentDatabase() AND table = '{name}' AND NOT is_done"
+            )
+            == "0\n"
+        )
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")

@@ -2450,14 +2450,12 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
     const time_t now = time(nullptr);
 
     size_t done_count = 0;
-    for (auto it = current_mutations_by_version.begin(); it != current_mutations_by_version.end(); ++it)
+    for (auto & [version, entry] : current_mutations_by_version)
     {
-        auto & entry = it->second;
-
         if (!entry.tid.isNonTransactional())
             break;
 
-        if (hasPartsToMutate(entry, static_cast<Int64>(it->first), part_versions))
+        if (hasPartsToMutate(entry, static_cast<Int64>(version), part_versions))
             break;
 
         if (!entry.is_done)
@@ -2472,7 +2470,7 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         /// was not observed. A mutation in the attributed range can be `is_done` already if a
         /// concurrent unattributed pass flipped it right after the event, so check `finish_time`
         /// itself rather than stamping under the `is_done` flip above.
-        if (!entry.finish_time && it->first >= first_just_completed_version)
+        if (!entry.finish_time && version >= first_just_completed_version)
             entry.finish_time = now;
 
         ++done_count;
