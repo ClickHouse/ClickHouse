@@ -150,6 +150,8 @@ public:
     virtual bool isDataLakeConfiguration() const { return false; }
     virtual bool isIcebergConfiguration() const { return false; }
 
+    virtual bool hasLoadedMetadata() const { return true; }
+
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }

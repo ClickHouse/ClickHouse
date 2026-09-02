@@ -223,6 +223,8 @@ public:
         return std::nullopt;
     }
 
+    bool hasLoadedMetadata() const override { return tryGetMetadata() != nullptr; }
+
     bool supportsTotalRows(ContextPtr context, ObjectStorageType storage_type) const override
     {
         return DataLakeMetadata::supportsTotalRows(context, storage_type);
