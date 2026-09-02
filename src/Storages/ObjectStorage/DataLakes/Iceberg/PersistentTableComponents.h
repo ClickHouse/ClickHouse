@@ -30,6 +30,9 @@ struct PersistentTableComponents
     /// `IcebergMetadata::update` refreshes it when the table may have been replaced in place.
     const TrustedTableUuidPtr trusted_table_uuid;
     const IcebergPathResolver path_resolver;
+    /// True when the resolver works against a table root deeper than `table_path`. Operations scoped
+    /// to `table_path` then reach outside this table, so they must refuse to run.
+    const bool table_root_was_derived;
 
     /// The `table-uuid` currently trusted as a metadata content cache key. Always read it
     /// through this accessor - the value can be refreshed by `IcebergMetadata::update`.
