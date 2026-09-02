@@ -946,7 +946,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
     std::unique_lock lock(mutex);
 
     /// Rebuild when credentials rotate so the engine never outlives its embedded STS token.
-    auto current_credentials_fingerprint = helper->getCredentialsFingerprint();
+    const auto current_credentials_fingerprint = helper->getCredentialsFingerprint();
     if (kernel_snapshot_state && !kernel_state_needs_rebuild
         && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
         return;
@@ -1042,9 +1042,11 @@ void TableSnapshot::initOrUpdateSnapshot() const
         }
         catch (const DB::Exception & e)
         {
-            if (attempt > 0 || !tryRefreshAfterStaleTokenError(e, current_credentials_fingerprint, "snapshot init"))
+            /// Judged against the credentials the failed build actually used (recorded by the
+            /// worker), not against the helper's client as seen by whichever waiter handles the
+            /// failure: the client may have rotated while the shared load was in flight.
+            if (attempt > 0 || !tryRefreshAfterStaleTokenError(e, load->credentials_fingerprint, "snapshot init"))
                 throw;
-            current_credentials_fingerprint = helper->getCredentialsFingerprint();
             continue;
         }
         if (!is_current_load && kernel_snapshot_state)
@@ -1128,11 +1130,12 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
     auto load = std::make_shared<InflightSnapshotLoad>();
     load->client_options = client_options;
     auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
-        [kernel_helper, version_to_build, client_options]
+        [kernel_helper, version_to_build, client_options, load]
         {
             /// Simulates a kernel call which never returns (used by tests).
             DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
-            return std::make_shared<KernelSnapshotState>(*kernel_helper, version_to_build, client_options);
+            return std::make_shared<KernelSnapshotState>(
+                *kernel_helper, version_to_build, client_options, load->credentials_fingerprint);
         });
     load->future = task->get_future().share();
 
@@ -1249,7 +1252,10 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::getKernelSnap
 }
 
 TableSnapshot::KernelSnapshotState::KernelSnapshotState(
-    const IKernelHelper & helper_, std::optional<size_t> snapshot_version_, const KernelClientOptions & client_options_)
+    const IKernelHelper & helper_,
+    std::optional<size_t> snapshot_version_,
+    const KernelClientOptions & client_options_,
+    DB::UInt128 & used_credentials_fingerprint)
 {
     fiu_do_on(DB::FailPoints::delta_kernel_force_stale_token_error,
     {
@@ -1259,8 +1265,10 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(
     });
 
     /// The fingerprint is taken inside the helper from the same client snapshot the builder is
-    /// filled with, so it describes the credentials this engine is actually built with.
+    /// filled with, so it describes the credentials this engine is actually built with. It is
+    /// published to the load right away, before the kernel calls below which may throw.
     auto * engine_builder = helper_.createBuilderWithOptions(client_options_, credentials_fingerprint);
+    used_credentials_fingerprint = credentials_fingerprint;
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 
     using KernelSnapshotBuilder = KernelPointerWrapper<ffi::MutableFfiSnapshotBuilder, ffi::free_snapshot_builder>;

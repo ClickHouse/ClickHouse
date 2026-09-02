@@ -100,8 +100,14 @@ private:
 
     struct KernelSnapshotState : private boost::noncopyable
     {
+        /// `used_credentials_fingerprint` receives the fingerprint of the credentials the engine
+        /// is built with as soon as they are known — before the kernel calls which may throw —
+        /// so that a failed build can still be judged against the credentials it actually used.
         KernelSnapshotState(
-            const IKernelHelper & helper_, std::optional<size_t> snapshot_version_, const KernelClientOptions & client_options_);
+            const IKernelHelper & helper_,
+            std::optional<size_t> snapshot_version_,
+            const KernelClientOptions & client_options_,
+            DB::UInt128 & used_credentials_fingerprint);
 
         KernelExternEngine engine;
         KernelSnapshot snapshot;
@@ -136,6 +142,11 @@ private:
         std::atomic<Int64> waiters{0};
         /// Client options the build runs with; a query with different options does not share it.
         KernelClientOptions client_options;
+        /// Fingerprint of the credentials the worker built (or tried to build) the engine with.
+        /// Written by the worker before the future becomes ready, so readers which observed the
+        /// ready future see it; the stale-token retry compares against it, not against whatever
+        /// the helper's client is by the time some waiter handles the failure.
+        DB::UInt128 credentials_fingerprint{};
     };
     mutable std::shared_ptr<InflightSnapshotLoad> inflight_load TSA_GUARDED_BY(mutex);
     /// Client options this object is meant to load with, recorded by the metadata layer before
