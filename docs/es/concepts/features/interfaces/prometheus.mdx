@@ -119,16 +119,17 @@ Configure un handler enrutado por prefijo en el puerto HTTP principal de ClickHo
 
 `<defaults/>` conserva los handler integrados para endpoints como `/ping` y para solicitudes SQL. El prefijo anterior expone estos endpoints mediante un único handler:
 
-| Endpoint                         | Finalidad                       |
-| -------------------------------- | ------------------------------- |
-| `/prometheus/api/v1/write`       | Escritura remota de Prometheus  |
-| `/prometheus/api/v1/read`        | Lectura remota de Prometheus    |
-| `/prometheus/api/v1/query`       | Consultas PromQL instantáneas   |
-| `/prometheus/api/v1/query_range` | Consultas PromQL de rango       |
-| `/prometheus/api/v1/series`      | Metadatos de series             |
-| `/prometheus/api/v1/metadata`    | Metadatos de la familia métrica |
+| Endpoint                          | Finalidad                       |
+| --------------------------------- | ------------------------------- |
+| `/prometheus/api/v1/write`        | Escritura remota de Prometheus  |
+| `/prometheus/api/v1/read`         | Lectura remota de Prometheus    |
+| `/prometheus/api/v1/query`        | Consultas PromQL instantáneas   |
+| `/prometheus/api/v1/query_range`  | Consultas PromQL de rango       |
+| `/prometheus/api/v1/format_query` | Formato de expresiones PromQL   |
+| `/prometheus/api/v1/series`       | Metadatos de series             |
+| `/prometheus/api/v1/metadata`     | Metadatos de la familia métrica |
 
-El ejemplo omite `database` y `table` del handler. Cada solicitud debe incluir el parámetro de consulta `table`. También puede incluir `database`, usar un nombre de tabla completo como `prometheus.metrics` u omitir la base de datos para usar `default`. Esto permite que un único handler atienda varias tablas `TimeSeries`.
+El ejemplo omite `database` y `table` del handler. Cada solicitud debe incluir el parámetro de consulta `table` (excepto `/format_query`, que solo analiza la expresión PromQL indicada y no necesita una tabla). También puede incluir `database`, usar un nombre de tabla completo como `prometheus.metrics` u omitir la base de datos para usar `default`. Esto permite que un único handler atienda varias tablas `TimeSeries`.
 
 Para usar una tabla fija en todas las solicitudes, configúrela en el handler:
 
@@ -198,6 +199,16 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+Utilice el endpoint de formato de consulta para analizar y formatear una expresión de PromQL sin evaluarla:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+La expresión se devuelve serializada a partir de la consulta analizada, con los espacios en blanco normalizados, los comentarios eliminados, los paréntesis redundantes suprimidos y las duraciones convertidas a número de segundos: `sum by (job) (http_requests_total{code="200"}) / 2`. Este endpoint no evalúa la expresión, por lo que no necesita los parámetros `database` ni `table`.
+
 Consulte las [funcionalidades de PromQL compatibles](/es/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) para obtener la lista de funciones y operadores de agregación que utilizan la API HTTP, el dialecto `promql` y las funciones de tabla.
 
 #### Grafana {#grafana}
@@ -223,7 +234,7 @@ datasources:
 Grafana agrega `/api/v1/query` o `/api/v1/query_range` a esta URL base y añade `customQueryParameters` a cada solicitud.
 
 <Note>
-  Solo están implementados los endpoints de consulta `/api/v1/query` y `/api/v1/query_range` y los endpoints de metadatos `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` y `/api/v1/metadata`. `/api/v1/series` requiere al menos un selector de series `match[]`, admite los parámetros opcionales `start`, `end` y `limit`, y devuelve la unión de las series coincidentes con cada selector. `/api/v1/labels` acepta los mismos parámetros, con `match[]` como opcional, y devuelve los nombres de etiquetas ordenados de las series coincidentes (o de todas las series cuando no se proporcionan selectores). `/api/v1/label/<name>/values` acepta los mismos parámetros que `/api/v1/labels` y devuelve los valores ordenados de una etiqueta, donde `<name>` puede usar opcionalmente el escapado `U__...` de Prometheus para nombres de etiquetas que contienen caracteres fuera de `[a-zA-Z0-9_]`. Estos endpoints cubren lo que utiliza un origen de datos de Prometheus en Grafana para explorar etiquetas, variables de plantilla y el autocompletado del constructor de consultas.
+  Solo están implementados los endpoints de consulta `/api/v1/query`, `/api/v1/query_range` y `/api/v1/format_query` y los endpoints de metadatos `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` y `/api/v1/metadata`. `/api/v1/series` requiere al menos un selector de series `match[]`, admite los parámetros opcionales `start`, `end` y `limit`, y devuelve la unión de las series coincidentes con cada selector. `/api/v1/labels` acepta los mismos parámetros, con `match[]` como opcional, y devuelve los nombres de etiquetas ordenados de las series coincidentes (o de todas las series cuando no se proporcionan selectores). `/api/v1/label/<name>/values` acepta los mismos parámetros que `/api/v1/labels` y devuelve los valores ordenados de una etiqueta, donde `<name>` puede usar opcionalmente el escapado `U__...` de Prometheus para nombres de etiquetas que contienen caracteres fuera de `[a-zA-Z0-9_]`. Estos endpoints cubren lo que utiliza un origen de datos de Prometheus en Grafana para explorar etiquetas, variables de plantilla y el autocompletado del constructor de consultas.
 </Note>
 
 #### Puntos de entrada de SQL {#sql-entry-points}

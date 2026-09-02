@@ -119,16 +119,17 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 `<defaults/>` 会保留 `/ping` 等端点和 SQL 请求的内置处理程序。上述前缀通过一个处理程序公开这些端点：
 
-| 端点                               | 用途              |
-| -------------------------------- | --------------- |
-| `/prometheus/api/v1/write`       | Prometheus 远程写入 |
-| `/prometheus/api/v1/read`        | Prometheus 远程读取 |
-| `/prometheus/api/v1/query`       | 即时 PromQL 查询    |
-| `/prometheus/api/v1/query_range` | 范围 PromQL 查询    |
-| `/prometheus/api/v1/series`      | 序列元数据           |
-| `/prometheus/api/v1/metadata`    | 指标家族元数据         |
+| 端点                                | 用途              |
+| --------------------------------- | --------------- |
+| `/prometheus/api/v1/write`        | Prometheus 远程写入 |
+| `/prometheus/api/v1/read`         | Prometheus 远程读取 |
+| `/prometheus/api/v1/query`        | 即时 PromQL 查询    |
+| `/prometheus/api/v1/query_range`  | 范围 PromQL 查询    |
+| `/prometheus/api/v1/format_query` | PromQL 表达式格式化   |
+| `/prometheus/api/v1/series`       | 序列元数据           |
+| `/prometheus/api/v1/metadata`     | 指标家族元数据         |
 
-该示例未在处理程序中指定 `database` 和 `table`。每个请求都必须提供 `table` 查询参数。还可以提供 `database`、使用如 `prometheus.metrics` 这样的限定表名，或者省略数据库以使用 `default`。这样，一个处理程序即可为多个 `TimeSeries` 表提供服务。
+该示例未在处理程序中指定 `database` 和 `table`。每个请求都必须提供 `table` 查询参数 (`/format_query` 除外，它只解析给定的 PromQL 表达式，不需要表) 。还可以提供 `database`、使用如 `prometheus.metrics` 这样的限定表名，或者省略数据库以使用 `default`。这样，一个处理程序即可为多个 `TimeSeries` 表提供服务。
 
 若要让所有请求使用同一个固定表，请在处理程序中进行配置：
 
@@ -140,9 +141,9 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 </handler>
 ```
 
-在 处理程序 中配置的表不能被请求参数覆盖。
+在处理程序中配置的表不能被请求参数覆盖。
 
-路由和 处理程序 设置：
+路由和处理程序设置：
 
 | 名称           | 默认值 | 描述                                                                             |
 | ------------ | --- | ------------------------------------------------------------------------------ |
@@ -198,6 +199,16 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+使用格式化查询端点解析并格式化 PromQL 表达式，而不对其求值：
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+该表达式会从解析后的查询中序列化返回，其中空白已归一化、注释已移除、冗余括号已去除，时长也转换为秒数：`sum by (job) (http_requests_total{code="200"}) / 2`。该端点不会对表达式求值，因此不需要 `database` 和 `table` 参数。
+
 有关 HTTP API、`promql` 方言及表函数支持的函数和聚合运算符列表，请参阅[支持的 PromQL 功能](/zh/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)。
 
 #### Grafana {#grafana}
@@ -223,7 +234,7 @@ datasources:
 Grafana 会将 `/api/v1/query` 或 `/api/v1/query_range` 追加到此基础 URL，并在每个请求中添加 `customQueryParameters`。
 
 <Note>
-  目前仅实现了查询端点 `/api/v1/query` 和 `/api/v1/query_range` 以及元数据端点 `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values` 和 `/api/v1/metadata`。`/api/v1/series` 至少需要一个 `match[]` 序列选择器，支持可选的 `start`、`end` 和 `limit` 参数，并返回每个选择器匹配的序列的并集。`/api/v1/labels` 接受相同的参数，其中 `match[]` 为可选项，并返回匹配的序列的已排序标记名称 (未提供选择器时则返回所有序列的标记名称) 。`/api/v1/label/<name>/values` 接受与 `/api/v1/labels` 相同的参数，并返回某个标记的已排序值，其中 `<name>` 可选地使用 Prometheus 的 `U__...` 转义方式来表示包含 `[a-zA-Z0-9_]` 之外字符的标记名称。这些端点涵盖了 Grafana Prometheus 数据源用于浏览标记、模板变量和查询构建器自动补全的功能。
+  目前仅实现了查询端点 `/api/v1/query`、`/api/v1/query_range` 和 `/api/v1/format_query` 以及元数据端点 `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values` 和 `/api/v1/metadata`。`/api/v1/series` 至少需要一个 `match[]` 序列选择器，支持可选的 `start`、`end` 和 `limit` 参数，并返回每个选择器匹配的序列的并集。`/api/v1/labels` 接受相同的参数，其中 `match[]` 为可选项，并返回匹配的序列的已排序标记名称 (未提供选择器时则返回所有序列的标记名称) 。`/api/v1/label/<name>/values` 接受与 `/api/v1/labels` 相同的参数，并返回某个标记的已排序值，其中 `<name>` 可选地使用 Prometheus 的 `U__...` 转义方式来表示包含 `[a-zA-Z0-9_]` 之外字符的标记名称。这些端点涵盖了 Grafana Prometheus 数据源用于浏览标记、模板变量和查询构建器自动补全的功能。
 </Note>
 
 #### SQL 入口 {#sql-entry-points}

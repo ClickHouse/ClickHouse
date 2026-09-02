@@ -103,7 +103,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 ### تهيئة واجهة برمجة تطبيقات Prometheus {#configure-prometheus-api}
 
-هيِّئ معالجًا واحدًا قائمًا على توجيه البادئة على منفذ HTTP الرئيسي لـ ClickHouse:
+هيِّئ معالجًا واحدًا قائمًا على توجيه البادئة على منفذ HTTP الرئيسي لـ ClickHouse:
 
 ```xml
 <http_handlers>
@@ -119,16 +119,17 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 `<defaults/>` يحافظ على المعالجات المضمنة لنقاط النهاية، مثل `/ping` وطلبات SQL. تتيح البادئة أعلاه الوصول إلى هذه النقاط عبر معالج واحد:
 
-| نقطة النهاية                     | الغرض                            |
-| -------------------------------- | -------------------------------- |
-| `/prometheus/api/v1/write`       | الكتابة عن بُعد في Prometheus    |
-| `/prometheus/api/v1/read`        | القراءة عن بُعد من Prometheus    |
-| `/prometheus/api/v1/query`       | استعلامات PromQL الفورية         |
-| `/prometheus/api/v1/query_range` | استعلامات PromQL للنطاق          |
-| `/prometheus/api/v1/series`      | البيانات الوصفية للسلاسل         |
-| `/prometheus/api/v1/metadata`    | البيانات الوصفية لعائلة المقاييس |
+| نقطة النهاية                      | الغرض                            |
+| --------------------------------- | -------------------------------- |
+| `/prometheus/api/v1/write`        | الكتابة عن بُعد في Prometheus    |
+| `/prometheus/api/v1/read`         | القراءة عن بُعد من Prometheus    |
+| `/prometheus/api/v1/query`        | استعلامات PromQL الفورية         |
+| `/prometheus/api/v1/query_range`  | استعلامات PromQL للنطاق          |
+| `/prometheus/api/v1/format_query` | تنسيق تعبير PromQL               |
+| `/prometheus/api/v1/series`       | البيانات الوصفية للسلاسل         |
+| `/prometheus/api/v1/metadata`     | البيانات الوصفية لعائلة المقاييس |
 
-يحذف المثال `database` و`table` من المعالج. يجب أن يتضمن كل طلب معلمة الاستعلام `table`. ويمكنه أيضًا تضمين `database`، أو استخدام اسم جدول مؤهل مثل `prometheus.metrics`، أو حذف قاعدة البيانات لاستخدام `default`. يتيح ذلك لمعالج واحد خدمة عدة جداول `TimeSeries`.
+يحذف المثال `database` و`table` من المعالج. يجب أن يتضمن كل طلب معلمة الاستعلام `table` (باستثناء `/format_query`، الذي يحلل تعبير PromQL المُعطى فقط ولا يحتاج إلى جدول). ويمكنه أيضًا تضمين `database`، أو استخدام اسم جدول مؤهل مثل `prometheus.metrics`، أو حذف قاعدة البيانات لاستخدام `default`. يتيح ذلك لمعالج واحد خدمة عدة جداول `TimeSeries`.
 
 لاستخدام جدول ثابت واحد لكل طلب، هيّئه في المعالج:
 
@@ -198,6 +199,16 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+استخدم نقطة نهاية تنسيق الاستعلام لتحليل تعبير PromQL وتنسيقه دون تقييمه:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+يُعاد التعبير مُسلسلاً من الاستعلام المُحلَّل، مع توحيد المسافات البيضاء، وإزالة التعليقات، وحذف الأقواس الزائدة، وتحويل المدد إلى أعداد بالثواني: `sum by (job) (http_requests_total{code="200"}) / 2`. لا تقوم نقطة النهاية هذه بتقييم التعبير، لذا فهي لا تحتاج إلى المعاملين `database` و`table`.
+
 راجع [ميزات PromQL المدعومة](/ar/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) للاطلاع على قائمة الدالات وعوامل التجميع التي تستخدمها واجهة برمجة تطبيقات HTTP، ولهجة `promql`، ودالات الجداول.
 
 #### Grafana {#grafana}
@@ -223,7 +234,7 @@ datasources:
 يُلحق Grafana المسارَين ‎`/api/v1/query` أو ‎`/api/v1/query_range` بعنوان URL الأساسي هذا، ويضيف `customQueryParameters` إلى كل طلب.
 
 <Note>
-  لا تُنفَّذ إلا نقطتا نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values` و‎`/api/v1/metadata`. تتطلب ‎`/api/v1/series` محدِّد سلاسل واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد السلاسل المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء التسميات المرتبة للسلاسل المطابقة (أو لجميع السلاسل عند عدم تقديم أي محددات). وتقبل ‎`/api/v1/label/<name>/values` المعلمات نفسها التي تقبلها ‎`/api/v1/labels` وتُرجع القيم المرتبة لتسمية واحدة، مع إمكانية استخدام `<name>` لإفلات Prometheus بصيغة `U__...` لأسماء التسميات التي تحتوي على محارف خارج النطاق `[a-zA-Z0-9_]`. تغطي نقاط النهاية هذه ما يستخدمه مصدر بيانات Prometheus في Grafana لتصفّح التسميات ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات.
+  لا تُنفَّذ إلا نقاط نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` و‎`/api/v1/format_query` ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values` و‎`/api/v1/metadata`. تتطلب ‎`/api/v1/series` محدِّد سلاسل واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد السلاسل المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء التسميات المرتبة للسلاسل المطابقة (أو لجميع السلاسل عند عدم تقديم أي محددات). وتقبل ‎`/api/v1/label/<name>/values` المعلمات نفسها التي تقبلها ‎`/api/v1/labels` وتُرجع القيم المرتبة لتسمية واحدة، مع إمكانية استخدام `<name>` لإفلات Prometheus بصيغة `U__...` لأسماء التسميات التي تحتوي على محارف خارج النطاق `[a-zA-Z0-9_]`. تغطي نقاط النهاية هذه ما يستخدمه مصدر بيانات Prometheus في Grafana لتصفّح التسميات ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات.
 </Note>
 
 #### نقاط إدخال SQL {#sql-entry-points}
