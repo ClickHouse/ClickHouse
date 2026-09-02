@@ -62,6 +62,33 @@ private:
         return backslash_count % 2 == 0;
     }
 
+    /// Whether the pattern turns the `s` (dot matches a newline) flag off with an inline group,
+    /// `(?-s)` or `(?i-s:...)`. ClickHouse compiles regexp functions with `dot_nl` on, so `.`
+    /// normally matches a newline and a trailing `.*$` never constrains the match; with the flag
+    /// off it does. The scope of such a group is not tracked - any occurrence is enough to decline.
+    static bool disablesDotAll(const std::string & regexp)
+    {
+        for (size_t i = 0; i + 2 < regexp.size(); ++i)
+        {
+            if (regexp[i] != '(' || regexp[i + 1] != '?')
+                continue;
+
+            /// re2 flags are `i`, `m`, `s` and `U`, and everything after a `-` is turned off.
+            bool negated = false;
+            for (size_t j = i + 2; j < regexp.size(); ++j)
+            {
+                const char flag = regexp[j];
+                if (flag == '-')
+                    negated = true;
+                else if (flag == 's' && negated)
+                    return true;
+                else if (flag != 'i' && flag != 's' && flag != 'U' && flag != 'm')
+                    break; /// Not a flag group, or its flag list has ended.
+            }
+        }
+        return false;
+    }
+
     bool handleReplaceRegexpAll(FunctionNode & function_node)
     {
         auto & function_node_arguments_nodes = function_node.getArguments().getNodes();
@@ -133,8 +160,13 @@ private:
         /// `extract('a1b2c3', '^.*(\d)')` is `3` - the idiomatic "last digit" pattern - while
         /// `extract('a1b2c3', '(\d)')` is `1`.
         ///
+        /// The tail is only free of consequences while `.` matches a newline. ClickHouse compiles
+        /// regexp functions with `dot_nl` on, but an inline `(?-s)` turns it back off, and then
+        /// `.*$` cannot cross a newline: it pins the match to the last line, and dropping it moves
+        /// the capture to an earlier one.
+        ///
         /// For simplicity, this optimization ignores alternations.
-        if (regexp.size() >= 3 && regexp.ends_with(".*$") && isUnescaped(regexp, regexp.size() - 3))
+        if (regexp.size() >= 3 && regexp.ends_with(".*$") && isUnescaped(regexp, regexp.size() - 3) && !disablesDotAll(regexp))
         {
             regexp = regexp.substr(0, regexp.size() - 3);
             function_node_arguments_nodes[1] = std::make_shared<ConstantNode>(std::move(regexp));
