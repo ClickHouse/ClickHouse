@@ -24,6 +24,18 @@ struct ConnectionParams;
 namespace DeltaLake
 {
 
+/// Client options resolved on the query thread for one kernel engine build. The worker which
+/// performs the build runs under a neutral thread group and has no query context of its own,
+/// so anything taken from the query's settings must be captured beforehand.
+struct KernelClientOptions
+{
+    std::optional<UInt64> s3_connect_timeout_ms;
+    std::optional<UInt64> s3_request_timeout_ms;
+
+    /// Takes the settings changed in the current query, if there is one.
+    static KernelClientOptions fromCurrentQuery();
+};
+
 /**
  * A helper class to manage different storage types,
  * their data location, authentication, connection.
@@ -46,6 +58,10 @@ public:
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
+
+    /// Same as createBuilder(), with client options captured on the query thread. The default
+    /// ignores them; helpers whose client depends on query settings override it.
+    virtual ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions &) const { return createBuilder(); }
 
     /// Hash of current credentials; override for providers with rotating sessions.
     virtual DB::UInt128 getCredentialsFingerprint() const { return {}; }
