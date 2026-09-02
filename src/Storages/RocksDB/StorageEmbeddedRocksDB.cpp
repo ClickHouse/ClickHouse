@@ -856,13 +856,31 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// An explicit `rocksdb_dir` opens a directory under `user_files_path` and needs the same `FILE` grant
     /// as `file`; the argument-less form touches only the table's own data directory, and `clickhouse-local`
     /// has no `user_files` fence to authorize. A replayed definition was authorized when it was introduced.
+    ///
+    /// `WRITE` is required whenever this statement could create the directory, which includes a
+    /// `read_only = 1` table over a directory that is not there yet: the constructor runs
+    /// `fs::create_directories(rocksdb_dir)` on the CREATE path, before the read-only open is attempted,
+    /// so authorizing that with `READ` alone would give a read-only source grant a filesystem write side
+    /// effect. Over a directory that already exists the creation is a no-op and `READ` is enough.
     auto local_context = args.getLocalContext();
     const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
     if (!rocksdb_dir.empty() && !from_existing_metadata
         && local_context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
+        bool may_create_directory = !read_only;
+        if (!may_create_directory)
+        {
+            /// Resolved exactly as the constructor resolves it. The `user_files` fence is enforced there
+            /// and throws, so a path landing outside it is treated as creating: no existence of anything
+            /// beyond the fence is probed, and the statement fails on the fence either way.
+            const fs::path user_files_path = fs::canonical(local_context->getUserFilesPath());
+            fs::path resolved = fs::path(rocksdb_dir).is_relative() ? user_files_path / rocksdb_dir : fs::path(rocksdb_dir);
+            resolved = fs::absolute(resolved).lexically_normal();
+            may_create_directory = !fileOrSymlinkPathStartsWith(resolved, user_files_path) || !fs::exists(resolved);
+        }
+
         const AccessFlags required
-            = read_only ? AccessFlags(AccessType::READ) : (AccessType::READ | AccessType::WRITE);
+            = may_create_directory ? (AccessType::READ | AccessType::WRITE) : AccessFlags(AccessType::READ);
         local_context->checkAccess(required, toStringSource(AccessTypeObjects::Source::FILE));
     }
 

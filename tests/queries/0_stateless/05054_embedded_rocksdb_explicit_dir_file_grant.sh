@@ -9,7 +9,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `EmbeddedRocksDB(ttl, rocksdb_dir, read_only)` with an explicit directory opens a directory under
 # `user_files`, so it needs the same `FILE` source grant as `file`: `READ` to open one, and `WRITE` as
-# well for a writable table. The argument-less form touches only the table's own data directory and
+# well whenever the statement could create it — a writable table, or a read_only one whose directory
+# does not exist yet, since the CREATE path runs `fs::create_directories` before the read-only open. The argument-less form touches only the table's own data directory and
 # stays free, and a definition replayed from stored metadata is not re-checked.
 
 # A user, a database, three user_files directories and a backup destination are global names, and the
@@ -25,6 +26,7 @@ VICTIM="${CLICKHOUSE_DATABASE}.victim_${NAME}"
 SECRET_DIR="${NAME}_secret"
 RW_DIR="${NAME}_rw"
 RESTORE_DIR="${NAME}_restore"
+MISSING_DIR="${NAME}_missing"
 BACKUP="Disk('backups', '05054_${NAME}')"
 
 # The denial assertions match the privilege sentence rather than the grant name: the client echoes the
@@ -78,6 +80,18 @@ out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${POC}.leak (k Stri
 rc=$?
 if [ "$rc" -eq 0 ] && created leak; then echo "read-only-allowed"; else echo "read-only-FAILED (unexpected): rc=$rc $out"; fi
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT * FROM ${POC}.leak"
+
+echo "--- a read_only table over a missing directory needs WRITE and does not create it ---"
+# The CREATE path runs `fs::create_directories(rocksdb_dir)` before the read-only open, so authorizing
+# this with READ alone would let a read-only source grant leave a new directory in `user_files`.
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${POC}.missing (k String, v String) ENGINE = EmbeddedRocksDB(0, '${MISSING_DIR}', 1) PRIMARY KEY k" 2>&1 \
+    | denied_write && echo "missing-dir-denied" || echo "NOT DENIED"
+created missing && echo "CREATED ANYWAY (unexpected)" || echo "not-created"
+if [ -n "${CLICKHOUSE_USER_FILES}" ] && [ -e "${CLICKHOUSE_USER_FILES:?}/${MISSING_DIR}" ]; then
+    echo "DIRECTORY CREATED (unexpected)"
+else
+    echo "dir-absent"
+fi
 
 echo "--- a writable table needs WRITE ON FILE as well ---"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${POC}.rw (k String, v String) ENGINE = EmbeddedRocksDB(0, '${RW_DIR}') PRIMARY KEY k" 2>&1 \
@@ -138,5 +152,5 @@ ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 # Dropping such a table closes its handle but leaves the directory, so remove the three this test made.
 if [ -n "${CLICKHOUSE_USER_FILES}" ]; then
     rm -rf "${CLICKHOUSE_USER_FILES:?}/${SECRET_DIR}" "${CLICKHOUSE_USER_FILES:?}/${RW_DIR}" \
-        "${CLICKHOUSE_USER_FILES:?}/${RESTORE_DIR}"
+        "${CLICKHOUSE_USER_FILES:?}/${RESTORE_DIR}" "${CLICKHOUSE_USER_FILES:?}/${MISSING_DIR}"
 fi
