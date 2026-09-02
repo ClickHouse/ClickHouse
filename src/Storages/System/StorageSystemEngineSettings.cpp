@@ -48,13 +48,19 @@ development and the expectations one might have when using them:
     };
 }
 
-void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     const auto & storages = StorageFactory::instance().getAllStorages();
-    const size_t num_columns = res_columns.size();
 
     const auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
     const auto & constraints = constraints_and_current_profiles->constraints;
+
+    /// A fill function writes every setting column, so the columns it fills into are built from the
+    /// full description rather than from `res_columns`, which holds only the queried ones. The mask
+    /// then decides which of them reach the result. It cannot make a fill function do less work:
+    /// `MergeTreeSettings` shares `dumpToSystemMergeTreeSettingsColumns` with
+    /// `system.merge_tree_settings`, which has no mask to pass on.
+    const auto all_columns = getColumnsDescription().getAllPhysical();
 
     for (const auto & [engine_name, creator] : storages)
     {
@@ -71,18 +77,26 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
 
         /// Every column except `engine_name`, which is per engine rather than per setting.
         MutableColumns setting_columns;
-        setting_columns.reserve(num_columns - 1);
-        for (size_t col = 1; col < num_columns; ++col)
-            setting_columns.push_back(res_columns[col]->cloneEmpty());
+        setting_columns.reserve(all_columns.size() - 1);
+        for (auto it = std::next(all_columns.begin()); it != all_columns.end(); ++it)
+            setting_columns.push_back(it->type->createColumn());
 
         MutableColumnsAndConstraints params(setting_columns, constraints);
         fill_fn(params, context);
 
         const size_t num_rows = setting_columns[0]->size();
-        for (size_t row = 0; row < num_rows; ++row)
-            res_columns[0]->insert(engine_name);
-        for (size_t col = 1; col < num_columns; ++col)
-            res_columns[col]->insertRangeFrom(*setting_columns[col - 1], 0, num_rows);
+        size_t src_index = 0;
+        size_t res_index = 0;
+
+        if (columns_mask[src_index++])
+        {
+            for (size_t row = 0; row < num_rows; ++row)
+                res_columns[res_index]->insert(engine_name);
+            ++res_index;
+        }
+        for (const auto & column : setting_columns)
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertRangeFrom(*column, 0, num_rows);
     }
 }
 

@@ -17,6 +17,9 @@ public:
     static ColumnsDescription getColumnsDescription();
 
 protected:
+    bool supportsColumnsMask() const override { return true; }
+
+protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
     void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
