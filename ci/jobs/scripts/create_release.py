@@ -947,7 +947,19 @@ if __name__ == "__main__":
                 commit_sha=release_info.commit_sha,
                 version=release_info.version,
             )
-            p.run()
+            # A rehearsed dry-run commit has no build artifacts in S3; tolerate
+            # that (nothing is published) so the patch dry-run PR check still
+            # exercises the download path. A real run must find them.
+            if args.dry_run and not release_packages.release_build_artifacts_ready(
+                p.s3,
+                release_info.release_branch,
+                release_info.commit_sha,
+                release_info.version,
+                p.with_signed_macos,
+            ):
+                print("Dry run: no release artifacts in S3 for this commit; skipping download")
+            else:
+                p.run()
 
     if args.create_gh_release:
         with ReleaseContextManager(
