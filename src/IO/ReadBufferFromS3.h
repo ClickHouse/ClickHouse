@@ -116,7 +116,8 @@ private:
 
     size_t getObjectSizeFromS3() const;
 
-    Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
+    Aws::S3::Model::GetObjectResult sendRequest(
+        size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl, bool * request_started = nullptr) const;
 
     ReadSettings read_settings;
 

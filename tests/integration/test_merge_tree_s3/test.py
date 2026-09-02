@@ -195,6 +195,21 @@ def check_no_objects_after_drop(cluster, table_name="s3_test", node_name="node")
     return wait_for_delete_s3_objects(cluster, 0, timeout=30)
 
 
+def get_s3_read_histogram_counts(node):
+    return {
+        metric: int(value)
+        for metric, value in (
+            line.split("\t")
+            for line in node.query(
+                "SELECT metric, toUInt64(value) FROM system.histogram_metrics "
+                "WHERE metric IN "
+                "('s3_read_request_duration_microseconds', 's3_read_request_bytes') "
+                "AND labels['le']='+Inf' ORDER BY metric"
+            ).strip().splitlines()
+        )
+    }
+
+
 def test_prefetch_stops_after_max_execution_time(cluster):
     node = cluster.instances["node"]
     table = "s3_prefetch_cancellation"
@@ -248,6 +263,70 @@ def test_prefetch_stops_after_max_execution_time(cluster):
     assert node.query(f"SELECT sum(id) FROM {table}").strip() == str(sum(range(4096)))
 
     check_no_objects_after_drop(cluster, table_name=table)
+
+
+def test_read_big_at_cancellation_does_not_record_s3_histograms(cluster):
+    node = cluster.instances["node"]
+    object_name = "data/s3_read_big_at_cancellation.parquet"
+    url = (
+        f"http://{cluster.minio_host}:{cluster.minio_port}/"
+        f"{cluster.minio_bucket}/{object_name}"
+    )
+    table_function = (
+        f"s3('{url}', 'minio', '{cluster.minio_secret_key}', "
+        "'Parquet', 'id UInt64, data String')"
+    )
+    query_id = uuid.uuid4().hex
+    failpoint = "s3_read_before_get_object"
+
+    node.query(
+        f"INSERT INTO FUNCTION {table_function} "
+        "SELECT number AS id, repeat('x', 1024) AS data FROM numbers(4096)"
+    )
+    histogram_counts_before = get_s3_read_histogram_counts(node)
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    query_future = executor.submit(
+        node.query_and_get_answer_with_error,
+        f"SELECT sum(id) FROM {table_function} SETTINGS "
+        "max_execution_time=1, timeout_overflow_mode='throw', max_threads=1, "
+        "max_download_threads=1, remote_filesystem_read_prefetch=0, "
+        "enable_filesystem_cache=0, use_uncompressed_cache=0",
+        query_id=query_id,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=20,
+            sleep_time=0.25,
+        )
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+        _, error = query_future.result(timeout=10)
+        assert "TIMEOUT_EXCEEDED" in error, error
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        node.query(
+            "SELECT sum(ProfileEvents['S3GetObject']), "
+            "sum(ProfileEvents['ReadBufferFromS3RequestsErrors']) FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type!='QueryStart'"
+        ).strip()
+        == "0\t0"
+    )
+    assert get_s3_read_histogram_counts(node) == histogram_counts_before
+
+    cluster.minio_client.remove_object(cluster.minio_bucket, object_name)
+    wait_for_delete_s3_objects(cluster, 0, timeout=30)
 
 
 def test_custom_query_cancellation_is_not_s3_error(cluster):

@@ -316,10 +316,11 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
         std::optional<Aws::S3::Model::GetObjectResult> result;
+        bool request_started = false;
 
         try
         {
-            result = sendRequest(attempt, range_begin, range_begin + n - 1);
+            result = sendRequest(attempt, range_begin, range_begin + n - 1, &request_started);
             std::istream & istr = result->GetBody();
 
             bool cancelled = false;
@@ -340,7 +341,8 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         }
         catch (...)
         {
-            observe_request_metrics();
+            if (request_started)
+                observe_request_metrics();
 
             if (!processException(range_begin, attempt))
                 throw;
@@ -581,7 +583,8 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 
-Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const
+Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(
+    size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl, bool * request_started) const
 {
     S3::GetObjectRequest req;
     req.SetBucket(bucket);
@@ -613,6 +616,9 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_get_object);
     CurrentThread::checkIfNotCancelled();
+
+    if (request_started)
+        *request_started = true;
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
     if (client_ptr->isClientForDisk())
