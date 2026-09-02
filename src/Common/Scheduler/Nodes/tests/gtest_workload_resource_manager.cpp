@@ -3553,6 +3553,41 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsPerResourceScheduler)
+{
+    // `scheduler` can be chosen per resource via the `FOR <resource>` clause (e.g. a different
+    // algorithm for CPU and IO). A resource-specific value wins for that resource; a resource with
+    // no specific value falls back to the workload-wide (regular) value, otherwise the `fifo`
+    // default. This resolution is what lets `WorkloadResourceManager` build each resource's leaf
+    // with its own algorithm.
+    ASTCreateWorkloadQuery::SettingsChanges changes;
+    changes.emplace_back("scheduler", Field(String("fair")), "cpu");
+    changes.emplace_back("scheduler", Field(String("las")), "io");
+    changes.emplace_back("scheduler", Field(String("priority")), ""); // workload-wide value
+
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "cpu");
+        EXPECT_EQ(ws.scheduler, "fair");
+    }
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "io");
+        EXPECT_EQ(ws.scheduler, "las");
+    }
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "other"); // no FOR-specific value → workload-wide value
+        EXPECT_EQ(ws.scheduler, "priority");
+    }
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges none;
+        ws.initFromChanges(none);
+        EXPECT_EQ(ws.scheduler, "fifo"); // default when unset
+    }
+}
+
 TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
 {
     const Int64 cores = static_cast<Int64>(getNumberOfCPUCoresToUse());

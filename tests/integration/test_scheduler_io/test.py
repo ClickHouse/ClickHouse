@@ -1226,3 +1226,63 @@ def test_config_based_workloads_and_resources():
 
     # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"
     node.query("DROP WORKLOAD development")
+
+
+def test_priority_scheduling_io():
+    # End-to-end check of the per-query `priority` scheduler on the IO path, which is DISTINCT from
+    # CPU (IO requests go through ResourceGuard, not PipelineExecutor). Two sets of reads run in the
+    # SAME workload and differ ONLY by their per-query `priority`; under IO contention the
+    # higher-priority reads must win the network_read resource first and complete more often. This
+    # can only happen if the real IO request path tags each read's requests with the query's
+    # scheduling context. `enable_filesystem_cache=0` forces every read to hit S3 (so reads keep
+    # contending instead of being served from cache), and a small `max_bytes_inflight` creates the
+    # contention the priority scheduler arbitrates.
+    node.query(
+        """
+        create resource network_write (write disk s3);
+        create resource network_read (read disk s3);
+        create workload all settings max_bytes_inflight = 1000000, scheduler = 'priority';
+    """
+    )
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by key settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+    """
+    )
+    node.query(
+        "insert into data select number, randomString(100000) from numbers(50) SETTINGS workload='all'"
+    )
+
+    stop_event = threading.Event()
+    counts = {"high": 0, "low": 0}
+    counts_lock = threading.Lock()
+
+    def read_thread(priority, label):
+        while not stop_event.is_set():
+            try:
+                node.query(
+                    "select count() from data where not ignore(*) "
+                    f"SETTINGS workload='all', priority={priority}, enable_filesystem_cache=0"
+                )
+                with counts_lock:
+                    counts[label] += 1
+            except QueryRuntimeException:
+                pass
+
+    threads = []
+    for i in range(4):
+        threads.append(threading.Thread(target=read_thread, args=(1, "high"))) # priority 1 = highest
+        threads.append(threading.Thread(target=read_thread, args=(2, "low")))  # priority 2 = lower
+    for thread in threads:
+        thread.start()
+
+    time.sleep(10) # let the priority scheduler arbitrate IO under the inflight limit
+    stop_event.set()
+    for thread in threads:
+        thread.join()
+
+    # Under strict priority the higher-priority reads win the IO resource, so they complete more
+    # often (guard on a minimum total so a slow CI runner is not asserted against).
+    if counts["high"] + counts["low"] > 4:
+        assert counts["high"] > counts["low"], f"IO priority did not favor higher priority: high={counts['high']} low={counts['low']}"

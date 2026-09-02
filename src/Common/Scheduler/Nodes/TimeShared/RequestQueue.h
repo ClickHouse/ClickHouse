@@ -637,6 +637,17 @@ public:
         algo->pullAll(pending);
         algo = makeAlgorithm(new_algorithm, unit, this);
         algorithm = new_algorithm;
+        // `fair` projects each query's virtual runtime in push() and stores it in the (per-query)
+        // scheduling context, which outlives this leaf's algorithm instances. The new instance
+        // starts from a zero system virtual time, so reset each migrated query's projected vruntime
+        // for this leaf before re-pushing — otherwise the pending backlog's projection would be
+        // double-counted on top of what a previous `fair` stint left behind (re-keying the same
+        // requests advances vruntime again). attained_cost is real accrued service, left untouched.
+        // Resetting a context repeatedly is idempotent, so no dedup is needed before the push loop.
+        if (new_algorithm == SchedulerAlgorithm::Fair)
+            for (ResourceRequest * request : pending)
+                if (auto * ctx = request->scheduling_context)
+                    ctx->getResourceState(this).vruntime = 0.0;
         for (ResourceRequest * request : pending)
             algo->push(request);
     }

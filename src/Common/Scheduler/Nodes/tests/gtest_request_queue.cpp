@@ -291,6 +291,26 @@ TEST(RequestQueue, SwapSchedulerKeepsRequests)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4, 5}));
 }
 
+/// Toggling a fair leaf's algorithm away and back must not double-count the pending backlog's
+/// projected virtual runtime: the migrated queries' vruntime is reset on swap-into-fair, so a query
+/// is not pushed behind a fresh one by a doubled projection.
+TEST(RequestQueue, FairSwapRoundTripNoVruntimeDoubleCount)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    f.enqueue(1, a); // A1
+    f.enqueue(2, a); // A2 (A's projected vruntime is now 2)
+    // Swap the leaf's algorithm away from fair and back while A's requests are still queued.
+    f.queue->setScheduler(SchedulerAlgorithm::Priority);
+    f.queue->setScheduler(SchedulerAlgorithm::Fair);
+    f.enqueue(3, b); // B1, a fresh query
+    // With the vruntime reset A's backlog is re-projected once (A1 at vstart 0), so A1 leads the
+    // fresh B1 and A2 follows. Without it, A's doubled vruntime would push both A1 and A2 behind
+    // B1 (i.e. {3, 1, 2}).
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3, 2}));
+}
+
 /// Cancellation from the middle works for both algorithms; counters update.
 TEST(RequestQueue, CancelFromMiddle)
 {
