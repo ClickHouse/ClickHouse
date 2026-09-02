@@ -1393,3 +1393,42 @@ def test_distributed_query_does_not_rebuild_profiles_from_propagated_roles(
     # sum(x), not count(): a trivial count is answered from part metadata without
     # reading rows, so the leaf read limit would never be consulted.
     assert in_session("SELECT sum(x) FROM default.replay_distributed").strip() == "15"
+
+
+def test_response_framing_contract(started_cluster):
+    # A 200 body carries authentication state, so its complete reception must be verifiable:
+    # Content-Length or chunked framing is required, and a detectable truncation fails the
+    # attempt. A body delimited only by connection close is rejected even when it is valid,
+    # because a helper dying right after the headers would be indistinguishable from an
+    # empty response. None of these failures is retried (one helper request each).
+    for user in [
+        "truncated_200_user",
+        "close_delimited_empty_user",
+        "close_delimited_body_user",
+    ]:
+        before = helper_request_count(instance, user)
+        error = instance.query_and_get_error(
+            "SELECT 1", user=user, password=GOOD_PASSWORD
+        )
+        assert "Authentication failed" in error, (user, error)
+        assert helper_request_count(instance, user) - before == 1, user
+    # Content-Length: 0 keeps the "empty 200 means {}" contract: the rejection above is about
+    # unverifiable framing, not about empty bodies.
+    assert (
+        instance.query(
+            "SELECT currentUser()",
+            user="content_length_zero_user",
+            password=GOOD_PASSWORD,
+        ).strip()
+        == "content_length_zero_user"
+    )
+    # A truncated 404 (Content-Length: 100, connection closed after 2 bytes) is an incomplete
+    # response, not a "user not found": on node3, where the http directory precedes users.xml
+    # and truncated_404_user exists in users.xml with this password, the attempt must fail
+    # closed rather than fall through to the local user.
+    before = helper_request_count(instance3, "truncated_404_user")
+    error = instance3.query_and_get_error(
+        "SELECT 1", user="truncated_404_user", password="local_pw"
+    )
+    assert "Authentication failed" in error, error
+    assert helper_request_count(instance3, "truncated_404_user") - before == 1

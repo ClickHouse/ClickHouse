@@ -62,6 +62,8 @@ MAIN_USERS = {
     "legacy_settings_user": {"body": {"settings": {"max_threads": "4"}}},
     # Used only by test_metrics for delta-based ProfileEvents/CurrentMetrics assertions.
     "metrics_user": {"body": {}},
+    # 200 with Content-Length: 0 - the "empty body means {}" contract with verifiable framing.
+    "content_length_zero_user": {"body": ""},
     # Creates a SQL SECURITY DEFINER view; external_definer is prefix-delegated.
     "definer_user": {"body": {"roles": ["external_definer"]}},
     # Custom settings under the configured `SQL_` prefix keep their JSON scalar types; the
@@ -135,6 +137,21 @@ AUX_USERS = {
 # the later users.xml storage.
 CACHE_USERS = {f"cache_user_{i}": {"body": {}} for i in range(10)}
 CACHE_USERS["shadowed_user"] = {"body": {}}
+# truncated_404_user also exists in users.xml (password "local_pw"). node3's helper answers
+# 404 with Content-Length: 100 and then closes after 2 bytes: the incomplete response must
+# fail the attempt, never fall through to users.xml.
+CACHE_USERS["truncated_404_user"] = {"body": {}}
+
+# Framing cases for test_response_framing_contract (all MAIN_USERS, any password accepted):
+#   truncated_200_user        200, Content-Length: 100, 2 bytes sent, then close  -> fail
+#   close_delimited_empty_user 200, no Content-Length/chunked, empty body, close  -> fail
+#   close_delimited_body_user  200, no Content-Length/chunked, body "{}", close   -> fail
+#   content_length_zero_user   200, Content-Length: 0 (ordinary _reply with "")    -> ok
+FRAMING_USERS = {
+    "truncated_200_user",
+    "close_delimited_empty_user",
+    "close_delimited_body_user",
+}
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -144,6 +161,21 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             return None, None
         user, _, password = base64.b64decode(auth[6:]).decode().partition(":")
         return user, password
+
+    def _reply_raw(self, status, headers, payload, close_after=True):
+        # Writes a response with explicit framing headers (and no automatic Content-Length),
+        # then closes the connection so the client observes exactly this framing.
+        self.send_response(status)
+        for name, value in headers:
+            self.send_header(name, value)
+        self.end_headers()
+        if payload:
+            self.wfile.write(payload)
+        self.wfile.flush()
+        if close_after:
+            self.close_connection = True
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
 
     def _reply(self, status, body=""):
         payload = body if isinstance(body, str) else json.dumps(body)
@@ -186,6 +218,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             if password in LIMIT_USER_PASSWORDS:
                 return self._reply(200, LIMIT_USER_PASSWORDS[password])
             return self._reply(401)
+        if user == "truncated_200_user" and users is MAIN_USERS:
+            return self._reply_raw(200, [("Content-Length", "100")], b"{}")
+        if user == "close_delimited_empty_user" and users is MAIN_USERS:
+            return self._reply_raw(200, [("Connection", "close")], b"")
+        if user == "close_delimited_body_user" and users is MAIN_USERS:
+            return self._reply_raw(200, [("Connection", "close")], b"{}")
+        if user == "truncated_404_user" and users is CACHE_USERS:
+            return self._reply_raw(404, [("Content-Length", "100")], b"{}")
         if user == "conn_reset_user" and users is MAIN_USERS:
             # Simulate a transport failure (connection closed without any HTTP response)
             # so the client sees this as a retryable failure, unlike a parsed response.
