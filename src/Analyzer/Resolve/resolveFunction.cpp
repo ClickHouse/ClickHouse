@@ -1842,24 +1842,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
 
                         ASTPtr sql_udf_ast;
-                        ASTPtr wasm_udf_ast;
                         if (!inner_resolver)
                         {
-                            auto stored_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(identifier_name);
-                            if (stored_udf_ast && stored_udf_ast->as<ASTCreateSQLFunctionQuery>())
-                                sql_udf_ast = std::move(stored_udf_ast);
-                            /// A `CREATE FUNCTION ... LANGUAGE WASM` definition is kept in the same storage and
-                            /// outlives the engine that runs it: after a restart with
-                            /// `allow_experimental_webassembly_udf` turned off, or on a build without a
-                            /// WebAssembly engine at all, the definition is still stored while the registry
-                            /// probed above is empty. Rewrite the reference from the stored definition anyway,
-                            /// so that resolving the rewritten call reports that WebAssembly support is
-                            /// unavailable instead of failing as an unknown identifier.
-                            else if (stored_udf_ast && stored_udf_ast->as<ASTCreateWasmFunctionQuery>())
-                                wasm_udf_ast = std::move(stored_udf_ast);
+                            sql_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(identifier_name);
+                            if (!sql_udf_ast || !sql_udf_ast->as<ASTCreateSQLFunctionQuery>())
+                                sql_udf_ast.reset();
                         }
 
-                        if (inner_resolver || sql_udf_ast || wasm_udf_ast)
+                        if (inner_resolver || sql_udf_ast)
                         {
                             /// Determine arity from the inner function itself. This handles
                             /// cases like `arrayMap(plus, arr1, arr2)` where `plus` has a
@@ -1890,11 +1880,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                     }
                                 }
                             }
-
-                            /// A WebAssembly UDF declares its arguments in the `CREATE FUNCTION` statement,
-                            /// so the stored definition carries the arity even when nothing can run it.
-                            if (const auto * wasm_udf = wasm_udf_ast ? wasm_udf_ast->as<ASTCreateWasmFunctionQuery>() : nullptr)
-                                inner_arity = wasm_udf->getNumberOfArguments();
 
                             /// Determine the lambda arity:
                             /// - Inner function with fixed arity: use it directly.
@@ -2701,10 +2686,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist{}. In scope {}",
-                            function_name,
-                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)),
-                            scope.scope_node->formatASTForErrorMessage());
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist. In scope {}{}",
+                            function_name, scope.scope_node->formatASTForErrorMessage(),
+                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -2759,7 +2743,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
         {
             UNUSED(create_function_query);
-            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
     }
@@ -2831,10 +2814,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name {} does not exist{}. In scope {}",
+                "Function with name {} does not exist. In scope {}{}",
                 backQuote(function_name),
-                getHintsErrorMessageSuffix(hints),
-                scope.scope_node->formatASTForErrorMessage());
+                scope.scope_node->formatASTForErrorMessage(),
+                getHintsErrorMessageSuffix(hints));
         }
 
         if (!function_lambda_arguments_indexes.empty())

@@ -22,43 +22,38 @@ void TTLDeleteAlgorithm::execute(Block & block)
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
     auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
-    /// Decide once for the whole block, then filter the columns in one vectorized pass. A forced
-    /// algorithm runs on every merge of a value-combining mode, where the common case is that
-    /// nothing expires - and then the block is handed on untouched.
-    const size_t rows = block.rows();
-    PaddedPODArray<Int64> timestamps;
-    extractTimestamps(ttl_column.get(), timestamps);
+    MutableColumns result_columns;
+    const auto & column_names = block.getNames();
 
-    IColumn::Filter filter(rows);
-    size_t removed = 0;
-
-    for (size_t i = 0; i < rows; ++i)
+    result_columns.reserve(column_names.size());
+    for (auto it = column_names.begin(); it != column_names.end(); ++it)
     {
-        Int64 cur_ttl = timestamps[i];
-        bool where_filter_passed = !where_column || where_column->getBool(i);
-        bool remove = isTTLExpired(cur_ttl) && where_filter_passed;
+        const IColumn * values_column = block.getByName(*it).column.get();
+        MutableColumnPtr result_column = values_column->cloneEmpty();
+        result_column->reserve(block.rows());
 
-        filter[i] = !remove;
+        for (size_t i = 0; i < block.rows(); ++i)
+        {
+            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+            bool where_filter_passed = !where_column || where_column->getBool(i);
 
-        if (remove)
-        {
-            ++removed;
+            if (!isTTLExpired(cur_ttl) || !where_filter_passed)
+            {
+                /// Update ttl info only if row passes the filter.
+                /// Rows that don't pass the filter should not affect TTL.
+                if (where_filter_passed)
+                    new_ttl_info.update(cur_ttl);
+
+                result_column->insertFrom(*values_column, i);
+            }
+            else if (it == column_names.begin())
+                ++rows_removed;
         }
-        else if (where_filter_passed)
-        {
-            /// Update ttl info only if row passes the filter.
-            /// Rows that don't pass the filter should not affect TTL.
-            new_ttl_info.update(cur_ttl);
-        }
+
+        result_columns.emplace_back(std::move(result_column));
     }
 
-    rows_removed += removed;
-
-    if (removed == 0)
-        return;
-
-    for (auto & column : block)
-        column.column = column.column->filter(filter, rows - removed);
+    block = block.cloneWithColumns(std::move(result_columns));
 }
 
 void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const

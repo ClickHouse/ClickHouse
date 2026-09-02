@@ -39,7 +39,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
@@ -921,11 +920,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
         catch (Exception & e)
         {
-            /// A value that ends before the deserializer expected is reported as an attempt to read after eof,
-            /// which says nothing about the query - it reads like a problem with the data. Comparing a numeric
-            /// column with an empty string, `WHERE n <> ''`, is a common mistake and deserves the same message
-            /// as `WHERE n <> 'abc'` already gets.
-            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.safeGet<String>(), type.getName());
 
             e.addMessage(fmt::format("while converting '{}' to {}", src.safeGet<String>(), type.getName()));

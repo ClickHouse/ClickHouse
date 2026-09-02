@@ -1345,71 +1345,44 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
 
 void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    /// A logically equal object must hash the same regardless of how its paths are split between
-    /// dynamic sub-columns and `shared_data` (the split varies across blocks and temp-file round-trips).
-    /// Typed paths can never move between sections, so they are chained in a fixed order. Dynamic paths
-    /// and `shared_data` can hold the same path, so each `(path, value)` is folded commutatively (`+`)
-    /// and a `shared_data` value is decoded to the leaf hash it would have as a typed variant.
-    const size_t n = row_end - row_begin;
-    PaddedPODArray<UInt32> object_hash(n, WEAK_HASH32_INITIAL_VALUE);
-
-    for (const auto & path : sorted_typed_paths)
-        typed_paths.find(path)->second->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
-
-    if (global_max_dynamic_paths == 0)
+    /// Like `updateHashWithValueRange`, this hashes the physical path layout: it does NOT guarantee
+    /// equal hashes for a logically equal object whose paths are split differently between dynamic
+    /// columns and `shared_data` across blocks; the in-memory scatter consumers only need fast
+    /// per-query partitioning.
+    ///
+    /// Build the finalized per-row object hash by chaining the sub-objects in the existing
+    /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
+    /// buffer is always seeded (no empty-object special case needed).
+    auto computeFinalizedInto = [&](UInt32 * out)
     {
-        /// No path can ever be dynamic, so `shared_data` holds every non-typed path in a canonical
-        /// layout and its bulk hash is already split-invariant (no per-value decode needed).
-        shared_data->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
-    }
-    else
-    {
-        PaddedPODArray<UInt32> value_hash(n);
-        for (const auto & [path, column] : dynamic_paths_ptrs)
+        bool first = true;
+        for (const auto & [_, column] : typed_paths)
         {
-            column->computeHashInto(row_begin, row_end, value_hash.data(), /*initial=*/true);
-            const UInt32 path_hash = updateWeakHash32(
-                reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
-            for (size_t i = 0; i < n; ++i)
-            {
-                /// An absent/NULL path contributes nothing, so `{"a":1}` and `{"a":1,"b":null}` agree.
-                if (!column->isNullAt(row_begin + i))
-                    object_hash[i] += combineWeakHash32(value_hash[i], path_hash);
-            }
+            column->computeHashInto(row_begin, row_end, out, first);
+            first = false;
         }
-
-        const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
-        const auto & shared_offsets = getSharedDataOffsets();
-        const size_t entries_begin = shared_offsets[static_cast<ssize_t>(row_begin) - 1];
-        const size_t num_entries = shared_offsets[static_cast<ssize_t>(row_end) - 1] - entries_begin;
-        if (num_entries)
+        for (const auto & [_, column] : dynamic_paths_ptrs)
         {
-            /// The whole range is hashed in one call so the deserialization can be batched by type.
-            PODArray<UInt32> entry_hash(num_entries);
-            ColumnDynamic::hashSharedValues(*shared_values, entries_begin, num_entries, entry_hash.data());
-
-            for (size_t i = 0; i < n; ++i)
-            {
-                for (size_t j = shared_offsets[static_cast<ssize_t>(row_begin + i) - 1]; j < shared_offsets[row_begin + i]; ++j)
-                {
-                    const auto path = shared_paths->getDataAt(j);
-                    const UInt32 path_hash = updateWeakHash32(
-                        reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
-                    object_hash[i] += combineWeakHash32(entry_hash[j - entries_begin], path_hash);
-                }
-            }
+            column->computeHashInto(row_begin, row_end, out, first);
+            first = false;
         }
-    }
+        shared_data->computeHashInto(row_begin, row_end, out, first);
+    };
 
     if (initial)
     {
-        memcpy(hash_out, object_hash.data(), n * sizeof(UInt32));
+        computeFinalizedInto(hash_out);
+        return;
     }
-    else
-    {
-        for (size_t i = 0; i < n; ++i)
-            hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
-    }
+
+    /// Non-initial: build the finalized object hash in a scratch buffer, then combine that single
+    /// value into the prior key columns' hash (rather than streaming sub-objects straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
+    const size_t n = row_end - row_begin;
+    PaddedPODArray<UInt32> object_hash(n);
+    computeFinalizedInto(object_hash.data());
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const

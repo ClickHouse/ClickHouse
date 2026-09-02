@@ -7,6 +7,7 @@
 SET max_rows_to_group_by = 0;
 SET max_threads = 4;
 SET max_block_size = 8192;
+SET enable_sharding_aggregator = 0;
 SET adaptive_aggregator_freeze_threshold = 128;
 -- The adaptive gate requires two-level aggregation to be permitted.
 SET group_by_two_level_threshold = 100000;

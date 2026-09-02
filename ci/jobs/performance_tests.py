@@ -1021,7 +1021,7 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/"
+        cls, test_file, runs=None, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -1035,7 +1035,6 @@ class CHServer:
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} \
                 --profile-seconds 10 \
-                --pr-number {pr_number} \
                 {test_file}",
             verbose=True,
             strip=False,
@@ -1374,11 +1373,8 @@ def main():
             f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:",
             verbose=True,
         )
-        # The test definitions must stay at the reference vintage (an old server cannot run new
-        # queries), but their runner `perf.py` is driven by this job and must match its version.
         Shell.check(
-            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance"
-            " && git checkout HEAD -- ./tests/performance/scripts/perf.py",
+            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance",
             verbose=True,
             strict=True,
         )
@@ -1680,7 +1676,6 @@ def main():
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=max_queries,
-                    pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
                 cleanup_user_files()

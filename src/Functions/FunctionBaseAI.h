@@ -52,7 +52,7 @@ using AIParamValues = std::map<String, Field, std::less<>>; // STYLE_CHECK_ALLOW
 class FunctionBaseAI : public IFunction
 {
 public:
-    explicit FunctionBaseAI(ContextPtr context_) : context(context_) {}
+    explicit FunctionBaseAI(ContextPtr context_);
 
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
@@ -145,18 +145,19 @@ public:
 
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
-    /// `ai_function_throw_on_error` disabled).
+    /// `ai_function_throw_on_error` disabled). The counters feed the AI ProfileEvents.
     struct EmbeddingResult
     {
         VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;
+        UInt64 api_calls = 0;
+        UInt64 input_tokens = 0;
         UInt64 texts_embedded = 0;
         UInt64 texts_skipped = 0;
     };
 
     /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching,
     /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
-    /// Accumulates into `result`, so the batches completed before a throw stay visible to the caller.
-    static void embedTexts(
+    static EmbeddingResult embedTexts(
         IAIProvider & provider,
         const String & model,
         UInt64 dimensions,
@@ -167,8 +168,7 @@ public:
         UInt64 retry_delay_ms,
         bool throw_on_error,
         AIQuotaTracker & quota,
-        const ConnectionTimeouts & timeouts,
-        EmbeddingResult & result);
+        const ConnectionTimeouts & timeouts);
 
 protected:
     ContextPtr context;

@@ -1,4 +1,0 @@
-the highlight 'query-selection' is both styled and registered
-color: var(--selection-color);
-background-color: var(--selection-background-color);
-2
