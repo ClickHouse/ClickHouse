@@ -2768,7 +2768,6 @@ TEST(SchedulerSpaceShared, TopLevelSuctionUsesReservedMemory)
     policy.suction_max_allocation_bytes = 10000;
     policy.suction_reserved_bytes = 2000;
     ManualAllocation requester(queue, "requester", 1000, true, policy);
-    requester.protectAfterPressureRounds(1);
     auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 7000, true, policy);
 
     requester.increaseAsync(2000);
