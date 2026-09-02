@@ -7,6 +7,8 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/IStorage_fwd.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -30,10 +32,11 @@ struct TreeRewriterResult
     NamesAndTypesList source_columns;
     NameSet source_columns_set; /// Set of names of source_columns.
     /// The names to suggest as `maybe you meant` for an unknown identifier when there is no storage to ask.
-    /// Empty means every source column is a candidate. It is set by the callers that analyze a key, an index
-    /// or a TTL expression: they extend the source columns with virtual columns, which are not accepted in
-    /// these expressions, so suggesting one would only lead the user to the next error.
-    Names hint_columns;
+    /// Unset means every source column is a candidate; an empty list means nothing can be suggested.
+    /// A caller sets it when only a part of the source columns is accepted by the check that follows the
+    /// analysis - e.g. an expression added to the sorting key by `ALTER TABLE` may use only the columns
+    /// added by the same `ALTER` - so that the hint does not lead the user straight to the next error.
+    std::optional<Names> hint_columns;
     /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
     NamesAndTypesList required_source_columns;
     /// Same as above but also record alias columns which are expanded. This is for RBAC access check.
@@ -146,7 +149,7 @@ private:
     /// Do not throw exception from analyze on unknown identifiers, but only return nullptr.
     bool no_throw = false;
 
-    Names hint_columns;
+    std::optional<Names> hint_columns;
 };
 
 }
