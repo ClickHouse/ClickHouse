@@ -1,0 +1,140 @@
+---
+title: '권한 모델'
+sidebarTitle: '권한 모델'
+description: 'ClickHouse Connector가 수행할 수 있는 작업과 수행할 수 없는 작업: 아웃바운드 연결, ClickHouse 권한 부여, Kubernetes RBAC, 작업 주체 추적 및 데이터 최소화'
+keywords: ['BYOC', '클라우드', '자체 클라우드 사용', '커넥터', '권한', '보안']
+doc_type: 'reference'
+---
+
+이 페이지에서는 ClickHouse Connector의 보안 모델을 상세히 설명합니다. Connector가 설정하는 모든 연결, 보유한 정확한 권한, 구조적으로 수행할 수 없는 작업, 그리고 모든 작업의 주체를 추적하는 방식을 다룹니다. 구성 요소의 작동 방식은 [아키텍처](/ko/products/bring-your-own-cloud/connector/architecture)를 참조하십시오.
+
+<div id="what-the-connector-can-do">
+  ## connector로 수행할 수 있는 작업
+</div>
+
+<div id="outbound-connections">
+  ### 아웃바운드 연결
+</div>
+
+다음은 커넥터가 설정하는 모든 연결 목록입니다. 모든 연결은 사용자 환경 내부에서 시작됩니다.
+
+| 대상                    | 프로토콜                               | 용도                                                                                                                                                   |
+| --------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 조직의 커넥터 API 엔드포인트     | mTLS를 사용하는 HTTPS, 모든 요청에 HMAC 서명   | `POST /v1/metrics`, `/v1/self-metrics`, `/v1/status`, `/v1/instance/sync`, `/v1/infra/sync`, `/v1/backup/sync`, `/v1/pcm/cert/renew`                 |
+| 조직의 커넥터 API 엔드포인트     | 아웃바운드 WebSocket, `/v1/commands/ws` | 지원 세션 상태에 따라 허용되는 troubleshooter의 명령 채널                                                                                                              |
+| 조직의 등록 엔드포인트          | HTTPS(등록 토큰 또는 HMAC, mTLS 없음)      | 설치 시 토큰 교환 및 인증서 서명(`/v1/pcm/cert/sign`)                                                                                                             |
+| ClickHouse 인스턴스       | ClickHouse 네이티브 프로토콜               | `pcm_scraper` 및 `pcm_troubleshooter`의 읽기 전용 쿼리와 scraper의 로그 플러시 문(자세한 내용은 [권한 부여](#clickhouse-grants) 참조)                                            |
+| Kubernetes API server | HTTPS                              | 네임스페이스 범위의 읽기 및 ServiceAccount 토큰 요청(두 대상 모두), 갱신된 인증서를 유지하기 위한 커넥터 자체 mTLS 시크릿의 정확한 이름 지정 읽기 및 업데이트(Kubernetes 설치에만 해당, VM은 갱신된 인증서를 로컬 TLS 파일에 기록) |
+| IdP(Identity Provider)의 JWKS 엔드포인트 | HTTPS                              | 세션 gateway가 활성화된 경우에만 운영자 토큰 유효성 검사                                                                                                                  |
+
+인바운드 측에서 커넥터는 로컬 상태 확인 및 메트릭 포트와 선택적으로 활성화할 수 있는 세션 gateway만 노출합니다. 그 외에는 수신 대기하지 않으며, ClickHouse Cloud는 사용자 환경에 연결하지 않습니다. troubleshooter의 아웃바운드 WebSocket에만 응답할 수 있습니다.
+
+<div id="clickhouse-grants">
+  ### ClickHouse 권한 부여
+</div>
+
+Provisioning은 구성 요소마다 읽기 전용 사용자 1명을 생성합니다. 읽기 전용이라는 원칙의 유일한 예외는 아래에 나열된 스크레이퍼의 `SYSTEM FLUSH LOGS` 권한입니다. 이 권한은 어떤 데이터도 읽거나 수정하지 않으며, 이미 버퍼링된 항목을 로그 테이블에 영구 저장하도록 강제할 뿐입니다. 사용자는 `IDENTIFIED WITH bcrypt_hash`로 생성되므로 Provisioning SQL에는 솔트된 bcrypt 해시만 포함되며, 평문 비밀번호는 데몬이 런타임에 읽는 자격 증명 파일에만 저장됩니다. 기본 테이블 Set에 적용되는 권한은 정확히 다음과 같습니다:
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`server_settings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`tables` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`warnings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_scraper`;
+GRANT READ ON REMOTE TO `pcm_scraper`;
+GRANT SYSTEM FLUSH LOGS ON *.* TO `pcm_scraper`;
+```
+
+스크레이프 쿼리는 각 시스템 테이블을 `clusterAllReplicas()`로 감싸므로 `READ ON REMOTE` 권한이 필요합니다. ClickHouse는 이 권한에 더 좁은 범위를 지정하는 것을 허용하지 않으므로 `SYSTEM FLUSH LOGS`는 전역 범위에서 부여해야 합니다. 다만 ClickHouse는 이 권한을 `*_log` 시스템 테이블에 대해서만 적용하므로, 부여 범위가 실제 기능보다 넓습니다.
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_troubleshooter` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`build_options` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`clusters` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`databases` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`detached_parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`disks` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`events` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`formats` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`functions` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`grants` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`merges` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`mutations` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_summary` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`processes` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replicas` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replication_queue` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`roles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profile_elements` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profiles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`storage_policies` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`table_engines` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`tables` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`users` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
+```
+
+두 사용자에 `system.user_directories` 권한을 부여하는 이유는 하나의 진단을 위해서입니다. `clicklink clctl preflight`는 connector 자체 자격 증명으로 실행되며, 인스턴스가 ClickHouse 사용자를 복제된 방식으로 저장하는지 로컬 방식으로 저장하는지 확인합니다. 이 테이블에는 사용자 데이터가 아닌 사용자 스토리지 구성 메타데이터가 저장되며, 스크레이프 집합이나 세션 테이블 허용 목록에 포함되지 않으므로 스크레이프 또는 세션 출력 경로에서 읽히지 않습니다. 이 권한이 없으면 해당 사전 점검은 건너뛴 것으로 보고되지만, 그 외 모든 작업은 계속 진행됩니다.
+
+테이블별 `SELECT` 권한 외에 부여되는 유일한 시스템 수준 권한은 스크레이퍼의 `SYSTEM FLUSH LOGS`입니다. 이 권한은 `*_log` 시스템 테이블의 버퍼링된 항목을 디스크에 영구 저장하여 스크레이프 시 최신 데이터를 볼 수 있게 하며, 그 외의 작업은 수행하지 않습니다. 이 권한은 전역 범위에서만 부여할 수 있지만, ClickHouse는 로그 테이블에 대해서만 이를 적용합니다. `INSERT`, DDL, 사용자 관리, 설정 또는 프로세스 제어 권한은 없습니다. 두 번째 connector 배포가 인스턴스를 공유하면 해당 사용자는 동일한 권한 세트에 접미사(`pcm_scraper_<suffix>`)를 추가한 이름을 사용합니다.
+
+<div id="kubernetes-rbac">
+  ### Kubernetes RBAC
+</div>
+
+이 차트는 네임스페이스 범위의 역할만 생성하며, 클러스터 역할이나 ClusterRoleBinding은 생성하지 않습니다.
+
+| 리소스                                                                                             | 동사                     | 범위                                                                     |
+| ----------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------- |
+| `secrets`                                                                                       | `get`                  | 정확히 일치하는 이름만: mTLS 시크릿, HMAC 시크릿, 각 인스턴스별 액세스 번들 시크릿                   |
+| `secrets`                                                                                       | `update`               | 데몬이 자동 갱신된 클라이언트 인증서를 영구 저장할 수 있도록, 정확히 일치하는 이름의 mTLS 시크릿만             |
+| `serviceaccounts/token`                                                                         | `create`               | 정확히 일치하는 이름만: 구성 요소 자체의 ServiceAccount 및 각 인스턴스별 액세스 번들 ServiceAccount |
+| `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | troubleshooter 전용                                                      |
+| `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | troubleshooter 전용                                                      |
+
+<div id="what-the-connector-cannot-do">
+  ## 커넥터가 수행할 수 없는 작업
+</div>
+
+* **ClickHouse 데이터 또는 상태에 쓰기 불가.** 위의 권한 부여에는 `INSERT`, DDL, 사용자 관리, 설정 또는 프로세스 제어 권한이 없습니다. 유일한 시스템 클래스 권한인 스크레이퍼의 `SYSTEM FLUSH LOGS`는 로그 테이블이 이미 버퍼링한 내용을 플러시할 뿐입니다. 커넥터는 데이터, 스키마, 사용자 또는 설정을 수정할 수 없습니다.
+* **exec 불가.** RBAC에 `pods/exec` 권한이 없으므로 커넥터는 파드에서 명령어를 실행할 수 없습니다.
+* **삭제 및 패치 불가.** RBAC는 2개의 뮤테이션만 허용합니다. 커넥터 자체 mTLS 시크릿에 대해 정확한 이름으로 수행하는 `update`와, 커넥터 자체 ServiceAccounts용 단기 토큰을 발급하고 저장된 객체는 수정하지 않는 `serviceaccounts/token`에 대한 `create`입니다.
+* **클러스터 범위 없음.** 모든 역할은 네임스페이스에 바인딩되므로 커넥터는 권한이 부여된 네임스페이스 외부의 리소스를 나열하거나 읽을 수 없습니다.
+* **인바운드 없음.** ClickHouse Cloud는 사용자 환경으로 연결을 열지 않습니다. 유일한 명령 경로는 troubleshooter의 아웃바운드 WebSocket이며, troubleshooter는 활성화된 지원 세션이 없으면 모든 명령을 거부합니다. 세션 중에도 양쪽 모두에서 범위가 제한됩니다. ClickHouse 쿼리는 테이블 허용 목록으로 제한되며, `query_log`와 `text_log`는 구성과 관계없이 검증기가 거부합니다. Kubernetes 액세스도 네임스페이스 범위 역할이 부여하는 읽기 전용 뷰와 파드 로그로 별도로 제한됩니다.
+
+<div id="what-requires-your-action">
+  ## 직접 조치해야 하는 사항
+</div>
+
+* **Support 세션.** 대화형 문제 해결은 활성화한 세션에서만 가능하며, 기본적으로 4시간, 최대 24시간으로 제한됩니다. 비활성화는 즉시 적용됩니다. [Support 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
+* **운영자 허용 목록.** 모든 gateway 요청에는 증명된 이메일 주소가 허용 목록에 포함된 OIDC 토큰이 있어야 합니다. 허용 목록이 비어 있으면 모든 접근이 차단됩니다. 목록은 직접 관리합니다. [구성 가이드](/ko/products/bring-your-own-cloud/connector/configuration)를 참조하십시오.
+* **Gateway 노출.** 세션 gateway는 활성화하지 않으면 비활성 상태이며, 인그레스를 사용하지 않는 한 포트 포워딩으로만 접근할 수 있습니다. VM에서는 세션 명령어가 gateway와 통신하기 전에 각 운영자가 자체 서명 인증서의 지문을 고정해야 합니다.
+* **네트워크 이그레스.** 강제 적용 CNI 환경에서는 chart의 NetworkPolicy에서 엔드포인트 CIDR을 허용 목록에 추가하기 전까지 connector에 이그레스가 없습니다.
+
+<div id="how-access-is-attributed">
+  ## 액세스 주체를 식별하는 방식
+</div>
+
+* **배포 아이덴티티.** mTLS 클라이언트 인증서의 공통 이름은 조직 ID이며, 엔드포인트 호스트에는 단일 DNS 이름이 연결되므로 모든 API 연결의 조직을 식별할 수 있습니다. 인증서 갱신은 데몬 내에서 자동으로 수행되며, 운영자가 키 자료를 처리할 필요가 없습니다.
+* **요청 무결성.** 모든 API 요청에는 등록 시 발급된 키 쌍을 사용해 메서드, 경로, 타임스탬프 및 본문 해시를 기준으로 계산한 HMAC-SHA256 서명(`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`)도 포함됩니다.
+* **운영자 아이덴티티.** Gateway 호출은 운영자의 OIDC ID 토큰으로 증명되고 조직의 IdP(Identity Provider) JWKS를 통해 검증된 이메일에 귀속됩니다. 토큰을 사용할 수 있는 경우 자체 신고한 이름은 신뢰하지 않습니다.
+* **감사 추적.** 허용되거나 차단된 모든 gateway 호출과 모든 문제 해결 명령어는 NDJSON 감사 로그에 추가됩니다. gateway 항목에는 증명된 운영자 이메일이, VM 로컬 세션 변경에는 명령을 실행한 호스트 사용자가, 세션 명령어에는 인증된 채널을 통해 전달된 조직 아이덴티티가 기록됩니다. `clicklink clctl troubleshoot audit tail`로 확인할 수 있습니다. [CLI 참고](/ko/products/bring-your-own-cloud/connector/reference/cli)를 참조하십시오.
+
+<div id="data-minimization-defaults">
+  ## 데이터 최소화 기본값
+</div>
+
+* **`query_log`는 기본적으로 스크레이프 대상에서 제외됩니다.** 해당 컬럼에는 리터럴 값이 포함된 원시 SQL이 들어 있으며 개인 데이터나 시크릿을 포함할 수 있으므로, 의도적으로 추가하지 않는 한 보안 경계 밖으로 나가지 않습니다.
+* **troubleshooter는 허용 목록에 있는 테이블만 읽고**, validator는 `query_log`와 `text_log`를 무조건 거부하므로 쿼리 이력을 읽을 수 없습니다. 기본 허용 목록에는 `system.processes`(실시간 쿼리 텍스트)가 포함됩니다. 세션 중에도 이를 숨겨야 한다면 세션 테이블 허용 목록을 축소하십시오(Kubernetes에서는 `troubleshooter.allowedTables`, VM에서는 `troubleshooter.allowed_tables`).
+* **모든 troubleshooter 출력은 마스킹됩니다.** IPv4 및 IPv6 주소, Bearer 토큰, AWS 액세스 키, 이메일, JWT, SSH 프라이빗 키, 연결 문자열 자격 증명에 대한 내장 패턴과 정의한 모든 패턴이 적용됩니다. 데몬은 마스킹되지 않은 상태로 실행하는 대신 패턴 파일이 유효하지 않으면 시작을 거부합니다.
+* **저장 시 자격 증명 노출을 최소화합니다.** Provisioning SQL에는 평문 비밀번호가 아닌 bcrypt 해시가 포함됩니다. 등록 토큰은 명령줄, 디스크 또는 로그에 기록되지 않으며, 키는 Kubernetes Secrets 또는 권한 모드가 0600인 파일에 저장됩니다.
