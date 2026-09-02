@@ -585,6 +585,18 @@ ColumnPtr IExecutableFunction::execute(
         if (!has_replicated_column)
             return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);
 
+        /// A function that is not deterministic in the scope of the query, such as `rand` or
+        /// `generateUUIDv4`, must be evaluated once per output row. The default implementation below
+        /// evaluates it once per row of the nested column and expands that single result to every row
+        /// replicated from it, which would make all rows fanned out from the same source row share one
+        /// value. Materialize the replicated arguments so that the function runs per output row.
+        if (!isDeterministicInScopeOfQuery())
+        {
+            auto full_arguments = arguments;
+            convertReplicatedColumnsToFull(full_arguments);
+            return executeWithoutReplicatedColumns(full_arguments, result_type, input_rows_count, dry_run);
+        }
+
         /// If we have only constants and replicated columns with the same indexes
         /// we can execute function on nested columns and create replicated column
         /// from the result using common indexes.
