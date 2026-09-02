@@ -17,11 +17,12 @@ node = cluster.add_instance(
 )
 
 NAMED_COLLECTIONS_DIR = "/var/lib/clickhouse/named_collections"
-SQL_OBJECT_DIRS = [
-    NAMED_COLLECTIONS_DIR,
-    "/var/lib/clickhouse/user_defined",
-    "/var/lib/clickhouse/workload",
-]
+USER_DEFINED_DIR = "/var/lib/clickhouse/user_defined"
+# Configured two levels below an existing directory, so creating the store exercises a
+# multi-component path rather than a single missing directory.
+WORKLOAD_ROOT = "/var/lib/clickhouse/workload"
+WORKLOAD_DIR = f"{WORKLOAD_ROOT}/entities/local"
+SQL_OBJECT_DIRS = [NAMED_COLLECTIONS_DIR, USER_DEFINED_DIR, WORKLOAD_DIR]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -158,15 +159,24 @@ def test_corrupt_named_collection_does_not_brick_startup():
     node.query("DROP NAMED COLLECTION nc_good")
 
 
-# (create, drop) per on-disk SQL-object store. A shared directory-sync helper can stop
-# syncing one store without the others noticing, so each is checked separately. A resource
-# stands in for the workload store: it is kept there too, and unlike a workload it needs no
-# parent, so this does not depend on which workloads other tests leave behind.
+# (create, drop, store directory) per on-disk SQL-object store. A shared directory-sync
+# helper can stop syncing one store without the others noticing, so each is checked
+# separately. A resource stands in for the workload store: it is kept there too, and unlike
+# a workload it needs no parent, so this does not depend on what other tests leave behind.
 FAILING_SYNC_CASES = [
-    ("CREATE FUNCTION {n} AS (x) -> x + 1", "DROP FUNCTION {n}"),
-    ("CREATE RESOURCE {n} (WRITE DISK {n}_disk)", "DROP RESOURCE {n}"),
-    ("CREATE NAMED COLLECTION {n} AS a = 1", "DROP NAMED COLLECTION {n}"),
+    ("CREATE FUNCTION {n} AS (x) -> x + 1", "DROP FUNCTION {n}", USER_DEFINED_DIR),
+    ("CREATE RESOURCE {n} (WRITE DISK {n}_disk)", "DROP RESOURCE {n}", WORKLOAD_DIR),
+    ("CREATE NAMED COLLECTION {n} AS a = 1", "DROP NAMED COLLECTION {n}", NAMED_COLLECTIONS_DIR),
 ]
+
+
+def _files_matching(directory, name):
+    """Number of files in `directory` whose name contains `name`."""
+    return int(
+        node.exec_in_container(
+            ["bash", "-c", f"ls {directory} 2>/dev/null | grep -c {name} || true"]
+        ).strip()
+    )
 
 
 def test_failed_directory_sync_fails_the_ddl():
@@ -176,13 +186,18 @@ def test_failed_directory_sync_fails_the_ddl():
     explicitly and its failure propagates instead of being logged and dropped.
 
     `directory_sync_fail` makes the directory sync of every on-disk SQL-object store fail.
-    Each family is first exercised with the failpoint disabled: that both proves the DDL
+    Each store is first exercised with the failpoint disabled: that both proves the DDL
     itself is valid (so a raise below is caused by the failed sync, not by the statement)
     and creates the store directory, so the failure under test is the commit sync rather
     than a directory-creation sync.
+
+    The file state after each failure also pins the ordering: the sync has to happen after
+    the rename or unlink it makes durable, so the `.sql` file is already in place when a
+    failing create raises and already gone when a failing drop raises. A sync moved before
+    the mutation would raise just the same, so the exception alone does not show this.
     """
     try:
-        for i, (create, drop) in enumerate(FAILING_SYNC_CASES):
+        for i, (create, drop, store_dir) in enumerate(FAILING_SYNC_CASES):
             control = f"ds_control_{i}"
             node.query(create.format(n=control), settings={"fsync_metadata": 1})
 
@@ -191,9 +206,15 @@ def test_failed_directory_sync_fails_the_ddl():
             failing = f"ds_failing_{i}"
             with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
                 node.query(create.format(n=failing), settings={"fsync_metadata": 1})
+            assert _files_matching(store_dir, failing) == 1, (
+                f"{failing}: the rename must already have committed when the sync failed"
+            )
 
             with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
                 node.query(drop.format(n=control), settings={"fsync_metadata": 1})
+            assert _files_matching(store_dir, control) == 0, (
+                f"{control}: the unlink must already have committed when the sync failed"
+            )
 
             node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
     finally:
@@ -204,3 +225,40 @@ def test_failed_directory_sync_fails_the_ddl():
         for directory in SQL_OBJECT_DIRS:
             node.exec_in_container(["bash", "-c", f"rm -f {directory}/*ds_control_* {directory}/*ds_failing_*"])
         node.restart_clickhouse()
+
+
+def test_failed_store_directory_creation_is_rolled_back():
+    """
+    A store directory is created lazily on first use, and its own entry in its parent has to
+    be persisted as well. If that fails the directory must not be left behind: the next
+    attempt would find it present, skip creating it, so never persist its entry, and the
+    CREATE it then acknowledges could still be lost together with the directory.
+
+    The workload store is configured two levels down, so this covers a multi-component path.
+    """
+    node.query("DROP RESOURCE IF EXISTS dc_probe")
+    node.exec_in_container(["bash", "-c", f"rm -rf {WORKLOAD_ROOT}"])
+
+    node.query("SYSTEM ENABLE FAILPOINT directory_sync_fail")
+    try:
+        with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
+            node.query(
+                "CREATE RESOURCE dc_probe (WRITE DISK dc_probe_disk)",
+                settings={"fsync_metadata": 1},
+            )
+        left_behind = node.exec_in_container(
+            ["bash", "-c", f"test -e {WORKLOAD_ROOT} && echo yes || echo no"]
+        ).strip()
+        assert left_behind == "no", (
+            "a directory whose entry could not be persisted was kept, so a retry would "
+            "treat it as already created and never persist it"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
+
+    # The retry starts over, so it creates the directories again and persists them.
+    node.query("CREATE RESOURCE dc_probe (WRITE DISK dc_probe_disk)", settings={"fsync_metadata": 1})
+    assert node.query("SELECT count() FROM system.resources WHERE name = 'dc_probe'").strip() == "1"
+
+    node.query("DROP RESOURCE dc_probe")
+    node.restart_clickhouse()
