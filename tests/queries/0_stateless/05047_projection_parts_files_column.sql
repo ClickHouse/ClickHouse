@@ -15,12 +15,14 @@ CREATE TABLE t_projection_parts_files
 )
 ENGINE = MergeTree
 ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000,
+         serialization_info_version = 'basic', ratio_of_defaults_for_sparse_serialization = 1.0;
 
 INSERT INTO t_projection_parts_files SELECT number, number * 2 FROM numbers(100);
 
--- The projection part is Compact (pinned by the table settings above), so its checksums
--- contain exactly: count.txt, data.bin, marks, primary index and serialization.json.
+-- The projection part is Compact and serialization.json is not written (both pinned by the
+-- table settings above), so its checksums contain exactly: count.txt, data.bin, marks and
+-- the primary index.
 SELECT name, files
 FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_projection_parts_files' AND active;
