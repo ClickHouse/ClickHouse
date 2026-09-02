@@ -4497,13 +4497,18 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
     size_t first_src_size = 0;
     size_t remaining_src_sizes = 0;
+    size_t max_remaining_src_size = 0;
     size_t dst_size_before = 0;
     if constexpr (can_reserve)
     {
         if (non_empty_data.size() > 1)
             first_src_size = getDataVariant<Method>(*non_empty_data[1]).data.size();
         for (size_t result_num = 2, size = non_empty_data.size(); result_num < size; ++result_num)
-            remaining_src_sizes += getDataVariant<Method>(*non_empty_data[result_num]).data.size();
+        {
+            const size_t src_size = getDataVariant<Method>(*non_empty_data[result_num]).data.size();
+            remaining_src_sizes += src_size;
+            max_remaining_src_size = std::max(max_remaining_src_size, src_size);
+        }
         dst_size_before = dst.size();
     }
 
@@ -4534,10 +4539,17 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
             {
                 /// If this merge already crossed `max_rows_to_group_by`, the `checkLimits` on the
                 /// next iteration stops the merge (`throw`/`break`) or stops admitting new keys
-                /// (`any`), so the remaining sources cannot grow the table anymore.
+                /// (`any`), so the remaining sources cannot grow the table anymore. Below the
+                /// limit, `checkLimits` runs only between sources and a source is merged whole,
+                /// so the table cannot grow past the limit plus the largest remaining source.
                 const bool limit_reached = params.max_rows_to_group_by && res->sizeWithoutOverflowRow() > params.max_rows_to_group_by;
                 if (result_num == 1 && remaining_src_sizes && !limit_reached)
-                    dst.reserve(reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes));
+                {
+                    size_t reservation = reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes);
+                    if (params.max_rows_to_group_by)
+                        reservation = std::min(reservation, params.max_rows_to_group_by + max_remaining_src_size);
+                    dst.reserve(reservation);
+                }
             }
         }
         else if (res->without_key)
