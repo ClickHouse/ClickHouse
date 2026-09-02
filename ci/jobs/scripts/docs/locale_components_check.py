@@ -84,6 +84,16 @@ NAVBAR_SIGN_IN_LABELS = {
     "ru": "Войти",
     "zh": "登录",
 }
+NAVBAR_GET_STARTED_LABELS = {
+    "ar": "بدء الاستخدام",
+    "es": "Primeros pasos",
+    "fr": "Prise en main",
+    "ja": "はじめに",
+    "ko": "시작하기",
+    "pt-BR": "Primeiros passos",
+    "ru": "Начало работы",
+    "zh": "快速开始",
+}
 SIDEBAR_AD_COPY = {
     "en": {
         "dismissLabel": "Dismiss ClickHouse Cloud advert permanently",
@@ -229,7 +239,7 @@ def check_sample_explorer_theme_images(docs_root):
 
 
 def check_navbar_sign_in_labels(docs_root):
-    """Validate the sign-in label rendered by the global navbar script."""
+    """Validate localized labels rendered by the global navbar script."""
     path = os.path.join(docs_root, "_site", "customizations", "navbar-cta.js")
     source = open(path, encoding="utf-8", errors="replace").read()
     rel = os.path.relpath(path, docs_root)
@@ -239,6 +249,14 @@ def check_navbar_sign_in_labels(docs_root):
         marker = f"    {key}: '{label}',"
         if source.count(marker) != 1:
             violations.append((rel, locale, "missing-sign-in-label", label))
+
+    for locale, label in NAVBAR_GET_STARTED_LABELS.items():
+        key = f"'{locale}'" if "-" in locale else locale
+        marker = f"    {key}: '{label}',"
+        if source.count(marker) != 1:
+            violations.append(
+                (rel, locale, "missing-get-started-label", label)
+            )
 
     locale_pattern = (
         r"/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/"
@@ -253,6 +271,14 @@ def check_navbar_sign_in_labels(docs_root):
     if source.count(label_assignment) != 1:
         violations.append(
             (rel, label_assignment, "missing-localized-sign-in", None)
+        )
+    cta_assignment = (
+        "ctaLink.textContent = GET_STARTED_LABELS[getLocale()] || "
+        "'Get Started';"
+    )
+    if source.count(cta_assignment) != 1:
+        violations.append(
+            (rel, cta_assignment, "missing-localized-get-started", None)
         )
     attributed_hrefs = (
         "var SIGN_IN_HREF = 'https://console.clickhouse.cloud/signIn?loc=docs-nav-signIn-cta';",
