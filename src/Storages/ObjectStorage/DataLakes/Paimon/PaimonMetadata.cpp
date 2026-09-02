@@ -61,6 +61,7 @@ extern const SettingsUInt64 max_consume_snapshots;
 
 namespace FailPoints
 {
+extern const char paimon_incremental_read_pause_before_processing_lock[];
 extern const char paimon_incremental_read_pause_before_watermark_commit[];
 extern const char paimon_incremental_read_pause_after_watermark_commit[];
 }
@@ -615,6 +616,19 @@ ObjectIterator PaimonMetadata::iterate(
                     "Another server may be using the same replica_name.");
         }
 
+        /// The snapshot this read is pinned to was resolved during analysis; the watermark
+        /// below is read now. Logging the pinned id makes that gap visible when a read
+        /// reports no new data that a concurrent consumer had already taken.
+        LOG_TRACE(log, "Paimon incremental read of '{}' pinned snapshot_id={}, acquiring the processing lock",
+            persistent_components.table_path, state->snapshot_id);
+
+        /// Test-only pause in exactly that gap, so tests can let another consumer finish a
+        /// whole poll here and pin down that finding the watermark ahead of the pinned state
+        /// is not by itself reported as a rewound warehouse. Pauses once, so the competing
+        /// poll is not blocked by it too.
+        FailPointInjection::pauseFailPoint(
+            FailPoints::paimon_incremental_read_pause_before_processing_lock);
+
         /// The handle owns the session it acquired the lock with and releases the lock
         /// on destruction, so every exit path below is fenced and leaves no orphan lock.
         PaimonProcessingLockPtr processing_lock = stream_state->acquireProcessingLock();
@@ -889,17 +903,41 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
     }
     else if (*committed_snapshot_id > state->snapshot_id)
     {
-        /// The watermark can never exceed a snapshot id that once existed, so the only
-        /// way to get here is that the warehouse lost snapshots off the top. Treating
-        /// this as "no new data" (as a plain `>=` comparison would) silently drops every
-        /// subsequent commit at an id below the stale watermark, so fail instead.
+        /// `state` is pinned during analysis, while the watermark is read here at execution
+        /// time under the processing lock, so the two come from different moments. Another
+        /// consumer sharing this cursor can complete a whole poll in between and legitimately
+        /// leave the watermark ahead of what this query pinned - nothing was rolled back.
         ///
-        /// `state->snapshot_id` is trustworthy here: getLatestTableSnapshotInfo validates
-        /// the LATEST hint against the snapshot directory and falls back to a listing,
-        /// so a stale hint cannot make the latest snapshot id look smaller than it is.
-        ///
+        /// Resolve the warehouse head again to tell the two apart. Only a watermark ahead of
+        /// the *current* head means the warehouse lost snapshots off the top; a watermark
+        /// ahead of the pinned state alone means somebody else simply got there first.
+        const auto latest_snapshot_info = table_client->getLatestTableSnapshotInfo();
+
+        if (latest_snapshot_info && *committed_snapshot_id <= latest_snapshot_info->first)
+        {
+            /// Everything up to the watermark has been consumed by another reader. Do not
+            /// consume up to the fresh head either: this query's schema was resolved from
+            /// the pinned state, and Paimon schemas can change across snapshots. The next
+            /// poll pins a fresh state and picks the new snapshots up.
+            LOG_DEBUG(log, "Watermark {} was advanced past the pinned snapshot {} by another reader "
+                "(warehouse head is {}), no new data",
+                *committed_snapshot_id, state->snapshot_id, latest_snapshot_info->first);
+            return {};
+        }
+
         /// Nothing has been read and the watermark is untouched, so this failure is
         /// idempotent: every poll fails the same way until an operator resolves it.
+        if (!latest_snapshot_info)
+            throw Exception(
+                ErrorCodes::INVALID_STATE,
+                "Paimon incremental read cursor is at snapshot {}, but '{}' has no snapshots at all. "
+                "The warehouse was emptied or recreated while the Keeper cursor at '{}' was not reset. "
+                "No data was read and the cursor was not modified.",
+                *committed_snapshot_id,
+                persistent_components.table_path,
+                persistent_components.stream_state->getKeeperPath());
+
+        const Int64 warehouse_head = latest_snapshot_info->first;
         throw Exception(
             ErrorCodes::INVALID_STATE,
             "Paimon incremental read cursor is ahead of the warehouse: committed snapshot is {}, "
@@ -911,10 +949,10 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
             "Do NOT delete that node: it triggers a full re-read of the entire table.",
             *committed_snapshot_id,
             persistent_components.table_path,
-            state->snapshot_id,
+            warehouse_head,
             persistent_components.stream_state->getKeeperPath(),
             persistent_components.stream_state->getKeeperPath(),
-            state->snapshot_id);
+            warehouse_head);
     }
     else
     {

@@ -22,6 +22,7 @@ CH_TABLE_NAME_LOST_LOCK = "paimon_inc_read_lost_lock"
 CH_TABLE_NAME_MONOTONIC = "paimon_inc_read_monotonic"
 CH_TABLE_NAME_CURSOR_AHEAD = "paimon_inc_read_cursor_ahead"
 CH_TABLE_NAME_TRANSIENT_ERROR = "paimon_inc_read_transient_error"
+CH_TABLE_NAME_CONCURRENT = "paimon_inc_read_concurrent"
 CH_TABLE_NAME_EXPIRED = "paimon_inc_read_expired"
 CH_TABLE_NAME_HOLE = "paimon_inc_read_hole"
 CH_MV_PAIMON_TABLE = "paimon_mv_source"
@@ -628,6 +629,92 @@ def test_paimon_incremental_read_transient_error_does_not_burn_snapshot(started_
         zk.stop()
 
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_TRANSIENT_ERROR} SYNC;")
+
+
+def test_paimon_incremental_read_concurrent_reader_is_not_a_rewind(started_cluster):
+    """Another consumer getting ahead of us is not a rewound warehouse.
+
+    A read pins its snapshot state during analysis but reads the watermark at
+    execution time, under the processing lock. A second consumer sharing the cursor
+    can complete a whole poll in that gap and leave the watermark above the pinned
+    state without anything being rolled back. Reporting that as a rewind would be a
+    false alarm, and the recovery command in that error would rewind the cursor to
+    the stale pinned id and re-deliver snapshots the other consumer already sent."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_concurrent"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    keeper_path = f"/clickhouse/paimon_concurrent_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_CONCURRENT, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_CONCURRENT}"
+    _drain_baseline(count_query, "1\n")
+
+    # Snapshot 2 exists, so the parked reader below pins snapshot 2.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=1)
+
+    # The failpoint pauses once, so only this reader parks - the competing poll below
+    # runs straight through.
+    node.query(
+        "SYSTEM ENABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock"
+    )
+    parked_result = {}
+    parked = threading.Thread(
+        target=lambda: parked_result.update(
+            zip(("out", "err"), node.query_and_get_answer_with_error(count_query))
+        )
+    )
+    parked.start()
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        # Wait until the reader has actually reached the failpoint rather than guessing.
+        # The warehouse name makes this match specific to this test, so it cannot be
+        # satisfied by a line another test left in the shared server log.
+        node.wait_for_log_line(
+            f"Paimon incremental read of '.*{warehouse_name}.*' pinned snapshot_id=2",
+            timeout=60,
+        )
+        assert parked.is_alive(), (
+            f"the reader returned before the competing poll ran: {parked_result!r}"
+        )
+
+        # Snapshot 3 lands and another consumer drains 2..3 while the first reader is
+        # parked with snapshot 2 pinned.
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=11, rows_per_commit=10, commit_times=1)
+        zk.set(f"{keeper_path}/committed_snapshot", b"3")
+
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock"
+        )
+        parked.join(timeout=120)
+        assert not parked.is_alive(), "the reader thread never finished"
+
+        # Watermark 3 > pinned snapshot 2, but the warehouse head is also 3: nothing was
+        # rewound, so this is simply no new data.
+        assert not parked_result.get("err"), (
+            f"a concurrent reader's progress was reported as a rewound warehouse: {parked_result!r}"
+        )
+        assert parked_result.get("out") == "0\n", (
+            f"expected no new data, got {parked_result!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3", (
+            "the cursor was moved by a read that had nothing to do"
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock"
+        )
+        zk.stop()
+        parked.join(timeout=60)
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_CONCURRENT} SYNC;")
 
 
 def test_paimon_incremental_read_expired_snapshot_is_skipped(started_cluster):
