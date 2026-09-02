@@ -129,13 +129,13 @@ description: '이 문서에서는 손상된 Keeper 스냅샷에서 복구하는 
 
 * Keeper 메타데이터가 유실되었거나 손상되었지만 테이블 데이터는 여전히 디스크에 남아 있는 경우
 * ZooKeeper/Keeper 메타데이터가 없어 테이블이 읽기 전용 모드로 전환된 경우
-* 로컬에서 사용 가능한 데이터 파트를 기반으로 Keeper 메타데이터를 다시 만들어야 하는 경우
+* 로컬에서 사용 가능한 데이터 파트를 기반으로 Keeper 메타데이터를 재생성해야 하는 경우
 
 메타데이터를 복원하려면 아래 단계를 따르십시오.
 
 1. 구성의 `<path>`로 설정된 `clickHouse-server` 데이터 경로에 테이블 데이터가 로컬에 존재하는지 확인하십시오. (기본값: `/var/lib/clickhouse/data/`)
 
-2. 영향을 받는 각 테이블에 대해 다음을 실행하십시오.
+2. 영향을 받는 각 테이블에 대해 다음을 실행하십시오:
 
 ```sql
 SYSTEM RESTART REPLICA [db.]table_name;
@@ -159,7 +159,7 @@ SYSTEM SYNC REPLICA [db.]table_name;
 <Info>
   **작동 방식**
 
-  `SYSTEM RESTORE REPLICA`는 기존의 모든 파트를 분리한 뒤 Keeper에 메타데이터를 다시 생성한 다음(새 빈 테이블인 것처럼), 모든 파트를 다시 연결합니다. 이렇게 하면 네트워크를 통해 데이터를 다시 다운로드하지 않아도 됩니다.
+  `SYSTEM RESTORE REPLICA`는 기존의 모든 파트를 detach한 뒤 Keeper에 메타데이터를 재생성한 다음(새 빈 테이블인 것처럼), 모든 파트를 다시 ATTACH합니다. 이렇게 하면 네트워크를 통해 데이터를 다시 다운로드하지 않아도 됩니다.
 </Info>
 
 <Warning>
