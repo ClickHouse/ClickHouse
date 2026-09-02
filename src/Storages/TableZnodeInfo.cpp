@@ -10,7 +10,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/UUID.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 #include <optional>
 

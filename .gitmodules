@@ -381,6 +381,9 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/heks"]
+	path = contrib/heks
+	url = https://github.com/ClickHouse/heks.git
 [submodule "contrib/musl"]
 	path = contrib/musl
 	url = https://github.com/ClickHouse/musl

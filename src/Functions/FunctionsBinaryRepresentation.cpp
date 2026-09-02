@@ -11,6 +11,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Common/BinStringDecodeHelper.h>
+#include <Common/BitHelpers.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -60,16 +62,14 @@ struct HexImpl
         }
     }
 
-    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
+    static ALWAYS_INLINE inline void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
     {
         if (!reverse_order)
         {
-            while (pos < end)
-            {
-                writeHexByteUppercase(*pos, out);
-                ++pos;
-                out += word_size;
-            }
+            const auto raw_size = end - pos;
+            constexpr bool lower_case = false;
+            hexString<lower_case>(reinterpret_cast<UInt8*>(out), pos, raw_size);
+            out += 2 * raw_size;
         }
         else
         {
@@ -119,7 +119,7 @@ struct UnhexImpl
 
     static void decode(const char * pos, const char * end, char *& out)
     {
-        hexStringDecode(pos, end, out, word_size);
+        hexStringDecode2(pos, end, out);
     }
 };
 
@@ -359,20 +359,30 @@ public:
             /// reserve `word_size` bytes for each input byte
             out_vec.resize(in_vec.size() * word_size);
 
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (word_size == 2)
             {
-                size_t new_offset = in_offsets[i];
-
-                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
-
-                out_offsets[i] = pos - begin;
-
-                prev_offset = new_offset;
+                /// Hex is a pure byte-to-2-byte mapping, so we can encode the entire
+                /// contiguous buffer at once instead of dispatching per row.
+                constexpr bool lower_case = false;
+                hexString<lower_case>(out_vec.data(), in_vec.data(), in_vec.size());
+                for (size_t i = 0; i < size; ++i)
+                    out_offsets[i] = in_offsets[i] * word_size;
             }
+            else
+            {
+                char * begin = reinterpret_cast<char *>(out_vec.data());
+                char * pos = begin;
+                size_t prev_offset = 0;
+
+                for (size_t i = 0; i < size; ++i)
+                {
+                    size_t new_offset = in_offsets[i];
+                    Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
+                    out_offsets[i] = pos - begin;
+                    prev_offset = new_offset;
+                }
+            }
+
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
 
@@ -414,21 +424,29 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() * word_size);
 
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-
             size_t n = col_fstr_in->getN();
+            size_t hex_length = n * word_size;
 
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (word_size == 2)
             {
-                size_t new_offset = prev_offset + n;
+                constexpr bool lower_case = false;
+                hexString<lower_case>(out_vec.data(), in_vec.data(), in_vec.size());
+                for (size_t i = 0; i < size; ++i)
+                    out_offsets[i] = (i + 1) * hex_length;
+            }
+            else
+            {
+                char * begin = reinterpret_cast<char *>(out_vec.data());
+                char * pos = begin;
+                size_t prev_offset = 0;
 
-                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
-
-                out_offsets[i] = pos - begin;
-                prev_offset = new_offset;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    size_t new_offset = prev_offset + n;
+                    Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
+                    out_offsets[i] = pos - begin;
+                    prev_offset = new_offset;
+                }
             }
 
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
@@ -641,24 +659,30 @@ public:
             }
             out_vec.resize(max_out_len);
 
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < input_rows_count; ++i)
+            if constexpr (word_size == 2)
             {
-                size_t new_offset = in_offsets[i];
-
-                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
-
-                out_offsets[i] = pos - begin;
-                prev_offset = new_offset;
+                DB::decodeHexStrings(reinterpret_cast<uint8_t *>(out_vec.data()), reinterpret_cast<const uint8_t *>(in_vec.data()), in_offsets.data(), out_offsets.data(), input_rows_count);
+                out_vec.resize(input_rows_count > 0 ? out_offsets.back() : 0);
             }
+            else
+            {
+                char * begin = reinterpret_cast<char *>(out_vec.data());
+                char * pos = begin;
+                size_t prev_offset = 0;
 
-            chassert(
-                static_cast<size_t>(pos - begin) <= out_vec.size(),
-                fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
-            out_vec.resize(pos - begin);
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    size_t new_offset = in_offsets[i];
+                    Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
+                    out_offsets[i] = pos - begin;
+                    prev_offset = new_offset;
+                }
+
+                chassert(
+                    static_cast<size_t>(pos - begin) <= out_vec.size(),
+                    fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
+                out_vec.resize(pos - begin);
+            }
 
             return col_res;
         }
@@ -675,25 +699,51 @@ public:
             out_offsets.resize(input_rows_count);
             out_vec.resize((n + word_size - 1) / word_size * input_rows_count);
 
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < input_rows_count; ++i)
+            if constexpr (word_size == 2)
             {
-                size_t new_offset = prev_offset + n;
-
-                Impl::decode(
-                    reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
-
-                out_offsets[i] = pos - begin;
-                prev_offset = new_offset;
+                if (n % 2 == 0)
+                {
+                    size_t decoded_len = n / 2;
+                    DB::decodeHexString(reinterpret_cast<uint8_t *>(out_vec.data()), reinterpret_cast<const uint8_t *>(in_vec.data()), decoded_len * input_rows_count);
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        out_offsets[i] = (i + 1) * decoded_len;
+                    out_vec.resize(decoded_len * input_rows_count);
+                }
+                else
+                {
+                    char * begin = reinterpret_cast<char *>(out_vec.data());
+                    char * pos = begin;
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                    {
+                        Impl::decode(
+                            reinterpret_cast<const char *>(&in_vec[i * n]),
+                            reinterpret_cast<const char *>(&in_vec[(i + 1) * n]),
+                            pos);
+                        out_offsets[i] = pos - begin;
+                    }
+                    out_vec.resize(pos - begin);
+                }
             }
+            else
+            {
+                char * begin = reinterpret_cast<char *>(out_vec.data());
+                char * pos = begin;
+                size_t prev_offset = 0;
 
-            chassert(
-                static_cast<size_t>(pos - begin) <= out_vec.size(),
-                fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
-            out_vec.resize(pos - begin);
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    size_t new_offset = prev_offset + n;
+                    Impl::decode(
+                        reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
+                    out_offsets[i] = pos - begin;
+                    prev_offset = new_offset;
+                }
+
+                chassert(
+                    static_cast<size_t>(pos - begin) <= out_vec.size(),
+                    fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
+                out_vec.resize(pos - begin);
+            }
 
             return col_res;
         }
