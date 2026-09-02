@@ -99,7 +99,7 @@ public:
     bool pulling() const { return output != nullptr; }
     /// Use PushingPipelineExecutor or PushingAsyncPipelineExecutor.
     bool pushing() const { return input != nullptr; }
-    /// Use PipelineExecutor. Call execute() to build one.
+    /// Use CompletedPipelineExecutor.
     bool completed() const { return initialized() && !pulling() && !pushing(); }
 
     /// Only for pushing.
@@ -195,7 +195,6 @@ private:
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
-    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

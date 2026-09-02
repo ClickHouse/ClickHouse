@@ -21,6 +21,7 @@ struct CompletedPipelineExecutor::Data
 {
     PipelineExecutorPtr executor;
     std::exception_ptr exception;
+    std::atomic_bool is_started = false;
     std::atomic_bool is_finished = false;
     std::atomic_bool has_exception = false;
     ThreadFromGlobalPool thread;
@@ -56,6 +57,10 @@ CompletedPipelineExecutor::CompletedPipelineExecutor(QueryPipeline & pipeline_) 
 {
     if (!pipeline.completed())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CompletedPipelineExecutor must be completed");
+
+    data = std::make_unique<Data>();
+    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
+    data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 }
 
 void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_)
@@ -66,12 +71,10 @@ void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cance
 
 void CompletedPipelineExecutor::execute()
 {
+    data->is_started = true;
+
     if (interactive_timeout_ms)
     {
-        data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
-        data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
         auto func = [
@@ -91,9 +94,7 @@ void CompletedPipelineExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
-            {
                 data->executor->cancel();
-            }
         }
 
         if (data->has_exception)
@@ -101,20 +102,22 @@ void CompletedPipelineExecutor::execute()
     }
     else
     {
-        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
-        executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        data->executor->execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        data->is_finished = true;
     }
+}
+
+void CompletedPipelineExecutor::cancel()
+{
+    data->executor->cancel();
 }
 
 CompletedPipelineExecutor::~CompletedPipelineExecutor()
 {
     try
     {
-        if (data && data->executor)
-        {
+        if (data && data->is_started && !data->is_finished)
             data->executor->cancel();
-        }
     }
     catch (...)
     {

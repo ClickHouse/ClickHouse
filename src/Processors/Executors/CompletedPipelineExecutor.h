@@ -23,6 +23,9 @@ public:
     void setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_);
 
     void execute();
+
+    void cancel();
+
     struct Data;
 
 private:
