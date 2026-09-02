@@ -15,6 +15,7 @@ from threading import Thread
 
 import yaml
 
+from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import download_and_extract_datasets
@@ -1447,6 +1448,14 @@ MASTER_RUN_INCOMPLETE = "incomplete"
 MASTER_WORKFLOW_RESULT_FILE = "result_masterci.json"
 
 
+def master_report_link(sha, file_name):
+    """Link to a report file published by `MasterCI` at master commit `sha`."""
+    prefix = _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+    )
+    return f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{prefix}/{file_name}"
+
+
 def classify_missing_prev_master_run(job_name, sha):
     """Tell whether this job was ever scheduled at master commit `sha`, given
     that its `result_*.json` is missing there.
@@ -1472,10 +1481,7 @@ def classify_missing_prev_master_run(job_name, sha):
     or parsed. Those all stop the walk, and the caller falls back to the
     absolute gate for this one run - the next master run finds this run's own
     result and gets its delta back."""
-    link = (
-        "https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/"
-        f"{sha}/{MASTER_WORKFLOW_RESULT_FILE}"
-    )
+    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
     state, out = fetch_prev_master_result(link)
     if state == FETCH_MISSING:
         print(f"INFO: master commit {sha} has no {MASTER_WORKFLOW_RESULT_FILE}")
@@ -1529,7 +1535,7 @@ def find_prev_master_slower_count(job_name, commits, release_base_sha):
     before reaching the previous run that did measure this job."""
     result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
     for sha in commits:
-        link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
+        link = master_report_link(sha, result_file_name)
         state, out = fetch_prev_master_result(link)
         if state == FETCH_MISSING:
             if classify_missing_prev_master_run(job_name, sha) == MASTER_RUN_INCOMPLETE:
