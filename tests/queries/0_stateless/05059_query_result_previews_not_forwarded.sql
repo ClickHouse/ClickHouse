@@ -26,8 +26,13 @@ SELECT
     countIf(arrayExists(name -> name LIKE 'query_result_previews%', mapKeys(Settings))) AS preview_settings_on_shard,
     countIf(query LIKE '%query_result_previews%') AS preview_settings_in_query_text
 FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND log_comment IN ('05059_query_result_previews_context', '05059_query_result_previews_inline')
-    AND NOT is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
+WHERE NOT is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
+    -- The shard queries run in the connection's default database, so they are selected through
+    -- the initiator queries of this test, which are scoped to its own database.
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND log_comment IN ('05059_query_result_previews_context', '05059_query_result_previews_inline')
+            AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday())
 GROUP BY log_comment
 ORDER BY log_comment;
