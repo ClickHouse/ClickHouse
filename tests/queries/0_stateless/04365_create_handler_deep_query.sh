@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Tags: no-tsan
+# The test needs an expression nested deeper than the default parser depth of 1000, and
+# `checkStackSize` allows a thread to use only 5 % of its stack under TSan (~410 KiB), which is
+# just about what a recursion of that depth costs. The margin is a fraction of a percent, so an
+# unrelated change of the frame layout anywhere below the recursion flips the test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

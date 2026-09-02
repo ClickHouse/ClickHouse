@@ -1,0 +1,89 @@
+---
+title: 'Arquitectura'
+sidebarTitle: 'Arquitectura'
+description: 'Componentes, conexiones, ciclo de vida de los certificados y flujo de datos de ClickHouse Connector'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="components">
+  ## Componentes
+</div>
+
+ClickHouse Connector ejecuta dos demonios, ambos integrados en el binario `clicklink`:
+
+* **El scraper** consulta, a intervalos fijos, una lista de permitidos de tablas del sistema de ClickHouse, almacena los resultados localmente en un búfer y los envía al endpoint de su conector junto con metadatos de infraestructura y el estado de salud.
+* **El solucionador de problemas** mantiene un canal de comandos saliente hacia el endpoint de su conector y ejecuta diagnósticos de solo lectura durante una [sesión de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) activa. Fuera de una sesión, no ejecuta nada.
+
+En Kubernetes, ambos se ejecutan como cargas de trabajo desplegadas por el gráfico de Helm `clicklink-connector` en un espacio de nombres que elija (el predeterminado es `clicklink`). En una VM Linux, se ejecutan como las unidades de systemd `clicklink-scraper` y `clicklink-troubleshooter` bajo un usuario del sistema `clicklink` sin privilegios.
+
+<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="Arquitectura de ClickHouse Connector" />
+
+<div id="connections">
+  ## Conexiones
+</div>
+
+Todas las conexiones que establece el conector son salientes. Lista completa:
+
+| Destino                                                                                             | Dirección                      | Protocolo                      | Autenticación                                                                                           | Finalidad                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| El endpoint de su conector (API)                                                                    | Saliente                       | HTTPS                          | Certificado de cliente mTLS y solicitudes firmadas con HMAC                                             | Envía métricas, métricas propias del conector y estado; sincroniza metadatos de instancias, infraestructura y copias de seguridad; renueva el certificado de cliente                                                     |
+| El endpoint de su conector (canal de comandos)                                                      | Saliente                       | WebSocket sobre TLS            | Certificado de cliente mTLS y handshake firmado con HMAC                                                | Canal de comandos para el solucionador de problemas; transmite comandos únicamente mientras haya una sesión de soporte activa                                                                                              |
+| Su endpoint de inscripción                                                                             | Saliente                       | HTTPS                          | Token de inscripción de un solo uso (canje) o HMAC (primera firma de certificado); sin mTLS                | Canje del token y primera emisión del certificado durante la configuración                                                                                                                                               |
+| Sus clústeres de ClickHouse                                                                         | Saliente, dentro de su entorno | Protocolo nativo de ClickHouse | Usuarios dedicados de solo lectura `pcm_scraper` y `pcm_troubleshooter`, almacenados como hashes bcrypt | Lecturas de tablas del sistema para la recopilación de métricas y el diagnóstico de sesiones, además del vaciado de la tabla de logs del scraper                                                                         |
+| Servidor de API de Kubernetes (cada implementación aprovisionada, en ambos destinos de instalación) | Saliente, dentro de su entorno | HTTPS                          | ServiceAccounts vinculadas a Roles con ámbito de espacio de nombres                                     | Vistas de cargas de trabajo de solo lectura para el solucionador de problemas; en las instalaciones de Kubernetes, ambos daemons también persisten en el Secret de mTLS el certificado de cliente renovado automáticamente |
+| El endpoint JWKS de su proveedor de identidad (solo cuando el gateway está habilitado)              | Saliente                       | HTTPS                          | Ninguna (claves de firma públicas)                                                                      | Valida los tokens de ID de OIDC presentados al gateway de sesión                                                                                                                                                         |
+
+Cada solicitud de API incluye un encabezado `Authorization` con una firma HMAC-SHA256 calculada sobre el método, la ruta, la marca de tiempo y un hash del cuerpo, por lo que las solicitudes no pueden reproducirse ni alterarse en tránsito, incluso dentro del canal TLS.
+
+En sentido entrante, el conector expone únicamente puertos locales de estado y métricas, además del gateway de sesión opcional descrito en la página de [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions). El plano de control de ClickHouse nunca se conecta a ninguno de ellos.
+
+<div id="certificate-lifecycle">
+  ## Ciclo de vida del certificado
+</div>
+
+El conector se autentica ante su endpoint con un certificado de cliente que obtiene y mantiene por sí mismo:
+
+* **Inscripción.** `clicklink clctl init` genera localmente una clave privada y una solicitud de firma de certificado con el ID de su organización como nombre común y el host de su endpoint como único SAN de DNS. La clave privada nunca sale de su entorno.
+* **Primera emisión.** La CSR se envía al endpoint de firma de inscripción en `/v1/pcm/cert/sign`, autenticada mediante HMAC. Si ya existe un certificado no expirado para su organización, el endpoint rechaza la solicitud con un 409 y la CLI indica cómo completar el proceso con el certificado existente o reemplazarlo deliberadamente con `--force`.
+* **Renovación automática.** Cada demonio comprueba la vigencia del certificado cada 12 horas y, cuando quedan 10 días, solicita un certificado renovado de 30 días mediante `/v1/pcm/cert/renew` (mTLS y HMAC). En Kubernetes, cada demonio vuelve a escribir el certificado renovado en el Secret `clicklink-mtls` mediante una concesión de RBAC de nombre exacto; en una VM, el directorio TLS permite escritura al usuario del demonio. No se requiere ninguna acción del operador para la renovación.
+
+El conector verifica el certificado de servidor de su endpoint con el almacén de confianza del sistema o con el paquete de CA proporcionado durante la inscripción cuando su endpoint utiliza una CA privada.
+
+<div id="data-flow">
+  ## Flujo de datos
+</div>
+
+<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="Flujo de datos de ClickHouse Connector" />
+
+<div id="what-leaves">
+  ### Qué sale de su entorno
+</div>
+
+* **Métricas de tablas del sistema incluidas en la lista de permitidas.** El conjunto predeterminado del scraper es `metric_log`, `asynchronous_metric_log`, `tables`, `warnings` y `server_settings`. La lista de permitidas es una configuración explícita; el scraper no lee nada fuera de ella.
+* **Metadatos de infraestructura.** Inventario de instancias, infraestructura y copias de seguridad sincronizado mediante la API.
+* **Estado y métricas del propio sistema.** Estado de los componentes y métricas operativas del propio conector.
+* **Resultados de la sesión de Support.** Resultados de diagnósticos de solo lectura ejecutados durante una sesión que habilitó, tras la eliminación de información confidencial.
+
+<div id="what-never-leaves">
+  ### Lo que nunca sale de forma predeterminada
+</div>
+
+* **Texto sin procesar de las consultas en la ruta de recopilación.** `system.query_log` se excluye deliberadamente del conjunto de recopilación predeterminado porque sus columnas de consulta pueden contener valores literales y, con ellos, datos personales o secretos; volver a añadirlo es una sobrescritura específica de cada implementación que debe realizar de forma consciente. Durante una sesión de soporte, la lista predeterminada de tablas permitidas sí incluye `system.processes`, que muestra el texto de las consultas en curso; consulte [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) para obtener información sobre cómo recortarlo.
+* **Credenciales.** Los archivos de configuración no contienen credenciales, ClickHouse solo almacena hashes bcrypt de las contraseñas de los usuarios del conector y los secretos permanecen en Kubernetes Secrets o en archivos del host legibles por root. Nada en las rutas de recopilación o sincronización los transmite.
+* **Salida sin censurar del solucionador de problemas.** Todo lo que devuelve el solucionador de problemas pasa por patrones de redacción (integrados y propios) antes de salir. Consulte [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
+
+<div id="trust-boundaries">
+  ## Límites de confianza
+</div>
+
+* **Su entorno es el límite.** ClickHouse Cloud recibe únicamente lo que envía el scraper y lo que devuelve una sesión de soporte activa. Nunca inicia conexiones hacia el interior.
+* **La gateway de sesión es suya.** Solo es accesible dentro de su entorno (mediante `kubectl port-forward` en Kubernetes o localmente en una VM), salvo que decida exponerla mediante un Ingreso. El plano de control de ClickHouse nunca se conecta a ella.
+* **El acceso a ClickHouse es de solo lectura.** Los usuarios `pcm_scraper` y `pcm_troubleshooter` tienen privilegios `SELECT` por tabla, además de un único privilegio de sistema exclusivo del scraper que fuerza el vaciado de las tablas de logs al disco y nada más; no existen privilegios de `INSERT`, DDL ni de administración de usuarios. La enumeración exacta se encuentra en el [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
+* **El acceso a Kubernetes está limitado al espacio de nombres.** Todo el RBAC se concede mediante Roles en los espacios de nombres del conector y de la instancia, con verbos de solo lectura para los recursos de carga de trabajo y acceso por nombre exacto a los Secrets del propio conector. No hay permisos de `exec`, `delete` ni `patch`.
+* **Política de red.** En Kubernetes, el chart puede generar una NetworkPolicy que deniega toda salida del conector, excepto hacia los CIDR que enumere. La aplicación depende de que su cluster ejecute un CNI que la haga cumplir; sin uno, la política no tiene efecto. Consulte la [configuración](/es/products/bring-your-own-cloud/connector/configuration).
+* **Endurecimiento del host en VM.** Las unidades se ejecutan como un usuario de sistema sin inicio de sesión, con `ProtectSystem=strict`, `NoNewPrivileges`, rutas de configuración de solo lectura y modo FIPS habilitado.
+
+Para consultar los privilegios y las reglas de RBAC exactos del conector, consulte la referencia del [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model). Si ClickHouse opera los clusters por usted, el modelo de confianza es diferente; consulte las páginas de [arquitectura de BYOC](/es/products/bring-your-own-cloud/overview/architecture) y [privilegios de BYOC](/es/products/bring-your-own-cloud/reference/privilege).
