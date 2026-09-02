@@ -23,6 +23,17 @@ SELECT countIf(replaceRegexpAll(h, '([a-z]+)([0-9]+)', '\\2:\\1') != replaceRege
 FROM (SELECT if(number < 1000, concat('ab', toString(number), 'cd'), concat('ab', toString(intDiv(number, 8) % 4), 'cd')) AS h FROM numbers(2000))
 SETTINGS max_block_size = 2000;
 
+-- A mostly-distinct prefix followed by a short non-adjacent cycle: the map is switched off after the first window
+-- and switched back on once a sampled value recurs, so the cycle is served by a cache rebuilt mid-block.
+SELECT countIf(replaceRegexpAll(h, '([a-z]+)([0-9]+)', '\\2:\\1') != replaceRegexpAll(h, materialize('([a-z]+)([0-9]+)'), '\\2:\\1'))
+FROM (SELECT if(number < 256, concat('ab', toString(number), 'cd'), concat('ab', toString(number % 4), 'cd')) AS h FROM numbers(2000))
+SETTINGS max_block_size = 2000;
+
+-- Alternating mostly-distinct and low-cardinality stretches: the map is dropped and rebuilt several times in one block.
+SELECT countIf(replaceRegexpAll(h, '([a-z]+)([0-9]+)', '\\2:\\1') != replaceRegexpAll(h, materialize('([a-z]+)([0-9]+)'), '\\2:\\1'))
+FROM (SELECT if(intDiv(number, 512) % 2 = 0, concat('ab', toString(number), 'cd'), concat('ab', toString(number % 4), 'cd')) AS h FROM numbers(4096))
+SETTINGS max_block_size = 4096;
+
 -- A repetitive prefix followed by a mostly-distinct suffix: the distinct ratio is measured over the recent rows,
 -- so the map is switched off partway through the block, after it has already served repeats.
 SELECT countIf(replaceRegexpAll(h, '([a-z]+)([0-9]+)', '\\2:\\1') != replaceRegexpAll(h, materialize('([a-z]+)([0-9]+)'), '\\2:\\1'))

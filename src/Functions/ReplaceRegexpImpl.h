@@ -416,6 +416,15 @@ struct ReplaceRegexpImpl
         bool has_prev_haystack = false;
         CachedResult prev_result{0, 0, false};
 
+        /// While the cache is off, one haystack per distinct-ratio window is kept as a sample and the
+        /// rows equal to it are counted, so that a block whose remainder turns repetitive after a
+        /// mostly-distinct window is not stuck on the plain path for the rest of the block. A distinct
+        /// row pays one compare that exits at the length check or the first differing byte, and an
+        /// all-distinct block never re-enables the cache at all. A value that recurs only after more
+        /// than a window of rows escapes the sample just as it escapes the distinct ratio.
+        std::string_view sample_haystack;
+        size_t sample_hits = 0;
+
         /// `haystack_bytes_read` is the size of the haystack the compare or lookup scanned to find the
         /// entry. Charging only the copied result would let a run of repeated multi-megabyte haystacks
         /// with a tiny cached result advance the budget by little more than the per-row unit.
@@ -434,6 +443,13 @@ struct ReplaceRegexpImpl
         {
             budget.charge();
 
+            const std::string_view haystack = get_haystack(i);
+
+            /// Compared against the previous window's sample, ahead of the checkpoint that may replace
+            /// it, so that the sampled row never counts as a repeat of itself.
+            if (!map_enabled && haystack == sample_haystack)
+                ++sample_hits;
+
             /// The checkpoint runs ahead of every fast path below, so every row advances it and no
             /// `continue` can starve it: a block of pre-check rejects, of adjacent duplicates, or of
             /// cache-disabled rows all keep re-evaluating the heuristics on schedule. The match ratio
@@ -442,27 +458,41 @@ struct ReplaceRegexpImpl
             if (rows_in_window == ratio_check_window)
             {
                 precheck_non_matching = matched_in_window * 20 < ratio_check_window;
-                /// While the cache is enabled every row either reaches it or is an adjacent duplicate
-                /// (a repeat the caching strategy serves), so the insertions since the previous check
-                /// count the distinct rows of the last window. The ratio covers only that window rather
-                /// than the whole prefix: a repetitive prefix must not keep the cache on for a
-                /// mostly-distinct remainder of the block, where the lookups would pay for nothing.
-                if (map_enabled && i % distinct_ratio_window == 0)
+                if (i % distinct_ratio_window == 0)
                 {
-                    const size_t distinct_in_window = results_cache.size() - cache_size_at_distinct_check;
-                    if (distinct_in_window * 10 > distinct_ratio_window * 9)
+                    /// While the cache is enabled every row either reaches it or is an adjacent duplicate
+                    /// (a repeat the caching strategy serves), so the insertions since the previous check
+                    /// count the distinct rows of the last window. The ratio covers only that window rather
+                    /// than the whole prefix: a repetitive prefix must not keep the cache on for a
+                    /// mostly-distinct remainder of the block, where the lookups would pay for nothing.
+                    if (map_enabled)
                     {
-                        map_enabled = false;
-                        results_cache.clearAndShrink();
+                        const size_t distinct_in_window = results_cache.size() - cache_size_at_distinct_check;
+                        if (distinct_in_window * 10 > distinct_ratio_window * 9)
+                        {
+                            map_enabled = false;
+                            /// Not `clearAndShrink`: that frees the buffer and leaves the table unusable,
+                            /// while the sample below may bring the cache back later in the block.
+                            results_cache.clear();
+                        }
+                        cache_size_at_distinct_check = results_cache.size();
                     }
-                    cache_size_at_distinct_check = results_cache.size();
+                    /// A recurring sample proves the last window was not all-distinct. The distinct
+                    /// ratio of the next window then judges the rebuilt cache, so a wrong re-enable
+                    /// costs one window of lookups, while a cycle of a few values keeps it for good.
+                    else if (sample_hits > 0)
+                        map_enabled = true;
+
+                    if (!map_enabled)
+                    {
+                        sample_haystack = haystack;
+                        sample_hits = 0;
+                    }
                 }
                 rows_in_window = 0;
                 matched_in_window = 0;
             }
             ++rows_in_window;
-
-            const std::string_view haystack = get_haystack(i);
 
             /// Ahead of the pre-check: an adjacent duplicate is served by a compare against a value that
             /// is still cache-hot, which costs about as much as the copy both paths pay, while re-running
