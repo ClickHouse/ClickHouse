@@ -357,13 +357,11 @@ TEST(Base58, Generic)
 
 /// The callback fires on accumulated inner-loop work, so how often it fires must not depend on how
 /// many input elements one iteration consumes. The count is the sum over passes of
-/// `limb_count * CHUNK * <limb width>` divided by the threshold, an exact function of the body
-/// length, so the band below needs no timing and cannot be flaky. 10000 bytes gives 64 either way.
+/// `limb_count * CHUNK * <limb width>` divided by the threshold, an exact integer function of the
+/// body length: asserted exactly, so retuning the accounting or `work_per_check` must update it.
 TEST(Base58, GenericCancellationInterval)
 {
     constexpr size_t expected_calls = 64;
-    constexpr size_t min_calls = 40;
-    constexpr size_t max_calls = 200;
 
     const std::string body = bodyOfLength(10000, 0);
 
@@ -381,14 +379,8 @@ TEST(Base58, GenericCancellationInterval)
     ASSERT_TRUE(decoded_size.has_value());
     ASSERT_EQ(std::string(reinterpret_cast<const char *>(decoded.data()), *decoded_size), body);
 
-    EXPECT_GE(encode_calls, min_calls) << "encodeBase58 checked " << encode_calls << " times, expected "
-                                       << expected_calls;
-    EXPECT_LE(encode_calls, max_calls) << "encodeBase58 checked " << encode_calls << " times, expected "
-                                       << expected_calls;
-    EXPECT_GE(decode_calls, min_calls) << "decodeBase58 checked " << decode_calls << " times, expected "
-                                       << expected_calls;
-    EXPECT_LE(decode_calls, max_calls) << "decodeBase58 checked " << decode_calls << " times, expected "
-                                       << expected_calls;
+    EXPECT_EQ(encode_calls, expected_calls);
+    EXPECT_EQ(decode_calls, expected_calls);
 
     /// The callback is expected to throw once the query is cancelled or out of time, which is only
     /// useful if the throw leaves the conversion.

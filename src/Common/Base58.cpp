@@ -958,7 +958,9 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         }
     }
 
-    /// The most significant limb is never zero: a pass only multiplies the accumulator by `58^CHUNK`.
+    /// The most significant limb is never zero: a pass rewrites a top limb `t >= 1` as
+    /// `t * 58^CHUNK + carry >= 58^CHUNK`, so it either stays non-zero in place or carries, and the
+    /// last limb the append loop above stores is the final non-zero `carry`.
     if (limb_count)
     {
         size_t top_bytes = 1;
