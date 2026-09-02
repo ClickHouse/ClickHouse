@@ -62,9 +62,8 @@ def zk_rmr_with_retries(zk, path):
     assert False
 
 
-# Retry only when clickhouse-client could not open its connection to this node's own
-# server (NETWORK_ERROR refusing this node's own endpoint). A remote refusal (different
-# address) is re-raised immediately, so ON CLUSTER DDL or partial INSERTs are never resubmitted.
+# Retry only when clickhouse-client was refused by this node's own endpoint (the query reached
+# no server); a remote refusal names another address and is re-raised, so nothing is resubmitted.
 def query_with_connect_retry(node, sql, retries=20, sleep_time=0.5, **kwargs):
     endpoint = f"{node.ip_address}:9000"
     for attempt in range(retries):

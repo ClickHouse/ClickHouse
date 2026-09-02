@@ -251,7 +251,8 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                         throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
                 }
 
-                socket->impl()->throwSocketError(it->toString());
+                if (auto err = socket->impl()->socketError())
+                    socket->impl()->error(err, it->toString()); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
 
                 socket->setBlocking(true);
             }

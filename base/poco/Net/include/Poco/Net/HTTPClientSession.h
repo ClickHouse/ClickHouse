@@ -137,8 +137,8 @@ namespace Net
         /// Returns the port number of the target HTTP server.
 
         std::string getResolvedAddress() const;
-        /// Returns the resolved host:port of the actually-dialled endpoint
-        /// (the proxy endpoint when a proxy is configured, otherwise the target).
+        /// Returns the host:port that reconnect() dialled (the proxy when one is used),
+        /// or the target host:port before the first connect.
 
         void setProxy(
             const std::string & host,
@@ -350,8 +350,8 @@ namespace Net
         /// proxy username and password have been set.
 
         StreamSocket proxyConnect(const SocketAddress * resolvedProxyAddress = nullptr);
-        /// Sends a CONNECT request to the proxy server and returns
-        /// a StreamSocket for the resulting connection.
+        /// Sends a CONNECT request to the proxy server (dialled at resolvedProxyAddress
+        /// when given) and returns a StreamSocket for the resulting connection.
 
         void proxyTunnel();
         /// Calls proxyConnect() and attaches the resulting StreamSocket
@@ -371,6 +371,7 @@ namespace Net
     private:
         std::string _host;
         std::string _resolved_host;
+        std::string _dialled_address;
         Poco::UInt16 _port;
         ProxyConfig _proxyConfig;
         Poco::Timespan _keepAliveTimeout;
@@ -400,8 +401,8 @@ namespace Net
 
     inline std::string HTTPClientSession::getResolvedAddress() const
     {
-        if (!_proxyConfig.host.empty())
-            return _resolved_host + ':' + std::to_string(_proxyConfig.port);
+        if (!_dialled_address.empty())
+            return _dialled_address;
         return (_resolved_host.empty() ? _host : _resolved_host) + ':' + std::to_string(_port);
     }
 

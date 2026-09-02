@@ -1,8 +1,0 @@
-<clickhouse>
-    <proxy>
-        <https>
-            <!-- Two A records (added to /etc/hosts by the test), both dead port. -->
-            <uri>http://proxymulti:1</uri>
-        </https>
-    </proxy>
-</clickhouse>
