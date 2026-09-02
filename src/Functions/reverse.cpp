@@ -21,14 +21,10 @@ namespace ErrorCodes
 
 namespace
 {
-class FunctionReverse : public IFunction
+class FunctionReverse final : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionReverse>();
-    }
 
     String getName() const override
     {
@@ -119,13 +115,16 @@ public:
 
 
 /// Also works with arrays.
-class ReverseOverloadResolver : public IFunctionOverloadResolver
+class ReverseOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "reverse";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit ReverseOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit ReverseOverloadResolver(ContextPtr context)
+        : array_reverse(FunctionFactory::instance().get("arrayReverse", context))
+    {
+    }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -135,9 +134,9 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
+            return array_reverse->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            FunctionReverse::create(context),
+            std::make_shared<FunctionReverse>(),
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
@@ -145,7 +144,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return FunctionReverse{}.getReturnTypeImpl(arguments); }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr array_reverse;
 };
 
 }
@@ -159,8 +158,8 @@ REGISTER_FUNCTION(Reverse)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array or string with the order of elements or characters reversed."};
     FunctionDocumentation::Examples examples = {
-        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4, 3, 2, 1]"},
-        {"Reverse string", "SELECT reverse('abcd');", "'dcba'"}
+        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4,3,2,1]"},
+        {"Reverse string", "SELECT reverse('abcd');", "dcba"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

@@ -19,7 +19,6 @@
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
-static constexpr auto TMP_TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt.tmp";
 namespace DB
 {
 
@@ -35,19 +34,21 @@ namespace MergeTreeSetting
 extern const MergeTreeSettingsBool fsync_part_directory;
 }
 
-VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_)
+VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_, PartDirIntent intent)
     : VersionMetadata(merge_tree_data_part_)
     , can_write_metadata(merge_tree_data_part->storage.supportsTransactions() && !merge_tree_data_part->getDataPartStorage().isReadonly())
 {
     log = ::getLogger("VersionMetadataOnDisk");
-    is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
-    LOG_DEBUG(
+    /// A `CreateFresh` directory is clean, so it reads nothing and keeps the member default (true).
+    if (intent == PartDirIntent::OpenExisting)
+        is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
+    LOG_TEST(
         log, "Object {}, can_write_metadata {}, is_persist_deferrable {}", getObjectName(), can_write_metadata, is_persist_deferrable);
 }
 
 VersionInfo VersionMetadataOnDisk::loadMetadata()
 {
-    LOG_DEBUG(log, "Object {}, loading metadata", getObjectName());
+    LOG_TRACE(log, "Object {}, loading metadata", getObjectName());
     std::optional<VersionInfo> loading_info = std::nullopt;
     bool has_tmp_metadata_file = false;
     auto & data_part_storage = merge_tree_data_part->getDataPartStorage();
@@ -65,7 +66,7 @@ VersionInfo VersionMetadataOnDisk::loadMetadata()
         return *loading_info;
     }
 
-    LOG_DEBUG(log, "Object {}, no metadata", getObjectName());
+    LOG_TEST(log, "Object {}, no metadata", getObjectName());
 
     /// Four (?) cases are possible:
     /// 1. Part was created without transactions.
@@ -106,7 +107,7 @@ void VersionMetadataOnDisk::setAndStoreNonTransactionalRemovalTID(const Transact
 
 bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
-    LOG_DEBUG(
+    LOG_TEST(
         log,
         "Object {}, tryLockRemovalTID by {}, table: {}, part: {}",
         getObjectName(),
@@ -140,7 +141,7 @@ bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const T
 
 void VersionMetadataOnDisk::unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    LOG_DEBUG(
+    LOG_TEST(
         log,
         "Object {}, unlockRemovalTID by {}, table: {}, part: {}",
         getObjectName(),
@@ -185,7 +186,7 @@ bool VersionMetadataOnDisk::hasPersistedMetadata() const
 
 std::expected<Int32, StaleVersion> VersionMetadataOnDisk::storeInfoUnlocked(VersionInfo new_info)
 {
-    LOG_DEBUG(log, "Object {}, storeInfoUnlocked {}", getObjectName(), new_info.toString(/*one_line=*/true));
+    LOG_TEST(log, "Object {}, storeInfoUnlocked {}", getObjectName(), new_info.toString(/*one_line=*/true));
 
     bool involved_in_transaction = new_info.wasInvolvedInTransaction();
     if (!can_write_metadata)
@@ -204,7 +205,7 @@ std::expected<Int32, StaleVersion> VersionMetadataOnDisk::storeInfoUnlocked(Vers
 
     if (!involved_in_transaction && is_persist_deferrable)
     {
-        LOG_DEBUG(log, "Object {}, pending store metadata", getObjectName());
+        LOG_TEST(log, "Object {}, pending store metadata", getObjectName());
         deferred_persist_info = new_info;
         return ++(*deferred_persist_info).storing_version;
     }
@@ -265,7 +266,7 @@ std::optional<VersionInfo> VersionMetadataOnDisk::readMetadataUnlocked()
     size_t small_file_size = 4096;
     auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
     /// Avoid cannot allocated thread error. No need in threadpool read method here.
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     auto buf = data_part_storage.readFile(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size);
 
     String content;
@@ -299,20 +300,36 @@ void VersionMetadataOnDisk::removeTmpMetadataFile()
     if (!data_part_storage.existsFile(TMP_TXN_VERSION_METADATA_FILE_NAME))
         return;
 
-    auto last_modified = data_part_storage.getLastModified();
-    size_t file_size = data_part_storage.getFileSize(TMP_TXN_VERSION_METADATA_FILE_NAME);
-    auto buf = data_part_storage.readFile(TMP_TXN_VERSION_METADATA_FILE_NAME, getReadSettings().adjustBufferSize(file_size), file_size);
+    /// The dump of the leftover file below is purely diagnostic and must be best-effort: the file
+    /// is an artifact of an interrupted write, so not only its content but even the disk-level
+    /// metadata describing it can be broken (e.g. a partially written local metadata file of an
+    /// object storage disk, for which already `getFileSize` throws while deserializing it).
+    /// A failure to read it must not prevent the cleanup, let alone fail the part loading and
+    /// with it the server startup. The removal itself is tolerant to such files:
+    /// `UnlinkFileOperation` reads the disk-level metadata with `tryReadMetadataFile`.
+    try
+    {
+        auto last_modified = data_part_storage.getLastModified();
+        size_t file_size = data_part_storage.getFileSize(TMP_TXN_VERSION_METADATA_FILE_NAME);
+        auto buf = data_part_storage.readFile(TMP_TXN_VERSION_METADATA_FILE_NAME, getReadSettings().adjustBufferSize(file_size), file_size);
 
-    String content;
-    readStringUntilEOF(content, *buf);
-    LOG_WARNING(
-        log,
-        "Object {}, found file {} that was last modified on {}, has size {} and the following content: {}",
-        getObjectName(),
-        TMP_TXN_VERSION_METADATA_FILE_NAME,
-        last_modified.epochTime(),
-        content.size(),
-        content);
+        String content;
+        readStringUntilEOF(content, *buf);
+        LOG_WARNING(
+            log,
+            "Object {}, found file {} that was last modified on {}, has size {} and the following content: {}",
+            getObjectName(),
+            TMP_TXN_VERSION_METADATA_FILE_NAME,
+            last_modified.epochTime(),
+            content.size(),
+            content);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            log,
+            fmt::format("Object {}, cannot read the content of {}", getObjectName(), TMP_TXN_VERSION_METADATA_FILE_NAME));
+    }
 
     if (!merge_tree_data_part->isStoredOnReadonlyDisk())
         data_part_storage.removeFile(TMP_TXN_VERSION_METADATA_FILE_NAME);

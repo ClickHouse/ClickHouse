@@ -8,6 +8,8 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace DB
 {
 
@@ -24,7 +26,7 @@ namespace
 /// returns the value of the leftmost non-falsey argument.
 /// If all arguments are falsey, returns the default value for the result type.
 /// Result type is the supertype of all arguments.
-class FunctionFirstNonDefault : public IFunction
+class FunctionFirstNonDefault final : public IFunction
 {
 public:
     static constexpr auto name = "firstNonDefault";
@@ -80,7 +82,7 @@ public:
 
         /// Cast all arguments to the result type
         /// Use this columns to insert values into the result column
-        std::vector<ColumnPtr> casted_columns;
+        VectorWithMemoryTracking<ColumnPtr> casted_columns;
         casted_columns.reserve(num_columns);
         for (const auto & arg : arguments)
         {
@@ -129,7 +131,7 @@ public:
 
 REGISTER_FUNCTION(FirstNonDefault)
 {
-    FunctionDocumentation doc;
+    FunctionDocumentation doc{};
     doc.description = "Returns the first non-default value from a set of arguments";
     doc.syntax = "firstNonDefault(arg1[, arg2[ ...]])";
     doc.arguments = {
@@ -141,7 +143,7 @@ REGISTER_FUNCTION(FirstNonDefault)
     doc.returned_value = FunctionDocumentation::ReturnedValue{"Result type is the supertype of all arguments", {}};
     doc.examples = {
         {"integers", "SELECT firstNonDefault(0, 1, 2)", "1"},
-        {"strings", "SELECT firstNonDefault('', 'hello', 'world')", "'hello'"},
+        {"strings", "SELECT firstNonDefault('', 'hello', 'world')", "hello"},
         {"nulls", "SELECT firstNonDefault(NULL, 0 :: UInt8, 1 :: UInt8)", "1"},
         {"nullable zero", "SELECT firstNonDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))", "0"},
     };

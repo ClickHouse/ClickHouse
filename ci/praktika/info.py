@@ -1,11 +1,12 @@
 import json
 import os
 import traceback
-import urllib
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
 from .settings import Settings
+from .workflow import Workflow
 
 class Info:
 
@@ -43,6 +44,10 @@ class Info:
     @property
     def event_time(self):
         return self.env.EVENT_TIME
+
+    @property
+    def event_action(self):
+        return self.env.EVENT_ACTION
 
     @property
     def job_config(self):
@@ -130,7 +135,10 @@ class Info:
 
     @property
     def is_merge_queue_event(self):
-        return self.env.EVENT_TYPE == "merge_group"
+        # EVENT_TYPE always holds a Workflow.Event value, never GitHub's event
+        # name: the GitHub event is called "merge_group", praktika's value is
+        # "merge_queue". Compare against the enum so the two cannot drift.
+        return self.env.EVENT_TYPE == Workflow.Event.MERGE_QUEUE
 
     @property
     def is_push_event(self):
@@ -191,7 +199,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
@@ -211,7 +219,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
@@ -231,6 +239,20 @@ class Info:
         except Exception as e:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
+
+    @staticmethod
+    def set_workflow_inputs(inputs: dict) -> None:
+        """Persist workflow_dispatch inputs for jobs to read via
+        `get_workflow_input_value`.
+
+        Mirrors the heredoc the YAML generator emits in CI; used by the
+        praktika `--workflow-input` CLI flag for local job runs.
+        """
+        from .settings import _Settings
+
+        os.makedirs(_Settings.TEMP_DIR, exist_ok=True)
+        with open(_Settings.WORKFLOW_INPUTS_FILE, "w", encoding="utf8") as f:
+            json.dump(inputs, f)
 
     def set_pr_labels(self, labels, reset=False):
         self.env.set_pr_labels(labels, reset=reset)

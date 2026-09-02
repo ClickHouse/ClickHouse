@@ -163,6 +163,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorOrderBy(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorOrderBy(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrderBy>());

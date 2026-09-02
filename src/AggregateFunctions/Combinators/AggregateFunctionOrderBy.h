@@ -54,7 +54,7 @@ struct OrderByArrayNode
 
     static OrderByArrayNode * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         char * place = arena->alignedAlloc(sizeof(OrderByArrayNode) + size, alignof(OrderByArrayNode));
         auto * node = reinterpret_cast<OrderByArrayNode *>(place);
@@ -198,7 +198,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur = Base::data(place);
         const auto & rhs_data = Base::data(rhs);
@@ -216,7 +216,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /*version*/, Arena * arena) const override
     {
-        UInt64 elems;
+        UInt64 elems = 0;
         readVarUInt(elems, buf);
         auto & value = Base::data(place).value;
         value.resize_exact(elems, arena);

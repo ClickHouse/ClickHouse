@@ -2,8 +2,10 @@
 #include <base/sleep.h>
 
 #include <filesystem>
+#include <thread>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -11,6 +13,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/saturatedDuration.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
@@ -28,7 +31,7 @@ namespace Setting
 namespace DatabaseReplicatedSetting
 {
     extern const DatabaseReplicatedSettingsBool check_consistency;
-    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
+    extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
     extern const DatabaseReplicatedSettingsUInt64 max_retries_before_automatic_recovery;
     extern const DatabaseReplicatedSettingsUInt64 wait_entry_commited_timeout_sec;
     extern const DatabaseReplicatedSettingsBool allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views;
@@ -191,12 +194,19 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
-    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    /// Read `/max_log_ptr` together with its `Stat` so we can pin the database identity (`czxid`
+    /// of the node) here and forward it to `recoverLostReplica`. Without this, a `DROP`+recreate
+    /// at the same Keeper path between this read and the snapshot read inside
+    /// `getConsistentMetadataSnapshotImpl` can advance both the value and the `czxid` to the new
+    /// database, after which the in-function identity checks compare new-to-new and silently
+    /// substitute metadata from the recreated database during recovery.
+    Coordination::Stat max_log_ptr_stat;
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
 
-    UInt64 digest;
+    UInt64 digest = 0;
     String digest_str;
-    UInt64 local_digest;
+    UInt64 local_digest = 0;
     if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
         digest = parse<UInt64>(digest_str);
@@ -226,7 +236,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
 
-        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr, max_log_ptr_stat.czxid);
 
         fiu_do_on(FailPoints::database_replicated_delay_recovery,
         {
@@ -352,7 +362,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     {
         std::unique_lock lock{mutex};
         LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
-        bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
+        bool processed = wait_current_task_change.wait_for(lock, saturatedMilliseconds(timeout_ms), [&]()
         {
             return zookeeper->expired() || current_task >= max_log || stop_flag;
         });
@@ -459,7 +469,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->entry = entry;
     task->parseQueryFromEntry(context);
     chassert(!task->entry.query.empty());
-    assert(!zookeeper->exists(task->getFinishedNodePath()));
+    chassert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
@@ -469,9 +479,9 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     {
         std::unique_lock lock{mutex};
-        bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
+        bool processed = wait_current_task_change.wait_for(lock, saturatedSeconds(timeout), [&]()
         {
-            assert(zookeeper->expired() || current_task <= entry_name);
+            chassert(zookeeper->expired() || current_task <= entry_name);
 
             if (zookeeper->expired() || stop_flag)
             {
@@ -544,7 +554,7 @@ static bool getRMVCoordinationInfo(
         String data;
         if (!zookeeper->tryGet(*coordination_path, data, &stats))
             return false;
-        coordination_znode.parse(data);
+        coordination_znode.parse(data, /*running_znode_exists=*/ false, log);
         return true;
     }
     catch (...)
@@ -689,8 +699,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->is_initial_query)
     {
-        assert(!zookeeper->exists(fs::path(entry_path) / "try"));
-        assert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
+        chassert(!zookeeper->exists(fs::path(entry_path) / "try"));
+        chassert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }

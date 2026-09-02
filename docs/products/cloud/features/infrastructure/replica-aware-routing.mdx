@@ -1,0 +1,94 @@
+---
+title: 'Replica-aware routing'
+slug: /manage/replica-aware-routing
+description: 'Route related requests to the same ClickHouse Cloud replica for temporary tables, sessions, cache reuse, and read-after-write consistency'
+keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<PrivatePreviewBadge/>
+<EnterprisePlanFeatureBadge feature="Replica-aware routing" support="true"/>
+
+Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
+
+It's best-effort and doesn't guarantee isolation. The proxy maps each routing value to one replica. The mapping remains stable while the number of replicas remains unchanged; scaling the service can map the value to a different replica.
+
+<Warning>
+**Requires the HTTP interface**
+
+Replica-aware routing is applied at the proxy layer over the [HTTP/HTTPS interface](/concepts/features/interfaces/http) using the `X-ClickHouse-Replica-Tag` header.
+
+Replica-aware routing is **currently unavailable over the native protocol** (native port, e.g. the [clickhouse-go](/integrations/language-clients/go/index) driver in its default native mode). Native-protocol clients must switch to HTTP and send the routing value on every request.
+</Warning>
+
+## Prerequisites {#prerequisites}
+
+- Your service needs **2 or more replicas**. On a single-replica service, there's nothing to pin to.
+- Available on **Enterprise** by default when the feature is GA.
+- Supported on standard ClickHouse Cloud services. [BYOC](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) isn't supported yet.
+
+## Configuring replica-aware routing {#configuring-replica-aware-routing}
+
+Open a [support](https://clickhouse.com/support/program) ticket and ask to enable HTTP-based sticky replica routing. Include your service ID and why you need it (temporary tables, session state, cache reuse, or read-after-write consistency). No restart is required.
+
+## HTTP-based routing {#http-based-routing}
+
+To pin a workload to a replica, send an `X-ClickHouse-Replica-Tag` header on the [HTTPS interface](/concepts/features/interfaces/http). The proxy uses consistent hashing on the header value, so requests sharing it go to the same replica while the number of replicas remains unchanged. A different value hashes independently and may land on the same or a different replica, but you don't choose *which* replica a value maps to.
+
+Use your existing service hostname. No special sticky hostnames or DNS changes are required. The header value can be any string you choose, such as an application name, user ID, or workload label. Requests without the header keep normal load balancing.
+
+Set the `X-ClickHouse-Replica-Tag` header on each request:
+
+```bash
+echo 'SELECT hostName()' | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+```
+
+For clickhouse-go (v2), set `Protocol: clickhouse.HTTP` and pass the header with the [`HttpHeaders` connection option](/integrations/language-clients/go/configuration#connection-settings).
+
+<Info>
+`X-ClickHouse-Replica-Tag` provides replica affinity without creating a ClickHouse HTTP session. Concurrent requests can reuse the same tag without encountering `SESSION_IS_LOCKED`.
+</Info>
+
+### Read-after-write consistency {#read-after-write-consistency}
+
+On a multi-replica service, a write on one replica may not be visible on the others until replication catches up. Send your write with an `X-ClickHouse-Replica-Tag` header, then reuse the same header value on follow-up reads. The proxy routes both to the same replica, so you read your own write even while other replicas are still behind. This pattern works for workloads that write and then immediately read back the same data, such as interactive applications or ETL jobs that validate inserts before moving on.
+
+For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/reference/settings/session-settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
+
+### Check which replica you hit {#check-which-replica}
+
+Run the `SELECT hostName()` example again with the same `X-ClickHouse-Replica-Tag` value. You should get the same hostname while the number of replicas remains unchanged. A different header value may map to a different replica.
+
+## Limitations of replica-aware routing {#limitations-of-replica-aware-routing}
+
+### Stickiness changes when the replica count changes {#replica-aware-routing-does-not-guarantee-isolation}
+
+Scaling out or in changes the routing hash ring. Requests sharing the same routing value may then land on a different replica. If you rely on temporary tables or session-level settings, be ready to recreate them after a remap.
+
+### Replica-aware routing isn't workload isolation {#not-workload-isolation}
+
+Sticky routing only controls *which* replica handles a request. That replica may still serve other traffic. For dedicated compute, use [compute-compute separation](/products/cloud/features/infrastructure/warehouses).
+
+### Private networking {#private-networking}
+
+HTTP-based routing works with [private networking](/products/cloud/guides/security/connectivity/private-networking) on your normal service hostname. No extra DNS entries are required.
+
+### Replica-aware routing requires the HTTP protocol {#replica-aware-routing-requires-http}
+
+Sticky routing is keyed on the `X-ClickHouse-Replica-Tag` HTTP header. The native binary protocol doesn't carry this value for the HTTP proxy to hash on, so replica-aware routing isn't available over the native protocol. Native-protocol clients must move the relevant workload to the HTTP interface to use this feature.
+
+## Troubleshooting {#troubleshooting}
+
+**Queries still land on different replicas with the same routing value**
+
+- Confirm that every request includes the `X-ClickHouse-Replica-Tag` header.
+- Confirm that every request uses exactly the same routing value.
+- Wait briefly after enablement. It can take under a minute to take effect.
+- Check whether the number of replicas recently changed; remapping is expected after scaling. Use `SELECT hostName()` to discover the new mapping.

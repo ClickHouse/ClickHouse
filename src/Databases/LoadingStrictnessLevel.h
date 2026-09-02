@@ -23,4 +23,22 @@ enum class LoadingStrictnessLevel : uint8_t
 
 LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore, bool secondary);
 
+/// Returns true when a table or database is being loaded from previously-validated metadata
+/// (server startup, force-restore, or UNDROP TABLE) rather than from a fresh user-supplied
+/// query. Only in this case should security checks (e.g. `dynamic_disk_allow_*`) be skipped,
+/// because the disk configuration was already validated when the object was originally created.
+inline bool isLoadingFromExistingMetadata(LoadingStrictnessLevel level)
+{
+    return level == LoadingStrictnessLevel::FORCE_ATTACH || level == LoadingStrictnessLevel::FORCE_RESTORE;
+}
+
+/// Whether the definition comes from the user now rather than being replayed. A full-definition
+/// `ATTACH TABLE t UUID '...' (...) ENGINE = ...` is user input and runs under `ATTACH`; a definition
+/// stored on this server is replayed under `attach_short_syntax`, `SECONDARY_CREATE` or above.
+inline bool isFreshTableDefinition(LoadingStrictnessLevel level, bool attach_short_syntax)
+{
+    return level <= LoadingStrictnessLevel::CREATE
+        || (level == LoadingStrictnessLevel::ATTACH && !attach_short_syntax);
+}
+
 }

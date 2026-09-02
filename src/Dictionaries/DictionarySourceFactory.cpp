@@ -20,6 +20,8 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Holds one row per column, an attribute's row being its `null_value` default. A port header
+    /// must have no rows, so a source publishing this block as its header has to strip them first.
     Block createSampleBlock(const DictionaryStructure & dict_struct)
     {
         Block block;
@@ -69,10 +71,19 @@ DictionarySourceFactory::DictionarySourceFactory() : log(getLogger("DictionarySo
 {
 }
 
-void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source)
+void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source, Documentation documentation)
 {
     if (!registered_sources.emplace(source_type, std::move(create_source)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionarySourceFactory: the source name '{}' is not unique", source_type);
+
+    source_documentations.emplace(source_type, std::move(documentation));
+}
+
+Documentation DictionarySourceFactory::getDocumentation(const std::string & source_type) const
+{
+    if (auto it = source_documentations.find(source_type); it != source_documentations.end())
+        return it->second;
+    return {};
 }
 
 std::vector<String> DictionarySourceFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS

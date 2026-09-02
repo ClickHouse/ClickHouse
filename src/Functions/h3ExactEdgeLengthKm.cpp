@@ -22,7 +22,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3ExactEdgeLengthKm : public IFunction
+class FunctionH3ExactEdgeLengthKm final : public IFunction
 {
 public:
     static constexpr auto name = "h3ExactEdgeLengthKm";
@@ -108,11 +108,11 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
     FunctionDocumentation::Examples examples = {
         {
             "Get exact edge length in kilometers",
-            "SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm",
+            "SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm",
             R"(
-┌──exactEdgeLengthKm─┐
-│ 195.44963163407317 │
-└────────────────────┘
+┌─exactEdgeLengthKm─┐
+│      195.44963163 │
+└───────────────────┘
             )"
         }
     };

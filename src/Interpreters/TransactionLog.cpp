@@ -9,6 +9,8 @@
 #include <base/defines.h>
 #include <base/sort.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
@@ -21,10 +23,17 @@
 namespace DB
 {
 
+std::atomic<Int64> TransactionLog::async_tables_loading_job_number{0};
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
+}
+
+namespace FailPoints
+{
+    extern const char transaction_force_unknown_state_after_commit[];
 }
 
 static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
@@ -35,12 +44,13 @@ try
     if (!system_log)
         return;
 
-    TransactionsInfoLogElement elem;
-    elem.type = type;
-    elem.tid = tid;
-    elem.csn = csn;
-    elem.fillCommonFields(nullptr);
-    system_log->add(std::move(elem));
+    system_log->add([&](TransactionsInfoLogElement & element)
+    {
+        element.type = type;
+        element.tid = tid;
+        element.csn = csn;
+        element.fillCommonFields(nullptr);
+    });
 }
 catch (...)
 {
@@ -59,7 +69,7 @@ TransactionLog::TransactionLog()
     auto compoment_guard = Coordination::setCurrentComponent("TransactionLog::TransactionLog");
     loadLogFromZooKeeper();
 
-    updating_thread = ThreadFromGlobalPool(&TransactionLog::runUpdatingThread, this);
+    updating_thread = std::make_unique<ThreadFromGlobalPool>(&TransactionLog::runUpdatingThread, this);
 }
 
 TransactionLog::~TransactionLog()
@@ -73,7 +83,8 @@ void TransactionLog::shutdown()
         return;
     log_updated_event->set();
     latest_snapshot.notify_all();
-    updating_thread.join();
+    if (updating_thread)
+        updating_thread->join();
 
     std::lock_guard lock{mutex};
     /// This is required to... you'll never guess - avoid race condition inside Poco::Logger (Coordination::ZooKeeper::log)
@@ -90,7 +101,7 @@ UInt64 TransactionLog::deserializeCSN(const String & csn_node_name)
 {
     ReadBufferFromString buf{csn_node_name};
     assertString("csn-", buf);
-    UInt64 res;
+    UInt64 res = 0;
     readText(res, buf);
     assertEOF(buf);
     return res;
@@ -435,6 +446,15 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
 
             csn_path_created = dynamic_cast<const Coordination::CreateResponse *>(res.back().get())->path_created;
+
+            fiu_do_on(FailPoints::transaction_force_unknown_state_after_commit,
+            {
+                /// CSN znode is already created in ZK; simulate the response being lost.
+                /// The catch block below will postpone finalization to runUpdatingThread,
+                /// reproducing the fault_probability_after_commit code path deterministically.
+                throw Coordination::Exception::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT,
+                    "Fault injected: forced unknown state after commit");
+            });
         }
         catch (const Coordination::Exception & e)
         {
@@ -460,8 +480,6 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         /// Do not allow exceptions between commit point and the and of transaction finalization
         /// (otherwise it may stuck in COMMITTING state holding snapshot).
         NOEXCEPT_SCOPE_STRICT({
-            /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
-            /// (overflow is possible in a several weeks/months of active usage)
             allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
         });
     }

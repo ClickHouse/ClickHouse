@@ -56,9 +56,32 @@ private:
 /// Converts Iceberg metadata paths to actual object storage paths.
 ///
 /// This is the ONLY way to go from a metadata path to a storage path.
+///
+/// `table_root` is the storage directory the metadata `location` field denotes. That is usually the
+/// queried path, but not when the queried path is an ancestor of it; `deriveTableRoot` tells which.
 class IcebergPathResolver
 {
 public:
+    /// What `deriveTableRoot` established about the queried path.
+    enum class RootRelation
+    {
+        Same,              /// The queried path is the table root.
+        AdoptedDescendant, /// The table root is a proper descendant of the queried path.
+        Unknown,           /// Not established; the queried path is used unchanged.
+    };
+
+    struct TableRootDerivation
+    {
+        String table_root;
+        RootRelation relation;
+    };
+
+    /// Locate the table root from where its metadata document actually sits, accepted only if the
+    /// location that document declares names the same directory. Returns `queried_path` unchanged
+    /// whenever the two cannot be shown to agree.
+    static TableRootDerivation
+    deriveTableRoot(const String & table_location, const String & queried_path, const String & metadata_file_key);
+
     IcebergPathResolver(String table_location_, String table_root_, String blob_storage_type_name_ = {}, String blob_storage_namespace_name_ = {})
         : table_location(std::move(table_location_))
         , table_root(std::move(table_root_))
@@ -74,12 +97,20 @@ public:
         trim_backward_slashes(table_location);
 
         /// Normalize: non-URI table_location should start with '/'
-        if (!table_location.empty() && table_location.find("://") == String::npos && table_location[0] != '/')
+        if (!table_location.empty() && !table_location.contains("://") && table_location[0] != '/')
             table_location = "/" + table_location;
     }
 
     /// Convert a metadata path to an actual storage path for I/O operations.
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
+
+    IcebergPathFromMetadata reverseResolve(const String & storage_path) const
+    {
+        if (storage_path.size() > table_root.size()
+            && storage_path.starts_with(table_root))
+            return IcebergPathFromMetadata::deserialize(table_location + storage_path.substr(table_root.size()));
+        return IcebergPathFromMetadata::deserialize(table_location + storage_path);
+    }
 
     /// Convert a metadata path to a catalog-compatible path.
     /// Done this way because backward compatibility reasons.

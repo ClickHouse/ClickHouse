@@ -3,6 +3,7 @@
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
+#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -90,7 +91,7 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const Poco::T
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
-    if (!lock.try_lock_for(std::chrono::milliseconds(acquire_timeout.totalMilliseconds())))
+    if (!lock.try_lock_for(saturatedMilliseconds(acquire_timeout.totalMilliseconds())))
         return {};
 
     if (is_dropped || is_detached)
@@ -120,17 +121,6 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return result;
-}
-
-Pipe IStorage::watch(
-    const Names & /*column_names*/,
-    const SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
-    QueryProcessingStage::Enum & /*processed_stage*/,
-    size_t /*max_block_size*/,
-    size_t /*num_streams*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", getName());
 }
 
 Pipe IStorage::read(
@@ -227,7 +217,8 @@ Pipe IStorage::alterPartition(
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
@@ -318,7 +309,8 @@ StorageID IStorage::getStorageID() const
 
 bool IStorage::supportsSampling() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->hasSamplingKey();
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return storage_metadata_snapshot->hasSamplingKey();
 }
 
 ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const
@@ -332,9 +324,9 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
     storage_id = new_table_id;
 }
 
-Names IStorage::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const
 {
-    Names result;
+    VectorWithMemoryTracking<String> result;
     auto getter = [](const auto & column) { return column.name; };
     const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     const auto & available_columns = metadata_snapshot->getColumns().getAllPhysical();
