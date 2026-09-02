@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
@@ -133,7 +135,8 @@ private:
         const TokenSource * source = nullptr;
         /// Next entry of info.offsets to decode.
         size_t next_segment = 0;
-        /// Decoded and remapped row ids of the current segment.
+        /// Decoded and remapped row ids of the current segment, or of the whole source
+        /// when it is decoded at once (see initCursor).
         /// The sort cursor points at this column once, in the task constructor.
         ColumnUInt32::MutablePtr column;
         SortCursorImpl impl;
@@ -150,7 +153,10 @@ private:
     };
 
     /// Points the cursor at a source and decodes its first postings.
+    /// A source with positions is decoded at once because positions are addressed by posting rank.
     void initCursor(PostingsMergeCursor & cursor, const TokenSource & source);
+    /// Decodes one posting list segment of the source and appends its row ids in pre-remap order.
+    void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids);
     /// Decodes the source's next segment; returns false when the source is exhausted.
     bool advanceCursorSegment(PostingsMergeCursor & cursor);
 
@@ -165,7 +171,8 @@ private:
     TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
 
     /// Reads the positions of one source and appends them to output_positions.
-    void readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info);
+    /// Positions are stored per posting rank, so they are paired with the row ids of the source in pre-remap order.
+    void readAndAppendPositions(const TokenSource & source, std::span<const UInt32> row_ids);
     /// Sorts and merges output_positions and serializes them to the positions stream.
     void flushPositions(TokenPostingsInfo & token_info);
 
@@ -210,9 +217,11 @@ private:
     /// Min-queue over the postings cursors of the current token; drained by every mergePostings call.
     SortingQueueBatch<PostingsSortCursor> postings_queue;
     /// Reusable buffer for position entries of one token read from a source.
-    PaddedPODArray<RoaringishEntry> position_entries_buffer;
+    PODArray<RoaringishEntry> position_entries_buffer;
     /// Positions accumulated for the current token (phrase query support).
     PaddedPODArray<RoaringishEntry> output_positions;
+    /// Reused across tokens to keep position decode allocation-free during merge.
+    TextIndexBlockedPositionsCodec::DecodeScratch blocked_decode_scratch;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

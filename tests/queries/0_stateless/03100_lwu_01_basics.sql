@@ -24,18 +24,18 @@ SET max_threads = 1;
 UPDATE t_shared SET c2 = c1 * c1 WHERE id % 2 = 0;
 
 SELECT * FROM t_shared ORDER BY id;
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
 
 DETACH TABLE t_shared;
 ATTACH TABLE t_shared;
 
 SELECT * FROM t_shared ORDER BY id;
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
 
 ALTER TABLE t_shared APPLY PATCHES SETTINGS mutations_sync = 2;
 
 SELECT * FROM t_shared ORDER BY id;
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
 
 SYSTEM FLUSH LOGS query_log;
 
