@@ -47,4 +47,7 @@ def test_system_logs_comment():
     node.query("system flush logs")
 
     comment = node.query("SELECT comment FROM system.tables WHERE name = 'query_log'")
-    assert comment == "test_comment\n"
+    assert (
+        "\n\n.description\ntest_comment\n\n.description\n"
+        "It is safe to truncate or drop this table at any time."
+    ) in comment
