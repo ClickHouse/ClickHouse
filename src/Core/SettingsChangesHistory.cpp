@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"query_plan_optimize_join_order_use_cd_a_conflict_detector", false, false, "New experimental setting to use the CD-A conflict detector for join reordering validity in the DPsub join order algorithm."},
+            {"query_plan_optimize_join_order_use_cd_c_conflict_detector", false, false, "New experimental setting to use the CD-C (correct and complete) conflict detector for join reordering validity in the DPsub join order algorithm."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
@@ -282,8 +284,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
-            {"query_plan_optimize_join_order_use_cd_a_conflict_detector", false, false, "New experimental setting to use the CD-A conflict detector for join reordering validity in the DPsub join order algorithm."},
-            {"query_plan_optimize_join_order_use_cd_c_conflict_detector", false, false, "New experimental setting to use the CD-C (correct and complete) conflict detector for join reordering validity in the DPsub join order algorithm."},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
