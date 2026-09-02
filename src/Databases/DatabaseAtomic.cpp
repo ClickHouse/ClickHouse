@@ -447,8 +447,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     catch (...)
     {
         db_disk->removeFileIfExists(table_metadata_tmp_path);
-        if (db_disk->existsDirectory(table_data_path))
-            db_disk->removeRecursive(table_data_path);
+        DatabaseCatalog::instance().removeTableDataFromDisk(table->getStorageID(), table);
         throw;
     }
     if (table->storesDataOnDisk())

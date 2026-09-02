@@ -270,6 +270,7 @@ static struct InitFiu
     REGULAR(sleep_in_logs_flush) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
+    ONCE(database_atomic_commit_create_table_failure) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
@@ -369,8 +370,7 @@ static struct InitFiu
     ONCE(hash_join_throw_after_data_release) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
-    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
-    ONCE(database_atomic_commit_create_table_failure)
+    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
 
 namespace FailPoints
 {

@@ -2512,7 +2512,7 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
 
 
 def test_commit_create_table_failure(started_cluster):
-    db_name = "test_commit_create_table_keeper_failure"
+    db_name = "test_commit_create_table_failure"
 
     main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
     dummy_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
