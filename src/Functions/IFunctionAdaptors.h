@@ -89,6 +89,8 @@ public:
 
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }
 
+    bool isExpensive() const override { return function->isExpensive(); }
+
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
     ComparisonOrderDomain getComparisonOrderDomain() const override
