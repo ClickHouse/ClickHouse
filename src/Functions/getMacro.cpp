@@ -34,10 +34,11 @@ private:
 
 public:
     static constexpr auto name = "getMacro";
-    /// The function returns the same values as `system.macros`, so it requires the same grant.
+    /// The function is `SELECT substitution FROM system.macros WHERE macro = ...`, so it requires the
+    /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "macros");
+        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "macros", Strings{"macro", "substitution"});
         return std::make_shared<FunctionGetMacro>(context->getMacros(), context->isDistributed());
     }
 

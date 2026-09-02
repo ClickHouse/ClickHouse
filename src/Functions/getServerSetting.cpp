@@ -27,10 +27,11 @@ class FunctionGetServerSetting final : public IFunction
 public:
     static constexpr auto name = "getServerSetting";
 
-    /// The function returns the same values as `system.server_settings`, so it requires the same grant.
+    /// The function is `SELECT value FROM system.server_settings WHERE name = ...`, so it requires the
+    /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "server_settings");
+        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "server_settings", Strings{"name", "value"});
         return std::make_shared<FunctionGetServerSetting>();
     }
 

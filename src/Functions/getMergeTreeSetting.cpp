@@ -28,10 +28,11 @@ class FunctionGetMergeTreeSetting final : public IFunction, WithContext
 public:
     static constexpr auto name = "getMergeTreeSetting";
 
-    /// The function returns the same values as `system.merge_tree_settings`, so it requires the same grant.
+    /// The function is `SELECT value FROM system.merge_tree_settings WHERE name = ...`, so it requires the
+    /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context_)
     {
-        context_->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "merge_tree_settings");
+        context_->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "merge_tree_settings", Strings{"name", "value"});
         return std::make_shared<FunctionGetMergeTreeSetting>(context_);
     }
     explicit FunctionGetMergeTreeSetting(ContextPtr context_) : WithContext(context_) {}
