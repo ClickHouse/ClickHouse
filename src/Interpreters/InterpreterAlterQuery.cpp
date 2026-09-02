@@ -569,8 +569,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// would invert the lock order of RENAME/EXCHANGE/DROP.
     }
 
-    /// Shared Catalog serializes DDL itself and its state application takes the same name guards,
-    /// so holding the guard across an internal execution can deadlock the state application.
+    /// Shared Catalog serializes DDL itself and its state application takes the same name guards, so
+    /// holding the guard across an internal execution can deadlock it. The flag cannot come from the
+    /// AST there, because SharedDatabaseCatalog re-executes the query from its text.
     bool no_ddl_lock = alter.no_ddl_lock || getContext()->getClientInfo().is_shared_catalog_internal;
     return runCommandSegments(segments, table, getContext(), no_ddl_lock);
 }
