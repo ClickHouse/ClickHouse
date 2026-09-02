@@ -631,15 +631,23 @@ TEST_F(AggregatorParallelPartitionMerge, TwoLevelPromotionForParallelMerge)
         return std::make_unique<Scenario>(makeHeader(uint64_type), std::move(params));
     };
 
-    /// 4 sources of 400 groups each (1600 summed, above the promotion floor of 1024), every key in
-    /// every source, distinct values per source so the uniqExact states have real content.
+    /// 4 sources of 400 groups each (1600 summed, above the group-count floor of 1024). Each key
+    /// carries 40 distinct values per source, so the single-level uniqExact states the gate
+    /// samples average ~40 elements - above the state-weight floor (16) - and the query promotes,
+    /// standing in for the heavy-state Q10/Q11 class.
     auto make_block = [](size_t source)
     {
-        std::vector<UInt64> keys;
-        keys.reserve(1200);
-        for (size_t i = 0; i < 1200; ++i)
-            keys.push_back(i % 400);
-        return makeUInt64Block(keys, source * 100000);
+        std::vector<Field> keys;
+        std::vector<Field> values;
+        keys.reserve(400 * 40);
+        values.reserve(400 * 40);
+        for (UInt64 key = 0; key < 400; ++key)
+            for (UInt64 r = 0; r < 40; ++r)
+            {
+                keys.emplace_back(key);
+                values.emplace_back(source * 1000000 + key * 40 + r);
+            }
+        return Columns{makeColumn(uint64_type, keys), makeColumn(uint64_type, values)};
     };
     std::vector<Columns> blocks{make_block(0), make_block(1), make_block(2), make_block(3)};
 
@@ -701,6 +709,49 @@ TEST_F(AggregatorParallelPartitionMerge, TwoLevelPromotionRespectsGroupsFloor)
     EXPECT_EQ(expected.size(), 200u);
 
     /// 4 x 200 = 800 groups summed: below the floor.
+    auto prepared = scenario.prepare(
+        {scenario.aggregate({blocks[0]}),
+         scenario.aggregate({blocks[1]}),
+         scenario.aggregate({blocks[2]}),
+         scenario.aggregate({blocks[3]})});
+    ASSERT_FALSE(prepared.empty());
+    EXPECT_FALSE(prepared.at(0)->isTwoLevel());
+    EXPECT_EQ(scenario.mergeSingleLevel(prepared), expected);
+}
+
+/// Above the group-count floor but with LIGHT per-key states (one distinct value per key per
+/// source), the state-weight component of the gate must keep the promotion off: the sampled mean
+/// state cardinality (~1) is below the floor (16). This is the Q22/Q04/Q05 class the gate retry
+/// added the component for. Results still identical, on the unchanged single-level path.
+TEST_F(AggregatorParallelPartitionMerge, TwoLevelPromotionRespectsStateWeightFloor)
+{
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("two_level_promotion_state_weight_test");
+    query_context->setSetting("max_threads", UInt64(4));
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto params = makeParams({"k"}, {makeAggregate("uniqExact", {"v"}, {uint64_type})});
+    params.max_threads = 4;
+    params.enable_multi_way_keyed_merge = true;
+    params.enable_two_level_promotion_for_parallel_merge = true;
+    Scenario scenario(makeHeader(uint64_type), std::move(params));
+
+    /// 400 groups per source (1600 summed, clears the 1024 group floor), but value == key so each
+    /// key holds exactly one distinct value per source - a weightless uniqExact state.
+    auto make_block = [](size_t source)
+    {
+        std::vector<UInt64> keys;
+        keys.reserve(1200);
+        for (size_t i = 0; i < 1200; ++i)
+            keys.push_back(i % 400);
+        return makeUInt64Block(keys, source * 100000);
+    };
+    std::vector<Columns> blocks{make_block(0), make_block(1), make_block(2), make_block(3)};
+
+    auto expected = scenario.referenceOf(blocks);
+    EXPECT_EQ(expected.size(), 400u);
+
     auto prepared = scenario.prepare(
         {scenario.aggregate({blocks[0]}),
          scenario.aggregate({blocks[1]}),

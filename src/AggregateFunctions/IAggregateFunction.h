@@ -261,6 +261,14 @@ public:
         std::atomic<bool> & /*is_cancelled*/,
         Arena * /*arena*/) const;
 
+    /// For a function that supports the parallel merge (isAbleToParallelizeMerge()), the number of
+    /// elements in the parallelizable state at `place` (the uniqExact set size). Read-only; used
+    /// only by the merge-time two-level promotion gate to estimate per-key state weight cheaply
+    /// (see Aggregator::sampleParallelizableStateMeanCardinality). 0 for functions that carry no
+    /// such state, so combinator-wrapped forms that do not override it read as weightless and keep
+    /// the merge off the promoted path - the safe direction.
+    virtual size_t parallelizeMergeStateCardinality(ConstAggregateDataPtr /*place*/) const { return 0; }
+
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;

@@ -437,6 +437,13 @@ public:
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
+    /// Mean number of elements in the parallelizable aggregate's single-level states, sampled over
+    /// up to a small cap of cells across the (all single-level) variants. The per-key state-weight
+    /// discriminator of the merge-time two-level promotion gate; reads only cells already owned
+    /// before the merge, so it costs microseconds. `offset` is the state's offset inside the row.
+    double sampleParallelizableStateMeanCardinality(
+        const ManyAggregatedDataVariants & non_empty_data, const IAggregateFunction & aggregate_function, size_t offset) const;
+
     /// Whether the variants' single-level method can be merged in hash partitions
     /// (`mergeSingleLevelPartitionAndConvertToChunk`): every method with a two-level counterpart, whose
     /// bucket function defines the partition partition.

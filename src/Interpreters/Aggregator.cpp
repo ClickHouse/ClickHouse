@@ -4828,6 +4828,47 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     }
 }
 
+double Aggregator::sampleParallelizableStateMeanCardinality(
+    const ManyAggregatedDataVariants & non_empty_data, const IAggregateFunction & aggregate_function, size_t offset) const
+{
+    /// A small cap: a few dozen cells give a stable mean for the uniform-weight queries the gate
+    /// targets, and forEachMapped breaks as soon as the cap is reached (hash order makes the first
+    /// cells an effectively random sample of keys).
+    static constexpr size_t max_state_samples = 64;
+    size_t samples = 0;
+    size_t sum_cardinality = 0;
+
+    auto sample_table = [&](auto & table)
+    {
+        table.forEachMapped(
+            [&](AggregateDataPtr place) -> bool
+            {
+                sum_cardinality += aggregate_function.parallelizeMergeStateCardinality(place + offset);
+                return ++samples < max_state_samples;
+            });
+    };
+
+    for (const auto & variant : non_empty_data)
+    {
+        if (samples >= max_state_samples)
+            break;
+
+        switch (variant->type)
+        {
+#define M(NAME) \
+            case AggregatedDataVariants::Type::NAME: \
+                sample_table(variant->NAME->data); \
+                break;
+            APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+            default:
+                break;
+        }
+    }
+
+    return samples ? static_cast<double>(sum_cardinality) / static_cast<double>(samples) : 0.0;
+}
+
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const
 {
@@ -4881,6 +4922,16 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     /// 1024 groups summed across the variants is a tunable, not a measured constant: it only
     /// keeps trivial merges, whose 256-bucket bookkeeping would cost more than the merge itself,
     /// off the promoted path.
+    ///
+    /// Gate retry (state-weight component): the group-count floor alone still promoted
+    /// COUNT(DISTINCT)-bearing queries with LIGHT per-key states (few distinct values per key),
+    /// where the wave pays the conversion + 256-way bucketed merge for almost no work and the
+    /// promotion regressed the query (measured: Q22 +4.96%). So the gate also requires the
+    /// parallelizable aggregate's per-key states to be heavy on average - the mean single-level
+    /// state cardinality, sampled cheaply from cells already owned pre-merge, must clear a floor.
+    /// Heavy-state queries (Q10/Q11 class, hundreds of distinct per key) clear it and keep the
+    /// win; light-state ones (Q22/Q04/Q05 class, single digits per key) do not and are left on
+    /// the unchanged merge path.
     if (!has_at_least_one_two_level
         && params.enable_two_level_promotion_for_parallel_merge
         && params.enable_multi_way_keyed_merge
@@ -4888,10 +4939,15 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
         && non_empty_data.size() >= 3)
     {
         static constexpr size_t min_total_groups_for_promotion = 1024;
+        static constexpr double min_mean_state_cardinality_for_promotion = 16;
 
-        bool any_parallelizable = false;
-        for (size_t i = 0; i < params.aggregates_size && !any_parallelizable; ++i)
-            any_parallelizable = aggregate_functions[i]->isAbleToParallelizeMerge();
+        size_t parallelizable_index = params.aggregates_size;
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            if (aggregate_functions[i]->isAbleToParallelizeMerge())
+            {
+                parallelizable_index = i;
+                break;
+            }
 
         /// All variants are single-level here (no two-level one was found above), but the method
         /// may have no two-level form at all (e.g. the fixed-array key8/key16 methods).
@@ -4903,8 +4959,30 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             total_groups += variant->sizeWithoutOverflowRow();
         }
 
-        if (any_parallelizable && all_convertible && total_groups >= min_total_groups_for_promotion)
-            has_at_least_one_two_level = true;
+        if (parallelizable_index < params.aggregates_size && all_convertible
+            && total_groups >= min_total_groups_for_promotion)
+        {
+            const double mean_state_cardinality = sampleParallelizableStateMeanCardinality(
+                non_empty_data, *aggregate_functions[parallelizable_index],
+                offsets_of_aggregate_states[parallelizable_index]);
+
+            /// Diagnostic (byte-neutral when the flag is off): the gate inputs and verdict, for
+            /// tuning the two floors against real workloads.
+            if (params.log_per_bucket_merge_timings)
+                LOG_DEBUG(
+                    log,
+                    "TwoLevelPromotionGate: sources={} total_groups={} mean_state_cardinality={:.1f} "
+                    "groups_floor={} cardinality_floor={} promote={}",
+                    non_empty_data.size(),
+                    total_groups,
+                    mean_state_cardinality,
+                    min_total_groups_for_promotion,
+                    min_mean_state_cardinality_for_promotion,
+                    mean_state_cardinality >= min_mean_state_cardinality_for_promotion);
+
+            if (mean_state_cardinality >= min_mean_state_cardinality_for_promotion)
+                has_at_least_one_two_level = true;
+        }
     }
 
     if (has_at_least_one_two_level)
