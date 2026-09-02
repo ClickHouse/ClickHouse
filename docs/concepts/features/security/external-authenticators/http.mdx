@@ -175,7 +175,10 @@ On HTTP `200`, the response body may be empty (equivalent to `{}`) or a JSON obj
   authentication attempt fails. Roles are session-scoped: they are applied to the
   authenticated session and are not persisted as grants on the materialized user, so
   two simultaneous sessions of the same user may have different role sets. An empty
-  delegation configuration denies every returned role.
+  delegation configuration denies every returned role. When a fresh authenticated session
+  is created, the returned roles supply their privileges, row policies, role hierarchy and
+  quotas, and they also participate in settings-profile initialization, so their
+  role-attached settings values and constraints become creation-time session state.
 - `settings` — session settings, applied like the existing `IDENTIFIED WITH HTTP`
   response settings, subject to the usual setting constraints. Every name must be either
   a built-in server setting or a custom setting whose name matches
@@ -253,6 +256,17 @@ this directory whose authentication returned roles therefore fails with `NOT_IMP
 Use `SQL SECURITY INVOKER` for views. Materialized views default to `SQL SECURITY DEFINER`
 (see `default_materialized_view_sql_security`) and must be created with an explicit
 `SQL SECURITY NONE` by such users, which requires the `ALLOW_SQL_SECURITY_NONE` privilege.
+
+### Propagated roles {#http-external-user-directory-propagated-roles}
+
+Distributed and interserver queries, and deferred execution such as asynchronous inserts,
+propagate the session's effective role set through the existing external-role machinery, so
+role-based authorization (privileges, row policies, role hierarchy, quotas) is preserved on
+the remote or deferred side. The propagated current-role list is not treated as fresh
+authentication-time input: it does not rebuild settings-profile values or constraints there.
+Execution settings continue to be propagated as before; settings-profile provenance is not.
+Likewise, `SET ROLE` inside a session does not rebuild that session's creation-time
+settings-profile state.
 
 ### Established-session refresh and revocation {#http-external-user-directory-revocation}
 

@@ -1339,3 +1339,57 @@ def test_helper_request_counts(started_cluster):
     assert (
         helper_request_count(instance, "conn_reset_user") - before == 3
     ), "a transport failure must be retried exactly max_tries times"
+
+
+def test_distributed_query_does_not_rebuild_profiles_from_propagated_roles(
+    started_cluster,
+):
+    # Regression for the provenance rule. An ordinary user gets a NON-default role whose
+    # profile caps max_threads at 4 and sets max_rows_to_read_leaf = 1. The session is
+    # created without the role, so without that profile; `SET ROLE` inside the session
+    # enables the role for authorization but does not rebuild the session's creation-time
+    # profile state, so `SET max_threads = 16` succeeds. A Distributed query then pushes the
+    # current role to node2 for authorization only. If node2 treated the propagated role as
+    # fresh authentication-time profile input, it would install the role's profile there:
+    # max_rows_to_read_leaf = 1 (a value the initiator never sends, because it is unchanged
+    # on the initiator) is enforced on node2's own read of two rows and fails the query.
+    # (A MAX constraint alone cannot detect this: a secondary query's propagated settings are
+    # clamped quietly, not rejected.)
+    for run in [admin, admin2]:
+        run("CREATE USER IF NOT EXISTS replay_user IDENTIFIED BY 'replay_password'")
+        run("CREATE ROLE IF NOT EXISTS replay_constraint_role")
+        run(
+            "CREATE SETTINGS PROFILE IF NOT EXISTS replay_cap_profile "
+            "SETTINGS max_threads MAX 4, max_rows_to_read_leaf = 1"
+        )
+        run("ALTER ROLE replay_constraint_role ADD PROFILES 'replay_cap_profile'")
+        run("GRANT SELECT ON default.* TO replay_constraint_role")
+        run("GRANT replay_constraint_role TO replay_user")
+        run("ALTER USER replay_user DEFAULT ROLE NONE")
+        run(
+            "CREATE TABLE IF NOT EXISTS default.replay_local (x UInt64) ENGINE = MergeTree ORDER BY x"
+        )
+    admin2("INSERT INTO default.replay_local VALUES (7), (8)")
+    admin(
+        "CREATE TABLE IF NOT EXISTS default.replay_distributed AS default.replay_local "
+        "ENGINE = Distributed(test_cluster, default, replay_local)"
+    )
+    session = "sess_replay_constraint"
+
+    def in_session(sql):
+        return instance.http_query(
+            sql,
+            user="replay_user",
+            password="replay_password",
+            params={"session_id": session},
+        )
+
+    in_session("SELECT 1")  # creates the session without the role's constraint
+    in_session("SET ROLE replay_constraint_role")
+    in_session(
+        "SET max_threads = 16"
+    )  # must succeed: SET ROLE does not rebuild constraints
+    assert in_session("SELECT getSetting('max_threads')").strip() == "16"
+    # sum(x), not count(): a trivial count is answered from part metadata without
+    # reading rows, so the leaf read limit would never be consulted.
+    assert in_session("SELECT sum(x) FROM default.replay_distributed").strip() == "15"
