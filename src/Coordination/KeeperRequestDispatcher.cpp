@@ -97,29 +97,41 @@ static void startReadWaitForWriteSpan(const KeeperRequestForSession & read)
     read.request->spans.maybeInitialize(KeeperSpan::ReadWaitForWrite, read.request->tracing_context.get());
 }
 
-static void finalizeReadWaitForWriteSpans(
-    KeeperRequestsForSessions & reads,
-    OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
-    const String & error_message = {})
+static std::vector<OpenTelemetry::SpanAttribute> readWaitForWriteSpanAttributes(const KeeperRequestForSession & read)
+{
+    return std::vector<OpenTelemetry::SpanAttribute>{
+        {"keeper.operation", Coordination::opNumToString(read.request->getOpNum())},
+        {"keeper.session_id", read.session_id},
+        {"keeper.xid", read.request->xid},
+    };
+}
+
+/// The wait ended because the write the read depends on committed, so it is a sample of what
+/// `keeper_read_wait_for_write_time_milliseconds` measures.
+static void finalizeReadWaitForWriteSpans(KeeperRequestsForSessions & reads)
 {
     for (auto & read : reads)
     {
-        /// Reads that were answered without waiting never started the span.
+        /// Reads that were answered without waiting for a write never started the span.
         if (!read.request->spans.isStarted(KeeperSpan::ReadWaitForWrite))
             continue;
 
         read.request->spans.maybeFinalize(
-            KeeperSpan::ReadWaitForWrite,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(read.request->getOpNum())},
-                    {"keeper.session_id", read.session_id},
-                    {"keeper.xid", read.request->xid},
-                };
-            },
-            status,
-            error_message);
+            KeeperSpan::ReadWaitForWrite, [&] { return readWaitForWriteSpanAttributes(read); });
+    }
+}
+
+/// The wait was abandoned: the write the read depends on never committed. The trace span gets an
+/// error, but the duration is deliberately not observed - see `maybeAbandon`.
+static void abandonReadWaitForWriteSpans(KeeperRequestsForSessions & reads, const String & error_message)
+{
+    for (auto & read : reads)
+    {
+        if (!read.request->spans.isStarted(KeeperSpan::ReadWaitForWrite))
+            continue;
+
+        read.request->spans.maybeAbandon(
+            KeeperSpan::ReadWaitForWrite, [&] { return readWaitForWriteSpanAttributes(read); }, error_message);
     }
 }
 
@@ -1013,7 +1025,7 @@ void KeeperRequestDispatcher::dropInFlightRequests()
                 batch.intermediate_reads[batch.intermediate_reads_idx].first == batch.committed_requests)
             {
                 auto & dropped_reads = batch.intermediate_reads[batch.intermediate_reads_idx].second;
-                finalizeReadWaitForWriteSpans(dropped_reads, OpenTelemetry::SpanStatus::ERROR, "Connection loss");
+                abandonReadWaitForWriteSpans(dropped_reads, "Connection loss");
                 for (const auto & read_request : dropped_reads)
                 {
                     reads_dropped += 1;
@@ -1028,7 +1040,7 @@ void KeeperRequestDispatcher::dropInFlightRequests()
             auto reads = batch.late_reads.takeAndFinishIfEmpty();
             if (reads.empty())
                 break;
-            finalizeReadWaitForWriteSpans(reads, OpenTelemetry::SpanStatus::ERROR, "Connection loss");
+            abandonReadWaitForWriteSpans(reads, "Connection loss");
             for (const auto & read_request : reads)
             {
                 reads_dropped += 1;
@@ -1137,6 +1149,11 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         /// dispatchThread that subsequent reads can be executed right there.
         /// (Alternatively, we could make dispatchThread block waiting for onCommit to finish reading,
         ///  but that's just worse.)
+        /// Reads parked from here on are only kept in order behind the reads we are about to
+        /// execute; they are not waiting for an uncommitted write, so they must not be recorded in
+        /// `keeper_read_wait_for_write_time_milliseconds`.
+        batch.late_reads.markWritesCommitted();
+
         while (true)
         {
             auto reads = batch.late_reads.takeAndFinishIfEmpty();

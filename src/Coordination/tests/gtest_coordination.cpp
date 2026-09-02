@@ -30,6 +30,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/HistogramMetrics.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -1419,6 +1421,18 @@ public:
     static size_t headIdx(const KeeperRequestDispatcher & dispatcher) { return dispatcher.head_idx.load(); }
 
     static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
+
+    /// Parks a read in the batch's late_reads, the way dispatchThread's case (2) does.
+    static bool addLateRead(KeeperRequestDispatcher & dispatcher, size_t batch_idx, KeeperRequestForSession & request)
+    {
+        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads.add(request);
+    }
+
+    /// What onCommit does once the whole batch has committed, before it drains the parked reads.
+    static void markWritesCommitted(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
+    {
+        dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads.markWritesCommitted();
+    }
 };
 
 class KeeperRequestDispatcherOldTestAccessor
@@ -1539,6 +1553,36 @@ struct DispatcherFixture
         dispatcher = std::make_unique<DB::KeeperRequestDispatcher>(server.get(), router());
     }
 };
+
+/// Total number of samples in a histogram metric, summed over its buckets (the counters are
+/// per-bucket, not cumulative), so a test can assert whether an observation happened at all.
+UInt64 histogramSampleCount(const String & name)
+{
+    UInt64 total = 0;
+    HistogramMetrics::Factory::instance().forEachFamily(
+        [&](const HistogramMetrics::MetricFamily & family)
+        {
+            if (family.getName() != name)
+                return;
+            family.forEachMetric(
+                [&](const HistogramMetrics::LabelValues &, const HistogramMetrics::Metric & metric)
+                {
+                    for (size_t i = 0; i <= family.getBuckets().size(); ++i)
+                        total += metric.getCounter(i);
+                });
+        });
+    return total;
+}
+
+DB::KeeperRequestForSession makeReadRequest(int64_t session_id, const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperGetRequest>();
+    request->path = path;
+    DB::KeeperRequestForSession request_for_session;
+    request_for_session.request = request;
+    request_for_session.session_id = session_id;
+    return request_for_session;
+}
 
 DB::KeeperRequestForSession makeSessionIDRequest(int32_t server_id, int64_t internal_id)
 {
@@ -1883,3 +1927,58 @@ TEST(KeeperDispatcher, InterruptibleSleepReturnsAtOnceForNonPositivePeriod)
 }
 
 #endif
+
+
+/// The histogram means "time a read waited for the write it depends on". A read parked in
+/// `LateReads` while the batch still has uncommitted writes is such a wait; a read parked after the
+/// batch has fully committed is only being kept in order behind the reads that are already
+/// executing, so it must not become a sample.
+TEST(KeeperDispatcher, ReadWaitForWriteOnlyCountsWaitsForWrites)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 21));
+
+    /// Parked while the write is still in flight: this is a wait for a write.
+    auto waiting_read = makeReadRequest(/*session_id=*/ 5, "/waiting");
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, waiting_read));
+    EXPECT_TRUE(waiting_read.request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
+
+    /// Parked after the batch committed, in the window where onCommit re-opens the container between
+    /// `takeAndFinishIfEmpty` iterations.
+    RequestDispatcherAccessor::markWritesCommitted(dispatcher, batch_idx);
+    auto ordered_read = makeReadRequest(/*session_id=*/ 5, "/ordered");
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, ordered_read));
+    EXPECT_FALSE(ordered_read.request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite))
+        << "a read parked after the batch committed was counted as waiting for a write";
+
+    /// A started span is the one that gets observed, which is what makes the distinction above matter.
+    UInt64 before = histogramSampleCount("keeper_read_wait_for_write_time_milliseconds");
+    waiting_read.request->spans.maybeFinalize(
+        DB::KeeperSpan::ReadWaitForWrite, [] { return std::vector<OpenTelemetry::SpanAttribute>{}; });
+    EXPECT_EQ(histogramSampleCount("keeper_read_wait_for_write_time_milliseconds"), before + 1);
+}
+
+/// A read dropped because the append stream broke never saw its write commit, so its wait must not
+/// end up in the histogram - otherwise a broken stream reads as `wait_for_write` activity.
+TEST(KeeperDispatcher, ReadWaitForWriteNotObservedForDroppedReads)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 23));
+
+    auto read = makeReadRequest(/*session_id=*/ 7, "/dropped");
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read));
+    ASSERT_TRUE(read.request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
+
+    UInt64 before = histogramSampleCount("keeper_read_wait_for_write_time_milliseconds");
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+
+    EXPECT_EQ(histogramSampleCount("keeper_read_wait_for_write_time_milliseconds"), before)
+        << "an abandoned wait was recorded in keeper_read_wait_for_write_time_milliseconds";
+    EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the dropped batch was not popped";
+}

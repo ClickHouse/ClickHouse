@@ -141,13 +141,21 @@ private:
             if (!lock())
                 return false;
             /// The read is parked here until the batch commits; start measuring that wait. Done
-            /// under the lock because only the successful path parks the request.
-            request_for_session.request->spans.maybeInitialize(
-                KeeperSpan::ReadWaitForWrite, request_for_session.request->tracing_context.get());
+            /// under the lock because only the successful path parks the request, and because the
+            /// `writes_committed` check must see the state the batch is in at the moment of parking.
+            if (!writes_committed.load(std::memory_order_relaxed))
+                request_for_session.request->spans.maybeInitialize(
+                    KeeperSpan::ReadWaitForWrite, request_for_session.request->tracing_context.get());
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;
         }
+
+        /// Called by onCommit once every write of the batch has committed, before it starts draining
+        /// the parked reads. From this point on the container is only used to keep same-session reads
+        /// ordered behind the reads that are already executing, so a read parked here is not waiting
+        /// for an uncommitted write and must not be counted as one.
+        void markWritesCommitted() { writes_committed.store(true, std::memory_order_relaxed); }
 
         /// Moves reads out of the container.
         /// If it's empty, changes status to Finished, otherwise back to Available.
@@ -180,6 +188,7 @@ private:
         {
             chassert(reads.empty());
             reads = std::move(initial_late_reads);
+            writes_committed.store(false, std::memory_order_relaxed);
             Status s = status.exchange(Status::Available);
             chassert(s == Status::Finished);
         }
@@ -197,6 +206,8 @@ private:
         };
 
         std::atomic<Status> status {Status::Finished};
+        /// See markWritesCommitted.
+        std::atomic<bool> writes_committed {false};
         KeeperRequestsForSessions reads;
 
         bool lock()
