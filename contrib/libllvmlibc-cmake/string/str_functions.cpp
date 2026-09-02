@@ -3,9 +3,11 @@
 // LLVM-libc's are byte loops). glibc uses EVEX/AVX2 assembly for both, and the
 // CSV parser showed musl's word-at-a-time `memchr` taking twice the samples.
 //
-// Vector loads are done on 32-byte-aligned addresses only, so they never cross
-// a page boundary and cannot fault even when they reach past the buffer (the
-// bytes outside [s, s + n) are masked off before the result is used). Not built
+// Vector loads are done on aligned addresses only, and the unrolled loop on
+// addresses aligned to its whole stride, so no load ever crosses a page
+// boundary: reading past the buffer or past the first match stays inside a
+// page that is known to be mapped, and the bytes outside [s, s + n) are masked
+// off before the result is used. Not built
 // under sanitizers: their interceptors define strong `memchr`/`strlen` and the
 // wrapped libc versions carry the range checks.
 
@@ -110,6 +112,18 @@ extern "C" void *memchr(const void *s, int c, size_t n) noexcept {
     return const_cast<char *>(p + __builtin_ctzll(m));
 
   a += VEC;
+  // Callers may pass an `n` that overstates the buffer and rely on the search
+  // stopping at the first match (musl's strnlen passes the caller's limit,
+  // realpath's is PATH_MAX past a shorter string), so `end` does not bound the
+  // readable memory. Re-align to the 4 * VEC stride before the unrolled loop:
+  // a 4 * VEC-aligned group never crosses a page, so it is only ever read
+  // beyond the match within the page that holds the match.
+  for (; a + VEC <= end && (reinterpret_cast<uintptr_t>(a) & (4 * VEC - 1));
+       a += VEC) {
+    m = eq_mask(a, needle);
+    if (m)
+      return const_cast<char *>(a + __builtin_ctzll(m));
+  }
   for (; a + 4 * VEC <= end; a += 4 * VEC)
     if (const char *r = scan4(a, needle))
       return const_cast<char *>(r);
