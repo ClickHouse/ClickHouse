@@ -576,3 +576,97 @@ def test_totally_unknown_user_fails(started_cluster):
     assert "Authentication failed" in instance.query_and_get_error(
         "SELECT 1", user="ghost_user", password=GOOD_PASSWORD
     )
+
+
+def test_max_cached_users_bound(started_cluster):
+    # node3's directory allows at most 3 materialized users (soft bound; this test is
+    # sequential, so no overshoot occurs). One slot is taken by shadowed_user if an
+    # earlier test materialized it; count from system.users first and fill up to the
+    # bound deterministically.
+    admin3 = lambda q: instance3.query(q, user="admin_user", password="admin_password")
+    already = int(
+        admin3("SELECT count() FROM system.users WHERE storage = 'http'").strip()
+    )
+    for i in range(3 - already):
+        assert (
+            instance3.query(
+                "SELECT 1", user=f"cache_user_{i}", password=GOOD_PASSWORD
+            ).strip()
+            == "1"
+        )
+    # The next new username is rejected...
+    assert "Authentication failed" in instance3.query_and_get_error(
+        "SELECT 1", user="cache_user_9", password=GOOD_PASSWORD
+    )
+    # ...but an already materialized user keeps authenticating even at the bound.
+    a_cached_user = admin3(
+        "SELECT name FROM system.users WHERE storage = 'http' LIMIT 1"
+    ).strip()
+    assert (
+        instance3.query("SELECT 1", user=a_cached_user, password=GOOD_PASSWORD).strip()
+        == "1"
+    )
+    # Sequentially, the cache holds exactly the bound (no assertion of strictness under
+    # concurrency — the bound is documented as approximate).
+    assert (
+        int(admin3("SELECT count() FROM system.users WHERE storage = 'http'").strip())
+        == 3
+    )
+
+
+def test_concurrent_first_authentication_converges(started_cluster):
+    import threading
+
+    results = []
+
+    def login():
+        results.append(
+            instance.query(
+                "SELECT currentUser()",
+                user="http_user_concurrent",
+                password=GOOD_PASSWORD,
+            ).strip()
+        )
+
+    threads = [threading.Thread(target=login) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results == ["http_user_concurrent"] * 8
+    # Exactly one cached entity.
+    assert (
+        admin(
+            "SELECT count() FROM system.users WHERE name = 'http_user_concurrent'"
+        ).strip()
+        == "1"
+    )
+
+
+def test_distinct_users_authenticate_concurrently(started_cluster):
+    # Proves remote HTTP I/O is NOT serialized by a directory-wide lock: N distinct
+    # usernames authenticate at once, and the mock's handler barriers all N requests
+    # before releasing any. With a directory-wide lock the second request never reaches
+    # the mock while the first is blocked, so the barrier never fills and the mock times
+    # out (requests fail). Without such a lock, all N arrive and the barrier releases.
+    import threading
+
+    n = 4
+    results = []
+
+    def login(i):
+        try:
+            results.append(
+                instance.query(
+                    "SELECT 1", user=f"barrier_user_{i}", password=GOOD_PASSWORD
+                ).strip()
+            )
+        except Exception as e:  # noqa: BLE001
+            results.append(f"ERR:{e}")
+
+    threads = [threading.Thread(target=login, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results == ["1"] * n, results

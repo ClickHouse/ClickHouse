@@ -1,8 +1,16 @@
 import base64
 import http.server
 import json
+import threading
 
 GOOD_PASSWORD = "good_password"
+
+# Barriers all N concurrent barrier_user_* requests before replying 200 to any of them.
+# Proves the http directory does not serialize remote I/O behind a directory-wide lock:
+# with such a lock, the second request would never reach the mock while the first is
+# blocked authenticating, the barrier would never fill, and it would time out (503).
+BARRIER_PARTIES = 4
+CONCURRENT_BARRIER = threading.Barrier(BARRIER_PARTIES, timeout=10)
 
 # Usernames this server has been asked to authenticate — used by the precedence tests to
 # prove the http directory actually reached the server (rather than being bypassed by a
@@ -39,7 +47,9 @@ MAIN_USERS = {
     # Mixed set: reader exists on both nodes, only_node1_role only on `node`. Proves the
     # receiver fails closed on a PARTIALLY-resolvable set, not just an all-missing one.
     "halfcluster_user": {"body": {"roles": ["reader", "only_node1_role"]}},
+    "http_user_concurrent": {"body": {"roles": ["reader"]}},
 }
+MAIN_USERS.update({f"barrier_user_{i}": {"body": {}} for i in range(BARRIER_PARTIES)})
 
 # dual_user: the returned role set depends on the password, to simulate
 # membership changes between authentications of the same username.
@@ -93,6 +103,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if password != GOOD_PASSWORD:
             return self._reply(401)
         entry = users[user]
+        if user.startswith("barrier_user_"):
+            try:
+                CONCURRENT_BARRIER.wait()
+            except threading.BrokenBarrierError:
+                return self._reply(503)
         return self._reply(entry.get("status", 200), entry.get("body", ""))
 
     def do_GET(self):
