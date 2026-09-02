@@ -198,7 +198,6 @@ private:
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
                     .etag = object.GetETag(),
-                    .version_id = {},
                     .tags = {},
                     .attributes = {},
                 };
@@ -379,16 +378,16 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
             break;
 
         for (const auto & object : objects)
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
-                object.GetKey(),
-                ObjectMetadata{
-                    .size_bytes = static_cast<uint64_t>(object.GetSize()),
-                    .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    .etag = object.GetETag(),
-                    .version_id = {},
-                    .tags = {},
-                    .attributes = {},
-                }));
+            children.emplace_back(
+                std::make_shared<RelativePathWithMetadata>(
+                    object.GetKey(),
+                    ObjectMetadata{
+                        .size_bytes = static_cast<uint64_t>(object.GetSize()),
+                        .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                        .etag = object.GetETag(),
+                        .tags = {},
+                        .attributes = {},
+                    }));
 
         if (max_keys)
         {
@@ -523,7 +522,6 @@ void S3ObjectStorage::tagObjects(const StoredObjects & objects, const std::strin
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 {
-    auto settings_ptr = s3_settings.get();
     auto object_info = S3::getObjectInfoIfExists(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
@@ -655,11 +653,13 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
     auto source_info = S3::getObjectInfo(
-        *current_client, uri.bucket, object_from.remote_path, /*version_id=*/ {}, /*with_metadata=*/ false);
-    /// The moved source is deleted afterwards, so its tags must really be read or the move must
-    /// fail; HeadObject's TagCount can be hidden from least-privilege credentials, so ask directly.
-    if (!write_settings.object_storage_write_if_none_match.empty() && write_settings.object_storage_copy_preserve_source_tags)
-        source_info.tags = S3::getObjectTags(*current_client, uri.bucket, object_from.remote_path);
+        *current_client,
+        uri.bucket,
+        object_from.remote_path,
+        /*version_id=*/{},
+        /*with_metadata=*/false,
+        /*with_tags=*/!write_settings.object_storage_write_if_none_match.empty()
+            && write_settings.object_storage_copy_preserve_source_tags);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
@@ -675,17 +675,15 @@ void S3ObjectStorage::copyObject( // NOLINT
         read_settings_to_use,
         BlobStorageLogWriter::create(disk_name),
         scheduler,
-        [&, this]{ return readObject(object_from, read_settings_to_use);},
+        [&, this] { return readObject(object_from, read_settings_to_use); },
         object_to_attributes,
-        /// Lets a caller demand that the copy fail rather than overwrite an existing destination.
-        write_settings.object_storage_write_if_none_match,
-        /// That demand keeps the copy off CopyObject, which would have carried these over itself.
-        write_settings.object_storage_write_if_none_match.empty()
-            ? std::optional<S3::ObjectHeaders>{}
-            : std::optional<S3::ObjectHeaders>{source_info.headers},
-        write_settings.object_storage_write_if_none_match.empty()
-            ? std::optional<ObjectAttributes>{}
-            : std::optional<ObjectAttributes>{source_info.tags});
+        S3CopyFileSettings{
+            .if_none_match = write_settings.object_storage_write_if_none_match,
+            .source_headers = write_settings.object_storage_write_if_none_match.empty()
+                ? std::optional<S3::ObjectHeaders>{}
+                : std::optional<S3::ObjectHeaders>{source_info.headers},
+            .source_tags = write_settings.object_storage_write_if_none_match.empty() ? std::optional<ObjectAttributes>{}
+                                                                                     : std::optional<ObjectAttributes>{source_info.tags}});
 }
 
 void S3ObjectStorage::shutdown()

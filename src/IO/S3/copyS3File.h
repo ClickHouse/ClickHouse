@@ -21,6 +21,13 @@ class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
+struct S3CopyFileSettings
+{
+    String if_none_match;
+    std::optional<S3::ObjectHeaders> source_headers;
+    std::optional<ObjectAttributes> source_tags;
+};
+
 /// Builds the S3 upload request body for the part [offset, offset + size) of the source.
 /// The part is read fully into memory up front, so the returned body has no failable inner
 /// source buffer: the AWS SDK can rewind (clear(); seekg(0)) and resend the body on a retry
@@ -53,14 +60,7 @@ void copyS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
-    /// Precondition on the destination for the request that makes the object visible. Pass "*" to
-    /// make the copy fail with PreconditionFailed instead of overwriting an existing object.
-    const String & dest_if_none_match = {},
-    /// Source headers to restate when the copy cannot go through CopyObject (which would have
-    /// preserved them itself), e.g. because `dest_if_none_match` forces the buffered upload.
-    const std::optional<S3::ObjectHeaders> & source_headers = std::nullopt,
-    /// The source tag set, restated for the same reason: CopyObject copies tags by default.
-    const std::optional<ObjectAttributes> & source_tags = std::nullopt);
+    const S3CopyFileSettings & copy_settings = {});
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -101,13 +101,7 @@ void copyDataToS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
-    /// See copyS3File().
-    const String & dest_if_none_match = {},
-    /// See copyS3File().
-    const std::optional<S3::ObjectHeaders> & source_headers = std::nullopt,
-    /// See copyS3File().
-    const std::optional<ObjectAttributes> & source_tags = std::nullopt);
-
+    const S3CopyFileSettings & copy_settings = {});
 }
 
 #endif

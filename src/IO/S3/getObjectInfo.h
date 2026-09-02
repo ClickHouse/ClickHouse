@@ -10,9 +10,7 @@
 namespace DB::S3
 {
 
-/// Headers a server-side CopyObject carries over on its own, but a read-write re-upload has to
-/// restate: without them PutObject/CreateMultipartUpload would leave the destination as plain
-/// `binary/octet-stream` with no encoding, language or caching directive.
+/// Headers to restate when a guarded copy uses a read-write upload.
 struct ObjectHeaders
 {
     String content_type;

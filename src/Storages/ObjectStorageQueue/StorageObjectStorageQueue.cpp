@@ -1394,7 +1394,6 @@ bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, Ob
 {
     checkNormalizedSetting(name);
 
-    /// Engine-gated like its CREATE-time check, so `alterable` and ALTER agree on every engine.
     if (storage_type != ObjectStorageType::S3 && name == "after_processing_move_preserve_tags")
         return false;
 
@@ -1484,15 +1483,6 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
                     setting.name, magic_enum::enum_name(mode), getName());
-            }
-
-            /// Same contract as at CREATE: only the S3 move path reads and restates tags.
-            if (setting.name == "after_processing_move_preserve_tags" && type != ObjectStorageType::S3)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting `after_processing_move_preserve_tags` is supported only for S3 object storage, not for {}",
-                    type);
             }
 
             /// Some settings affect the work of background processing thread,
@@ -1614,15 +1604,6 @@ void StorageObjectStorageQueue::alter(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
                     setting.name, magic_enum::enum_name(mode), getName());
-            }
-
-            /// Same contract as at CREATE: only the S3 move path reads and restates tags.
-            if (setting.name == "after_processing_move_preserve_tags" && type != ObjectStorageType::S3)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting `after_processing_move_preserve_tags` is supported only for S3 object storage, not for {}",
-                    type);
             }
 
             if (requiresDetachedMV(setting.name))

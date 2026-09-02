@@ -89,10 +89,8 @@ namespace
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
 
-        /// GetObjectTagging is skipped when HeadObject already reports zero tags; callers needing
-        /// "the set or an error" (guarded moves) must call getObjectTags() themselves, since
-        /// HeadObject's TagCount can be hidden from least-privilege credentials.
-        if (with_tags && result.GetTagCount() > 0)
+        /// `GetObjectTagging` must run even when `TagCount` is hidden by limited credentials.
+        if (with_tags)
             object_info.tags = getObjectTags(client, bucket, key, version_id);
 
         return {object_info, {}};

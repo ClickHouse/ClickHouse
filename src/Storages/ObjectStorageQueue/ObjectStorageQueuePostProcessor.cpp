@@ -70,34 +70,12 @@ namespace ErrorCodes
 namespace
 {
 
-/// True when a copy made conditional with `If-None-Match: *` was rejected because the destination
-/// already exists. Every object storage reports that as FILE_ALREADY_EXISTS: the S3 helpers classify
-/// the 412 where the raw error is still available, since S3Exception keeps only the S3Errors code.
-bool isDestinationAlreadyExistsError(const Exception & e)
-{
-    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-}
-
-/// Provenance stamped onto the destination as object metadata: which source key and which content
-/// version of it (by ETag and last-modification time) this copy was made from. Lowercase to survive
-/// the S3 round-trip verbatim.
-///
-/// These identify a source version rather than a processing attempt on purpose: an attempt can die
-/// between committing its copy and removing the source - server restart, task cancellation - so the
-/// next attempt must be able to prove "this destination is my own earlier copy" without any memory
-/// of its predecessor. A token regenerated per attempt could not, since nothing persists it; a
-/// re-read of the current source does.
+/// Provenance lets a later attempt recognize a committed copy after an interrupted move.
 constexpr auto move_source_path_attribute = "clickhouse_move_source_path";
 constexpr auto move_source_etag_attribute = "clickhouse_move_source_etag";
 constexpr auto move_source_last_modified_attribute = "clickhouse_move_source_last_modified";
-/// Unique per upload on S3 buckets with versioning: the one identifier a same-second identical
-/// re-upload cannot alias. Stamped and compared only when the storage reports one.
 constexpr auto move_source_version_id_attribute = "clickhouse_move_source_version_id";
 
-/// The copy replaces the destination's metadata wholesale, so the source's own user metadata is
-/// carried along with the provenance keys rather than being dropped by the move. The times are
-/// recorded as epoch-seconds strings: object metadata values are strings and a fixed rendering
-/// keeps the later comparison exact.
 std::optional<ObjectAttributes> makeMoveProvenance(
     ObjectAttributes source_attributes,
     const String & source_path,
@@ -115,10 +93,6 @@ std::optional<ObjectAttributes> makeMoveProvenance(
     return source_attributes;
 }
 
-/// True when the "already existing" destination records the current content version of this source
-/// (key, ETag, last-modification time) as its origin: our own earlier copy committed and only a
-/// post-copy step failed - possibly across a restart that lost every attempt's in-memory state - so
-/// removing the source loses nothing.
 bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & provenance, const ObjectAttributes & destination_attributes)
 {
     if (!provenance)
@@ -131,13 +105,13 @@ bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & prove
         if (expected == provenance->end() || actual == destination_attributes.end() || actual->second != expected->second)
             return false;
     }
-    /// Compared only when both sides carry one, so a destination stamped before this field existed
-    /// still completes its interrupted move after an upgrade.
     auto expected_version = provenance->find(move_source_version_id_attribute);
-    auto actual_version = destination_attributes.find(move_source_version_id_attribute);
-    if (expected_version != provenance->end() && actual_version != destination_attributes.end()
-        && actual_version->second != expected_version->second)
-        return false;
+    if (expected_version != provenance->end())
+    {
+        auto actual_version = destination_attributes.find(move_source_version_id_attribute);
+        if (actual_version == destination_attributes.end() || actual_version->second != expected_version->second)
+            return false;
+    }
     return true;
 }
 
@@ -147,13 +121,11 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ContextPtr context_,
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
-    String engine_name_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     AfterProcessingSettings settings_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
-    , engine_name(engine_name_)
     , table_metadata(table_metadata_)
     , settings(std::move(settings_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
@@ -280,6 +252,42 @@ void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action
     }
 }
 
+bool ObjectStorageQueuePostProcessor::copyAndRemoveObject(const StoredObject & object, const std::function<bool()> & copy_object) const
+{
+    bool copy_finished = false;
+    bool destination_is_ours = true;
+    doWithRetries(
+        [&]
+        {
+            if (!copy_finished)
+            {
+                destination_is_ours = copy_object();
+                if (!destination_is_ours)
+                    return;
+
+                fiu_do_on(FailPoints::object_storage_queue_fail_after_move_copy, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after copying the object");
+                });
+                copy_finished = true;
+            }
+
+            LOG_INFO(log, "Removing object {}", object.remote_path);
+            object_storage->removeObjectIfExists(object);
+        });
+    return destination_is_ours;
+}
+
+void ObjectStorageQueuePostProcessor::reportMoveCollision(const StoredObject & source, const StoredObject & destination) const
+{
+    LOG_ERROR(
+        log,
+        "Not moving object {}: destination object {} already exists; leaving the source in place "
+        "(consider setting `after_processing_move_preserve_path`)",
+        source.remote_path,
+        destination.remote_path);
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+}
+
 static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix, bool preserve_path)
 {
     if (move_prefix.empty())
@@ -290,18 +298,6 @@ static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const Str
     chassert(!suffix.starts_with('/'));
     const String remote_path = fs::path(move_prefix) / suffix;
     return StoredObject(remote_path);
-}
-
-/// With preserve_path = false, objects with equal basenames under different prefixes map to the
-/// same destination; moving them all would silently overwrite data (see #114847).
-static std::vector<UInt8> findDuplicateMoveDestinations(const StoredObjects & objects, const String & move_prefix, bool preserve_path)
-{
-    std::vector<UInt8> duplicate(objects.size(), 0);
-    std::unordered_set<String> destinations;
-    for (size_t i = 0; i < objects.size(); ++i)
-        if (!destinations.insert(applyMovePrefixIfPresent(objects[i], move_prefix, preserve_path).remote_path).second)
-            duplicate[i] = 1;
-    return duplicate;
 }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -327,9 +323,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     auto read_settings = getReadSettings();
     auto move_write_settings = getWriteSettings();
 
-    /// With the path preserved, destinations are unique by construction. Without it, several source
-    /// keys can flatten onto one destination, so the copy itself must refuse to overwrite - checking
-    /// with a separate exists() call first would still let two concurrent movers both pass the check.
+    /// Flattened moves need an atomic no-overwrite precondition.
     if (!preserve_path)
         move_write_settings.object_storage_write_if_none_match = "*";
     move_write_settings.object_storage_copy_preserve_source_tags = settings.after_processing_move_preserve_tags;
@@ -342,109 +336,72 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     TaskTracker task_tracker(schedule, post_process_max_inflight_object_moves, limited_log);
 
     std::atomic<size_t> moved_objects = 0;
-    const auto duplicate_destination = findDuplicateMoveDestinations(objects, move_prefix, preserve_path);
+    std::unordered_set<String> destinations;
 
     try
     {
         for (size_t i = 0; i < objects.size(); ++i)
         {
-            if (duplicate_destination[i])
+            auto object_to = applyMovePrefixIfPresent(objects[i], move_prefix, preserve_path);
+            if (!destinations.insert(object_to.remote_path).second)
             {
-                LOG_ERROR(
-                    log,
-                    "Not moving object {}: its destination collides with another object's destination "
-                    "(consider setting after_processing_move_preserve_path); leaving the object in place",
-                    objects[i].remote_path);
-                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                reportMoveCollision(objects[i], object_to);
                 continue;
             }
-            task_tracker.add([&, &object_from = objects[i]]{
-                try
+            task_tracker.add(
+                [&, &object_from = objects[i], object_to = std::move(object_to)]
                 {
-                    auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, preserve_path);
-
-                    /// `copied` makes the retry idempotent: once the destination is written, a failure
-                    /// of the removal below must not re-run the copy, which would then be rejected by
-                    /// its own precondition and be mistaken for a collision.
-                    bool copied = false;
-                    bool destination_exists = false;
-                    doWithRetries([&]{
-                        if (!copied)
+                    try
+                    {
+                        auto copy_object = [&]
                         {
                             LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
-                            /// Stamped onto the destination so a later attempt can prove "this is my own
-                            /// earlier copy" on a rejected precondition; an unguarded copy has no use for
-                            /// it and keeps the native copy's header/metadata preservation instead.
                             std::optional<ObjectAttributes> provenance;
                             if (!preserve_path)
-                                if (auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/ false))
+                            {
+                                if (auto source_metadata
+                                    = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/false))
+                                {
                                     provenance = makeMoveProvenance(
                                         source_metadata->attributes,
                                         object_from.remote_path,
                                         source_metadata->etag,
                                         source_metadata->last_modified.epochTime(),
                                         source_metadata->version_id);
+                                }
+                            }
+
                             try
                             {
-                                object_storage->copyObject(
-                                    object_from,
-                                    object_to,
-                                    read_settings,
-                                    move_write_settings,
-                                    provenance);
+                                object_storage->copyObject(object_from, object_to, read_settings, move_write_settings, provenance);
                             }
                             catch (const Exception & e)
                             {
-                                /// Losing the race is a final answer, not something to retry - unless the
-                                /// destination records this source as its origin: an earlier attempt
-                                /// committed the copy and failed only afterwards.
-                                if (isDestinationAlreadyExistsError(e))
-                                {
-                                    auto destination_metadata = object_storage->tryGetObjectMetadata(object_to.remote_path, /*with_tags=*/ false);
-                                    if (!destination_metadata
-                                        || !destinationIsOwnCommittedCopy(provenance, destination_metadata->attributes))
-                                    {
-                                        destination_exists = true;
-                                        return;
-                                    }
-                                }
-                                else
+                                if (e.code() != ErrorCodes::FILE_ALREADY_EXISTS)
                                     throw;
-                            }
-                            /// The destination is committed but the move is not finished: this is the
-                            /// window a retry has to recognize as its own copy rather than a collision.
-                            fiu_do_on(FailPoints::object_storage_queue_fail_after_move_copy, {
-                                throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after copying the object");
-                            });
-                            copied = true;
-                        }
-                        LOG_INFO(log, "Removing object {}", object_from.remote_path);
-                        object_storage->removeObjectIfExists(object_from);
-                    });
 
-                    if (destination_exists)
-                    {
-                        LOG_ERROR(
-                            log,
-                            "Not moving object {} to {}: destination object already exists "
-                            "(consider setting after_processing_move_preserve_path); leaving the object in place",
-                            object_from.remote_path,
-                            object_to.remote_path);
-                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
-                        return;
+                                auto destination_metadata
+                                    = object_storage->tryGetObjectMetadata(object_to.remote_path, /*with_tags=*/false);
+                                return destination_metadata && destinationIsOwnCommittedCopy(provenance, destination_metadata->attributes);
+                            }
+                            return true;
+                        };
+                        if (!copyAndRemoveObject(object_from, copy_object))
+                        {
+                            reportMoveCollision(object_from, object_to);
+                            return;
+                        }
+                        ++moved_objects;
                     }
-                    ++moved_objects;
-                }
-                catch (...)
-                {
-                    LOG_WARNING(
-                        log,
-                        "Failed to move S3 object {} within bucket with exception: {}",
-                        object_from.remote_path,
-                        getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
-                    );
-                }
-            });
+                    catch (...)
+                    {
+                        LOG_WARNING(
+                            log,
+                            "Failed to move object {} within its storage with exception: {}",
+                            object_from.remote_path,
+                            getExceptionMessage(std::current_exception(), /*with_stacktrace=*/false));
+                    }
+                });
         }
         task_tracker.waitAll();
     }
@@ -523,129 +480,77 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 ThreadName::S3_COPY_POOL);
 
             size_t moved_objects = 0;
-            /// Without the path preserved, several source keys can flatten onto one destination, so the
-            /// copy itself must refuse to overwrite; a separate objectExists() check would still let two
-            /// concurrent movers both pass it. With no prefix nothing is flattened - the destination key
-            /// is the source key - so guarding there would only demand tag-read rights the plain move
-            /// never needed.
+            /// Prefixless moves do not flatten paths and need no guard.
             const String move_if_none_match
                 = (!move_prefix.empty() && !settings.after_processing_move_preserve_path) ? "*" : "";
-            const auto duplicate_destination = findDuplicateMoveDestinations(objects, move_prefix, settings.after_processing_move_preserve_path);
+            std::unordered_set<String> destinations;
+            const String src_bucket = s3_storage->getObjectsNamespace();
             for (size_t i = 0; i < objects.size(); ++i)
             {
                 const auto & object_from = objects[i];
-                if (duplicate_destination[i])
+                auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
+                if (!destinations.insert(object_to.remote_path).second)
                 {
-                    LOG_ERROR(
-                        log,
-                        "Not moving object {}: its destination collides with another object's destination "
-                        "(consider setting after_processing_move_preserve_path); leaving the object in place",
-                        object_from.remote_path);
-                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                    reportMoveCollision(object_from, object_to);
                     continue;
                 }
                 try
                 {
-                    auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
-
-                    /// See moveWithinBucket(): the copy has to refuse an existing destination itself,
-                    /// and the retry must not re-run it once it has succeeded.
-                    bool copied = false;
-                    bool destination_exists = false;
-                    doWithRetries([&]{
-                        if (!copied)
-                        {
-                            const String src_bucket = s3_storage->getObjectsNamespace();
-                            auto source_info = S3::getObjectInfo(
-                                *src_client,
-                                src_bucket,
-                                object_from.remote_path,
-                                /*version_id=*/ {},
-                                /*with_metadata=*/ true);
-                            /// The moved source is deleted afterwards, so its tags must really be
-                            /// read or the move must fail; HeadObject's TagCount can be hidden from
-                            /// least-privilege credentials, so ask directly instead of deferring.
-                            if (!move_if_none_match.empty() && settings.after_processing_move_preserve_tags)
-                                source_info.tags = S3::getObjectTags(*src_client, src_bucket, object_from.remote_path);
-                            /// See moveWithinBucket(): lets a later attempt recognize its own committed
-                            /// copy; an unguarded copy keeps the native header/metadata preservation instead.
-                            const auto provenance = move_if_none_match.empty()
-                                ? std::optional<ObjectAttributes>{}
-                                : makeMoveProvenance(
-                                    source_info.metadata,
-                                    object_from.remote_path,
-                                    source_info.etag,
-                                    source_info.last_modification_time,
-                                    source_info.version_id);
-
-                            LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, source_info.size, dst_uri.bucket);
-                            try
-                            {
-                                copyS3File(
-                                    src_client,
-                                    /*src_bucket=*/ src_bucket,
-                                    /*src_key=*/ object_from.remote_path,
-                                    /*src_size=*/ source_info.size,
-                                    /*dest_s3_client=*/ dst_client,
-                                    /*dest_bucket=*/ dst_uri.bucket,
-                                    /*dest_key=*/ object_to.remote_path,
-                                    /*settings=*/ s3_settings->request_settings,
-                                    /*read_settings=*/ read_settings_to_use,
-                                    BlobStorageLogWriter::create(object_storage->getDiskName()),
-                                    scheduler,
-                                    /*fallback_file_reader=*/ [&]{
-                                        return s3_storage->readObject(object_from, read_settings_to_use);
-                                    },
-                                    /*object_metadata=*/ provenance,
-                                    /*dest_if_none_match=*/ move_if_none_match,
-                                    /// The guard keeps this copy off CopyObject, so the headers and
-                                    /// tags it would have carried over have to be restated on the upload.
-                                    /*source_headers=*/ move_if_none_match.empty()
-                                        ? std::optional<S3::ObjectHeaders>{}
-                                        : std::optional<S3::ObjectHeaders>{source_info.headers},
-                                    /*source_tags=*/ move_if_none_match.empty()
-                                        ? std::optional<ObjectAttributes>{}
-                                        : std::optional<ObjectAttributes>{source_info.tags});
-                            }
-                            catch (const Exception & e)
-                            {
-                                /// See moveWithinBucket(): a destination recording this source as its origin
-                                /// means an earlier attempt committed the copy and failed only afterwards.
-                                if (isDestinationAlreadyExistsError(e))
-                                {
-                                    const auto destination_info = S3::getObjectInfoIfExists(
-                                        *dst_client, dst_uri.bucket, object_to.remote_path, /*version_id=*/ {}, /*with_metadata=*/ true);
-                                    if (!destinationIsOwnCommittedCopy(provenance, destination_info.metadata))
-                                    {
-                                        destination_exists = true;
-                                        return;
-                                    }
-                                }
-                                else
-                                    throw;
-                            }
-                            /// The destination is committed but the move is not finished: this is the
-                            /// window a retry has to recognize as its own copy rather than a collision.
-                            fiu_do_on(FailPoints::object_storage_queue_fail_after_move_copy, {
-                                throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after copying the object");
-                            });
-                            copied = true;
-                        }
-
-                        LOG_INFO(log, "Removing object {}", object_from.remote_path);
-                        object_storage->removeObjectIfExists(object_from);
-                    });
-
-                    if (destination_exists)
+                    auto copy_object = [&]
                     {
-                        LOG_ERROR(
-                            log,
-                            "Not moving object {} to bucket {}: destination object {} already exists "
-                            "(consider setting after_processing_move_preserve_path); leaving the object in place",
+                        auto source_info = S3::getObjectInfo(
+                            *src_client,
+                            src_bucket,
                             object_from.remote_path,
-                            dst_uri.bucket,
-                            object_to.remote_path);
-                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                            /*version_id=*/{},
+                            /*with_metadata=*/true,
+                            /*with_tags=*/!move_if_none_match.empty() && settings.after_processing_move_preserve_tags);
+                        const auto provenance = move_if_none_match.empty() ? std::optional<ObjectAttributes>{}
+                                                                           : makeMoveProvenance(
+                                                                                 source_info.metadata,
+                                                                                 object_from.remote_path,
+                                                                                 source_info.etag,
+                                                                                 source_info.last_modification_time,
+                                                                                 source_info.version_id);
+
+                        LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, source_info.size, dst_uri.bucket);
+                        try
+                        {
+                            copyS3File(
+                                src_client,
+                                /*src_bucket=*/src_bucket,
+                                /*src_key=*/object_from.remote_path,
+                                /*src_size=*/source_info.size,
+                                /*dest_s3_client=*/dst_client,
+                                /*dest_bucket=*/dst_uri.bucket,
+                                /*dest_key=*/object_to.remote_path,
+                                /*settings=*/s3_settings->request_settings,
+                                /*read_settings=*/read_settings_to_use,
+                                BlobStorageLogWriter::create(object_storage->getDiskName()),
+                                scheduler,
+                                /*fallback_file_reader=*/[&] { return s3_storage->readObject(object_from, read_settings_to_use); },
+                                /*object_metadata=*/provenance,
+                                S3CopyFileSettings{
+                                    .if_none_match = move_if_none_match,
+                                    .source_headers = move_if_none_match.empty() ? std::optional<S3::ObjectHeaders>{}
+                                                                                 : std::optional<S3::ObjectHeaders>{source_info.headers},
+                                    .source_tags = move_if_none_match.empty() ? std::optional<ObjectAttributes>{}
+                                                                              : std::optional<ObjectAttributes>{source_info.tags}});
+                        }
+                        catch (const Exception & e)
+                        {
+                            if (e.code() != ErrorCodes::FILE_ALREADY_EXISTS)
+                                throw;
+
+                            const auto destination_info = S3::getObjectInfoIfExists(
+                                *dst_client, dst_uri.bucket, object_to.remote_path, /*version_id=*/{}, /*with_metadata=*/true);
+                            return destinationIsOwnCommittedCopy(provenance, destination_info.metadata);
+                        }
+                        return true;
+                    };
+                    if (!copyAndRemoveObject(object_from, copy_object))
+                    {
+                        reportMoveCollision(object_from, object_to);
                         continue;
                     }
 
@@ -709,124 +614,72 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 is_readonly);
 
             size_t moved_objects = 0;
-            /// See moveS3Objects(): flattened destinations can collide across batches and movers, so the
-            /// copy itself must refuse to overwrite rather than be preceded by a separate check, and a
-            /// prefixless move flattens nothing and stays unguarded.
+            /// Prefixless moves do not flatten paths and need no guard.
             const String move_if_none_match
                 = (!move_prefix.empty() && !settings.after_processing_move_preserve_path) ? "*" : "";
-            const auto duplicate_destination = findDuplicateMoveDestinations(objects, move_prefix, settings.after_processing_move_preserve_path);
+            std::unordered_set<String> destinations;
+            auto request_settings = azure_storage->getSettings();
+            const auto read_settings = azure_storage->patchSettings(getReadSettings());
+            auto scheduler = threadPoolCallbackRunnerUnsafe<void>(IObjectStorage::getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
             for (size_t i = 0; i < objects.size(); ++i)
             {
                 const auto & object_from = objects[i];
-                if (duplicate_destination[i])
+                auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
+                if (!destinations.insert(object_to.remote_path).second)
                 {
-                    LOG_ERROR(
-                        log,
-                        "Not moving object {}: its destination collides with another object's destination "
-                        "(consider setting after_processing_move_preserve_path); leaving the object in place",
-                        object_from.remote_path);
-                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                    reportMoveCollision(object_from, object_to);
                     continue;
                 }
                 try
                 {
-                    auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
-
-                    /// See moveWithinBucket(): the copy has to refuse an existing destination itself,
-                    /// and the retry must not re-run it once it has succeeded.
-                    bool copied = false;
-                    bool destination_exists = false;
-                    doWithRetries([&]{
-                        if (!copied)
-                        {
-                            Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
-                            auto properties = blobClient.GetProperties().Value;
-                            auto blob_size = properties.BlobSize;
-                            /// See moveWithinBucket(): lets a later attempt recognize its own committed
-                            /// copy; an unguarded copy leaves the destination's user metadata untouched.
-                            const auto provenance = move_if_none_match.empty()
-                                ? std::optional<ObjectAttributes>{}
-                                : makeMoveProvenance(
-                                    ObjectAttributes{properties.Metadata.begin(), properties.Metadata.end()},
-                                    object_from.remote_path,
-                                    properties.ETag.ToString(),
-                                    std::chrono::system_clock::to_time_t(static_cast<std::chrono::system_clock::time_point>(properties.LastModified)));
-                            auto request_settings = azure_storage->getSettings();
-                            auto read_settings = getReadSettings();
-                            const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
-                            auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
-                                IObjectStorage::getThreadPoolWriter(),
-                                ThreadName::AZURE_COPY_POOL);
-
-                            LOG_INFO(log, "Copying {} ({} Bytes) to container {}", object_from.remote_path, blob_size, move_container);
-                            try
-                            {
-                                copyAzureBlobStorageFile(
-                                    src_client,
-                                    dst_client,
-                                    connection_params.getContainer(),
-                                    /* src_blob */ object_from.remote_path,
-                                    /* src_offset */ 0,
-                                    blob_size,
-                                    move_container,
-                                    /* dest_blob */ object_to.remote_path,
-                                    request_settings,
-                                    read_settings,
-                                    provenance,
-                                    scheduler,
-                                    /* blob_storage_log */ {},
-                                    /* dest_if_none_match */ move_if_none_match
-                                );
-                            }
-                            catch (const Azure::Core::RequestFailedException & e)
-                            {
-                                /// Azure answers 409 BlobAlreadyExists / 412 for a rejected If-None-Match.
-                                /// Without the precondition (path-preserving moves) such a status is no
-                                /// evidence of a collision, so it is not swallowed - mirroring
-                                /// AzureObjectStorage::copyObject.
-                                if (!move_if_none_match.empty()
-                                    && (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                                        || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed))
-                                {
-                                    /// See moveWithinBucket(): a destination recording this source as its
-                                    /// origin means an earlier attempt committed the copy. A failing lookup
-                                    /// escapes into the retry loop: swallowed as a collision it would strand
-                                    /// a source whose copy may well have committed.
-                                    auto destination_properties = dst_client->GetBlobClient(object_to.remote_path).GetProperties().Value;
-                                    bool own_committed_copy = destinationIsOwnCommittedCopy(
-                                        provenance,
-                                        ObjectAttributes{destination_properties.Metadata.begin(), destination_properties.Metadata.end()});
-                                    if (!own_committed_copy)
-                                    {
-                                        destination_exists = true;
-                                        return;
-                                    }
-                                }
-                                else
-                                    throw;
-                            }
-                            /// The destination is committed but the move is not finished: this is the
-                            /// window a retry has to recognize as its own copy rather than a collision.
-                            fiu_do_on(FailPoints::object_storage_queue_fail_after_move_copy, {
-                                throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after copying the object");
-                            });
-                            copied = true;
-                        }
-
-                        LOG_INFO(log, "Removing object {}", object_from.remote_path);
-                        object_storage->removeObjectIfExists(object_from);
-                    });
-
-                    if (destination_exists)
+                    auto copy_object = [&]
                     {
-                        LOG_ERROR(
-                            log,
-                            "Not moving object {} to container {}: destination object {} already exists "
-                            "(consider setting after_processing_move_preserve_path); leaving the object in place",
-                            object_from.remote_path,
-                            move_container,
-                            object_to.remote_path);
-                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                        auto blob_client = src_client->GetBlobClient(object_from.remote_path);
+                        auto properties = blob_client.GetProperties().Value;
+                        auto blob_size = properties.BlobSize;
+                        const auto provenance = move_if_none_match.empty()
+                            ? std::optional<ObjectAttributes>{}
+                            : makeMoveProvenance(
+                                  ObjectAttributes{properties.Metadata.begin(), properties.Metadata.end()},
+                                  object_from.remote_path,
+                                  properties.ETag.ToString(),
+                                  std::chrono::system_clock::to_time_t(
+                                      static_cast<std::chrono::system_clock::time_point>(properties.LastModified)));
+                        LOG_INFO(log, "Copying {} ({} Bytes) to container {}", object_from.remote_path, blob_size, move_container);
+                        try
+                        {
+                            copyAzureBlobStorageFile(
+                                src_client,
+                                dst_client,
+                                connection_params.getContainer(),
+                                /* src_blob */ object_from.remote_path,
+                                /* src_offset */ 0,
+                                blob_size,
+                                move_container,
+                                /* dest_blob */ object_to.remote_path,
+                                request_settings,
+                                read_settings,
+                                provenance,
+                                scheduler,
+                                /* blob_storage_log */ {},
+                                /* dest_if_none_match */ move_if_none_match);
+                        }
+                        catch (const Azure::Core::RequestFailedException & e)
+                        {
+                            if (!move_if_none_match.empty() && isAzureDestinationAlreadyExistsError(e))
+                            {
+                                auto destination_properties = dst_client->GetBlobClient(object_to.remote_path).GetProperties().Value;
+                                return destinationIsOwnCommittedCopy(
+                                    provenance,
+                                    ObjectAttributes{destination_properties.Metadata.begin(), destination_properties.Metadata.end()});
+                            }
+                            throw;
+                        }
+                        return true;
+                    };
+                    if (!copyAndRemoveObject(object_from, copy_object))
+                    {
+                        reportMoveCollision(object_from, object_to);
                         continue;
                     }
 

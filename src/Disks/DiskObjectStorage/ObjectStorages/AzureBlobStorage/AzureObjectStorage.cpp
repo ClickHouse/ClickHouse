@@ -99,18 +99,19 @@ private:
 
         for (const auto & blob : blobs_list)
         {
-            batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
-                blob.Name,
-                ObjectMetadata{
-                    .size_bytes = static_cast<uint64_t>(blob.BlobSize),
-                    .last_modified = Poco::Timestamp::fromEpochTime(
-                        std::chrono::duration_cast<std::chrono::seconds>(
-                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = blob.Details.ETag.ToString(),
-                    .version_id = {},
-                    .tags = {},
-                    .attributes = {},
-                }));
+            batch.emplace_back(
+                std::make_shared<RelativePathWithMetadata>(
+                    blob.Name,
+                    ObjectMetadata{
+                        .size_bytes = static_cast<uint64_t>(blob.BlobSize),
+                        .last_modified = Poco::Timestamp::fromEpochTime(
+                            std::chrono::duration_cast<std::chrono::seconds>(
+                                static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch())
+                                .count()),
+                        .etag = blob.Details.ETag.ToString(),
+                        .tags = {},
+                        .attributes = {},
+                    }));
         }
 
         if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
@@ -211,18 +212,19 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         for (const auto & blob : blob_list_response.Blobs)
         {
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
-                blob.Name,
-                ObjectMetadata{
-                    .size_bytes = static_cast<uint64_t>(blob.BlobSize),
-                    .last_modified = Poco::Timestamp::fromEpochTime(
-                        std::chrono::duration_cast<std::chrono::seconds>(
-                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = blob.Details.ETag.ToString(),
-                    .version_id = {},
-                    .tags = {},
-                    .attributes = {},
-                }));
+            children.emplace_back(
+                std::make_shared<RelativePathWithMetadata>(
+                    blob.Name,
+                    ObjectMetadata{
+                        .size_bytes = static_cast<uint64_t>(blob.BlobSize),
+                        .last_modified = Poco::Timestamp::fromEpochTime(
+                            std::chrono::duration_cast<std::chrono::seconds>(
+                                static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch())
+                                .count()),
+                        .etag = blob.Details.ETag.ToString(),
+                        .tags = {},
+                        .attributes = {},
+                    }));
         }
 
         if (max_keys && children.size() >= max_keys)
@@ -598,7 +600,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
     result.etag = properties.ETag.ToString();
-    /// A bare map::emplace() inserted a {"", ""} entry - a leftover from the optional<> era.
+    /// Do not insert an empty key before copying the Azure metadata.
     for (const auto & [key, value] : properties.Metadata)
         result.attributes[key] = value;
     result.last_modified = static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count();
@@ -652,17 +654,14 @@ void AzureObjectStorage::copyObject( /// NOLINT
             read_settings,
             object_to_attributes,
             scheduler,
-            /*blob_storage_log=*/ nullptr,
-            /// Lets a caller demand that the copy fail rather than overwrite an existing destination.
+            /*blob_storage_log=*/nullptr,
             if_none_match);
     }
     catch (const Azure::Core::RequestFailedException & e)
     {
-        /// Azure answers 409 BlobAlreadyExists / 412 for a rejected If-None-Match. Report it the way the
+        /// Azure answers 409 `BlobAlreadyExists` / 412 for a rejected `If-None-Match`. Report it the way the
         /// other object storages do, so a caller can tell an existing destination from a failed copy.
-        if (!if_none_match.empty()
-            && (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed))
+        if (!if_none_match.empty() && isAzureDestinationAlreadyExistsError(e))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
                 "Object {} already exists in container {}", object_to.remote_path, connection_params.getContainer());
         throw;

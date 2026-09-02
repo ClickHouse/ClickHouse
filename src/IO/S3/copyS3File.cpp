@@ -79,15 +79,14 @@ namespace
     /// InvalidRequest otherwise -- so a range of a smaller source cannot be server-side copied at all.
     constexpr size_t MIN_SOURCE_SIZE_FOR_RANGE_COPY = 5 * 1024 * 1024;
 
-    /// A destination precondition was rejected. S3 has no S3Errors code for 412 and S3Exception keeps
-    /// only that code, so the raw error has to be classified here rather than by the caller.
+    /// Classify 412 before `S3Exception` discards the raw response code.
     bool isPreconditionFailed(const Aws::S3::S3Error & error)
     {
         return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED
             || error.GetExceptionName() == "PreconditionFailed";
     }
 
-    /// The `x-amz-tagging` form PutObject/CreateMultipartUpload expect: URL-encoded query parameters.
+    /// Format tags for `PutObject` and `CreateMultipartUpload`.
     String urlEncodeTagSet(const ObjectAttributes & tags)
     {
         String result;
@@ -114,9 +113,7 @@ namespace
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_,
-            const String & dest_if_none_match_ = {},
-            const std::optional<S3::ObjectHeaders> & source_headers_ = {},
-            const std::optional<ObjectAttributes> & source_tags_ = {})
+            const S3CopyFileSettings & copy_settings_ = {})
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -125,9 +122,7 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
-            , dest_if_none_match(dest_if_none_match_)
-            , source_headers(source_headers_)
-            , source_tags(source_tags_)
+            , copy_settings(copy_settings_)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -144,15 +139,7 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        /// Destination precondition for the request that makes the object visible. "*" means the copy
-        /// must fail with PreconditionFailed instead of overwriting an object that already exists.
-        const String dest_if_none_match;
-        /// Headers of the source object, when the caller wants a re-upload to look like the
-        /// server-side copy it replaced. Empty fields are left at the request's own defaults.
-        const std::optional<S3::ObjectHeaders> source_headers;
-        /// The source tag set, for the same reason: CopyObject's default TaggingDirective=COPY
-        /// carried it over, so the replacing re-upload has to restate it.
-        const std::optional<ObjectAttributes> source_tags;
+        const S3CopyFileSettings copy_settings;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -172,35 +159,35 @@ namespace
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
-        /// A guarded copy re-uploads instead of asking S3 to copy server-side, which would have carried
-        /// these over on its own; restate them so the destination is not left as a bare octet stream.
+        /// Restate headers that `CopyObject` would preserve.
         template <typename RequestType>
         void applySourceHeaders(RequestType & request) const
         {
-            if (!source_headers.has_value())
+            if (!copy_settings.source_headers.has_value())
                 return;
-            if (!source_headers->content_type.empty())
-                request.SetContentType(source_headers->content_type);
-            if (!source_headers->content_encoding.empty())
-                request.SetContentEncoding(source_headers->content_encoding);
-            if (!source_headers->content_language.empty())
-                request.SetContentLanguage(source_headers->content_language);
-            if (!source_headers->content_disposition.empty())
-                request.SetContentDisposition(source_headers->content_disposition);
-            if (!source_headers->cache_control.empty())
-                request.SetCacheControl(source_headers->cache_control);
-            if (source_headers->expires.Millis() > 0)
-                request.SetExpires(source_headers->expires);
-            if (!source_headers->website_redirect_location.empty())
-                request.SetWebsiteRedirectLocation(source_headers->website_redirect_location);
+            const auto & headers = *copy_settings.source_headers;
+            if (!headers.content_type.empty())
+                request.SetContentType(headers.content_type);
+            if (!headers.content_encoding.empty())
+                request.SetContentEncoding(headers.content_encoding);
+            if (!headers.content_language.empty())
+                request.SetContentLanguage(headers.content_language);
+            if (!headers.content_disposition.empty())
+                request.SetContentDisposition(headers.content_disposition);
+            if (!headers.cache_control.empty())
+                request.SetCacheControl(headers.cache_control);
+            if (headers.expires.Millis() > 0)
+                request.SetExpires(headers.expires);
+            if (!headers.website_redirect_location.empty())
+                request.SetWebsiteRedirectLocation(headers.website_redirect_location);
         }
 
-        /// Same rationale as applySourceHeaders: CopyObject copied the source tag set by default.
+        /// Restate tags that `CopyObject` would preserve.
         template <typename RequestType>
         void applySourceTags(RequestType & request) const
         {
-            if (source_tags.has_value() && !source_tags->empty())
-                request.SetTagging(urlEncodeTagSet(*source_tags));
+            if (copy_settings.source_tags.has_value() && !copy_settings.source_tags->empty())
+                request.SetTagging(urlEncodeTagSet(*copy_settings.source_tags));
         }
 
         void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & request)
@@ -268,8 +255,8 @@ namespace
             request.SetKey(dest_key);
             request.SetUploadId(multipart_upload_id);
 
-            if (!dest_if_none_match.empty())
-                request.SetIfNoneMatch(dest_if_none_match);
+            if (!copy_settings.if_none_match.empty())
+                request.SetIfNoneMatch(copy_settings.if_none_match);
 
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
             for (size_t i = 0; i < multipart_tags.size(); ++i)
@@ -311,7 +298,7 @@ namespace
                     continue; /// will retry
                 }
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
-                if (!dest_if_none_match.empty() && isPreconditionFailed(outcome.GetError()))
+                if (!copy_settings.if_none_match.empty() && isPreconditionFailed(outcome.GetError()))
                     throw Exception(
                         ErrorCodes::FILE_ALREADY_EXISTS,
                         "Object already exists, If-None-Match precondition failed. Key: {}, Bucket: {}",
@@ -514,10 +501,17 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const String & dest_if_none_match_,
-            const std::optional<S3::ObjectHeaders> & source_headers_,
-            const std::optional<ObjectAttributes> & source_tags_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"), dest_if_none_match_, source_headers_, source_tags_)
+            const S3CopyFileSettings & copy_settings_)
+            : UploadHelper(
+                  client_ptr_,
+                  dest_bucket_,
+                  dest_key_,
+                  request_settings_,
+                  object_metadata_,
+                  schedule_,
+                  blob_storage_log_,
+                  getLogger("copyDataToS3File"),
+                  copy_settings_)
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -573,8 +567,8 @@ namespace
             applySourceHeaders(request);
             applySourceTags(request);
 
-            if (!dest_if_none_match.empty())
-                request.SetIfNoneMatch(dest_if_none_match);
+            if (!copy_settings.if_none_match.empty())
+                request.SetIfNoneMatch(copy_settings.if_none_match);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -640,7 +634,7 @@ namespace
                     continue; /// will retry
                 }
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
-                if (!dest_if_none_match.empty() && isPreconditionFailed(outcome.GetError()))
+                if (!copy_settings.if_none_match.empty() && isPreconditionFailed(outcome.GetError()))
                     throw Exception(
                         ErrorCodes::FILE_ALREADY_EXISTS,
                         "Object already exists, If-None-Match precondition failed. Key: {}, Bucket: {}",
@@ -722,21 +716,17 @@ namespace
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_,
             bool is_ranged_copy_,
-            const String & dest_if_none_match_,
-            const std::optional<S3::ObjectHeaders> & source_headers_,
-            const std::optional<ObjectAttributes> & source_tags_)
+            const S3CopyFileSettings & copy_settings_)
             : UploadHelper(
-                client_ptr_,
-                dest_bucket_,
-                dest_key_,
-                request_settings_,
-                object_metadata_,
-                schedule_,
-                blob_storage_log_,
-                getLogger("copyS3File"),
-                dest_if_none_match_,
-                source_headers_,
-                source_tags_)
+                  client_ptr_,
+                  dest_bucket_,
+                  dest_key_,
+                  request_settings_,
+                  object_metadata_,
+                  schedule_,
+                  blob_storage_log_,
+                  getLogger("copyS3File"),
+                  copy_settings_)
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -772,9 +762,8 @@ namespace
             /// A ranged copy must never reach whole-object CopyObject (it would copy the entire source).
             chassert(!(is_ranged_copy && use_single_operation_copy));
 
-            /// CopyObject silently ignores destination preconditions - only PutObject and
-            /// CompleteMultipartUpload honor If-None-Match - so a guarded copy cannot take it.
-            if (use_single_operation_copy && !dest_if_none_match.empty())
+            /// `CopyObject` ignores destination preconditions, so guarded copies must re-upload.
+            if (use_single_operation_copy && !copy_settings.if_none_match.empty())
             {
                 fallback_method();
                 return;
@@ -986,9 +975,7 @@ void copyDataToS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const std::optional<ObjectAttributes> & object_metadata,
-    const String & dest_if_none_match,
-    const std::optional<S3::ObjectHeaders> & source_headers,
-    const std::optional<ObjectAttributes> & source_tags)
+    const S3CopyFileSettings & copy_settings)
 {
     CopyDataToFileHelper helper{
         create_read_buffer,
@@ -1001,9 +988,7 @@ void copyDataToS3File(
         object_metadata,
         schedule,
         blob_storage_log,
-        dest_if_none_match,
-        source_headers,
-        source_tags};
+        copy_settings};
     helper.performCopy();
 }
 
@@ -1012,76 +997,70 @@ namespace
 {
     /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
     /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    void copyS3FileImpl(
-        std::shared_ptr<const S3::Client> src_s3_client,
-        const String & src_bucket,
-        const String & src_key,
-        size_t src_offset,
-        size_t src_size,
-        size_t src_object_size,
-        std::shared_ptr<const S3::Client> dest_s3_client,
-        const String & dest_bucket,
-        const String & dest_key,
-        const S3::S3RequestSettings & settings,
-        const ReadSettings & read_settings,
-        BlobStorageLogWriterPtr blob_storage_log,
-        ThreadPoolCallbackRunnerUnsafe<void> schedule,
-        const CreateReadBuffer & fallback_file_reader,
-        const std::optional<ObjectAttributes> & object_metadata,
-        bool is_ranged_copy,
-        const String & dest_if_none_match,
-        const std::optional<S3::ObjectHeaders> & source_headers,
-        const std::optional<ObjectAttributes> & source_tags)
+void copyS3FileImpl(
+    std::shared_ptr<const S3::Client> src_s3_client,
+    const String & src_bucket,
+    const String & src_key,
+    size_t src_offset,
+    size_t src_size,
+    size_t src_object_size,
+    std::shared_ptr<const S3::Client> dest_s3_client,
+    const String & dest_bucket,
+    const String & dest_key,
+    const S3::S3RequestSettings & settings,
+    const ReadSettings & read_settings,
+    BlobStorageLogWriterPtr blob_storage_log,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
+    const CreateReadBuffer & fallback_file_reader,
+    const std::optional<ObjectAttributes> & object_metadata,
+    bool is_ranged_copy,
+    const S3CopyFileSettings & copy_settings)
+{
+    if (!dest_s3_client)
+        dest_s3_client = src_s3_client;
+
+    std::function<void()> fallback_method = [&] mutable
     {
-        if (!dest_s3_client)
-            dest_s3_client = src_s3_client;
-
-        std::function<void()> fallback_method = [&] mutable
-        {
-            copyDataToS3File(
-                fallback_file_reader,
-                src_offset,
-                src_size,
-                dest_s3_client,
-                dest_bucket,
-                dest_key,
-                settings,
-                blob_storage_log,
-                schedule,
-                object_metadata,
-                dest_if_none_match,
-                source_headers,
-                source_tags);
-        };
-
-        if (!settings[S3RequestSetting::allow_native_copy])
-        {
-            LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            fallback_method();
-            return;
-        }
-
-        CopyFileHelper helper{
-            src_s3_client,
-            src_bucket,
-            src_key,
+        copyDataToS3File(
+            fallback_file_reader,
             src_offset,
             src_size,
-            src_object_size,
+            dest_s3_client,
             dest_bucket,
             dest_key,
             settings,
-            read_settings,
-            object_metadata,
-            schedule,
             blob_storage_log,
-            std::move(fallback_method),
-            is_ranged_copy,
-            dest_if_none_match,
-            source_headers,
-            source_tags};
-        helper.performCopy();
+            schedule,
+            object_metadata,
+            copy_settings);
+    };
+
+    if (!settings[S3RequestSetting::allow_native_copy])
+    {
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
+        fallback_method();
+        return;
     }
+
+    CopyFileHelper helper{
+        src_s3_client,
+        src_bucket,
+        src_key,
+        src_offset,
+        src_size,
+        src_object_size,
+        dest_bucket,
+        dest_key,
+        settings,
+        read_settings,
+        object_metadata,
+        schedule,
+        blob_storage_log,
+        std::move(fallback_method),
+        is_ranged_copy,
+        copy_settings};
+    helper.performCopy();
+}
 }
 
 void copyS3File(
@@ -1098,9 +1077,7 @@ void copyS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata,
-    const String & dest_if_none_match,
-    const std::optional<S3::ObjectHeaders> & source_headers,
-    const std::optional<ObjectAttributes> & source_tags)
+    const S3CopyFileSettings & copy_settings)
 {
     copyS3FileImpl(
         std::move(src_s3_client),
@@ -1119,9 +1096,7 @@ void copyS3File(
         fallback_file_reader,
         object_metadata,
         /* is_ranged_copy= */ false,
-        dest_if_none_match,
-        source_headers,
-        source_tags);
+        copy_settings);
 }
 
 void copyS3FileRange(
@@ -1158,9 +1133,7 @@ void copyS3FileRange(
         fallback_file_reader,
         object_metadata,
         /* is_ranged_copy= */ true,
-        /* dest_if_none_match= */ {},
-        /* source_headers= */ {},
-        /* source_tags= */ {});
+        /* copy_settings= */ {});
 }
 
 }

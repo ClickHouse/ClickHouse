@@ -37,6 +37,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+bool isAzureDestinationAlreadyExistsError(const Azure::Core::RequestFailedException & exception)
+{
+    return exception.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed
+        || (exception.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict && exception.ErrorCode == "BlobAlreadyExists");
+}
+
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
@@ -92,11 +98,9 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        /// Destination precondition for the request that makes the blob visible. "*" means the upload
-        /// must fail instead of overwriting a blob that already exists.
+        /// Precondition for the request that makes the destination visible.
         const String dest_if_none_match;
-        /// Metadata for the request that makes the blob visible, so the blob is never visible
-        /// without it (the queue's move provenance relies on that).
+        /// Metadata committed atomically with the destination.
         const std::optional<ObjectAttributes> object_to_attributes;
         size_t max_single_part_upload_size;
 
