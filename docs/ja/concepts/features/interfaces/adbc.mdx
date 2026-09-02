@@ -1,0 +1,44 @@
+---
+description: 'ClickHouse ADBC ドライバーのドキュメント'
+sidebarTitle: 'ADBC ドライバー'
+slug: /interfaces/adbc
+title: 'ADBC ドライバー'
+doc_type: 'reference'
+---
+
+ClickHouse ADBC ドライバーは、ADBC 互換アプリケーションを ClickHouse に接続するための、標準準拠の [Arrow Database Connectivity (ADBC)](https://arrow.apache.org/adbc/)
+インターフェイスを提供します。
+
+このドライバーは、すべての ClickHouse デプロイメントで主要なプロトコルとしてサポートされている [HTTP プロトコル](/ja/concepts/features/interfaces/http) を使用して ClickHouse サーバーと通信します。これにより、ローカルインストール、クラウド管理サービス、HTTP ベースのアクセスしか利用できない環境など、さまざまな環境で一貫して動作します。
+
+ドライバーのソースコードは、
+[adbc&#95;clickhouse GitHub リポジトリ](https://github.com/clickhouse/adbc_clickhouse)で公開されています。
+
+<Note>
+  このドライバーは現在も活発に開発されています。一部の ADBC 機能は、まだ完全には実装されていない場合があります。現在のバージョンは、基本的な接続機能と中核的な ADBC 機能の提供に重点を置いており、追加機能は今後のリリースで提供される予定です。
+
+  皆様からのフィードバックは非常に貴重であり、新機能や改善の優先順位付けに役立ちます。制限事項、不足している機能、予期しない動作に遭遇した場合は、観察結果や機能リクエストを以下の issue tracker からお寄せください。
+  [github.com/ClickHouse/adbc&#95;clickhouse/issues](https://github.com/ClickHouse/adbc_clickhouse/issues)
+</Note>
+
+<div id="installation">
+  ## インストール
+</div>
+
+[dbc](https://docs.columnar.tech/dbc/) を使用して、ドライバーの最新版をインストールできます。
+
+```bash
+dbc install clickhouse
+```
+
+また、[github.com/adbc-drivers/clickhouse/releases](https://github.com/adbc-drivers/clickhouse/releases) から手動でダウンロードすることもできます。
+
+<div id="database-options">
+  ## データベースオプション
+</div>
+
+以下のデータベースオプションは、ClickHouse ADBC ドライバーへの接続を確立するために使用します。
+
+* `uri`: ClickHouse サーバー の完全な HTTP(S) エンドポイントを指定します。プロトコル、ホスト、ポートが含まれます。
+* `username`: ClickHouse サーバー の認証に使用するユーザー名です。
+* `password`: 指定したユーザー名に関連付けられたパスワードです。
