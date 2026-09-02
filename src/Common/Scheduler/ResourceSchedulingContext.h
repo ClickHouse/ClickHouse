@@ -33,25 +33,29 @@ public:
         Float64 weight_lowering_io_bytes_,
         UInt64 priority_)
         : start_ns(start_ns_)
+        // Non-positive weight is meaningless for SFQ (virtual runtime divides by the weight), so a
+        // query setting `weight <= 0` falls back to the default 1.0.
         , weight(weight_ > 0 ? weight_ : 1.0)
         // Clamp to [0, 1]: the factor only ever LOWERS a query's weight. `1.0` disables lowering;
         // a value > 1 would raise the share (inverting the setting) and a negative value is
         // meaningless, so both ends are clamped to keep the user-facing contract monotonic.
         , weight_lowering_factor(weight_lowering_factor_ > 1.0 ? 1.0 : (weight_lowering_factor_ < 0.0 ? 0.0 : weight_lowering_factor_))
-        , weight_lowering_age_seconds(weight_lowering_age_seconds_)
-        , weight_lowering_cpu_seconds(weight_lowering_cpu_seconds_)
-        , weight_lowering_io_bytes(weight_lowering_io_bytes_)
+        // Thresholds are disabled at 0; a negative value is meaningless, so clamp it to 0 (disabled)
+        // rather than storing a negative that only happens to read as disabled by the `> 0` checks.
+        , weight_lowering_age_seconds(weight_lowering_age_seconds_ > 0 ? weight_lowering_age_seconds_ : 0.0)
+        , weight_lowering_cpu_seconds(weight_lowering_cpu_seconds_ > 0 ? weight_lowering_cpu_seconds_ : 0.0)
+        , weight_lowering_io_bytes(weight_lowering_io_bytes_ > 0 ? weight_lowering_io_bytes_ : 0.0)
         , priority(priority_)
     {
     }
 
     /// Immutable per-query configuration (from query settings at query start).
     const UInt64 start_ns; /// Monotonic `clock_gettime_ns()` when the query started; used for age
-    const Float64 weight; /// Base fair-scheduling weight (query setting `weight`)
-    const Float64 weight_lowering_factor; /// Multiply weight once a threshold trips (1 = disabled)
-    const Float64 weight_lowering_age_seconds; /// Age threshold in seconds (0 = disabled)
-    const Float64 weight_lowering_cpu_seconds; /// Attained CPU-seconds threshold (0 = disabled)
-    const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 = disabled)
+    const Float64 weight; /// Base fair-scheduling weight (query setting `weight`; non-positive → 1.0)
+    const Float64 weight_lowering_factor; /// Multiply weight once a threshold trips (1 = disabled; clamped to [0,1])
+    const Float64 weight_lowering_age_seconds; /// Age threshold in seconds (0 or negative = disabled)
+    const Float64 weight_lowering_cpu_seconds; /// Attained CPU-seconds threshold (0 or negative = disabled)
+    const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 or negative = disabled)
     const UInt64 priority; /// Query priority (setting `priority`): 1 highest, larger = lower, 0 = none. Used by the `priority` scheduler.
 
     /// Mutable per-resource scheduling state for this query. There is one entry per scheduler leaf

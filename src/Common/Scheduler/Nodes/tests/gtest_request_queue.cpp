@@ -407,6 +407,23 @@ TEST(RequestQueue, WeightLoweringFactorClamped)
     EXPECT_EQ(normal.weight_lowering_factor, 0.25);
     ResourceSchedulingContext zero_weight(clock_gettime_ns(), 0.0, 1.0, 0, 0, 0, 0);
     EXPECT_EQ(zero_weight.weight, 1.0);
+    ResourceSchedulingContext negative_weight(clock_gettime_ns(), -3.0, 1.0, 0, 0, 0, 0);
+    EXPECT_EQ(negative_weight.weight, 1.0);
+}
+
+TEST(RequestQueue, WeightLoweringThresholdsClampNegativeToDisabled)
+{
+    // A negative lowering threshold is meaningless and is clamped to 0 (disabled), rather than
+    // stored as-is and only read as disabled by the `> 0` checks in effectiveWeight().
+    ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, 0.5, -1.0, -2.0, -3.0, 0);
+    EXPECT_EQ(negative.weight_lowering_age_seconds, 0.0);
+    EXPECT_EQ(negative.weight_lowering_cpu_seconds, 0.0);
+    EXPECT_EQ(negative.weight_lowering_io_bytes, 0.0);
+    // Positive thresholds are preserved verbatim.
+    ResourceSchedulingContext positive(clock_gettime_ns(), 1.0, 0.5, 3.0, 4.0, 5.0, 0);
+    EXPECT_EQ(positive.weight_lowering_age_seconds, 3.0);
+    EXPECT_EQ(positive.weight_lowering_cpu_seconds, 4.0);
+    EXPECT_EQ(positive.weight_lowering_io_bytes, 5.0);
 }
 
 /// `fair` accounts virtual runtime from `scheduling_cost` (the query's DECLARED cost), not `cost`
