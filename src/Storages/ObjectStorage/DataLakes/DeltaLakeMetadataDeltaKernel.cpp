@@ -161,7 +161,9 @@ DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resol
         std::lock_guard lock(snapshots_mutex);
         /// Concurrent callers share one TableSnapshot, and with it one in-flight kernel build,
         /// instead of each starting their own `snapshot_builder_build` for the same table.
-        if (!latest_snapshot_in_flight)
+        /// A latest-version load is never repeated on one object (it could resolve a different
+        /// version), so once every waiter gave up on the shared one, a fresh object takes over.
+        if (!latest_snapshot_in_flight || latest_snapshot_in_flight->isAbandonedWithoutWaiters())
         {
             /// Constructor itself is lightweight.
             latest_snapshot_in_flight = std::make_shared<DeltaLake::TableSnapshot>(

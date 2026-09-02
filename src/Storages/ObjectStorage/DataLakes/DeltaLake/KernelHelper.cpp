@@ -50,6 +50,20 @@ namespace DB::FailPoints
 namespace DeltaLake
 {
 
+KernelClientOptions KernelClientOptions::fromCurrentQuery()
+{
+    KernelClientOptions options;
+    if (auto query_context = DB::CurrentThread::tryGetQueryContext())
+    {
+        const auto & settings = query_context->getSettingsRef();
+        if (settings[DB::Setting::s3_connect_timeout_ms].changed)
+            options.s3_connect_timeout_ms = settings[DB::Setting::s3_connect_timeout_ms];
+        if (settings[DB::Setting::s3_request_timeout_ms].changed)
+            options.s3_request_timeout_ms = settings[DB::Setting::s3_request_timeout_ms];
+    }
+    return options;
+}
+
 namespace
 {
 
@@ -153,6 +167,11 @@ public:
 
     ffi::EngineBuilder * createBuilder() const override
     {
+        return createBuilderWithOptions(KernelClientOptions::fromCurrentQuery());
+    }
+
+    ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions & options) const override
+    {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
@@ -206,18 +225,10 @@ public:
         /// object_store's built-in defaults (30 s request / 5 s connect) stay in effect.
         /// The server's S3 client re-resolves these from the current query on every update
         /// (`applyNewSettings`), so a query-level `SETTINGS s3_request_timeout_ms = ...` must
-        /// reach the kernel client as well: prefer the current query's changed settings over
-        /// the values captured when this helper was created.
-        UInt64 effective_connect_timeout_ms = connect_timeout_ms;
-        UInt64 effective_request_timeout_ms = request_timeout_ms;
-        if (auto query_context = DB::CurrentThread::tryGetQueryContext())
-        {
-            const auto & settings = query_context->getSettingsRef();
-            if (settings[DB::Setting::s3_connect_timeout_ms].changed)
-                effective_connect_timeout_ms = settings[DB::Setting::s3_connect_timeout_ms];
-            if (settings[DB::Setting::s3_request_timeout_ms].changed)
-                effective_request_timeout_ms = settings[DB::Setting::s3_request_timeout_ms];
-        }
+        /// reach the kernel client as well: the options captured on the query thread take
+        /// precedence over the values captured when this helper was created.
+        const UInt64 effective_connect_timeout_ms = options.s3_connect_timeout_ms.value_or(connect_timeout_ms);
+        const UInt64 effective_request_timeout_ms = options.s3_request_timeout_ms.value_or(request_timeout_ms);
 
         if (effective_connect_timeout_ms)
             set_option("connect_timeout", fmt::format("{}ms", effective_connect_timeout_ms));

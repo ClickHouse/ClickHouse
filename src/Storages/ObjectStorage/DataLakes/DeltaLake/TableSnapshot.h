@@ -40,6 +40,11 @@ public:
     /// Get snapshot version.
     size_t getVersion() const;
 
+    /// True when nothing is installed yet and the only load on this snapshot was given up on by
+    /// every waiter. The metadata layer then resolves the latest version through a fresh object
+    /// rather than reusing this one, so that one object never resolves two different versions.
+    bool isAbandonedWithoutWaiters() const;
+
     std::optional<size_t> getTotalRows() const;
     std::optional<size_t> getTotalBytes() const;
 
@@ -84,7 +89,8 @@ private:
 
     struct KernelSnapshotState : private boost::noncopyable
     {
-        KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_);
+        KernelSnapshotState(
+            const IKernelHelper & helper_, std::optional<size_t> snapshot_version_, const KernelClientOptions & client_options_);
 
         KernelExternEngine engine;
         KernelSnapshot snapshot;
@@ -111,6 +117,9 @@ private:
 
         std::shared_future<std::shared_ptr<KernelSnapshotState>> future;
         std::atomic<State> state{State::Running};
+        /// Queries currently waiting for this load. A load some waiter gave up on is still
+        /// healthy work for the others; only a load nobody waits for is considered dead.
+        std::atomic<Int64> waiters{0};
     };
     mutable std::shared_ptr<InflightSnapshotLoad> inflight_load TSA_GUARDED_BY(mutex);
 

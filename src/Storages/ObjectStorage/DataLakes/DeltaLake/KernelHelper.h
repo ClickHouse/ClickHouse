@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include <optional>
+
 namespace ffi
 {
 struct EngineBuilder;

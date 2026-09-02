@@ -713,6 +713,14 @@ size_t TableSnapshot::getVersion() const
     return getVersionUnlocked();
 }
 
+bool TableSnapshot::isAbandonedWithoutWaiters() const
+{
+    std::lock_guard lock(mutex);
+    return !kernel_snapshot_state && inflight_load
+        && inflight_load->state.load() == InflightSnapshotLoad::State::Abandoned
+        && inflight_load->waiters.load() == 0;
+}
+
 size_t TableSnapshot::getVersionUnlocked() const
 {
     return getKernelSnapshotState()->snapshot_version;
@@ -934,12 +942,18 @@ void TableSnapshot::initOrUpdateSnapshot() const
     for (size_t attempt = 0;; ++attempt)
     {
         /// One in-flight build is shared by every query which needs this snapshot: the first
-        /// waiter starts it and later waiters adopt it. A load that some waiter already gave up
-        /// on is not adopted, though: it may be stuck for good, and adopting it would poison
-        /// this snapshot forever. A fresh (permit-bounded) load is started instead, so the
-        /// table recovers once the object store does; the stuck worker just drops its result.
+        /// waiter starts it and later waiters adopt it — also when some waiter already gave up
+        /// on it, as long as another one is still waiting (a short-timeout query must not divert
+        /// healthy work). Only a load nobody waits for any more is considered dead: it may be
+        /// stuck for good, so a fresh (permit-bounded) load is started instead and the table
+        /// recovers once the object store does. That restart is only allowed for a pinned
+        /// version (or a rebuild of the installed one), whose result is the same version. A first
+        /// latest-version load is never repeated on this object, or it could resolve two
+        /// different versions: the metadata layer starts a fresh object in that case.
         auto load = inflight_load;
-        if (!load || load->state.load() == InflightSnapshotLoad::State::Abandoned)
+        const bool given_up = load && load->state.load() == InflightSnapshotLoad::State::Abandoned
+            && load->waiters.load() == 0;
+        if (!load || (given_up && version_to_build.has_value()))
         {
             load = startKernelSnapshotLoad(helper, version_to_build);
             inflight_load = load;
@@ -955,25 +969,15 @@ void TableSnapshot::initOrUpdateSnapshot() const
         waitForSnapshotLoad(*load, *helper, log);
         lock.lock();
 
-        /// Only the load which is still registered as in flight may install its result. A load
-        /// that was given up on and superseded by a fresh one is stale whenever it completes,
-        /// before or after the fresh one: installing it could make the cached object resolve
-        /// to an older version, or flip between versions. Its waiters re-adopt the fresh load.
+        /// The registered load installs its result. A superseded load (given up on by everyone,
+        /// then replaced by a fresh one for the same pinned version) may still install it while
+        /// nothing is installed yet, so that a waiter which stayed on healthy work completes from
+        /// it. Once a state is installed only the registered load may replace it — a rebuild
+        /// after a credentials refresh, pinned to the same version — so an object never changes
+        /// its version.
         const bool is_current_load = (inflight_load == load);
         if (is_current_load)
             inflight_load = nullptr;
-
-        if (!is_current_load)
-        {
-            if (kernel_snapshot_state)
-                break;  /// Installed by the fresh load (or by a sibling waiter of this one): keep it.
-            if (inflight_load)
-            {
-                LOG_TRACE(log, "Ignoring the completion of a superseded snapshot load; waiting for the current one");
-                continue;
-            }
-            /// Nothing newer exists any more (the fresh load failed): fall through and use this result.
-        }
 
         std::shared_ptr<KernelSnapshotState> built;
         try
@@ -988,6 +992,8 @@ void TableSnapshot::initOrUpdateSnapshot() const
             current_credentials_fingerprint = helper->getCredentialsFingerprint();
             continue;
         }
+        if (!is_current_load && kernel_snapshot_state)
+            break;  /// Already installed by the registered load (or a sibling waiter): keep it.
         kernel_snapshot_state = built;
         kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
         kernel_state_needs_rebuild = false;
@@ -1060,13 +1066,17 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
             snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
     });
 
+    /// Captured here, on the query thread: the worker runs under a neutral thread group and
+    /// has no query context to take settings from.
+    const auto client_options = KernelClientOptions::fromCurrentQuery();
+
     auto load = std::make_shared<InflightSnapshotLoad>();
     auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
-        [kernel_helper, version_to_build]
+        [kernel_helper, version_to_build, client_options]
         {
             /// Simulates a kernel call which never returns (used by tests).
             DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
-            return std::make_shared<KernelSnapshotState>(*kernel_helper, version_to_build);
+            return std::make_shared<KernelSnapshotState>(*kernel_helper, version_to_build, client_options);
         });
     load->future = task->get_future().share();
 
@@ -1111,6 +1121,9 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKern
         process_list_element = context->getProcessListElementSafe();
         timeout_ms = context->getSettingsRef()[DB::Setting::delta_lake_snapshot_load_timeout_ms].totalMilliseconds();
     }
+
+    load.waiters.fetch_add(1, std::memory_order_relaxed);
+    SCOPE_EXIT({ load.waiters.fetch_sub(1, std::memory_order_relaxed); });
 
     Stopwatch watch;
     while (load.future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
@@ -1167,7 +1180,8 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::getKernelSnap
     return kernel_snapshot_state;
 }
 
-TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_)
+TableSnapshot::KernelSnapshotState::KernelSnapshotState(
+    const IKernelHelper & helper_, std::optional<size_t> snapshot_version_, const KernelClientOptions & client_options_)
 {
     fiu_do_on(DB::FailPoints::delta_kernel_force_stale_token_error,
     {
@@ -1176,7 +1190,7 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
             "ExpiredToken: forced by delta_kernel_force_stale_token_error failpoint");
     });
 
-    auto * engine_builder = helper_.createBuilder();
+    auto * engine_builder = helper_.createBuilderWithOptions(client_options_);
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 
     using KernelSnapshotBuilder = KernelPointerWrapper<ffi::MutableFfiSnapshotBuilder, ffi::free_snapshot_builder>;
