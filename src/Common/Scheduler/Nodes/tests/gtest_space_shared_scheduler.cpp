@@ -1829,7 +1829,7 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
         heavy.increaseAsync(6000); // 5000 + 6000 > limit even when heavy is alone.
         auto anchor = std::make_unique<ManualAllocation>(queue, "anchor", 200, /* wait_for_admission = */ false);
         release.set_value();
-        anchor->waitSynced();
+        ASSERT_TRUE(anchor->waitSyncedFor(std::chrono::seconds(2))) << "seed=" << seed << " initial anchor admission";
 
         struct LiveQuery
         {
@@ -1879,7 +1879,8 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
                 ResourceCost release_size = randomBetween(50, 200);
                 release_size = std::min(release_size, releaser->size());
                 releaser->decreaseAsync(release_size);
-                releaser->waitSynced();
+                ASSERT_TRUE(releaser->waitSyncedFor(std::chrono::seconds(2)))
+                    << "seed=" << seed << " round=" << round << " releaser decrease";
                 ++progress_events;
                 ++release_retry_checkpoints;
                 bytes_released += release_size;
@@ -1939,7 +1940,8 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
 
             for (size_t index = 0; index < batch_size; ++index)
             {
-                batch[index]->waitSynced();
+                ASSERT_TRUE(batch[index]->waitSyncedFor(std::chrono::seconds(2)))
+                    << "seed=" << seed << " round=" << round << " batch_index=" << index;
                 ASSERT_EQ(batch[index]->size(), expected_sizes[index]);
                 ASSERT_EQ(batch[index]->killCount(), 0u);
                 live_queries.push_back({
@@ -1964,7 +1966,8 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
                 ResourceCost old_size = query.size();
 
                 query.increaseAsync(increase);
-                query.waitSynced();
+                ASSERT_TRUE(query.waitSyncedFor(std::chrono::seconds(2)))
+                    << "seed=" << seed << " round=" << round << " fitting growth";
 
                 ASSERT_EQ(query.size(), old_size + increase);
                 ASSERT_EQ(query.killCount(), 0u);
@@ -1985,7 +1988,8 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
                 {
                     ResourceCost decrease = randomBetween(1, old_size);
                     query.decreaseAsync(decrease);
-                    query.waitSynced();
+                    ASSERT_TRUE(query.waitSyncedFor(std::chrono::seconds(2)))
+                        << "seed=" << seed << " round=" << round << " partial release";
                     ASSERT_EQ(query.size(), old_size - decrease);
                     ++progress_events;
                     ++release_retry_checkpoints;
@@ -2015,7 +2019,7 @@ TEST(SchedulerSpaceShared, RandomizedFittingAllocationsAlwaysProgress)
         /// Once every beneficiary finishes, the heavy request is still impossible and must reach
         /// the existing last-resort kill path after its exhaustive spill pass completes.
         heavy.recoveryCheckpoint();
-        heavy.waitKills(1);
+        ASSERT_TRUE(heavy.waitKillsFor(1, std::chrono::seconds(2))) << "seed=" << seed << " final eviction";
         EXPECT_EQ(heavy.killCount(), 1u);
 
         total_fitting_requests_approved += fitting_requests_approved;
@@ -2525,6 +2529,7 @@ TEST(SchedulerSpaceShared, DetachingParkedOwnerRetriesSurvivingSibling)
     r.registerResource();
 
     auto heavy = std::make_unique<ManualAllocation>(owner_queue_ptr, "heavy", 8000);
+    heavy->protectAfterPressureRounds(1);
     heavy->increaseAsync(5000);
     auto survivor = std::make_unique<ManualAllocation>(survivor_queue_ptr, "survivor", 3000, false);
     heavy->waitPressureCount(1);
@@ -2576,6 +2581,7 @@ TEST(SchedulerSpaceShared, DetachingSuspendedPrecedenceChildUnblocksLowerWork)
     r.registerResource();
 
     auto heavy = std::make_unique<ManualAllocation>(high_queue_ptr, "heavy", 8000);
+    heavy->protectAfterPressureRounds(1);
     heavy->increaseAsync(5000);
     auto lower = std::make_unique<ManualAllocation>(low_queue_ptr, "lower", 3000, false);
     heavy->waitPressureCount(1);
