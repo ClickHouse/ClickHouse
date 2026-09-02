@@ -1,3 +1,6 @@
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -29,6 +32,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsString rename_files_after_processing;
 }
 
 StorageFileCluster::StorageFileCluster(
@@ -79,6 +83,16 @@ StorageFileCluster::StorageFileCluster(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context));
     setInMemoryMetadata(storage_metadata);
+}
+
+void StorageFileCluster::updateBeforeRead(const ContextPtr & context)
+{
+    /// The workers rename the files they read, so the user who asks for it must be allowed to write
+    /// here, on the node it authenticated to: without a cluster secret a secondary query is
+    /// authorized as the cluster's configured user, not as the user who issued this query.
+    if (!context->getSettingsRef()[Setting::rename_files_after_processing].value.empty())
+        context->getAccess()->checkAccessWithFilter(
+            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
 }
 
 void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)

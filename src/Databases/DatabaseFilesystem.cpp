@@ -28,6 +28,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsString rename_files_after_processing;
 }
 
 namespace ErrorCodes
@@ -141,9 +142,18 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
+    /// A renaming rule belongs to the one query that set it, while a cached table is shared with the
+    /// later queries of every user. Such a table is therefore neither taken from the cache, where it
+    /// would arrive without the rule, nor put into it, where it would rename for an unrelated query.
+    const bool renames_after_processing
+        = !context_->getSettingsRef()[Setting::rename_files_after_processing].value.empty();
+
     /// Check if table exists in loaded tables map.
-    if (auto table = tryGetTableFromCache(name))
-        return table;
+    if (!renames_after_processing)
+    {
+        if (auto table = tryGetTableFromCache(name))
+            return table;
+    }
 
     auto table_path = getTablePath(name);
     if (!checkTableFilePath(table_path, context_, throw_on_error))
@@ -157,7 +167,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
 
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
-    if (table_storage)
+    if (table_storage && !renames_after_processing)
         return addTable(name, table_storage);
 
     return table_storage;

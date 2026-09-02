@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# Tags: no-replicated-database
+# no-replicated-database: with a replicated access storage the entity serialization round trip widens
+# `GRANT READ ON FILE` to both `READ` and `WRITE` (see issue
+# https://github.com/ClickHouse/ClickHouse/issues/111402, whose fix is not merged yet), so every
+# denial asserted below would hold for the wrong reason.
+
+# `rename_files_after_processing` renames the files a `SELECT` has read, so it is a write to the
+# source and requires `WRITE ON FILE` on top of `READ ON FILE`. It is also a per-query rule, so it
+# must not be cached in a `Filesystem` database and applied to another query.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+FILES_DIR="${CLICKHOUSE_USER_FILES_UNIQUE}"
+mkdir -p "${FILES_DIR}"
+
+READER="reader_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+FS_DB="fsdb_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+RENAME="rename_files_after_processing='processed_%a'"
+
+# One input file per renaming scenario: a successful rename consumes the name.
+for name in direct_select wrapped_url cluster_initiator explain_pipeline explain_plan \
+            granted_write cached_armed_for_reader cached_armed_for_owner cached_unarmed; do
+    echo 7 > "${FILES_DIR}/${name}.csv"
+done
+
+${CLICKHOUSE_CLIENT} -q "
+DROP DATABASE IF EXISTS ${FS_DB};
+DROP USER IF EXISTS ${READER};
+CREATE USER ${READER} IDENTIFIED WITH no_password;
+GRANT CREATE TEMPORARY TABLE ON *.* TO ${READER};
+GRANT READ ON FILE TO ${READER};
+"
+
+# Prints what became of one input file. The no-side-effect half of every denial is asserted with it:
+# a refusal that still renamed the file would regress silently.
+file_state() {
+    if [ -f "${FILES_DIR}/processed_$1.csv" ] && [ ! -f "${FILES_DIR}/$1.csv" ]; then
+        echo "renamed"
+    elif [ -f "${FILES_DIR}/$1.csv" ] && [ ! -f "${FILES_DIR}/processed_$1.csv" ]; then
+        echo "intact"
+    else
+        echo "unexpected"
+    fi
+}
+
+echo '--- the read-only grant set really is read-only: an explicit write is refused'
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "INSERT INTO FUNCTION file('${FILES_DIR}/direct_select.csv', 'CSV', 'x UInt8') SELECT 9" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+
+echo '--- a renaming SELECT through file() is refused, and renames nothing'
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM file('${FILES_DIR}/direct_select.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+file_state direct_select
+
+echo '--- the same through url(file://), which resolves to a file() delegate'
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM url('file://${FILES_DIR}/wrapped_url.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+file_state wrapped_url
+
+echo '--- the same through fileCluster(), refused on the initiator'
+# Without a cluster secret the secondary query is authorized as the cluster's configured user, so a
+# worker-side check alone would let this user rename the file.
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM fileCluster('test_shard_localhost', '${FILES_DIR}/cluster_initiator.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+file_state cluster_initiator
+
+echo '--- EXPLAIN PIPELINE builds the readers, so it renames too, and is refused'
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "EXPLAIN PIPELINE SELECT * FROM file('${FILES_DIR}/explain_pipeline.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+file_state explain_pipeline
+
+echo '--- EXPLAIN PLAN renames nothing, but needs the privileges of the query it explains'
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "EXPLAIN PLAN SELECT * FROM file('${FILES_DIR}/explain_plan.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+file_state explain_plan
+
+echo '--- structure resolution builds no reader and keeps working with READ ON FILE alone'
+# The resolved structure is printed, not just the absence of an error: a count of missing denials
+# would read the same whether the DESCRIBE succeeded or failed for an unrelated reason.
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "DESCRIBE TABLE file('${FILES_DIR}/explain_plan.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME} FORMAT TSV" 2>&1 |
+    cut -f1,2 | head -1
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "DESCRIBE TABLE fileCluster('test_shard_localhost', '${FILES_DIR}/explain_plan.csv', 'CSV', 'x UInt8')
+     SETTINGS describe_include_virtual_columns = 1, ${RENAME} FORMAT TSV" 2>&1 |
+    cut -f1,2 | head -1
+
+echo '--- a plain read without the setting is not affected'
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM file('${FILES_DIR}/cached_unarmed.csv', 'CSV', 'x UInt8')"
+file_state cached_unarmed
+
+echo '--- a Filesystem database does not cache the rename rule for later queries'
+${CLICKHOUSE_CLIENT} -q "
+CREATE DATABASE ${FS_DB} ENGINE = Filesystem('${FILES_DIR}');
+GRANT SELECT ON ${FS_DB}.* TO ${READER};
+"
+# A DESCRIBE with the setting used to leave an armed table in the database cache, so an unrelated
+# later query renamed the file: the reader never asked for it, and the owner never authorized it.
+${CLICKHOUSE_CLIENT} -q \
+    "DESCRIBE TABLE ${FS_DB}.\`cached_armed_for_reader.csv\` SETTINGS ${RENAME}" > /dev/null
+${CLICKHOUSE_CLIENT} --user "${READER}" -q "SELECT * FROM ${FS_DB}.\`cached_armed_for_reader.csv\`"
+file_state cached_armed_for_reader
+
+${CLICKHOUSE_CLIENT} -q \
+    "DESCRIBE TABLE ${FS_DB}.\`cached_armed_for_owner.csv\` SETTINGS ${RENAME}" > /dev/null
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${FS_DB}.\`cached_armed_for_owner.csv\`"
+file_state cached_armed_for_owner
+
+echo '--- and it does not serve a renaming query from an entry cached without the rule'
+# The mirror image: a warm unarmed entry used to make the setting a silent no-op, so the rename never
+# happened and no privilege was required for asking.
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${FS_DB}.\`cached_unarmed.csv\`" > /dev/null
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM ${FS_DB}.\`cached_unarmed.csv\` SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+file_state cached_unarmed
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${FS_DB}.\`cached_unarmed.csv\` SETTINGS ${RENAME}"
+file_state cached_unarmed
+
+echo '--- with WRITE ON FILE granted, the rename happens'
+${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO ${READER}"
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM file('${FILES_DIR}/granted_write.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}"
+file_state granted_write
+
+${CLICKHOUSE_CLIENT} -q "
+DROP DATABASE IF EXISTS ${FS_DB};
+DROP USER IF EXISTS ${READER};
+"
+rm -rf "${FILES_DIR}"
