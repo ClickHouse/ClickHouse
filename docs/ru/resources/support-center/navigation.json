@@ -1,11 +1,11 @@
 {
   "groups": [
     {
-      "group": "База знаний",
+      "group": "Knowledgebase",
       "pages": [
         "ru/resources/support-center/home",
         {
-          "group": "Производительность & оптимизация",
+          "group": "Performance & optimization",
           "pages": [
             "ru/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "ru/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -40,7 +40,7 @@
           ]
         },
         {
-          "group": "Импорт & экспорт данных",
+          "group": "Data import & export",
           "pages": [
             "ru/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "ru/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -60,7 +60,7 @@
           ]
         },
         {
-          "group": "Конфигурация & настройки",
+          "group": "Configuration & settings",
           "pages": [
             "ru/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "ru/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
@@ -71,7 +71,7 @@
           ]
         },
         {
-          "group": "Интеграции & клиентские библиотеки",
+          "group": "Integrations & client libraries",
           "pages": [
             "ru/resources/support-center/knowledge-base/integrations/node-js-example",
             "ru/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "group": "Устранение неполадок & ошибки",
+          "group": "Troubleshooting & errors",
           "pages": [
             "ru/resources/support-center/troubleshooting/index",
             "ru/resources/support-center/troubleshooting/troubleshooting",
@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "Таблицы & схема",
+          "group": "Tables & schema",
           "pages": [
             "ru/resources/support-center/knowledge-base/tables-schema/add-column",
             "ru/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "Запросы & SQL",
+          "group": "Queries & SQL",
           "pages": [
             "ru/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "ru/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -126,7 +126,7 @@
           ]
         },
         {
-          "group": "Materialized views & проекции",
+          "group": "Materialized views & projections",
           "pages": [
             "ru/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ru/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "group": "Мониторинг & отладка",
+          "group": "Monitoring & debugging",
           "pages": [
             "ru/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "ru/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -150,7 +150,7 @@
           ]
         },
         {
-          "group": "Безопасность & управление доступом",
+          "group": "Security & access control",
           "pages": [
             "ru/resources/support-center/knowledge-base/security/check-users-roles",
             "ru/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -161,7 +161,7 @@
           ]
         },
         {
-          "group": "Управление данными",
+          "group": "Data management",
           "pages": [
             "ru/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
             "ru/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
@@ -173,7 +173,7 @@
           ]
         },
         {
-          "group": "Настройка & установка",
+          "group": "Setup & installation",
           "pages": [
             "ru/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "ru/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
@@ -185,11 +185,11 @@
           ]
         },
         {
-          "group": "Общее & FAQ",
+          "group": "General & FAQs",
           "pages": [
             "ru/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "Общее",
+              "group": "General",
               "pages": [
                 "ru/resources/support-center/knowledge-base/general-faqs/index",
                 "ru/resources/support-center/knowledge-base/general-faqs/columnar-database",
@@ -211,7 +211,7 @@
               ]
             },
             {
-              "group": "Сценарии использования",
+              "group": "Use cases",
               "pages": [
                 "ru/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "ru/resources/support-center/knowledge-base/general-faqs/key-value",
@@ -221,7 +221,7 @@
               ]
             },
             {
-              "group": "Интеграция",
+              "group": "Integration",
               "pages": [
                 "ru/resources/support-center/knowledge-base/integrations/index",
                 "ru/resources/support-center/knowledge-base/data-import-export/json-import",
@@ -241,7 +241,7 @@
           ]
         },
         {
-          "group": "Советы & рекомендации",
+          "group": "Tips & tricks",
           "pages": [
             "ru/resources/support-center/tips-and-tricks/community-wisdom",
             "ru/resources/support-center/tips-and-tricks/cost-optimization",
@@ -256,5 +256,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "Центр поддержки"
+  "item": "Support center"
 }

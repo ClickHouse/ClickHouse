@@ -65,6 +65,7 @@ constexpr std::array supported_functions{
     SupportedFunction{"sumMappedArrays", false},
     SupportedFunction{"minMappedArrays", false},
     SupportedFunction{"maxMappedArrays", false},
+    SupportedFunction{"timeSeriesGroupArray", false},
 };
 
 const SupportedFunction * findSupportedFunction(const String & name)
@@ -274,6 +275,7 @@ The following aggregate functions are supported:
 - [`sumMap` (`sumMappedArrays`)](/reference/functions/aggregate-functions/sumMap)
 - [`minMap` (`minMappedArrays`)](/reference/functions/aggregate-functions/minMap)
 - [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/maxMap)
+- [`timeSeriesGroupArray`](/reference/functions/aggregate-functions/timeSeriesGroupArray) (with a single argument of type `Array(Tuple(timestamp, value))`)
 
 :::note
 Values of the `SimpleAggregateFunction(func, Type)` have the same `Type`,

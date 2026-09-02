@@ -17,6 +17,7 @@
 #include <Core/SettingsTierType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
+#include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
@@ -1848,6 +1849,16 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, optimize_mutations_with_partition_pruning, true, R"(
+When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of `ALTER TABLE UPDATE`/`DELETE` mutations and lightweight `UPDATE`/`DELETE` statements on tables of the `ReplicatedMergeTree` family and only processes the affected partitions instead of all partitions.
+
+This automatic pruning currently applies only to replicated tables. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit a mutation to specific partitions.
+
+Possible values:
+
+- 0 — Disabled. Mutations and lightweight updates will process all partitions.
+- 1 — Enabled. Mutations and lightweight updates will only process partitions that match the WHERE condition.
 )", 0) \
     DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
 Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
@@ -3898,7 +3909,7 @@ Possible values:
 - NONE — No compression is applied.
 )", 0) \
     \
-    DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
+    DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption. A value above 1 GiB is reduced to 1 GiB.", 0) \
     DECLARE(UInt64, max_rows_to_transfer, 0, R"(
 Maximum size (in rows) that can be passed to a remote server or saved in a
 temporary table when the GLOBAL IN/JOIN section is executed.
@@ -5390,7 +5401,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 ```
 )", 0) \
  DECLARE(Bool, validate_mutation_query, true, R"(
-Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query will cause mutations to get stuck, requiring manual intervention.
+Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query can cause mutations to get stuck, requiring manual intervention.
 
 Only change this setting if you encounter a backward-incompatible bug.
 )", 0) \
@@ -5406,9 +5417,6 @@ Possible values:
 )", 0) \
     DECLARE(Bool, materialize_ttl_after_modify, true, R"(
 Apply TTL for old data, after ALTER MODIFY TTL query
-)", 0) \
-    DECLARE(String, function_implementation, "", R"(
-Choose function implementation for specific target or variant (experimental). If empty enable all of them.
 )", 0) \
     DECLARE(Bool, data_type_default_nullable, false, R"(
 Allows data types without explicit modifiers [NULL or NOT NULL](/reference/statements/create/table#null-or-not-null-modifiers) in column definition will be [Nullable](/reference/data-types/nullable).
@@ -6333,6 +6341,9 @@ Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_
     DECLARE(Bool, force_distinct_partitions_independently, false, R"(
 Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
 )", 0) \
+    DECLARE(Bool, allow_preliminary_distinct_abandoning, true, R"(
+Let the preliminary (per-stream) `DISTINCT` give up deduplicating mostly-unique input, freeing its hash table and passing the remaining rows through. The preliminary `DISTINCT` is best-effort by design - duplicates from different streams pass through it even when it deduplicates - and the final `DISTINCT` deduplicates its output again, so abandoning gives up the removal of almost nothing and saves the memory and hashing of a second copy of the unique keys. Not applied when the preliminary `DISTINCT` carries a limit hint (a plain `LIMIT` with no subsequent ordering).
+)", 0) \
     DECLARE(Bool, allow_window_partitions_independently, true, R"(
 Enable independent evaluation of window functions per partition on separate threads when the partition expression of the `MergeTree` table is a deterministic function of the window `PARTITION BY` columns. Each partition is read through a separate stream, sorted independently by the window sort description, and processed by its own window transform, skipping the hash scatter that ordinarily reshuffles every row across threads. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_window](#max_number_of_partitions_for_independent_window) and [force_window_partitions_independently](#force_window_partitions_independently). Not applied with `FINAL` or parallel replicas.
 )", 0) \
@@ -6676,6 +6687,14 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_fuse_filter_into_array_join, true, R"(
 Toggles a query-plan-level optimization which fuses a filter on `ARRAY JOIN`ed element columns into the `ARRAY JOIN` step, filtering the arrays in element space before expansion so that filtered-out elements are never expanded or replicated.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+)", 0) \
+    DECLARE(Bool, query_plan_lower_array_join_function, false, R"(
+Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 :::note
@@ -8905,19 +8924,6 @@ Controls how posting lists are applied during text index queries.
 Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
 Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
 )", 0, text_index_density_threshold) \
-    DECLARE(Bool, allow_experimental_window_view, false, R"(
-Enable WINDOW VIEW. Not mature enough.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, window_view_clean_interval, 60, R"(
-The clean interval of window view in seconds to free outdated data.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, window_view_heartbeat_interval, 15, R"(
-The heartbeat interval in seconds to indicate watch query is alive.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, wait_for_window_view_fire_signal_timeout, 10, R"(
-Timeout for waiting for window view fire signal in event time processing
-)", EXPERIMENTAL) \
-    \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
@@ -8944,7 +8950,7 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
-Enable Kusto Query Language (KQL) - an alternative to SQL.
+Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
@@ -9176,6 +9182,7 @@ Enable experimental table function `eval`.
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
+    MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_ai_functions, false) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
@@ -9261,6 +9268,10 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, allow_experimental_live_view, false) \
     MAKE_OBSOLETE(M, Seconds, live_view_heartbeat_interval, 15) \
     MAKE_OBSOLETE(M, UInt64, max_live_view_insert_blocks_before_refresh, 64) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_window_view, false) \
+    MAKE_OBSOLETE(M, Seconds, window_view_clean_interval, 60) \
+    MAKE_OBSOLETE(M, Seconds, window_view_heartbeat_interval, 15) \
+    MAKE_OBSOLETE(M, Seconds, wait_for_window_view_fire_signal_timeout, 10) \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_cleanup_timeout_ms, 1000) \
     MAKE_OBSOLETE(M, Bool, optimize_fuse_sum_count_avg, 0) \
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
@@ -9310,6 +9321,15 @@ Enable experimental table function `eval`.
 // clang-format on
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS, COMMON_SETTINGS_SUPPORTED_TYPES)
+
+/// A `merge_tree_`-prefixed name is a `MergeTreeSettings` setting kept here as a custom setting, and it can
+/// have two names. Store it under the canonical one, so that a value written under either name is the value
+/// read under either name, instead of the two names holding two values of one setting.
+template <>
+std::string_view resolveCustomSettingName<SettingsTraits>(std::string_view name)
+{
+    return canonicalSettingName(name);
+}
 
 /** Settings of query execution.
   * These settings go to users.xml.
