@@ -34,22 +34,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
-initial_tasks=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'BackgroundMergesAndMutationsPoolTask'")
-initial_merges=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges")
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause"
-$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_optimize_single_partition_slot FINAL" &
+$CLICKHOUSE_CLIENT --receive_timeout 900 --query "OPTIMIZE TABLE t_optimize_single_partition_slot FINAL" &
 optimize_pid=$!
 
+# `BackgroundMergesAndMutationsPoolTask` is server-global: unrelated background merges (e.g. of
+# system tables) are charged to it as well, and their number changes while the test runs. Read the
+# merge counts and the metric in a single snapshot and require the metric to account for every merge
+# in flight. A baseline taken before the `OPTIMIZE` cannot be used: it also counts background tasks
+# that are gone by the time the check runs, which makes the threshold unreachable.
 reserved=no
-for _ in {1..300}; do
-    merges=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_optimize_single_partition_slot'")
-    total_merges=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges")
-    tasks=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'BackgroundMergesAndMutationsPoolTask'")
-    if [[ "$merges" -eq 1 && "$tasks" -ge $((initial_tasks + total_merges - initial_merges)) ]]; then
+deadline=$((SECONDS + 60))
+while (( SECONDS < deadline )); do
+    state=$($CLICKHOUSE_CLIENT --query "
+        SELECT
+            (SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_optimize_single_partition_slot'),
+            (SELECT count() FROM system.merges),
+            (SELECT value FROM system.metrics WHERE metric = 'BackgroundMergesAndMutationsPoolTask')")
+    in_flight=$(echo "$state" | cut -f1)
+    total_in_flight=$(echo "$state" | cut -f2)
+    tasks=$(echo "$state" | cut -f3)
+    if [[ "$in_flight" -eq 1 && "$tasks" -ge "$total_in_flight" ]]; then
         reserved=yes
         break
     fi
-    sleep 0.1
+    sleep 0.2
 done
 
 echo "single partition optimize final reserves merge slot: $reserved"
