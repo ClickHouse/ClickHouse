@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-contained tests for structured system-table documentation generation."""
+"""Test structured system-table sources and Python page rewriting."""
 
 import importlib.util
 import io
@@ -470,7 +470,7 @@ This entry came from live runtime state.
     print(
         f"OK: {len(documents)} structured system-table comments: "
         f"{len(attach_documents)} attached tables and "
-        f"{len(system_log_documents)} system logs; generated pages preserve "
+        f"{len(system_log_documents)} system logs; Python page rewrites preserve "
         "their MDX preamble and published section headings and update deterministically"
     )
     return 0
