@@ -11,7 +11,7 @@ class SourceFromSingleChunk final : public ISource
 /// If the source consists of multiple chunks you can instead use SourceFromChunks.
 public:
     SourceFromSingleChunk(SharedHeader header, Chunk chunk_);
-    explicit SourceFromSingleChunk(SharedHeader data);
+    explicit SourceFromSingleChunk(SharedHeader data, bool enable_auto_progress = true);
     String getName() const override;
 
 protected:
