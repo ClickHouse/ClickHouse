@@ -21,16 +21,16 @@ Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
 47
 -- direct read preserved: eligible WHERE reads the __text_index_* virtual column
 1
-preprocessor is applied only on the index path
--- SELECT-list position: preprocessor not applied
-0
--- SELECT-list preprocessor is not applied even when a sibling WHERE uses the index
-0
--- WHERE: preprocessor applied only with use_skip_indexes = 1
-0
+preprocessor is applied on the row-scan path too
+-- SELECT-list position: preprocessor applied
 10
--- EXPLAIN: SELECT-list injects the tokenizer but not the preprocessor
-Output: hasAnyTokens(s, [\'hello\'], \'splitByNonAlpha\')
+-- a sibling WHERE strands the aggregate argument above the scan, no rewrite reaches it
+0
+-- WHERE is consistent across use_skip_indexes
+10
+10
+-- EXPLAIN: SELECT-list injects the preprocessor and the tokenizer
+Output: hasAnyTokens(lower(s), [\'hello\'], \'splitByNonAlpha\')
 postprocessor is applied on the row-scan path too
 -- SELECT-list position: postprocessor applied
 10	10
