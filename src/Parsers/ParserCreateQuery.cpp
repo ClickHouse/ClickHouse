@@ -182,12 +182,15 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (s_granularity.ignore(pos, expected))
     {
+        if (!allow_granularity)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "`LOOKUP INDEX` does not support `GRANULARITY`");
+
         if (!granularity_p.parse(pos, granularity, expected))
             return false;
     }
 
     auto index = make_intrusive<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
-    index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
+    index->granularity = allow_granularity ? getSecondaryIndexGranularity(index->getType(), granularity) : 0;
     node = index;
     return true;
 }
@@ -397,6 +400,7 @@ bool ParserForeignKeyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    auto s_lookup_index = ParserKeyword::createDeprecated("LOOKUP INDEX");
     ParserKeyword s_index(Keyword::INDEX);
     ParserKeyword s_constraint(Keyword::CONSTRAINT);
     ParserKeyword s_projection(Keyword::PROJECTION);
@@ -404,6 +408,7 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     ParserKeyword s_primary_key(Keyword::PRIMARY_KEY);
 
     ParserIndexDeclaration index_p;
+    ParserIndexDeclaration lookup_index_p(false);
     ParserConstraintDeclaration constraint_p;
     ParserProjectionDeclaration projection_p;
     ParserForeignKeyDeclaration foreign_key_p;
@@ -412,7 +417,14 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
 
     ASTPtr new_node = nullptr;
 
-    if (s_index.ignore(pos, expected))
+    if (s_lookup_index.ignore(pos, expected))
+    {
+        if (!lookup_index_p.parse(pos, new_node, expected))
+            return false;
+
+        new_node->as<ASTIndexDeclaration &>().is_lookup_index = true;
+    }
+    else if (s_index.ignore(pos, expected))
     {
         if (!index_p.parse(pos, new_node, expected))
             return false;
@@ -475,6 +487,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         return false;
 
     ASTPtr columns = make_intrusive<ASTExpressionList>();
+    ASTPtr lookup_indices = make_intrusive<ASTExpressionList>();
     ASTPtr indices = make_intrusive<ASTExpressionList>();
     ASTPtr constraints = make_intrusive<ASTExpressionList>();
     ASTPtr projections = make_intrusive<ASTExpressionList>();
@@ -500,8 +513,13 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             }
             columns->children.push_back(elem);
         }
-        else if (elem->as<ASTIndexDeclaration>())
-            indices->children.push_back(elem);
+        else if (const auto * index = elem->as<ASTIndexDeclaration>())
+        {
+            if (index->is_lookup_index)
+                lookup_indices->children.push_back(elem);
+            else
+                indices->children.push_back(elem);
+        }
         else if (elem->as<ASTConstraintDeclaration>())
             constraints->children.push_back(elem);
         else if (elem->as<ASTProjectionDeclaration>())
@@ -528,6 +546,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (!columns->children.empty())
         res->set(res->columns, columns);
+    if (!lookup_indices->children.empty())
+        res->set(res->lookup_indices, lookup_indices);
     if (!indices->children.empty())
         res->set(res->indices, indices);
     if (!constraints->children.empty())

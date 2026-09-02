@@ -1,0 +1,15 @@
+map subcolumn selected
+1	['k1']
+2	['k2','k3']
+map subcolumn: not using DirectKeyValueJoin
+0
+virtual column selected
+1	1
+2	1
+virtual column: not using DirectKeyValueJoin
+0
+physical map column only
+1	{'k1':'v1'}
+2	{'k2':'v2','k3':'v3'}
+physical map column only: using DirectKeyValueJoin
+1

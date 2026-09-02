@@ -43,6 +43,8 @@ struct AlterCommand
         MODIFY_SAMPLE_BY,
         ADD_INDEX,
         DROP_INDEX,
+        ADD_LOOKUP_INDEX,
+        DROP_LOOKUP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
         MODIFY_CONSTRAINT,
