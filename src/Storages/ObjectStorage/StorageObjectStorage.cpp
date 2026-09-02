@@ -1076,7 +1076,10 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
     auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
-    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
+    /// The state the command is validated against, pinned for the whole of its execution.
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    return metadata->executeCommand(
+        command_name, args, object_storage, configuration, catalog, context, storage_id, metadata_snapshot);
 }
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
@@ -1091,7 +1094,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
     checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
 
-    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+    configuration->alter(object_storage, params, context, getStorageID(), catalog, metadata_snapshot);
 
     if (catalog)
         return;

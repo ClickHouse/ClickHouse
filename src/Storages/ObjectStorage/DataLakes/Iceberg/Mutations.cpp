@@ -819,7 +819,8 @@ void alter(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    std::optional<UInt64> validated_incarnation)
 {
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
@@ -829,6 +830,11 @@ void alter(
     while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
+
+        /// The columns being altered were resolved against the incarnation the statement was
+        /// validated for, so the metadata read below must describe that same table.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "ALTER");
+
         auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
@@ -884,6 +890,10 @@ void alter(
         }
 
         std::string json_representation = stringifyJSON(metadata, 4);
+
+        /// A replacement landing while the new metadata was being built would make the rewrite
+        /// below overwrite another table's metadata with this one's schema.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "ALTER");
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 

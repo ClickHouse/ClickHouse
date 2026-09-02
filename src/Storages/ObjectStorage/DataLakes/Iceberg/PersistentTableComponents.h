@@ -43,6 +43,12 @@ struct PersistentTableComponents
     /// processor when the table is replaced, and the previous one stays alive for its holders.
     IcebergSchemaProcessorPtr getSchemaProcessor() const { return shared_schema_processor->get(); }
 
+    /// The current schema processor and the incarnation it describes, observed as one.
+    std::pair<IcebergSchemaProcessorPtr, UInt64> getSchemaProcessorWithIncarnation() const
+    {
+        return shared_schema_processor->getWithIncarnation();
+    }
+
     /// The schema processor of the incarnation a query was validated against, which is the one
     /// every execution-time schema lookup of that query has to go through. Throws when the table
     /// was replaced in the meantime. See `SharedSchemaProcessor::getForPinnedIncarnation`.
@@ -50,6 +56,14 @@ struct PersistentTableComponents
     {
         return shared_schema_processor->getForPinnedIncarnation(pinned_incarnation);
     }
+
+    /// Refuse to continue when the table was dropped and recreated at the same root since the
+    /// statement was validated. A statement plans against one incarnation - its sample block, its
+    /// column ids, its reachability set all describe that table - so continuing against the
+    /// replacement would rewrite or delete another table's files. `operation` names the statement
+    /// in the message. A statement carrying no validated incarnation, such as one deserialized on
+    /// another server, has nothing to compare against and is let through.
+    void checkTableWasNotReplaced(std::optional<UInt64> validated_incarnation, std::string_view operation) const;
 
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).

@@ -1019,6 +1019,11 @@ IcebergStorageSink::IcebergStorageSink(
 {
     checkTableWasNotReplaced();
 
+    /// Both reads are keyed by the UUID of the validated incarnation rather than by the live one,
+    /// which a concurrent query may already have moved to a table that replaced this one, and the
+    /// check is repeated afterwards: a replacement landing between the check above and these reads
+    /// would otherwise start the sink off the replacement's metadata while `sample_block` still
+    /// describes the table the write was validated for.
     auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
@@ -1028,7 +1033,7 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_cache,
         context_,
         log.get(),
-        persistent_table_components.getTableUuid(),
+        persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation),
         persistent_table_components.metadata_compression_method,
         /* ignore_explicit_metadata_file_path */ false);
 
@@ -1039,7 +1044,9 @@ IcebergStorageSink::IcebergStorageSink(
         context,
         log,
         compression_method,
-        persistent_table_components.getTableUuid());
+        persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation));
+
+    checkTableWasNotReplaced();
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
@@ -1332,7 +1339,7 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites").get(),
-                persistent_table_components.getTableUuid(),
+                persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation),
                 persistent_table_components.metadata_compression_method,
                 /* ignore_explicit_metadata_file_path */ true);
 
@@ -1350,7 +1357,9 @@ bool IcebergStorageSink::initializeMetadata()
                 context,
                 getLogger("IcebergWrites"),
                 compression_method,
-                persistent_table_components.getTableUuid());
+                persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation));
+
+            checkTableWasNotReplaced();
             partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 

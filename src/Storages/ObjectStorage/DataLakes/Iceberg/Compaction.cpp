@@ -1360,7 +1360,8 @@ void compactIcebergManifests(
     ContextPtr context_,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id)
+    const StorageID & table_id,
+    std::optional<UInt64> validated_incarnation)
 {
     auto log = getLogger("IcebergManifestCompaction");
     LOG_INFO(log, "Starting manifest-only compaction for Iceberg table");
@@ -1371,6 +1372,8 @@ void compactIcebergManifests(
     {
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
+
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE TABLE ... MANIFEST");
 
         const auto [metadata_version, metadata_file_path, _, _identity] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage_,
@@ -1415,6 +1418,8 @@ void compactIcebergManifests(
             return;
         }
 
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE TABLE ... MANIFEST");
+
         if (writeConsolidatedManifestFile(
                 metadata_version,
                 metadata_object,
@@ -1452,9 +1457,15 @@ void compactIcebergTable(
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
-    const String & write_format)
+    const String & write_format,
+    std::optional<UInt64> validated_incarnation)
 {
     checkIfIcebergHistorySupported(snapshots_info);
+
+    /// The plan is built against whatever the table looks like now, and the rewrite below replaces
+    /// the table with the result of that plan. Both have to describe the incarnation the OPTIMIZE
+    /// was validated for, so the check is repeated after the plan and before the rewrite.
+    persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE");
 
     auto plan = getPlan(
         std::move(snapshots_info),
@@ -1464,6 +1475,8 @@ void compactIcebergTable(
         write_format,
         context_,
         persistent_table_components.metadata_compression_method);
+    persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE");
+
     if (plan.need_optimize)
     {
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
@@ -1476,6 +1489,9 @@ void compactIcebergTable(
             context_,
             write_format,
             persistent_table_components.metadata_compression_method);
+        /// `clearOldFiles` deletes the files the plan started from, so the last word before the
+        /// destructive step is that they still belong to the table this statement was validated for.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE");
         writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }

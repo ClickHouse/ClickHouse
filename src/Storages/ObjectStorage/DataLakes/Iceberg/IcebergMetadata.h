@@ -173,7 +173,8 @@ public:
         const AlterCommands & params,
         ContextPtr context,
         const StorageID & storage_id,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageMetadataPtr & metadata_snapshot) override;
 
     Pipe executeCommand(
         const String & command_name,
@@ -182,7 +183,8 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         std::shared_ptr<DataLake::ICatalog> catalog,
         ContextPtr context,
-        const StorageID & storage_id) override;
+        const StorageID & storage_id,
+        const StorageMetadataPtr & metadata_snapshot) override;
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -221,13 +223,24 @@ private:
         LoggerPtr log);
 
     Iceberg::IcebergDataSnapshotPtr
-    getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
+    getIcebergDataSnapshot(
+        Poco::JSON::Object::Ptr metadata_object,
+        Int64 snapshot_id,
+        ContextPtr local_context,
+        const Iceberg::IcebergSchemaProcessorPtr & schema_processor) const;
 
     Iceberg::IcebergDataSnapshotPtr createIcebergDataSnapshotFromSnapshotJSON(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
-    getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
+    getStateImpl(
+        const ContextPtr & local_context,
+        Poco::JSON::Object::Ptr metadata_object,
+        const Iceberg::IcebergSchemaProcessorPtr & schema_processor) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
+    getState(
+        const ContextPtr & local_context,
+        const String & metadata_path,
+        Int32 metadata_version,
+        const Iceberg::IcebergSchemaProcessorPtr & schema_processor) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;

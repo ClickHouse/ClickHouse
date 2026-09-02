@@ -200,10 +200,11 @@ public:
         const AlterCommands & params,
         ContextPtr context,
         const StorageID & storage_id,
-        std::shared_ptr<DataLake::ICatalog> catalog) override
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageMetadataPtr & metadata_snapshot) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        getMetadata()->alter(params, context, storage_id, catalog);
+        getMetadata()->alter(params, context, storage_id, catalog, metadata_snapshot);
     }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override

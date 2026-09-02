@@ -665,7 +665,8 @@ ExpireSnapshotsResult expireSnapshots(
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name)
+    const String & table_name,
+    std::optional<UInt64> validated_incarnation)
 {
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
@@ -681,6 +682,11 @@ ExpireSnapshotsResult expireSnapshots(
     {
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergExpireSnapshots");
+
+        /// The snapshots to expire and the files they hold are read below; they must belong to the
+        /// incarnation this statement was validated for, not to a table that replaced it.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE expire_snapshots");
+
         auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
@@ -773,6 +779,10 @@ ExpireSnapshotsResult expireSnapshots(
 
         updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
 
+        /// The commit below rewrites the metadata and the deletion that follows it removes the
+        /// expired files for good, so this is the last point at which a replacement can be caught.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE expire_snapshots");
+
         std::string json_representation = stringifyJSON(metadata, 4);
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
         auto hint_path = filename_generator.generateVersionHint();
@@ -835,7 +845,8 @@ Pipe executeExpireSnapshots(
     const PersistentTableComponents & persistent_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name)
+    const String & table_name,
+    std::optional<UInt64> validated_incarnation)
 {
     auto parsed = makeSchema().parse(args);
     auto options = buildOptions(parsed);
@@ -848,7 +859,8 @@ Pipe executeExpireSnapshots(
         persistent_components,
         write_format,
         catalog,
-        table_name);
+        table_name,
+        validated_incarnation);
 
     return resultToPipe(result);
 }

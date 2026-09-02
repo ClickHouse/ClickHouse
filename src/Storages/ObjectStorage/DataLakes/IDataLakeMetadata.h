@@ -168,7 +168,8 @@ public:
         const AlterCommands & /*params*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("alter"); }
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/) { throwNotImplemented("alter"); }
 
     virtual Pipe executeCommand(
         const String & command_name,
@@ -177,7 +178,8 @@ public:
         StorageObjectStorageConfigurationPtr /*configuration*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         ContextPtr /*context*/,
-        const StorageID & /*storage_id*/)
+        const StorageID & /*storage_id*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/)
     {
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }

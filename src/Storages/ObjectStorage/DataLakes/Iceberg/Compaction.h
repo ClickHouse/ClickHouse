@@ -28,7 +28,8 @@ void compactIcebergTable(
     const std::optional<DB::FormatSettings> & format_settings_,
     DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
-    const String & write_format);
+    const String & write_format,
+    std::optional<UInt64> validated_incarnation);
 
 void compactIcebergManifests(
     const PersistentTableComponents & persistent_table_components,
@@ -38,7 +39,8 @@ void compactIcebergManifests(
     DB::ContextPtr context_,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id);
+    const StorageID & table_id,
+    std::optional<UInt64> validated_incarnation);
 
 #endif
 }

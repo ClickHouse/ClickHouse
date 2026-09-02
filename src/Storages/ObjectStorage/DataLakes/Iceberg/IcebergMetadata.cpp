@@ -234,7 +234,12 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
     /// both sides and rebuild the state when a replacement landed in between.
     for (size_t attempt = 0; attempt < 100; ++attempt)
     {
-        const auto incarnation_before = persistent_components.trusted_table_uuid->getIncarnation();
+        /// The processor comes from the same observation as the incarnation, and the state below is
+        /// built against it. `getState` is not pure - it registers the schemas and snapshots it
+        /// parses in the processor it is given - so an attempt that turns out to have raced with a
+        /// replacement leaves its schema ids in the processor of the incarnation it was reading,
+        /// which is exactly where they belong, and never in the replacement's fresh one.
+        const auto [schema_processor, incarnation_before] = persistent_components.getSchemaProcessorWithIncarnation();
 
         const auto [metadata_version, metadata_file_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage,
@@ -246,7 +251,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
             persistent_components.getTableUuid(),
             persistent_components.metadata_compression_method,
             force_fetch_latest_metadata);
-        auto state = getState(context, metadata_file_path, metadata_version);
+        auto state = getState(context, metadata_file_path, metadata_version, schema_processor);
 
         if (persistent_components.trusted_table_uuid->getIncarnation() != incarnation_before)
             continue;
@@ -538,13 +543,35 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 }
 
 IcebergDataSnapshotPtr
-IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
+IcebergMetadata::getIcebergDataSnapshot(
+    Poco::JSON::Object::Ptr metadata_object,
+    Int64 snapshot_id,
+    ContextPtr local_context,
+    const IcebergSchemaProcessorPtr & schema_processor) const
 {
-    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.getSchemaProcessor());
+    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, schema_processor);
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
     return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
+}
+
+namespace
+{
+
+/// The incarnation the statement was validated for, taken from the metadata snapshot the
+/// interpreter pinned rather than from the shared cell, which a concurrent query may already have
+/// moved on to a table that replaced this one in place. Empty when the statement carries no
+/// snapshot of an Iceberg table state, which leaves nothing to compare against.
+std::optional<UInt64> getValidatedIncarnation(const StorageMetadataPtr & metadata_snapshot)
+{
+    if (!metadata_snapshot || !metadata_snapshot->datalake_table_state.has_value())
+        return {};
+    if (const auto * iceberg_state = std::get_if<TableStateSnapshot>(&*metadata_snapshot->datalake_table_state))
+        return iceberg_state->trusted_uuid_incarnation;
+    return {};
+}
+
 }
 
 bool IcebergMetadata::optimize(
@@ -578,7 +605,8 @@ bool IcebergMetadata::optimize(
             format_settings,
             sample_block,
             context,
-            write_format);
+            write_format,
+            getValidatedIncarnation(metadata_snapshot));
         return true;
     }
     else
@@ -617,7 +645,8 @@ bool IcebergMetadata::optimizeManifestFiles(
             context,
             write_format,
             catalog,
-            storage_id);
+            storage_id,
+            getValidatedIncarnation(metadata_snapshot));
 
         return true;
     }
@@ -629,7 +658,10 @@ bool IcebergMetadata::optimizeManifestFiles(
 }
 
 std::pair<IcebergDataSnapshotPtr, Int32>
-IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const
+IcebergMetadata::getStateImpl(
+    const ContextPtr & local_context,
+    Poco::JSON::Object::Ptr metadata_object,
+    const IcebergSchemaProcessorPtr & schema_processor) const
 {
     std::optional<String> manifest_list_file;
 
@@ -670,18 +702,18 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
                 ErrorCodes::BAD_ARGUMENTS,
                 "No snapshot found in snapshot log before requested timestamp for iceberg table {}",
                 persistent_components.table_path);
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, local_context);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, local_context, schema_processor);
         return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
     else if (snapshot_id_changed)
     {
         Int64 current_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context, schema_processor);
         return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
     else
     {
-        auto schema_id = parseTableSchema(metadata_object, *persistent_components.getSchemaProcessor(), log);
+        auto schema_id = parseTableSchema(metadata_object, *schema_processor, log);
         if (!metadata_object->has(f_current_snapshot_id))
         {
             return {nullptr, schema_id};
@@ -693,13 +725,17 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
         {
             return {nullptr, schema_id};
         }
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context, schema_processor);
         return {data_snapshot, schema_id};
     }
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>
-IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const
+IcebergMetadata::getState(
+    const ContextPtr & local_context,
+    const String & metadata_path,
+    Int32 metadata_version,
+    const IcebergSchemaProcessorPtr & schema_processor) const
 {
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
@@ -719,7 +755,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         std::nullopt,
         std::nullopt);
 
-    std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object);
+    std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object, schema_processor);
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
     table_state_snapshot.metadata_version = metadata_version;
     table_state_snapshot.metadata_file_path = metadata_path;
@@ -842,7 +878,8 @@ void IcebergMetadata::alter(
     const AlterCommands & params,
     ContextPtr context,
     const StorageID & storage_id,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const StorageMetadataPtr & metadata_snapshot)
 {
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
@@ -852,7 +889,9 @@ void IcebergMetadata::alter(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
-    Iceberg::alter(params, context, storage_id, object_storage, data_lake_settings, persistent_components, write_format, catalog);
+    Iceberg::alter(
+        params, context, storage_id, object_storage, data_lake_settings, persistent_components, write_format, catalog,
+        getValidatedIncarnation(metadata_snapshot));
 }
 
 Pipe IcebergMetadata::executeCommand(
@@ -862,7 +901,8 @@ Pipe IcebergMetadata::executeCommand(
     StorageObjectStorageConfigurationPtr /*configuration*/,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     ContextPtr context,
-    const StorageID & storage_id)
+    const StorageID & storage_id,
+    const StorageMetadataPtr & metadata_snapshot)
 {
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
@@ -885,7 +925,7 @@ Pipe IcebergMetadata::executeCommand(
         checkTableRootIsQueriedPath("expire_snapshots");
         return Iceberg::executeExpireSnapshots(
             args, context, object_storage_, data_lake_settings, persistent_components,
-            write_format, catalog_, storage_id.getTableName());
+            write_format, catalog_, storage_id.getTableName(), getValidatedIncarnation(metadata_snapshot));
     }
     else if (command_name == "remove_orphan_files")
     {
@@ -899,7 +939,7 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
-            args, context, object_storage_, data_lake_settings, persistent_components);
+            args, context, object_storage_, data_lake_settings, persistent_components, getValidatedIncarnation(metadata_snapshot));
     }
     else
     {
@@ -1644,16 +1684,6 @@ SinkToStoragePtr IcebergMetadata::write(
     {
         checkTableRootIsQueriedPath("INSERT");
 
-        /// The incarnation the INSERT was validated for, taken from the metadata snapshot the
-        /// interpreter pinned rather than from the shared cell, which a concurrent query may
-        /// already have moved on to a table that replaced this one in place.
-        std::optional<UInt64> validated_incarnation;
-        if (metadata_snapshot && metadata_snapshot->datalake_table_state.has_value())
-        {
-            if (const auto * iceberg_state = std::get_if<TableStateSnapshot>(&*metadata_snapshot->datalake_table_state))
-                validated_incarnation = iceberg_state->trusted_uuid_incarnation;
-        }
-
         return std::make_shared<IcebergStorageSink>(
             object_storage,
             configuration,
@@ -1663,7 +1693,7 @@ SinkToStoragePtr IcebergMetadata::write(
             catalog,
             persistent_components,
             table_id,
-            validated_incarnation);
+            getValidatedIncarnation(metadata_snapshot));
     }
     else
     {

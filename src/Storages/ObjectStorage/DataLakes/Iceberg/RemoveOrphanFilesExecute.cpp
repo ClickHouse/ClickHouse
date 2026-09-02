@@ -256,9 +256,15 @@ RemoveOrphanFilesResult removeOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components)
+    const PersistentTableComponents & persistent_table_components,
+    std::optional<UInt64> validated_incarnation)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
+
+    /// The reachability set below decides which files are orphans, so it has to be collected from
+    /// the incarnation the statement was validated for: a table replaced at the same root reaches
+    /// a different set of files, and every file of the old table would look like an orphan.
+    persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE remove_orphan_files");
 
     auto [reachable, metadata_version] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log);
@@ -285,6 +291,8 @@ RemoveOrphanFilesResult removeOrphanFiles(
             "aborting to avoid deleting files referenced by a concurrent commit",
             metadata_version, recheck_version);
 
+    persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE remove_orphan_files");
+
     auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
         delete_result.deleted_paths.size(), scan.orphan_paths.size(), delete_result.failed_count);
@@ -306,8 +314,11 @@ Pipe executeRemoveOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_components)
+    const PersistentTableComponents & persistent_components,
+    std::optional<UInt64> validated_incarnation)
 {
+    persistent_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE remove_orphan_files");
+
     /// `persistent_components.format_version` is captured when the table was opened and
     /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
     /// between queries. Read the latest metadata file to get the authoritative version
@@ -370,7 +381,7 @@ Pipe executeRemoveOrphanFiles(
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;
 
-    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components);
+    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components, validated_incarnation);
 
     return resultToPipe(result);
 }

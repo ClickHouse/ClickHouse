@@ -172,6 +172,16 @@ public:
         return processor;
     }
 
+    /// The current processor together with the incarnation it describes, observed as one. A
+    /// caller that has to build state against a processor and pin the result to an incarnation
+    /// needs both from the same observation, or it can register one incarnation's schemas in the
+    /// other's processor.
+    std::pair<IcebergSchemaProcessorPtr, UInt64> getWithIncarnation() const
+    {
+        SharedLockGuard lock(mutex);
+        return {processor, incarnation};
+    }
+
     /// The processor of the incarnation a query was validated against.
     ///
     /// A query pins one `TableStateSnapshot` from analysis through execution, and the schemas it

@@ -265,7 +265,8 @@ public:
         const AlterCommands & /*params*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
