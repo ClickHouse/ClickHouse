@@ -31,7 +31,7 @@ The following are not captured: `INSERT`, `EXPLAIN` and other statement kinds, q
 Enabling `log_query_plans` makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses. Queries that are not captured are unaffected.
 </Note>
 
-Where this table does not exist, `log_query_plans` has no effect and no query is instrumented: that is the case in `clickhouse-local`, and on a server whose configuration removes the `<query_plan_log>` section.
+Where this table does not exist, `log_query_plans` has no effect and no query is instrumented
 
 It is safe to truncate or drop this table at any time.
 
