@@ -532,7 +532,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
     if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
         throw Exception(ErrorCodes::ABORTED,
-            "Cancelling merge, because it was done without starting transaction,"
+            "Cancelling merge, because it was done without starting transaction, "
             "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.

@@ -511,7 +511,7 @@ static DataTypePtr parseORCType(
 
             throw Exception(
                 ErrorCodes::UNKNOWN_TYPE,
-                "Unsupported ORC type '{}'."
+                "Unsupported ORC type '{}'. "
                 "If you want to skip columns with unsupported types, "
                 "you can enable setting input_format_orc_skip_columns_with_unsupported_types_in_schema_inference",
                 orc_type->toString());

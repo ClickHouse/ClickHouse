@@ -1116,7 +1116,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
             queue_names += queue;
         }
         LOG_WARNING(log,
-                    "RabbitMQ clean up not done, because there is no connection in table's shutdown."
+                    "RabbitMQ clean up not done, because there is no connection in table's shutdown. "
                     "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
                     queues.size(), queue_names);
         return;

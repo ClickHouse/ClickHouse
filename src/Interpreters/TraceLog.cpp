@@ -91,7 +91,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "`MemoryPeak` represents collecting updates of peak memory usage. "
             "`ProfileEvent` represents collecting of increments of profile events. "
             "`JemallocSample` represents collecting of jemalloc samples. "
-            "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only)."
+            "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only). "
             "`Instrumentation` represents traces collected by the instrumentation performed through XRay."
         },
         {"cpu_id", std::make_shared<DataTypeUInt64>(), "CPU identifier."},
