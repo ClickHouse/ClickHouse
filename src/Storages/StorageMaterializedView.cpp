@@ -1,4 +1,5 @@
 #include <thread>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/ColumnDefault.h>
@@ -1021,8 +1022,9 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         hash.update(getMetadataVersionForModificationHash());
         /// The execution security context is part of what the view returns (under row policies an
         /// `INVOKER` and a `DEFINER` view can see different rows of the target table). See `StorageView`.
-        hash.update(storage_snapshot->metadata->sql_security_type ? static_cast<Int8>(*storage_snapshot->metadata->sql_security_type) : Int8(-1));
-        hash.update(storage_snapshot->metadata->definer.value_or(""));
+        /// Canonicalized the way `getSQLSecurityOverriddenContext` reads it, so that a security change
+        /// with no effect on the read does not look like a data change.
+        updateHashWithEffectiveSQLSecurity(hash, *storage_snapshot->metadata);
         hash.update(*target_hash);
         return hash.get128();
     }

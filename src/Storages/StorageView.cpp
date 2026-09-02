@@ -1,4 +1,3 @@
-#include <set>
 
 #include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
@@ -324,16 +323,6 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     return DatabaseCatalog::instance().tryGetTable(storage_id, context);
 }
 
-
-/// Settings that cannot affect the rows a view returns, so they must not take part in its modification
-/// hash. `RefreshTask::createRefreshContext` puts the attempt number into `log_comment`, so folding it
-/// in would make the hash of an unchanged view differ between a first attempt and a retry: a
-/// `REFRESH ... IF CHANGED APPEND` watermark written by a retry would then be ignored by the next
-/// attempt, which would append a duplicate copy of unchanged rows. The result limits and `extremes`
-/// are overwritten by `getViewContext` (they apply to the outer query, not to the view), and writing
-/// them marks them as changed, so they have to be left out here instead.
-const std::set<std::string_view> settings_not_affecting_view_result
-    = {"log_comment", "max_result_rows", "max_result_bytes", "extremes"};
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
@@ -700,15 +689,19 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         hash.update(getStorageID().uuid);
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
         hash.update(getMetadataVersionForModificationHash());
-        hash.update(storage_snapshot->metadata->sql_security_type ? static_cast<Int8>(*storage_snapshot->metadata->sql_security_type) : Int8(-1));
-        hash.update(storage_snapshot->metadata->definer.value_or(""));
+        /// Canonicalized, so that a semantic no-op such as spelling out the default `SQL SECURITY
+        /// INVOKER` on a legacy view, or a `MODIFY DEFINER` under `INVOKER` / `NONE`, does not move
+        /// the hash: `getSQLSecurityOverriddenContext` reads neither.
+        updateHashWithEffectiveSQLSecurity(hash, *storage_snapshot->metadata);
         /// The effective reader's settings can change the rows this view returns (for example,
         /// a definer's read limits), so a settings-profile update must invalidate consistency users.
-        /// `changedToMap` is ordered by name, so the hash does not depend on the order in which the
-        /// settings were applied, and settings left at their default value are equal everywhere.
+        /// Purely operational settings are left out: a definer's profile carries them without
+        /// changing a single row. `changedToMap` is ordered by name, so the hash does not depend on
+        /// the order in which the settings were applied, and settings left at their default value
+        /// are equal everywhere.
         for (const auto & [name, value] : effective_context->getSettingsRef().changedToMap())
         {
-            if (settings_not_affecting_view_result.contains(name))
+            if (!settingCanAffectQueryRows(name))
                 continue;
             hash.update(name);
             hash.update(value);

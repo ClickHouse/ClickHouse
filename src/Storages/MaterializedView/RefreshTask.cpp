@@ -1,4 +1,3 @@
-#include <set>
 #include <thread>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -22,6 +21,7 @@
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/EnumReflection.h>
 #include <base/hex.h>
@@ -155,20 +155,12 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
     return deps;
 }
 
-/// Settings of the refresh context that carry per-attempt diagnostics instead of read semantics.
-/// They must not take part in the view definition hash: `createRefreshContext` puts the attempt
-/// number into `log_comment`, so folding it in would make the hash of an unchanged view differ
-/// between a first attempt and a retry, and a persisted `REFRESH ... IF CHANGED` watermark written
-/// by a retry would then be ignored by the next attempt (an `APPEND` view would append a duplicate
-/// copy of unchanged rows).
-const std::set<std::string_view> settings_not_affecting_refresh_result = {"log_comment"};
-
 /// Hash of the parts of the view definition that decide what a refresh reads and produces: the
 /// `SELECT` query, the refresh strategy (which carries `IF CHANGED`, the schedule and the
-/// dependencies), SQL security, and the settings of the refresh context that are not per-attempt
-/// diagnostics. Used to tell whether a persisted `REFRESH ... IF CHANGED` source hash was produced
-/// by the definition and settings the view has now, or by an older one that an `ALTER` or a
-/// settings-profile update has since replaced.
+/// dependencies), the effective SQL security, and the settings of the refresh context that can
+/// affect the rows the refresh `SELECT` produces. Used to tell whether a persisted
+/// `REFRESH ... IF CHANGED` source hash was produced by the definition and settings the view has
+/// now, or by an older one that an `ALTER` or a settings-profile update has since replaced.
 UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, const ContextPtr & refresh_context)
 {
     SipHash hash;
@@ -176,15 +168,21 @@ UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, cons
         metadata.select.select_query->updateTreeHash(hash, /*ignore_aliases=*/ false);
     if (metadata.refresh)
         metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
-    hash.update(metadata.sql_security_type ? static_cast<Int8>(*metadata.sql_security_type) : Int8(-1));
-    hash.update(metadata.definer.value_or(""));
+    /// Canonicalized, so that a security change the refresh never acts on - spelling out the
+    /// default `INVOKER`, or a `MODIFY DEFINER` under `INVOKER` / `NONE`, which
+    /// `getSQLSecurityOverriddenContext` does not read - does not invalidate the watermark and make
+    /// an `APPEND` view append a duplicate copy of unchanged rows.
+    updateHashWithEffectiveSQLSecurity(hash, metadata);
+    /// Only the settings that can affect the produced rows: per-attempt diagnostics such as
+    /// `log_comment` and a definer profile's operational settings must not move the hash, or a
+    /// watermark written by one attempt would be ignored by the next one.
     /// `changedToMap` is ordered by name, so the hash does not depend on the order in which the
     /// settings were applied. Settings left at their default value are equal on every replica and
     /// attempt, so leaving them out changes nothing: a profile update that resets a setting back to
     /// its default removes it from the map and still moves the hash.
     for (const auto & [name, value] : refresh_context->getSettingsRef().changedToMap())
     {
-        if (settings_not_affecting_refresh_result.contains(name))
+        if (!settingCanAffectQueryRows(name))
             continue;
         hash.update(name);
         hash.update(value);
