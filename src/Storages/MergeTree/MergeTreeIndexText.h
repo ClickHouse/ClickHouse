@@ -13,6 +13,7 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <absl/container/btree_map.h>
@@ -37,10 +38,11 @@ namespace DB
   * Granules are aggregated the same way as for other skip indexes
   * Unlike other skip indexes, text index can be merged instead of rebuilt on merge of the data parts.
   *
-  * Text index has three streams (files with data and marks for them):
+  * Text index has three streams (files with data and marks for them), plus a fourth with 'support_phrase_search':
   * - File with index granules (.idx)
   * - File with dictionary blocks (.dct)
   * - File with posting lists (.pst)
+  * - File with token positions (.pos), one blob per token (see TextIndexBlockedPositionsCodec)
   *
   * Index granule accumulates tokens from all documents and collects the posting lists
   * (positions in the granule of documents that contain the token) for each token.
@@ -69,7 +71,8 @@ namespace DB
   * - Information about posting lists for each token:
   *    1. Header of posting list (VarUInt) (see PostingsSerialization::Flags).
   *    2. Cardinality of token (VarUInt).
-  *    3. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
+  *    3. If HasPositions flag is set, the token's offset and byte length in .pos (VarUInt each).
+  *    4. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
   *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
@@ -87,6 +90,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     size_t positions = 0;
+    UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
     ASTPtr preprocessor;
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
@@ -116,10 +120,19 @@ public:
     /// posting list is created in the postings_holder and reference to it is saved.
     void add(UInt32 value, PostingListsHolder & postings_holder);
 
-    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
+    size_t size() const
+    {
+        chassert(!isFiltered());
+        return isSmall() ? small_size : large.postings->cardinality();
+    }
     bool isEmpty() const { return size() == 0; }
     bool isSmall() const { return small_size < max_small_size; }
     bool isLarge() const { return !isSmall(); }
+
+    /// A filtered entry holds no postings; only isFiltered and clearFiltered may be called on it.
+    void markFiltered() { small_size = filtered_flag; }
+    bool isFiltered() const { return small_size == filtered_flag; }
+    void clearFiltered() { small_size = 0; }
 
     UInt32 minimum() const
     {
@@ -133,9 +146,9 @@ public:
         return isSmall() ? small[small_size - 1] : large.postings->maximum();
     }
 
-    SmallContainer & getSmall() { return small; }
-    const SmallContainer & getSmall() const { return small; }
-    PostingList & getLarge() const { return *large.postings; }
+    SmallContainer & getSmall() { chassert(!isFiltered()); return small; }
+    const SmallContainer & getSmall() const { chassert(!isFiltered()); return small; }
+    PostingList & getLarge() const { chassert(!isFiltered()); return *large.postings; }
 
 private:
     struct PostingListWithContext
@@ -150,6 +163,7 @@ private:
         PostingListWithContext large;
     };
 
+    static constexpr UInt8 filtered_flag = 0xFF;
     UInt8 small_size;
 };
 
@@ -253,8 +267,8 @@ struct TokenPostingsInfo
 
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
-    /// Number of Roaringish UInt64 entries in position data.
-    UInt32 position_cardinality = 0;
+    /// Byte length of the position blob, so readers bound it by the token's extent, not the file's.
+    UInt64 position_bytes = 0;
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
@@ -314,8 +328,9 @@ struct TextIndexHeader
 {
     MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// Persisted for version >= V2_WithPositions.
+    /// has_positions and positions_codec are persisted for version >= V2_WithPositions.
     bool has_positions = false;
+    UInt8 positions_codec = 0;
     DictionarySparseIndex sparse_index;
 };
 
@@ -345,7 +360,7 @@ struct TextIndexSerialization
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
     static void checkTokenSize(size_t token_size);
-    static void serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr);
+    static void serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -396,6 +411,7 @@ public:
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
+    UInt8 getPositionsCodec() const { return positions_codec; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -431,6 +447,8 @@ private:
     IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
     /// On-disk serialization version of the text index header.
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
+    /// Positions on-disk codec persisted in the header.
+    UInt8 positions_codec = 0;
 };
 
 /// Text index granule created on writing of the index.
@@ -494,6 +512,8 @@ struct MergeTreeIndexTextGranuleBuilder
     bool empty() const { return is_empty; }
     void reset();
 
+    void seedDropFilter();
+
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
@@ -510,8 +530,8 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Position data for phrase query support.
     /// Only allocated when params.positions is true.
     std::unique_ptr<TokenToPositionListMap> position_map;
-    /// Fast path for IN/NOT IN filter-only postprocessors: when set, addToken drops a token before inserting it,
-    /// so dropped tokens allocate no map entry and build no postings. Non-owning.
+    /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
+    /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
     const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
 };
 

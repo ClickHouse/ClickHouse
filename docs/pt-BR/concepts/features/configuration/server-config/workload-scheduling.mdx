@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - aplica a evicção de acordo com precedência estática (um valor menor significa precedência mais alta); uma alocação pendente de maior precedência remove alocações de menor precedência; os nós filhos devem especificar `precedence` (o padrão é 0).
 * `queue` - folha da hierarquia capaz de armazenar alocações em execução e pendentes.
 
-<div id="deprecated-configuration">
-  ## Configuração XML obsoleta
-</div>
-
-Uma forma alternativa de indicar quais discos são usados por um recurso é o `storage_configuration` do servidor:
-
-Para habilitar o agendamento de E/S para um disco específico, você precisa especificar `read_resource` e/ou `write_resource` na configuração de armazenamento. Isso informa ao ClickHouse qual recurso deve ser usado para cada solicitação de leitura e gravação do disco especificado. Os recursos de leitura e gravação podem se referir ao mesmo nome de recurso, o que é útil para Local SSDs ou HDDs. Vários discos diferentes também podem se referir ao mesmo recurso, o que é útil para discos remotos, caso você queira permitir uma divisão justa da largura de banda da rede entre cargas de trabalho como, por exemplo, &quot;produção&quot; e &quot;desenvolvimento&quot;.
-
-Exemplo:
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-Observe que as opções de configuração do servidor têm prioridade sobre a forma de definir recursos via SQL.
-
 <div id="see-also">
   ## Veja também
 </div>
