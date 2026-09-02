@@ -701,6 +701,71 @@ def test_prometheus_handler():
         )
 
 
+def test_prometheus_url_routing_config_validation():
+    cluster = ClickHouseCluster(__file__)
+    instance = cluster.add_instance(
+        "prometheus_url_routing_validation",
+        main_configs=["test_prometheus_url_routing_validation/config.xml"],
+        stay_alive=True,
+    )
+    config_path = "/etc/clickhouse-server/config.d/config.xml"
+
+    def assert_config_is_rejected(replacements, expected_message):
+        instance.rotate_logs()
+        instance.stop_clickhouse()
+        for old, new in replacements:
+            instance.replace_in_config(config_path, old, new)
+
+        instance.start_clickhouse(expected_to_fail=True)
+        assert instance.contains_in_log(expected_message)
+
+        for old, new in reversed(replacements):
+            instance.replace_in_config(config_path, new, old)
+        instance.start_clickhouse()
+
+    try:
+        cluster.start()
+        for handler_type in ("prometheus_remote_read", "prometheus_query_api"):
+            # NOTE: `contains_in_log` interpolates the pattern into a double-quoted
+            # bash string, so backticks in the expected message would be executed
+            # as command substitution. Keep the expected messages backtick-free.
+            expected_message = (
+                "Setting 'enable_table_name_url_routing' is not supported for Prometheus "
+                f"handler type '{handler_type}'"
+            )
+            assert_config_is_rejected(
+                [("<type>prometheus_write</type>", f"<type>{handler_type}</type>")],
+                expected_message,
+            )
+
+        fixed_target_error = (
+            "Setting 'enable_table_name_url_routing' cannot be combined with a configured "
+            "'database' or 'table'"
+        )
+        assert_config_is_rejected(
+            [
+                (
+                    "<enable_table_name_url_routing>false</enable_table_name_url_routing>",
+                    "<enable_table_name_url_routing>true</enable_table_name_url_routing>",
+                )
+            ],
+            fixed_target_error,
+        )
+        assert_config_is_rejected(
+            [
+                ("<type>prometheus_write</type>", "<type>prometheus_api_v1</type>"),
+                ("<table>default.prometheus</table>", "<database>default</database>"),
+                (
+                    "<enable_table_name_url_routing>false</enable_table_name_url_routing>",
+                    "<enable_table_name_url_routing>true</enable_table_name_url_routing>",
+                ),
+            ],
+            fixed_target_error,
+        )
+    finally:
+        cluster.shutdown()
+
+
 def test_replicas_status_handler():
     with contextlib.closing(
         SimpleCluster(

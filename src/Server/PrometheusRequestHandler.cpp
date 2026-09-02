@@ -35,9 +35,14 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Core/QualifiedTableName.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
+
+#include <vector>
 
 
 namespace DB
@@ -55,6 +60,81 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool prometheus_remote_write_dynamic_routing_enabled;
+}
+
+namespace
+{
+#if USE_PROMETHEUS_PROTOBUFS
+    /// Returns the fixed path segments that must follow the `/{database}/{table}` prefix
+    /// for the endpoint that this handler serves with dynamic routing:
+    ///   - `remote_write`      -> `/{database}/{table}/write`
+    ///   - `prometheus_api_v1` -> `/{database}/{table}/api/v1/write`
+    /// Dynamic routing is only supported for these two handler types (and, for `prometheus_api_v1`,
+    /// only for the remote-write endpoint).
+    std::vector<String> getDynamicRoutingPathSuffix(const PrometheusRequestHandlerConfig & config)
+    {
+        switch (config.type)
+        {
+            case PrometheusRequestHandlerConfig::Type::Write:
+                return {"write"};
+            case PrometheusRequestHandlerConfig::Type::APIv1:
+                return {"api", "v1", "write"};
+            default:
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "URL path routing is supported only for Prometheus remote-write handlers");
+        }
+    }
+
+    QualifiedTableName resolveTableNameFromRequest(
+        const PrometheusRequestHandlerConfig & config,
+        const HTTPServerRequest & request)
+    {
+        if (!config.enable_table_name_url_routing)
+            return config.time_series_table_name;
+
+        /// The dynamic routing contract requires the request path to be exactly `/{database}/{table}/<suffix>`,
+        /// so that the first two segments unambiguously identify the target table. Validate the shape (and the
+        /// trailing suffix) instead of blindly using the first two segments: otherwise a fixed-table URL such as
+        /// `/prometheus/api/v1/write` (from a legacy `<url_prefix>/prometheus/api/v1</url_prefix>` handler that
+        /// enabled routing by mistake) would be silently reinterpreted as `database = "prometheus", table = "api"`.
+        const auto expected_suffix = getDynamicRoutingPathSuffix(config);
+
+        Poco::URI uri(request.getURI());
+        std::vector<String> path_segments;
+        uri.getPathSegments(path_segments);
+
+        bool shape_matches = (path_segments.size() == expected_suffix.size() + 2);
+        for (size_t i = 0; shape_matches && (i < expected_suffix.size()); ++i)
+            shape_matches = (path_segments[i + 2] == expected_suffix[i]);
+
+        if (!shape_matches)
+        {
+            String expected_path = "/{database}/{table}";
+            for (const auto & segment : expected_suffix)
+                expected_path += "/" + segment;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not match the expected dynamic routing shape '{}'",
+                uri.getPath(), expected_path);
+        }
+
+        const String & database = path_segments[0];
+        const String & table = path_segments[1];
+        if (database.empty() || table.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not contain a database and a table name",
+                uri.getPath());
+
+        return QualifiedTableName{database, table};
+    }
+#endif
 }
 
 /// Base implementation of a prometheus protocol.
@@ -273,6 +353,11 @@ protected:
         return StorageID{full_name};
     }
 
+    bool isTimeSeriesTableNameSetFromRequest() const
+    {
+        return params->has("database") || params->has("table");
+    }
+
     void onException() override
     {
         // So that the next requests on the connection have to always start afresh in case of exceptions.
@@ -320,8 +405,32 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
-        PrometheusRemoteWriteProtocol protocol{table, context};
+        /// Resolve and validate the target table before parsing the request body, so that requests targeting a
+        /// missing or non-`TimeSeries` table (or, with dynamic routing, a table that does not opt into it) are
+        /// rejected without first decompressing and materializing the whole protobuf payload.
+        const bool is_url_path_dynamic_routing = config().enable_table_name_url_routing;
+        if (is_url_path_dynamic_routing && isTimeSeriesTableNameSetFromRequest())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path routing cannot be combined with the 'database' or 'table' query parameters");
+
+        auto table_id = is_url_path_dynamic_routing
+            ? StorageID{resolveTableNameFromRequest(config(), request)}
+            : getTimeSeriesTableID();
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
+        auto time_series_storage = storagePtrToTimeSeries(table);
+        if (is_url_path_dynamic_routing)
+        {
+            const auto & time_series_settings = time_series_storage->getStorageSettings();
+            if (!(*time_series_settings)[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Prometheus remote write dynamic routing is disabled for TimeSeries table {}",
+                    time_series_storage->getStorageID().getNameForLogs());
+            }
+        }
+        PrometheusRemoteWriteProtocol protocol{time_series_storage, context};
 
         prometheus::WriteRequest write_request;
 
@@ -702,6 +811,11 @@ private:
 
         if (path.ends_with("/write"))
             return write_impl;
+        if (config().enable_table_name_url_routing)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path routing for prometheus_api_v1 is supported only for remote write");
+
         if (path.ends_with("/read"))
             return read_impl;
 

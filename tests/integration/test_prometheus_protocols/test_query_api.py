@@ -363,6 +363,19 @@ def test_table_query_param():
     assert "cannot be overridden" in error
 
 
+def test_api_v1_url_path_routing_is_write_only():
+    response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/default/prometheus/api/v1/query",
+        "foo",
+        150,
+    )
+
+    assert response.status_code == requests.codes.bad_request
+    assert "URL path routing for prometheus_api_v1 is supported only for remote write" in response.text
+
+
 def test_generated_sql_always_runs_with_analyzer():
     # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which only the
     # analyzer honors, so the handler forces the analyzer and enable_materialized_cte

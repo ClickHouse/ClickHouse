@@ -64,10 +64,12 @@ namespace
         return copy;
     }
 
-    /// We allow altering only two settings: `id_generator` and `filter_by_min_time_and_max_time`.
+    /// We allow altering only settings that do not affect inner-table schemas.
     void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
     {
-        if ((setting_name != "id_generator") && (setting_name != "filter_by_min_time_and_max_time"))
+        if ((setting_name != "id_generator")
+            && (setting_name != "filter_by_min_time_and_max_time")
+            && (setting_name != "prometheus_remote_write_dynamic_routing_enabled"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
@@ -779,6 +781,25 @@ Then this table can be used with the following protocols (a port must be assigne
 - [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
 - [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
 
+When configuring a Prometheus remote-write handler with `enable_table_name_url_routing`, the URL is expected to start with `/{database}/{table}/`. This option cannot be combined with a fixed `database` or `table` in the handler configuration. Make sure the handler's `<url>` rule matches paths that include the database and table name. For example:
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url>regex:^/[^/]+/[^/]+/write$</url>
+        <handler>
+            <type>prometheus_write</type>
+            <enable_table_name_url_routing>true</enable_table_name_url_routing>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+Enabling `enable_table_name_url_routing` on a `prometheus_api_v1` handler makes that handler write-only. Configure a separate handler without this option for `/read`, `/query`, and metadata endpoints; that handler can use a fixed `database` and `table` or the corresponding query parameters.
+
+See [Route remote write by URL path](/concepts/features/interfaces/prometheus#remote-write-url-routing) for the full handler configuration.
+
 ### Outer columns {#outer-columns}
 
 Columns of a TimeSeries table are generated automatically. These are outer columns, they store no data, they just provide interface for SELECT/INSERT. Actual data is stored in [target tables](#target-tables). Here is the list of the outer columns:
@@ -1115,14 +1136,16 @@ The id-generator expression for an external tags target is resolved at INSERT ti
 
 ## Altering settings {#altering-settings}
 
-Two settings can be changed after `CREATE`:
+Three settings can be changed after `CREATE`:
 
 - `id_generator`
 - `filter_by_min_time_and_max_time`
+- `prometheus_remote_write_dynamic_routing_enabled`
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table MODIFY SETTING prometheus_remote_write_dynamic_routing_enabled = 1;
 ```
 
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
@@ -1143,6 +1166,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
+| `prometheus_remote_write_dynamic_routing_enabled` | Bool | false | Allow Prometheus remote-write dynamic URL routing to insert into this `TimeSeries` table |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. Requires `recent_samples_ttl_seconds` to be non-zero |

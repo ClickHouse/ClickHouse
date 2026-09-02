@@ -1,0 +1,14 @@
+<clickhouse>
+    <http_handlers>
+        <!-- The element name must start with `rule` (or be `defaults`), otherwise
+             `HTTPRequestHandlerFactoryMain` rejects the whole `<http_handlers>` section. -->
+        <rule>
+            <url>/write</url>
+            <handler>
+                <type>prometheus_write</type>
+                <table>default.prometheus</table>
+                <enable_table_name_url_routing>false</enable_table_name_url_routing>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

@@ -149,6 +149,7 @@ Routing and handler settings:
 | `url_prefix` | none | Rule filter that matches every request path that starts with the configured prefix. |
 | `table` | none | The name of a `TimeSeries` table. When omitted, the request must provide the `table` query parameter. The configured name can include a database. |
 | `database` | none | The database containing the table. A request can provide it as a query parameter. When omitted, ClickHouse uses a database from a qualified `table` value or falls back to `default`. |
+| `enable_table_name_url_routing` | false | Takes the database and the table from the request path instead of the query parameters. Supported for the `prometheus_write` handler and for the remote-write endpoint of a `prometheus_api_v1` handler. Cannot be combined with a configured `database` or `table`. See [Route remote write by URL path](#remote-write-url-routing). |
 
 ### Ingest metrics with remote write {#remote-write}
 
@@ -172,6 +173,44 @@ remote_write:
 ```
 
 ClickHouse acknowledges an asynchronous remote-write request only after the data is flushed to all inner tables of the `TimeSeries` table, regardless of the [`wait_for_async_insert`](/reference/settings/session-settings/wait-for#wait_for_async_insert) setting: the remote-write protocol treats an acknowledged write as durable. If the flush fails, the request returns an error and Prometheus retries it.
+
+#### Route remote write by URL path {#remote-write-url-routing}
+
+One remote-write handler can ingest into many `TimeSeries` tables without any query parameter, by taking the target from the request path. Enable `enable_table_name_url_routing` in the handler and match a URL that carries the database and the table:
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url>regex:^/[^/]+/[^/]+/write$</url>
+        <handler>
+            <type>prometheus_write</type>
+            <enable_table_name_url_routing>true</enable_table_name_url_routing>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+The path must have exactly the shape `/{database}/{table}/write`, or `/{database}/{table}/api/v1/write` for a `prometheus_api_v1` handler. A handler with `enable_table_name_url_routing` cannot also configure `database` or `table`, and a request to such a handler cannot pass the `database` or `table` query parameters.
+
+Each target table must opt in with the [`prometheus_remote_write_dynamic_routing_enabled`](/reference/engines/table-engines/integrations/time-series) setting:
+
+```sql
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries
+SETTINGS prometheus_remote_write_dynamic_routing_enabled = 1;
+```
+
+Prometheus then writes to a table chosen by the URL:
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/metrics/write
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+Enabling `enable_table_name_url_routing` on a `prometheus_api_v1` handler makes that handler write-only. Configure a separate handler without this option for `/read`, `/query`, and metadata endpoints; that handler can use a fixed `database` and `table` or the corresponding query parameters.
 
 ### Query with PromQL {#promql-query-support}
 
