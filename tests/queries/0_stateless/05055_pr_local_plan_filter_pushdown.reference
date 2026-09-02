@@ -1,2 +1,5 @@
+default: not in the local plan
+5	5
+enabled: in the local plan
 Prewhere filter column:  a = 5
 5	5

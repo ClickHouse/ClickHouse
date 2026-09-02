@@ -1119,7 +1119,42 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+/// Whether the condition is made only of join runtime filters (`__applyFilter`), possibly conjoined.
+/// Such a predicate cannot mark a column as fixed - `enrichFixedColumns` only does that for a function
+/// whose every argument is fixed or constant, and the probe key is neither - so it cannot change the
+/// read mode the step below it requests. Anything else may: `WHERE key = 42` fixes `key`.
+static bool isOnlyJoinRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
+{
+    const auto * filter_node = dag.tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return false;
+
+    std::vector<const ActionsDAG::Node *> stack{filter_node};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            /// `CAST` is allowed because it cannot make its argument fixed on its own, and a runtime
+            /// filter's probe key is often wrapped in one.
+            if (name != "__applyFilter" && name != "and" && name != "CAST" && name != "_CAST")
+                return false;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return true;
+}
+
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -1392,13 +1427,17 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        /// The local plan is the initiator's own share of the read, so this is an ordinary in-process
-        /// plan optimization and is not gated by `parallel_replicas_filter_pushdown`: that setting
-        /// governs the other half of the union, where the predicate has to be spliced into the query
-        /// AST shipped to the replicas. The sibling branch keeps its own `Filter`, so nothing ends up
-        /// filtered here only, and the replicas do not have to agree on which ranges the local plan
-        /// reads - each announces its own and the coordinator reconciles them. What they do have to
-        /// agree on is the coordination mode, see the local plan optimization in `optimizeTreeSecondPass`.
+        /// Only the initiator's own share of the read gets the predicate here; the replicas plan from
+        /// their own query, which carries it only when `parallel_replicas_filter_pushdown` splices it in.
+        /// A predicate the replicas do not have may not change what the local fragment announces to the
+        /// shared coordinator - an equality fixes a sort key column, which lets a sort or an aggregation
+        /// inside the fragment read in order, and the initiator would then announce `WithOrder` against
+        /// the replicas' `Default`. A join runtime filter cannot do that (see `isOnlyJoinRuntimeFilters`),
+        /// and it is also the one predicate the setting could never mirror, so it is pushed either way.
+        if (!settings.parallel_replicas_filter_pushdown
+            && !isOnlyJoinRuntimeFilters(filter->getExpression(), filter->getFilterColumnName()))
+            return 0;
+
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
         parallel_replicas_local_plan->addFilter(std::move(info));

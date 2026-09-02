@@ -10,3 +10,22 @@ Read type: Default
 442
 Read type: Default
 100	499200
+sort inside the fragment
+Read type: Default
+42
+142
+242
+342
+442
+sort inside the fragment, filter shipped to the replicas too
+Read type: InOrder
+42
+142
+242
+342
+442
+sort inside the fragment, join runtime filter
+Read type: Default
+Runtime filters: RF1(tenant, tenant from default.b_pr_read_mode)
+Read type: Default
+100
