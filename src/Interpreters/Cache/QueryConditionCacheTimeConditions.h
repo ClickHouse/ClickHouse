@@ -74,10 +74,19 @@ struct DeterministicTimeCondition
 /// `current_time` is only used to choose the grid step; it does not affect soundness, only the
 /// likelihood that independent derivations (e.g. the write side of one query and the read side of a
 /// later query) pick the same grid and therefore the same cache key.
+///
+/// `allow_top_k_filter` treats the internal `__topKFilter` function - which TopK dynamic filtering
+/// folds into the storage filter as `and(__topKFilter(...), <predicate>)` - as an opaque
+/// deterministic leaf, mirroring `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache`
+/// and `ReadFromMergeTree`. Without it, a TopK read of a current-time condition would derive nothing
+/// and bypass the cache entirely. Only pass `true` where the cache key is additionally partitioned by
+/// the TopK plan parameters, because granule exclusions produced under a running `__topKFilter`
+/// threshold may only be reused under the same TopK plan.
 std::optional<DeterministicTimeCondition> deriveDeterministicTimeCondition(
     const ActionsDAG::Node * condition,
     TimeConditionRounding rounding,
     double grid_factor,
-    time_t current_time);
+    time_t current_time,
+    bool allow_top_k_filter);
 
 }

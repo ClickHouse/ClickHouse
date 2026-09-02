@@ -204,7 +204,10 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                             output,
                             TimeConditionRounding::Strengthen,
                             reader_settings.query_condition_cache_time_condition_grid_factor,
-                            time(nullptr)))
+                            time(nullptr),
+                            /// The PREWHERE write path does not partition the key by the TopK plan,
+                            /// so a `__topKFilter` in PREWHERE must keep suppressing the write.
+                            /*allow_top_k_filter=*/false))
                         prewhere_condition_for_query_condition_cache.emplace(derived->hash, derived->condition);
                 }
                 break;

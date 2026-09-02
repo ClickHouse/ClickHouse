@@ -3578,7 +3578,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                             outputs.front(),
                             TimeConditionRounding::Strengthen,
                             static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
-                            time(nullptr)))
+                            time(nullptr),
+                            /*allow_top_k_filter=*/true))
                         hash = derived->hash;
                 }
 

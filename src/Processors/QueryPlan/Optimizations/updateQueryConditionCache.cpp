@@ -115,7 +115,8 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                     output,
                     TimeConditionRounding::Strengthen,
                     optimization_settings.query_condition_cache_time_condition_grid_factor,
-                    time(nullptr));
+                    time(nullptr),
+                    /*allow_top_k_filter=*/true);
             if (!derived)
                 return;
         }
@@ -138,7 +139,8 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                         filter_node,
                         TimeConditionRounding::Strengthen,
                         optimization_settings.query_condition_cache_time_condition_grid_factor,
-                        time(nullptr)))
+                        time(nullptr),
+                        /*allow_top_k_filter=*/true))
                     return;
             }
 
