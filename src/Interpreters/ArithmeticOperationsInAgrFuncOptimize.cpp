@@ -1,5 +1,6 @@
 #include <unordered_set>
 
+#include <Common/FieldAccurateComparison.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -19,6 +20,30 @@ namespace ErrorCodes
 
 namespace
 {
+
+/** The argument types are not known at this stage, so a `Decimal` argument cannot be recognized here.
+  * Arithmetic with a `Decimal` operand computes in the decimal's own native signed width (`Int32` for
+  * every `Decimal32`), into which the literal is materialised by a `static_cast`, so a literal outside
+  * the narrowest of those widths may participate as a different value - which would both invert the
+  * `min`/`max` swap decision below and change the result of the hoisted operation. Leave such a query
+  * alone; the type-aware analyzer pass declines only for the argument types that really truncate.
+  */
+bool literalMayNotSurviveDecimalWidth(const Field & literal)
+{
+    switch (literal.getType())
+    {
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+            return accurateLess(literal, Field(std::numeric_limits<Int32>::min()))
+                || accurateLess(Field(std::numeric_limits<Int32>::max()), literal);
+        default:
+            return false;
+    }
+}
 
 const ASTFunction * getInternalFunction(const ASTFunction & func)
 {
@@ -120,6 +145,10 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
         /// It's possible to rewrite 'sum(1/n)' with 'sum(1) * div(1/n)' but we lose accuracy. Ignored.
         if (child_func->name == "divide")
             return {};
+
+        if (literalMayNotSurviveDecimalWidth(first_literal->value))
+            return {};
+
         bool need_reverse
             = (child_func->name == "multiply" && first_literal->value < zeroField(first_literal->value)) || child_func->name == "minus";
         if (need_reverse)
@@ -129,6 +158,9 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
     }
     else if (second_literal) /// second or both are consts
     {
+        if (literalMayNotSurviveDecimalWidth(second_literal->value))
+            return {};
+
         bool need_reverse
             = (child_func->name == "multiply" || child_func->name == "divide") && second_literal->value < zeroField(second_literal->value);
         if (need_reverse)
