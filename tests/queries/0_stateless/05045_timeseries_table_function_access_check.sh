@@ -52,6 +52,11 @@ ${CLIENT_USER} -q "DESCRIBE prometheusQuery($db.ts, 'up', 1000) FORMAT Null; -- 
 ${CLIENT_USER} -q "SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }"
 ${CLIENT_USER} -q "INSERT INTO FUNCTION timeSeriesSamples($db.ts) SELECT toUInt64(2), toDateTime64('2026-01-01 00:00:02.000', 3), toFloat64(7); -- { serverError ACCESS_DENIED }"
 
+# Reading the engine of the named table and the name of its target is refused too, so the argument a
+# caller may not describe cannot be told apart from one holding a different engine.
+${CLIENT_USER} -q "SELECT * FROM timeSeriesSamples($db.ts_samples) FORMAT Null; -- { serverError ACCESS_DENIED }"
+${CLIENT_TS} -q "SELECT * FROM timeSeriesSamples($db.ts_samples) FORMAT Null; -- { serverError UNEXPECTED_TABLE_ENGINE }"
+
 # Granting the target tables is not enough: the TimeSeries table named in the call is checked as well.
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT, INSERT, SHOW COLUMNS ON $db.ts_samples TO $user"
 ${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }"
