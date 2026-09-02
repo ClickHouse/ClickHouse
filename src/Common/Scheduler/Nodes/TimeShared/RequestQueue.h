@@ -228,11 +228,14 @@ private:
         }
         if (!lowered && unit == CostUnit::CPUNanosecond && ctx.weight_lowering_cpu_seconds > 0)
         {
-            // attained_cost is the summed per-request cost. Under CPU slot preemption (the default)
-            // each lease renewal charges the CPU nanoseconds actually consumed, so this is real CPU
-            // time. Without preemption a CPUSlotRequest charges a fixed cost once per acquired slot,
-            // so attained_cost then counts acquired slots (each ~1s) rather than real CPU-seconds —
-            // a documented limitation of the non-preemptive path (see weight_lowering_cpu_seconds).
+            // attained_cost is the summed per-request cost, charged at grant (pop), so it measures
+            // granted CPU service rather than CPU already spent. Under CPU slot preemption (the
+            // default) each lease renewal charges the next quantum, so attained tracks granted CPU
+            // and leads actual consumption by at most one quantum (cpu_slot_quantum_ns) per active
+            // slot (self-reconciled by the lease's overrun term). Without preemption a CPUSlotRequest
+            // charges a fixed cost once per acquired slot, so attained_cost then counts acquired slots
+            // rather than CPU-seconds — a documented limitation of the non-preemptive path (see
+            // weight_lowering_cpu_seconds).
             if (static_cast<double>(state.attained_cost) / 1e9 >= ctx.weight_lowering_cpu_seconds)
                 lowered = true;
         }
