@@ -7,8 +7,10 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
@@ -21,6 +23,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 
 #include <Access/ContextAccess.h>
@@ -90,11 +93,128 @@ bool isSupportedDictGetFunction(const String & name)
     return supported_functions.contains(name);
 }
 
-std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node)
+bool isSafePassThroughQuery(const QueryNode & query_node){
+    if (query_node.hasGroupBy() || query_node.isGroupByWithTotals() || query_node.isDistinct()
+        || query_node.hasHaving() || query_node.hasWindow() || query_node.hasQualify()
+        || query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy())
+        return false;
+
+    auto join_tree_node_type = query_node.getJoinTree().getNodeType();
+    return join_tree_node_type == QueryTreeNodeType::TABLE || join_tree_node_type == QueryTreeNodeType::QUERY;
+}
+
+QueryTreeNodePtr tryResolveViewInnerQueryForInspection(const TableNode & table_node, const ContextPtr & context)
 {
+    const auto & storage = table_node.getStorage();
+    const auto * view = typeid_cast<const StorageView *>(storage.get());
+    if (!view || view->isParameterizedView() || table_node.hasTableExpressionModifiers())
+        return nullptr;
+
+    try
+    {
+        const auto & storage_snapshot = table_node.getStorageSnapshot();
+        auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+
+        ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
+        QueryTreeNodePtr view_query_tree = buildQueryTree(view_ast, view_context);
+
+        QueryAnalyzer view_analyzer(/*only_analyze_=*/ true);
+        view_analyzer.resolve(view_query_tree, {}, view_context);
+
+        if (view_query_tree->as<QueryNode>())
+            return view_query_tree;
+    }
+    catch (const Exception &)
+    {
+        return nullptr;
+    }
+
+    return nullptr;
+}
+
+struct ColumnDefinition
+{
+    QueryTreeNodePtr defining_expression;
+    QueryNodePtr source_query_node;
+};
+
+std::optional<ColumnDefinition> tryResolveColumnDefinition(const ColumnNode & column_node, const ContextPtr & context)
+{
+    auto column_source = column_node.getColumnSourceOrNull();
+    if (!column_source)
+        return std::nullopt;
+
+    QueryNodePtr source_query_node;
+
+    if (column_source->as<QueryNode>())
+    {
+        source_query_node = std::static_pointer_cast<QueryNode>(column_source);
+    }
+    else if (auto * table_node = column_source->as<TableNode>())
+    {
+        auto resolved = tryResolveViewInnerQueryForInspection(*table_node, context);
+        if (!resolved)
+            return std::nullopt;
+        source_query_node = std::static_pointer_cast<QueryNode>(resolved);
+    }
+    else
+    {
+        return std::nullopt;
+    }
+
+    if (!isSafePassThroughQuery(*source_query_node))
+        return std::nullopt;
+
+    const auto & projection_columns = source_query_node->getProjectionColumns();
+    const auto & projection_nodes = source_query_node->getProjection().getNodes();
+    if (projection_columns.size() != projection_nodes.size())
+        return std::nullopt;
+
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        if (projection_columns[i].name == column_node.getColumnName())
+            return ColumnDefinition{projection_nodes[i], source_query_node};
+    }
+
+    return std::nullopt;
+}
+
+std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+
     const auto * function_node = node->as<FunctionNode>();
 
-    if (!function_node || !isSupportedDictGetFunction(function_node->getFunctionName()))
+    if (!function_node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return std::nullopt;
+
+        auto column_definition = tryResolveColumnDefinition(*column_node, context);
+        if (!column_definition)
+            return std::nullopt;
+
+        auto info = tryParseDictFunctionCall(column_definition->defining_expression, context);
+        if (!info)
+            return std::nullopt;
+
+        const auto & projection_columns = column_definition->source_query_node->getProjectionColumns();
+        const auto & projection_nodes = column_definition->source_query_node->getProjection().getNodes();
+
+        for (size_t i = 0; i < projection_nodes.size(); ++i)
+        {
+            if (!info->key_expr_node->isEqual(*projection_nodes[i]))
+                continue;
+
+            NameAndTypePair outer_key_column{projection_columns[i].name, projection_columns[i].type};
+            info->key_expr_node = std::make_shared<ColumnNode>(outer_key_column, column_node->getColumnSource());
+            return info;
+        }
+
+        return std::nullopt;
+    }
+
+    if (!isSupportedDictGetFunction(function_node->getFunctionName()))
         return std::nullopt;
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -302,12 +422,12 @@ public:
         Side dict_side = Side::NONE;
         DictGetFunctionInfo dictget_function_info;
 
-        if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
+        if (auto info_lhs = tryParseDictFunctionCall(arguments[0], getContext()); info_lhs && arguments[1]->as<ConstantNode>())
         {
             dict_side = Side::LHS;
             dictget_function_info = std::move(*info_lhs);
         }
-        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
+        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1], getContext()); info_rhs && arguments[0]->as<ConstantNode>())
         {
             dict_side = Side::RHS;
             dictget_function_info = std::move(*info_rhs);
