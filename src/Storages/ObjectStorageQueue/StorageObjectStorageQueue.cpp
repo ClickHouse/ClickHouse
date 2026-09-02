@@ -1194,13 +1194,7 @@ void StorageObjectStorageQueue::postProcess(
     LOG_TEST(log, "Executing post process for {} objects", successful_objects.size());
     {
         std::lock_guard lock(mutex);
-        post_processor.emplace(
-            getContext(),
-            type,
-            object_storage,
-            getName(),
-            metadata.getTableMetadata(),
-            after_processing_settings);
+        post_processor.emplace(getContext(), type, object_storage, metadata.getTableMetadata(), after_processing_settings);
     }
 
     if (post_processor)
