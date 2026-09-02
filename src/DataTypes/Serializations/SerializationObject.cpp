@@ -8,6 +8,7 @@
 
 
 #include <Columns/ColumnObject.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadBufferFromString.h>
@@ -25,6 +26,20 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+namespace
+{
+
+void throwIfInvalidNumberOfBuckets(size_t num_buckets)
+{
+    if (num_buckets == 0 || num_buckets > MAX_OBJECT_SHARED_DATA_BUCKETS)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "JSON/Object column has an invalid number of shared data buckets: {} (must be in the range [1, {}])",
+            num_buckets, MAX_OBJECT_SHARED_DATA_BUCKETS);
+}
+
 }
 
 SerializationObject::SerializationObject(
@@ -697,6 +712,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
                 {
                     readVarUInt(structure_state->shared_data_buckets, *structure_stream);
+                    throwIfInvalidNumberOfBuckets(structure_state->shared_data_buckets);
                 }
             }
 
