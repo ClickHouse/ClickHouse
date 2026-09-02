@@ -1,6 +1,10 @@
-cheap condition first
-0	1
-AI condition first
-0	1
-AI condition alone
-0
+aiGenerate	0	1
+aiClassify	0	1
+aiExtract	0	1
+aiTranslate	0	1
+aiFilter	0	1
+aiRedact	0	1
+aiEmbed	0	1
+aiSimilarity	0	1
+AI condition written first	0	1
+AI condition alone	0

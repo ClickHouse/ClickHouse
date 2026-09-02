@@ -841,9 +841,8 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         if (functionIsGlobalInOperator(function_name))
             return true;
 
-        /// Disallow expensive functions, e.g. AI functions issuing one request per row. The cost
-        /// model below prices a condition by the size of the columns it reads, which says nothing
-        /// about such a function, and in PREWHERE it would run on every row read.
+        /// Some functions are expensive in ways the optimizer cannot see, e.g. an LLM call.
+        /// Disallow these functions from being moved to PREWHERE.
         if (auto function_base = function_node.getFunctionBase(); function_base && function_base->isExpensive())
             return true;
 
