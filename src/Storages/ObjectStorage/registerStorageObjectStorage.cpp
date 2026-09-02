@@ -1888,7 +1888,7 @@ Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse
 When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
 
 ```
-clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '<latest snapshot id>'"
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
 ```
 
 Do not delete the `committed_snapshot` node to recover. An absent cursor means "never consumed", which makes the next read a full re-read of the whole table rather than a resume.
