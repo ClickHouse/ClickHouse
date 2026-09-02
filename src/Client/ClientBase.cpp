@@ -1023,6 +1023,19 @@ int openFileCancellable(const String & file_name, int flags, const std::function
     }
 }
 
+/// Whether writes into this descriptor can block indefinitely, i.e. whether the sink needs the
+/// lossy best-effort discipline at all. A regular file (or a block device) always accepts the data
+/// and reports real errors such as `ENOSPC`, so it must stay on the ordinary throwing path: silently
+/// dropping the tail of a diagnostic file the user explicitly asked for would hide the error.
+/// Terminals, FIFOs, sockets and character devices, on the other hand, can park a write forever.
+bool isBlockingCapableSink(int fd)
+{
+    struct stat file_stat{};
+    if (::fstat(fd, &file_stat) != 0)
+        return true;
+    return !S_ISREG(file_stat.st_mode) && !S_ISBLK(file_stat.st_mode);
+}
+
 }
 
 
@@ -1458,11 +1471,18 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
                     }
                 });
 
+                /// Only a sink that can actually block is treated as terminal-facing: an ordinary
+                /// file must keep the plain throwing write path, so that a real write error
+                /// (`ENOSPC`, `EIO`) surfaces instead of being swallowed by the lossy best-effort
+                /// discipline that the responsive hook and the epilogue budget apply.
+                const bool sink_can_block = isBlockingCapableSink(logs_fd);
+
                 /// See the note above on why the member is assigned first and downcast with
                 /// `static_cast`.
                 using FileLogsBuffer = AutoCanceledWriteBuffer<WriteBufferFromFile>;
                 out_logs_buf = std::make_unique<FileLogsBuffer>(logs_fd, server_logs_file, DBMS_DEFAULT_BUFFER_SIZE);
-                logs_out_terminal_buf = static_cast<FileLogsBuffer *>(out_logs_buf.get());
+                if (sink_can_block)
+                    logs_out_terminal_buf = static_cast<FileLogsBuffer *>(out_logs_buf.get());
                 wb = out_logs_buf.get();
             }
         }
@@ -1476,8 +1496,9 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
         /// output - so without a hook the first Ctrl+C could still hang in a log/profile-events flush.
         /// In --server_logs_file=- mode the sink is std_out, which is already armed for the query (and
         /// whose hook resetOutput() re-points during teardown), so it must not be re-armed from here.
-        /// An explicit --server_logs_file=<path> (a dedicated buffer) is armed here as well, so a
-        /// non-regular sink such as a FIFO stays interruptible.
+        /// An explicit --server_logs_file=<path> naming a sink that can block (a FIFO, a character
+        /// device, a socket) is armed here as well so it stays interruptible; a regular file is not
+        /// tracked at all, because it cannot block and its write errors must not be swallowed.
         if (server_logs_file != "-" && logs_out_terminal_buf)
             armResponsiveOutput(*logs_out_terminal_buf);
     }
