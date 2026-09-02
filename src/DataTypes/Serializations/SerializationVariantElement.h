@@ -42,6 +42,7 @@ public:
         ColumnVariant::Discriminator variant_discriminator_,
         size_t num_variants_ = 0);
     size_t allocatedBytes() const override;
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

@@ -9,6 +9,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool query_plan_merge_filters;
+    extern const SettingsBool allow_preliminary_distinct_abandoning;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
@@ -32,6 +33,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];
     max_streams_for_union_step_to_max_threads_ratio = static_cast<double>(from->getSettingsRef()[Setting::max_streams_for_union_step_to_max_threads_ratio]);
+    allow_preliminary_distinct_abandoning = settings[Setting::allow_preliminary_distinct_abandoning];
 
     /// Setting query_plan_merge_filters is enabled by default.
     /// But it can brake short-circuit without splitting filter step into smaller steps.

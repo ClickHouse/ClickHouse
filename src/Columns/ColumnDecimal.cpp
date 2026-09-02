@@ -671,6 +671,12 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 }
 
 template <is_decimal T>
+bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
+template <is_decimal T>
 void ColumnDecimal<T>::serializeAsComparable(size_t n, String & out) const
 {
     using Native = T::NativeType;

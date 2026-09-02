@@ -166,6 +166,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUnique");
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'hasOnlyTypeDefaults' not implemented for ColumnUnique");
+    }
+
     void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
