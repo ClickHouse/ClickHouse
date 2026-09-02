@@ -1,2 +1,2 @@
-Tuple(UInt64, UUID2)
+Tuple(UInt64, LowCardinality(UUID2))
 1
