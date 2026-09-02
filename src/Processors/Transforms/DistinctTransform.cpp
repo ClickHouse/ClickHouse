@@ -4,9 +4,15 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NullableUtils.h>
+#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
+
+namespace ProfileEvents
+{
+    extern const Event DistinctTransformsAbandonedDeduplication;
+}
 
 namespace DB
 {
@@ -475,6 +481,20 @@ bool DistinctTransform::timeoutShouldThrow() const
     return should;
 }
 
+void DistinctTransform::maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows)
+{
+    if (!abandon_controller)
+        return;
+
+    abandon_controller->update(num_rows, num_unique_rows, data->getTotalByteCount());
+    if (abandon_controller->isAbandoned())
+    {
+        data.reset();
+        lc_dict_states.clear();
+        ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
+    }
+}
+
 void DistinctTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
@@ -783,8 +803,7 @@ void DistinctTransform::transform(Chunk & chunk)
             {
                 if (time_limit_exceeded)
                     stopReading();
-                if (abandon_controller)
-                    abandon_controller->update(num_rows, 0, data->getTotalByteCount());
+                maybeAbandonDeduplication(num_rows, 0);
                 return;
             }
 
@@ -838,15 +857,7 @@ void DistinctTransform::transform(Chunk & chunk)
     const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;
 
-    if (abandon_controller)
-    {
-        abandon_controller->update(num_rows, num_selected, data->getTotalByteCount());
-        if (abandon_controller->isAbandoned())
-        {
-            data.reset();
-            lc_dict_states.clear();
-        }
-    }
+    maybeAbandonDeduplication(num_rows, num_selected);
 
     /// Just go to the next chunk if there isn't any new record in the current one.
     if (num_selected == 0)
