@@ -225,6 +225,7 @@ namespace Setting
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool log_per_bucket_merge_timings;
     extern const SettingsBool enable_multi_way_keyed_merge;
+    extern const SettingsBool enable_two_level_promotion_for_parallel_merge;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsBool use_hive_partitioning;
@@ -3120,6 +3121,7 @@ static Aggregator::Params getAggregatorParams(
     /// merge, which is the safe direction (neither changes results).
     aggregator_params.log_per_bucket_merge_timings = settings[Setting::log_per_bucket_merge_timings];
     aggregator_params.enable_multi_way_keyed_merge = settings[Setting::enable_multi_way_keyed_merge];
+    aggregator_params.enable_two_level_promotion_for_parallel_merge = settings[Setting::enable_two_level_promotion_for_parallel_merge];
 
     return aggregator_params;
 }

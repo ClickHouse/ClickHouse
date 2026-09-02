@@ -4813,6 +4813,43 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
         }
     }
 
+    /// Merge-time two-level promotion (`enable_two_level_promotion_for_parallel_merge`): a query
+    /// sitting at the single-level/two-level conversion boundary produces all-single-level
+    /// variants in some runs, and the merge then takes the single-level path, where the multi-way
+    /// keyed merge (`enable_multi_way_keyed_merge`) never engages. When the multi-way waves could
+    /// do real work - the multi-way merge is on and has its thread pool, at least one aggregate
+    /// function supports the parallel merge, and there are enough sources (>= 3, below which the
+    /// wave is the pairwise fold anyway) - convert all variants to two-level here, through the
+    /// unchanged conversion machinery below, so the merge takes the per-bucket path. The floor of
+    /// 1024 groups summed across the variants is a tunable, not a measured constant: it only
+    /// keeps trivial merges, whose 256-bucket bookkeeping would cost more than the merge itself,
+    /// off the promoted path.
+    if (!has_at_least_one_two_level
+        && params.enable_two_level_promotion_for_parallel_merge
+        && params.enable_multi_way_keyed_merge
+        && thread_pool != nullptr
+        && non_empty_data.size() >= 3)
+    {
+        static constexpr size_t min_total_groups_for_promotion = 1024;
+
+        bool any_parallelizable = false;
+        for (size_t i = 0; i < params.aggregates_size && !any_parallelizable; ++i)
+            any_parallelizable = aggregate_functions[i]->isAbleToParallelizeMerge();
+
+        /// All variants are single-level here (no two-level one was found above), but the method
+        /// may have no two-level form at all (e.g. the fixed-array key8/key16 methods).
+        bool all_convertible = true;
+        size_t total_groups = 0;
+        for (const auto & variant : non_empty_data)
+        {
+            all_convertible = all_convertible && variant->isConvertibleToTwoLevel();
+            total_groups += variant->sizeWithoutOverflowRow();
+        }
+
+        if (any_parallelizable && all_convertible && total_groups >= min_total_groups_for_promotion)
+            has_at_least_one_two_level = true;
+    }
+
     if (has_at_least_one_two_level)
     {
         std::vector<AggregatedDataVariants *> variants_to_convert;
