@@ -6017,6 +6017,13 @@ Higher values raise peak memory when the Iceberg metadata files cache is disable
 
 Must be greater than zero; `1` decodes the manifests one at a time.
 )", 0, iceberg_delete_manifest_decode_concurrency) \
+    DECLARE(NonZeroUInt64, iceberg_file_entries_queue_size, 100, R"(
+Capacity of the queue between the Iceberg data manifest decode tasks and the query, in data file entries.
+
+The decode tasks pause once the queue is full and the query is not consuming, so this also bounds the read-ahead.
+
+Must be greater than zero.
+)", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 

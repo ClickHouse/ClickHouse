@@ -80,6 +80,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsNonZeroUInt64 iceberg_file_entries_queue_size;
 extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 };
 
@@ -315,7 +316,7 @@ IcebergIterator::IcebergIterator(
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Context is required to construct IcebergIterator");
 
     data_files_stream = std::make_unique<Iceberg::DataFileEntriesStream>(
-        /* queue_size */ 100,
+        local_context->getSettingsRef()[Setting::iceberg_file_entries_queue_size],
         local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
         data_snapshot,
         [this](const ManifestFileCacheKey & manifest_list_entry, std::function<bool()> stop_condition)
