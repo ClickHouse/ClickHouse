@@ -205,8 +205,15 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
     auto optimization = checkAndGetLiteralArgument<String>(args[start_index++], "extra_optimization");
     if (optimization == "vector_search_index_analysis")
     {
-        auto cast_node = args[start_index++]->children.at(0);
-        auto vector_search_args = evaluateConstantExpressionAsLiteral(cast_node->children.at(0), context)->as<ASTLiteral &>().value.safeGet<Array>();
+        const ASTPtr & args_array = args[start_index++];
+        /// Owns the literal that `args_field` and `vector_search_args` point into.
+        ASTPtr args_array_literal = evaluateConstantExpressionAsLiteral(args_array, context);
+        const Field & args_field = args_array_literal->as<ASTLiteral &>().value;
+        if (args_field.getType() != Field::Types::Array)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Argument 'args_array' of optimization 'vector_search_index_analysis' must be a constant expression "
+                "of type `Array`, got {} of type {}", args_array->formatForErrorMessage(), args_field.getTypeName());
+        const Array & vector_search_args = args_field.safeGet<Array>();
         if (vector_search_args.size() != 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "vector_search_index_analysis requires 6 arguments");
