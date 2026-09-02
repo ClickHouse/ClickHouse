@@ -476,6 +476,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
                 table_state_snapshot->schema_id,
                 Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *schema_processor));
+        object_info->pinned_incarnation = table_state_snapshot->trusted_uuid_incarnation;
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
