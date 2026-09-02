@@ -25,6 +25,53 @@ namespace ErrorCodes
 
 namespace fs = std::filesystem;
 
+namespace
+{
+
+/// The base URL of a web disk is a URL, not a filesystem path: joining it with `std::filesystem`
+/// gives it path semantics (on Windows it is not even parsed the same way), so the whole class
+/// keeps it in plain URL string space instead.
+String joinUrl(const String & base, const String & suffix)
+{
+    if (base.empty())
+        return suffix;
+    if (suffix.empty())
+        return base;
+    if (base.ends_with('/'))
+        return suffix.starts_with('/') ? base + suffix.substr(1) : base + suffix;
+    return suffix.starts_with('/') ? base + suffix : base + "/" + suffix;
+}
+
+/// The remote path of an object, relative to the base URL, with the file name escaped
+/// the same way `escapeForFileName` escapes it for the uploaded static files.
+String makeRemotePath(const String & path)
+{
+    std::string_view rest = path;
+    while (rest.starts_with('/'))
+        rest.remove_prefix(1);
+
+    const size_t slash_pos = rest.find_last_of('/');
+    const std::string_view directory = slash_pos == std::string_view::npos ? std::string_view{} : rest.substr(0, slash_pos + 1);
+    const std::string_view file_name = slash_pos == std::string_view::npos ? rest : rest.substr(slash_pos + 1);
+
+    /// The extension starts at the last dot, unless the name is "." or ".." or the dot is leading.
+    std::string_view stem = file_name;
+    std::string_view extension;
+    if (file_name != "." && file_name != "..")
+    {
+        const size_t dot_pos = file_name.find_last_of('.');
+        if (dot_pos != std::string_view::npos && dot_pos != 0)
+        {
+            stem = file_name.substr(0, dot_pos);
+            extension = file_name.substr(dot_pos);
+        }
+    }
+
+    return fmt::format("/{}{}{}", directory, escapeForFileName(String(stem)), extension);
+}
+
+}
+
 MetadataStorageFromStaticFilesWebServer::MetadataStorageFromStaticFilesWebServer(
     const WebObjectStorage & object_storage_)
     : object_storage(object_storage_)
@@ -100,9 +147,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
 {
     assertExists(path);
 
-    auto fs_path = fs::path(object_storage.getBaseURL()) / path;
-    std::string remote_path = pathToGenericString(fs_path.parent_path() / (escapeForFileName(pathToGenericString(fs_path.stem())) + fs_path.extension().string()));
-    remote_path = remote_path.substr(object_storage.getBaseURL().size());
+    const std::string remote_path = makeRemotePath(path);
 
     auto file_info = getFileInfo(path);
     return {StoredObject(remote_path, path, file_info->size)};
@@ -110,9 +155,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
 
 std::optional<StoredObjects> MetadataStorageFromStaticFilesWebServer::getStorageObjectsIfExist(const std::string & path) const
 {
-    auto fs_path = fs::path(object_storage.getBaseURL()) / path;
-    std::string remote_path = pathToGenericString(fs_path.parent_path() / (escapeForFileName(pathToGenericString(fs_path.stem())) + fs_path.extension().string()));
-    remote_path = remote_path.substr(object_storage.getBaseURL().size());
+    const std::string remote_path = makeRemotePath(path);
 
     if (auto file_info = tryGetFileInfo(path))
         return StoredObjects{StoredObject(remote_path, path, file_info->size)};
@@ -147,7 +190,7 @@ std::pair<MetadataStorageFromStaticFilesWebServer::FileDataPtr, std::vector<Stri
 MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const
 {
     std::vector<String> loaded_files;
-    auto full_url = fs::path(object_storage.getBaseURL()) / path;
+    const String full_url = joinUrl(object_storage.getBaseURL(), path);
 
     LOG_TRACE(log, "Adding directory: {} ({})", path, full_url);
 
@@ -160,7 +203,7 @@ MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const st
             object_storage.getContext()->getSettingsRef(),
             object_storage.getContext()->getServerSettings());
 
-        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(pathToGenericString(fs::path(full_url) / ".index")))
+        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(joinUrl(full_url, ".index")))
                                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
                                 .withSettings(object_storage.getContext()->getReadSettings())
                                 .withTimeouts(timeouts)
