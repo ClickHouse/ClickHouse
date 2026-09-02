@@ -108,7 +108,9 @@ Toggles the optimizer rule that routes column reads through a `Row(...)`
 wrapper. The rule only fires when the wrapper would cover **at least two**
 of the requested columns, to avoid trading a plain column read for the
 per-row unpacking overhead of the wrapper. Set to `0` to compare baseline
-vs. wrapper performance.
+vs. wrapper performance; the performance test
+`tests/performance/row_wrapper_scattered_reads.xml` runs the scattered-lookup
+workload both ways.
 
 ## Profile events {#profile-events}
 

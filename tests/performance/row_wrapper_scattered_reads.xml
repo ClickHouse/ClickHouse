@@ -1,0 +1,87 @@
+<test>
+    <!--
+        The workload `Row(...)` targets: a wide table, a few rows scattered across many
+        granules, most columns wanted. Columnar storage pays one seek and one compressed
+        block per column per lookup; the wrapper reads a single stream. The small
+        `index_granularity` keeps the rows per lookup low so that per-column overhead,
+        not decompression, dominates. `{wrappers}` toggles the rewrite so both variants
+        of every query are reported next to each other.
+    -->
+    <substitutions>
+        <substitution>
+            <name>wrappers</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query do_not_check_in_pr="95071">
+        CREATE TABLE row_wrapper_lookups
+        (
+            id UInt64,
+            u1 UInt32, u2 UInt32, u3 UInt32, u4 UInt32, u5 UInt32,
+            u6 UInt32, u7 UInt32, u8 UInt32, u9 UInt32, u10 UInt32,
+            s1 String, s2 String, s3 String, s4 String, s5 String,
+            s6 String, s7 String, s8 String, s9 String, s10 String,
+            bundle Row(
+                u1 UInt32, u2 UInt32, u3 UInt32, u4 UInt32, u5 UInt32,
+                u6 UInt32, u7 UInt32, u8 UInt32, u9 UInt32, u10 UInt32,
+                s1 String, s2 String, s3 String, s4 String, s5 String,
+                s6 String, s7 String, s8 String, s9 String, s10 String)
+                MATERIALIZED tuple(u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 128, min_bytes_for_wide_part = 0, allow_experimental_row_type = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO row_wrapper_lookups SELECT
+            number,
+            intHash32(number + 1) % 100000, intHash32(number + 2) % 100000, intHash32(number + 3) % 100000,
+            intHash32(number + 4) % 100000, intHash32(number + 5) % 100000, intHash32(number + 6) % 100000,
+            intHash32(number + 7) % 100000, intHash32(number + 8) % 100000, intHash32(number + 9) % 100000,
+            intHash32(number + 10) % 100000,
+            concat('v', toString(intHash32(number * 1) % 100000)), concat('v', toString(intHash32(number * 2) % 100000)),
+            concat('v', toString(intHash32(number * 3) % 100000)), concat('v', toString(intHash32(number * 4) % 100000)),
+            concat('v', toString(intHash32(number * 5) % 100000)), concat('v', toString(intHash32(number * 6) % 100000)),
+            concat('v', toString(intHash32(number * 7) % 100000)), concat('v', toString(intHash32(number * 8) % 100000)),
+            concat('v', toString(intHash32(number * 9) % 100000)), concat('v', toString(intHash32(number * 10) % 100000))
+        FROM numbers_mt(5000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE row_wrapper_lookups FINAL</fill_query>
+
+    <!--
+        Lookups are spaced wider than a compressed block of a UInt32 column (64 KiB, 16K rows),
+        so without the wrapper every lookup decompresses one block per column.
+    -->
+    <query>
+        SELECT u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10
+        FROM row_wrapper_lookups
+        WHERE id IN (SELECT number * 12503 FROM numbers(400))
+        FORMAT Null
+        SETTINGS query_plan_use_row_wrappers = {wrappers}
+    </query>
+
+    <!-- A narrow projection still pays for unpacking the whole record through the wrapper. -->
+    <query>
+        SELECT u1, s1, u5
+        FROM row_wrapper_lookups
+        WHERE id IN (SELECT number * 12503 FROM numbers(400))
+        FORMAT Null
+        SETTINGS query_plan_use_row_wrappers = {wrappers}
+    </query>
+
+    <!-- The recent-rows shape from the documentation: a dense tail read where both layouts read the same rows. -->
+    <query>
+        SELECT u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10
+        FROM row_wrapper_lookups
+        ORDER BY id DESC
+        LIMIT 100000
+        FORMAT Null
+        SETTINGS query_plan_use_row_wrappers = {wrappers}
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS row_wrapper_lookups</drop_query>
+</test>
