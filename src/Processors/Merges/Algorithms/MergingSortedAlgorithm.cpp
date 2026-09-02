@@ -364,15 +364,13 @@ void MergingSortedAlgorithm::insertChunk(size_t source_num)
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::forwardVirtualRow(size_t source_num)
 {
-    /// Forward the announcement in the form `VirtualRowTransform` emits it: an empty chunk whose
-    /// key lives in the chunk info. The row `setVirtualRow` materialized for the cursor would pass
-    /// for data in the transforms between this merge and the next one (a preliminary DISTINCT
-    /// remembers it and drops the real rows with the same key).
-    Chunk consumed = std::move(current_inputs[source_num].chunk);
-    Chunk boundary(header->cloneEmptyColumns(), 0);
-    boundary.setChunkInfos(std::move(consumed.getChunkInfos()));
+    /// Downstream must see the announcement the way `VirtualRowTransform` emits it: an empty
+    /// chunk whose key lives in the chunk info. The row `setVirtualRow` materialized for the
+    /// cursor is this merge's business only; any transform in between would take it for data.
+    auto & chunk = current_inputs[source_num].chunk;
+    chunk.setColumns(chunk.cloneEmptyColumns(), 0);
 
-    Status result(std::move(boundary));
+    Status result(std::move(chunk));
     result.required_source = source_num;
     return result;
 }
