@@ -269,7 +269,12 @@ Chunk ColumnBinaryInputFormat::read()
                 "ColumnBinary: column {} decoded as {}, which does not match the declared type {}",
                 i, decoded.getName(), expected_type->getName());
 
-        result.push_back(std::move(column));
+        // A `COL_IS_CONST` descriptor decodes to a `ColumnConst` wrapper, but the chunk this
+        // produces must match the header structurally: the header carries the plain column the
+        // declared type creates, so handing a `ColumnConst` to the pipeline makes the very next
+        // structure comparison downstream report a logical error. Materialize it here - const
+        // is a wire-level encoding of a repeated value, not part of the format's data model.
+        result.push_back(IColumn::mutate(column->convertToFullColumnIfConst()));
 
         region_start = region_end;
     }
