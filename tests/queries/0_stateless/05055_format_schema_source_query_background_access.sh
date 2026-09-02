@@ -38,7 +38,7 @@ do
         WHERE event_date >= toDate('${START}')
           AND event_time_microseconds >= toDateTime64('${START}', 6)
           AND logger_name LIKE '%StorageBuffer%'
-          AND message LIKE '%can only be used in a query running on behalf of a user%'")
+          AND message LIKE '%can only be executed on behalf of a user%'")
     [ "$refused" = "1" ] && break
     sleep 0.5
 done
