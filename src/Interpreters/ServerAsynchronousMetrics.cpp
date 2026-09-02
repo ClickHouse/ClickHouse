@@ -1031,6 +1031,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
     new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 #define MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION \
     "Approximate resident set size of pthread stacks, summed from `Rss:` of /proc/self/smaps VMAs tagged with " \
     "`[anon:clickhouse_stack]` via `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or " \
@@ -1046,7 +1047,6 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     "cadence. Requires Linux 5.17 or newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in " \
     "`system.warnings`). On macOS, it counts the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Re-emit cached thread-stack stats on every scrape so the metrics stay
     /// present between heavy-cadence refreshes. They are emitted only after a
     /// successful sample; in environments where the source cannot be read, or
@@ -1072,11 +1072,11 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
             MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION };
 #endif
     }
-#endif
 
 #undef MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION
 #undef MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION
 #undef MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION
+#endif
 }
 
 }
