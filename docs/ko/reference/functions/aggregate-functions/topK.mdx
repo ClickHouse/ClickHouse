@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 도입 버전: v1.1.0
 
-지정된 컬럼에서 대략적으로 가장 빈도가 높은 값들의 배열을 반환합니다. 결과 배열은 값 자체가 아니라 값의 대략적인 출현 빈도를 기준으로 내림차순 정렬됩니다.
+지정된 컬럼에서 대략적으로 가장 자주 나타나는 값들의 배열을 반환합니다. 결과 배열은 값 자체가 아니라 값의 대략적인 빈도를 기준으로 내림차순 정렬됩니다.
 
 TopK를 분석하기 위해 [Parallel Space Saving](https://doi.org/10.1016/j.ins.2015.09.003)의 reduce-and-combine 알고리즘을 기반으로 한 [Filtered Space-Saving](https://doi.org/10.1016/j.ins.2010.08.024) 알고리즘을 구현합니다.
 
@@ -46,7 +46,7 @@ topK(N, load_factor, 'counts')(column)
 
 **반환 값**
 
-근사 빈도를 기준으로 내림차순 정렬된, 대략적으로 가장 자주 나타나는 값들의 배열을 반환합니다. [`Array`](/ko/reference/data-types/array)
+대략적인 빈도를 기준으로 내림차순 정렬된, 대략적으로 가장 자주 나타나는 값들의 배열을 반환합니다. [`Array`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -54,7 +54,7 @@ topK(N, load_factor, 'counts')(column)
 
 ```sql title=Query
 SELECT topK(3)(AirlineID) AS res
-FROM ontime;
+FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
 ```
 
 ```response title=Response

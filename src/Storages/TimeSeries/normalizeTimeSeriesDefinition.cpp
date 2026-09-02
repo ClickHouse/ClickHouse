@@ -252,6 +252,7 @@ namespace
     /// Reads the declaration of the external samples target table and
     /// extract types `timestamp_type`, `scalar_type`, id_type`.
     void readTypesFromExternalSamples(
+        std::string_view table_kind_name,
         const StorageID & external_table_id, const ColumnsDescription & external_columns,
         DataTypePtr & timestamp_type, String & timestamp_src,
         DataTypePtr & scalar_type, String & scalar_src,
@@ -262,15 +263,15 @@ namespace
         {
             if (column.name == TimeSeriesColumnNames::Timestamp)
                 setOrCheckDataType(timestamp_type, timestamp_src, column.type,
-                    fmt::format("column `{}` of the external `samples` table {}", column.name, external_table_id.getNameForLogs()),
+                    fmt::format("column `{}` of the external `{}` table {}", column.name, table_kind_name, external_table_id.getNameForLogs()),
                     "timestamp", table_id);
             else if (column.name == TimeSeriesColumnNames::Value)
                 setOrCheckDataType(scalar_type, scalar_src, column.type,
-                    fmt::format("column `{}` of the external `samples` table {}", column.name, external_table_id.getNameForLogs()),
+                    fmt::format("column `{}` of the external `{}` table {}", column.name, table_kind_name, external_table_id.getNameForLogs()),
                     "scalar", table_id);
             else if (column.name == TimeSeriesColumnNames::ID)
                 setOrCheckDataType(id_type, id_src, column.type,
-                    fmt::format("column `{}` of the external `samples` table {}", column.name, external_table_id.getNameForLogs()),
+                    fmt::format("column `{}` of the external `{}` table {}", column.name, table_kind_name, external_table_id.getNameForLogs()),
                     "id", table_id);
         }
     }
@@ -315,7 +316,15 @@ namespace
 
         auto [samples_id, samples_columns] = resolve_external(ViewTarget::Samples);
         if (!samples_id.empty())
-            readTypesFromExternalSamples(samples_id, samples_columns,
+            readTypesFromExternalSamples("samples", samples_id, samples_columns,
+                                         timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src,
+                                         table_id);
+
+        /// An external recent-samples table has the same layout as an external samples table,
+        /// and it can be the only declared source of the column types.
+        auto [recent_samples_id, recent_samples_columns] = resolve_external(ViewTarget::RecentSamples);
+        if (!recent_samples_id.empty())
+            readTypesFromExternalSamples("recent samples", recent_samples_id, recent_samples_columns,
                                          timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src,
                                          table_id);
 
@@ -377,7 +386,9 @@ namespace
         if (!id_type)
             id_type = std::make_shared<DataTypeTuple>(DataTypes{
                 std::make_shared<DataTypeUInt64>(),
-                uuid_type_version == 2 ? DataTypePtr(std::make_shared<DataTypeUUID2>()) : DataTypePtr(std::make_shared<DataTypeUUID>())});
+                std::make_shared<DataTypeLowCardinality>(
+                    uuid_type_version == 2 ? DataTypePtr(std::make_shared<DataTypeUUID2>())
+                                           : DataTypePtr(std::make_shared<DataTypeUUID>()))});
 
         /// Validate types.
         {
