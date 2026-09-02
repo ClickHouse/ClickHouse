@@ -1711,7 +1711,7 @@ void StorageObjectStorageQueue::alter(
         });
 
         LOG_TRACE(
-            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}): {})",
             new_metadata.settings_changes->formatForLogging(),
             requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 

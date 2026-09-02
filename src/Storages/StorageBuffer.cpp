@@ -1476,7 +1476,7 @@ void registerStorageBuffer(StorageFactory & factory)
         if (engine_args.size() < 9 || engine_args.size() > 12)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage Buffer requires from 9 to 12 parameters: "
-                            " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
+                            "destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
                             "max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].");
 
         // Table and database name arguments accept expressions, evaluate them.

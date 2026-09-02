@@ -770,7 +770,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
                  "Failed to declare queue. Probably queue settings are conflicting: "
                  "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
                  "or use a different queue_base or manually delete previously declared queues, "
-                 "which  were declared with the same names. ERROR reason: {}", std::string(message));
+                 "which were declared with the same names. ERROR reason: {}", std::string(message));
     });
 
     AMQP::Table queue_settings;

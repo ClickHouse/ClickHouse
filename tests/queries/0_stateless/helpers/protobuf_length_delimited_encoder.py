@@ -232,7 +232,7 @@ if __name__ == "__main__":
         "--decode_and_check",
         action="store_true",
         help="The same as --decode, and the utility will then encode "
-        " the decoded data back to the binary form to check that the result of that encoding is the same as the input was.",
+        "the decoded data back to the binary form to check that the result of that encoding is the same as the input was.",
     )
     args = parser.parse_args()
 

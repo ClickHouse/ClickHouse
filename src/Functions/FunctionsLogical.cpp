@@ -709,7 +709,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
-                    " argument {} is of type {}", getName(), i + 1, arg_type->getName());
+                    "argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
         if (!(isNativeNumber(arg_type)

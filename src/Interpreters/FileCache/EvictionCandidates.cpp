@@ -151,7 +151,7 @@ const QueueEvictionInfo & EvictionInfo::get(const QueueID & queue_id) const
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Eviction info for queue  with id {} does not exist ({})",
+            "Eviction info for queue with id {} does not exist ({})",
             queue_id, toString());
     }
 }
