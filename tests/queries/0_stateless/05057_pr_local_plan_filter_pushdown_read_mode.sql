@@ -89,6 +89,19 @@ FROM (
 WHERE explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%';
 SELECT count() FROM (SELECT v.ts FROM v_sorted_pr_read_mode AS v JOIN b_pr_read_mode AS bb ON v.tenant = bb.tenant);
 
+SELECT 'sort inside the fragment, runtime filter conjoined with an ordinary one';
+-- The two conditions get merged into one `Filter`. Only the runtime filter half may go into the local
+-- plan; `tenant = 42` has to stay above it, or the read would go in order and the replicas would not.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT v.ts FROM v_sorted_pr_read_mode AS v JOIN b_pr_read_mode AS bb ON v.tenant = bb.tenant
+    WHERE v.tenant = 42 LIMIT 5
+)
+WHERE explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%' OR explain LIKE '%Prewhere filter column%';
+SELECT v.ts FROM v_sorted_pr_read_mode AS v JOIN b_pr_read_mode AS bb ON v.tenant = bb.tenant
+WHERE v.tenant = 42 ORDER BY v.ts LIMIT 5;
+
 DROP TABLE b_pr_read_mode;
 DROP VIEW v_sorted_pr_read_mode;
 DROP VIEW v_pr_read_mode;

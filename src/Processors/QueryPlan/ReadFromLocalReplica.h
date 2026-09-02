@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -25,9 +26,15 @@ public:
 
     void addFilter(FilterDAGInfo filter);
 
+    /// Conditions already moved into the plan. A partial push-down leaves the original `Filter` in
+    /// place, so the pass has to recognize what it has already taken and stop.
+    bool hasPushedCondition(const String & name) const { return pushed_conditions.contains(name); }
+    void notePushedCondition(const String & name) { pushed_conditions.insert(name); }
+
 private:
     QueryPlanPtr query_plan;
     ContextPtr context;
+    NameSet pushed_conditions;
 };
 
 }

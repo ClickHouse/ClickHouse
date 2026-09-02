@@ -29,3 +29,12 @@ Read type: Default
 Runtime filters: RF1(tenant, tenant from default.b_pr_read_mode)
 Read type: Default
 100
+sort inside the fragment, runtime filter conjoined with an ordinary one
+Read type: Default
+Runtime filters: RF1(tenant, tenant from default.b_pr_read_mode)
+Read type: Default
+42
+142
+242
+342
+442

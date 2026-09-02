@@ -1123,13 +1123,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 /// Such a predicate cannot mark a column as fixed - `enrichFixedColumns` only does that for a function
 /// whose every argument is fixed or constant, and the probe key is neither - so it cannot change the
 /// read mode the step below it requests. Anything else may: `WHERE key = 42` fixes `key`.
-static bool isOnlyJoinRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
+static bool isOnlyJoinRuntimeFilters(const ActionsDAG::Node * condition)
 {
-    const auto * filter_node = dag.tryFindInOutputs(filter_column_name);
-    if (!filter_node)
-        return false;
-
-    std::vector<const ActionsDAG::Node *> stack{filter_node};
+    std::vector<const ActionsDAG::Node *> stack{condition};
     std::unordered_set<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
@@ -1427,21 +1423,61 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        /// Only the initiator's own share of the read gets the predicate here; the replicas plan from
+        /// Only the initiator's own share of the read gets the condition here; the replicas plan from
         /// their own query, which carries it only when `parallel_replicas_filter_pushdown` splices it in.
-        /// A predicate the replicas do not have may not change what the local fragment announces to the
+        /// A condition the replicas do not have may not change what the local fragment announces to the
         /// shared coordinator - an equality fixes a sort key column, which lets a sort or an aggregation
         /// inside the fragment read in order, and the initiator would then announce `WithOrder` against
         /// the replicas' `Default`. A join runtime filter cannot do that (see `isOnlyJoinRuntimeFilters`),
-        /// and it is also the one predicate the setting could never mirror, so it is pushed either way.
-        if (!settings.parallel_replicas_filter_pushdown
-            && !isOnlyJoinRuntimeFilters(filter->getExpression(), filter->getFilterColumnName()))
+        /// and it is also the one condition the setting could never mirror, so it goes in either way.
+        if (settings.parallel_replicas_filter_pushdown)
+        {
+            // actual push down will be done when plan for local parallel replica will be optimized
+            FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+            parallel_replicas_local_plan->addFilter(std::move(info));
+            std::swap(*parent_node, *child_node);
+            return 1;
+        }
+
+        /// Take the runtime filters out of the conjunction rather than giving up on the whole condition:
+        /// `WHERE ... ` merged with a runtime filter is the common shape, and the runtime filter is the
+        /// half worth having down there.
+        const auto & expression = filter->getExpression();
+        const auto * predicate = expression.tryFindInOutputs(filter->getFilterColumnName());
+        if (!predicate)
             return 0;
 
-        // actual push down will be done when plan for local parallel replica will be optimized
-        FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
-        parallel_replicas_local_plan->addFilter(std::move(info));
-        std::swap(*parent_node, *child_node);
+        ActionsDAG::NodeRawConstPtrs pushable;
+        auto atoms = ActionsDAG::extractConjunctionAtoms(predicate);
+        for (const auto * atom : atoms)
+        {
+            if (isOnlyJoinRuntimeFilters(atom) && !parallel_replicas_local_plan->hasPushedCondition(atom->result_name))
+                pushable.push_back(atom);
+        }
+
+        if (pushable.empty())
+            return 0;
+
+        if (pushable.size() == atoms.size())
+        {
+            /// The whole condition may go in, so move it instead of leaving a copy behind.
+            FilterDAGInfo info{expression.clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+            parallel_replicas_local_plan->addFilter(std::move(info));
+            std::swap(*parent_node, *child_node);
+            return 1;
+        }
+
+        auto split = ActionsDAG::createActionsForConjunction(pushable, child->getOutputHeader()->getColumnsWithTypeAndName());
+        if (!split)
+            return 0;
+
+        /// The rest of the condition stays above, and so does this part of it - filtering the same rows
+        /// twice is harmless, and rebuilding the original `Filter` without them is not: its actions may
+        /// compute more than the predicate.
+        String pushed_name = split->dag.getOutputs()[split->filter_pos]->result_name;
+        for (const auto * atom : pushable)
+            parallel_replicas_local_plan->notePushedCondition(atom->result_name);
+        parallel_replicas_local_plan->addFilter(FilterDAGInfo{std::move(split->dag), pushed_name, split->remove_filter});
         return 1;
     }
 
