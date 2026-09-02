@@ -7,7 +7,8 @@ CREATE TABLE states
     argmax AggregateFunction(argMax, LowCardinality(String), DateTime),
     argmax_nullable AggregateFunction(argMax, LowCardinality(Nullable(String)), DateTime),
     summap AggregateFunction(sumMap, Array(LowCardinality(String)), Array(UInt64)),
-    quantiles AggregateFunction(quantiles(0.5), LowCardinality(Float64))
+    quantiles AggregateFunction(quantiles(0.5), LowCardinality(Float64)),
+    argmaxif AggregateFunction(argMaxIf, LowCardinality(Nullable(String)), DateTime, Bool)
 )
 ENGINE = MergeTree ORDER BY k;
 
@@ -19,11 +20,12 @@ INSERT INTO states SELECT
     argMaxState(toLowCardinality('a'), toDateTime(1)),
     argMaxState(toLowCardinality(CAST('b', 'Nullable(String)')), toDateTime(1)),
     sumMapState([toLowCardinality('x')], [toUInt64(7)]),
-    quantilesState(0.5)(toLowCardinality(toFloat64(3)));
+    quantilesState(0.5)(toLowCardinality(toFloat64(3))),
+    argMaxIfState(toLowCardinality(CAST('c', 'Nullable(String)')), toDateTime(1), true);
 
 OPTIMIZE TABLE states FINAL;
 
-SELECT argMaxMerge(argmax), argMaxMerge(argmax_nullable), sumMapMerge(summap), quantilesMerge(0.5)(quantiles) FROM states;
+SELECT argMaxMerge(argmax), argMaxMerge(argmax_nullable), sumMapMerge(summap), quantilesMerge(0.5)(quantiles), argMaxIfMerge(argmaxif) FROM states;
 
 -- The default state is the same one the spelling without LowCardinality produces.
 SELECT hex(defaultValueOfTypeName('AggregateFunction(argMax, LowCardinality(String), DateTime)'))
