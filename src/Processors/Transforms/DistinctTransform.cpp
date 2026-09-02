@@ -1,8 +1,19 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event DistinctTransformsAbandonedDeduplication;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DistinctTransformsAbandonedDeduplication;
+}
 
 namespace DB
 {
@@ -38,6 +49,20 @@ DistinctTransform::DistinctTransform(
 {
     if (allow_abandoning_)
         abandon_controller.emplace();
+}
+
+void DistinctTransform::maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows)
+{
+    if (!abandon_controller)
+        return;
+
+    abandon_controller->update(num_rows, num_unique_rows, data->getTotalByteCount());
+    if (abandon_controller->isAbandoned())
+    {
+        data.reset();
+        lc_dict_states.clear();
+        ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
+    }
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -95,6 +120,7 @@ void DistinctTransform::transform(Chunk & chunk)
             /// The new rows of the current chunk are still emitted (the following chunks flow
             /// through unfiltered).
             distinct_set.clear();
+            ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
             return;
         }
     }

@@ -220,7 +220,7 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
-void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     /// The final distinct deduplicates across the whole input, so it needs all data in a single
     /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
@@ -306,6 +306,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// final is memory-bounded by the spilling.
     const UInt64 pass_through_threshold = (pre_distinct && final_distinct_spills) ? external_threshold : 0;
 
+    /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
+    /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
+    /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
+    const bool allow_abandoning = pre_distinct && build_settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
+
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
@@ -314,7 +319,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
             return std::make_shared<DistinctTransform>(
                 header, settings.set_size_limits, limit_hint, columns,
-                /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false, pass_through_threshold);
+                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold);
         });
 }
 
