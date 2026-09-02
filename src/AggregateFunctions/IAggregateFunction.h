@@ -571,6 +571,31 @@ public:
         }
     }
 
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (flags[i])
+                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+        }
+    }
+
     void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const final // NOLINT
     {
         for (size_t i = start; i < size; ++i)
@@ -869,31 +894,6 @@ public:
             std::is_same_v<decltype(&IAggregateFunctionDataHelper::hasTrivialDestructor), decltype(&Derived::hasTrivialDestructor)>;
         static_assert(declares_destroy_and_has_trivial_destructor,
             "destroy() and hasTrivialDestructor() methods of an aggregate function must be either both overridden or not");
-    }
-
-    void addBatchWithNonNullPlaces( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if (flags[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-            }
-        }
-        else
-        {
-            for (size_t i = row_begin; i < row_end; ++i)
-                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-        }
     }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
