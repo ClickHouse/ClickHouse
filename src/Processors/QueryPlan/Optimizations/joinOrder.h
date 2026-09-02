@@ -67,6 +67,7 @@ struct DPJoinEntry
 struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
+    std::optional<Float64> avg_row_bytes = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
@@ -109,6 +110,13 @@ struct QueryGraph
     /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
     /// otherwise. See `ConflictJoinOp`.
     std::vector<ConflictJoinOp> conflict_ops;
+
+    /// When either is true, DPsub builds its reordering constraints from the conflict detector
+    /// (see conflictDetector.h) over `conflict_ops` instead of the per-relation `join_kinds`
+    /// restrictions. CD-C takes precedence over CD-A when both are set. Set from settings in
+    /// `optimizeJoinOrder`; affects only the DPsub algorithm.
+    bool use_cd_a_conflict_detector = false;
+    bool use_cd_c_conflict_detector = false;
 
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).

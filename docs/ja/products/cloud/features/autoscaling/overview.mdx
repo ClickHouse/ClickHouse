@@ -1,5 +1,5 @@
 ---
-sidebarTitle: '概要'
+sidebarTitle: 'オートスケーリング'
 slug: /manage/scaling
 description: 'ClickHouse Cloud におけるオートスケーリングの概要'
 keywords: ['オートスケーリング', 'オートスケーリング', 'スケーリング', '水平', '垂直', 'バースト']
@@ -9,25 +9,25 @@ doc_type: 'guide'
 
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-スケーリングとは、クライアントの需要に応じて利用可能なリソースを調整できることです。Scale および Enterprise (標準の 1:4 プロファイル) のティアのサービスでは、API をプログラムから呼び出すか、UI で設定を変更してシステムリソースを調整することで、水平スケーリングを行えます。これらのサービスは、アプリケーションの需要に応じて垂直方向に**オートスケール**することもできます。
+スケーリングとは、クライアントの需要に応じて利用可能なリソースを調整できることです。Scale および Enterprise ティアのサービスでは、API をプログラムから呼び出すか、UI で設定を変更することで、水平スケーリングを行えます。Scale ティアのサービスおよび標準の `1:4` プロファイルを持つ Enterprise ティアのサービスは、アプリケーションの需要に応じて垂直方向に**オートスケール**することもできます。
 
 <ScalePlanFeatureBadge feature="自動垂直スケーリング" />
 
 <Note>
-  Scale ティアと Enterprise ティアは、単一レプリカと複数レプリカの両方のサービスをサポートしています。一方、Basic ティアでサポートされるのは単一レプリカのサービスのみです。単一レプリカのサービスは固定サイズを前提としているため、垂直スケーリングにも水平スケーリングにも対応していません。サービスをスケーリングするには、Scale ティアまたは Enterprise ティアにアップグレードできます。
+  Scale ティアと Enterprise ティアは、単一レプリカと複数レプリカの両方のサービスをサポートしています。単一レプリカの Scale サービスおよび標準の `1:4` プロファイルを持つ Enterprise サービスでは、セルフサービスで垂直オートスケーリングを行えます。カスタムプロファイルを持つ Enterprise サービスでは、サポートによる垂直リサイズが必要です。Scale サービスと Enterprise サービスは、複数のレプリカに水平スケーリングできます。Basic ティアのサービスは単一レプリカでサイズが固定されており、垂直スケーリングおよび水平スケーリングはできません。詳細については、[大規模な単一レプリカサービス](/ja/products/cloud/features/large-single-replica-services) を参照してください。
 </Note>
 
 <div id="how-scaling-works-in-clickhouse-cloud">
   ## ClickHouse Cloud におけるスケーリングの仕組み
 </div>
 
-現在、ClickHouse Cloud では、Scale ティア サービスで垂直オートスケーリングと手動の水平スケーリングをサポートしています。
+ClickHouse Cloud では、Scale および Enterprise ティア サービスで手動の水平スケーリングをサポートしています。Scale ティア サービスでは垂直オートスケーリングもサポートしています。Enterprise ティアの垂直オートスケーリングのサポートは、以下で説明するようにプロファイルによって異なります。[水平オートスケーリング](/ja/products/cloud/features/autoscaling/horizontal-autoscaling) は、Scale および Enterprise ティア サービス向けにプライベートプレビューで利用できます。
 
 Enterprise ティア サービスのスケーリングは、次のとおりです。
 
 * **水平スケーリング**: Enterprise ティア では、すべての標準プロファイルおよびカスタムプロファイルで手動の水平スケーリングを利用できます。
 * **垂直スケーリング**:
-  * 標準プロファイル (1:4) では、垂直オートスケーリングをサポートしています。
+  * 標準の `1:4` プロファイルでは、垂直オートスケーリングをサポートしています。
   * カスタムプロファイル (`highMemory` と `highCPU`) では、垂直オートスケーリングと手動の垂直スケーリングはサポートされていません。ただし、これらのサービスはサポートに連絡することで垂直スケーリングが可能です。
 
 <Note>
@@ -44,8 +44,10 @@ Enterprise ティア サービスのスケーリングは、次のとおりで�
 </div>
 
 * [垂直オートスケーリング](/ja/products/cloud/features/autoscaling/vertical) — 使用状況に応じた CPU とメモリの自動スケーリング
+* [水平オートスケーリング](/ja/products/cloud/features/autoscaling/horizontal-autoscaling) — ワークロードの需要に基づくレプリカの自動スケーリング
 * [水平スケーリング](/ja/products/cloud/features/autoscaling/horizontal) — API または UI によるレプリカの手動スケーリング
 * [Make Before Break (MBB)](/ja/products/cloud/features/autoscaling/make-before-break) — ClickHouse Cloud がシームレスにスケーリングを実行する仕組み
 * [自動アイドリング](/ja/products/cloud/features/autoscaling/idling) — サービスの自動停止によるコスト削減
 * [スケーリングの推奨事項](/ja/products/cloud/features/autoscaling/scaling-recommendations) — スケーリングの推奨事項について
 * [スケジュールスケーリング](/ja/products/cloud/features/autoscaling/scheduled-scaling) — リアルタイムのメトリクスに依存せず、サービスをいつスケールアップまたはスケールダウンするかを正確に指定できるスケジュールスケーリング機能について
+* [大規模な単一レプリカサービス](/ja/products/cloud/features/large-single-replica-services) — Scale および Enterprise ティアにおける単一レプリカサービスの垂直スケーリング

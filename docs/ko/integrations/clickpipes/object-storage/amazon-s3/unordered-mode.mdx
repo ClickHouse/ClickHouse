@@ -18,9 +18,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 작동 방식
 </div>
 
-이 모드에서는 S3 ClickPipe가 먼저 선택한 경로의 **모든 파일**을 초기 적재한 다음, 지정된 경로와 일치하는 큐의 `ObjectCreated:*` 이벤트를 수신합니다. 이전에 이미 확인한 파일에 대한 메시지이거나, 경로와 일치하지 않는 파일이거나, 다른 유형의 이벤트는 **무시됩니다**. 파일은 `max insert bytes` 또는 `max file count`에 설정된 임계값에 도달하거나, 설정 가능한 인터벌이 지난 후(기본값 30초) 적재됩니다. 특정 파일이나 특정 시점부터 수집을 시작하는 것은 **불가능합니다**. ClickPipes는 항상 선택한 경로의 모든 파일을 적재합니다.
+이 모드에서는 S3 ClickPipe가 먼저 선택한 경로의 **모든 파일**을 초기 적재한 다음, 지정된 경로와 일치하는 큐의 `ObjectCreated:*` 이벤트를 수신합니다. 이전에 이미 확인한 파일에 대한 메시지이거나, 경로와 일치하지 않는 파일이거나, 다른 유형의 이벤트는 **무시됩니다**. 파일은 `max insert bytes` 또는 `max file count`에 설정된 임계값에 도달하거나, 설정 가능한 인터벌이 지난 후(기본값 30초) 수집됩니다.
 
-데이터를 적재하는 동안에는 다양한 유형의 장애가 발생할 수 있으며, 이로 인해 부분 삽입이나 중복 데이터가 생길 수 있습니다. 객체 스토리지 ClickPipes는 삽입 실패에도 견고하며, 임시 스테이징 테이블(staging table)을 사용해 정확히 한 번 처리 의미 체계를 제공합니다. 데이터는 먼저 스테이징 테이블에 삽입됩니다. 문제가 발생하면 스테이징 테이블을 TRUNCATE한 뒤 깨끗한 상태에서 삽입을 다시 시도합니다. 삽입이 성공적으로 완료된 경우에만 파티션이 대상 테이블로 이동합니다.
+큐를 통해 전달된 파일만 수집하려면 **Skip initial load**를 활성화하세요. 활성화하면 ClickPipes는 선택한 경로에 있는 기존 파일의 초기 스캔을 건너뛰고 SQS 큐를 통해 전달된 파일만 처리합니다.
+
+데이터를 수집하는 동안에는 다양한 유형의 장애가 발생할 수 있으며, 이로 인해 부분 삽입이나 중복 데이터가 생길 수 있습니다. 객체 스토리지 ClickPipes는 삽입 실패에도 견고하며, 임시 스테이징 테이블(staging table)을 사용해 정확히 한 번 처리 의미 체계를 제공합니다. 데이터는 먼저 스테이징 테이블에 삽입됩니다. 문제가 발생하면 스테이징 테이블을 TRUNCATE한 뒤 깨끗한 상태에서 삽입을 다시 시도합니다. 삽입이 성공적으로 완료된 경우에만 파티션이 대상 테이블로 이동합니다.
 
 <Steps>
   <Step title="Amazon SQS 큐 생성" id="create-sqs-queue">
@@ -68,7 +70,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
         <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="EventBridge 규칙이 성공적으로 생성됨" size="lg" border />
 
-        **d.** EventBridge가 이 큐로 메시지를 전송할 수 있도록 SQS 큐 액세스 정책을 편집합니다. `<sqs-queue-arn>` 및 `<eventbridge-rule-arn>`을 적절한 값으로 바꾸십시오.
+        **d.** EventBridge가 이 큐로 메시지를 전송할 수 있도록 SQS 큐 액세스 정책을 편집합니다. `<sqs-queue-arn>` 및 `<eventbridge-rule-arn>`을 적절한 값으로 바꾸십시오:
 
         ```json
         {
@@ -196,10 +198,10 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   <Step title="unordered mode로 ClickPipe 생성" id="create-clickpipe">
     **1.** ClickHouse Cloud 콘솔에서 **Data Sources &gt; Create ClickPipe**로 이동한 다음 **Amazon S3**를 선택합니다. S3 버킷에 연결하는 데 필요한 정보를 입력합니다. **Authentication method**에서 **IAM role**을 선택하고, 이전 단계에서 생성한 역할의 ARN을 입력합니다.
 
-    **2.** **Incoming data**에서 **Continuous ingestion**을 켭니다. 수집 모드로 **Any order**를 선택하고, 버킷에 연결된 큐의 **SQS queue URL**을 입력합니다. 이 큐는 이 ClickPipe에서만 전용으로 사용해야 합니다. [Amazon SQS 큐 생성](#create-sqs-queue)을 참조하십시오.
+    **2.** **Incoming data**에서 **Continuous ingestion**을 켭니다. 수집 모드로 **Any order**를 선택하고, 버킷에 연결된 큐의 **SQS queue URL**을 입력합니다. 큐의 파일만 처리하고 선택한 경로에 있는 기존 파일을 처음 스캔하지 않으려면 **Skip initial load**를 활성화합니다. 이 큐는 이 ClickPipe에서만 전용으로 사용해야 합니다. [Amazon SQS 큐 생성](#create-sqs-queue)을 참조하십시오.
 
     **3.** **Parse information**에서 대상 테이블의 &#42;&#42;정렬 키(Sorting key)&#42;&#42;를 정의합니다. 매핑된 스키마를 필요에 맞게 조정한 다음, ClickPipes 데이터베이스 사용자에 대한 역할을 구성합니다.
 
-    **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 로드한 다음, 큐에 새 `ObjectCreated:*` 이벤트가 도착하면 파일 처리를 시작합니다.
+    **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. **Skip initial load**가 활성화되지 않은 경우, ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 로드한 다음, 일치하는 `ObjectCreated:*` 이벤트가 큐에서 전달되면 파일 처리를 시작합니다.
   </Step>
 </Steps>

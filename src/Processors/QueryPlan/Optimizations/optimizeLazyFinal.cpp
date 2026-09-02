@@ -428,11 +428,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
                 break;
             continue;
         }
-        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is produced.
-        /// The DISTINCT transform honors the hint even when the enclosing limit has
-        /// always_read_till_end (e.g. exact_rows_before_limit), so any non-zero hint means the
-        /// query terminates reading early; if the hint seeding ever starts to account for that,
-        /// this check follows automatically.
+        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is
+        /// produced, so any non-zero hint means the query terminates reading early.
         if (const auto * distinct_step = typeid_cast<DistinctStep *>(step))
         {
             limit_above_reading = distinct_step->getLimitHint();
@@ -715,7 +712,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         SizeLimits{},
         nullptr));
 
-    set_plan.optimize(optimization_settings);
+    /// The per-partition pre-deduplication for set builds (see `optimizeCreatingSetPerPartition`) is
+    /// scoped to `IN (subquery)` set fills; this internal set build has its own BREAK-mode size limits
+    /// above, so keep it out.
+    auto set_plan_optimization_settings = optimization_settings;
+    set_plan_optimization_settings.creating_set_partitions_independently = false;
+    set_plan.optimize(set_plan_optimization_settings);
 
     /// Shared state between LazyFinalKeyAnalysisTransform and LazyReadReplacingFinalSource.
     auto shared_state = std::make_shared<LazyFinalSharedState>();

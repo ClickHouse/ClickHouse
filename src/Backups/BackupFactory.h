@@ -1,10 +1,17 @@
 #pragma once
 
+#include "config.h"
+
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
+#if CLICKHOUSE_CLOUD
+#include <Backups/BackupResumeParams.h>
+#endif
 #include <Backups/IBackup.h>
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
@@ -50,6 +57,10 @@ public:
         bool azure_attempt_to_create_container = true;
         ReadSettings read_settings;
         WriteSettings write_settings;
+#if CLICKHOUSE_CLOUD
+        /// Set only when this attempt continues an interrupted one; see `BackupResumer`.
+        std::optional<BackupResumeParams> resume;
+#endif
 
         CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
     };
@@ -64,18 +75,37 @@ public:
     /// observe the same collection state.
     String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
 
+    /// The SOURCES grant required to open `backup_info` in `open_mode`, as declared by its engine.
+    struct SourceAccessTarget
+    {
+        AccessTypeObjects::Source source;
+        /// The URI to match regex-filtered grants against. Empty means a whole-source grant is required.
+        String uri;
+        AccessFlags flags;
+    };
+
+    /// `std::nullopt` for engines with no external location (`Memory`, `Null`).
+    using SourceAccessFn
+        = std::function<std::optional<SourceAccessTarget>(const BackupInfo &, ContextPtr, IBackup::OpenMode)>;
+
+    /// Performs no I/O, so it is also callable as a preflight before a query is distributed or a
+    /// database is created.
+    void checkSourceAccess(const BackupInfo & backup_info, ContextPtr context, OpenMode open_mode) const;
+
     using CreatorFn = std::function<BackupMutablePtr(const CreateParams & params)>;
     using DestinationIdentityFn = std::function<Strings(const BackupInfo & backup_info, ContextPtr context)>;
     void registerBackupEngine(
         const String & engine_name,
         const CreatorFn & creator_fn,
-        const DestinationIdentityFn & destination_identity_fn);
+        const DestinationIdentityFn & destination_identity_fn,
+        const SourceAccessFn & source_access_fn);
 
 private:
     struct RegisteredEngine
     {
         CreatorFn creator;
         DestinationIdentityFn destination_identity;
+        SourceAccessFn source_access;
     };
 
     BackupFactory();

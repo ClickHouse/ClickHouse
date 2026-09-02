@@ -25,15 +25,21 @@ O Kafka Connector Sink é distribuído nos termos da [Licença Apache 2.0](https
   ### Requisitos do ambiente
 </div>
 
-O framework [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) v2.7 ou posterior deve estar instalado no ambiente.
+O framework [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) v2.7 ou posterior deve estar instalado no ambiente e ser executado com Java 11 ou posterior.
 
 <div id="version-compatibility-matrix">
   ### Matriz de compatibilidade de versões
 </div>
 
-| Versão do ClickHouse Kafka Connect | Versão do ClickHouse | Kafka Connect | Confluent Platform |
-| ---------------------------------- | -------------------- | ------------- | ------------------ |
-| 1.0.0                              | &gt; 23.3            | &gt; 2.7      | &gt; 6.1           |
+| Versão do ClickHouse Kafka Connect | Versão do ClickHouse | Kafka Connect | Confluent Platform | ClickHouse Java Client |
+| ---------------------------------- | -------------------- | ------------- | ------------------ | ---------------------- |
+| 1.4.x (mais recente)               | 23.3+                | 2.7+          | 6.1+               | 0.9.5                  |
+| 1.3.x                              | 23.3+                | 2.7+          | 6.1+               | 0.8.0 a 0.9.5          |
+| 1.2.x                              | 23.3+                | 2.7+          | 6.1+               | 0.6.3 a 0.8.0          |
+| 1.1.x                              | 23.3+                | 2.7+          | 6.1+               | 0.6.0 a 0.6.1          |
+| 1.0.x                              | 23.3+                | 2.7+          | 6.1+               | 0.4.6 a 0.6.0          |
+
+O conector não inicia em servidores ClickHouse anteriores à versão 23.3. Use sempre o [lançamento mais recente](https://github.com/ClickHouse/clickhouse-kafka-connect/releases/latest), a menos que tenha um motivo para fixar uma versão anterior.
 
 <div id="main-features">
   ### Principais recursos
@@ -136,6 +142,7 @@ A tabela completa de opções de configuração:
 | `bufferCount` (a partir da v1.3.6)                      | Número de registros a manter em buffer na memória antes de gravar no ClickHouse. `0` desabilita o buffer interno. O uso de buffer não é compatível com `exactlyOnce=true`.                                                                                                                                                   | `"0"`                                                    |
 | `bufferFlushTime` (a partir da v1.3.6)                  | Tempo máximo, em milissegundos, para manter registros no buffer antes de fazer o flush quando `exactlyOnce=false`. `0` desabilita o flush baseado em tempo. O valor padrão é `0`. Necessário apenas para limiar baseado em tempo. Só tem efeito quando `bufferCount > 0`.                                                    | `"0"`                                                    |
 | `reportInsertedOffsets` (a partir da v1.3.6)            | Permite retornar do `preCommit` apenas os offsets inseridos com sucesso (em vez de `currentOffsets`) quando `exactlyOnce=false`. Isso não se aplica quando `ignorePartitionsWhenBatching=true`, caso em que `currentOffsets` ainda são retornados.                                                                           | `"false"`                                                |
+| `client_version` (a partir da v1.2.0)                   | Seleciona o [cliente Java do ClickHouse](/pt-BR/integrations/language-clients/java/client) usado pelo conector. Os valores válidos são `"V1"` e `"V2"`.                                                                                                                                                                            | `"V1"`                                                   |
 
 <div id="target-tables">
   ### Tabelas de destino
@@ -464,10 +471,10 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 ```
 
 <div id="unsupported-proto-schemas">
-  #### Esquemas Protobuf sem suporte
+  #### Schemas Protobuf sem suporte
 </div>
 
-Os seguintes esquemas Protobuf não são suportados pelo conector:
+Os seguintes schemas Protobuf não são suportados pelo conector:
 
 * unions com várias mensagens (**antes da versão 26.1 do CH**)
 
@@ -494,7 +501,7 @@ message TwoRecords {
 }
 ```
 
-A partir da versão 26.1 do CH, esse schema é suportado quando `allow_experimental_nullable_tuple_type=1` (consulte [esta página da documentação](/pt-BR/reference/settings/session-settings#allow_experimental_nullable_tuple_type)).
+A partir da versão 26.1 do CH, esse schema é suportado quando `allow_experimental_nullable_tuple_type=1` (consulte [esta página da documentação](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
 
 <div id="json-schema-support">
   ### Suporte a schema JSON
@@ -986,13 +993,31 @@ Para as configurações de `insert` em nível de conector:
 O conector mantém conexões HTTP com o ClickHouse. Ajuste os timeouts para redes com alta latência:
 
 ```json
-"clickhouseSettings": "socket_timeout=300000,connection_timeout=30000"
+"jdbcConnectionProperties": "?socket_timeout=300000,connection_timeout=30000"
 ```
 
 * **`socket_timeout`** (padrão: 30000 ms): Tempo máximo para operações de leitura
 * **`connection_timeout`** (padrão: 10000 ms): Tempo máximo para estabelecer a conexão
 
 Aumente esses valores se ocorrerem erros de timeout com lotes grandes.
+
+<div id="client-network-buffer">
+  #### Buffer de rede do cliente
+</div>
+
+Ao usar o cliente V2 (`"client_version": "V2"`), os dados são copiados entre o socket e a memória da aplicação por meio de um buffer controlado por `client_network_buffer_size` (em bytes). O tamanho padrão é de `300000` bytes. Um buffer maior pode melhorar a vazão em conexões com alta latência ou alta largura de banda, mas aumenta o uso de memória por tarefa de conexão.
+
+Todas as opções do cliente são configuradas por meio de `jdbcConnectionProperties`, e não de `clickhouseSettings`. Por exemplo:
+
+```json
+"jdbcConnectionProperties": "?client_network_buffer_size=1000000"
+```
+
+Se precisar configurar várias propriedades do cliente, separe-as com `&`:
+
+```json
+"jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
+```
 
 <div id="monitoring-performance">
   #### Monitoramento e solução de problemas de desempenho

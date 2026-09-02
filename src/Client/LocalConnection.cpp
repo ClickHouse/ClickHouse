@@ -27,9 +27,8 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
-#include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 namespace ProfileEvents
@@ -42,7 +41,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsString database;
     extern const SettingsDialect dialect;
+    extern const SettingsString input_format;
+    extern const SettingsString format;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
@@ -203,6 +205,22 @@ void LocalConnection::sendQuery(
     if (!current_database.empty() && current_database != query_context->getCurrentDatabase())
         query_context->setCurrentDatabase(current_database);
 
+    /// Keep the `database` setting consistent with the connection's current database. The setting is
+    /// applied by `executeQuery` (it is documented as equivalent to `USE`), and the per-query context
+    /// is rebuilt from the session on every query while the client-sent settings are not forwarded by
+    /// `LocalConnection`. Without this, the `database` value inherited from the server's startup
+    /// configuration (e.g. from `--database`) would be re-applied by `executeQuery` and override the
+    /// database just selected by a `USE` statement (which only updates `current_database` above). But a
+    /// standalone `SET database = ...` changes the inherited session setting away from the connection cache
+    /// (which only tracks `USE`) while keeping ordinary-setting semantics, so preserve it: write the cache
+    /// back only when the session has not diverged the `database` setting from it. A query's own
+    /// `SETTINGS database = ...` is applied later and still takes precedence.
+    const auto & session_settings = query_context->getSettingsRef();
+    const bool session_diverged_database =
+        session_settings[Setting::database].changed && session_settings[Setting::database].value != current_database;
+    if (!current_database.empty() && !session_diverged_database)
+        query_context->setSetting("database", current_database);
+
     query_context->addQueryParameters(query_parameters);
 
     state.reset();
@@ -213,9 +231,16 @@ void LocalConnection::sendQuery(
     /// Capture the parser-affecting settings now, before the query's own `SETTINGS` clause is applied
     /// during execution. The `input()` initializer below reparses `state->query`, and must use the
     /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
-    state->parsed_as_json_dialect = query_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+    state->parsed_dialect = query_context->getSettingsRef()[Setting::dialect];
     state->enable_json_ast_dialect = query_context->getSettingsRef()[Setting::enable_json_ast_dialect];
-    state->json_ast_max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
+    state->max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
+    state->max_parser_depth = query_context->getSettingsRef()[Setting::max_parser_depth];
+    state->max_parser_backtracks = query_context->getSettingsRef()[Setting::max_parser_backtracks];
+    state->allow_settings_after_format_in_insert = query_context->getSettingsRef()[Setting::allow_settings_after_format_in_insert];
+    state->implicit_select = query_context->getSettingsRef()[Setting::implicit_select];
+    state->promql_database = query_context->getSettingsRef()[Setting::promql_database];
+    state->promql_table = query_context->getSettingsRef()[Setting::promql_table];
+    state->promql_evaluation_time = Field{query_context->getSettingsRef()[Setting::promql_evaluation_time]};
     state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
     state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
     state->query_scope_holder = QueryScope::create(query_context);
@@ -254,21 +279,21 @@ void LocalConnection::sendQuery(
         const char * begin = state->query.data();
 
         const char * end = begin + state->query.size();
-        const Dialect & dialect = settings[Setting::dialect];
+        const Dialect dialect = state->parsed_dialect;
 
         ASTPtr parsed_query;
         /// In `clickhouse_json` dialect, route the query through `IAST::createFromJSON`,
         /// except for plain `SET` queries which are still parsed with `ParserQuery` so
         /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
         /// without being locked into JSON-only input.
-        if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size))
+        if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(begin, end, state->max_query_size))
         {
             if (!state->enable_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Support for clickhouse_json dialect is disabled "
                     "(turn on setting 'enable_json_ast_dialect')");
 
-            const size_t max_query_size = state->json_ast_max_query_size;
+            const size_t max_query_size = state->max_query_size;
             if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
                 throw Exception(ErrorCodes::SYNTAX_ERROR,
                     "Max query size exceeded (can be increased with the `max_query_size` setting)");
@@ -299,38 +324,36 @@ void LocalConnection::sendQuery(
             if (state->json_ast_max_elements)
                 parsed_query->checkSize(state->json_ast_max_elements);
         }
+        else if (dialect == Dialect::kusto)
+        {
+            const char * kql_pos = begin;
+            parsed_query = parseKQLQuery(
+                kql_pos,
+                end,
+                /*allow_multi_statements=*/false,
+                state->max_query_size,
+                state->max_parser_depth,
+                state->max_parser_backtracks);
+        }
         else
         {
             std::unique_ptr<IParserBase> parser;
-            if (dialect == Dialect::kusto)
-                parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-            else if (dialect == Dialect::prql)
-                parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            if (dialect == Dialect::prql)
+                parser = std::make_unique<ParserPRQLQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
             else if (dialect == Dialect::promql)
-                parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+                parser = std::make_unique<ParserPrometheusQuery>(state->promql_database, state->promql_table, state->promql_evaluation_time);
             else
-                parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 
-            if (dialect == Dialect::kusto)
-                parsed_query = parseKQLQueryAndMovePosition(
-                    *parser,
-                    begin,
-                    end,
-                    "",
-                    /*allow_multi_statements*/ false,
-                    settings[Setting::max_query_size],
-                    settings[Setting::max_parser_depth],
-                    settings[Setting::max_parser_backtracks]);
-            else
-                parsed_query = parseQueryAndMovePosition(
-                    *parser,
-                    begin,
-                    end,
-                    "",
-                    /*allow_multi_statements*/ false,
-                    settings[Setting::max_query_size],
-                    settings[Setting::max_parser_depth],
-                    settings[Setting::max_parser_backtracks]);
+            parsed_query = parseQueryAndMovePosition(
+                *parser,
+                begin,
+                end,
+                "",
+                /*allow_multi_statements*/ false,
+                state->max_query_size,
+                state->max_parser_depth,
+                state->max_parser_backtracks);
         }
 
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
@@ -338,6 +361,14 @@ void LocalConnection::sendQuery(
             if (!insert->format.empty())
                 current_format = insert->format;
         }
+
+        /// `input_format` / `format` settings override the FORMAT for input (mirrors
+        /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
+        /// `SETTINGS input_format = ...` take effect on the `clickhouse-local` `input()` path.
+        if (!settings[Setting::input_format].value.empty())
+            current_format = settings[Setting::input_format];
+        else if (!settings[Setting::format].value.empty())
+            current_format = settings[Setting::format];
 
         chassert(in, "ReadBuffer should be initialized");
 

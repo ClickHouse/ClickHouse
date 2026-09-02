@@ -345,6 +345,13 @@ WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_,
     }
 }
 
+WorkloadEntityStorageBase::~WorkloadEntityStorageBase()
+{
+    /// The chain subscription must be dropped before members are destroyed: its handler reads
+    /// `log`, which is declared after `subscription` and would die first.
+    subscription.reset();
+}
+
 ASTPtr WorkloadEntityStorageBase::get(const String & entity_name) const
 {
     if (auto result = tryGet(entity_name))
@@ -600,12 +607,17 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
         current_state = orderEntities(entities);
 
         std::lock_guard lock2{handlers->mutex};
-        handlers->list.push_back(handler);
+        handlers->list.push_back(std::make_shared<HandlerEntry>(handler));
         auto handler_it = std::prev(handlers->list.end());
-        result = [my_handlers = handlers, handler_it]
+        result = [my_handlers = handlers, entry = *handler_it, handler_it]
         {
-            std::lock_guard lock3{my_handlers->mutex};
-            my_handlers->list.erase(handler_it);
+            {
+                std::lock_guard lock3{my_handlers->mutex};
+                my_handlers->list.erase(handler_it);
+            }
+
+            std::lock_guard exec_lock{entry->exec_mutex};
+            entry->unsubscribed = true;
         };
     }
 
@@ -646,7 +658,7 @@ void WorkloadEntityStorageBase::unlockAndNotify(
     if (tx.empty())
         return;
 
-    std::vector<OnChangedHandler> current_handlers;
+    std::vector<HandlerEntryPtr> current_handlers;
     {
         std::lock_guard handlers_lock{handlers->mutex};
         boost::range::copy(handlers->list, std::back_inserter(current_handlers));
@@ -654,11 +666,14 @@ void WorkloadEntityStorageBase::unlockAndNotify(
 
     lock.unlock();
 
-    for (const auto & handler : current_handlers)
+    for (const auto & entry : current_handlers)
     {
         try
         {
-            handler(tx);
+            std::lock_guard exec_lock{entry->exec_mutex};
+            if (entry->unsubscribed)
+                continue;
+            entry->handler(tx);
         }
         catch (...)
         {

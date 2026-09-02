@@ -78,9 +78,13 @@ engine = create_engine(
 
 In this mode every bound value must have a ClickHouse-compatible SQLAlchemy type. Supported `IN` lists become typed ClickHouse `Array` parameters. The compiler raises `CompileError` when it cannot derive a compatible type or safely process a bind.
 
+Bind names must be ClickHouse ASCII BareWord names. Names that start and end with `$` are rejected because the core driver reserves them for raw binary query parameters.
+
 ## Core queries {#sqlalchemy-core-queries}
 
-The dialect supports SQLAlchemy Core `SELECT` queries with joins, filters, ordering, limits and offsets, and `DISTINCT`.
+The dialect supports SQLAlchemy Core `SELECT` queries with joins, filters, ordering, limits and offsets, `DISTINCT`, and compound selects.
+
+SQLAlchemy `union()`, `intersect()`, and `except_()` compile to ClickHouse `UNION DISTINCT`, `INTERSECT DISTINCT`, and `EXCEPT DISTINCT`. Their `union_all()`, `intersect_all()`, and `except_all()` counterparts compile to the corresponding `ALL` operators. This explicit mapping preserves SQLAlchemy's duplicate semantics regardless of ClickHouse set-operation defaults.
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -110,6 +114,10 @@ stmt = delete(users).where(users.c.name.like("%temporary%"))
 with engine.connect() as conn:
     conn.execute(stmt)
 ```
+
+### Literal rendering {#sqlalchemy-literal-rendering}
+
+When SQLAlchemy inlines a bound value through `literal_binds` or `literal_execute`, the dialect uses ClickHouse quoting for generic string types and ClickHouse types. This also applies through `TypeDecorator` wrappers and `with_variant()` selections. String values retain percent signs and backslashes even when other bound parameters remain.
 
 ### JSON subcolumns {#sqlalchemy-json-subcolumns}
 
@@ -185,6 +193,20 @@ The ClickHouse `Select` methods are:
 | `.left_array_join(...)` | `LEFT ARRAY JOIN` |
 | `.ch_join(...)` | ClickHouse joins with `strictness`, `distribution`, `using`, and `cross` options |
 | `.cte(name, materialized=True)` | `WITH name AS MATERIALIZED (...)` |
+
+SQLAlchemy's `Select.with_hint()` is a table hint API. The ClickHouse dialect does not render table hints. An applicable wildcard or `clickhousedb` hint emits an `SAWarning` and leaves the generated SQL unchanged. Use `final()`, `sample()`, `prewhere()`, or `limit_by()` for those ClickHouse clauses.
+
+`Select.with_statement_hint()` is a raw tail directive API. It appends the supplied text to the end of the `SELECT` without ClickHouse-specific validation. This remains available for trusted static SQL such as `SETTINGS max_threads=1`:
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+For ClickHouse settings, prefer execution options so the driver handles the settings separately from the SQL text:
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
 
 For example, a ClickHouse `GLOBAL ANY LEFT JOIN` can be chained without nesting a custom `FromClause`:
 
@@ -292,6 +314,8 @@ with engine.connect() as conn:
 ```
 
 Reflected columns carry `server_default` for `DEFAULT` expressions and dialect-specific attributes such as `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized`, and `clickhouse_alias` when present.
+
+String values in `DEFAULT`, `MATERIALIZED`, `ALIAS`, and `TTL` clauses use ClickHouse string escaping. The same escaping applies to table, dictionary, and column comments, including comments emitted by Alembic.
 
 MergeTree key arguments such as `order_by`, `partition_by`, `primary_key`, `sample_by`, and `ttl` accept SQLAlchemy column and SQL expressions as well as plain strings.
 

@@ -1,0 +1,10 @@
+-- control: FROM-less aggregate, no construction setting (resolves the path table)
+15
+-- FROM-less SELECT + order + limit (wrapping must keep the path table)
+1
+2
+-- FROM-less SELECT + filter + order (wrapping must keep the path table)
+4
+5
+-- FROM-less SELECT with an alias + order on the alias + limit
+1

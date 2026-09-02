@@ -801,7 +801,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <CloudNotSupportedBadge/>
 
 :::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
 :::
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
@@ -877,7 +877,7 @@ SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
 :::note
-Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+[**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
 :::
 )DOCS_MD",
             .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password') ORDER BY key",
