@@ -183,12 +183,16 @@ SELECT '-- 26. task-budget sanity: 3 joins under an aggregation must not exhaust
 -- shape is deterministic (the preamble pins the join-order, join-swap and runtime-filter
 -- settings session-wide). The classic shape wins here: `t_push_dims_multi` has no stat-hint
 -- entry at this point, so the pushed join subtree lacks the estimates the cardinality gate
--- needs and no pushdown alternative is built.
+-- needs and no pushdown alternative is built. `use_hash_table_stats_for_join_reordering` is
+-- pinned to its default because this is the only canary with three joins, so the join-order
+-- search has freedom: the msan flaky check (2026-09-02) flipped the `t_push_dims` /
+-- `t_push_dims_multi` sibling order under the randomized value 0.
 EXPLAIN SELECT count() FROM t_push_facts AS t1
   LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key
   LEFT JOIN t_push_dims_multi AS t3 ON t1.key = t3.key
   LEFT JOIN t_push_dims AS t4 ON t1.key = t4.key
-GROUP BY t1.key;
+GROUP BY t1.key
+SETTINGS use_hash_table_stats_for_join_reordering = 1;
 
 -- Nested aggregation, pinned as a stable no-cascade shape (not exercising the new cascade
 -- capability): the outer `Aggregating` sits above the inner query's variant-B pushdown group
