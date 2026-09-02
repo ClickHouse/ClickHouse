@@ -46,6 +46,7 @@ export const FullWidthDivider = ({ style }) => {
 };
 
 export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, description, body, href, links, icon, showArrow, external, arrowBottom, extraClassName, logo, logoInvert, overlayImg, fullWidthImage, imageHeight = 'h-48', imageTop, galaxyEvent }) => {
+    const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
     const resolvedHref = withDocsBase(href);
     const darkFilename = darkFilenameProp || (filename ? filename.replace('-light.', '-dark.') : null);
     const cardClassName = `ch-hero-card relative ${arrowBottom ? 'flex flex-col' : 'block'} p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit${fullWidthImage ? ' overflow-hidden' : ''}`;
@@ -140,6 +141,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 };
 
 export const IntegrationsBanner = () => {
+    const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
     const href = withDocsBase(localizeHref('/integrations/home'));
     return (
         <a
@@ -183,6 +185,7 @@ export const HighlightedClickHouse = () => {
 };
 
 export const McpLink = ({ children }) => {
+    const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
     const path = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
     const href = withDocsBase(path);
     return (

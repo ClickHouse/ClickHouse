@@ -413,6 +413,8 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         "};"
     )
     docs_base_requirements = {
+        "const assetBase = typeof window === 'undefined' || "
+        "window.location.pathname.startsWith('/docs') ? '/docs' : '';": 3,
         "const resolvedHref = withDocsBase(href);": 1,
         "href={resolvedHref}": 2,
         "href={withDocsBase(link.href)}": 1,
@@ -570,12 +572,7 @@ def check_install_cloud_banners(docs_root: Path) -> list:
         quickstart_href = "/get-started/setup/cloud"
         if locale:
             quickstart_href = f"/{locale}{quickstart_href}"
-        quickstart_url = f"https://clickhouse.com/docs{quickstart_href}"
-        quickstart_anchor = f'href="{quickstart_url}"'
-        quickstart_click = (
-            "window.location.href = "
-            f"withDocsBase('{quickstart_href}');"
-        )
+        quickstart_anchor = f"href={{withDocsBase('{quickstart_href}')}}"
 
         if source.count('className="ch-install-cloud-card"') != 1:
             errors.append(
@@ -594,12 +591,7 @@ def check_install_cloud_banners(docs_root: Path) -> list:
         if source.count(quickstart_anchor) != 1:
             errors.append(
                 f"{name}: expected one Cloud quickstart link that renders "
-                f"{quickstart_url!r} during server-side rendering"
-            )
-        if source.count(quickstart_click) != 1:
-            errors.append(
-                f"{name}: expected one Cloud quickstart click handler that "
-                "preserves the local docs mount"
+                f"{f'/docs{quickstart_href}'!r} during server-side rendering"
             )
         if '<Card title="ClickHouse Cloud"' in source:
             errors.append(
