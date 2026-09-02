@@ -2471,8 +2471,8 @@ static bool fieldHoldsZeroConflatedWithNegativeZero(const Field & field, const D
                     if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
                         return true;
                     const Tuple & entry_elements = entry.safeGet<Tuple>();
-                    pending.emplace_back(&entry_elements[0], map_type->getKeyType());
-                    pending.emplace_back(&entry_elements[1], map_type->getValueType());
+                    pending.emplace_back(entry_elements.data(), map_type->getKeyType());
+                    pending.emplace_back(entry_elements.data() + 1, map_type->getValueType());
                 }
                 break;
             }
