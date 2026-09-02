@@ -7,36 +7,36 @@
       "versionId": "3184391f351af9bc8cd2dfd8aacf67d9a7add65a9741294faafb4266ccd7f762",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-02T19:44:50.614Z",
+          "updatedAt": "2026-09-02T20:05:41.495Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-02T19:44:51.008Z",
+          "updatedAt": "2026-09-02T20:05:41.872Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-02T19:44:50.336Z",
+          "updatedAt": "2026-09-02T20:05:41.209Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-02T19:44:50.754Z",
+          "updatedAt": "2026-09-02T20:05:41.627Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-02T19:44:51.145Z",
+          "updatedAt": "2026-09-02T20:05:42.003Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-02T19:44:51.268Z",
+          "updatedAt": "2026-09-02T20:05:42.137Z",
           "fileName": "docs.json",
-          "postProcessHash": "909df5a78ec84af5c750616d67993372239a3cc02ebe9c7ad09065de4ab41d64"
+          "postProcessHash": "d8e0b637202e4e0e6cf16717a98cbd26fdb4b3662bbd7d45b4dfbb11138a3414"
         },
         "ja": {
-          "updatedAt": "2026-09-02T19:44:50.473Z",
+          "updatedAt": "2026-09-02T20:05:41.357Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-02T19:44:50.883Z",
+          "updatedAt": "2026-09-02T20:05:41.748Z",
           "fileName": "docs.json"
         }
       },
@@ -48754,51 +48754,50 @@
     },
     {
       "fileId": "de1e5e6c548066eacfaab2a6ca9e62ad71c894592f015939af977fb1c2b7fd42",
-      "versionId": "00f28021b01bc5535aacec5cf3f6987b3e2ed8c08becea7e30df8e8c34f956b5",
+      "versionId": "00e97852c352a386e4cf1947b3e05b67dc33fb45cedf9388f17e510d899e20ab",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:06.715Z",
+          "updatedAt": "2026-09-02T20:05:46.218Z",
           "fileName": "es/products/managed-postgres/migrations/clickpipes.mdx",
-          "postProcessHash": "48eb6b152e95504a5aba275d4117d397c4643fb64fce8298356471d5d9c1c519"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.715Z",
-          "fileName": "ja/products/managed-postgres/migrations/clickpipes.mdx",
-          "postProcessHash": "e801101b18a9f3248ae28a60ad35f8a2629692173a4812ce762b99f24f6f04a6"
+          "postProcessHash": "8dbbc91d5470390bfada5c914df8e2b5af1c01bc78653a826f1ff188f3dde94a"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.715Z",
+          "updatedAt": "2026-09-02T20:05:46.220Z",
           "fileName": "ko/products/managed-postgres/migrations/clickpipes.mdx",
-          "postProcessHash": "b7f729af2e63ac34d75bb2ca8f01ba566ca9d8faa844cedb9c6edaa275ef7489"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.715Z",
-          "fileName": "pt-BR/products/managed-postgres/migrations/clickpipes.mdx",
-          "postProcessHash": "10cbd1803a22a2ffe63b1eefee2a05cf37a2ce7abfbf4978bf5ae875b8d93721"
+          "postProcessHash": "effbdee1744a79dd09f401304d7e55490774e9cf951a3a1bcbcbaa894ee82547"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.716Z",
+          "updatedAt": "2026-09-02T20:05:46.221Z",
           "fileName": "ru/products/managed-postgres/migrations/clickpipes.mdx",
-          "postProcessHash": "4c18207ba0d4fdcd6aa563a9d28d8bb75976c451c43debc29e4c3dfad55d8334"
+          "postProcessHash": "0a8c5a7886b0b6ec8db600b7fcf736b8959f4ffa083f3ff3a3dc7dc602755ea7"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.716Z",
-          "fileName": "zh/products/managed-postgres/migrations/clickpipes.mdx",
-          "postProcessHash": "2afe113e4a540e34c58ea662f26143dfeeec3169e385d53ac793b75ad8182085"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.716Z",
-          "fileName": "ar/products/managed-postgres/migrations/clickpipes.mdx",
-          "postProcessHash": "d5e7b6960bf684cedb1eb2ff2275088dc354130950dcfce493dd9d1310dab037"
+        "pt-BR": {
+          "updatedAt": "2026-09-02T20:05:46.222Z",
+          "fileName": "pt-BR/products/managed-postgres/migrations/clickpipes.mdx",
+          "postProcessHash": "e5c6f761c332a2b6e41b0159ca1092a0ee2be024b4d24d67bc6d3759dc2221f4"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.716Z",
+          "updatedAt": "2026-09-02T20:05:46.222Z",
           "fileName": "fr/products/managed-postgres/migrations/clickpipes.mdx",
-          "postProcessHash": "0ed374af8f153519bf9169ccf2d86fbce09f2ebb87528269e14e01728da532e0"
+          "postProcessHash": "b6b26cf630676ee57f986b0c049d521ef08789c5823d323271389100d311c64c"
+        },
+        "ar": {
+          "updatedAt": "2026-09-02T20:05:46.223Z",
+          "fileName": "ar/products/managed-postgres/migrations/clickpipes.mdx",
+          "postProcessHash": "b89d0051583502e9a6867c475862c70a76225e4380859cf7f10fe295dbfaf7a1"
+        },
+        "ja": {
+          "updatedAt": "2026-09-02T20:05:46.223Z",
+          "fileName": "ja/products/managed-postgres/migrations/clickpipes.mdx",
+          "postProcessHash": "e179c3c6ac5a9da427c316c7755b0b7865617e42bac00b90e97fd74da61acce3"
+        },
+        "zh": {
+          "updatedAt": "2026-09-02T20:05:46.224Z",
+          "fileName": "zh/products/managed-postgres/migrations/clickpipes.mdx",
+          "postProcessHash": "42db2d92ef4a910565f754d0df6f3bd3ff06810d34e46bcb8e1998b579e1f642"
         }
       },
-      "fileName": "products/managed-postgres/migrations/clickpipes.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/migrations/clickpipes.mdx"
     },
     {
       "fileId": "cf4fbf919b783d8e7277649e812e3ea10fbb99c35a5dad46ec2145ff87fceee9",
@@ -137500,6 +137499,53 @@
         }
       },
       "fileName": "concepts/features/interfaces/sql-console.mdx"
+    },
+    {
+      "fileId": "0ce6e6e2946fd42c54c7518e2bb2e59602b081dbaa99a8ed162bc93f68824c40",
+      "versionId": "c6be388ac2872d8334382924889754a1037a56e7cbf391eb3ad28cb569b1a3f4",
+      "translations": {
+        "ru": {
+          "updatedAt": "2026-09-02T20:05:46.218Z",
+          "fileName": "ru/products/managed-postgres/migrations/neon.mdx",
+          "postProcessHash": "bb9421246baff3d0290f9568142bd9b01f4269651d03968ebe570c7c930b0216"
+        },
+        "es": {
+          "updatedAt": "2026-09-02T20:05:46.219Z",
+          "fileName": "es/products/managed-postgres/migrations/neon.mdx",
+          "postProcessHash": "f16acdf50a3a73ecf8a4d89d8030c925c1f8eb55abcef6993838a828c455d980"
+        },
+        "ko": {
+          "updatedAt": "2026-09-02T20:05:46.220Z",
+          "fileName": "ko/products/managed-postgres/migrations/neon.mdx",
+          "postProcessHash": "67ee4cf8a27238bc1ac8f84a4635bc6fff020e30b92525fe21945e0a1df2ccf8"
+        },
+        "fr": {
+          "updatedAt": "2026-09-02T20:05:46.224Z",
+          "fileName": "fr/products/managed-postgres/migrations/neon.mdx",
+          "postProcessHash": "73b631cbbb910045e94c13c200bac01078e13535091d7cf865497a910b3cdfdf"
+        },
+        "zh": {
+          "updatedAt": "2026-09-02T20:05:46.224Z",
+          "fileName": "zh/products/managed-postgres/migrations/neon.mdx",
+          "postProcessHash": "fbcc9851e2b6b1440d619b7d678fc8127937562d688b518e3222a555f449fe0d"
+        },
+        "ja": {
+          "updatedAt": "2026-09-02T20:05:46.225Z",
+          "fileName": "ja/products/managed-postgres/migrations/neon.mdx",
+          "postProcessHash": "7baa32eabde5e3c4f093a72ca132f48ba36a5809728f5a3ee01b3839b8959a68"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-02T20:05:46.225Z",
+          "fileName": "pt-BR/products/managed-postgres/migrations/neon.mdx",
+          "postProcessHash": "f71a1666ee68885c6e78db1acad380fb49c4b8faeccd2ea4b2f9c27ef8947d78"
+        },
+        "ar": {
+          "updatedAt": "2026-09-02T20:05:46.226Z",
+          "fileName": "ar/products/managed-postgres/migrations/neon.mdx",
+          "postProcessHash": "1c90ac1ff687ca359ebb2c7ec0ef5e6ca4e2ca2c19e69c206f7d97c43358f8d1"
+        }
+      },
+      "fileName": "products/managed-postgres/migrations/neon.mdx"
     }
   ]
 }
