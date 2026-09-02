@@ -7,6 +7,8 @@ title: 'Recherche en texte intégral avec des index de texte'
 doc_type: 'référence'
 ---
 
+import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 Les index de texte (également appelés [index inversés](https://en.wikipedia.org/wiki/Inverted_index)) permettent d&#39;effectuer rapidement des recherches en texte intégral dans des données textuelles.
 Un index de texte stocke une association entre les tokens et les numéros de ligne qui contiennent chaque token.
 Les tokens sont générés par un processus appelé tokenisation.
@@ -67,7 +69,7 @@ Dans ces versions, aucun paramètre particulier n’est nécessaire pour utilise
 Nous recommandons vivement d’utiliser ClickHouse version 26.2 ou ultérieure pour les cas d’usage en production.
 
 <Note>
-  Les index de texte peuvent être utilisés avec n’importe quelle version de ClickHouse &gt;= 26.2, quel que soit le paramètre de [compatibilité](/fr/reference/settings/session-settings#compatibility).
+  Les index de texte peuvent être utilisés avec n’importe quelle version de ClickHouse &gt;= 26.2, quel que soit le paramètre de [compatibilité](/fr/reference/settings/session-settings/compatibility#compatibility).
 </Note>
 
 Pour créer un index de texte, utilisez la syntaxe suivante :
@@ -81,7 +83,11 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
+                                            | chinese[(granularity)]
+                                            | icu(locale)
+                                            | japanese
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -117,7 +123,11 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
+                                            | chinese[(granularity)]
+                                            | icu(locale)
+                                            | japanese
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -134,7 +144,7 @@ ALTER TABLE table
 
 ```
 
-Si vous ajoutez un index à une table existante, nous vous recommandons de matérialiser l’index pour les parts de la table existantes (sinon, la recherche sur les parts sans index reviendra à des balayages exhaustifs lents).
+Si vous ajoutez un index à une table existante, nous vous recommandons de matérialiser l’index pour les parts de la table existantes (sinon, la recherche sur les parts sans index basculera vers des balayages exhaustifs lents).
 
 ```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
@@ -153,7 +163,16 @@ ALTER TABLE table DROP INDEX text_idx;
   Les séparateurs peuvent être spécifiés à l&#39;aide d&#39;un paramètre facultatif, par exemple `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Notez que chaque chaîne peut être composée de plusieurs caractères (`', '` dans l&#39;exemple).
   La liste de séparateurs par défaut, si elle n&#39;est pas explicitement spécifiée (par exemple `tokenizer = splitByString`), est un seul espace `[' ']`.
+* `splitByRegexp(re)` divise les chaînes selon un séparateur d’expression régulière `re` défini par l’utilisateur (voir la fonction [splitByRegexp](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  L’argument `re` est obligatoire, par exemple `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
+  Contrairement aux chaînes séparatrices fixes de `splitByString`, un séparateur d’expression régulière peut préserver les tokens contenant des caractères spéciaux (comme `C++` ou `C#`) que les autres tokenizers sépareraient.
 * `asciiCJK` divise les chaînes en tokens selon les règles de délimitation des mots Unicode (comme dans [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). Les caractères ASCII alphanumériques et les traits de soulignement forment des tokens avec des connecteurs (ASCII `:` pour les lettres, `.` et `'` pour les caractères de même type). Les caractères Unicode non ASCII, y compris les caractères [CJK](https://en.wikipedia.org/wiki/CJK_characters), deviennent des tokens d&#39;un seul caractère.
+* `chinese[(granularity)]` segmente le texte chinois en mots à l’aide d’un dictionnaire et d’un modèle de Markov caché (l’algorithme suit [jieba](https://github.com/fxsjy/jieba) ; les données du dictionnaire et du modèle intégrés sont dérivées de [cppjieba](https://github.com/yanyiwu/cppjieba)). Contrairement à `asciiCJK`, qui traite chaque caractère non ASCII comme un token d’un seul caractère, `chinese` regroupe les caractères chinois consécutifs en mots (par exemple, `北京大学` devient un seul token `北京大学` plutôt que quatre tokens d’un seul caractère). Cela produit des tokens plus significatifs pour le texte chinois et améliore la qualité de recherche. Pour le texte général ou mixte, utilisez `asciiCJK` ; pour le texte exclusivement chinois, utilisez `chinese`. L’argument facultatif `granularity` est soit `'coarse_grained'` (la valeur par défaut s’il n’est pas spécifié), soit `'fine_grained'`. Ce dernier répertorie également les sous-mots qui se chevauchent ; par exemple, `北京邮电大学` produit également `北京`, `邮电`, `大学`. La tokenisation fine améliore le rappel au prix d’un index plus volumineux.
+  Recherchez dans un index de texte `chinese` avec [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens) (qui tokenisent le needle avec le tokenizer `chinese`), et non avec `hasToken` (qui divise uniquement selon les séparateurs ASCII).
+* `icu(locale)` divise les chaînes en tokens de mots à l’aide de la segmentation des mots Unicode (UAX #29) de la bibliothèque [ICU](https://icu.unicode.org/). Pour les écritures qui ne séparent pas les mots par des espaces (p. ex. le chinois, le japonais, le thaï), ICU applique une segmentation fondée sur un dictionnaire : contrairement à `asciiCJK`, ce texte est donc divisé en mots significatifs de plusieurs caractères plutôt qu’en caractères uniques. Ici, « dictionnaire » désigne les listes de mots intégrées d’ICU pour ces écritures (voir [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)) ; ICU choisit le découpage le plus probable parmi ces mots.
+  `locale` correspond aux paramètres régionaux ICU transmis au segmenteur ; la segmentation est principalement déterminée par l’écriture et le dictionnaire, et les paramètres régionaux sélectionnent les adaptations propres à ICU. Il s’agit d’un paramètre obligatoire, par exemple `tokenizer = icu('ja')` ou `tokenizer = icu('zh')`.
+  Les paramètres régionaux disponibles peuvent être répertoriés avec `SELECT * FROM system.collations`.
+* `japanese` divise le texte japonais en mots à l’aide de l’analyseur morphologique [MeCab](https://github.com/taku910/mecab). Contrairement à `asciiCJK`, qui produit des tokens d’un seul caractère pour les entrées CJK, ce tokenizer effectue une segmentation correcte des mots. Il nécessite un dictionnaire chargé à l’exécution à partir de la configuration du serveur (voir [Dictionnaire du tokenizer japonais](#japanese-tokenizer-dictionary)).
 * `ngrams(N)` divise les chaînes en `N`-grammes de taille identique (voir la fonction [ngrams](/fr/reference/functions/regular-functions/splitting-merging-functions#ngrams)).
   La longueur des n-grammes peut être spécifiée à l&#39;aide d&#39;un paramètre entier facultatif compris entre 1 et 8, par exemple `tokenizer = ngrams(3)`.
   La taille des n-grammes par défaut, si elle n&#39;est pas explicitement spécifiée (par exemple `tokenizer = ngrams`), est de 3.
@@ -162,9 +181,73 @@ ALTER TABLE table DROP INDEX text_idx;
   Si le paramètre `min_cutoff_length` est fourni, seuls les n-grammes dont la longueur est supérieure ou égale à `min_cutoff_length` sont renvoyés.
   Comparé à `ngrams(N)`, le tokenizer `sparseGrams` produit des N-grammes de longueur variable, ce qui permet une représentation plus souple du texte d&#39;origine.
   Par exemple, `tokenizer = sparseGrams(3, 5, 4)` génère en interne des 3-, 4- et 5-grammes à partir de la chaîne d&#39;entrée, mais seuls les 4- et 5-grammes sont renvoyés.
-* `array` ne réalise aucune tokenisation, c.-à-d. que chaque valeur de ligne constitue un token (voir la fonction [array](/fr/reference/functions/regular-functions/array-functions#array)).
+* `array` ne réalise aucune tokenisation, c.-à-d. que chaque valeur de ligne constitue un token (voir la fonction [array](/fr/reference/functions/regular-functions/array-functions#array)). Pour assurer la compatibilité avec d’autres systèmes, `keyword` est disponible comme alias de `array`.
 
 Tous les tokenizers disponibles sont répertoriés dans [system.tokenizers](/fr/reference/system-tables/tokenizers).
+
+<div id="japanese-tokenizer-dictionary">
+  ### Dictionnaire du tokenizer japonais
+</div>
+
+<CloudNotSupportedBadge />
+
+Le tokenizer `japanese` nécessite un dictionnaire MeCab, qui n’est pas fourni avec ClickHouse. Ajoutez-en un dans la configuration du serveur :
+
+```xml
+<tokenizer>
+    <japanese>
+        <dictionary_location>https://example.com/dictionary.tar.zst</dictionary_location>
+        <dictionary_sha>0123...cdef</dictionary_sha>
+    </japanese>
+</tokenizer>
+```
+
+* `dictionary_location` correspond à l’emplacement d’une archive d’un dictionnaire MeCab compilé. Tout dictionnaire officiel convient, comme [IPADIC](https://github.com/taku910/mecab) ou [UniDic](https://clrd.ninjal.ac.jp/unidic/). L’emplacement doit se terminer par une extension d’archive prise en charge (par exemple `.tar.gz`, `.tar.zst` ou `.zip`) — le type d’archive est déterminé à partir de celle-ci —, donc une URL sans une telle extension (p. ex. `https://example.com/download`) est rejetée. Emplacements pris en charge :
+  * un chemin local `file://` ;
+  * une URL `http(s)://`, récupérée comme téléchargement simple (utilisez-la pour un objet public ou pré-signé) ;
+  * un stockage d’objets compatible S3 — AWS S3, GCS, MinIO, sur site, etc. (pas uniquement AWS) — adressé sous la forme `s3://`/`gs://`/`oss://` ou d’une URL complète `http(s)://endpoint/bucket/key`. Pour un bucket privé, fournissez les informations d’identification S3 en tant qu’éléments enfants de `<japanese>` (voir l’exemple ci-dessous).
+* `dictionary_sha` correspond au SHA-256 de cette archive. Il est vérifié avant le chargement du dictionnaire ; en cas de non-correspondance, le dictionnaire n’est pas chargé et une erreur est générée.
+
+L’archive est téléchargée et extraite une seule fois, puis mise en cache localement. Comme le dictionnaire détermine la manière dont les documents sont tokenisés, le même `dictionary_sha` doit être configuré sur toutes les répliques.
+
+Pour lire depuis un bucket privé compatible S3, ajoutez les paramètres S3 en tant qu’éléments enfants de `<japanese>`, à côté de `dictionary_location` et `dictionary_sha` :
+
+```xml
+<tokenizer>
+    <japanese>
+        <dictionary_location>s3://my-bucket/dictionary.tar.zst</dictionary_location>
+        <dictionary_sha>0123...cdef</dictionary_sha>
+        <access_key_id>...</access_key_id>
+        <secret_access_key>...</secret_access_key>
+        <region>us-east-1</region>
+    </japanese>
+</tokenizer>
+```
+
+Les paramètres reconnus (`access_key_id`, `secret_access_key`, `region`, `no_sign_request`, `use_environment_credentials`, ...) sont les mêmes paramètres d’authentification S3 utilisés ailleurs dans ClickHouse. Leur présence entraîne également le téléchargement d’une URL `http(s)://` via le client S3 (avec signature des requêtes), plutôt que comme un téléchargement standard.
+
+Une fois le dictionnaire configuré, le tokenizer `japanese` peut être utilisé comme suit :
+
+```sql title="Query"
+CREATE TABLE docs
+(
+    id UInt64,
+    body String,
+    INDEX body_idx body TYPE text(tokenizer = 'japanese')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO docs VALUES (1, '日本語の形態素解析エンジン'), (2, 'これはテストの文章です');
+
+SELECT id FROM docs WHERE hasAllTokens(body, '形態 解析', 'japanese') ORDER BY id;
+```
+
+```text title="Response"
+┌─id─┐
+│  1 │
+└────┘
+```
 
 <Note>
   Le tokenizer `splitByString` applique les séparateurs de découpage de gauche à droite.
@@ -187,13 +270,16 @@ SELECT tokens('abc def', 'ngrams', 3);
 ['abc','bc ','c d',' de','def']
 ```
 
-*Utilisation de données d’entrée non ASCII.*
-Les index de texte peuvent être créés à partir de données textuelles dans n’importe quelle langue et avec n’importe quel jeu de caractères.
-Pour le texte non ASCII, le tokenizer `asciiCJK` est recommandé, car il gère correctement les limites de mots Unicode, y compris pour les caractères CJK.
+*Utilisation d’entrées non ASCII.*
+Les index de texte peuvent être construits à partir de données textuelles dans n’importe quelle langue et tout jeu de caractères.
+Pour le texte non ASCII, le tokenizer `asciiCJK` est recommandé, car il gère correctement les limites de mots Unicode, y compris les caractères CJK.
+Pour les langues qui ne séparent pas les mots par des espaces (par exemple le chinois, le japonais ou le thaï), le tokenizer `icu(locale)` produit des tokens de mots significatifs comportant plusieurs caractères grâce à la segmentation des mots d’ICU basée sur un dictionnaire.
+Pour le japonais en particulier, le tokenizer `japanese` (MeCab) segmente le texte en mots plutôt qu’en caractères uniques et donne généralement de meilleurs résultats de recherche.
+Pour le chinois en particulier, le tokenizer `chinese` (jieba) segmente le texte en mots plutôt qu’en caractères uniques et donne généralement de meilleurs résultats de recherche.
 
-<a id="preprocessor-argument-optional" />**Argument de préprocesseur (facultatif)**. Le préprocesseur correspond à une expression appliquée à la chaîne d’entrée avant la tokenisation.
+<a id="preprocessor-argument-optional" />**Argument de préprocesseur (facultatif)**. Le préprocesseur désigne une expression appliquée à la chaîne d’entrée avant la tokenisation.
 
-Les cas d’usage typiques de l’argument de préprocesseur incluent
+Les cas d’utilisation typiques de l’argument de préprocesseur incluent
 
 1. Conversion en minuscules/majuscules, ou normalisation de la casse pour permettre une correspondance insensible à la casse, par ex., [lower](/fr/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/fr/reference/functions/regular-functions/string-functions#lowerUTF8), [caseFoldUTF8](/fr/reference/functions/regular-functions/string-functions#caseFoldUTF8).
 2. Normalisation UTF-8, par ex. [normalizeUTF8NFC](/fr/reference/functions/regular-functions/string-functions#normalizeUTF8NFC), [normalizeUTF8NFD](/fr/reference/functions/regular-functions/string-functions#normalizeUTF8NFD), [normalizeUTF8NFKC](/fr/reference/functions/regular-functions/string-functions#normalizeUTF8NFKC), [normalizeUTF8NFKD](/fr/reference/functions/regular-functions/string-functions#normalizeUTF8NFKD), [normalizeUTF8NFKCCasefold](/fr/reference/functions/regular-functions/string-functions#normalizeUTF8NFKCCasefold), [toValidUTF8](/fr/reference/functions/regular-functions/string-functions#toValidUTF8).
@@ -227,8 +313,8 @@ L&#39;usage de fonctions non déterministes est interdit.
   Pour une expérience utilisateur optimale, nous recommandons donc d&#39;utiliser des expressions de préprocesseur.
 </Note>
 
-Les fonctions [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens) et [hasPhrase](/fr/reference/functions/regular-functions/string-search-functions#hasPhrase) utilisent le préprocesseur pour d&#39;abord transformer le terme de recherche avant de le découper en tokens.
-Notez que, comme le préprocesseur n&#39;est appliqué que sur le chemin de l&#39;index de texte, les résultats de ces fonctions peuvent différer entre les requêtes qui utilisent l&#39;index de texte et celles qui ne l&#39;utilisent pas (par ex. `SETTINGS use_skip_indexes = 0`).
+Les fonctions [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens) et [hasPhrase](/fr/reference/functions/regular-functions/string-search-functions#hasPhrase) utilisent le préprocesseur pour transformer le terme de recherche avant de le tokeniser.
+Notez que, comme le préprocesseur est appliqué uniquement sur le chemin d’exécution de l’index de texte, les résultats de ces fonctions peuvent différer selon que les requêtes utilisent ou non l’index de texte (par exemple, `SETTINGS use_skip_indexes = 0`).
 
 Par exemple,
 
@@ -244,7 +330,7 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasToken(str, 'Foo');
 ```
 
-est équivalent à :
+équivaut à :
 
 ```sql title="Query"
 CREATE TABLE table
@@ -315,26 +401,26 @@ Les cas d’usage typiques de l’argument `postprocessor` incluent :
      Cela fonctionne avec n’importe quel tokenizer et est plus efficace, car les caractères du timestamp ne sont jamais tokenized.
      Les deux approches peuvent être combinées : le préprocesseur retire le timestamp tandis que le postprocesseur normalise ou filtre les tokens restants (par exemple, passage en minuscules + suppression des mots de sévérité comme `ERROR` ou `INFO`).
 3. **Racinisation**. Ramener chaque token à sa racine améliore le rappel de recherche en faisant correspondre des variantes morphologiques qui partagent la même racine.
-   Par exemple, avec la racinisation anglaise, &quot;running&quot;, &quot;runs&quot; et &quot;run&quot; sont tous ramenés à &quot;run&quot;, de sorte qu’une query sur l’une de ces variantes correspond à toutes.
+   Par exemple, avec la racinisation anglaise, &quot;running&quot;, &quot;runs&quot; et &quot;run&quot; sont tous ramenés à &quot;run&quot;, de sorte qu’une requête sur l’une de ces variantes correspond à toutes.
    ClickHouse fournit une fonction [stem](/fr/reference/functions/regular-functions/nlp-functions#stem) intégrée pour plusieurs langues.
    Exemple : `stem(str, 'en')`
 4. **Normalisation de la casse**. Conversion des tokens en minuscules ou en majuscules pour permettre une correspondance insensible à la casse, par exemple [lower](/fr/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/fr/reference/functions/regular-functions/string-functions#lowerUTF8).
    Pour la conversion en minuscules et en majuscules, nous recommandons un préprocesseur plutôt qu’un postprocesseur.
 
-L&#39;expression de posttraitement transforme des tokens de type [String](/fr/reference/data-types/string) en tokens du même type.
-De plus, l&#39;expression de posttraitement ne doit référencer que la colonne ou l&#39;expression sur laquelle le text index est défini.
-Lorsque la colonne est de type `Array(String)`, le postprocesseur continue d&#39;opérer sur les tokens individuels en tant que valeurs `String` simples.
+L’expression du postprocesseur transforme des tokens de type [String](/fr/reference/data-types/string) en tokens du même type.
+De plus, l’expression du postprocesseur ne doit référencer que la colonne ou l’expression sur laquelle l’index de texte est défini.
+Lorsque la colonne est de type `Array(String)`, le postprocesseur agit toujours sur les tokens individuels en tant que valeurs `String` simples.
 
 L’utilisation de fonctions non déterministes est interdite.
 
-Le postprocesseur est appliqué à chaque token généré lors de la construction de l&#39;index (pour le tokenizer `array`, chaque élément du tableau est un token). Au moment de l&#39;exécution de la requête, le comportement dépend de la fonction :
+Le postprocesseur est appliqué à chaque token généré lors de la création de l’index (pour le tokenizer `array`, chaque élément du tableau est un token). Au moment de l’exécution de la requête, le comportement dépend de la fonction :
 
-* Pour `hasToken`, `hasAllTokens`, `hasAnyTokens` et `hasPhrase` (avec n’importe quel tokenizer pris en charge) : le postprocesseur est appliqué à la fois aux tokens du haystack et au needle de recherche, ce qui permet une correspondance entièrement normalisée (par ex. une recherche insensible à la casse). Pour `hasPhrase`, les tokens posttraités sont positionnés de façon compacte : ainsi, si le postprocesseur supprime un token, cela ne crée aucun écart de position et l’expression continue de correspondre malgré tout — par ex., avec un postprocesseur de stop words qui supprime `the`, `hasPhrase(col, 'see cat')` correspond à un document `see the cat`.
-* Pour toutes les autres fonctions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`) : seul le needle de recherche est posttraité pour la recherche avec indication d’index ; le prédicat au niveau des lignes continue, lui, de comparer les valeurs d’origine de la colonne.
+* Pour `hasToken`, `hasAllTokens`, `hasAnyTokens` et `hasPhrase` (avec n’importe quel tokenizer pris en charge) : le postprocesseur est appliqué à la fois aux tokens du haystack et au needle de recherche, ce qui permet une correspondance entièrement normalisée (par exemple, une recherche insensible à la casse). Pour `hasPhrase`, les tokens post-traités sont positionnés de manière dense : un token supprimé par le postprocesseur ne laisse donc aucun écart de position et la phrase correspond toujours à travers celui-ci — par exemple, avec un postprocesseur de stop words qui supprime `the`, `hasPhrase(col, 'see cat')` correspond à un document `see the cat`. La seule exception est `hasPhrase` sur un index `splitByRegexp`, qui ne prend pas en charge de postprocesseur (la combinaison est rejetée avec une exception).
+* Pour toutes les autres fonctions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`) : seul le needle de recherche est post-traité pour la recherche par indication d’index ; le prédicat au niveau des lignes compare toujours les valeurs de colonne d’origine.
 
-Exemples :
+Exemples :
 
-* Supprimez les stop words à l’aide d’une expression de posttraitement :
+* Supprimez les stop words à l’aide d’une expression de postprocesseur :
 
 ```sql
 CREATE TABLE table
@@ -349,7 +435,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-* Supprimez les horodatages à l’aide d’une expression de post-traitement :
+* Supprimez les timestamps à l’aide d’une expression de postprocesseur :
 
 ```sql
 -- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
@@ -371,7 +457,7 @@ SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast inde
 SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
 ```
 
-* Supprimez les horodatages à l’aide d’une expression de prétraitement :
+* Supprimez les horodatages à l’aide d’une expression de préprocesseur :
 
 ```sql
 -- The preprocessor strips the ISO timestamp prefix before tokenization.
@@ -413,7 +499,7 @@ ENGINE = MergeTree ORDER BY id;
 SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
 ```
 
-* Réduisez les tokens à leur racine à l’aide d’une expression de post-traitement :
+* Réduisez les tokens à leur racine à l’aide d’une expression de postprocesseur :
 
 ```sql
 CREATE TABLE table
@@ -437,51 +523,53 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 Pour les prédicats qui consultent l’index de texte, le préprocesseur et le postprocesseur sont appliqués à la valeur recherchée avant la vérification au niveau du granule, afin que la recherche dans l’index utilise les mêmes tokens que ceux stockés lors de la création de l’index.
 Pour la plupart des fonctions (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), l’index de texte sert uniquement à ignorer les blocs de données non pertinents ; ClickHouse vérifie ensuite chaque ligne conservée à l’aide du prédicat d’origine sur les données de la colonne d’origine.
 Pour les fonctions de recherche de tokens (`hasToken`, `hasAllTokens`, `hasAnyTokens`), l’index de texte constitue le principal mécanisme d’évaluation : ClickHouse normalise le needle à l’aide du même préprocesseur, tokenizer et postprocesseur que ceux appliqués lors de la création de l’index, puis utilise cette forme normalisée aussi bien pour les parts de la table indexées que non indexées. En présence d’un postprocesseur, les tokens du haystack sont également normalisés au moment de la requête (pour n’importe quel tokenizer, et pas seulement `array`), de sorte que les deux côtés de la comparaison sont transformés de manière cohérente et que le résultat ne dépend ni d’une lecture directe de l’index (paramètre `query_plan_direct_read_from_text_index`), ni du fait qu’une part donnée dispose d’un index matérialisé — par exemple, pour activer une correspondance insensible à la casse pour `hasAllTokens(col, ['FOO'])` avec un postprocesseur `lower`.
-Sans `support_phrase_search`, `hasPhrase` utilise l’index uniquement comme indication et vérifie chaque ligne conservée à l’aide du prédicat d’origine ; un postprocesseur normalise en outre la phrase et les tokens du haystack de la même manière, afin que le résultat soit indépendant du chemin de lecture, et les tokens supprimés par le postprocesseur ne rompent pas l’adjacence de la phrase. Avec `support_phrase_search = 1`, `hasPhrase` utilise des lectures directes exactes (tout en appliquant le postprocesseur, le cas échéant).
-Les tokens de recherche que le postprocesseur transforme en chaîne vide sont ignorés, c’est-à-dire traités comme absents de la phrase de recherche.
+Sans `support_phrase_search`, `hasPhrase` utilise l’index uniquement comme indication et vérifie chaque ligne conservée à l’aide du prédicat d’origine ; un postprocesseur normalise en outre l’expression et les tokens du haystack de la même manière, afin que le résultat soit indépendant du chemin de lecture, et les tokens supprimés par le postprocesseur ne rompent pas l’adjacence de l’expression. Avec `support_phrase_search = 1`, `hasPhrase` utilise des lectures directes exactes (tout en appliquant le postprocesseur, le cas échéant). Cette prise en charge du postprocesseur ne s’étend pas au tokenizer `splitByRegexp` : `hasPhrase` sur un index `splitByRegexp` associé à un postprocesseur est rejeté (voir la note de bas de page ³ ci-dessous).
+Les tokens de recherche que le postprocesseur transforme en chaîne vide sont ignorés, c’est-à-dire traités comme absents de l’expression de recherche.
 
-| Fonction                                                                                                | Prend en charge un préprocesseur                                    | Tokenizers compatibles                                   | Prend en charge un postprocesseur |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------- |
-| `=`                                                                                                     | oui                                                                 | tous                                                     | oui                               |
-| `IN`                                                                                                    | oui                                                                 | tous                                                     | oui                               |
-| [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken)                     | oui                                                                 | tous (conçu pour `splitByNonAlpha`)                      | oui                               |
-| [hasAnyTokens(col, str)](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | oui                                                                 | tous                                                     | oui                               |
-| [hasAllTokens(col, str)](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | oui                                                                 | tous                                                     | oui                               |
-| [hasAnyTokens(col, arr)](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | non (les éléments du tableau sont utilisés tels quels comme tokens) | tous                                                     | oui                               |
-| [hasAllTokens(col, arr)](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | non (les éléments du tableau sont utilisés tels quels comme tokens) | tous                                                     | oui                               |
-| [hasPhrase](/fr/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | oui                                                                 | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | oui                               |
-| [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith)                        | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | oui                               |
-| [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith)                            | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | oui                               |
-| [like](/fr/reference/functions/regular-functions/string-search-functions#like)                             | oui¹                                                                | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | oui¹                              |
-| [match](/fr/reference/functions/regular-functions/string-search-functions#match)                           | oui¹                                                                | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | oui¹                              |
-| [ilike](/fr/reference/functions/regular-functions/string-search-functions#like)                            | oui² (`lower`/`upper` uniquement)                                   | `splitByNonAlpha`, `array`²                              | non²                              |
-| [mapContainsKey](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | oui                                                                 | tous                                                     | oui                               |
-| [mapContainsValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | oui                                                                 | tous                                                     | oui                               |
-| [mapContainsKeyLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | oui                               |
-| [mapContainsValueLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | oui                               |
-| [has](/fr/reference/functions/regular-functions/array-functions#has)                                       | oui                                                                 | `array`                                                  | oui                               |
-| [hasAny](/fr/reference/functions/regular-functions/array-functions#hasAny)                                 | oui                                                                 | `array`                                                  | oui                               |
-| [hasAll](/fr/reference/functions/regular-functions/array-functions#hasAll)                                 | oui                                                                 | `array`                                                  | oui                               |
+| Fonction                                                                                                | Prend en charge un préprocesseur                                    | Tokenizers compatibles                                                            | Prend en charge un postprocesseur |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------- |
+| `=`                                                                                                     | oui                                                                 | tous                                                                              | oui                               |
+| `IN`                                                                                                    | oui                                                                 | tous                                                                              | oui                               |
+| [hasToken](/fr/reference/functions/regular-functions/string-search-functions#hasToken)                     | oui                                                                 | tous (conçu pour `splitByNonAlpha`)                                               | oui                               |
+| [hasAnyTokens(col, str)](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | oui                                                                 | tous                                                                              | oui                               |
+| [hasAllTokens(col, str)](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | oui                                                                 | tous                                                                              | oui                               |
+| [hasAnyTokens(col, arr)](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | non (les éléments du tableau sont utilisés tels quels comme tokens) | tous                                                                              | oui                               |
+| [hasAllTokens(col, arr)](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | non (les éléments du tableau sont utilisés tels quels comme tokens) | tous                                                                              | oui                               |
+| [hasPhrase](/fr/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | oui                                                                 | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | oui³                              |
+| [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith)                        | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | oui                               |
+| [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith)                            | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | oui                               |
+| [like](/fr/reference/functions/regular-functions/string-search-functions#like)                             | oui¹                                                                | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | oui¹                              |
+| [match](/fr/reference/functions/regular-functions/string-search-functions#match)                           | oui¹                                                                | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | oui¹                              |
+| [ilike](/fr/reference/functions/regular-functions/string-search-functions#like)                            | oui² (`lower`/`upper` uniquement)                                   | `splitByNonAlpha`, `array`²                                                       | non²                              |
+| [mapContainsKey](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | oui                                                                 | tous                                                                              | oui                               |
+| [mapContainsValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | oui                                                                 | tous                                                                              | oui                               |
+| [mapContainsKeyLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | oui                               |
+| [mapContainsValueLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | oui                               |
+| [has](/fr/reference/functions/regular-functions/array-functions#has)                                       | oui                                                                 | `array`                                                                           | oui                               |
+| [hasAny](/fr/reference/functions/regular-functions/array-functions#hasAny)                                 | oui                                                                 | `array`                                                                           | oui                               |
+| [hasAll](/fr/reference/functions/regular-functions/array-functions#hasAll)                                 | oui                                                                 | `array`                                                                           | oui                               |
 
-¹ `LIKE` et `match` utilisent la lecture directe comme indice pour les tokenizers listés ; sinon, ils reviennent à un balayage exhaustif.
-`LIKE` prend en outre en charge une *lecture directe (sans indice)* (activée via `use_text_index_like_evaluation_by_dictionary_scan`) pour les tokenizers `splitByNonAlpha` et `array`, sans préprocesseur ni postprocesseur.
+¹ `LIKE` et `match` utilisent la lecture directe comme indication pour les tokenizers listés ; sinon, ils reviennent à un balayage exhaustif.
+`LIKE` prend en outre en charge une *lecture directe (sans indication)* (activée via `use_text_index_like_evaluation_by_dictionary_scan`) pour les tokenizers `splitByNonAlpha` et `array`, sans préprocesseur ni postprocesseur.
 
-² `ILIKE` est uniquement pris en charge via la lecture directe (sans indice) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizer `splitByNonAlpha` ou `array`).
-Il n&#39;y a pas de solution de repli consistant à utiliser l&#39;index comme indice : si le paramètre est désactivé ou si le tokenizer ne fait pas partie de l&#39;ensemble pris en charge, l&#39;index n&#39;est pas utilisé pour `ILIKE`.
+² `ILIKE` est uniquement pris en charge via la lecture directe (sans indication) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizer `splitByNonAlpha` ou `array`).
+Il n&#39;y a pas de solution de repli consistant à utiliser l&#39;index comme indication : si le paramètre est désactivé ou si le tokenizer ne fait pas partie de l&#39;ensemble pris en charge, l&#39;index n&#39;est pas utilisé pour `ILIKE`.
 Le préprocesseur, s&#39;il est présent, doit être `lower` ou `upper` ; les postprocesseurs ne sont pas pris en charge.
 
-**Expérimental : argument de prise en charge de la recherche de phrase (facultatif)**.
+³ `hasPhrase` sur un index de texte `splitByRegexp` ne prend **pas** en charge de postprocesseur : la combinaison est rejetée avec une exception, car la réécriture au niveau des lignes du postprocesseur suppose des tokens de type `splitByNonAlpha` séparés par des espaces. Sans postprocesseur, `splitByRegexp` est entièrement pris en charge par `hasPhrase`.
+
+**Expérimental : argument de prise en charge de la recherche d’expression (facultatif)**.
 
 Le paramètre expérimental `support_phrase_search` (par défaut : `0`) contrôle si l’index stocke les positions des tokens.
 Lorsqu’il est défini sur `1`, l’index stocke également des données de position (dans un fichier `.pos`), ce qui permet une correspondance exacte des expressions via des lectures directes pour la fonction [`hasPhrase`](#functions-example-hasphrase).
 Le stockage des positions augmente la taille de l’index sur disque et le coût d’écriture ; il est donc optionnel.
 Le format sur disque n’est pas encore stable ; ce paramètre est donc expérimental et pourrait changer dans une prochaine version.
-La création d’un index avec `support_phrase_search = 1` nécessite donc que le paramètre MergeTree [`allow_experimental_text_index_phrase_search`](/fr/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) soit activé.
+La création d’un index avec `support_phrase_search = 1` nécessite donc que le paramètre MergeTree [`allow_experimental_text_index_phrase_search`](/fr/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) soit activé.
 Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver un stockage reposant uniquement sur des posting lists ; les index de texte créés sans cet argument restent sans positions.
 
 <Warning>
   Cet argument est expérimental et ne doit être utilisé que pour des tests.
-  Activez le paramètre MergeTree [`allow_experimental_text_index_phrase_search`](/fr/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) pour autoriser le stockage des positions.
+  Activez le paramètre MergeTree [`allow_experimental_text_index_phrase_search`](/fr/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) pour autoriser le stockage des positions.
 </Warning>
 
 <details markdown="1">
@@ -501,7 +589,7 @@ Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver u
   * `none` - les posting lists sont stockées sans compression supplémentaire.
   * `bitpacking` - applique le [codage différentiel (delta)](https://en.wikipedia.org/wiki/Delta_encoding), suivi du [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (chacun dans des blocs de taille fixe). Cela ralentit les requêtes SELECT et n&#39;est pas recommandé pour le moment.
 
-  Les paramètres avancés ci-dessus peuvent également être définis au niveau de la table via les paramètres MergeTree correspondants : [`text_index_dictionary_block_size`](/fr/reference/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/fr/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/fr/reference/settings/merge-tree-settings#text_index_posting_list_block_size) et [`text_index_posting_list_codec`](/fr/reference/settings/merge-tree-settings#text_index_posting_list_codec).
+  Les paramètres avancés ci-dessus peuvent également être définis au niveau de la table via les paramètres MergeTree correspondants : [`text_index_dictionary_block_size`](/fr/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/fr/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) et [`text_index_posting_list_codec`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   Ils s&#39;appliquent à chaque index de texte de la table qui ne spécifie pas explicitement le paramètre.
 
   Le principal cas d&#39;usage des paramètres au niveau de la table est de modifier les paramètres d&#39;index d&#39;une table existante sans supprimer puis recréer l&#39;index de texte sur toutes les parts de la table.
@@ -754,9 +842,9 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 La fonction [hasPhrase](/fr/reference/functions/regular-functions/string-search-functions#hasPhrase) vérifie la présence d’une expression : tous les tokens doivent apparaître de façon consécutive et dans le même ordre que dans la chaîne de recherche.
 
 Contrairement à `hasAllTokens`, qui exige seulement que tous les tokens soient présents quelque part, `hasPhrase` exige qu’ils apparaissent sous la forme d’une séquence consécutive.
-L’expression de recherche est tokenisée à l’aide du même tokenizer configuré pour la colonne indexée.
+L’expression de recherche est tokenisée à l’aide du même tokenizer configuré pour la colonne d’index.
 Lorsque l’index de texte utilise un postprocesseur, l’expression de recherche est également normalisée avant la recherche dans l’index.
-Notez que la fonction nécessite l’un des tokenizers `splitByNonAlpha`, `splitByString`, `ngrams` ou `asciiCJK`.
+Notez que la fonction nécessite l’un des tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` ou `icu`.
 
 Exemple :
 
@@ -1190,12 +1278,12 @@ WHERE hasPhrase(col, 'weather in Tokyo')
 
 correspond à toute ligne contenant la séquence de tokens `weather in Tokyo`, comme `How is the weather in Tokyo?` ?
 
-L’index de texte accélère la recherche d’expressions en faisant l’intersection des posting lists de tous les tokens de l’expression afin d’identifier les granules candidates.
+L’index de texte accélère la recherche d’expressions en faisant l’intersection des listes de postings de tous les tokens de l’expression afin d’identifier les granules candidates.
 Dans ces granules, ClickHouse vérifie ensuite que les tokens sont exactement adjacents.
 Ce processus est relativement coûteux et plus lent que les requêtes de recherche textuelle classiques.
 Pour accélérer les requêtes de recherche d’expressions, veuillez activer le stockage des positions dans l’index de texte (voir `Optional parameters` ci-dessus).
 
-`hasPhrase` peut être utilisé avec les tokenizers `splitByNonAlpha`, `splitByString`, `ngrams` et `asciiCJK`.
+`hasPhrase` peut être utilisé avec les tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` et `icu`.
 La chaîne correspondant à l’expression fournie est tokenisée à l’aide du tokenizer de l’index.
 Les caractères séparateurs de l’expression sont ignorés : `hasPhrase(text, 'quick+brown')` équivaut à `hasPhrase(text, 'quick brown')`, à condition que `splitByNonAlpha` soit utilisé comme tokenizer.
 
@@ -1254,8 +1342,8 @@ Les consultations de l’index de texte lisent relativement peu de données et s
 
 La lecture directe est contrôlée par deux paramètres :
 
-* Le paramètre [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings#query_plan_direct_read_from_text_index) (`true` par défaut) indique si la lecture directe est activée de manière générale.
-* Le paramètre [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/fr/reference/settings/session-settings#use_skip_indexes_on_data_read) était un prérequis pour la lecture directe dans les versions de ClickHouse &lt; 26.4.
+* Le paramètre [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (`true` par défaut) indique si la lecture directe est activée de manière générale.
+* Le paramètre [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/fr/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) était un prérequis pour la lecture directe dans les versions de ClickHouse &lt; 26.4.
 
 **Fonctions prises en charge**
 
@@ -1324,7 +1412,7 @@ Les fonctions prises en charge sont : `like`, `startsWith`, `endsWith`, `equals
 
 Le filtre supplémentaire peut apporter une sélectivité supplémentaire pour restreindre davantage le jeu de résultats en combinaison avec d’autres filtres, ce qui aide à réduire la quantité de données lues depuis d’autres colonnes.
 
-La lecture directe comme indice est contrôlée par le paramètre [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/fr/reference/settings/session-settings#query_plan_text_index_add_hint) (activé par défaut).
+La lecture directe comme indice est contrôlée par le paramètre [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/fr/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (activé par défaut).
 
 Exemple de requête sans indice :
 
@@ -1378,14 +1466,48 @@ Lorsque l’optimisation est activée, les requêtes LIKE/ILIKE devraient être 
 
 L’optimisation est contrôlée par un paramètre :
 
-* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/fr/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/fr/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 Le mécanisme de repli est contrôlé par deux paramètres :
 
-* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/fr/reference/settings/session-settings#text_index_like_min_pattern_length)
-* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/fr/reference/settings/session-settings#text_index_like_max_postings_to_read)
+* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/fr/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/fr/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Cette optimisation ne prend en charge que les fonctions `like` et `ilike`.
+
+<div id="count-queries-perf">
+  ### Requêtes de comptage simples
+</div>
+
+Requête qui compte uniquement les lignes correspondant à un prédicat de recherche textuelle
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+est traitée à partir de l’index de texte, sans lire les lignes correspondantes.
+ClickHouse récupère le décompte à partir de la cardinalité des listes de postings de l’index, sans avoir à lire la colonne virtuelle qui marque les lignes correspondantes ni à effectuer l’agrégation sur celle-ci. Un seul token ne nécessite que la cardinalité de son dictionnaire, aucune liste de postings n’est donc lue ; les prédicats portant sur plusieurs tokens lisent les postings uniquement pour les unir (`hasAnyTokens`) ou les intersecter (`hasAllTokens`). Comme un index de texte couvre l’intégralité de la part, le décompte est exact et reste rapide même pour de très grandes parts.
+
+L’optimisation s’applique à un simple `count()` filtré par un unique prédicat `hasToken`, `hasAnyTokens` ou `hasAllTokens` (ou un équivalent `Array`/`Map`). Des prédicats combinés avec `AND`/`OR`/`NOT`, un filtre supplémentaire (par ex. `... AND id > 10`), un prédicat en mode indice tel que `m['key'] = 'value'`, la sélection d’un élément autre que le décompte, ou une recherche d’expression ou par `LIKE`/motif obligent la requête à lire les lignes. Les parts sans index matérialisé sont toujours comptées correctement en lisant leurs lignes.
+
+Pour confirmer que l’optimisation est activée, vérifiez la présence de `ReadFromTextIndexCount` dans le plan de requête :
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+L’optimisation est contrôlée par [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (activée par défaut). Elle repose sur la [lecture directe](#direct-read) ; [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use&#95;skip&#95;indexes](/fr/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) et [optimize&#95;trivial&#95;count&#95;query](/fr/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) doivent donc également être activés (ils le sont tous par défaut).
 
 <div id="caching">
   ### Mise en cache
@@ -1393,44 +1515,45 @@ Cette optimisation ne prend en charge que les fonctions `like` et `ilike`.
 
 Il existe différents caches à l’échelle du serveur pour conserver en mémoire certaines parties de l’index de texte (voir la section [Détails d’implémentation](#implementation)) :
 À l’heure actuelle, il existe des caches pour les en-têtes désérialisés, les tokens et les listes de postings de l’index de texte afin de réduire les opérations d’E/S.
-Utilisez les paramètres [use&#95;text&#95;index&#95;header&#95;cache](/fr/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/fr/reference/settings/session-settings#use_text_index_tokens_cache) et [use&#95;text&#95;index&#95;postings&#95;cache](/fr/reference/settings/session-settings#use_text_index_postings_cache) pour désactiver, pour les requêtes, la lecture et l’écriture dans les caches individuels.
+Utilisez les paramètres [use&#95;text&#95;index&#95;header&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_tokens_cache) et [use&#95;text&#95;index&#95;postings&#95;cache](/fr/reference/settings/session-settings/use-text#use_text_index_postings_cache) pour désactiver, pour les requêtes, la lecture et l’écriture dans les caches individuels.
+La mise en cache des tokens absents d’une data part est activée par défaut et peut être contrôlée indépendamment avec [`use_text_index_negative_tokens_cache`](/fr/reference/settings/session-settings/use-text).
 
 Pour vider les caches, utilisez l’instruction [SYSTEM CLEAR TEXT INDEX CACHES](/fr/reference/statements/system#drop-text-index-caches)
 
 Reportez-vous aux paramètres du serveur ci-dessous pour configurer les caches.
 
 <div id="caching-tokens">
-  #### Paramètres du cache des jetons
+  #### Paramètres du cache des tokens
 </div>
 
-| Paramètre                                                                                                                                   | Description                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;tokens&#95;cache&#95;policy](/fr/reference/settings/server-settings/settings#text_index_tokens_cache_policy)               | Nom de la politique du cache des jetons de l’index de texte.                                                      |
-| [text&#95;index&#95;tokens&#95;cache&#95;size](/fr/reference/settings/server-settings/settings#text_index_tokens_cache_size)                   | Taille maximale du cache en octets.                                                                                        |
-| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries) | Nombre maximal de jetons désérialisés dans le cache.                                                                       |
-| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)   | Taille de la file protégée dans le cache des jetons de l’index de texte, par rapport à la taille totale du cache. |
+| Paramètre                                                                                                                                              | Description                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;tokens&#95;cache&#95;policy](/fr/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)               | Nom de la politique du cache des tokens de l’index de texte.                                                      |
+| [text&#95;index&#95;tokens&#95;cache&#95;size](/fr/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                   | Taille maximale du cache en octets.                                                                               |
+| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | Nombre maximal de tokens désérialisés dans le cache.                                                              |
+| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | Taille de la file protégée dans le cache des tokens de l’index de texte, par rapport à la taille totale du cache. |
 
 <div id="caching-header">
   #### Paramètres du cache des en-têtes
 </div>
 
-| Paramètre                                                                                                                                   | Description                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;header&#95;cache&#95;policy](/fr/reference/settings/server-settings/settings#text_index_header_cache_policy)               | Nom de la politique du cache des en-têtes de l&#39;index de texte.                                                                    |
-| [text&#95;index&#95;header&#95;cache&#95;size](/fr/reference/settings/server-settings/settings#text_index_header_cache_size)                   | Taille maximale du cache en octets.                                                                                                   |
-| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | Nombre maximal d&#39;en-têtes désérialisés dans le cache.                                                                             |
-| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | Taille de la file d&#39;attente protégée dans le cache des en-têtes de l&#39;index de texte, par rapport à la taille totale du cache. |
+| Paramètre                                                                                                                                              | Description                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/fr/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)               | Nom de la politique du cache des en-têtes de l&#39;index de texte.                                                                    |
+| [text&#95;index&#95;header&#95;cache&#95;size](/fr/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                   | Taille maximale du cache en octets.                                                                                                   |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | Nombre maximal d&#39;en-têtes désérialisés dans le cache.                                                                             |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | Taille de la file d&#39;attente protégée dans le cache des en-têtes de l&#39;index de texte, par rapport à la taille totale du cache. |
 
 <div id="caching-posting-lists">
   #### Paramètres du cache des listes de postings
 </div>
 
-| Setting                                                                                                                                         | Description                                                                                                                  |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;postings&#95;cache&#95;policy](/fr/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | Nom de la politique de cache des listes de postings de l&#39;index de texte.                                                      |
-| [text&#95;index&#95;postings&#95;cache&#95;size](/fr/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | Taille maximale du cache en octets.                                                                                          |
-| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | Nombre maximal de listes de postings désérialisées dans le cache.                                                                 |
-| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | Taille de la file protégée dans le cache des listes de postings de l&#39;index de texte, par rapport à la taille totale du cache. |
+| Setting                                                                                                                                                    | Description                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/fr/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)               | Nom de la politique de cache des listes de postings de l&#39;index de texte.                                                      |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/fr/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                   | Taille maximale du cache en octets.                                                                                               |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | Nombre maximal de listes de postings désérialisées dans le cache.                                                                 |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | Taille de la file protégée dans le cache des listes de postings de l&#39;index de texte, par rapport à la taille totale du cache. |
 
 <div id="limitations">
   ## Limites
@@ -1441,6 +1564,14 @@ L’index de texte présente actuellement les limitations suivantes :
 * La matérialisation d’index de texte comportant un grand nombre de tokens (par ex. 10 milliards de tokens) peut consommer une quantité importante de mémoire. La
   matérialisation d’un index de texte peut se produire directement (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) ou indirectement lors des fusions de parts.
 * Il n’est pas possible de matérialiser des index de texte sur des parts de plus de 4.294.967.296 (= 2^32 = env. 4,2 milliards) lignes. Sans index de texte matérialisé, les requêtes reviennent à une recherche brute-force lente dans la part. Dans le pire des cas, supposons qu’une part contienne une seule colonne de type String et que le paramètre MergeTree `max_bytes_to_merge_at_max_space_in_pool` (par défaut : 150 GB) n’ait pas été modifié. Dans ce cas, cela se produit si la colonne contient en moyenne moins de 29,5 caractères par ligne. En pratique, les tables contiennent aussi d’autres colonnes et le seuil est alors plusieurs fois plus faible (selon le nombre, le type et la taille des autres colonnes).
+
+<div id="upgrade-notes">
+  ## Notes de mise à niveau
+</div>
+
+La version du format sur disque des index de texte est contrôlée par le paramètre de table [`text_index_serialization_version`](/fr/reference/settings/merge-tree-settings/text-index) (par défaut : `v2_with_positions`).
+Ce paramètre constitue une préférence plutôt qu&#39;une contrainte stricte : si la version configurée ne permet pas de représenter un index, une version plus récente qui le permet est automatiquement sélectionnée. Ainsi, l&#39;écriture d&#39;un index de texte n&#39;échoue jamais à cause de ce paramètre.
+Lors d&#39;une mise à niveau progressive, verrouillez le format à l&#39;aide du paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) sur les serveurs déjà mis à niveau : lorsqu&#39;il est défini sur une version antérieure à celle ayant introduit le format correspondant, `text_index_serialization_version` reprend automatiquement une valeur antérieure et les serveurs plus récents continuent d&#39;écrire dans un format que les serveurs plus anciens peuvent toujours lire.
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## Index de texte vs index basés sur des filtres de Bloom

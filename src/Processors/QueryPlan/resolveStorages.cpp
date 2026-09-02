@@ -1,3 +1,4 @@
+#include <Processors/QueryPlan/resolveStorages.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
@@ -55,8 +56,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
 }
 
-Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context);
-
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -72,8 +71,6 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 
     return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
 }
-
-std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context);
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
@@ -204,6 +201,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
+
+    if (select_query_info.table_expression_modifiers)
+        snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
 
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 

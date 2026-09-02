@@ -19,22 +19,23 @@ doc_type: 'reference'
 
 Метод `Client.raw_query` позволяет напрямую использовать HTTP-интерфейс запросов ClickHouse через клиентское соединение. Возвращаемое значение — необработанный объект `bytes`. Этот метод предоставляет удобную обёртку с привязкой параметров, обработкой ошибок, повторными попытками и управлением настройками через минимальный интерфейс:
 
-| Parameter         | Type             | Default    | Description                                                                                                                                                                                                |
-| ----------------- | ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| query             | str              | *Required* | Любой допустимый запрос к ClickHouse                                                                                                                                                                       |
-| parameters        | dict or iterable | *None*     | См. [описание параметров](/ru/integrations/language-clients/python/driver-api#parameters-argument).                                                                                                           |
-| settings          | dict             | *None*     | См. [описание настроек](/ru/integrations/language-clients/python/driver-api#settings-argument).                                                                                                               |
-| fmt               | str              | *None*     | Выходной формат ClickHouse для результирующего объекта bytes. (Если формат не указан, ClickHouse использует TSV)                                                                                           |
-| use&#95;database  | bool             | True       | Использовать назначенную клиенту ClickHouse Connect базу данных в контексте запроса                                                                                                                        |
-| external&#95;data | ExternalData     | *None*     | Объект ExternalData, содержащий файловые или бинарные данные для использования в запросе. См. [Расширенные запросы (External Data)](/ru/integrations/language-clients/python/advanced-querying#external-data) |
+| Parameter            | Type             | Default  | Description                                                                                                                    |
+| -------------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `query`              | str              | Required | Любой допустимый запрос к ClickHouse.                                                                                          |
+| `parameters`         | dict or sequence | `None`   | См. [аргумент Parameters](/ru/integrations/language-clients/python/driver-api#parameters-argument).                               |
+| `settings`           | dict             | `None`   | См. [аргумент Settings](/ru/integrations/language-clients/python/driver-api#settings-argument-1).                                 |
+| `fmt`                | str              | `None`   | Выходной формат ClickHouse. Если формат не указан, ClickHouse использует TSV.                                                  |
+| `use_database`       | bool             | `True`   | Использовать базу данных, настроенную в клиенте.                                                                               |
+| `external_data`      | `ExternalData`   | `None`   | Внешний файл или бинарные данные. См. [Внешние данные](/ru/integrations/language-clients/python/advanced-querying#external-data). |
+| `transport_settings` | dict             | `None`   | HTTP-заголовки, добавляемые к этому запросу.                                                                                   |
 
 Обработка результирующего объекта `bytes` остаётся на стороне вызывающего кода. Обратите внимание, что `Client.query_arrow` — это лишь простая обёртка над этим методом, использующая выходной формат ClickHouse `Arrow`.
 
 <div id="client-rawstream-method">
-  ### Метод `raw_stream` клиента
+  ### Метод `raw_stream` класса Client
 </div>
 
-Метод `Client.raw_stream` имеет тот же API, что и метод `raw_query`, но возвращает объект `io.IOBase`, который можно использовать как генератор или источник потока объектов `bytes`. В настоящее время он используется в методе `query_arrow_stream`.
+Синхронный метод `Client.raw_stream` имеет тот же API, что и `raw_query`, но возвращает поток `io.IOBase`, состоящий из байтовых фрагментов. Закройте поток после завершения обработки. Для `AsyncClient.raw_stream` нужно использовать `await`; этот метод возвращает асинхронный `StreamContext` для работы с `async with` и `async for`.
 
 <div id="client-rawinsert-method">
   ### Метод клиента `raw_insert`
@@ -42,13 +43,15 @@ doc_type: 'reference'
 
 Метод `Client.raw_insert` позволяет выполнять прямую вставку объектов `bytes` или генераторов объектов `bytes` через клиентское соединение. Поскольку он никак не обрабатывает полезную нагрузку вставки, он обеспечивает очень высокую производительность. Метод предоставляет параметры для указания настроек и формата вставки:
 
-| Параметр         | Тип                                    | По умолчанию  | Описание                                                                                                |
-| ---------------- | -------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| table            | str                                    | *Обязательно* | Простое имя таблицы или имя таблицы с указанием базы данных                                             |
-| column&#95;names | Sequence[str]                          | *None*        | Имена столбцов для блока вставки. Обязательно, если параметр `fmt` не включает имена                    |
-| insert&#95;block | str, bytes, Generator[bytes], BinaryIO | *Обязательно* | Данные для вставки. Строки будут закодированы с использованием кодировки клиента.                       |
-| settings         | dict                                   | *None*        | См. [описание настроек](/ru/integrations/language-clients/python/driver-api#settings-argument).            |
-| fmt              | str                                    | *None*        | Входной формат ClickHouse для байтов `insert_block`. (Если формат не указан, ClickHouse использует TSV) |
+| Параметр             | Тип                                  | По умолчанию | Описание                                                                                                      |
+| -------------------- | ------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `table`              | str                                  | Обязательно  | Простое имя таблицы или имя таблицы с указанием базы данных.                                                  |
+| `column_names`       | Sequence[str]                        | `None`       | Имена столбцов для блока вставки. Обязательно, если `fmt` не включает имена.                                  |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Обязательно  | Данные для вставки. Строки кодируются с использованием кодировки клиента.                                     |
+| `settings`           | dict                                 | `None`       | См. [аргумент Settings](/ru/integrations/language-clients/python/driver-api#settings-argument-1).                |
+| `fmt`                | str                                  | `None`       | Входной формат ClickHouse для полезной нагрузки `insert_block`. Если формат не указан, используется `Native`. |
+| `compression`        | str                                  | `None`       | Сжатие, уже применённое к `insert_block`, например `"gzip"`, `"lz4"` или `"zstd"`.                            |
+| `transport_settings` | dict                                 | `None`       | HTTP-заголовки, добавляемые к этому запросу.                                                                  |
 
 Ответственность за то, чтобы `insert_block` соответствовал указанному формату и использовал указанный метод сжатия, лежит на вызывающей стороне. ClickHouse Connect использует такие необработанные вставки для загрузки файлов и таблиц PyArrow, делегируя их разбор ClickHouse server.
 
@@ -61,14 +64,20 @@ doc_type: 'reference'
 ```python
 import clickhouse_connect
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     client = clickhouse_connect.get_client()
-    query = 'SELECT number, toString(number) AS number_as_str FROM system.numbers LIMIT 5'
-    fmt = 'CSVWithNames'  # или CSV, или CSVWithNamesAndTypes, или TabSeparated и т.д.
-    stream = client.raw_stream(query=query, fmt=fmt)
-    with open("output.csv", "wb") as f:
-        for chunk in stream:
-            f.write(chunk)
+    query = (
+        "SELECT number, toString(number) AS number_as_str "
+        "FROM system.numbers LIMIT 5"
+    )
+    stream = client.raw_stream(query=query, fmt="CSVWithNames")
+    try:
+        with open("output.csv", "wb") as file:
+            for chunk in stream:
+                file.write(chunk)
+    finally:
+        stream.close()
+        client.close()
 ```
 
 Приведённый выше код создаёт файл `output.csv` со следующим содержимым:
@@ -94,36 +103,48 @@ ClickHouse Connect хорошо работает в многопоточных, 
 
 Кроме того, в приложении, где одновременно выполняются два или более запроса и/или вставки, нужно учитывать еще два момента. Первый — это clickHouse-«сеанс», связанный с запросом или вставкой, а второй — пул HTTP-соединений, используемый экземплярами клиента ClickHouse Connect.
 
-<div id="asyncclient-wrapper">
-  ## Обёртка для AsyncClient
+<div id="asyncclient">
+  ## AsyncClient
 </div>
 
-ClickHouse Connect предоставляет асинхронную обёртку для обычного `Client`, чтобы его можно было использовать в среде `asyncio`.
+ClickHouse Connect предоставляет нативный клиент на базе aiohttp для приложений asyncio. Перед использованием установите дополнительную зависимость:
 
-Чтобы получить экземпляр `AsyncClient`, можно воспользоваться фабричной функцией `get_async_client`, которая принимает те же параметры, что и стандартная `get_client`:
+```bash
+pip install "clickhouse-connect[async]"
+```
+
+Вызовите `get_async_client` с `await`, чтобы создать и инициализировать клиент. Методы ввода-вывода, такие как `query`, `command` и `insert`, являются корутинами:
 
 ```python
 import asyncio
 
 import clickhouse_connect
 
+
 async def main():
-    client = await clickhouse_connect.get_async_client()
-    result = await client.query("SELECT name FROM system.databases LIMIT 1")
-    print(result.result_rows)
-    # Вывод:
-    # [('INFORMATION_SCHEMA',)]
+    async with await clickhouse_connect.get_async_client() as client:
+        result = await client.query(
+            "SELECT name FROM system.databases ORDER BY name LIMIT 1"
+        )
+        print(result.result_rows)
+
 
 asyncio.run(main())
 ```
 
-`AsyncClient` имеет те же методы и параметры, что и стандартный `Client`, но там, где это применимо, они являются корутинами. Внутри методы `Client`, выполняющие операции I/O, оборачиваются в вызов [run&#95;in&#95;executor](https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.run_in_executor).
+Асинхронный клиент поддерживает те же контракты query, insert, raw, Arrow и streaming, что и синхронный клиент. Для сетевого ввода-вывода используется aiohttp. Разбор Native-формата, ограниченный CPU, может выполняться в исполнителе, чтобы не блокировать цикл событий.
 
-При использовании обёртки `AsyncClient` многопоточная производительность повышается, поскольку потоки выполнения и GIL освобождаются во время ожидания завершения операций I/O.
+Асинхронных методов streaming нужно дождаться перед входом в возвращаемый контекст:
 
-Примечание: в отличие от обычного `Client`, в `AsyncClient` параметр `autogenerate_session_id` по умолчанию принудительно устанавливается в `False`.
+```python
+async with await client.query_rows_stream(
+    "SELECT number FROM numbers(100000)"
+) as stream:
+    async for row in stream:
+        process(row)
+```
 
-См. также: [пример run&#95;async](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/run_async.py).
+В отличие от синхронной фабрики, `get_async_client` по умолчанию отключает автоматическую генерацию идентификаторов сеанса, чтобы параллельно выполняющиеся корутины могли использовать один клиент совместно. Явный `session_id` или `autogenerate_session_id=True` следует передавать только в тех случаях, когда вам нужно состояние сеанса и вы можете избежать параллельных запросов в рамках этого сеанса.
 
 <div id="managing-clickhouse-session-ids">
   ## Управление идентификаторами сеансов ClickHouse
@@ -134,18 +155,22 @@ asyncio.run(main())
 * Чтобы связывать определённые настройки ClickHouse с несколькими запросами (см. [настройки пользователя](/ru/reference/settings/session-settings)). Команда ClickHouse `SET` используется для изменения настроек в рамках пользовательского сеанса.
 * Для отслеживания [временных таблиц](/ru/reference/statements/create/table#temporary-tables)
 
-По умолчанию каждый запрос, выполняемый экземпляром `Client` из ClickHouse Connect, использует идентификатор сеанса этого клиента. Операторы `SET` и временные таблицы работают ожидаемым образом при использовании одного клиента. Однако ClickHouse server не допускает одновременное выполнение запросов в рамках одного и того же сеанса (при такой попытке клиент вызовет `ProgrammingError`). Для приложений, которые выполняют запросы параллельно, используйте один из следующих подходов:
+По умолчанию синхронный `Client` использует сгенерированный идентификатор сеанса. Поэтому операторы `SET` и временные таблицы сохраняются между запросами от этого клиента. Асинхронная фабрика по умолчанию не генерирует идентификатор сеанса. ClickHouse не допускает одновременное выполнение запросов в рамках одного и того же сеанса, и клиент вызывает `ProgrammingError`, если предпринята такая попытка, поэтому используйте один из следующих подходов:
 
 1. Создайте отдельный экземпляр `Client` для каждого thread/process/event handler, которому требуется изоляция сеанса. Это сохраняет состояние сеанса на уровне клиента (временные таблицы и значения `SET`).
 2. Используйте уникальный `session_id` для каждого запроса через аргумент `settings` при вызове `query`, `command` или `insert`, если вам не требуется общее состояние сеанса.
 3. Отключите сеансы для общего клиента, установив `autogenerate_session_id=False` перед созданием клиента (или передайте его напрямую в `get_client`).
 
 ```python
-from clickhouse_connect import common
 import clickhouse_connect
+from clickhouse_connect import common
 
-common.set_setting('autogenerate_session_id', False)  # Это всегда нужно задавать до создания клиента
-client = clickhouse_connect.get_client(host='somehost.com', user='dbuser', password=1234)
+common.set_setting("autogenerate_session_id", False)
+client = clickhouse_connect.get_client(
+    host="somehost.com",
+    username="dbuser",
+    password="password",
+)
 ```
 
 Либо передайте `autogenerate_session_id=False` напрямую в `get_client(...)`.
@@ -170,4 +195,6 @@ client1 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 ```
 
-Как показано в примере выше, клиенты могут использовать общий менеджер пула, либо для каждого клиента можно создать отдельный. Подробнее о параметрах, доступных при создании PoolManager, см. в [документации `urllib3`](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior).
+Клиенты могут использовать общий менеджер пула, либо каждый клиент может использовать отдельный менеджер. Подробнее см. в [документации `urllib3` по `PoolManager`](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior).
+
+Асинхронный клиент использует собственный пул `aiohttp` вместо `urllib3`. Настройте его с помощью `connector_limit`, `connector_limit_per_host` и `keepalive_timeout` в `get_async_client`. Вызов `await async_client.close_connections()` пересоздаёт пул, не прерывая выполняющиеся запросы.

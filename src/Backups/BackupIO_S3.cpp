@@ -176,20 +176,27 @@ private:
             external_id = settings.auth_settings[S3AuthSetting::external_id];
         }
 
-        /// Under the restriction a role_arn may be assumed only with the request's own base keys, never the
-        /// server `<s3>` keys as the STS base. Drop a server-inherited role used on top of explicit keys, and
-        /// (positional/`extra_credentials` form only) drop a query role whose base keys fell back to server
-        /// config. A named-collection role keeps its keys from the collection, so a role-only collection is left
-        /// to reach the central rejection (a query-overridden role is handled in registerBackupEngineS3).
-        const bool drop_inherited_role = !role_arn_supplied_by_query && !credentials.IsEmpty();
-        const bool drop_role_on_server_keys
-            = !from_named_collection && role_arn_supplied_by_query && !base_keys_supplied_by_query;
-        if (!role_arn.empty() && (drop_inherited_role || drop_role_on_server_keys)
-            && context->shouldRestrictUserQueryS3Credentials())
+        /// Under the restriction a query-supplied role_arn is honored (STS assume-role is the documented way
+        /// to grant ClickHouse Cloud access to a private bucket), but it may be assumed only with the request's
+        /// own base keys or the server's ambient identity, never the server `<s3>` static keys as the STS base;
+        /// and a server-configured role is not applied to user requests at all. So drop a server-inherited
+        /// role, and (positional/`extra_credentials` form only) drop server-config base keys that a query role
+        /// would otherwise pick up, letting the assume-role call fall through to the ambient provider chain.
+        /// A named-collection role keeps its keys from the collection (a query-overridden role is handled in
+        /// registerBackupEngineS3).
+        if (context->shouldRestrictUserQueryS3Credentials())
         {
-            role_arn.clear();
-            role_session_name.clear();
-            external_id.clear();
+            if (!role_arn.empty() && !role_arn_supplied_by_query)
+            {
+                role_arn.clear();
+                role_session_name.clear();
+                external_id.clear();
+            }
+            else if (!from_named_collection && role_arn_supplied_by_query && !base_keys_supplied_by_query)
+            {
+                credentials = Aws::Auth::AWSCredentials();
+                session_token.clear();
+            }
         }
 
 
@@ -675,6 +682,22 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         std::nullopt,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
         write_settings);
+}
+
+std::unique_ptr<WriteBuffer> BackupWriterS3::writeFileIfNotExists(const String & file_name)
+{
+    WriteSettings conditional_write_settings = write_settings;
+    conditional_write_settings.object_storage_write_if_none_match = "*";
+    return std::make_unique<WriteBufferFromS3>(
+        client,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / file_name,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        s3_settings.request_settings,
+        blob_storage_log,
+        std::nullopt,
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
+        conditional_write_settings);
 }
 
 void BackupWriterS3::removeFile(const String & file_name)

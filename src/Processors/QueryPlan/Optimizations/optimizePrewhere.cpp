@@ -22,6 +22,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
@@ -224,7 +225,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
-    auto column_sizes = storage.getColumnSizes(queried_columns);
+    auto column_sizes = storage.getColumnSizes(
+        queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     if (column_sizes.empty())
         return;
 
@@ -252,6 +254,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
         queried_columns,
         storage.supportedPrewhereColumns(),
+        storage.supportedPrewhereColumnsIncludeSubcolumns(),
         getLogger("QueryPlanOptimizePrewhere")};
 
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),

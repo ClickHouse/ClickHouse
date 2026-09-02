@@ -141,6 +141,14 @@
             text-decoration: none;
         }
 
+        /* File size shown next to a file link - same font size, but muted */
+        .file-size {
+            color: var(--text-color);
+            font-weight: normal;
+            opacity: 0.7;
+            white-space: nowrap;
+        }
+
         .external-link {
             color: var(--file-link-color);
             font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -753,11 +761,55 @@
         return `${formattedSeconds}.${formattedMilliseconds}`;
     }
 
+    // e.g. 1288490189 -> "1.2 GiB"; empty string for an unknown size.
+    function formatFileSize(sizeInBytes) {
+        if (sizeInBytes === null || sizeInBytes === undefined) {
+            return '';
+        }
+        const size = parseFloat(sizeInBytes);
+        if (isNaN(size) || size < 0) {
+            return '';
+        }
+        const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+        let unitIdx = 0;
+        let value = size;
+        while (value >= 1024 && unitIdx < units.length - 1) {
+            value /= 1024;
+            unitIdx++;
+        }
+        return `${unitIdx === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIdx]}`;
+    }
+
+    // Size of the linked file, reused from StorageUsage (uploaded_details is
+    // keyed by basename, which is the link's last path component). undefined if
+    // unknown, e.g. a link to another report.
+    function sizeForLink(link, storage_usage) {
+        const details = storage_usage && storage_usage.uploaded_details;
+        if (!details) return undefined;
+        let name = link.split('/').pop().split('?')[0];
+        try {
+            name = decodeURIComponent(name);
+        } catch (e) {
+        }
+        return details[name];
+    }
+
+    // Appends " (1.2 GiB)" to a file link element, if the size is known.
+    function appendFileSize(linkElement, sizeInBytes) {
+        const text = formatFileSize(sizeInBytes);
+        if (!text) return;
+        const sizeElement = document.createElement('span');
+        sizeElement.className = 'file-size';
+        sizeElement.textContent = ` (${text})`;
+        linkElement.appendChild(sizeElement);
+    }
+
     // Function to determine status class based on value
     function getStatusClass(status) {
         const lowerStatus = status.toLowerCase();
         if (lowerStatus === 'xfail') return 'status-other';  // expected failure: gray (known, not alarming)
         if (lowerStatus === 'xpass') return 'status-fail';    // unexpected pass: red
+        if (lowerStatus === 'slower') return 'status-fail';    // perf regression: red, as shouldShowRow counts it
         if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
         if (lowerStatus.includes('fail')) return 'status-fail';
         if (lowerStatus.includes('pending')) return 'status-pending';
@@ -866,7 +918,7 @@
         statusContainer.appendChild(widget);
     }
 
-    function addFileLinksWidget(links) {
+    function addFileLinksWidget(links, storage_usage = null) {
         if (!Array.isArray(links) || links.length === 0) return;
 
         const statusContainer = document.getElementById('status-container');
@@ -882,6 +934,7 @@
             fileLink.target = '_blank';
             fileLink.className = 'file-link';
             fileLink.textContent = link.includes(base_url) ? "Report" : link.split('/').pop();
+            appendFileSize(fileLink, sizeForLink(link, storage_usage));
 
             // Wrap each link in its own line for spacing
             const line = document.createElement('div');
@@ -1140,13 +1193,15 @@
     // Renders the whole-VM CPU/RAM timeline collected by praktika's
     // HostMetricsCollector and stored in a job Result's ext.metrics.
     // Shape: { interval, duration, mem_total_gb, n_raw, peaks: {cpu, mem, mem_gb},
-    //          psi?: {...}, series: { cpu: [[t,avg,peak],...], mem: [...] } }
+    //          psi?: {...}, series: { cpu: [[t,avg,peak],...], iowait?: [...], mem: [...] } }
     function addHostMetricsChart(metrics) {
         // Require the current schema (with exact `peaks`). Reports produced by
         // the earlier version lack it and use [t, v] points - skip rather than
         // degrade, so the chart code only ever handles one shape.
         if (!metrics || !metrics.series || !metrics.peaks) return;
         const cpu = metrics.series.cpu || [];
+        // Reports from before iowait was collected simply have no series.
+        const iowait = metrics.series.iowait || [];
         const mem = metrics.series.mem || [];
         const disk = metrics.series.disk || [];
         if (cpu.length < 2 && mem.length < 2 && disk.length < 2) return;
@@ -1157,6 +1212,7 @@
         wrapper.style.position = "relative";
 
         const CPU_COLOR = "#4e79a7";
+        const IOWAIT_COLOR = "#f28e2b";
         const MEM_COLOR = "#e15759";
         const DISK_COLOR = "#59a14f";
 
@@ -1165,12 +1221,13 @@
         const peakOf = (p) => p[2];
         // Exact global peaks (max over every fine sample, never decimated away).
         const cpuPeak = metrics.peaks.cpu;
+        const iowaitPeak = metrics.peaks.iowait;
         const memPeak = metrics.peaks.mem;
         const diskPeak = metrics.peaks.disk;
         const lastT = (s) => (s.length ? s[s.length - 1][0] : 0);
         const duration = Math.max(
             metrics.duration || 0,
-            lastT(cpu), lastT(mem), lastT(disk),
+            lastT(cpu), lastT(iowait), lastT(mem), lastT(disk),
             1
         );
 
@@ -1217,6 +1274,9 @@
         // Left column: peak legend, one metric per line.
         const legendCol = mkCol("left");
         addRow(legendCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuPeak.toFixed(0)}% peak`);
+        if (iowait.length && iowaitPeak != null) {
+            addRow(legendCol, `<span style="color:${IOWAIT_COLOR}">■</span> iowait ${iowaitPeak.toFixed(0)}% peak`);
+        }
         addRow(legendCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memPeak.toFixed(0)}%` +
             (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : ""));
         if (disk.length) {
@@ -1309,6 +1369,8 @@
         mkPath(disk, DISK_COLOR, avgOf, "1.2", "1");
         mkPath(mem, MEM_COLOR, peakOf, "1", "0.35");
         mkPath(mem, MEM_COLOR, avgOf, "1.2", "1");
+        mkPath(iowait, IOWAIT_COLOR, peakOf, "1", "0.35");
+        mkPath(iowait, IOWAIT_COLOR, avgOf, "1.2", "1");
         mkPath(cpu, CPU_COLOR, peakOf, "1", "0.35");
         mkPath(cpu, CPU_COLOR, avgOf, "1.2", "1");
 
@@ -1346,13 +1408,14 @@
             const cx = xScale(t);
             cursor.setAttribute("x1", cx); cursor.setAttribute("x2", cx);
             cursor.setAttribute("stroke-opacity", 0.4);
-            const c = nearest(cpu, t), m = nearest(mem, t), d = nearest(disk, t);
+            const c = nearest(cpu, t), w = nearest(iowait, t), m = nearest(mem, t), d = nearest(disk, t);
             const fmtPt = (label, color, p) =>
                 `<span style="color:${color}">${label}</span> ${avgOf(p).toFixed(0)}%` +
                 ` <span style="opacity:0.7">(peak ${peakOf(p).toFixed(0)}%)</span>`;
             tip.innerHTML =
                 `${fmtT(t)}<br>` +
                 (c ? fmtPt("cpu", CPU_COLOR, c) + "<br>" : "") +
+                (w ? fmtPt("iowait", IOWAIT_COLOR, w) + "<br>" : "") +
                 (m ? fmtPt("ram", MEM_COLOR, m) + (d ? "<br>" : "") : "") +
                 (d ? fmtPt("disk", DISK_COLOR, d) : "");
             tip.style.display = "block";
@@ -1369,6 +1432,89 @@
         });
 
         wrapper.appendChild(svg);
+        statusContainer.appendChild(wrapper);
+    }
+
+    // Whole-pipeline utilization KPI, accumulated across qualifying jobs into
+    // the workflow Result (see PipelineUtilization). Only present on the
+    // workflow-level result; values are capacity-time-weighted running sums, so
+    // the percentages are derived here as area / provisioned-resource-seconds.
+    function addPipelineUtilizationWidget(u) {
+        if (!u || !u.cpu_core_s) return;
+        const CPU_COLOR = "#4e79a7";
+        const MEM_COLOR = "#e15759";
+        const DISK_COLOR = "#59a14f";
+        const pct = (area, weight) => (weight ? Math.min(100, area / weight) : 0);
+        const cpuUtil = pct(u.cpu_used_area, u.cpu_core_s);
+        const memUtil = pct(u.mem_used_area, u.mem_gb_s);
+        const diskUtil = pct(u.disk_used_area, u.disk_gb_s);
+        // "some" stalls are wall-clock pressure fractions -> weighted by runtime;
+        // "full" stalls waste every core -> weighted by provisioned core-seconds.
+        const cpuStall = pct(u.cpu_stall_area, u.wall_time_s);
+        const memStall = pct(u.mem_stall_area, u.wall_time_s);
+        const ioStall = pct(u.io_stall_area, u.wall_time_s);
+        const memFull = pct(u.mem_full_area, u.cpu_core_s);
+        const ioFull = pct(u.io_full_area, u.cpu_core_s);
+        // Provisioned capacity-time, in hours (cores/GB * duration).
+        const cpuHours = u.cpu_core_s / 3600;
+        const memHours = u.mem_gb_s / 3600;
+        const diskHours = u.disk_gb_s / 3600;
+
+        const statusContainer = document.getElementById("status-container");
+        const wrapper = document.createElement("div");
+        wrapper.className = "status-widget";
+
+        const title = document.createElement("div");
+        title.style.fontSize = "0.8em";
+        title.textContent = "pipeline utilization";
+        wrapper.appendChild(title);
+
+        // Faded sub-line: job count and provisioned capacity-time.
+        const sub = document.createElement("div");
+        sub.style.fontSize = "0.7em";
+        sub.style.opacity = "0.55";
+        sub.style.marginBottom = "4px";
+        const fmtH = (h) => (h >= 100 ? Math.round(h) : h.toFixed(1));
+        sub.textContent =
+            `${u.jobs} job${u.jobs === 1 ? "" : "s"} · ${fmtH(cpuHours)} cpu-h · ${fmtH(memHours)} GiB-h` +
+            (u.disk_gb_s ? ` · ${fmtH(diskHours)} disk-GiB-h` : "");
+        wrapper.appendChild(sub);
+
+        const cols = document.createElement("div");
+        cols.style.display = "flex";
+        cols.style.justifyContent = "space-between";
+        cols.style.gap = "10px";
+        cols.style.fontSize = "0.75em";
+        const mkCol = (align) => {
+            const c = document.createElement("div");
+            c.style.display = "flex";
+            c.style.flexDirection = "column";
+            c.style.whiteSpace = "nowrap";
+            c.style.textAlign = align;
+            return c;
+        };
+        const addRow = (col, html) => {
+            const d = document.createElement("div");
+            d.innerHTML = html;
+            col.appendChild(d);
+        };
+
+        const utilCol = mkCol("left");
+        addRow(utilCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuUtil.toFixed(0)}%`);
+        addRow(utilCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memUtil.toFixed(0)}%`);
+        if (u.disk_gb_s) {
+            addRow(utilCol, `<span style="color:${DISK_COLOR}">■</span> disk ${diskUtil.toFixed(0)}%`);
+        }
+        cols.appendChild(utilCol);
+
+        const stallCol = mkCol("right");
+        stallCol.style.opacity = "0.7";
+        addRow(stallCol, `cpu stalled ${cpuStall.toFixed(0)}%`);
+        addRow(stallCol, `mem stalled ${memStall.toFixed(0)}%` + (memFull >= 1 ? ` (full ${memFull.toFixed(0)}%)` : ""));
+        addRow(stallCol, `io stalled ${ioStall.toFixed(0)}%` + (ioFull >= 1 ? ` (full ${ioFull.toFixed(0)}%)` : ""));
+        cols.appendChild(stallCol);
+
+        wrapper.appendChild(cols);
         statusContainer.appendChild(wrapper);
     }
 
@@ -1749,7 +1895,7 @@
             nameLine.style.whiteSpace = "normal";
             nameLine.style.overflow = "hidden";
             nameLine.style.maxWidth = "100%";
-            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
+            nameLine.style.height = "3.9em"; // Reserve space for 3 lines
             nameLine.style.lineHeight = "1.3em";
             nameLine.style.textAlign = "left";
             widget.appendChild(nameLine);
@@ -1887,7 +2033,7 @@
                         statusEl.href = '#';
                         statusEl.addEventListener('click', (e) => {
                             e.preventDefault();
-                            toggleInfoRow(row, result.info, result.results, result.links);
+                            toggleInfoRow(row, result.info, result.results, result.links, result.ext?.storage_usage);
                         });
                     }
                     td.appendChild(statusEl);
@@ -1959,7 +2105,7 @@
 
             // unfold all for preview mode (nest_level = 0 in this case)
             if (nest_level === 0 && result.results.length > 0) {
-                toggleInfoRow(row, result.info, result.results, result.links);
+                toggleInfoRow(row, result.info, result.results, result.links, result.ext?.storage_usage);
             }
 
         });
@@ -1968,7 +2114,7 @@
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, sub_results = [], links = []) {
+    function toggleInfoRow(row, infoText, sub_results = [], links = [], storage_usage = null) {
         let nextRow = row.nextElementSibling;
 
         // Check if the next row is already an "info" row
@@ -2013,7 +2159,6 @@
                     let linkElement = document.createElement('a');
                     linkElement.href = link;
                     linkElement.target = "_blank"; // Open in a new tab
-                    linkElement.style.display = "block"; // Each link on a new line
 
                     if (!link.includes(base_url)) {
                         // External link: Show file name
@@ -2021,7 +2166,12 @@
                     } else {
                         linkElement.textContent = "Report";
                     }
-                    linksContainer.appendChild(linkElement);
+                    appendFileSize(linkElement, sizeForLink(link, storage_usage));
+
+                    // Each link, with its size, on a new line
+                    const line = document.createElement('div');
+                    line.appendChild(linkElement);
+                    linksContainer.appendChild(line);
                 });
 
                 infoCell.appendChild(linksContainer);
@@ -2338,7 +2488,7 @@
         let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
         addLabelsWidget(result.ext);
         if (nameParams.length > 1) {
-            addFileLinksWidget(result.links);
+            addFileLinksWidget(result.links, result.ext?.storage_usage);
             if (nameParams.length === 2) {
                 addStatisticsWidget(nameParams[1], result.duration * 1000)
             }
@@ -2346,6 +2496,7 @@
             addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
         addStorageUsageChartToStatus(result.ext?.storage_usage)
+        addPipelineUtilizationWidget(result.ext?.pipeline_utilization)
         addHostMetricsChart(result.ext?.metrics)
     }
 
@@ -2436,25 +2587,27 @@
 
         const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
 
+        const task0 = normalizeTaskName(nameParams[0]);
+        // S3 layout includes the normalized workflow name:
+        // <suffix>/<sha>/<normalized_workflow>/result_<job>.json
+        const workflowSegment = encodeURIComponent(task0);
+
         const fetchTasks = [];
         if (nameParams.length > 1) {
             const task1 = normalizeTaskName(nameParams[1]);
-            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
+            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/${workflowSegment}/result_${task1}.json`;
             fetchTasks.push(fetchJson(path1));
         }
 
-        const task0 = normalizeTaskName(nameParams[0]);
-        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
+        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/${workflowSegment}/result_${task0}.json`;
         fetchTasks.push(fetchJson(path0));
 
         // Run fetchJson calls in parallel
         const results = await Promise.all(fetchTasks);
 
         if (nameParams.length > 1) {
-            const { data, updated, status } = results[0]; // First request result
-            if (status === 403) {
-                return { error: 403, message: 'Report does not exist or expired' };
-            }
+            const { data, updated } = results[0]; // First request result
+            // A missing per-job report is not a missing report.
             if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
@@ -2503,7 +2656,7 @@
         let resultResult;
         try {
             resultResult = await fetchJson(
-                `${privateBaseUrl}/PRs/${encodeURIComponent(private_pr_number)}/${encodeURIComponent(private_sha)}/result_pr.json`
+                `${privateBaseUrl}/PRs/${encodeURIComponent(private_pr_number)}/${encodeURIComponent(private_sha)}/pr/result_pr.json`
             );
         } catch (e) {
             return { data: null, error: 'Downstream: proxy unreachable' };
@@ -2583,13 +2736,12 @@
                     // For single-level results, check json0 status
                     shouldContinue = ["running", "pending"].includes((runtimeCache?.json0?.status || '').toLowerCase());
                 } else if (nameParams?.length === 2) {
-                    // For two-level results, check json1 status (or json0 if json1 is null)
-                    if (runtimeCache?.json1) {
-                        shouldContinue = ["running", "pending"].includes((runtimeCache?.json1?.status || '').toLowerCase());
-                    } else {
-                        // If json1 is null, we might still be loading, so continue
-                        shouldContinue = true;
-                    }
+                    // For two-level results, check the status of the node actually rendered
+                    const target = runtimeCache?.json1 || getTargetResults(nameParams);
+                    // An unresolved target means nothing is loaded yet, so keep polling.
+                    shouldContinue = target
+                        ? ["running", "pending"].includes((target.status || '').toLowerCase())
+                        : true;
                 }
 
                 if (!shouldContinue) {
@@ -2747,6 +2899,21 @@
     });
 
     function createFavicon() {
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+        }
+        // Prefer a project-provided favicon deployed next to this page in the
+        // report bucket; fall back to a generated one if it's absent.
+        const img = new Image();
+        img.onload = () => { link.href = "favicon.png"; };
+        img.onerror = () => { link.href = generateFaviconDataURL(); };
+        img.src = "favicon.png";
+    }
+
+    function generateFaviconDataURL() {
         const width = 32;
         const height = 32;
         const lineColor = "rgb(0, 0, 0)";
@@ -2778,16 +2945,7 @@
         }
 
         // Convert canvas to Data URL (PNG format)
-        const faviconURL = canvas.toDataURL("image/png");
-
-        // Set the favicon dynamically
-        let link = document.querySelector("link[rel='icon']");
-        if (!link) {
-            link = document.createElement("link");
-            link.rel = "icon";
-            document.head.appendChild(link);
-        }
-        link.href = faviconURL;
+        return canvas.toDataURL("image/png");
     }
     createFavicon();
     </script>

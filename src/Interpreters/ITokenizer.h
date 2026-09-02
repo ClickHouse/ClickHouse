@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Common/assert_cast.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -11,6 +12,10 @@
 #include <base/FnTraits.h>
 #include <base/types.h>
 #include <fmt/format.h>
+
+#if USE_JIEBA
+#  include <Interpreters/JiebaSegmenter.h>
+#endif
 
 #if defined(__SSE2__)
 #  include <emmintrin.h>
@@ -31,9 +36,16 @@ public:
         SplitByNonAlpha,
         Ngrams,
         SplitByString,
+        SplitByRegexp,
         Array,
         SparseGrams,
         AsciiCJK,
+#if USE_JIEBA
+        Chinese,
+#endif
+#if USE_ICU
+        Icu,
+#endif
 #if USE_MECAB
         Japanese,
 #endif
@@ -327,6 +339,53 @@ private:
     std::vector<String> separators;
 };
 
+/// Parser extracting tokens which are separated by a regular expression.
+/// The regexp plays the role of the separator (like `splitByRegexp`): tokens are the pieces of text
+/// between successive matches. Empty pieces (produced by leading, trailing or consecutive separators) are
+/// not emitted, since empty tokens are useless for a text index.
+struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpTokenizer>
+{
+    explicit SplitByRegexpTokenizer(const String & regexp_);
+
+    static const char * getName() { return "splitByRegexp"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override;
+
+    bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
+    /// It reuses a single `MatchVec` across all tokens of the string, so - unlike a per-call `nextInString` -
+    /// it does not heap-allocate the RE2 match scratch for every emitted token. The buffer is a local, so the
+    /// method stays `const` and reentrant.
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * data, size_t length, Callback && callback) const
+    {
+        OptimizedRegularExpression::MatchVec matches;
+        size_t pos = 0;
+        size_t token_start = 0;
+        size_t token_length = 0;
+
+        while (pos < length && nextInStringImpl(data, length, pos, token_start, token_length, matches))
+            if (callback(data + token_start, token_length))
+                return;
+    }
+
+private:
+    /// Single split step, taking caller-owned RE2 match scratch so the hot path can reuse one buffer.
+    bool nextInStringImpl(
+        const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const;
+
+    String regexp_str;
+    /// `shared_ptr` (rather than a plain member) so that the tokenizer stays copyable for `clone`, since
+    /// `OptimizedRegularExpression` is non-copyable. The compiled regexp is immutable and safe to share.
+    std::shared_ptr<OptimizedRegularExpression> regexp;
+};
+
 /// Parser doing "no operation". Returns the entire input as a single token.
 struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 {
@@ -363,6 +422,25 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
     bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    /// Streams tokens straight to the callback instead of pulling one at a time via `nextInString`.
+    /// Emits the same tokens in the same order.
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+
+        Pos token_begin = nullptr;
+        Pos token_end = nullptr;
+        while (sparse_grams_iterator.get(token_begin, token_end))
+            if (callback(token_begin, static_cast<size_t>(token_end - token_begin)))
+                return;
+
+        previous_data = nullptr;
+        previous_len = 0;
+    }
 private:
     size_t min_gram_length;
     size_t max_gram_length;
@@ -443,6 +521,71 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+#if USE_JIEBA
+/// Parser segmenting Chinese text using the cppjieba library.
+/// Two granularities are supported:
+///   - "coarse_grained" (default): jieba's standard MP-segmentation result
+///   - "fine_grained": jieba's full segmentation (cutAll), enumerating overlapping word candidates
+struct ChineseTokenizer final : public ITokenizerHelper<ChineseTokenizer>
+{
+    explicit ChineseTokenizer(ChineseTokenizationGranularity granularity_)
+        : ITokenizerHelper(Type::Chinese)
+        , granularity(granularity_)
+    {
+    }
+
+    static const char * getName() { return "chinese"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override
+    {
+        return fmt::format("{}({})", getName(), granularity == ChineseTokenizationGranularity::Fine ? "fine_grained" : "coarse_grained");
+    }
+
+    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+    bool supportsStringLike() const override { return false; }
+    /// Hot-path methods bypass `nextInString` and invoke the segmenter directly with
+    /// per-call local state. `MergeTreeIndexText` shares one `ChineseTokenizer` between
+    /// concurrent aggregators and conditions, so the streaming `nextInString` iterator
+    /// (which would have to keep `tokens_cache` between calls) is not safe to use here.
+    void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override;
+    void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override;
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    ChineseTokenizationGranularity getGranularity() const { return granularity; }
+
+private:
+    ChineseTokenizationGranularity granularity;
+};
+#endif
+
+#if USE_ICU
+/// Tokenizer based on ICU's word break iteration (UAX #29). For scripts without whitespace between
+/// words (e.g. Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so such text is
+/// split into meaningful word tokens rather than single characters.
+struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
+{
+    explicit IcuTokenizer(String locale_) : ITokenizerHelper(Type::Icu), locale(std::move(locale_)) {}
+
+    static const char * getName() { return "icu"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override;
+
+    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    const String & getLocale() const { return locale; }
+
+private:
+    String locale;
+};
+#endif
+
 /// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
 /// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
 /// `nextInString` (see `Type::Japanese` below), so the concrete type is not needed here.
@@ -498,6 +641,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(split_by_string_tokenizer, data, length, callback);
             return;
         }
+        case ITokenizer::Type::SplitByRegexp:
+        {
+            const auto & split_by_regexp_tokenizer = assert_cast<const SplitByRegexpTokenizer &>(tokenizer);
+            split_by_regexp_tokenizer.forEachTokenImpl(data, length, callback);
+            return;
+        }
         case ITokenizer::Type::Array:
         {
             callback(data, length);
@@ -506,7 +655,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         case ITokenizer::Type::SparseGrams:
         {
             const auto & sparse_grams_tokenizer = assert_cast<const SparseGramsTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(sparse_grams_tokenizer, data, length, callback);
+            sparse_grams_tokenizer.forEachTokenImpl(data, length, callback);
             return;
         }
         case ITokenizer::Type::AsciiCJK:
@@ -515,6 +664,27 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
             return;
         }
+#if USE_JIEBA
+        case ITokenizer::Type::Chinese:
+        {
+            const auto & chinese_tokenizer = assert_cast<const ChineseTokenizer &>(tokenizer);
+            auto words = JiebaSegmenter::instance().tokenize({data, length}, chinese_tokenizer.getGranularity());
+            for (const auto & word : words)
+            {
+                if (callback(word.data(), word.size()))
+                    return;
+            }
+            return;
+        }
+#endif
+#if USE_ICU
+        case ITokenizer::Type::Icu:
+        {
+            const auto & icu_tokenizer = assert_cast<const IcuTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(icu_tokenizer, data, length, callback);
+            return;
+        }
+#endif
 #if USE_MECAB
         case ITokenizer::Type::Japanese:
             /// Dispatch through the base virtual `nextInString` so this header needn't see the

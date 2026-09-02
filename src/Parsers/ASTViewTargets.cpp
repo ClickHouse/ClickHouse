@@ -11,6 +11,7 @@
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
 
+#include <algorithm>
 #include <unordered_set>
 
 
@@ -31,6 +32,7 @@ namespace
             case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mysamples
             case ViewTarget::Inner:   return Keyword::INNER;   /// INNER ENGINE = MergeTree()
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
+            case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
             case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
         }
@@ -216,6 +218,30 @@ const ViewTarget * ASTViewTargets::tryGetTarget(ViewTarget::Kind kind) const
     return nullptr;
 }
 
+void ASTViewTargets::removeTarget(ViewTarget::Kind kind)
+{
+    for (auto it = targets.begin(); it != targets.end(); ++it)
+    {
+        if (it->kind == kind)
+        {
+            /// Detach the target's ASTs from `children` before erasing the target.
+            reset(it->inner_engine);
+            reset(it->inner_columns);
+            /// TODO: `table_ast` is registered in `children` only on some paths (JSON deserialization, clone),
+            /// so it can't be `reset` here; make `setTableASTWithQueryParams` register it always.
+            if (it->table_ast)
+            {
+                auto child = std::find_if(children.begin(), children.end(),
+                    [&](const ASTPtr & child_) { return child_.get() == it->table_ast.get(); });
+                if (child != children.end())
+                    children.erase(child);
+            }
+            targets.erase(it);
+            return;
+        }
+    }
+}
+
 ASTPtr ASTViewTargets::clone() const
 {
     auto res = make_intrusive<ASTViewTargets>(*this);
@@ -373,6 +399,17 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         target.kind = *kind_opt;
         if (!seen_kinds.insert(target.kind).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization; each kind may appear at most once", kind_str, i);
+        /// `ViewTarget::Inner` is kept only so that the UUID mappings of old DDL log entries still parse
+        /// (`CreateQueryUUIDs`); no `CREATE` syntax produces an `Inner` target any more, because `WINDOW VIEW`
+        /// - the only form with an `INNER ENGINE` / separately-specified inner table - was removed. Formatting
+        /// such a target back to SQL is lossy in both directions: `ASTCreateQuery::formatQueryImpl` emits an
+        /// `INNER ENGINE ...` clause the SQL parser no longer accepts, and drops everything else the target
+        /// carries. Reject it here instead of round-tripping it.
+        if (target.kind == ViewTarget::Inner)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTViewTargets JSON must not carry an 'Inner' target (at index {} in 'targets' array) during "
+                "AST JSON deserialization: `WINDOW VIEW` was removed and no `CREATE` query has an inner target",
+                i);
         if (target_obj->has("table_name"))
         {
             /// Restore the `StorageID` parts separately (see `writeJSON`); the database may be empty

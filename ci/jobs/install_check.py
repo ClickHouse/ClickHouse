@@ -107,20 +107,23 @@ exit 1
 
 
 def test_install_deb(image: DockerImage) -> List[Result]:
+    # `clickhouse-common-static-dbg` unpacks to 3.4 GiB and takes around 40 seconds to
+    # install - longer than everything else in a test together. `Install server deb`
+    # covers it, and the two tests below differ from it only in the way the server is
+    # started, so they install the same packages without the debug symbols.
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb -y
 bash -ex /packages/server_test.sh""",
         "Run server init.d (proxy to systemd)": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-{server,client,common}*deb -y
+apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_via_systemd_test.sh""",
         "Run server init.d": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-{server,client,common}*deb -y
+apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-keeper*deb -y
 bash -ex /packages/keeper_test.sh""",
-        "Install clickhouse binary in deb": r"bash -ex /packages/binary_test.sh",
     }
     return test_install(image, tests)
 
@@ -136,23 +139,42 @@ bash -ex /packages/server_test.sh""",
         "Install keeper rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
 bash -ex /packages/keeper_test.sh""",
-        "Install clickhouse binary in rpm": r"bash -ex /packages/binary_test.sh",
     }
     return test_install(image, tests)
 
 
-def test_install_tgz(image: DockerImage) -> List[Result]:
+def test_install_binary(image: DockerImage, name: str) -> List[Result]:
+    # By far the most disk hungry test of the job. The self-extracting archive unpacks in
+    # place, so `/packages/clickhouse` grows from 1 GiB to 4 GiB, and `clickhouse install`
+    # needs as much again: it hard links the binary into `/usr/bin` when it can, but
+    # `/packages` is a directory mounted from the host, so the link cannot be made and the
+    # binary is copied instead. On top of that, the installer refuses to start unless the
+    # whole size of the binary is available, which is why this test runs last - see `main`.
+    return test_install(image, {name: r"bash -ex /packages/binary_test.sh"})
+
+
+def test_install_tgz(image: DockerImage, debug_symbols: bool) -> List[Result]:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
 
     # `doinst.sh` copies the unpacked tree into the system instead of moving it, so a
     # package occupies twice its size - 6.8 GiB for `clickhouse-common-static-dbg` -
     # until the tree is removed. These are by far the most disk hungry tests of the
-    # job, and they used to fail with `No space left on device`.
+    # job, and they used to fail with `No space left on device`. The debug symbols also
+    # take more than a minute to install, and the same tarballs are installed in both
+    # images, so unpack them only in the first one - see `main`.
+    server_packages = (
+        "clickhouse-{common,client,server}*tgz"
+        if debug_symbols
+        else "clickhouse-{common-static,client,server}-[0-9]*tgz"
+    )
+    keeper_packages = (
+        "clickhouse-keeper*tgz" if debug_symbols else "clickhouse-keeper-[0-9]*tgz"
+    )
     tests = {
         f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
-for pkg in /packages/clickhouse-{common,client,server}*tgz; do
+for pkg in /packages/@PACKAGES@; do
     package=${pkg%-*}
     package=${package##*/}
     tar xf "$pkg"
@@ -160,17 +182,17 @@ for pkg in /packages/clickhouse-{common,client,server}*tgz; do
     rm -rf "/${package:?}"
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
-bash -ex /packages/server_test.sh""",
+bash -ex /packages/server_test.sh""".replace("@PACKAGES@", server_packages),
         f"Install keeper tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
-for pkg in /packages/clickhouse-keeper*tgz; do
+for pkg in /packages/@PACKAGES@; do
     package=${pkg%-*}
     package=${package##*/}
     tar xf "$pkg"
     "/$package/install/doinst.sh" $CONFIGURE
     rm -rf "/${package:?}"
 done
-bash -ex /packages/keeper_test.sh""",
+bash -ex /packages/keeper_test.sh""".replace("@PACKAGES@", keeper_packages),
         f"Install tgz over a symlinked config in {image}": r"""#!/bin/bash -ex
 # An installation may keep its config elsewhere and link to it from the installed path.
 # The installer has to write through such a symlink instead of replacing it.
@@ -208,17 +230,107 @@ done
         f"Install tgz over a dangling symlink in {image}": r"""#!/bin/bash -ex
 # A symlink whose target does not exist yet has to survive the installation as well: `-e`
 # follows the link, so the installer must test for the link itself before testing existence.
+# There is no destination inode to write through in this case, so the installed file has to
+# get the mode from the package - a `umask`-derived mode would install a binary
+# non-executable - and the ownership every installed file has.
 mkdir -p /etc/clickhouse-client /shared
 ln -s /shared/config.xml /etc/clickhouse-client/config.xml
 for pkg in /packages/clickhouse-client*tgz; do
     package=${pkg%-*}
     package=${package##*/}
     tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    # A restrictive `umask` makes a mode that comes from the installation instead of from the
+    # package visible in the assertion below.
+    umask 077
     "/$package/install/doinst.sh"
 done
 [ -L /etc/clickhouse-client/config.xml ]
 [ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
-[ -s /shared/config.xml ]""",
+[ -s /shared/config.xml ]
+[ "$(stat -c %a /shared/config.xml)" = "$mode" ]
+[ "$(stat -c %U:%G /shared/config.xml)" = "root:root" ]""",
+        f"Install tgz over a chain of dangling symlinks in {image}": r"""#!/bin/bash -ex
+# A destination symlink may point at another symlink, and writing through the destination
+# followed the whole chain, so the installer has to create only the final referent and keep
+# every level of the indirection, not just the first one. The hops here are relative, so that
+# a hop resolved against the wrong directory is caught as well.
+mkdir -p /etc/clickhouse-client /shared /real
+ln -s ../../shared/config.xml /etc/clickhouse-client/config.xml
+ln -s ../real/config.xml /shared/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    umask 077
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "../../shared/config.xml" ]
+[ -L /shared/config.xml ]
+[ "$(readlink /shared/config.xml)" = "../real/config.xml" ]
+[ -f /real/config.xml ] && [ ! -L /real/config.xml ]
+[ -s /real/config.xml ]
+[ "$(stat -c %a /real/config.xml)" = "$mode" ]
+[ "$(stat -c %U:%G /real/config.xml)" = "root:root" ]""",
+        f"Install tgz over a dangling symlink with a backslash in the target in {image}": r"""#!/bin/bash -ex
+# The installer runs under `/bin/sh`, which is `dash` on Debian, and `dash`'s `echo` expands
+# backslash escapes: `\t` in a resolved link target would come back as a tab. The resolved
+# path has to be returned byte-for-byte, so a target with a backslash lands at the literal
+# path instead of failing or landing at a mangled one.
+mkdir -p /etc/clickhouse-client '/shared/a\tb'
+ln -s '/shared/a\tb/config.xml' /etc/clickhouse-client/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    umask 077
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = '/shared/a\tb/config.xml' ]
+[ -s '/shared/a\tb/config.xml' ]
+[ "$(stat -c %a '/shared/a\tb/config.xml')" = "$mode" ]
+[ "$(stat -c %U:%G '/shared/a\tb/config.xml')" = "root:root" ]""",
+        f"Install tgz over a symlink into a missing directory in {image}": r"""#!/bin/bash -ex
+# A destination pointing into a directory that does not exist is an error the administrator
+# has to see: creating that directory would give it the `umask` of the installation and no
+# defined ownership, which can leave the installed file unreachable while the installation
+# reports success. Writing through the link failed in this case too, so the installer keeps
+# failing instead of materializing a half-usable tree.
+mkdir -p /etc/clickhouse-client
+ln -s /missing/config.xml /etc/clickhouse-client/config.xml
+# Not /tmp: the test image boots systemd, which runs `systemd-tmpfiles` with `D /tmp`
+# concurrently with this script and can wipe the log between writing and reading it.
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    ! "/$package/install/doinst.sh" > /root/install.log 2>&1
+done
+grep -q "the directory /missing does not exist" /root/install.log
+[ ! -e /missing ]
+[ -L /etc/clickhouse-client/config.xml ]""",
+        f"Install tgz over a symlink loop in {image}": r"""#!/bin/bash -ex
+# A chain of symlinks that never reaches a real path cannot be installed. Writing through
+# the destination used to fail with `ELOOP`; following the chain has to fail just as
+# loudly instead of spinning forever, and it has to leave the links as they were.
+mkdir -p /etc/clickhouse-client /shared
+ln -s /shared/config.xml /etc/clickhouse-client/config.xml
+ln -s /etc/clickhouse-client/config.xml /shared/config.xml
+# Not /tmp: the test image boots systemd, which runs `systemd-tmpfiles` with `D /tmp`
+# concurrently with this script and can wipe the log between writing and reading it.
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    ! "/$package/install/doinst.sh" > /root/install.log 2>&1
+done
+grep -q "Too many levels of symbolic links" /root/install.log
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
+[ "$(readlink /shared/config.xml)" = "/etc/clickhouse-client/config.xml" ]""",
     }
     return test_install(image, tests)
 
@@ -236,6 +348,17 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
         )
         print(f"Running docker container: [{run_command}]")
         container_id = Shell.get_output(run_command, verbose=True, strict=True)
+        # The image boots systemd, whose `systemd-tmpfiles-setup.service` unlinks the dnf lock
+        # files (`/usr/lib/tmpfiles.d/dnf.conf`). Wait for the bus first: while it is down
+        # `systemctl` cannot reach systemd, so a gate built on it alone silently does nothing.
+        Shell.check(
+            f"docker exec {container_id} bash -c '"
+            f"for _ in $(seq 1 600); do systemctl show -p Version --value >/dev/null 2>&1 "
+            f"&& break; sleep 0.1; done; "
+            f"systemctl start systemd-tmpfiles-setup.service'",
+            verbose=True,
+            strict=True,
+        )
         test_script_path = TEMP_PATH / "install.sh"
         test_script_path.write_text(command)
         # Shell.check(f"chmod +x {test_script_path}")
@@ -307,8 +430,12 @@ def main():
 
     args = parse_args()
 
-    deb_image = DockerImage.get_docker_image(DEB_IMAGE).pull_image()
-    rpm_image = DockerImage.get_docker_image(RPM_IMAGE).pull_image()
+    deb_image = DockerImage.get_docker_image(DEB_IMAGE).pull_image(
+        timeout_s=120, retries=2
+    )
+    rpm_image = DockerImage.get_docker_image(RPM_IMAGE).pull_image(
+        timeout_s=120, retries=2
+    )
 
     Shell.check(f"chmod +x {Utils.cwd()}/ci/tmp/clickhouse", verbose=True, strict=True)
 
@@ -326,8 +453,27 @@ def main():
         free_packages("*.rpm")
     if args.tgz:
         print("Test tgz")
-        test_results.extend(test_install_tgz(deb_image))
-        test_results.extend(test_install_tgz(rpm_image))
+        # The tgz packages are the same on both distributions, so the debug symbols are
+        # installed once - the second run only checks that `doinst.sh` works outside of
+        # Debian, for which the debug symbols add nothing but two minutes.
+        test_results.extend(test_install_tgz(deb_image, debug_symbols=True))
+        test_results.extend(test_install_tgz(rpm_image, debug_symbols=False))
+        free_packages("*.tgz*")
+
+    # The binary tests need nothing but `/packages/clickhouse`, and they need around 7 GiB
+    # of disk for it, more than twice as much as any other test here. The runners hand the
+    # job as little as 4 GiB of free space, so run these tests once every package has been
+    # deleted, which is worth 7 GiB on its own. Keeping the binary packed until the very
+    # end leaves 3 GiB more for the tgz tests as well.
+    print("Test the binary")
+    if args.deb:
+        test_results.extend(
+            test_install_binary(deb_image, "Install clickhouse binary in deb")
+        )
+    if args.rpm:
+        test_results.extend(
+            test_install_binary(rpm_image, "Install clickhouse binary in rpm")
+        )
 
     Result.create_from(
         results=test_results,

@@ -138,7 +138,9 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     {
         format->resetParser();
         /// Cancellation aborts the whole execution; it is not a recoverable per-input parse error.
-        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+        /// A cancelled `QueryStatus` reports an arbitrary exception, so ask the callback rather than
+        /// match on the code, which for a callback-less caller `on_error` must keep handling.
+        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || (is_cancelled && is_cancelled()))
             throw;
         return on_error(result_columns, checkpoints, e);
     }
