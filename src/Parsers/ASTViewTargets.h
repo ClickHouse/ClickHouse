@@ -11,7 +11,7 @@ namespace DB
 class ASTColumns;
 class ASTStorage;
 
-/// Information about target tables (external or inner) of a materialized view or a window view or a TimeSeries table.
+/// Information about target tables (external or inner) of a materialized view or a TimeSeries table.
 /// See ASTViewTargets for more details.
 struct ViewTarget
 {
@@ -22,14 +22,12 @@ struct ViewTarget
 
     enum Kind
     {
-        /// If `kind == ViewTarget::To` then `ViewTarget` contains information about the "TO" table of a materialized view or a window view:
+        /// If `kind == ViewTarget::To` then `ViewTarget` contains information about the "TO" table of a materialized view:
         ///     CREATE MATERIALIZED VIEW db.mv_name {TO [db.]to_target | ENGINE to_engine} AS SELECT ...
-        /// or
-        ///     CREATE WINDOW VIEW db.wv_name {TO [db.]to_target | ENGINE to_engine} AS SELECT ...
         To,
 
-        /// If `kind == ViewTarget::Inner` then `ViewTarget` contains information about the "INNER" table of a window view:
-        ///     CREATE WINDOW VIEW db.wv_name {INNER ENGINE inner_engine} AS SELECT ...
+        /// If `kind == ViewTarget::Inner` then `ViewTarget` contains information about a separately-specified inner table.
+        /// It was produced by the INNER ENGINE clause of the removed WINDOW VIEW; kept so that old DDL log entries still parse.
         Inner,
 
         /// The "samples" table for a TimeSeries table, contains samples.
@@ -74,10 +72,6 @@ struct ViewTarget
 /// For example, for a materialized view:
 ///     CREATE MATERIALIZED VIEW db.mv_name [TO [db.]to_target | ENGINE to_engine] AS SELECT ...
 /// this class contains information about the "TO" table: its name and database (if it's external), its UUID and engine (if it's inner).
-///
-/// For a window view:
-///     CREATE WINDOW VIEW db.wv_name [TO [db.]to_target | ENGINE to_engine] [INNER ENGINE inner_engine] AS SELECT ...
-/// this class contains information about both the "TO" table and the "INNER" table.
 class ASTViewTargets : public IAST
 {
 public:
