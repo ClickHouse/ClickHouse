@@ -7485,7 +7485,7 @@ For the `fair` workload scheduler: once the query crosses any of the `weight_low
 For the `fair` workload scheduler: once the query has been running (wall-clock) for this many seconds, its weight is lowered by `weight_lowering_factor`. `0` disables the age threshold.
 )", BETA) \
     DECLARE(Float, weight_lowering_cpu_seconds, 0, R"(
-For the `fair` workload scheduler: once the query has attained this many CPU-seconds, its weight is lowered by `weight_lowering_factor`. Applies to CPU resources. `0` disables the CPU threshold.
+For the `fair` workload scheduler: once the query has attained this many CPU-seconds, its weight is lowered by `weight_lowering_factor`. Applies to CPU resources. `0` disables the CPU threshold. Attained CPU is derived from the scheduler's per-request cost, which reflects real CPU consumption only under CPU slot preemption (`cpu_slot_preemption = 1`, the default); with preemption disabled a fixed cost is charged once per acquired CPU slot, so this threshold then counts acquired slots rather than real CPU-seconds. Use `weight_lowering_age_seconds` for a preemption-independent threshold.
 )", BETA) \
     DECLARE(Float, weight_lowering_io_bytes, 0, R"(
 For the `fair` workload scheduler: once the query has attained this many bytes of IO, its weight is lowered by `weight_lowering_factor`. Applies to IO resources. `0` disables the IO threshold.
