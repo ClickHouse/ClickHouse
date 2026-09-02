@@ -2,7 +2,9 @@
 
 #include <base/unaligned.h>
 
+#include <algorithm>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 #if defined(__AVX2__)
@@ -711,6 +713,14 @@ static_assert(base58EncodeLimbs(BASE58_ENCODE_STACK_MAX_BODY + 1) > BASE58_STACK
 static_assert(base58DecodeLimbs(BASE58_DECODE_STACK_MAX_BODY) <= BASE58_STACK_LIMBS);
 static_assert(base58DecodeLimbs(BASE58_DECODE_STACK_MAX_BODY + 1) > BASE58_STACK_LIMBS);
 
+/// The short-path bounds. Eight bytes is the largest body a `UInt64` holds; eleven characters is the
+/// encoded length of eight bytes, and the only length that can exceed one, since 58^10 <= 2^64 - 1 < 58^11.
+constexpr size_t BASE58_SHORT_ENCODE_MAX_BODY = sizeof(UInt64);
+constexpr size_t BASE58_SHORT_DECODE_MAX_BODY = 11;
+
+static_assert(power58(BASE58_SHORT_DECODE_MAX_BODY - 1) <= std::numeric_limits<UInt64>::max());
+static_assert(power58(BASE58_SHORT_DECODE_MAX_BODY - 1) > std::numeric_limits<UInt64>::max() / 58);
+
 /// `decodeBase58` hands the limb array's bytes back as its own output, so the layout is part of the
 /// algorithm and is little-endian on every host, not just the ones where that is the native order.
 /// Unaligned because the limbs may live in a byte buffer.
@@ -722,6 +732,79 @@ UInt32 loadLimb(const UInt8 * limbs, size_t i)
 void storeLimb(UInt8 * limbs, size_t i, UInt32 value)
 {
     unalignedStoreLittleEndian<UInt32>(limbs + i * sizeof(UInt32), value);
+}
+
+
+/// A body that fits a `UInt64` needs none of the limb apparatus above: the conversion is repeated divmod
+/// in a register. The digits are written least significant first and then reversed through the alphabet
+/// in place, exactly as the general path does, so at most 11 digits land inside the `2 * body + 1` bound.
+size_t encodeBase58Short(const UInt8 * src, size_t body_length, UInt8 * dst, const char * alphabet)
+{
+    UInt64 value = 0;
+    for (size_t i = 0; i < body_length; ++i)
+        value = (value << 8) | src[i];
+
+    size_t idx = 0;
+    while (value > 0)
+    {
+        const UInt64 quotient = value / 58;
+        dst[idx] = static_cast<UInt8>(value - quotient * 58);
+        ++idx;
+        value = quotient;
+    }
+
+    size_t c_idx = idx >> 1;
+    for (size_t i = 0; i < c_idx; ++i)
+    {
+        char s = alphabet[dst[i]];
+        dst[i] = alphabet[dst[idx - (i + 1)]];
+        dst[idx - (i + 1)] = s;
+    }
+
+    if ((idx & 1))
+        dst[c_idx] = alphabet[dst[c_idx]];
+
+    return idx;
+}
+
+/// The mirror of `encodeBase58Short`. An empty result means this path does not handle the input - an
+/// invalid character, or eleven characters above a `UInt64` - and nothing has been written to `dst`, so
+/// the caller falls through to the general path, which handles both.
+std::optional<size_t> decodeBase58Short(const UInt8 * src, size_t body_length, UInt8 * dst, const Int8 * map_digits)
+{
+    const size_t always_fits = body_length < BASE58_SHORT_DECODE_MAX_BODY ? body_length : BASE58_SHORT_DECODE_MAX_BODY - 1;
+    UInt64 value = 0;
+    for (size_t i = 0; i < always_fits; ++i)
+    {
+        const Int8 digit = map_digits[src[i]];
+        if (digit < 0)
+            return {};
+        value = value * 58 + static_cast<UInt64>(digit);
+    }
+
+    if (body_length == BASE58_SHORT_DECODE_MAX_BODY)
+    {
+        const Int8 digit = map_digits[src[BASE58_SHORT_DECODE_MAX_BODY - 1]];
+        if (digit < 0)
+            return {};
+        const UInt64 last = static_cast<UInt64>(digit);
+        if (value > (std::numeric_limits<UInt64>::max() - last) / 58)
+            return {};
+        value = value * 58 + last;
+    }
+
+    /// A `UInt64` already IS the little-endian byte form, so this only picks out the significant bytes
+    /// and reverses them, as the general path does.
+    size_t idx = 0;
+    while (value > 0)
+    {
+        dst[idx] = static_cast<UInt8>(value & 0xFF);
+        ++idx;
+        value >>= 8;
+    }
+
+    std::reverse(dst, dst + idx);
+    return idx;
 }
 
 } // anonymous namespace
@@ -744,8 +827,12 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
         ++src;
     }
 
-    /// The accumulator is the input so far as `UInt32` limbs of radix 58^5, least significant limb first.
     const size_t body_length = src_length - processed;
+
+    if (body_length <= BASE58_SHORT_ENCODE_MAX_BODY)
+        return zeros + encodeBase58Short(src, body_length, dst, base58_encoding_alphabet);
+
+    /// The accumulator is the input so far as `UInt32` limbs of radix 58^5, least significant limb first.
     UInt32 stack_limbs[BASE58_STACK_LIMBS];
     UInt8 * limbs = body_length > BASE58_ENCODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_limbs);
     size_t limb_count = 0;
@@ -814,16 +901,22 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
     /// limbs are IN `dst`: limbs 0 .. i-1 occupy `dst[0, 4 * i)` and limb i's digits start at 5 * i.
     if (limb_count)
     {
-        size_t top_digits = 1;
-        for (UInt32 rest = loadLimb(limbs, limb_count - 1) / 58; rest; rest /= 58)
+        UInt32 top = loadLimb(limbs, limb_count - 1);
+        const size_t top_base = BASE58_ENCODE_LIMB_DIGITS * (limb_count - 1);
+        size_t top_digits = 0;
+        do
+        {
+            const UInt32 quotient = top / 58;
+            dst[top_base + top_digits] = static_cast<UInt8>(top - quotient * 58);
+            top = quotient;
             ++top_digits;
-        idx = BASE58_ENCODE_LIMB_DIGITS * (limb_count - 1) + top_digits;
+        } while (top > 0);
+        idx = top_base + top_digits;
 
-        for (size_t i = limb_count; i-- > 0;)
+        for (size_t i = limb_count - 1; i-- > 0;)
         {
             UInt32 limb = loadLimb(limbs, i);
-            const size_t digits_here = i + 1 == limb_count ? top_digits : BASE58_ENCODE_LIMB_DIGITS;
-            for (size_t d = 0; d < digits_here; ++d)
+            for (size_t d = 0; d < BASE58_ENCODE_LIMB_DIGITS; ++d)
             {
                 const UInt32 quotient = limb / 58;
                 dst[BASE58_ENCODE_LIMB_DIGITS * i + d] = static_cast<UInt8>(limb - quotient * 58);
@@ -886,9 +979,16 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         ++src;
     }
 
+    const size_t body_length = src_length - processed;
+
+    if (body_length <= BASE58_SHORT_DECODE_MAX_BODY)
+    {
+        if (const std::optional<size_t> bytes = decodeBase58Short(src, body_length, dst, map_digits))
+            return zeros + *bytes;
+    }
+
     /// The accumulator is the characters so far as `UInt32` limbs of base 2^32, least significant first -
     /// byte for byte the little-endian form the result needs, so only the byte reversal is left at the end.
-    const size_t body_length = src_length - processed;
     UInt32 stack_limbs[BASE58_STACK_LIMBS];
     UInt8 * limbs = body_length > BASE58_DECODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_limbs);
     size_t limb_count = 0;

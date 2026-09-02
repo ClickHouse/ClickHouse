@@ -1,4 +1,11 @@
 <test>
+    <!-- Bodies short enough to be one register. Nothing at 32 bytes or above amortises the generic path's
+         per-call setup little enough to show a change in it, so these are the only rows that can. -->
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Encode(randomString(3)))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(3))))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Encode(randomString(8)))</query>
+    <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(8))))</query>
+
     <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Encode(randomString(32)))</query>
     <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Encode(randomString(64)))</query>
     <query>SELECT count() FROM numbers(500000) WHERE NOT ignore(base58Decode(base58Encode(randomString(33))))</query>

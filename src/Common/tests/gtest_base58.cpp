@@ -356,6 +356,39 @@ TEST(Base58, Generic)
     }
 }
 
+/// Eleven characters is the only body length whose value may exceed a `UInt64`, since
+/// 58^10 <= 2^64 - 1 < 58^11, so it is the only length `decodeBase58Short` can decline for size. Such a
+/// body must reach the general path and decode, not be rejected as invalid. The sweep above cannot reach
+/// this: the values live in [2^64, 58^11), which is 0.14% of the nine-byte range, so a nine-byte body
+/// encodes to twelve or more characters almost always. Each string below is that boundary written out.
+TEST(Base58, GenericElevenCharacterBoundary)
+{
+    for (std::string_view encoded : {
+             "21111111111", /// 58^10, the smallest eleven-character value, and it still fits a `UInt64`
+             "jpXCZedGfVQ", /// 2^64 - 1, the largest value the short path may hold
+             "jpXCZedGfVR", /// 2^64, the smallest it may not
+             "jpXCZedGfVS", /// 2^64 + 1
+             "sQm6nKp8qFD", /// midway between 2^64 and 58^11
+             "zzzzzzzzzzz", /// 58^11 - 1, the largest eleven-character value
+         })
+    {
+        const std::string expected = referenceDecode(std::string(encoded));
+        ASSERT_FALSE(expected.empty()) << "reference rejected " << encoded;
+
+        std::vector<UInt8> decoded(encoded.size() + GUARD_SIZE, GUARD_BYTE);
+        const auto decoded_size
+            = decodeBase58(reinterpret_cast<const UInt8 *>(encoded.data()), encoded.size(), decoded.data());
+        ASSERT_TRUE(decoded_size.has_value()) << encoded << " was rejected";
+        ASSERT_EQ(std::string(reinterpret_cast<const char *>(decoded.data()), *decoded_size), expected) << encoded;
+        expectGuardIntact(decoded, expected.size(), "decodeBase58");
+    }
+
+    /// Declining for size and rejecting an invalid character leave the same empty result, so the general
+    /// path must still reject at this length.
+    UInt8 out[16];
+    EXPECT_FALSE(decodeBase58(reinterpret_cast<const UInt8 *>("jpXCZedGfV0"), 11, out).has_value());
+}
+
 /// The callback fires on accumulated inner-loop work, so how often it fires must not depend on how many
 /// input elements one iteration consumes. Each pass adds `limb_count * CHUNK * <limb width>` to a counter
 /// that resets to zero on reaching the threshold, discarding the overshoot: an exact integer function of
