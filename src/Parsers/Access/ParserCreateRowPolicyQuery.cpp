@@ -420,6 +420,8 @@ In the `TO` section you can provide a list of users and roles this policy should
 
 Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
+Roles named in the `TO` section, including those after `ALL EXCEPT`, are matched against the roles enabled in the current session, not against every role granted to the user, so `SET ROLE` can change which policies apply.
+
 ## AS Clause {#as-clause}
 
 It's allowed to have more than one policy enabled on the same table for the same user at one time. So we need a way to combine the conditions from multiple policies.
@@ -440,8 +442,8 @@ A policy can be defined as restrictive as an alternative. Restrictive policies a
 Here is the general formula:
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the permissive policies that apply to the user have non-zero conditions) AND
+                 (all of the restrictive policies that apply to the user have non-zero conditions)
 ```
 
 For example, the following policies:
