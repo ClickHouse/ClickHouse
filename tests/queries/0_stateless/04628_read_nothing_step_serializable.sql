@@ -20,7 +20,7 @@ CREATE TABLE t_read_nothing_types
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, and the functional-test
 -- profile sets it nonzero, so pin it off. Trivial-count would fold the aggregation away.
-SET make_distributed_plan = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+SET make_distributed_plan = 1, enable_parallel_replicas = 0,
     distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0,
     max_rows_to_group_by = 0, optimize_trivial_count_query = 0;
 

@@ -2,6 +2,7 @@
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
@@ -46,6 +47,16 @@ namespace
     /// returns null if `type` is not one of the plain identifier types supported by the generator.
     ASTPtr makeHashExpressionForType(const IDataType & type, ASTs arguments)
     {
+        /// For a LowCardinality type the hash is calculated for the dictionary type, and the result
+        /// is dictionary-encoded right in the generator expression, so that the expression's type
+        /// matches the column's type and identifiers stay dictionary-encoded on every path.
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+        {
+            if (auto nested_expression = makeHashExpressionForType(*low_cardinality_type->getDictionaryType(), std::move(arguments)))
+                return makeASTFunction("toLowCardinality", std::move(nested_expression));
+            return nullptr;
+        }
+
         WhichDataType which(type);
 
         if (which.isUInt64())
@@ -95,7 +106,7 @@ ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const Stor
         "{}: An expression generating identifiers must be specified explicitly for the {} column of type {} - "
         "either as a DEFAULT expression of that column or in the 'id_generator' setting. "
         "An expression can be chosen automatically only for types UInt64, UInt128, UUID, FixedString(16), "
-        "and tuples of two of those types",
+        "the same types wrapped in LowCardinality, and tuples of two of those types",
         table_id.getNameForLogs(), TimeSeriesColumnNames::ID, id_type->getName());
 }
 

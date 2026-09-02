@@ -27,8 +27,14 @@ LOCAL = "/local/api/v1"
 
 EVALUATION_TIME = 140
 
-# The endpoints that derive their answer from the inner tables of a TimeSeries table.
-METADATA_ENDPOINTS = [("series", {"match[]": "m"}), ("labels", {}), ("metadata", {})]
+# The endpoints that derive their answer from the inner tables of a TimeSeries table: the path
+# under /api/v1, the name the refusal spells, and the parameters.
+METADATA_ENDPOINTS = [
+    ("series", "/api/v1/series", {"match[]": "m"}),
+    ("labels", "/api/v1/labels", {}),
+    ("label/host/values", "/api/v1/label/<name>/values", {}),
+    ("metadata", "/api/v1/metadata", {}),
+]
 
 FILTERED_USERS = {
     # The short name matches from the default database, the full name from anywhere.
@@ -118,12 +124,12 @@ def metadata_response(endpoint, params, user=None):
     )
 
 
-def assert_fails_closed(response, endpoint, reason):
+def assert_fails_closed(response, endpoint_name, reason):
     assert response.status_code == 400, response.text
     body = response.json()
     assert body["status"] == "error", body
     assert (
-        f"The Prometheus /api/v1/{endpoint} endpoint is not supported on table"
+        f"The Prometheus {endpoint_name} endpoint is not supported on table"
         in body["error"]
     ), body["error"]
     assert reason in body["error"], body["error"]
@@ -172,21 +178,23 @@ def test_row_policy_leaves_the_promql_answer_unchanged(promql, expected_series):
         assert query(LOCAL, promql) == unfiltered_local
 
 
-@pytest.mark.parametrize("endpoint, params", METADATA_ENDPOINTS)
-def test_metadata_endpoints_fail_closed_under_a_row_policy(endpoint, params):
+@pytest.mark.parametrize("endpoint, endpoint_name, params", METADATA_ENDPOINTS)
+def test_metadata_endpoints_fail_closed_under_a_row_policy(
+    endpoint, endpoint_name, params
+):
     assert metadata_response(endpoint, params).status_code == 200
     with restrictive_row_policies():
         assert_fails_closed(
             metadata_response(endpoint, params),
-            endpoint,
+            endpoint_name,
             "while a row policy applies to it",
         )
     assert metadata_response(endpoint, params).status_code == 200
 
 
-@pytest.mark.parametrize("endpoint, params", METADATA_ENDPOINTS)
+@pytest.mark.parametrize("endpoint, endpoint_name, params", METADATA_ENDPOINTS)
 def test_metadata_endpoints_fail_closed_under_additional_table_filters(
-    endpoint, params
+    endpoint, endpoint_name, params
 ):
     with filtered_users():
         # The filter is in force for these users: an ordinary SELECT sees nothing through it.
@@ -197,7 +205,7 @@ def test_metadata_endpoints_fail_closed_under_additional_table_filters(
         for user in ("prom_filter_short", "prom_filter_full"):
             assert_fails_closed(
                 metadata_response(endpoint, params, user),
-                endpoint,
+                endpoint_name,
                 "with an additional_table_filters entry for it",
             )
         assert (

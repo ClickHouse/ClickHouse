@@ -1,5 +1,5 @@
 inner tags table columns:
-`id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))), `metric_name` LowCardinality(String), `job_column` String, `instance_column` String, `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job_column` String, `instance_column` String, `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 stored tags:
 http_requests	crawler	host1:8080	{'__name__':'http_requests','instance':'host1:8080','job':'crawler','region':'eu'}
 http_requests	crawler	host2:8080	{'__name__':'http_requests','instance':'host2:8080','job':'crawler'}

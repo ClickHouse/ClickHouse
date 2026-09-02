@@ -1,5 +1,6 @@
-"""Surfaces that cannot merge shards - the inner-table readers /api/v1/series, /labels, /metadata
-and remote read with its node-local counter - each refuse a Distributed target."""
+"""Surfaces that cannot merge shards - the inner-table readers /api/v1/series, /labels,
+/label/<name>/values, /metadata and remote read with its node-local counter - each refuse a
+Distributed target."""
 
 import json
 
@@ -130,6 +131,11 @@ def test_series_endpoint_refuses_a_distributed_target():
 def test_labels_endpoint_refuses_a_distributed_target():
     assert get_answer(f"{LOCAL}/labels") == ["__name__", "host", "job"]
     assert_refused(f"{DIST}/labels", "/api/v1/labels")
+
+
+def test_label_values_endpoint_refuses_a_distributed_target():
+    assert get_answer(f"{LOCAL}/label/host/values") == ["h1", "h2", "h3", "h4"]
+    assert_refused(f"{DIST}/label/host/values", "/api/v1/label/<name>/values")
 
 
 def test_metadata_endpoint_refuses_a_distributed_target():

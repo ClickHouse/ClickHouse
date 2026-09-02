@@ -85,7 +85,6 @@ SET allow_statistic_optimize = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET distributed_plan_execute_locally = 1;
 SET enable_cascades_optimizer = 1;
 -- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps

@@ -53,10 +53,10 @@ private:
     size_t new_indices_observed = 0;
 };
 
-/// Preliminary per-stream deduplication (e.g. in front of a set fill, see `CreatingSetStep`) pays off
-/// only when it removes rows: the consumer deduplicates anyway, so on mostly-unique input the transform
-/// removes almost nothing while its hash table duplicates the memory of the structure being filled
-/// downstream.
+/// Preliminary per-stream deduplication (the preliminary `DISTINCT`, see `DistinctStep`, or the
+/// pre-deduplication in front of a set fill, see `CreatingSetStep`) pays off only when it removes
+/// rows: the consumer deduplicates anyway, so on mostly-unique input the transform removes almost
+/// nothing while its hash table duplicates the memory of the structure being filled downstream.
 ///
 /// This controller accumulates, over all chunks seen so far, how many rows survived deduplication.
 /// Once enough chunks have been observed for the rate to be meaningful, it is checked after every
@@ -165,6 +165,10 @@ private:
     /// rows need to be checked for distinctness.
     /// Returns {mask, new_indices_count}.
     std::pair<IColumn::Filter, size_t> buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows);
+
+    /// Feed the observed chunk to the abandon controller and, once it abandons, free the accumulated
+    /// state: the remaining chunks then pass through untouched. A no-op when abandoning is not allowed.
+    void maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows);
 };
 
 }

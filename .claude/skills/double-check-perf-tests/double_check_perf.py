@@ -53,11 +53,19 @@ from typing import Optional
 REPO = "ClickHouse/ClickHouse"
 
 # Public S3 layout used by CI:
-#   PRs:     clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/<build_type>/clickhouse
-#   master:  clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/<sha>/<build_type>/clickhouse
+#   PRs:     clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/pr/<build_type>/clickhouse
+#   master:  clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/<sha>/masterci/<build_type>/clickhouse
 BUILDS_BUCKET_PR = "https://clickhouse-builds.s3.amazonaws.com"
 BUILDS_BUCKET_MASTER = "https://clickhouse-builds.s3.us-east-1.amazonaws.com"
 REPORTS_BUCKET = "https://s3.amazonaws.com/clickhouse-test-reports"
+
+# The S3 layout inserts the normalized workflow name as a path segment between
+# <sha> and the per-job result/artifact directory (Utils.normalize_string of the
+# workflow name; see get_s3_prefix_static in ci/praktika/_environment.py). The
+# perf comparison and its PR builds run in the "PR" workflow; reference binaries
+# are built by the "MasterCI" workflow.
+PR_WORKFLOW_SEGMENT = "pr"
+MASTER_WORKFLOW_SEGMENT = "masterci"
 
 # Ports — must match performance_tests.py so config files we copy work.
 LEFT_TCP = 9001
@@ -295,7 +303,7 @@ SUPPORTED_BASELINE = "master_head"
 
 
 def get_performance_shards(pr_number: int, sha: str) -> list[PerfShard]:
-    pr_json_url = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/result_pr.json"
+    pr_json_url = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/{PR_WORKFLOW_SEGMENT}/result_pr.json"
     pr_json = json.loads(http_get(pr_json_url))
     shards: list[PerfShard] = []
 
@@ -316,7 +324,7 @@ def get_performance_shards(pr_number: int, sha: str) -> list[PerfShard]:
                     total_shards = int(m.group(4))
 
                     dir_name = normalize_job_name(name)
-                    base_dir = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/{dir_name}"
+                    base_dir = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/{PR_WORKFLOW_SEGMENT}/{dir_name}"
 
                     tsv_link = None
                     for link in r.get("links", []) or []:
@@ -1181,11 +1189,11 @@ def download_binaries(
     left_identity = f"{ref_sha} {build_type}"
 
     # Right binary (patched / PR)
-    right_url = f"{BUILDS_BUCKET_PR}/PRs/{pr_number}/{pr_sha}/{build_type}/clickhouse"
+    right_url = f"{BUILDS_BUCKET_PR}/PRs/{pr_number}/{pr_sha}/{PR_WORKFLOW_SEGMENT}/{build_type}/clickhouse"
     # Fallback for master-tip commits (no PR): same path under REFs/<branch>/<sha>
     candidate_right_urls = [right_url]
     candidate_right_urls.append(
-        f"{BUILDS_BUCKET_MASTER}/REFs/master/{pr_sha}/{build_type}/clickhouse"
+        f"{BUILDS_BUCKET_MASTER}/REFs/master/{pr_sha}/{MASTER_WORKFLOW_SEGMENT}/{build_type}/clickhouse"
     )
     if cached_identity(right_bin) == right_identity:
         log(f"reusing cached patched binary for {pr_sha[:12]}")
@@ -1203,7 +1211,7 @@ def download_binaries(
         record_identity(right_bin, right_identity)
 
     # Left binary (reference / baseline) — always built off master
-    left_url = f"{BUILDS_BUCKET_MASTER}/REFs/master/{ref_sha}/{build_type}/clickhouse"
+    left_url = f"{BUILDS_BUCKET_MASTER}/REFs/master/{ref_sha}/{MASTER_WORKFLOW_SEGMENT}/{build_type}/clickhouse"
     if cached_identity(left_bin) == left_identity:
         log(f"reusing cached reference binary for {ref_sha[:12]}")
     else:

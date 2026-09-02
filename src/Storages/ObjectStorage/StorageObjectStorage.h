@@ -157,7 +157,7 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
+    std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 

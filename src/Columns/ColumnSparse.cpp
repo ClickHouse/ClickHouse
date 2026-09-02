@@ -80,6 +80,15 @@ bool ColumnSparse::isDefaultAt(size_t n) const
     return getValueIndex(n) == 0;
 }
 
+bool ColumnSparse::hasOnlyTypeDefaults() const
+{
+    if (_size == 0)
+        return true;
+    /// All rows map to values[0] when offsets is empty, but values[0] may
+    /// not be the type-default (e.g. after deserialization), so verify it.
+    return getOffsetsData().empty() && values->isDefaultAt(0);
+}
+
 bool ColumnSparse::isNullAt(size_t n) const
 {
     return values->isNullAt(getValueIndex(n));

@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -792,17 +793,10 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     MaterializedColumnDependencies materialized_dependencies(columns_desc, context);
 
-    /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
-    /// and projections to recalculate them if dependencies are updated.
+    /// Readable MATERIALIZED dependency graph; EPHEMERAL inputs are excluded.
     std::unordered_map<String, Names> column_to_affected_materialized;
-    /// Each MATERIALIZED column's own required source columns. Used to walk chains of
-    /// MATERIALIZED columns (e.g. m2 MATERIALIZED m1 MATERIALIZED src) so a change of a
-    /// base column recalculates every MATERIALIZED column transitively derived from it.
     std::unordered_map<String, NameSet> materialized_column_dependencies;
 
-    /// The MATERIALIZED-chain analysis is needed for classical UPDATE, for materializing
-    /// patch parts (APPLY PATCHES) and for CLEAR COLUMN, since all three can change a
-    /// column that a chain of MATERIALIZED columns is derived from.
     const bool need_materialized_analysis =
         !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
     if (need_materialized_analysis)
@@ -845,11 +839,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
         }
 
-        /// Extend to chains of MATERIALIZED columns. If updated column `u` affects m1 and
-        /// another MATERIALIZED column m2 reads m1 (m2 MATERIALIZED m1 MATERIALIZED u), then
-        /// m2 must be recalculated too. Compute, for each updated column, the transitive
-        /// closure of MATERIALIZED columns derived from it and record them all under that
-        /// updated column so the recompute stage and TTL dependency analysis pick them up.
+        /// Close UPDATE dependencies transitively.
         for (auto & [updated_column, affected_list] : column_to_affected_materialized)
         {
             NameSet in_list(affected_list.begin(), affected_list.end());
@@ -875,10 +865,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
     }
 
-    /// Transitive closure of MATERIALIZED columns that must be recomputed when the given
-    /// base columns change. A MATERIALIZED column is affected if any of its required
-    /// columns is one of the changed base columns or is itself an affected MATERIALIZED
-    /// column. Columns already present in `changed_base_columns` are not returned.
+    /// Return the transitive MATERIALIZED closure of changed columns.
     auto affected_materialized_closure = [&](const NameSet & changed_base_columns) -> NameSet
     {
         NameSet affected;
@@ -902,13 +889,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         return affected;
     };
 
-    /// Emit recompute stages for a set of affected MATERIALIZED columns. A MATERIALIZED
-    /// column may read another affected MATERIALIZED column (e.g. m2 MATERIALIZED m1, where
-    /// m1 is itself recomputed). Recomputing them all in a single stage would evaluate m2
-    /// against the pre-mutation m1. Assign each affected column a dependency level (0 =
-    /// depends only on non-affected columns) and recompute one level per stage in ascending
-    /// order, so a column always reads the freshly written value of any affected column it
-    /// depends on.
+    /// Emit dependency-ordered recomputation stages.
     auto emit_materialized_recompute_stages = [&](const NameSet & affected_materialized)
     {
         if (affected_materialized.empty())
@@ -985,23 +966,12 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!patch_updated_columns.empty())
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
-    /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
-    /// below writes, otherwise a rewritten column keeps stale dependent artifacts.
+    /// CLEAR uses only the readable dependency closure.
     NameSet clear_affected_materialized;
-    if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
-    {
-        for (const auto & column : columns_desc)
-        {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
-                clear_affected_materialized.insert(column.name);
-        }
-    }
+    if (!clear_column_names.empty())
+        clear_affected_materialized = affected_materialized_closure(clear_column_names);
 
-    /// The union of every MATERIALIZED column recomputed by this mutation (from UPDATE, from
-    /// materializing patch parts, and from CLEAR COLUMN). Used both to seed dependency analysis
-    /// and to decide which projections / skip indices / statistics must be rebuilt, since a
-    /// rebuild predicate that only looked at the mutation's explicit columns would miss a
-    /// projection or index that reads a derived MATERIALIZED column (e.g. m2 in src -> m1 -> m2).
+    /// Recomputed MATERIALIZED columns also invalidate their stored artifacts.
     NameSet all_affected_materialized;
     for (const auto & [source_column, affected_materialized] : column_to_affected_materialized)
         all_affected_materialized.insert(affected_materialized.begin(), affected_materialized.end());
@@ -1010,18 +980,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     if (settings.recalculate_dependencies_of_updated_columns)
     {
-        /// Patch-updated columns change data without a type change, so they must
-        /// enter dependency analysis to have their skip indices / projections /
-        /// statistics rebuilt. They are excluded from update-column validation
-        /// above because they are not user-issued UPDATEs.
         NameSet columns_for_dependencies = updated_columns;
         columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
-        /// Base columns removed by CLEAR COLUMN also change data (to the type default) and so
-        /// must enter dependency analysis alongside their derived MATERIALIZED closure below.
         columns_for_dependencies.insert(clear_column_names.begin(), clear_column_names.end());
-        /// MATERIALIZED columns recomputed by the mutation are not in updated_columns
-        /// but their new values still drive dependencies (e.g. a TTL DELETE WHERE that
-        /// references a MATERIALIZED column). Seed them so recalculation is triggered.
         columns_for_dependencies.insert(all_affected_materialized.begin(), all_affected_materialized.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
     }
@@ -1031,14 +992,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
-    /// Columns that are being cleared and need default values in the pipeline
-    /// for correct projection/materialized-column rebuild (instead of passing
-    /// through original values).
+    /// Cleared values are injected before rebuilding their dependencies.
     NameSet cleared_columns_with_dependencies;
-
-    /// Whether any MATERIALIZED column depends on a cleared column and needs
-    /// to be recalculated with the type-default value.
-    bool need_recalculate_materialized_for_clear = false;
+    const bool need_recalculate_materialized_for_clear = !clear_affected_materialized.empty();
     if (has_lightweight_delete_materialization || has_rewrite_parts)
     {
         auto & stage = stages.emplace_back(context);
@@ -1412,7 +1368,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
 
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
+            bool suitable_for_ttl_optimization = source.getMergeTreeData()
+                && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
                 && metadata_snapshot->hasOnlyRowsTTL();
 
             if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
@@ -1483,8 +1440,21 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
                 /// that depend on it. We should rebuild such projections and indices
-                const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
-                if (column && command.data_type && !column->type->equals(*command.data_type))
+                DataTypePtr old_type;
+                if (const auto column = merge_tree_data_part->tryGetColumn(command.column_name))
+                    old_type = column->type;
+                else
+                {
+                    const auto & infos = merge_tree_data_part->getSerializationInfos();
+                    auto marker_name = command.column_name;
+                    if (const auto & alter_conversions = source.getAlterConversions();
+                        alter_conversions && alter_conversions->isColumnRenamed(marker_name))
+                        marker_name = alter_conversions->getColumnOldName(marker_name);
+                    if (const auto * missing = infos.getMissingColumnInfo(marker_name); missing && !missing->type_name.empty())
+                        old_type = DataTypeFactory::instance().get(missing->type_name);
+                }
+
+                if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
@@ -1532,12 +1502,27 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
         {
-            /// When clearing a column, we need to also clear any indices that depend on it
+            /// Rebuild indices that depend on the cleared column from its
+            /// post-CLEAR DEFAULT value. Dropping them would make index
+            /// availability depend on whether the value had physical files.
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
                 const auto & index_cols = index.expression->getRequiredColumns();
-                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
-                    dropped_indices.insert(index.name);
+                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) == index_cols.end())
+                    continue;
+
+                switch (index_mode)
+                {
+                    case AlterColumnSecondaryIndexMode::THROW:
+                    case AlterColumnSecondaryIndexMode::COMPATIBILITY:
+                    case AlterColumnSecondaryIndexMode::REBUILD:
+                        for (const auto & col : index_cols)
+                            dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+                        materialized_indices.insert(index.name);
+                        break;
+                    case AlterColumnSecondaryIndexMode::DROP:
+                        dropped_indices.insert(index.name);
+                }
             }
             /// When clearing a column, we also need to rebuild any projections that depend on it,
             /// otherwise stale projection data with outdated sort order will be hardlinked unchanged.
@@ -1556,42 +1541,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
 
-            /// When clearing a column, any MATERIALIZED column whose expression
-            /// depends on the cleared column must be recalculated so its stored
-            /// data stays consistent with the new (default) value.
-            /// We must check every CLEAR COLUMN command (not short-circuit after the
-            /// first match) so that all cleared columns used by materialized
-            /// expressions are registered in `cleared_columns_with_dependencies`.
-            bool has_dependent_materialized = false;
-            for (const auto & column : columns_desc)
+            if (!clear_affected_materialized.empty())
             {
-                if (!available_columns_set.contains(column.name))
-                    continue;
-
-                const auto * materialized = materialized_dependencies.findNode(column.name);
-                if (!materialized)
-                    continue;
-
-                for (const auto & dep : materialized->dependencies)
-                {
-                    if (dep == command.column_name)
-                    {
-                        has_dependent_materialized = true;
-                        break;
-                    }
-                }
-                if (has_dependent_materialized)
-                    break;
-            }
-
-            if (has_dependent_materialized)
-            {
-                need_recalculate_materialized_for_clear = true;
-                /// Ensure the cleared column enters the readonly stage
-                /// with its default value so the materialized expression
-                /// evaluates correctly.
-                dependencies.emplace(command.column_name, ColumnDependency::PROJECTION);
                 cleared_columns_with_dependencies.insert(command.column_name);
+                dependencies.emplace(command.column_name, ColumnDependency::PROJECTION);
             }
         }
         /// The following mutations handled separately:
@@ -1684,13 +1637,18 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 if (cleared_columns_with_dependencies.contains(column))
                 {
-                    /// For columns being cleared, provide the type default value
+                    /// For columns being cleared, provide the current column DEFAULT
+                    /// expression (or the type default when no expression exists)
                     /// instead of the original value from the source part.
                     auto col_decl = metadata_snapshot->getColumns().getPhysical(column);
+                    auto column_default = metadata_snapshot->getColumns().getDefault(column);
+                    ASTPtr cleared_value = column_default && column_default->expression
+                        ? column_default->expression->clone()
+                        : make_intrusive<ASTLiteral>(col_decl.type->getDefault());
                     stages.back().column_to_updated.emplace(
                         column,
                         makeASTFunction("_CAST",
-                            make_intrusive<ASTLiteral>(col_decl.type->getDefault()),
+                            std::move(cleared_value),
                             make_intrusive<ASTLiteral>(col_decl.type->getName())));
                 }
                 else
@@ -1702,7 +1660,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    /// The cleared column entered the readonly stage above with its type-default value, so these
+    /// The cleared column entered the readonly stage above with its current DEFAULT value, so these
     /// level-ordered stages evaluate each hop against the freshly written value of the previous one.
     if (need_recalculate_materialized_for_clear)
         emit_materialized_recompute_stages(clear_affected_materialized);

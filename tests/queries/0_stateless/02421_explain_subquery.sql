@@ -24,6 +24,9 @@ SELECT * FROM viewExplain('', ''); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', ''); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', '', 1); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', '', ''); -- { serverError BAD_ARGUMENTS }
+-- `viewExplain` validates the first two arguments as string literals before analyzer resolution.
+SELECT * FROM viewExplain((SELECT * FROM view_explain_missing_table), '', (SELECT 1)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN', (SELECT * FROM view_explain_missing_table), (SELECT 1)); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 ( a UInt64 ) Engine = MergeTree ORDER BY tuple() AS SELECT number AS a FROM system.numbers LIMIT 100000;

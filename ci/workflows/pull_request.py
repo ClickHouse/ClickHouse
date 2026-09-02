@@ -71,6 +71,7 @@ workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
@@ -291,6 +292,11 @@ workflow = Workflow.Config(
         "build": "Build (amd_binary)",
     },
     runs_on_label_prefix="pr-",
+    ai_orchestrator=Workflow.OrchestratorAI.Config(
+        enabled=False,
+        provider="bedrock",
+        model="global.anthropic.claude-sonnet-5",
+    ),
 )
 
 WORKFLOWS = [
