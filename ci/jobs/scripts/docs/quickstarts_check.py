@@ -6,7 +6,7 @@ Run from the docs root (the directory containing docs.json):
 
     python3 ../ci/jobs/scripts/docs/quickstarts_check.py .
 
-Six checks (see docs/get-started/quickstarts/README.md for the authoring
+Seven checks (see docs/get-started/quickstarts/README.md for the authoring
 guide):
 
 1. Frontmatter metadata and badge markers. Every English and localized
@@ -39,10 +39,14 @@ guide):
    must render the same recommended Cloud banner, attributed signup link, and
    locale-preserving quickstart link under the canonical `/docs` mount.
 
-5. Cloud setup signup attribution. The English and localized Cloud setup
+5. Explorer links. Quickstart and sample-dataset cards must render the
+   canonical `/docs` mount during server-side rendering in English and every
+   locale.
+
+6. Cloud setup signup attribution. The English and localized Cloud setup
    guides must all use the same attributed signup URL.
 
-6. Localized quickstart navigation. The group labels added for the quickstart
+7. Localized quickstart navigation. The group labels added for the quickstart
    explorer must use each locale's existing terminology instead of rendering
    English labels in translated sidebars.
 """
@@ -573,6 +577,64 @@ def check_install_cloud_banners(docs_root: Path) -> list:
     return errors
 
 
+def check_explorer_docs_links(docs_root: Path) -> list:
+    """Ensure explorer card anchors include `/docs` before hydration."""
+    errors = []
+    for locale in [None, *LOCALES]:
+        snippets_root = docs_root / "snippets"
+        if locale:
+            snippets_root /= locale
+            docs_base = (
+                'const assetBase = typeof window === "undefined" || '
+                'window.location.pathname.startsWith("/docs") ? "/docs" : ""'
+            )
+        else:
+            docs_base = (
+                "const assetBase = typeof window === 'undefined' || "
+                "window.location.pathname.startsWith('/docs') ? '/docs' : '';"
+            )
+
+        components = [
+            (
+                snippets_root
+                / "components"
+                / "QuickStartsGrid"
+                / "QuickStartsGrid.jsx",
+                "href={withBase(quickStart.href)}",
+                "href={quickStart.href}",
+                2,
+            ),
+            (
+                snippets_root
+                / "components"
+                / "SampleDatasetExplorer"
+                / "SampleDatasetExplorer.jsx",
+                "href={withBase(ds.href)}",
+                "href={ds.href}",
+                1,
+            ),
+        ]
+        for path, resolved_anchor, raw_anchor, expected_count in components:
+            source = path.read_text(encoding="utf-8")
+            name = path.relative_to(docs_root)
+            if source.count(docs_base) != 1:
+                errors.append(
+                    f"{name}: assetBase must default to `/docs` during "
+                    "server-side rendering"
+                )
+            if source.count(resolved_anchor) != expected_count:
+                errors.append(
+                    f"{name}: expected {expected_count} server-rendered "
+                    "card anchor(s) resolved through withBase"
+                )
+            if raw_anchor in source:
+                errors.append(
+                    f"{name}: raw card anchor {raw_anchor!r} bypasses the "
+                    "canonical `/docs` mount"
+                )
+    return errors
+
+
 def navigation_groups(node):
     """Yield every navigation object that owns a named page group."""
     if isinstance(node, dict):
@@ -674,6 +736,7 @@ def main() -> int:
     errors += check_cloud_setup_cards(docs_root)
     errors += check_localized_homepage_links(docs_root)
     errors += check_install_cloud_banners(docs_root)
+    errors += check_explorer_docs_links(docs_root)
     errors += check_cloud_setup_signup_attribution(docs_root)
     errors += check_localized_quickstart_navigation(docs_root)
     # Only bother running the generator when the tags are valid — invalid tags

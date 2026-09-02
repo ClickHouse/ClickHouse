@@ -1,6 +1,6 @@
 export const SampleDatasetExplorer = ({ categories }) => {
   const ACCENT = "#FAFF69"
-  const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
+  const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
   const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
 
   // 각 카테고리: id, title(배너 이미지 아래에 표시), 하위 카드에 사용되는 아이콘, 두 개의 배너 이미지, 하위 데이터셋 페이지.
@@ -414,7 +414,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {selected.datasets.map((ds, i) => (
-              <a key={ds.href} href={ds.href} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
+              <a key={ds.href} href={withBase(ds.href)} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
                 <span className="sde-tile-media">
                   {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">
