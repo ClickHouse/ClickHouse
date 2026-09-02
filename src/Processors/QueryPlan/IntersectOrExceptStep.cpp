@@ -16,6 +16,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
@@ -213,11 +214,11 @@ QueryPlanStepPtr IntersectOrExceptStep::deserialize(Deserialization & ctx)
 
     UInt8 operator_value = 0;
     readIntBinary(operator_value, ctx.in);
-    const auto current_operator = static_cast<Operator>(operator_value);
-    if (current_operator != Operator::EXCEPT_ALL && current_operator != Operator::EXCEPT_DISTINCT
-        && current_operator != Operator::INTERSECT_ALL && current_operator != Operator::INTERSECT_DISTINCT)
+    const auto current_operator = magic_enum::enum_cast<Operator>(operator_value);
+    /// `UNKNOWN` is a member of the enum but not a valid operator, reject it too.
+    if (!current_operator || *current_operator == Operator::UNKNOWN)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected intersect/except operator value {}", static_cast<UInt32>(operator_value));
-    return std::make_unique<IntersectOrExceptStep>(ctx.input_headers, current_operator, /*max_threads_=*/0);
+    return std::make_unique<IntersectOrExceptStep>(ctx.input_headers, *current_operator, /*max_threads_=*/0);
 }
 
 void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry);
