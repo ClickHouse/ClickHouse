@@ -44,6 +44,8 @@ a dictionary-encoded null union child maps to NULL and does not desync the buffe
 1
 2
 3
+an out-of-range index in a dictionary-encoded null union child is still rejected
+INCORRECT_DATA
 the skip setting still drops null-typed columns, so CREATE TABLE AS file() keeps working
 n	Nullable(Int64)					
 1

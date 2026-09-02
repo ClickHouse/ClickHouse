@@ -1045,10 +1045,11 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
 
         if (child.type.kind == TypeKind::Null)
         {
-            /// A dictionary-encoded null child is an index array (not the zero-buffer placeholder);
-            /// its values are all null anyway, so consume its buffers and map its rows to NULL.
+            /// A dictionary-encoded null child is an index array (not the zero-buffer placeholder); its
+            /// values are all null anyway. Decode it through the normal dictionary path so its node,
+            /// buffers and indexes get the usual validation, then discard the all-null column.
             if (child.dictionary)
-                skipField(child);
+                decodeField(child);
             else
                 nextNode(); /// consume the placeholder node; the null type has no buffers
             type_id_to_local[tid] = -1;

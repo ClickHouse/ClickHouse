@@ -58,6 +58,18 @@ union_null = pa.table({
 with pa.OSFile('${FILE_PREFIX}.union.arrow', 'wb') as sink:
     with pa.ipc.new_file(sink, union_null.schema) as writer:
         writer.write_table(union_null)
+# An out-of-range index (7 into a one-entry dictionary, safe=False skips pyarrow's bounds check)
+# must still be rejected even though the referenced values would all be null anyway.
+union_bad = pa.table({
+    'k': pa.array([1, 2, 3], type=pa.int64()),
+    'u': pa.UnionArray.from_sparse(
+        pa.array([1, 0, 1], type=pa.int8()),
+        [pa.array([10, 20, 30], type=pa.int32()),
+         pa.DictionaryArray.from_arrays(pa.array([7, 0, 0], type=pa.int8()), pa.array([None], type=pa.null()), safe=False)]),
+})
+with pa.OSFile('${FILE_PREFIX}.union_bad.arrow', 'wb') as sink:
+    with pa.ipc.new_file(sink, union_bad.schema) as writer:
+        writer.write_table(union_bad)
 "
 
 echo 'file, explicit structure'
@@ -94,6 +106,10 @@ echo 'a dictionary-encoded null union child maps to NULL and does not desync the
 ${CLICKHOUSE_LOCAL} -q "SELECT n, ud FROM file('${FILE_PREFIX}.union.arrow', 'Arrow') ORDER BY n"
 ${CLICKHOUSE_LOCAL} -q "SELECT n FROM file('${FILE_PREFIX}.union.arrow', 'Arrow', 'n Int64') ORDER BY n"
 
+echo 'an out-of-range index in a dictionary-encoded null union child is still rejected'
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.union_bad.arrow', 'Arrow') FORMAT Null" 2>&1 \
+    | grep -oF 'INCORRECT_DATA' | head -1
+
 echo 'the skip setting still drops null-typed columns, so CREATE TABLE AS file() keeps working'
 ${CLICKHOUSE_LOCAL} -q "
     CREATE TABLE t ENGINE = Memory AS SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow')
@@ -105,4 +121,4 @@ echo 'without the skip setting table creation reports the unusable type'
 ${CLICKHOUSE_LOCAL} -q "CREATE TABLE t2 ENGINE = Memory AS SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow')" 2>&1 \
     | grep -oF 'DATA_TYPE_CANNOT_BE_USED_IN_TABLES' | head -1
 
-rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow" "${FILE_PREFIX}.dict.arrow" "${FILE_PREFIX}.union.arrow"
+rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows" "${FILE_PREFIX}.trivial.arrow" "${FILE_PREFIX}.nested.arrow" "${FILE_PREFIX}.dict.arrow" "${FILE_PREFIX}.union.arrow" "${FILE_PREFIX}.union_bad.arrow"
