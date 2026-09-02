@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnObject.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -18,7 +19,7 @@ namespace DB
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObject & object_column);
 
 /// Insert data from flattened representation of an Object column to a usual Object column.
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows);
+void unflattenAndInsertPaths(const VectorWithMemoryTracking<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows);
 
 /// Get the bucket number for a specific path.
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets);
