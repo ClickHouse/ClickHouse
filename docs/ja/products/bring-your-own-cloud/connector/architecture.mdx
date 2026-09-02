@@ -1,0 +1,89 @@
+---
+title: 'アーキテクチャ'
+sidebarTitle: 'アーキテクチャ'
+description: 'ClickHouse Connectorのコンポーネント、接続、証明書のライフサイクル、データフロー'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'コネクタ']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="components">
+  ## コンポーネント
+</div>
+
+ClickHouse Connector は、いずれも `clicklink` バイナリに組み込まれた 2 つのデーモンを実行します。
+
+* **スクレイパー**は、ClickHouse のシステムテーブルの許可リストを一定間隔で読み取り、結果をローカルにバッファリングして、インフラストラクチャのメタデータおよび稼働状況とともにコネクタエンドポイントへ送信します。
+* **トラブルシューター**は、コネクタエンドポイントへのアウトバウンドコマンドチャネルを維持し、アクティブな[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)中に読み取り専用の診断を実行します。セッション外では何も実行しません。
+
+Kubernetes では、どちらも選択したネームスペース (デフォルトは `clicklink`) に `clicklink-connector` Helm チャートでデプロイされるワークロードとして実行されます。Linux VM では、非特権の `clicklink` システムユーザーとして、`clicklink-scraper` および `clicklink-troubleshooter` の systemd ユニットで実行されます。
+
+<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector のアーキテクチャ" />
+
+<div id="connections">
+  ## 接続
+</div>
+
+コネクタが確立するすべての接続はアウトバウンドです。全一覧は次のとおりです。
+
+| 宛先                                                         | 方向              | プロトコル                 | 認証                                                                      | 用途                                                                                            |
+| ---------------------------------------------------------- | --------------- | --------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| お使いのコネクタエンドポイント (API)                                      | アウトバウンド         | HTTPS                 | mTLS クライアント証明書および HMAC 署名付きリクエスト                                        | メトリクス、コネクタ自身のメトリクス、ステータスを送信し、インスタンス、インフラストラクチャ、バックアップのメタデータを同期し、クライアント証明書を更新します               |
+| お使いのコネクタエンドポイント (コマンドチャネル)                                 | アウトバウンド         | TLS 上の WebSocket      | mTLS クライアント証明書および HMAC 署名付きハンドシェイク                                      | トラブルシューターのコマンドチャネル。サポートセッションがアクティブな間のみコマンドを送信します                                              |
+| お使いの登録エンドポイント                                              | アウトバウンド         | HTTPS                 | 1 回限りの登録トークン (引き換え) または HMAC (最初の証明書署名時) 。mTLS なし                       | セットアップ時のトークン引き換えと最初の証明書発行                                                                     |
+| お使いの ClickHouse クラスター                                      | アウトバウンド、お使いの環境内 | ClickHouse ネイティブプロトコル | bcrypt ハッシュとして保存される専用の読み取り専用ユーザー `pcm_scraper` および `pcm_troubleshooter` | スクレイピングおよびセッション診断のためのシステムテーブルの読み取りと、スクレイパーによるログテーブルのフラッシュ                                     |
+| Kubernetes API server (プロビジョニングされたすべてのデプロイメント、両方のインストール先)  | アウトバウンド、お使いの環境内 | HTTPS                 | ネームスペーススコープのロールにバインドされた ServiceAccount                               | トラブルシューター用の読み取り専用ワークロードビュー。Kubernetes インストールでは、両方のデーモンが自動更新されたクライアント証明書を mTLS Secret にも永続化します |
+| お使いの ID プロバイダーの JWKS エンドポイント (ゲートウェイが有効な場合のみ)              | アウトバウンド         | HTTPS                 | なし (公開署名キー)                                                             | セッションゲートウェイに提示される OIDC ID トークンを検証します                                                          |
+
+すべての API リクエストには、メソッド、パス、タイムスタンプ、本文のハッシュに基づいて計算された HMAC-SHA256 署名を含む `Authorization` ヘッダーが付加されます。これにより、TLS チャネル内であっても、リクエストのリプレイや転送時の改ざんを防止します。
+
+インバウンドでは、コネクタはローカルのヘルスチェックおよびメトリクスポートと、[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)ページで説明されているオプトインのセッションゲートウェイのみを公開します。ClickHouse のコントロールプレーンがこれらに接続することはありません。
+
+<div id="certificate-lifecycle">
+  ## 証明書のライフサイクル
+</div>
+
+コネクタは、自ら取得・管理するクライアント証明書を使用してエンドポイントに対して認証を行います。
+
+* **登録。** `clicklink clctl init` は、ローカルで秘密鍵を生成し、組織 ID をコモンネーム、エンドポイントのホストを唯一の DNS SAN とする証明書署名リクエストを生成します。秘密鍵が環境外に出ることはありません。
+* **初回発行。** CSR は HMAC で認証され、`/v1/pcm/cert/sign` の登録用署名エンドポイントに送信されます。組織に対して有効期限切れでない証明書がすでに存在する場合、エンドポイントは 409 を返して拒否します。CLI には、既存の証明書で完了する方法、または `--force` を使用して意図的に置き換える方法が表示されます。
+* **自動更新。** 各デーモンは 12 時間ごとに証明書の有効期間を確認し、残り 10 日になると `/v1/pcm/cert/renew` (mTLS と HMAC) を介して新たに 30 日間有効な証明書をリクエストします。Kubernetes では、各デーモンが名前を完全一致で指定した RBAC 権限により、更新済みの証明書を `clicklink-mtls` Secret に書き戻します。VM では、TLS ディレクトリはデーモンユーザーが書き込み可能です。更新にオペレーターの操作は必要ありません。
+
+コネクタは、エンドポイントのサーバー証明書をシステムトラストストアで検証します。エンドポイントが private CA を使用している場合は、登録時に配布された CA bundle を使用します。
+
+<div id="data-flow">
+  ## データフロー
+</div>
+
+<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse Connectorのデータフロー" />
+
+<div id="what-leaves">
+  ### 環境外に送信されるもの
+</div>
+
+* **許可リストに登録されたシステムテーブルのメトリクス。** スクレイパーのデフォルトセットは `metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings` です。許可リストは明示的に設定されており、スクレイパーはこれ以外を読み取りません。
+* **インフラストラクチャのメタデータ。** API を介して同期されるインスタンス、インフラストラクチャ、バックアップのインベントリ。
+* **ヘルス情報と自己メトリクス。** コンポーネントのステータスとコネクタ自体の運用メトリクス。
+* **サポートセッションの出力。** 有効化したセッション中に実行された読み取り専用診断の結果 (機密情報のマスキング後) 。
+
+<div id="what-never-leaves">
+  ### デフォルトで外部に送信されないもの
+</div>
+
+* **スクレイプパス上の生のクエリテキスト。** `system.query_log` は、クエリカラムにリテラル値、ひいては PII やシークレットが含まれる可能性があるため、意図的にデフォルトのスクレイプ対象から除外されています。これを再追加するかどうかは、各デプロイメントでリスクを理解したうえで判断するオーバーライドです。サポートセッション中は、デフォルトのテーブル許可リストに、実行中のクエリテキストを表示する `system.processes` が含まれます。トリミング方法については、[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
+* **認証情報。** 構成ファイルには認証情報は含まれず、ClickHouse が保存するのはコネクタユーザーのパスワードの bcrypt ハッシュのみです。シークレットは Kubernetes Secrets またはホスト上で root のみが読み取れるファイルに保持されます。スクレイプパスや同期パスでこれらが送信されることはありません。
+* **マスキングされていない troubleshooter の出力。** troubleshooter が返すすべての内容は、外部に送信される前に、組み込みおよび独自のマスキングパターンによってマスキングされます。[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
+
+<div id="trust-boundaries">
+  ## 信頼境界
+</div>
+
+* **境界はお客様の環境です。** ClickHouse Cloudが受信するのは、スクレイパーが送信するデータと、有効なサポートセッションから返されるデータだけです。お客様の環境に向けて接続を開始することはありません。
+* **セッションゲートウェイはお客様の管理下にあります。** イングレス経由で公開しない限り、Kubernetesでは`kubectl port-forward`経由で、VMではローカルからのみ、お客様の環境内でアクセスできます。ClickHouseのコントロールプレーンが接続することはありません。
+* **ClickHouseへのアクセスは読み取り専用です。** `pcm_scraper`および`pcm_troubleshooter`ユーザーにはテーブルごとの`SELECT`権限があり、これに加えて、ログテーブルをディスクにフラッシュするためだけのスクレイパー専用システム権限が1つ付与されています。`INSERT`、DDL、ユーザー管理の権限はありません。正確な一覧は[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)に記載されています。
+* **Kubernetesへのアクセスはネームスペース単位に限定されます。** すべてのRBACは、コネクタおよびインスタンスのネームスペース内のロールを通じて付与されます。ワークロードリソースには読み取り専用の動詞のみが許可され、コネクタ自身のSecretsには完全一致する名前でのみアクセスできます。`exec`、`delete`、`patch`の権限はありません。
+* **ネットワークポリシー。** Kubernetesでは、チャートにより、指定したCIDR以外へのコネクタのegressをすべて拒否するNetworkPolicyを生成できます。強制されるかどうかは、クラスターでポリシーを強制するCNIが稼働しているかに依存します。そのようなCNIがない場合、ポリシーは機能しません。[設定](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
+* **VMのホスト強化。** ユニットはログイン不可のシステムユーザーとして実行され、`ProtectSystem=strict`、`NoNewPrivileges`、読み取り専用の設定パス、および有効化されたFIPSモードを使用します。
+
+コネクタの正確な権限およびRBACルールについては、[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)を参照してください。ClickHouseがお客様に代わってクラスターを運用する場合は、信頼モデルが異なります。[BYOC architecture](/ja/products/bring-your-own-cloud/overview/architecture)および[BYOC privilege](/ja/products/bring-your-own-cloud/reference/privilege)のページを参照してください。
