@@ -18,6 +18,7 @@ import yaml
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -1286,10 +1287,19 @@ def parse_args():
     return parser.parse_args()
 
 
+def master_build_link(sha, build_type):
+    """Ask praktika where `MasterCI` published the build of master commit `sha`,
+    so that a later change of the prefix layout is picked up here for free."""
+    prefix = _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+    )
+    return f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{prefix}/{build_type}/clickhouse"
+
+
 def find_prev_build(info, build_type):
     commits = info.get_kv_data("master_track_commits_sha") or []
     for sha in commits:
-        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
+        link = master_build_link(sha, build_type)
         if Shell.check(f"curl -sfI {link} > /dev/null"):
             return link
     return None
@@ -1299,7 +1309,7 @@ def find_base_release_build(info, build_type):
     commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
     for sha in commits:
-        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
+        link = master_build_link(sha, build_type)
         if Shell.check(f"curl -sfI {link} > /dev/null"):
             return link
     return None
@@ -1768,9 +1778,7 @@ def main():
     if Utils.is_arm():
         if compare_against_master:
             link_for_ref_ch = find_prev_build(info, "build_arm_release")
-            if not link_for_ref_ch:
-                print("WARNING: No build found for master track commits, falling back to latest master build")
-                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
@@ -1779,9 +1787,7 @@ def main():
     elif Utils.is_amd():
         if compare_against_master:
             link_for_ref_ch = find_prev_build(info, "build_amd_release")
-            if not link_for_ref_ch:
-                print("WARNING: No build found for master track commits, falling back to latest master build")
-                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
