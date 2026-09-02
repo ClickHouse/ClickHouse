@@ -1,0 +1,142 @@
+#include <Access/HTTPUserDirectoryResponseParser.h>
+
+#include <Access/resolveSetting.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
+
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/String.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int AUTHENTICATION_FAILED;
+}
+
+HTTPUserDirectoryResponseParser::Result
+HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response, std::istream * body_stream) const
+{
+    const auto status = response.getStatus();
+
+    if (status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+    {
+        Result result;
+        result.status = Result::Status::UserNotFound;
+        return result;
+    }
+
+    if (status != Poco::Net::HTTPResponse::HTTP_OK)
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "HTTP authentication server responded with status {}", static_cast<int>(status));
+
+    Result result;
+    result.status = Result::Status::Ok;
+
+    /// Bounded read: a compromised or broken helper must not force unbounded allocations.
+    static constexpr size_t max_response_body_size = 1 * 1024 * 1024;
+    String body;
+    if (body_stream)
+    {
+        char buffer[8192];
+        while (body_stream->good())
+        {
+            body_stream->read(buffer, sizeof(buffer));
+            body.append(buffer, static_cast<size_t>(body_stream->gcount()));
+            if (body.size() > max_response_body_size)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "HTTP authentication server response body exceeds {} bytes", max_response_body_size);
+        }
+    }
+
+    /// An empty or whitespace-only body is equivalent to an empty JSON object.
+    if (Poco::trim(body).empty())
+        return result;
+
+    Poco::JSON::Object::Ptr object;
+    try
+    {
+        Poco::JSON::Parser parser;
+        object = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (...)
+    {
+        /// Poco JSON exceptions derive from Poco::Exception, which would trigger retries
+        /// in HTTPAuthClient; convert to a DB exception so a malformed body fails immediately.
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "HTTP authentication server returned a malformed response body");
+    }
+
+    if (!object)
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "HTTP authentication server response is not a JSON object");
+
+    if (object->has("settings"))
+    {
+        Poco::JSON::Object::Ptr settings_object = object->getObject("settings");
+        if (!settings_object)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "The 'settings' field of the HTTP authentication server response is not a JSON object");
+
+        for (const auto & [name, value] : *settings_object)
+        {
+            try
+            {
+                result.settings.emplace_back(name, settingStringToValueUtil(name, value.toString()));
+            }
+            catch (...)
+            {
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Cannot parse setting {} from the HTTP authentication server response", backQuote(name));
+            }
+        }
+    }
+
+    if (object->has("roles"))
+    {
+        Poco::JSON::Array::Ptr roles_array = object->getArray("roles");
+        if (!roles_array)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "The 'roles' field of the HTTP authentication server response is not an array");
+
+        for (const auto & element : *roles_array)
+        {
+            if (!element.isString())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "The 'roles' field of the HTTP authentication server response must contain only strings");
+            result.role_names.push_back(element.toString());
+        }
+    }
+
+    if (object->has("valid_until"))
+    {
+        const auto value = object->get("valid_until");
+        /// `Poco::Dynamic::Var::isInteger` reports `true` for a boolean value as well
+        /// (`std::numeric_limits<bool>::is_integer` is `true`), so `isBoolean` must be
+        /// rejected explicitly.
+        if (!value.isInteger() || value.isBoolean())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "The 'valid_until' field of the HTTP authentication server response must be an integer Unix timestamp");
+        Int64 valid_until = 0;
+        try
+        {
+            valid_until = value.convert<Int64>();
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "The 'valid_until' field of the HTTP authentication server response is out of range");
+        }
+        if (valid_until < 0)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "The 'valid_until' field of the HTTP authentication server response must not be negative");
+        result.valid_until = static_cast<time_t>(valid_until);
+    }
+
+    return result;
+}
+
+}
