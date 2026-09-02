@@ -29,9 +29,9 @@ struct RapidJSONParser
     RapidJSONParser(RapidJSONParser &&) = delete;
     RapidJSONParser & operator=(RapidJSONParser &&) = delete;
 
-    /// The DOM, parser stack and string copies are accounted against the memory tracker, so a
-    /// huge or deeply nested untrusted document is rejected with MEMORY_LIMIT_EXCEEDED instead of
-    /// allocating without bound (see RapidJSONMemoryTrackerAllocator).
+    /// Allocations past the small inline pool buffer go through the memory tracker, so a huge or
+    /// deeply nested untrusted document is rejected with MEMORY_LIMIT_EXCEEDED instead of allocating
+    /// without bound (see RapidJSONMemoryTrackerAllocator).
     using PoolAllocator = rapidjson::MemoryPoolAllocator<RapidJSONMemoryTrackerAllocator>;
     using Value = rapidjson::GenericValue<rapidjson::UTF8<>, PoolAllocator>;
     using Document = rapidjson::GenericDocument<rapidjson::UTF8<>, PoolAllocator, RapidJSONMemoryTrackerAllocator>;
