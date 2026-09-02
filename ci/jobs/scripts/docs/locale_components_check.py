@@ -96,6 +96,7 @@ NAVBAR_GET_STARTED_LABELS = {
 }
 SIDEBAR_AD_COPY = {
     "en": {
+        "ariaLabel": "ClickHouse Cloud advert",
         "dismissLabel": "Dismiss ClickHouse Cloud advert permanently",
         "title": "Try ClickHouse Cloud for FREE",
         "description": (
@@ -105,6 +106,7 @@ SIDEBAR_AD_COPY = {
         "linkLabel": "Try it for Free",
     },
     "ar": {
+        "ariaLabel": "إعلان ClickHouse Cloud",
         "dismissLabel": "إخفاء إعلان ClickHouse Cloud نهائيًا",
         "title": "جرّب ClickHouse Cloud مجانًا",
         "description": (
@@ -115,6 +117,7 @@ SIDEBAR_AD_COPY = {
         "linkLabel": "جرّبه مجانًا",
     },
     "es": {
+        "ariaLabel": "Anuncio de ClickHouse Cloud",
         "dismissLabel": "Descartar permanentemente el anuncio de ClickHouse Cloud",
         "title": "Prueba ClickHouse Cloud GRATIS",
         "description": (
@@ -125,6 +128,7 @@ SIDEBAR_AD_COPY = {
         "linkLabel": "Pruébalo gratis",
     },
     "fr": {
+        "ariaLabel": "Annonce ClickHouse Cloud",
         "dismissLabel": "Masquer définitivement l’annonce ClickHouse Cloud",
         "title": "Essayez ClickHouse Cloud GRATUITEMENT",
         "description": (
@@ -135,6 +139,7 @@ SIDEBAR_AD_COPY = {
         "linkLabel": "Essayer gratuitement",
     },
     "ja": {
+        "ariaLabel": "ClickHouse Cloud の広告",
         "dismissLabel": "ClickHouse Cloud の広告を今後表示しない",
         "title": "ClickHouse Cloud を無料でお試しください",
         "description": (
@@ -145,6 +150,7 @@ SIDEBAR_AD_COPY = {
         "linkLabel": "無料で試す",
     },
     "ko": {
+        "ariaLabel": "ClickHouse Cloud 광고",
         "dismissLabel": "ClickHouse Cloud 광고를 영구적으로 닫기",
         "title": "ClickHouse Cloud를 무료로 사용해 보세요",
         "description": (
@@ -155,6 +161,7 @@ SIDEBAR_AD_COPY = {
         "linkLabel": "무료로 사용해 보기",
     },
     "pt-BR": {
+        "ariaLabel": "Anúncio do ClickHouse Cloud",
         "dismissLabel": "Dispensar permanentemente o anúncio do ClickHouse Cloud",
         "title": "Experimente o ClickHouse Cloud GRÁTIS",
         "description": (
@@ -316,6 +323,15 @@ def check_sidebar_ad_localization(docs_root):
         "return window.location.pathname.replace(/^\\/docs(?=\\/|$)/, '');",
         "var localeMatch = normalizedPath().match(/^\\/(ar|es|fr|ja|ko|pt-BR)(?:\\/|$)/);",
         "if (/^\\/(?:ru|zh)(?:\\/|$)/.test(path)) return false;",
+        "function updateAdCopy(slot) {",
+        "if (card && card.getAttribute('aria-label') !== copy.ariaLabel) {",
+        "card.setAttribute('aria-label', copy.ariaLabel);",
+        "dismissButton.setAttribute('aria-label', copy.dismissLabel);",
+        "updateText(slot.querySelector('.ch-cloud-sidebar-ad-title'), copy.title);",
+        "updateText(slot.querySelector('.ch-cloud-sidebar-ad-description'), copy.description);",
+        "updateText(slot.querySelector('.ch-cloud-sidebar-ad-link'), copy.linkLabel);",
+        "updateAdCopy(existing);",
+        "updateAdCopy(slot);",
     )
     for marker in required_markers:
         if source.count(marker) != 1:

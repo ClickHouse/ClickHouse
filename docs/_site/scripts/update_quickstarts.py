@@ -106,16 +106,21 @@ def unquote_scalar(value: str) -> str:
     available in the docs CI image, so unescape the two quoting styles by hand.
     """
     value = value.strip()
-    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
-        return value[1:-1].replace("''", "'")
-    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+    if value.startswith(("'", '"')):
+        if len(value) < 2 or value[-1] != value[0]:
+            raise ValueError(
+                "multiline or unterminated quoted YAML scalars are not "
+                "supported; keep the value on one physical line"
+            )
+        if value[0] == "'":
+            return value[1:-1].replace("''", "'")
         # Unescape \" and \\ left-to-right (re.sub matches non-overlapping).
         return re.sub(r'\\(["\\])', r'\1', value[1:-1])
     return value
 
 def parse_frontmatter(content: str) -> Dict[str, Any]:
     """
-    Parse YAML frontmatter from MDX file content.
+    Parse the supported single-line subset of YAML frontmatter.
 
     Args:
         content: The full content of the MDX file
@@ -131,28 +136,52 @@ def parse_frontmatter(content: str) -> Dict[str, Any]:
     frontmatter_text = match.group(1)
     frontmatter = {}
 
-    # Parse simple YAML key-value pairs and arrays
-    for line in frontmatter_text.split('\n'):
-        line = line.strip()
+    # Parse only the single-line scalar and inline-array forms this generator
+    # understands. Reject other valid YAML forms instead of silently reducing
+    # them to a different value than Mintlify's YAML parser renders.
+    for line_number, raw_line in enumerate(frontmatter_text.split('\n'), 1):
+        line = raw_line.strip()
         if not line or line.startswith('#'):
             continue
 
-        # Handle key: value pairs
-        if ':' in line:
-            key, value = line.split(':', 1)
-            key = key.strip()
-            value = value.strip()
+        if raw_line[0].isspace():
+            raise ValueError(
+                f"unsupported indented YAML value on frontmatter line "
+                f"{line_number}; use a single-line scalar or inline array"
+            )
 
-            # Handle arrays like [item1, item2]. Brackets are unquoted, so this
-            # is checked before unquoting the scalar form below.
-            if value.startswith('[') and value.endswith(']'):
-                # Parse array
-                array_content = value[1:-1]
-                items = [unquote_scalar(item)
-                        for item in array_content.split(',')]
-                frontmatter[key] = [item for item in items if item]
-            else:
-                frontmatter[key] = unquote_scalar(value)
+        if ':' not in line:
+            raise ValueError(
+                f"unsupported YAML syntax on frontmatter line {line_number}: "
+                f"{line!r}"
+            )
+
+        # Handle key: value pairs
+        key, value = line.split(':', 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            raise ValueError(
+                f"empty or nested YAML value for {key!r} on frontmatter "
+                f"line {line_number}; use a single-line scalar or inline array"
+            )
+        if key in frontmatter:
+            raise ValueError(f"duplicate frontmatter field {key!r}")
+        if value.startswith(('|', '>')):
+            raise ValueError(
+                f"block YAML scalar for {key!r} is not supported; keep the "
+                "value on one physical line"
+            )
+
+        # Handle arrays like [item1, item2]. Brackets are unquoted, so this
+        # is checked before unquoting the scalar form below.
+        if value.startswith('[') and value.endswith(']'):
+            array_content = value[1:-1]
+            items = [unquote_scalar(item)
+                    for item in array_content.split(',')]
+            frontmatter[key] = [item for item in items if item]
+        else:
+            frontmatter[key] = unquote_scalar(value)
 
     return frontmatter
 

@@ -55,6 +55,7 @@ guide):
    locale, so retiring or renaming an onboarding page cannot leave stale copy.
 """
 
+import html
 import importlib.util
 import json
 import re
@@ -275,6 +276,22 @@ def generated_paths(docs_root: Path) -> list:
 GENERATOR_COMMAND = "python3 _site/scripts/update_quickstarts.py"
 
 
+def read_generated_quickstarts(path: Path) -> list:
+    """Read the JSON array embedded in a generated quickstarts data module."""
+    source = path.read_text(encoding="utf-8")
+    match = re.search(
+        r"^export const quickStartsData = (?P<data>\[.*\]);\s*$",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        raise ValueError("could not find the exported quickStartsData array")
+    data = json.loads(match.group("data"))
+    if not isinstance(data, list):
+        raise ValueError("quickStartsData must be an array")
+    return data
+
+
 def check_cloud_setup_cards(docs_root: Path) -> list:
     """Ensure legacy pages stay deleted while their explorer cards remain."""
     generator_path = docs_root / "_site" / "scripts" / "update_quickstarts.py"
@@ -293,6 +310,17 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
         errors.append(
             "Cloud setup card translations must cover exactly: "
             + ", ".join(LOCALES)
+        )
+
+    unsupported_frontmatter = "---\ntitle: 'Example'\ndescription: >\n  Folded\n---\n"
+    try:
+        generator.parse_frontmatter(unsupported_frontmatter)
+    except ValueError:
+        pass
+    else:
+        errors.append(
+            "the quickstart generator must reject multiline YAML scalars "
+            "that its line-oriented frontmatter parser cannot represent"
         )
 
     redirects_path = docs_root / "_site" / "redirects.json"
@@ -353,9 +381,16 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
         setup_page = (
             docs_root / prefix / "get-started" / "setup" / "cloud.mdx"
         )
-        frontmatter = generator.parse_frontmatter(
-            setup_page.read_text(encoding="utf-8")
-        )
+        try:
+            frontmatter = generator.parse_frontmatter(
+                setup_page.read_text(encoding="utf-8")
+            )
+        except ValueError as ex:
+            errors.append(
+                f"{setup_page.relative_to(docs_root)}: unsupported "
+                f"frontmatter: {ex}"
+            )
+            frontmatter = {}
         for field in ("title", "description"):
             if card.get(field) != frontmatter.get(field):
                 errors.append(
@@ -368,6 +403,59 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
                 f"{locale or 'English'}: generated Cloud card href is "
                 f"{card.get('href')!r}; expected {expected_href!r}"
             )
+
+        data_root = docs_root / "snippets"
+        if locale:
+            data_root /= locale
+        data_path = (
+            data_root
+            / "components"
+            / "QuickStartsGrid"
+            / "quickstarts-data.jsx"
+        )
+        try:
+            shipped_cards = read_generated_quickstarts(data_path)
+        except (OSError, ValueError, json.JSONDecodeError) as ex:
+            errors.append(
+                f"{data_path.relative_to(docs_root)}: cannot validate "
+                f"generated Cloud setup card: {ex}"
+            )
+            shipped_cards = []
+
+        matching_cards = [
+            item for item in shipped_cards
+            if item.get("id") == generator.CLOUD_SETUP_CARD["id"]
+        ]
+        if len(matching_cards) != 1:
+            errors.append(
+                f"{data_path.relative_to(docs_root)}: expected exactly one "
+                "shipped create-your-first-service-on-cloud card"
+            )
+        else:
+            expected_shipped = {**expected, "href": expected_href}
+            expected_shipped["useCases"] = [
+                generator.slugify_tag(value)
+                for value in expected_shipped["useCases"]
+            ]
+            expected_shipped["products"] = [
+                generator.slugify_tag(value)
+                for value in expected_shipped["products"]
+            ]
+            shipped_card = matching_cards[0]
+            for field in (
+                "id",
+                "title",
+                "description",
+                "href",
+                "useCases",
+                "products",
+            ):
+                if shipped_card.get(field) != expected_shipped.get(field):
+                    errors.append(
+                        f"{data_path.relative_to(docs_root)}: shipped Cloud "
+                        f"card {field} is {shipped_card.get(field)!r}; "
+                        f"expected {expected_shipped.get(field)!r}"
+                    )
 
         if locale:
             if frontmatter.get("sidebarTitle") in (None, "Cloud"):
@@ -398,20 +486,80 @@ def check_cloud_setup_link_labels(docs_root: Path) -> list:
             continue
         expected_label = title_match.group(2)
         expected_href = f"{locale_prefix}/get-started/setup/cloud"
-        link = re.compile(
+        markdown_link = re.compile(
             rf"\[([^\]]+)\]\({re.escape(expected_href)}\)"
+        )
+        opening_tag = re.compile(
+            r"<(?P<tag>[A-Za-z][\w.:-]*)\b(?P<attrs>[^>]*)>",
+            re.DOTALL,
+        )
+        carrier_target = re.compile(
+            rf"\b(?:href|to)\s*=\s*(?:\{{[^}}]*?)?(['\"])"
+            rf"{re.escape(expected_href)}\1(?:[^}}]*\}})?"
+        )
+        label_attribute = re.compile(
+            r"\b(?:aria-label|label|title)\s*=\s*(?:\{\s*)?"
+            r"(['\"])(.*?)\1\s*\}?",
+            re.DOTALL,
         )
         quickstarts_dir = docs_root / prefix / "get-started" / "quickstarts"
         for pattern in ("**/*.mdx", "**/*.md"):
             for page in quickstarts_dir.glob(pattern):
                 source = page.read_text(encoding="utf-8")
-                for match in link.finditer(source):
+                covered_spans = []
+                for match in markdown_link.finditer(source):
+                    covered_spans.append(match.span())
                     if match.group(1) != expected_label:
                         errors.append(
                             f"{page.relative_to(docs_root)}: Cloud setup link "
                             f"label is {match.group(1)!r}; expected destination "
                             f"title {expected_label!r}"
                         )
+
+                for match in opening_tag.finditer(source):
+                    attrs = match.group("attrs")
+                    if not carrier_target.search(attrs):
+                        continue
+                    covered_spans.append(match.span())
+                    labels = [
+                        html.unescape(" ".join(label.group(2).split()))
+                        for label in label_attribute.finditer(attrs)
+                    ]
+                    if not match.group(0).rstrip().endswith("/>"):
+                        closing = re.search(
+                            rf"</{re.escape(match.group('tag'))}\s*>",
+                            source[match.end():],
+                            re.IGNORECASE,
+                        )
+                        if closing:
+                            body = source[
+                                match.end():match.end() + closing.start()
+                            ]
+                            body = re.sub(r"<[^>]+>", "", body)
+                            body = re.sub(r"\{[^{}]*\}", "", body)
+                            body_label = html.unescape(" ".join(body.split()))
+                            if body_label:
+                                labels.append(body_label)
+                    if expected_label not in labels:
+                        line = source.count("\n", 0, match.start()) + 1
+                        errors.append(
+                            f"{page.relative_to(docs_root)}:{line}: Cloud "
+                            "setup href/to carrier must expose the destination "
+                            f"title {expected_label!r}; found {labels!r}"
+                        )
+
+                for target in re.finditer(re.escape(expected_href), source):
+                    if any(
+                        start <= target.start() < end
+                        for start, end in covered_spans
+                    ):
+                        continue
+                    line = source.count("\n", 0, target.start()) + 1
+                    errors.append(
+                        f"{page.relative_to(docs_root)}:{line}: Cloud setup "
+                        "path is outside a supported labeled Markdown or "
+                        "MDX href/to carrier"
+                    )
     return errors
 
 
