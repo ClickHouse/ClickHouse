@@ -1,16 +1,18 @@
--- An ordinary filter above the part of the query parallel replicas execute reaches the initiator's
--- local plan only together with the replicas, that is only when `parallel_replicas_filter_pushdown`
--- also splices it into their query. On its own it could fix a sort key column and make the initiator
--- read in order while the replicas do not, see 05057. A join runtime filter is not like that and goes
--- into the local plan regardless of the setting, see 05056.
+-- A condition above the part of the query parallel replicas execute may enter the initiator's local
+-- plan on its own only if it cannot decide how that plan reads. Fixing a column is what decides it:
+-- with `tenant` pinned to one value a sort or an aggregation on the rest of the sort key reads in
+-- order, and the initiator would announce a coordination mode the replicas do not use (see 05057).
+-- So an equality waits for `parallel_replicas_filter_pushdown`, which puts it in the replicas' query
+-- too, while everything else - a comparison, a bare boolean, a join runtime filter (see 05056) - goes
+-- in regardless.
 
 DROP TABLE IF EXISTS t_pr_local_pd;
 DROP VIEW IF EXISTS v_pr_local_pd;
 
-CREATE TABLE t_pr_local_pd (a UInt32, b String) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_pr_local_pd (a UInt32, b String, flag UInt8) ENGINE = MergeTree ORDER BY a;
 -- Read the outer query over the view, so that the filter starts above the parallel replicas read.
 CREATE VIEW v_pr_local_pd AS SELECT * FROM t_pr_local_pd;
-INSERT INTO t_pr_local_pd SELECT number, toString(number) FROM numbers(1000);
+INSERT INTO t_pr_local_pd SELECT number, toString(number), number % 2 FROM numbers(1000);
 
 -- For runs with the old analyzer
 SET enable_analyzer = 1;
@@ -28,18 +30,32 @@ SET parallel_replicas_plan_based = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 
-SELECT 'default: not in the local plan';
+SELECT 'equality, default: not in the local plan';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE a = 5)
 WHERE explain LIKE '%Prewhere filter column%';
 SELECT * FROM v_pr_local_pd WHERE a = 5;
 
-SELECT 'enabled: in the local plan';
+SELECT 'equality, setting enabled: in the local plan';
 SET parallel_replicas_filter_pushdown = 1;
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE a = 5)
 WHERE explain LIKE '%Prewhere filter column%';
 SELECT * FROM v_pr_local_pd WHERE a = 5;
+
+SET parallel_replicas_filter_pushdown = 0;
+
+SELECT 'comparison, default: in the local plan';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE a > 995)
+WHERE explain LIKE '%Prewhere filter column%';
+SELECT count() FROM v_pr_local_pd WHERE a > 995;
+
+SELECT 'bare boolean, default: in the local plan';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE flag)
+WHERE explain LIKE '%Prewhere filter column%';
+SELECT count() FROM v_pr_local_pd WHERE flag;
 
 DROP VIEW v_pr_local_pd;
 DROP TABLE t_pr_local_pd;

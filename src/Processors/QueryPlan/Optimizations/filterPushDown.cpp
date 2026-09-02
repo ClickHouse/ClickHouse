@@ -1119,11 +1119,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-/// Whether the condition is made only of join runtime filters (`__applyFilter`), possibly conjoined.
-/// Such a predicate cannot mark a column as fixed - `enrichFixedColumns` only does that for a function
-/// whose every argument is fixed or constant, and the probe key is neither - so it cannot change the
-/// read mode the step below it requests. Anything else may: `WHERE key = 42` fixes `key`.
-static bool isOnlyJoinRuntimeFilters(const ActionsDAG::Node * condition)
+/// Whether a condition might decide how the step below it reads. Read-in-order treats a column that a
+/// filter pins to a single value as satisfying any position of the sort key, so `WHERE tenant = 42` can
+/// turn a read into an in-order one, while `WHERE tenant > 42`, a bare boolean or a join runtime filter
+/// leave the decision alone.
+///
+/// `appendFixedColumnsFromFilterExpression` is the analysis that collects those columns, but it only
+/// walks `and` chains: an equality under any other node is invisible to it. Missing one costs that
+/// analysis an optimization, while missing one here would cost correctness, so look for the equality
+/// anywhere in the condition rather than reusing it.
+static bool mayFixColumn(const ActionsDAG::Node * condition)
 {
     std::vector<const ActionsDAG::Node *> stack{condition};
     std::unordered_set<const ActionsDAG::Node *> visited;
@@ -1137,17 +1142,15 @@ static bool isOnlyJoinRuntimeFilters(const ActionsDAG::Node * condition)
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
-            /// `CAST` is allowed because it cannot make its argument fixed on its own, and a runtime
-            /// filter's probe key is often wrapped in one.
-            if (name != "__applyFilter" && name != "and" && name != "CAST" && name != "_CAST")
-                return false;
+            if (name == "equals" || name == "isNotDistinctFrom")
+                return true;
         }
 
         for (const auto * child : node->children)
             stack.push_back(child);
     }
 
-    return true;
+    return false;
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -1428,8 +1431,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// A condition the replicas do not have may not change what the local fragment announces to the
         /// shared coordinator - an equality fixes a sort key column, which lets a sort or an aggregation
         /// inside the fragment read in order, and the initiator would then announce `WithOrder` against
-        /// the replicas' `Default`. A join runtime filter cannot do that (see `isOnlyJoinRuntimeFilters`),
-        /// and it is also the one condition the setting could never mirror, so it goes in either way.
+        /// the replicas' `Default`. Only a condition that fixes a column can do that, see
+        /// `mayFixColumn`; the rest go in either way. A join runtime filter has to, being the one
+        /// condition the setting could never mirror: `addFilters` drops non-deterministic functions.
         if (settings.parallel_replicas_filter_pushdown)
         {
             // actual push down will be done when plan for local parallel replica will be optimized
@@ -1446,7 +1450,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             filter->getFilterColumnName(),
             filter->removesFilterColumn(),
             child->getOutputHeader()->getColumnsWithTypeAndName(),
-            isOnlyJoinRuntimeFilters);
+            [](const ActionsDAG::Node * atom) { return !mayFixColumn(atom); });
 
         if (!split)
             return 0;

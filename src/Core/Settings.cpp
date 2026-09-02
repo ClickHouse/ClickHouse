@@ -8230,8 +8230,9 @@ Allow usage of materialized views with parallel replicas
     DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
 Allow pushing down filters into the query shipped to remote replicas, so that a filter which the
 initiator applies to the result of a parallel replicas read is applied by the replicas themselves,
-and into the initiator's own local plan alongside it. Join runtime filters go into the local plan
-regardless of this setting: they can never be shipped to the replicas anyway.
+and into the initiator's own local plan alongside it. Conditions that cannot decide how the local
+plan reads - anything but an equality fixing a sort key column - go into it regardless of this
+setting; that includes join runtime filters, which can never be shipped to the replicas anyway.
 )", BETA) \
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.
