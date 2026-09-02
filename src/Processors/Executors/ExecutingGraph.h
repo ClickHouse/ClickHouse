@@ -59,9 +59,8 @@ public:
     {
         Idle,  /// prepare returned NeedData or PortFull. Non-owning.
         Preparing,  /// some executor is preparing processor, or processor is in task_queue. Owning.
-        Executing,  /// prepare returned Ready and task is executing. Owning.
+        Executing,  /// prepare returned Ready or Async and task is executing. Owning.
         Finished,  /// prepare returned Finished. Non-owning.
-        Async  /// prepare returned Async. Owning.
     };
 
     /// Forward decl so Node can hold an iterator into the owning Nodes list.
@@ -201,6 +200,7 @@ private:
         std::unordered_set<const void *> removed_edges;
     };
     RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
+    RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
     std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
     void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
 
