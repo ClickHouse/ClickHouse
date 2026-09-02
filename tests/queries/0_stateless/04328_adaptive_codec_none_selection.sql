@@ -14,7 +14,7 @@ CREATE TABLE t_adaptive_none
     z UInt64
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 INSERT INTO t_adaptive_none SELECT cityHash64(number), number, arrayElement([0, 18446744073709551615, 81985529216486895], number % 3 + 1) FROM numbers(1000000);
 INSERT INTO t_adaptive_none SELECT cityHash64(number), number, arrayElement([0, 18446744073709551615, 81985529216486895], number % 3 + 1) FROM numbers(1000000, 1000000);
@@ -29,7 +29,7 @@ FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_none) ORDER BY colu
 -- A merged part so small that one raw block beats any codec's framing.
 CREATE TABLE t_adaptive_none_tiny (x UInt64)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 INSERT INTO t_adaptive_none_tiny SELECT cityHash64(number) FROM numbers(4);
 INSERT INTO t_adaptive_none_tiny SELECT cityHash64(number) FROM numbers(4, 4);

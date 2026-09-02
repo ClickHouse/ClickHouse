@@ -79,6 +79,20 @@ For tuple subtraction: [tupleMinus](/reference/functions/regular-functions/tuple
 ### ilike function {#ilike-function}
 `a ILIKE b` – The `ilike(a, b)` function.
 
+### match function {#match-function}
+`a REGEXP b` – The `match(a, b)` function.
+
+`a ~ b` – The `match(a, b)` function (PostgreSQL-style regular expression match).
+
+### notMatch function {#notmatch-function}
+`a !~ b` – The `notMatch(a, b)` function (checks that `a` does not match the regular expression `b`).
+
+### matchCaseInsensitive function {#matchcaseinsensitive-function}
+`a ~* b` – The `matchCaseInsensitive(a, b)` function (case-insensitive regular expression match).
+
+### notMatchCaseInsensitive function {#notmatchcaseinsensitive-function}
+`a !~* b` – The `notMatchCaseInsensitive(a, b)` function (checks that `a` does not match the regular expression `b` case-insensitively).
+
 ### BETWEEN function {#between-function}
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 

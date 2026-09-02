@@ -35,7 +35,20 @@ fi
 echo $previous_release_tag
 
 echo "Clone previous release repository"
-git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
+
+function clone_previous_release_repository()
+{
+    # A killed clone leaves a `.git`-only directory that every later attempt rejects.
+    rm -rf previous_release_repository
+    # git has no default low-speed bound, so a stalled-but-open connection never ends.
+    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=120 clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
+}
+
+if ! run_with_retry 3 clone_previous_release_repository; then
+    echo -e "Failed to clone previous release tests$FAIL" >> /test_output/test_results.tsv
+    echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
+    exit 1
+fi
 
 echo "Download clickhouse-server from the previous release"
 mkdir previous_release_package_folder
@@ -58,6 +71,7 @@ fi
 # Check if we cloned previous release repository successfully
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
 then
+    echo -e "Failed to clone previous release tests$FAIL" >> /test_output/test_results.tsv
     echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
     exit 1
 elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
@@ -365,6 +379,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       globally, exactly like the `Code: 236 ... Cancelled mutating parts` message that the same cancelled test
 #       mutations emit above. Matching the message rather than the task type also covers the wrapping
 #       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
+# `Unexpected const virtual column: _table` (`NO_SUCH_COLUMN_IN_TABLE`, Code: 16) is the same class, from
+#       `04510_mutation_query_plan_only_virtual_columns`, whose `DELETE WHERE _table != ''` mutation is asserted to
+#       fail. Only a mutation command naming `_table` reaches that throw, since a query read fills it from the
+#       storage id, so the column name and the `MergeTreeSequentialSource` read path are matched together below.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
@@ -535,6 +553,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
            -e "Cannot parse string 'fail' as Int8" \
+           -e "Unexpected const virtual column: _table: While executing MergeTreeSequentialSource." \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \

@@ -47,7 +47,6 @@ SELECT *\nFROM\n(\n    (\n        SELECT *\n        FROM test_00597\n    )\n    
 2000-01-01	1	test string 1	1
 2000-01-01	1	test string 1	1
 SELECT *\nFROM\n(\n    SELECT *\n    FROM test_00597\n)\nANY LEFT JOIN\n(\n    SELECT *\n    FROM test_00597\n) USING (id)\nWHERE equals(id, 1)
-2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
 SELECT *\nFROM\n(\n    SELECT toInt8(1) AS id\n    FROM system.one\n)\nANY LEFT JOIN test_00597 USING (id)\nWHERE equals(value, 1)
@@ -55,21 +54,17 @@ SELECT *\nFROM\n(\n    SELECT toInt8(1) AS id\n    FROM system.one\n)\nANY LEFT 
 SELECT b.value\nFROM\n(\n    SELECT toInt8(1) AS id\n    FROM system.one\n)\nANY LEFT JOIN test_00597 AS b USING (id)\nWHERE equals(value, 1)
 1
 SELECT *\nFROM\n(\n    SELECT *\n    FROM\n    (\n        SELECT *\n        FROM test_00597\n    )\n    ANY LEFT JOIN\n    (\n        SELECT *\n        FROM test_00597\n    ) USING (id)\n)\nWHERE equals(id, 1)
-2000-01-01	1	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
 SELECT *\nFROM\n(\n    SELECT *\n    FROM test_00597\n)\nANY LEFT JOIN\n(\n    SELECT *\n    FROM test_00597\n) AS b USING (id)\nWHERE equals(b.id, 1)
-2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
 SELECT *\nFROM\n(\n    SELECT\n        toInt8(1) AS id,\n        toDate(\'2000-01-01\') AS date\n    FROM system.numbers\n    LIMIT 1\n)\nANY LEFT JOIN\n(\n    SELECT *\n    FROM test_00597\n) AS b USING (date, id)\nWHERE equals(b.date, toDate(\'2000-01-01\'))
-1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 2000-01-01	1	test string 1	1
 SELECT *\nFROM\n(\n    SELECT *\n    FROM\n    (\n        SELECT *\n        FROM test_00597\n    ) AS a\n    ANY LEFT JOIN\n    (\n        SELECT *\n        FROM test_00597\n    ) AS b ON equals(a.id, b.id)\n)\nWHERE equals(id, 1)
 2000-01-01	1	test string 1	1	2000-01-01	1	test string 1	1
 SELECT *\nFROM\n(\n    SELECT *\n    FROM test_00597\n)\nSEMI LEFT JOIN\n(\n    SELECT *\n    FROM\n    (\n        SELECT *\n        FROM test_00597\n    )\n) AS r USING (id)\nWHERE equals(r.id, 1)
-2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
 SELECT plus(value, t1.value) AS expr\nFROM\n(\n    SELECT\n        t0.value,\n        t1.value\n    FROM test_00597 AS t0\n    ALL FULL OUTER JOIN test_00597 AS t1 USING (date)\n)\nWHERE less(expr, 3)

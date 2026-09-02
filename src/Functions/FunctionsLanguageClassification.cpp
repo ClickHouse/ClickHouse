@@ -252,7 +252,7 @@ The longer the input, the more precise the language detection will be.
     };
     FunctionDocumentation::ReturnedValue returned_value_detect = {"Returns the 2-letter ISO code of the detected language. Other possible results: `un` = unknown, can not detect any language, `other` = the detected language does not have 2 letter code.", {"String"}};
     FunctionDocumentation::Examples examples_detect = {
-        {"Mixed language text", "SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there\\'s a will, there\\'s a way.')", "fr"}
+        {"Basic usage", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif.')", "fr"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_detect = {22, 2};
     FunctionDocumentation::Category category_detect = FunctionDocumentation::Category::NLP;
@@ -277,7 +277,7 @@ Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguage
     };
     FunctionDocumentation::ReturnedValue returned_value_mixed = {"Returns a map with keys which are 2-letter ISO codes and corresponding values which are a percentage of the text found for that language", {"Map(String, Float32)"}};
     FunctionDocumentation::Examples examples_mixed = {
-        {"Mixed languages", "SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
+        {"Mixed languages", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mixed = {22, 2};
     FunctionDocumentation::Category category_mixed = FunctionDocumentation::Category::NLP;
