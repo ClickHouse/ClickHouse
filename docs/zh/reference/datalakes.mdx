@@ -47,6 +47,13 @@ AWS Glue 数据目录可与 Iceberg 表搭配使用。你可以将其与 `iceber
 
 Iceberg REST Catalog 可用于 Iceberg 表。你可以将其与 `iceberg` 表引擎一起使用，也可以与 [DataLakeCatalog](/zh/reference/engines/database-engines/datalake) 数据库引擎一起使用。
 
+<div id="snowflake-horizon-catalog">
+  ## Snowflake Horizon Catalog
+</div>
+
+Snowflake Horizon Catalog 为 Snowflake 托管的 Iceberg 表提供 Iceberg REST API。
+使用 `catalog_type = 'horizon'` 的 `DataLakeCatalog`。请参阅 [Horizon catalog 指南](/zh/guides/use-cases/data-warehousing/horizon-catalog)。
+
 <div id="unity-catalog">
   ## Unity Catalog
 </div>

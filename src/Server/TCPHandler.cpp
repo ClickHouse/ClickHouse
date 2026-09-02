@@ -155,6 +155,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
+    extern const Event NativeProtocolSend;
     extern const Event ReadTaskRequestsSent;
     extern const Event MergeTreeReadTaskRequestsSent;
     extern const Event MergeTreeAllRangesAnnouncementsSent;
@@ -406,7 +407,8 @@ void TCPHandler::runImpl()
             return;
         }
 
-        out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocketChunked>>(socket(), write_event);
+        out = std::make_shared<AutoCanceledWriteBuffer<TCPHandlerPocoChunkedWriter>>(
+            socket(), write_event, ProfileEvents::NativeProtocolSend);
     }
     catch (const Exception & e)
     {
@@ -634,7 +636,7 @@ void TCPHandler::runImpl()
                 query_state->query_context,
                 /* fatal_error_callback */
                 [tcp_protocol_version = this->client_tcp_protocol_version,
-                 out_weak = std::weak_ptr<WriteBufferFromPocoSocketChunked>(this->out),
+                 out_weak = std::weak_ptr<TCPHandlerPocoChunkedWriter>(this->out),
                  query_state_weak = std::weak_ptr<QueryState>(query_state),
                  callback_mutex_weak = std::weak_ptr<std::mutex>(callback_mutex)]
                 {
@@ -651,7 +653,8 @@ void TCPHandler::runImpl()
                         return;
 
                     std::lock_guard lock(*callback_mutex_ptr);
-                    sendLogs(*query_state_ptr, std::move(out_ptr), tcp_protocol_version);
+                    sendLogs(*query_state_ptr, out_ptr, tcp_protocol_version);
+                    out_ptr->sync();
                 });
 
             if (query_state->run_query_in_background && session->sessionContext()
@@ -760,6 +763,7 @@ void TCPHandler::runImpl()
                     query_state->input_header = metadata_snapshot->getSampleBlock();
                     sendData(*query_state, query_state->input_header);
                     sendTimezone(*query_state);
+                    out->sync();
 
                     /// Update flag after reading external tables
                     query_state->read_all_data = false;
@@ -932,9 +936,7 @@ void TCPHandler::runImpl()
                         if (query_state->stop_read_return_partial_result)
                             return true;
 
-                        sendProgress(*query_state);
-                        sendSelectProfileEvents(*query_state);
-                        sendLogs(*query_state);
+                        sendInteractiveUpdates(*query_state);
                         return false;
                     });
             }
@@ -1016,7 +1018,17 @@ void TCPHandler::runImpl()
                 sendEndOfStream(*query_state);
 
                 if (query_state->run_query_in_background && !query_state->read_all_data)
+                {
+                    /// This is an early flush specifically for the detached-query path.
+                    /// `skipData` can block while waiting for the trailing client `Data` packet,
+                    /// so `EndOfStream` must reach the client before entering it.
+                    ///
+                    /// Other successful paths proceed directly to `finalizeOut`, which finalizes
+                    /// the compression wrapper and synchronizes `out`, so moving `sync` before
+                    /// the condition would be redundant for them.
+                    out->sync();
                     skipData(*query_state);
+                }
             }
 
             query_state->finalizeOut(out);
@@ -1157,7 +1169,10 @@ void TCPHandler::runImpl()
                 std::lock_guard lock(*callback_mutex);
 
                 if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                {
                     sendEndOfStream(*query_state);
+                    out->sync();
+                }
                 else
                     sendException(*exception, send_exception_with_stack_trace);
             }
@@ -1255,7 +1270,7 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
         case Protocol::Client::Ping:
             writeVarUInt(Protocol::Server::Pong, *out);
             out->finishChunk();
-            out->next();
+            out->sync();
             return false;
 
         case Protocol::Client::Cancel:
@@ -1345,7 +1360,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             case Protocol::Client::Ping:
                 writeVarUInt(Protocol::Server::Pong, *out);
                 out->finishChunk();
-                out->next();
+                out->sync();
                 continue;
 
             case Protocol::Client::Cancel:
@@ -1365,14 +1380,17 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 void TCPHandler::readTemporaryTables(QueryState & state)
 {
     sendLogs(state);
+    out->sync();
 
     /// no sense in partial_result_on_first_cancel setting when temporary data is read.
     auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
 
     while (receivePacketsExpectData(state))
     {
+        /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
         sendLogs(state);
         sendInsertProfileEvents(state);
+        out->sync();
     }
 }
 
@@ -1409,6 +1427,7 @@ void TCPHandler::startInsertQuery(QueryState & state)
     /// Send block to the client - table structure.
     sendData(state, state.io.pipeline.getHeader());
     sendLogs(state);
+    out->sync();
 
     /// Update flag after reading external tables
     state.read_all_data = false;
@@ -1431,8 +1450,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
 
         {
             std::lock_guard lock(*callback_mutex);
+            /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
             sendLogs(state);
             sendInsertProfileEvents(state);
+            out->sync();
         }
 
         if (result_chunk)
@@ -1482,8 +1503,10 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 executor.push(std::move(state.block_for_insert));
 
                 std::lock_guard lock(*callback_mutex);
+                /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
                 sendLogs(state);
                 sendInsertProfileEvents(state);
+                out->sync();
             }
 
             executor.finish();
@@ -1581,6 +1604,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         if (!header.empty())
         {
             sendData(state, header);
+            out->sync();
         }
     }
 
@@ -1613,11 +1637,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     {
                         /// Some time passed and there is a progress.
                         after_send_progress.restart();
-                        sendProgress(state);
-                        sendSelectProfileEvents(state);
+                        sendInteractiveUpdates(state);
                     }
-
-                    sendLogs(state);
+                    else
+                        sendLogs(state);
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
@@ -1627,6 +1650,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                         else
                             sendData(state, block);
                     }
+
+                    out->sync();
                 }
             }
         }
@@ -1785,7 +1810,7 @@ void TCPHandler::processTablesStatusRequest()
     /// For testing hedged requests
     if (unlikely(sleep_in_send_tables_status.totalMilliseconds()))
     {
-        out->next();
+        out->sync();
         std::chrono::milliseconds ms(sleep_in_send_tables_status.totalMilliseconds());
         std::this_thread::sleep_for(ms);
     }
@@ -1793,7 +1818,7 @@ void TCPHandler::processTablesStatusRequest()
     response.write(*out, client_tcp_protocol_version);
 
     out->finishChunk();
-    out->next();
+    out->sync();
 }
 
 
@@ -1821,7 +1846,7 @@ void TCPHandler::sendReadTaskRequest()
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
 
     out->finishChunk();
-    out->next();
+    out->sync();
 }
 
 
@@ -1831,7 +1856,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRang
     announcement.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
-    out->next();
+    out->sync();
 }
 
 
@@ -1841,7 +1866,7 @@ void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
     request.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
-    out->next();
+    out->sync();
 }
 
 
@@ -1851,7 +1876,6 @@ void TCPHandler::sendProfileInfo(QueryState &, const ProfileInfo & info)
     info.write(*out, client_tcp_protocol_version);
 
     out->finishChunk();
-    out->next();
 }
 
 
@@ -1866,9 +1890,9 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
     writeStringBinary("", *out);
 
     state.block_out->write(totals);
-    state.maybe_compressed_out->next();
+    if (state.maybe_compressed_out != out)
+        state.maybe_compressed_out->next();
     out->finishChunk();
-    out->next();
 }
 
 
@@ -1883,9 +1907,9 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
     writeStringBinary("", *out);
 
     state.block_out->write(extremes);
-    state.maybe_compressed_out->next();
+    if (state.maybe_compressed_out != out)
+        state.maybe_compressed_out->next();
     out->finishChunk();
-    out->next();
 }
 
 
@@ -1922,9 +1946,10 @@ void TCPHandler::sendProfileEvents(QueryState & state)
         writeStringBinary("", *out);
 
         state.profile_events_block_out->write(block);
-        state.profile_events_block_out->flush();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS
+            && state.maybe_compressed_out != out)
+            state.profile_events_block_out->flush();
         out->finishChunk();
-        out->next();
 
         auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
         if (elapsed_milliseconds > 100)
@@ -1966,7 +1991,6 @@ void TCPHandler::sendTimezone(QueryState & state)
     writeStringBinary(tz, *out);
 
     out->finishChunk();
-    out->next();
 }
 
 
@@ -2126,7 +2150,7 @@ void TCPHandler::receiveHello()
         if (packet_type == 'G' || packet_type == 'P')
         {
             writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config(), socket().secure()), *out);
-            out->next();
+            out->sync();
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
@@ -2295,7 +2319,7 @@ void TCPHandler::receiveHello()
         String challenge = create_challenge();
         writeVarUInt(Protocol::Server::SSHChallenge, *out);
         writeStringBinary(challenge, *out);
-        out->next();
+        out->sync();
 
         String signature;
         readVarUInt(packet_type, *in);
@@ -2455,7 +2479,7 @@ void TCPHandler::sendHello()
         writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
     }
 
-    out->next();
+    out->sync();
 }
 
 
@@ -3066,7 +3090,7 @@ void TCPHandler::initMaybeCompressedOut(QueryState & state)
     initMaybeCompressedOut(state, out);
 }
 
-void TCPHandler::initMaybeCompressedOut(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out)
+void TCPHandler::initMaybeCompressedOut(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out)
 {
     const Settings & query_settings = state.query_context->getSettingsRef();
     if (!state.maybe_compressed_out)
@@ -3096,7 +3120,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 
 
 void TCPHandler::initLogsBlockOutput(
-    QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version)
+    QueryState & state, const Block & block, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version)
 {
     if (!state.logs_block_out)
     {
@@ -3231,10 +3255,10 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
             /// hang on receiving of at least packet type - chunk will not be processed unless either chunk footer
             /// or chunk continuation header is received - first 'next' is sending starting chunk containing packet type
             /// and second 'next' is sending chunk continuation header.
-            out->next();
+            out->sync();
             /// Send external table name (empty name is the main table)
             writeStringBinary("", *out);
-            out->next();
+            out->sync();
             std::chrono::milliseconds ms(state.query_context->getSettingsRef()[Setting::sleep_in_send_data_ms].totalMilliseconds());
             std::this_thread::sleep_for(ms);
         }
@@ -3250,7 +3274,6 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
             state.maybe_compressed_out->next();
 
         out->finishChunk();
-        out->next();
     }
     catch (...)
     {
@@ -3278,7 +3301,7 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
 }
 
 void TCPHandler::sendLogData(
-    QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version)
+    QueryState & state, const Block & block, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version)
 {
     initLogsBlockOutput(state, block, out, client_tcp_protocol_version);
 
@@ -3290,9 +3313,10 @@ void TCPHandler::sendLogData(
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
-    state.logs_block_out->flush();
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS
+        && state.maybe_compressed_out != out)
+        state.logs_block_out->flush();
     out->finishChunk();
-    out->next();
 }
 
 
@@ -3311,9 +3335,9 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
     writeStringBinary("", *columns_buf);
     writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
 
-    columns_buf->next();
+    if (columns_buf != out.get())
+        columns_buf->next();
     out->finishChunk();
-    out->next();
 }
 
 
@@ -3326,7 +3350,7 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
     writeException(e, *out, with_stack_trace);
 
     out->finishChunk();
-    out->next();
+    out->sync();
 }
 
 
@@ -3402,7 +3426,6 @@ void TCPHandler::sendEndOfStream(QueryState & state)
     writeVarUInt(Protocol::Server::EndOfStream, *out);
 
     out->finishChunk();
-    out->next();
 }
 
 
@@ -3422,7 +3445,15 @@ void TCPHandler::sendProgress(QueryState & state)
     increment.write(*out, client_tcp_protocol_version);
 
     out->finishChunk();
-    out->next();
+}
+
+
+void TCPHandler::sendInteractiveUpdates(QueryState & state)
+{
+    sendProgress(state);
+    sendSelectProfileEvents(state);
+    sendLogs(state);
+    out->sync();
 }
 
 
@@ -3431,7 +3462,7 @@ void TCPHandler::sendLogs(QueryState & state)
     TCPHandler::sendLogs(state, out, client_tcp_protocol_version);
 }
 
-void TCPHandler::sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version)
+void TCPHandler::sendLogs(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version)
 {
     if (!state.logs_queue)
         return;
