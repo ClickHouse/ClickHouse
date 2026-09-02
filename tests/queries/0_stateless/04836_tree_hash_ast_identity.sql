@@ -40,6 +40,28 @@ SELECT k, s FROM (
     SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS w FROM numbers(4))
 ) ORDER BY k;
 
+-- `ASTWindowDefinition::frame_begin_offset`, a child of the definition an inline `OVER` clause
+-- holds by pointer.
+SELECT k, s FROM (
+    SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
+    UNION ALL
+    SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
+) ORDER BY k;
+
+-- `ASTWindowDefinition::partition_by`, another child of that definition.
+SELECT k, s FROM (
+    SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (PARTITION BY number % 2 ORDER BY number) AS w FROM numbers(4))
+    UNION ALL
+    SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (PARTITION BY number % 3 ORDER BY number) AS w FROM numbers(4))
+) ORDER BY k;
+
+-- `ASTWindowDefinition::order_by`, another child of that definition.
+SELECT k, s FROM (
+    SELECT 1 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
+    UNION ALL
+    SELECT 2 AS k, sum(w) AS s FROM view(SELECT sum(number) OVER (ORDER BY -number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS w FROM numbers(4))
+) ORDER BY k;
+
 -- The parameters of `ASTColumnsApplyTransformer`, which are not children of it either.
 SELECT * FROM (
     SELECT 1 AS k, * FROM view(SELECT COLUMNS('x') APPLY(quantile(0.1)) FROM (SELECT number AS x FROM numbers(11)))
@@ -54,3 +76,4 @@ DROP TABLE IF EXISTS t_04836;
 CREATE TABLE t_04836 (a UInt8 PRIMARY KEY, b String PRIMARY KEY) ENGINE = MergeTree;
 SELECT primary_key FROM system.tables WHERE database = currentDatabase() AND name = 't_04836';
 DROP TABLE t_04836;
+
