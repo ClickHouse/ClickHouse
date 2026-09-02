@@ -19,9 +19,9 @@ namespace DB
 
 /// This class can be used as an argument for the template class FunctionJSON.
 /// It provides ability to parse JSONs using rapidjson library.
-struct RapidJSONParser
+struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - value_pool_buffer is arena storage, written before read
 {
-    RapidJSONParser() = default;
+    RapidJSONParser() = default; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     /// `document` points to `value_pool`, whose bookkeeping lives inside `value_pool_buffer`, so a
     /// copy or a move would leave one of the three aiming into the other object.
     RapidJSONParser(const RapidJSONParser &) = delete;
