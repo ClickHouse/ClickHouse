@@ -33,6 +33,7 @@
 
 #include <bit>
 #include <chrono>
+#include <cmath>
 
 
 namespace ProfileEvents
@@ -109,6 +110,7 @@ void appendHistogramBuckets(
     const google::protobuf::RepeatedField<Int64> & deltas,
     const google::protobuf::RepeatedField<double> & counts,
     bool is_float,
+    bool is_stale_marker,
     std::string_view what,
     ColumnInt32 & out_span_offsets,
     ColumnUInt32 & out_span_lengths,
@@ -140,6 +142,9 @@ void appendHistogramBuckets(
             if (count < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has a negative {} bucket count: {}", what, count);
+            if (std::isnan(count) && !is_stale_marker)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has a NaN {} bucket count but is not a stale marker", what);
             out_values.insertValue(count);
         }
     }
@@ -241,13 +246,17 @@ ColumnPtr makeHistogramsColumn(
             Float64 count = is_float ? histogram.count_float() : static_cast<Float64>(histogram.count_int());
             Float64 zero_count = is_float ? histogram.zero_count_float() : static_cast<Float64>(histogram.zero_count_int());
             Float64 sum = histogram.sum();
+            bool is_stale_marker = isPrometheusStaleMarker(sum);
 
-            /// Only the float arms can be negative: the int ones are unsigned on the wire. NaN
-            /// compares false here, so a stale marker still gets through.
+            /// Only the float arms can be negative or NaN: the int ones are unsigned on the wire.
+            /// NaN counts are allowed only in a stale marker (whose sum carries the stale NaN).
             if (count < 0 || zero_count < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has a negative {}: {}",
                     count < 0 ? "count" : "zero count", count < 0 ? count : zero_count);
+            if (!is_stale_marker && (std::isnan(count) || std::isnan(zero_count)))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has a NaN {} but is not a stale marker", std::isnan(count) ? "count" : "zero count");
 
             if (histogram.reset_hint() < prometheus::Histogram::UNKNOWN || histogram.reset_hint() > prometheus::Histogram::GAUGE)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -260,7 +269,7 @@ ColumnPtr makeHistogramsColumn(
             if (is_float)
                 histogram_flags |= TimeSeriesHistogramFlags::IsFloat;
             histogram_flags |= static_cast<UInt8>(histogram.reset_hint()) << TimeSeriesHistogramFlags::CounterResetHintShift;
-            if (isPrometheusStaleMarker(sum))
+            if (is_stale_marker)
                 histogram_flags |= TimeSeriesHistogramFlags::StaleMarker;
 
             flags->insertValue(histogram_flags);
@@ -275,12 +284,12 @@ ColumnPtr makeHistogramsColumn(
             zero_counts_int->insertValue(is_float ? 0 : histogram.zero_count_int());
 
             appendHistogramBuckets(
-                histogram.positive_spans(), histogram.positive_deltas(), histogram.positive_counts(), is_float, "positive",
+                histogram.positive_spans(), histogram.positive_deltas(), histogram.positive_counts(), is_float, is_stale_marker, "positive",
                 *positive_span_offsets, *positive_span_lengths, *positive_spans_offsets,
                 *positive_values, *positive_values_offsets,
                 *positive_int_values, *positive_int_values_offsets);
             appendHistogramBuckets(
-                histogram.negative_spans(), histogram.negative_deltas(), histogram.negative_counts(), is_float, "negative",
+                histogram.negative_spans(), histogram.negative_deltas(), histogram.negative_counts(), is_float, is_stale_marker, "negative",
                 *negative_span_offsets, *negative_span_lengths, *negative_spans_offsets,
                 *negative_values, *negative_values_offsets,
                 *negative_int_values, *negative_int_values_offsets);
