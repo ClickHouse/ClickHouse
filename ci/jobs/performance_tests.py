@@ -863,17 +863,29 @@ def create_log_export_configs():
         return True
     try:
         host, password = log_export.get_credentials()
-        for config_dir, binary in (
-            (perf_left_config, f"{perf_left}/clickhouse"),
-            (perf_right_config, f"{perf_right}/clickhouse"),
-        ):
+    except Exception:
+        # Best effort: a job that cannot export its system logs still runs.
+        traceback.print_exc()
+        return True
+    for config_dir, binary in (
+        (perf_left_config, f"{perf_left}/clickhouse"),
+        (perf_right_config, f"{perf_right}/clickhouse"),
+    ):
+        # Per server: the export of the one whose config cannot be written is
+        # the only one lost. The reference server runs an older build, and it
+        # is the one whose `system.settings` probe can fail; the patched server
+        # is the side the check reports on, and it keeps its export.
+        try:
             if not log_export.create_config(config_dir, host, password):
                 print(f"WARNING: Failed to write the log export config into [{config_dir}]")
                 continue
             write_ci_logs_sender_user(config_dir, binary)
-    except Exception:
-        # Best effort: a job that cannot export its system logs still runs.
-        traceback.print_exc()
+        except Exception:
+            traceback.print_exc()
+            print(
+                f"WARNING: Failed to configure the log export of the server in "
+                f"[{config_dir}], its system logs will not be exported"
+            )
     return True
 
 
