@@ -213,6 +213,10 @@ struct FailPointChannel
     /// after a notify, waitForPause waits for pause_epoch > resume_epoch,
     /// ensuring the pause happened after the most recent resume.
     size_t pause_epoch = 0;
+
+    /// Set to true by disableFailPoint so that waitForPause can return
+    /// even when no thread has paused (pause_epoch <= resume_epoch).
+    bool disabled = false;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -255,6 +259,7 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     {
         /// Increment resume_epoch to wake up all waiting threads.
         ++iter->second->resume_epoch;
+        iter->second->disabled = true;
         iter->second->resume_cv.notify_all();
         iter->second->pause_cv.notify_all();
         fail_point_wait_channels.erase(iter);
@@ -315,7 +320,7 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     /// after NOTIFY, the task thread may not have decremented pause_count yet,
     /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
-        return channel->pause_epoch > channel->resume_epoch;
+        return channel->pause_epoch > channel->resume_epoch || channel->disabled;
     });
 }
 
@@ -339,12 +344,12 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 {
     std::vector<FailPointInfo> result;
 
-#define SUB_M(NAME, TP)                                 \
-    result.push_back(                                   \
-        FailPointInfo{                                  \
-            .name = FailPoints::NAME,                   \
-            .type = FailPointType::TP,                  \
-            .enabled = fiu_fail(FailPoints::NAME) != 0, \
+#define SUB_M(NAME, TP)                                   \
+    result.push_back(                                     \
+        FailPointInfo{                                    \
+            .name = FailPoints::NAME,                     \
+            .type = FailPointType::TP,                    \
+            .enabled = fiu_status(FailPoints::NAME) != 0, \
         });
 #define ADD_ONCE(NAME) SUB_M(NAME, Once)
 #define ADD_REGULAR(NAME) SUB_M(NAME, Regular)
