@@ -223,29 +223,36 @@ Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
 PruningReturnStatus ManifestFilesPruner::canBePruned(
     const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
+    const auto & partition_value = entry->parsed_entry->partition_key_value;
+
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry->parsed_entry->partition_key_value;
-        std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
-        for (size_t i = 0; i < index_value.size(); ++i)
+        /// A spec field whose source column or transform cannot be modelled is left out of the
+        /// partition key, so the key is narrower than the tuple and the two are not index-aligned.
+        /// Only the partition key is unusable then; the min/max conditions below still apply.
+        if (partition_key->data_types.size() == partition_value.size())
         {
-            auto & field = index_value[i];
-            const auto & type = partition_key->data_types.at(i);
-            // NULL_LAST
-            if (field.isNull())
-                field = POSITIVE_INFINITY;
-            else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
-                field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
-            else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
-                field = decodePartitionDecimalByType(field.safeGet<String>(), *type);
-        }
+            std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
+            for (size_t i = 0; i < index_value.size(); ++i)
+            {
+                auto & field = index_value[i];
+                const auto & type = partition_key->data_types.at(i);
+                // NULL_LAST
+                if (field.isNull())
+                    field = POSITIVE_INFINITY;
+                else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
+                    field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
+                else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
+                    field = decodePartitionDecimalByType(field.safeGet<String>(), *type);
+            }
 
-        bool can_be_true = partition_key_condition->mayBeTrueInRange(
-            partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+            bool can_be_true = partition_key_condition->mayBeTrueInRange(
+                partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
 
-        if (!can_be_true)
-        {
-            return PruningReturnStatus::PARTITION_PRUNED;
+            if (!can_be_true)
+            {
+                return PruningReturnStatus::PARTITION_PRUNED;
+            }
         }
     }
 
