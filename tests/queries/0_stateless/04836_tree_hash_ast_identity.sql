@@ -77,3 +77,18 @@ CREATE TABLE t_04836 (a UInt8 PRIMARY KEY, b String PRIMARY KEY) ENGINE = MergeT
 SELECT primary_key FROM system.tables WHERE database = currentDatabase() AND name = 't_04836';
 DROP TABLE t_04836;
 
+-- `ASTTableExpression::sample_size` and `ASTTableExpression::sample_offset`.
+DROP TABLE IF EXISTS t_04836_sample;
+CREATE TABLE t_04836_sample (x UInt64) ENGINE = MergeTree ORDER BY cityHash64(x) SAMPLE BY cityHash64(x);
+INSERT INTO t_04836_sample SELECT number FROM numbers(1024);
+SELECT k, s FROM (
+    SELECT 1 AS k, count() AS s FROM view(SELECT x FROM t_04836_sample SAMPLE 1/8)
+    UNION ALL
+    SELECT 2 AS k, count() AS s FROM view(SELECT x FROM t_04836_sample)
+) ORDER BY k;
+SELECT k, s FROM (
+    SELECT 1 AS k, count() AS s FROM view(SELECT x FROM t_04836_sample SAMPLE 1/4 OFFSET 0/4)
+    UNION ALL
+    SELECT 2 AS k, count() AS s FROM view(SELECT x FROM t_04836_sample SAMPLE 1/4 OFFSET 2/4)
+) ORDER BY k;
+DROP TABLE t_04836_sample;
