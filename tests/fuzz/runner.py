@@ -434,6 +434,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     "reduction_percent": round(reduction),
                 },
             )
+            # A successful minimization can spend the whole budget printing
+            # progress lines; keep its output bounded like the fuzzing output.
+            truncate_output(Path(out_path))
         else:
             # Delete minimized corpus directory
             shutil.rmtree(mini_corpus_dir)
