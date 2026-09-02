@@ -65,7 +65,7 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     Pour charger le jeu de données à partir du fichier `Parquet`, exécutez l’instruction SQL suivante :
 
     ```sql
-    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
     L’insertion de 28,74 millions de lignes dans la table va prendre quelques minutes.
@@ -108,9 +108,9 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     Le jeu de données HackerNews contient des embeddings vectoriels générés à partir du modèle
     [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
 
-    Un exemple de script Python est fourni ci-dessous pour illustrer la génération programmatique
-    de vecteurs d&#39;embedding à l&#39;aide du package Python `sentence_transformers`. Le vecteur d&#39;embedding de recherche
-    est ensuite passé en argument à la fonction [`cosineDistance()`](/fr/reference/functions/regular-functions/distance-functions#cosineDistance) dans la requête &#96;SELECT&#96;.
+    Un exemple de script Python est fourni ci-dessous pour montrer comment générer de manière programmatique
+    des vecteurs d&#39;embeddding en utilisant le package Python `sentence_transformers1`. Le vecteur d&#39;embedding de recherche
+    est ensuite passé en argument à la fonction [`cosineDistance()`](/fr/reference/functions/regular-functions/distance-functions#cosineDistance) dans la requête `SELECT`.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -227,11 +227,11 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     4. Utilise `LangChain` et l’API Chat OpenAI `gpt-3.5-turbo` pour **résumer** le contenu récupéré à l’étape #3.
        Les publications/commentaires récupérés à l’étape #3 sont transmis comme *contexte* à l’API Chat et constituent le maillon essentiel de Generative AI.
 
-    Un exemple d&#39;exécution de l&#39;application de résumé est présenté ci-dessous, suivi du code de l&#39;application. L&#39;exécution de l&#39;application nécessite qu&#39;une clé API OpenAI soit définie dans la variable d&#39;environnement `OPENAI_API_KEY`. La clé API OpenAI peut être obtenue après inscription sur https://platform.openai.com.
+    Un exemple d&#39;exécution de l&#39;application de résumé est présenté ci-dessous, suivi du code de l&#39;application de résumé. L&#39;exécution de l&#39;application nécessite qu&#39;une clé API OpenAI soit définie dans la variable d&#39;environnement `OPENAI_API_KEY`. La clé API OpenAI peut être obtenue après inscription sur https://platform.openai.com.
 
-    Cette application illustre un cas d&#39;usage d&#39;IA générative applicable à de multiples domaines métier, tels que :
-    l&#39;analyse du sentiment client, l&#39;automatisation du support technique, l&#39;exploitation des conversations utilisateurs, les documents juridiques, les dossiers médicaux,
-    les comptes rendus de réunions, les états financiers, etc.
+    Cette application illustre un cas d’usage d’IA générative applicable à de multiples domaines d’entreprise, tels que :
+    l’analyse du sentiment client, l’automatisation du support technique, l’exploitation des conversations des utilisateurs, les documents juridiques, les dossiers médicaux,
+    les comptes rendus de réunions, les états financiers, etc
 
     ```shell
     $ python3 summarize.py
