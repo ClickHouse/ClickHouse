@@ -414,16 +414,6 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 // - `Session::reconnect()` uses the pool as well
 // - comprehensive sensors
 // - session is reused according its inner state, automatically
-/// Mirrors `Poco::Net::HTTPClientSession::bypassProxy`; keep in sync on Poco upgrades.
-static bool isProxyBypassedForHost(const std::string & host, const Poco::Net::HTTPClientSession::ProxyConfig & proxy_config)
-{
-    return !proxy_config.nonProxyHosts.empty()
-        && Poco::RegularExpression::match(
-            host,
-            proxy_config.nonProxyHosts,
-            Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
-}
-
 template <class Session>
 class EndpointConnectionPool : public std::enable_shared_from_this<EndpointConnectionPool<Session>>, public IExtendedPool
 {
@@ -881,16 +871,16 @@ private:
 
 
     /// Establish a connection through a non-bypassed proxy. Poco connects to the proxy, which
-    /// resolves and reaches the target, so the target `HostResolver` is not consulted.
-    /// `_resolved_host` is set to the proxy host so that `getResolvedAddress()` reports it
-    /// (e.g. for S3 request logging) instead of the target URL host that was never dialled.
+    /// resolves and reaches the target, so the target `HostResolver` is not consulted and
+    /// `_resolved_host` is left empty (Poco then uses `_host` for the proxy request / `CONNECT`
+    /// target). A connect failure here belongs to the proxy, so it propagates without resolver
+    /// bookkeeping or per-address retry.
     ConnectionPtr prepareConnectionViaProxy(
         const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
     {
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
-        connection->setResolvedHost(poco_proxy_config.host);
 
         try
         {
@@ -921,7 +911,12 @@ private:
         auto poco_proxy_config = proxy_configuration.isEmpty()
             ? Poco::Net::HTTPClientSession::ProxyConfig{}
             : proxyConfigurationToPocoProxyConfig(proxy_configuration);
-        const bool proxy_bypassed_for_host = isProxyBypassedForHost(host, poco_proxy_config);
+        /// Mirrors `Poco::Net::HTTPClientSession::bypassProxy`; keep in sync on Poco upgrades.
+        const bool proxy_bypassed_for_host = !poco_proxy_config.nonProxyHosts.empty()
+            && Poco::RegularExpression::match(
+                host,
+                poco_proxy_config.nonProxyHosts,
+                Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
         const bool retry_resolved_addresses = proxy_configuration.isEmpty() || proxy_bypassed_for_host;
 
         if (!retry_resolved_addresses)

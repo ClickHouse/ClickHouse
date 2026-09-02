@@ -398,9 +398,6 @@ namespace Net
         int socketError();
         /// Returns the value of the SO_ERROR socket option.
 
-        void throwSocketError(const std::string & arg);
-        /// Throws the exception matching the pending socket error, naming `arg`.
-
         poco_socket_t sockfd() const;
         /// Returns the socket descriptor for the
         /// underlying native socket.
@@ -423,6 +420,9 @@ namespace Net
         /// Returns true iff the underlying socket is initialized.
 
         static void error(int code);
+        /// Throws an appropriate exception for the given error code.
+
+        static void error(int code, const std::string & arg);
         /// Throws an appropriate exception for the given error code.
 
     protected:
@@ -471,9 +471,6 @@ namespace Net
 
         static void error(const std::string & arg);
         /// Throws an appropriate exception for the last error.
-
-        static void error(int code, const std::string & arg);
-        /// Throws an appropriate exception for the given error code.
 
         void throttleSend(size_t length, bool blocking);
         /// Properly throttles the send operation.
