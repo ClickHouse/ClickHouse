@@ -52,6 +52,13 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
         if (!creator.features.fill_engine_settings_fn)
             continue;
 
+        /// An engine that does not accept a `SETTINGS` clause at `CREATE` must not advertise
+        /// settings here. `Hudi` shares `DataLakeStorageSettings` with the other data lake
+        /// engines, and so inherits their fill function, but is registered with
+        /// `supports_settings = false` - listing 356 settings it rejects would be misleading.
+        if (!creator.features.supports_settings)
+            continue;
+
         /// Fill settings for this engine into temporary columns (without engine_name)
         auto num_columns = res_columns.size();
         MutableColumns setting_columns;
