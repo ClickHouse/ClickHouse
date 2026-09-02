@@ -346,6 +346,18 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
                     f"{locale or 'English'}: generated Cloud card {field} "
                     "does not match its configured explorer metadata"
                 )
+        setup_page = (
+            docs_root / prefix / "get-started" / "setup" / "cloud.mdx"
+        )
+        frontmatter = generator.parse_frontmatter(
+            setup_page.read_text(encoding="utf-8")
+        )
+        for field in ("title", "description"):
+            if card.get(field) != frontmatter.get(field):
+                errors.append(
+                    f"{setup_page.relative_to(docs_root)}: generated Cloud "
+                    f"card {field} must match the destination page frontmatter"
+                )
         expected_href = f"{locale_prefix}/get-started/setup/cloud"
         if card.get("href") != expected_href:
             errors.append(
@@ -354,12 +366,6 @@ def check_cloud_setup_cards(docs_root: Path) -> list:
             )
 
         if locale:
-            setup_page = (
-                docs_root / locale / "get-started" / "setup" / "cloud.mdx"
-            )
-            frontmatter = generator.parse_frontmatter(
-                setup_page.read_text(encoding="utf-8")
-            )
             if frontmatter.get("sidebarTitle") in (None, "Cloud"):
                 errors.append(
                     f"{setup_page.relative_to(docs_root)}: sidebarTitle must "

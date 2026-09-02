@@ -31,10 +31,9 @@ LOCALES = ('ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh')
 
 CLOUD_SETUP_CARD = {
     'id': 'create-your-first-service-on-cloud',
-    'title': 'Create your first Cloud service and load example data',
+    'title': 'ClickHouse Cloud quick start',
     'description': (
-        'Create a ClickHouse Cloud service, explore the SQL console, and load '
-        'an example dataset to start querying real data in minutes.'
+        'Quick start guide for ClickHouse Cloud'
     ),
     'useCases': ['All'],
     'products': ['Cloud'],
@@ -42,78 +41,36 @@ CLOUD_SETUP_CARD = {
 
 CLOUD_SETUP_CARD_TRANSLATIONS = {
     'ar': {
-        'title': 'أنشئ أول خدمة Cloud لك وحمّل بيانات تجريبية',
-        'description': (
-            'أنشئ خدمة ClickHouse Cloud، واستكشف وحدة تحكم SQL، وحمّل '
-            'مجموعة بيانات نموذجية لبدء الاستعلام عن بيانات حقيقية خلال دقائق.'
-        ),
+        'title': 'البدء السريع مع ClickHouse Cloud',
+        'description': 'دليل البدء السريع لـ ClickHouse Cloud',
     },
     'es': {
-        'title': (
-            'Crea tu primer servicio de ClickHouse Cloud y carga datos de '
-            'ejemplo'
-        ),
-        'description': (
-            'Crea un servicio de ClickHouse Cloud, explora la consola SQL y '
-            'carga un conjunto de datos de ejemplo para empezar a consultar '
-            'datos reales en minutos.'
-        ),
+        'title': 'Inicio rápido de ClickHouse Cloud',
+        'description': 'Guía de inicio rápido para ClickHouse Cloud',
     },
     'fr': {
-        'title': (
-            'Créez votre premier service Cloud et chargez un jeu de données '
-            'd’exemple'
-        ),
-        'description': (
-            'Créez un service ClickHouse Cloud, découvrez la console SQL et '
-            'chargez un jeu de données d’exemple pour commencer à interroger '
-            'des données réelles en quelques minutes.'
-        ),
+        'title': 'Démarrage rapide de ClickHouse Cloud',
+        'description': 'Guide de démarrage rapide pour ClickHouse Cloud',
     },
     'ja': {
-        'title': '最初のCloud サービスを作成し、サンプルデータを読み込む',
-        'description': (
-            'ClickHouse Cloud サービスを作成し、SQL コンソールを確認して'
-            'サンプルデータセットを読み込むと、わずか数分で実際のデータに'
-            '対するクエリを開始できます。'
-        ),
+        'title': 'ClickHouse Cloud クイックスタート',
+        'description': 'ClickHouse Cloud のクイックスタートガイド',
     },
     'ko': {
-        'title': '첫 번째 Cloud 서비스를 만들고 예시 데이터 불러오기',
-        'description': (
-            'ClickHouse Cloud 서비스를 만들고 SQL 콘솔을 살펴본 뒤 예시 '
-            '데이터셋을 로드하여 몇 분 만에 실제 데이터에 쿼리를 실행할 수 '
-            '있습니다.'
-        ),
+        'title': 'ClickHouse Cloud 빠른 시작',
+        'description': 'ClickHouse Cloud 빠른 시작 가이드',
     },
     'pt-BR': {
-        'title': (
-            'Crie seu primeiro serviço do ClickHouse Cloud e carregue dados '
-            'de exemplo'
-        ),
-        'description': (
-            'Crie um serviço do ClickHouse Cloud, explore o Console SQL e '
-            'carregue um conjunto de dados de exemplo para começar a consultar '
-            'dados reais em poucos minutos.'
-        ),
+        'title': 'Início rápido do ClickHouse Cloud',
+        'description': 'Guia de início rápido do ClickHouse Cloud',
     },
     'ru': {
-        'title': (
-            'Создайте первый сервис ClickHouse Cloud и загрузите '
-            'демонстрационные данные'
-        ),
-        'description': (
-            'Создайте сервис ClickHouse Cloud, изучите SQL-консоль и загрузите '
-            'демонстрационный набор данных, чтобы уже через несколько минут '
-            'начать выполнять запросы к реальным данным.'
-        ),
+        'title': 'Быстрый старт с ClickHouse Cloud',
+        'description': 'Руководство по быстрому старту с ClickHouse Cloud',
     },
     'zh': {
-        'title': '创建您的第一个 Cloud 服务并加载示例数据',
-        'description': (
-            '创建一个 ClickHouse Cloud 服务，浏览 SQL 控制台并加载示例数据集，'
-            '即可在几分钟内开始查询真实数据。'
-        ),
+        'title': 'ClickHouse Cloud 快速入门',
+        'description': 'ClickHouse Cloud 快速入门指南',
     },
 }
 
