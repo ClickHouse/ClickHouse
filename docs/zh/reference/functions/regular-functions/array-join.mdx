@@ -20,6 +20,8 @@ doc_type: 'reference'
   若要返回仅包含数组类型默认值的一行，可以用 [emptyArrayToSingle](/zh/reference/functions/regular-functions/array-functions#emptyArrayToSingle) 对其进行包装，例如：`arrayJoin(emptyArrayToSingle(...))`。
 </Note>
 
+`unnest` (自 26.5 版本起) 是函数调用形式中 `arrayJoin` 的不区分大小写别名 (`SELECT unnest(arr)`) 。不支持 PostgreSQL 表源语法 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)` 和 `LATERAL`) 。对于此类查询，请使用 [`ARRAY JOIN`](/zh/reference/statements/select/array-join) 子句。
+
 例如：
 
 ```sql title="Query"
