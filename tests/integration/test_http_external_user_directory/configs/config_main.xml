@@ -31,6 +31,8 @@
                 <role>probe_role_a</role>
                 <role>probe_role_b</role>
                 <role>capped_role</role>
+                <role>limit_role_a</role>
+                <role>limit_role_b</role>
             </allowed_roles>
             <allowed_role_prefix>external_</allowed_role_prefix>
         </http>

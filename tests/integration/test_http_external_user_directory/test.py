@@ -1,5 +1,6 @@
 import os
 import shlex
+import threading
 
 import pytest
 
@@ -13,6 +14,7 @@ instance = cluster.add_instance(
     "node",
     main_configs=["configs/config_main.xml", "configs/remote_servers.xml"],
     user_configs=["configs/users.xml"],
+    stay_alive=True,  # test_definer_view_keeps_helper_roles restarts the server
 )
 instance2 = cluster.add_instance(
     "node2",
@@ -44,7 +46,7 @@ def admin2(query, **kwargs):
 
 
 def query4_local(query, user=None, password=None, nothrow=False):
-    # ADAPTATION (Task 8): node4's http directory restricts `networks` to `127.0.0.1/32`.
+    # node4's http directory restricts `networks` to `127.0.0.1/32`.
     # `instance4.query` (the normal helper) runs `clickhouse-client` as a SEPARATE process
     # on the test-runner host, connecting to node4 over the docker bridge network — node4
     # sees that connection's address as the container's own docker-network IP, never
@@ -110,6 +112,9 @@ def started_cluster():
             "probe_role_a",
             "probe_role_b",
             "capped_role",
+            "limit_role_a",
+            "limit_role_b",
+            "external_definer",
         ]:
             admin(f"CREATE ROLE IF NOT EXISTS {role}")
             instance2.query(
@@ -239,7 +244,7 @@ def test_membership_change_between_authentications(started_cluster):
 
 
 def test_two_simultaneous_sessions_keep_own_roles(started_cluster):
-    # ADR additional test 1. Reattachment to a named `session_id` now rebinds roles per
+    # Reattachment to a named `session_id` rebinds roles per
     # request (see "Replace authentication-scoped external roles on named-session
     # reattachment"), so this is a rebind smoke test, not proof of concurrent-session
     # isolation: each request's roles follow its own authentication, and touching session
@@ -464,7 +469,7 @@ def test_networks_allow_localhost(started_cluster):
     # helper) issues `clickhouse-client` from the test-runner host over the docker bridge
     # network, which node4 never sees as `127.0.0.1` — so this test must use
     # `query4_local`, which runs `clickhouse-client` INSIDE node4's own container against
-    # its own loopback. The rejection path from a remote client is covered in Task 10
+    # its own loopback. The rejection path from a remote client is covered
     # (`test_networks_reject_remote_client`).
     assert (
         query4_local("SELECT 1", user="aux_user", password=GOOD_PASSWORD).strip() == "1"
@@ -472,7 +477,7 @@ def test_networks_allow_localhost(started_cluster):
 
 
 def test_response_settings_override_profile_value(started_cluster):
-    # ADR additional test 8: response settings are applied after profile initialization
+    # Response settings are applied after profile initialization
     # and override the profile-provided value (sql_profile sets max_rows_to_read=12345,
     # the response returns 777). Requires sql_profile to exist — runs after
     # test_default_profile_resolved_late_and_fail_closed created it; create it here
@@ -795,7 +800,7 @@ def test_distributed_query_fails_closed_on_role_unknown_remotely(started_cluster
 def test_networks_reject_remote_client(started_cluster):
     # node4's directory allows only 127.0.0.1/32. A client connecting from node2's
     # address must be rejected (the fail-closed `networks` row of the matrix;
-    # complements Task 8's allow test).
+    # complements the allow test above).
     # ADAPTATION: the brief's literal command invokes a `clickhouse-client` binary, which
     # this image does not provide (`bash: line 1: clickhouse-client: command not found`,
     # verified by running the test). Use the same `/usr/bin/clickhouse client` multi-call
@@ -950,7 +955,7 @@ def test_named_session_role_profile_contract(started_cluster):
 
 
 def test_two_established_sessions_expire_independently(started_cluster):
-    # ADR test 2, robust form. Two NATIVE (persistent TCP) connections authenticate ONCE
+    # Two NATIVE (persistent TCP) connections authenticate ONCE
     # each with different ABSOLUTE deadlines and are held open CONCURRENTLY. Per-query
     # expiry enforcement (Session::checkIfUserIsStillValid on TCP) then applies to each
     # connection independently — the short one must expire while the long one keeps working,
@@ -981,7 +986,7 @@ def test_two_established_sessions_expire_independently(started_cluster):
 
 
 def test_named_session_expiry_replaced_for_async_insert(started_cluster):
-    # ADR named-session expiry-replacement test, DETERMINISTIC deferred vehicle. A plain
+    # Named-session expiry replacement, DETERMINISTIC deferred vehicle. A plain
     # reattach cannot prove replacement — every HTTP request re-authenticates, so the
     # request's own user_authenticated_with already carries the new deadline. An async
     # INSERT is genuinely deferred: AsynchronousInsertQueue captures
@@ -1045,7 +1050,7 @@ def test_named_session_expiry_replaced_for_async_insert(started_cluster):
 
 
 def test_failed_named_session_init_not_reusable(started_cluster):
-    # Regression for the Step 2b cleanup guard. Creating a named session fails when a
+    # Regression for the named-session cleanup guard. Creating a named session fails when a
     # returned setting violates a constraint from the returned role's profile
     # (checkSettingsConstraints throws AFTER acquireSession has published the session).
     # The failed session must not remain reusable: a later request with the same
@@ -1147,3 +1152,123 @@ def test_metrics(started_cluster):
     after = snapshot()
     assert after["requests"] == before["requests"] + 1
     assert after["failures"] == before["failures"]
+
+
+def test_named_session_refused_by_session_limit_not_reusable(started_cluster):
+    # Admission (`trackSession`, USER_SESSION_LIMIT_EXCEEDED) is part of named-session
+    # creation. A creation refused there must not leave a reusable session behind: the
+    # refused request's role-derived constraints and auth settings would otherwise be
+    # frozen into a session that a later, differently authorized request then reuses.
+    admin(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS one_session_profile SETTINGS max_sessions_for_user = 1"
+    )
+    admin("ALTER ROLE limit_role_a ADD PROFILES 'one_session_profile'")
+    admin(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS limit_cap_profile SETTINGS max_threads MAX 4"
+    )
+    admin("ALTER ROLE limit_role_b ADD PROFILES 'limit_cap_profile'")
+    session = "sess_limit"
+
+    # Occupy the single session slot of limit_user with a long-running unnamed request.
+    def blocker():
+        try:
+            instance.http_query(
+                "SELECT sleepEachRow(1) FROM numbers(60) SETTINGS max_block_size = 1",
+                user="limit_user",
+                password="password_a",
+                timeout=120,
+            )
+        except Exception:
+            pass  # killed below
+
+    thread = threading.Thread(target=blocker)
+    thread.start()
+    try:
+        wait_condition(
+            lambda: admin(
+                "SELECT count() FROM system.processes WHERE user = 'limit_user'"
+            ).strip(),
+            lambda value: value == "1",
+            max_attempts=300,
+            delay=0.1,
+        )
+        # Creation of the named session is refused by max_sessions_for_user = 1 (from
+        # limit_role_a's profile) AFTER setUser applied that role's settings/constraints and
+        # the auth setting max_result_rows = 111.
+        error = instance.http_query_and_get_error(
+            "SELECT 1",
+            user="limit_user",
+            password="password_a",
+            params={"session_id": session},
+        )
+        assert "USER_SESSION_LIMIT_EXCEEDED" in error, error
+    finally:
+        admin("KILL QUERY WHERE user = 'limit_user' SYNC")
+        thread.join()
+
+    # The same session_id under limit_role_b (no session limit, max_threads MAX 4,
+    # max_result_rows = 555) must get a FRESH session: the constraint of the creating role
+    # binds and the creating request's auth setting is applied. A leftover of the refused
+    # creation would have neither (created under limit_role_a with max_result_rows = 111).
+    error = instance.http_query_and_get_error(
+        "SET max_threads = 16",
+        user="limit_user",
+        password="password_b",
+        params={"session_id": session},
+    )
+    assert "max_threads" in error, error
+    assert (
+        http_sess(
+            "SELECT getSetting('max_result_rows')", "limit_user", "password_b", session
+        ).strip()
+        == "555"
+    )
+
+
+def test_definer_view_keeps_helper_roles(started_cluster):
+    # A SQL SECURITY DEFINER view created by an http-directory user is persisted with a
+    # shadow definer `<user>:definer`. Helper-returned roles are session-scoped and absent
+    # from the stored ephemeral user, so the shadow must receive them explicitly: otherwise
+    # the view has no access to its underlying table. Placed last: it restarts the server.
+    admin("GRANT SELECT ON default.protected TO external_definer")
+    admin("GRANT CREATE VIEW ON default.* TO external_definer")
+    instance.query(
+        "CREATE VIEW default.definer_view SQL SECURITY DEFINER AS SELECT count() AS c FROM default.protected",
+        user="definer_user",
+        password=GOOD_PASSWORD,
+    )
+    admin("CREATE USER IF NOT EXISTS definer_caller IDENTIFIED BY 'caller_password'")
+    admin("GRANT SELECT ON default.definer_view TO definer_caller")
+    grants = admin("SHOW GRANTS FOR 'definer_user:definer'")
+    assert "external_definer" in grants, grants
+    # The caller has no access to default.protected itself; the view works only through
+    # the shadow definer's role.
+    error = instance.query_and_get_error(
+        "SELECT count() FROM default.protected",
+        user="definer_caller",
+        password="caller_password",
+    )
+    assert "ACCESS_DENIED" in error or "Not enough privileges" in error, error
+    assert (
+        instance.query(
+            "SELECT c FROM default.definer_view",
+            user="definer_caller",
+            password="caller_password",
+        ).strip()
+        == "3"
+    )
+    # The shadow is why the view survives the ephemeral user: after a restart the
+    # materialized http user is gone, the persisted shadow with its role remains.
+    instance.restart_clickhouse()
+    assert (
+        admin("SELECT count() FROM system.users WHERE name = 'definer_user'").strip()
+        == "0"
+    )
+    assert (
+        instance.query(
+            "SELECT c FROM default.definer_view",
+            user="definer_caller",
+            password="caller_password",
+        ).strip()
+        == "3"
+    )

@@ -54,6 +54,8 @@ MAIN_USERS = {
     "legacy_settings_user": {"body": {"settings": {"max_threads": "4"}}},
     # Used only by test_metrics for delta-based ProfileEvents/CurrentMetrics assertions.
     "metrics_user": {"body": {}},
+    # Creates a SQL SECURITY DEFINER view; external_definer is prefix-delegated.
+    "definer_user": {"body": {"roles": ["external_definer"]}},
 }
 MAIN_USERS.update({f"barrier_user_{i}": {"body": {}} for i in range(BARRIER_PARTIES)})
 
@@ -75,16 +77,26 @@ PROBE_USER_PASSWORDS = {
 # guard_user: used by test_failed_named_session_init_not_reusable. "cause_fail" returns a
 # role/setting combination that violates that role's profile constraint (checked at
 # named-session creation, AFTER acquireSession has already published the session) so the
-# named-session cleanup guard (Step 2b) is exercised; "valid" is a normal authentication
+# named-session cleanup guard is exercised; "valid" is a normal authentication
 # used afterwards to prove the failed session was not left reusable.
 GUARD_USER_PASSWORDS = {
     "cause_fail": {"roles": ["capped_role"], "settings": {"max_threads": "16"}},
     "valid": {"settings": {"max_result_rows": "555"}},
 }
 
+# limit_user: used by test_named_session_refused_by_session_limit_not_reusable. "password_a"
+# returns a role whose profile sets max_sessions_for_user = 1 (so named-session admission can
+# be refused) plus a distinctive auth setting; "password_b" returns a role whose profile caps
+# max_threads and a different value of the same auth setting, so a session created under
+# "password_b" is distinguishable from a leftover of a refused "password_a" creation.
+LIMIT_USER_PASSWORDS = {
+    "password_a": {"roles": ["limit_role_a"], "settings": {"max_result_rows": "111"}},
+    "password_b": {"roles": ["limit_role_b"], "settings": {"max_result_rows": "555"}},
+}
+
 # Users known only to node4's directory (default_profile + networks).
 # aux_override_user: response settings override the directory profile's value for the
-# same setting (ADR additional test 8).
+# same setting.
 AUX_USERS = {
     "aux_user": {"body": {"roles": []}},
     "aux_override_user": {"body": {"settings": {"max_rows_to_read": "777"}}},
@@ -141,6 +153,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if user == "guard_user" and users is MAIN_USERS:
             if password in GUARD_USER_PASSWORDS:
                 return self._reply(200, GUARD_USER_PASSWORDS[password])
+            return self._reply(401)
+        if user == "limit_user" and users is MAIN_USERS:
+            if password in LIMIT_USER_PASSWORDS:
+                return self._reply(200, LIMIT_USER_PASSWORDS[password])
             return self._reply(401)
         if user not in users:
             return self._reply(404)
