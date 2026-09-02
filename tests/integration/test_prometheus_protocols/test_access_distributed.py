@@ -235,8 +235,9 @@ def test_selector_access_denied_precedes_the_engine_error():
     engine_error = node.query_and_get_error(sql)
     assert "is not TimeSeries" in engine_error, engine_error
 
-    # ...while a caller without the grant learns only that it has no grant.
-    denied = node.query_and_get_error(sql, user=NO_SELECT_USER)
+    # ...while a caller without the grant learns only that it has no grant. The client prints the
+    # server's stack trace after the message, and its frames name the selector's source files.
+    denied = node.query_and_get_error(sql, user=NO_SELECT_USER).split("Stack trace:")[0]
     assert "Not enough privileges" in denied, denied
     assert "TimeSeries" not in denied, denied
     assert "Distributed" not in denied, denied
