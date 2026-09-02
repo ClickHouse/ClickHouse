@@ -25,8 +25,6 @@
 #include <rocksdb/status.h>
 #include <rocksdb/table.h>
 
-#include <mutex>
-
 namespace DB
 {
 
@@ -35,7 +33,15 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int ROCKSDB_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
+
+/// Declares a `rocksdb::FileSystem` method override that unconditionally
+/// returns `NotSupported`. `ReadBufferFileSystem` implements only the read-only,
+/// random-access operations the SST reader needs; everything else is
+/// fail-closed. Scoped to this file: `#undef`-ed right after the class.
+#define ROCKSDB_IO_NOT_SUPPORTED(name, ...) \
+    rocksdb::IOStatus name(__VA_ARGS__) override { return rocksdb::IOStatus::NotSupported(); }
 
 namespace
 {
@@ -52,14 +58,14 @@ namespace
     }
 
     /// `FSRandomAccessFile` backed by a `ReadBuffer`. `readBigAt` is positional
-    /// and lock-free; the `seek`+`read` fallback needs the mutex.
-    /// `supportsReadAt` is probed once in the ctor (it may be slow).
+    /// and lock-free, so concurrent RocksDB reads need no serialization. The
+    /// buffer must support positional reads; that is enforced at open time by
+    /// `NewRandomAccessFile`, so the ctor can assume it here.
     class ReadBufferBasedRandomAccessFile : public rocksdb::FSRandomAccessFile
     {
     public:
         explicit ReadBufferBasedRandomAccessFile(std::unique_ptr<SeekableReadBuffer> buffer_)
             : buffer(std::move(buffer_))
-            , supports_read_at(buffer->supportsReadAt())
         {
         }
 
@@ -73,17 +79,7 @@ namespace
         {
             try
             {
-                size_t bytes_read = 0;
-                if (supports_read_at)
-                {
-                    bytes_read = buffer->readBigAt(scratch, n, offset, {});
-                }
-                else
-                {
-                    std::scoped_lock lock(mutex);
-                    buffer->seek(static_cast<size_t>(offset), SEEK_SET);
-                    bytes_read = buffer->read(scratch, n);
-                }
+                size_t bytes_read = buffer->readBigAt(scratch, n, offset, {});
                 *result = rocksdb::Slice(scratch, bytes_read);
                 return rocksdb::IOStatus::OK();
             }
@@ -95,12 +91,10 @@ namespace
 
     private:
         std::unique_ptr<SeekableReadBuffer> buffer;
-        const bool supports_read_at;
-        mutable std::mutex mutex;
     };
 
     /// Read-only `FileSystem` that opens files through `IDataPartStorage`, so
-    /// encrypted and remote SSTs are read in place. Only random-access is
+    /// remote SSTs are read in place. Only random-access is
     /// supported; everything else returns `NotSupported`.
     class ReadBufferFileSystem : public rocksdb::FileSystem
     {
@@ -121,8 +115,17 @@ namespace
         {
             try
             {
-                *r = std::make_unique<ReadBufferBasedRandomAccessFile>(
-                    storage->readFile(f, read_settings, /*read_hint=*/std::nullopt));
+                auto buffer = storage->readFile(f, read_settings, /*read_hint=*/std::nullopt);
+                /// Fail closed: without positional reads (`readBigAt`) the only
+                /// alternative is a `seek`+`read` fallback under a mutex, which
+                /// serializes every SST read. Reject such storage instead of
+                /// silently degrading concurrency.
+                if (!buffer->supportsReadAt())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "UNIQUE KEY SST cannot be read from `{}`: the storage does not support "
+                        "positional reads (readBigAt), required for concurrent index probing",
+                        f);
+                *r = std::make_unique<ReadBufferBasedRandomAccessFile>(std::move(buffer));
                 return rocksdb::IOStatus::OK();
             }
             catch (...)
@@ -164,81 +167,48 @@ namespace
         }
 
         /// Unsupported: this file system is read-only and random-access only.
-        rocksdb::IOStatus NewSequentialFile(
-            const std::string &,
-            const rocksdb::FileOptions &,
-            std::unique_ptr<rocksdb::FSSequentialFile> *,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus NewWritableFile(
-            const std::string &,
-            const rocksdb::FileOptions &,
-            std::unique_ptr<rocksdb::FSWritableFile> *,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus NewDirectory(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            std::unique_ptr<rocksdb::FSDirectory> *,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus GetChildren(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            std::vector<std::string> *,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus DeleteFile(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus CreateDir(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus CreateDirIfMissing(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus DeleteDir(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus GetFileModificationTime(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            uint64_t *,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus GetAbsolutePath(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            std::string *,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus RenameFile(
-            const std::string &,
-            const std::string &,
-            const rocksdb::IOOptions &,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus LockFile(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            rocksdb::FileLock **,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus UnlockFile(
-            rocksdb::FileLock *,
-            const rocksdb::IOOptions &,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus GetTestDirectory(
-            const rocksdb::IOOptions &,
-            std::string *,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-        rocksdb::IOStatus IsDirectory(
-            const std::string &,
-            const rocksdb::IOOptions &,
-            bool *,
-            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        ROCKSDB_IO_NOT_SUPPORTED(NewSequentialFile,
+            const std::string &, const rocksdb::FileOptions &,
+            std::unique_ptr<rocksdb::FSSequentialFile> *, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(NewWritableFile,
+            const std::string &, const rocksdb::FileOptions &,
+            std::unique_ptr<rocksdb::FSWritableFile> *, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(NewDirectory,
+            const std::string &, const rocksdb::IOOptions &,
+            std::unique_ptr<rocksdb::FSDirectory> *, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(GetChildren,
+            const std::string &, const rocksdb::IOOptions &,
+            std::vector<std::string> *, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(DeleteFile,
+            const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(CreateDir,
+            const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(CreateDirIfMissing,
+            const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(DeleteDir,
+            const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(GetFileModificationTime,
+            const std::string &, const rocksdb::IOOptions &, uint64_t *, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(GetAbsolutePath,
+            const std::string &, const rocksdb::IOOptions &, std::string *, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(RenameFile,
+            const std::string &, const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(LockFile,
+            const std::string &, const rocksdb::IOOptions &, rocksdb::FileLock **, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(UnlockFile,
+            rocksdb::FileLock *, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(GetTestDirectory,
+            const rocksdb::IOOptions &, std::string *, rocksdb::IODebugContext *)
+        ROCKSDB_IO_NOT_SUPPORTED(IsDirectory,
+            const std::string &, const rocksdb::IOOptions &, bool *, rocksdb::IODebugContext *)
 
     private:
         DataPartStoragePtr storage;
         ReadSettings read_settings;
     };
 }
+
+#undef ROCKSDB_IO_NOT_SUPPORTED
 
 SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const ReadSettings & read_settings)
 {

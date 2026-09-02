@@ -32,6 +32,8 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO uk_sst_checksums SELECT 0, number, toS
 # stored sparsely; `id` keeps the compound key unique. Read the serialization
 # kind from system.parts_columns rather than comparing on-disk file sizes, so
 # the check is independent of column file naming (e.g. max_file_name_length).
+# The wide-part forcing is required for that Sparse-serialization coverage
+# (compact parts have no per-column serialization kinds).
 echo "sparse_uk_column_stored"
 ${CLICKHOUSE_CLIENT} --query "SELECT if(serialization_kind = 'Sparse', 'yes', 'no') FROM system.parts_columns WHERE database = currentDatabase() AND table = 'uk_sst_checksums' AND active AND column = 'a'"
 
@@ -87,11 +89,11 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE uk_sst_checksums"
 # UNIQUE_KEY_DENSE_INDEX_UNREADABLE and leave the file untouched. The corruption
 # preserves the size, otherwise the part is rejected before the readonly branch.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS uk_sst_ro"
+# Default part format (compact for these small parts) to cover that path too.
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_unique_key = 1;
     CREATE TABLE uk_sst_ro (id UInt64, v String)
-    ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)
-    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+    ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id);
 "
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO uk_sst_ro SELECT number, toString(number) FROM numbers(200)"
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE uk_sst_ro MODIFY SETTING table_readonly = 1"
