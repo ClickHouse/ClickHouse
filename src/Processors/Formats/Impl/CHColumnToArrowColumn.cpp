@@ -91,6 +91,7 @@ namespace DB
         extern const int ILLEGAL_COLUMN;
         extern const int UNKNOWN_TYPE;
         extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+        extern const int TOO_LARGE_ARRAY_SIZE;
     }
 
     class ArrowUUIDExtensionType : public arrow::ExtensionType
@@ -844,7 +845,9 @@ namespace DB
         const auto column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column_array->getOffsetsColumn()).getPtr();
         size_t offsets_start = start > 0 ? start - 1 : 0;
         size_t offsets_view_start = start > 0 ? 1 : 0;
-        auto offsets = extractIndexes<int32_t>(column_offsets, offsets_start, end, false);
+        /// Keep the absolute offsets 64-bit: only the value rebased against `values_start` has to fit an
+        /// Arrow `List` offset, and for a range that does not start at row 0 the absolute one can be larger.
+        auto offsets = extractIndexes<Int64>(column_offsets, offsets_start, end, false);
         size_t values_start = start == 0 ? 0 : offsets[0];
         size_t values_end = offsets.empty() ? values_start : offsets.back();
 
@@ -858,7 +861,14 @@ namespace DB
         checkStatus(status, column_name, format_name);
         for (size_t i = offsets_view_start; i < offsets.size(); ++i)
         {
-            status = offsets_builder.Append(static_cast<int>(offsets[i] - values_start));
+            const Int64 rebased = offsets[i] - static_cast<Int64>(values_start);
+            if (static_cast<UInt64>(rebased) > MAX_ARROW_BUFFER_SIZE)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Cannot write a row of {} elements of column '{}' to {}: `List` offsets are 32-bit, so a "
+                    "single row cannot hold more than {} elements",
+                    rebased, column_name, format_name, MAX_ARROW_BUFFER_SIZE);
+            status = offsets_builder.Append(static_cast<int>(rebased));
             checkStatus(status, column_name, format_name);
         }
 

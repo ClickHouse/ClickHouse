@@ -21,3 +21,17 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT count(), sum(n), sum(length(s)), uniqExact(s)
     FROM file('$FILE', ArrowStream)
 "
+
+# `LowCardinality` reaches those same offsets through the materialized column, so a `FixedString`
+# dictionary written in offsets mode has to be split on the materialized width, not exempted.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --allow_suspicious_fixed_string_types 1 --query "
+    SELECT toFixedString(toString(number % 3), 100000)::LowCardinality(FixedString(100000)) AS lc
+    FROM numbers(21475)
+    SETTINGS output_format_arrow_fixed_string_as_fixed_byte_array = 0
+    FORMAT ArrowStream
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), sum(length(lc)), uniqExact(lc)
+    FROM file('$FILE', ArrowStream)
+"

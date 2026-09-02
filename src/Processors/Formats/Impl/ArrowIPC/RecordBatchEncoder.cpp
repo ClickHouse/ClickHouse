@@ -48,13 +48,15 @@ namespace DB::ArrowIPC
 namespace
 {
 
-/// Only reachable for a single oversized row: the writer splits an oversized chunk across batches.
+/// The writer splits an oversized chunk across batches, so normally only a single row too large on its own
+/// gets here; it is also the backstop for a shape the row limit does not cover, such as a `LowCardinality`
+/// dictionary exceeding one buffer.
 [[noreturn]] void throwValueDoesNotFitArrowBuffer(Int64 bytes)
 {
     throw Exception(
         ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-        "Cannot write a value of {} bytes to Arrow IPC: `Utf8`/`Binary` offsets are 32-bit, so a single value "
-        "cannot be larger than {} bytes",
+        "Cannot write {} bytes of string data to Arrow IPC: `Utf8`/`Binary` offsets are 32-bit, so one record "
+        "batch cannot hold more than {} bytes",
         bytes, MAX_ARROW_BUFFER_SIZE);
 }
 
@@ -126,7 +128,8 @@ void RecordBatchEncoder::appendOffsets(const IColumn::Offsets & ch_offsets, size
     arrow_offsets[0] = 0;
     for (size_t i = 0; i < num_rows; ++i)
     {
-        /// Only reachable for a single oversized row: the writer splits an oversized chunk across batches.
+        /// The row limit bounds the element count of `Array`/`Map` exactly, so only a row too large on its
+        /// own gets here.
         if (ch_offsets[i] > MAX_ARROW_BUFFER_SIZE)
             throw Exception(
                 ErrorCodes::TOO_LARGE_ARRAY_SIZE,

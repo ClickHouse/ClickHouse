@@ -38,17 +38,30 @@ size_t maxRowsByOffsets(const IColumn::Offsets & offsets, size_t begin, size_t e
     return static_cast<size_t>(it - first);
 }
 
-/// `canBeInsideLowCardinality` allows only fixed-width types and `String`, so only a `String` dictionary
-/// can overflow. A writer either materializes the column or dictionary-encodes it; measuring it as
-/// materialized bounds both, since a batch's dictionary holds at most the distinct values of its rows.
-size_t maxRowsForLowCardinality(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end)
+/// A writer either materializes the column or dictionary-encodes it; measuring it as materialized bounds
+/// both, since a batch's dictionary holds at most the distinct values of its rows. `canBeInsideLowCardinality`
+/// allows only fixed-width types, `String` and `FixedString`, and of those only the two string types reach
+/// a 32-bit-offset buffer.
+size_t maxRowsForLowCardinality(
+    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool fixed_string_as_fixed_byte_array)
 {
     const size_t num_rows = end - begin;
-    if (!isString(removeNullable(removeLowCardinality(type))))
+    const DataTypePtr values_type = removeNullable(removeLowCardinality(type));
+    const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(column);
+    const IColumn & values_column = *low_cardinality.getDictionary().getNestedNotNullableColumn();
+
+    if (isFixedString(values_type))
+    {
+        if (fixed_string_as_fixed_byte_array)
+            return num_rows;
+        const size_t n = assert_cast<const ColumnFixedString &>(values_column).getN();
+        return n == 0 ? num_rows : std::min<size_t>(num_rows, MAX_ARROW_BUFFER_SIZE / n);
+    }
+
+    if (!isString(values_type))
         return num_rows;
 
-    const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(column);
-    const auto & values = assert_cast<const ColumnString &>(*low_cardinality.getDictionary().getNestedNotNullableColumn());
+    const auto & values = assert_cast<const ColumnString &>(values_column);
     const auto & value_offsets = values.getOffsets();
 
     UInt64 max_value_size = 0;
@@ -138,7 +151,7 @@ size_t maxRowsFittingOneArrowBatch(
         return 0;
 
     if (type->lowCardinality())
-        return maxRowsForLowCardinality(column, type, begin, end);
+        return maxRowsForLowCardinality(column, type, begin, end, fixed_string_as_fixed_byte_array);
 
     if (isVariant(type))
         return maxRowsForVariant(column, type, begin, end, fixed_string_as_fixed_byte_array);

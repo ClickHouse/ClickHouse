@@ -22,10 +22,9 @@ constexpr UInt64 MAX_ARROW_BUFFER_SIZE = std::numeric_limits<Int32>::max() - 1;
 /// handled; callers materialize first.
 ///
 /// `LowCardinality` is measured as materialized, which only over-splits when it is written as an Arrow
-/// dictionary — except that a dictionary exceeding one buffer is not covered at all, because its bytes
-/// do not depend on the row count: `ColumnLowCardinality::insertRangeFrom` keeps a shared source
-/// dictionary whole, so every slice re-emits it. Such a chunk is rejected by Arrow, as it was before
-/// splitting existed.
+/// dictionary. A dictionary larger than one buffer is not covered at all: its bytes do not depend on the
+/// row count, because `ColumnLowCardinality::insertRangeFrom` keeps a shared source dictionary whole, so
+/// every slice re-emits it. Arrow rejects such a chunk.
 size_t maxRowsFittingOneArrowBatch(
     const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool fixed_string_as_fixed_byte_array);
 
