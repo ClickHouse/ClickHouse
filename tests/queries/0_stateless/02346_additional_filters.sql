@@ -105,3 +105,4 @@ select * from (select x + 1 as a, y from table_1 union all select x as a, y from
 
 select * from table_1 order by x settings additional_result_filter='x in (select number from numbers(3))';
 select count() as c from table_1 settings additional_result_filter='c in (select 4)', enable_analyzer=1;
+select count() as c from table_1 settings additional_result_filter='c in (select 3)', enable_analyzer=1;
