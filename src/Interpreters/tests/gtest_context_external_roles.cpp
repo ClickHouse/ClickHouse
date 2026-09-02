@@ -2,9 +2,12 @@
 
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
+#include <Access/SettingsProfileElement.h>
 #include <Access/User.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/SettingsChanges.h>
 #include <Common/tests/gtest_global_context.h>
 
 #include <algorithm>
@@ -14,6 +17,7 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
 namespace
@@ -127,4 +131,77 @@ TEST(ContextExternalRoles, SetUserClearsStaleExternalRolesOnUserSwitch)
     /// The stale external role must be gone; otherwise the target user would silently keep it enabled.
     EXPECT_TRUE(session_context->getExternalRoles().empty());
     EXPECT_FALSE(contains(session_context->getCurrentRoles(), role_id));
+}
+
+/// The provenance rule for external roles and settings profiles. An external role is always effective for
+/// authorization (it is a current role of the context). Whether its attached settings profile - values and
+/// constraints - is installed into the context's creation-time settings snapshot depends on how the role
+/// arrived: only roles passed as `external_roles_for_settings_profiles_` (the authentication-time roles of a
+/// freshly created session) initialize profiles. A role set that is merely propagated or replayed (interserver,
+/// DDL worker, deferred executors) passes only `external_roles_` and must not rebuild profile state.
+TEST(ContextExternalRoles, OnlyAuthenticationTimeExternalRolesInitializeProfiles)
+{
+    auto context = getMutableContext().context;
+    auto & access_control = context->getAccessControl();
+    access_control.addMemoryStorage("gtest_external_roles_profiles_memory", /*allow_backup_=*/ false);
+
+    auto user = std::make_shared<User>();
+    user->setName("gtest_external_roles_profiles_user");
+    UUID user_id = access_control.insert(user);
+
+    /// A role (not granted to the user) with an attached settings profile: a value and a constraint.
+    auto role = std::make_shared<Role>();
+    role->setName("gtest_external_roles_profiles_role");
+    {
+        SettingsProfileElement value_element;
+        value_element.setting_name = "max_result_rows";
+        value_element.value = Field(UInt64(555));
+        role->settings.push_back(value_element);
+
+        SettingsProfileElement constraint_element;
+        constraint_element.setting_name = "max_threads";
+        constraint_element.max_value = Field(UInt64(4));
+        role->settings.push_back(constraint_element);
+    }
+    UUID role_id = access_control.insert(role);
+
+    const SettingsChanges over_the_cap{{"max_threads", Field(UInt64(16))}};
+
+    /// Case A: the role is propagated/replayed as an external role only. It is effective for authorization,
+    /// but its profile is NOT installed: no value, no constraint.
+    {
+        auto replay_context = Context::createCopy(context);
+        replay_context->makeQueryContext();
+        replay_context->setUser(user_id, /*external_roles=*/ {role_id});
+        EXPECT_TRUE(contains(replay_context->getCurrentRoles(), role_id));
+        EXPECT_EQ(replay_context->getExternalRoles(), std::vector<UUID>{role_id});
+        EXPECT_NE(replay_context->getSettingsRef().get("max_result_rows").safeGet<UInt64>(), 555u);
+        EXPECT_NO_THROW(replay_context->checkSettingsConstraints(over_the_cap, SettingSource::QUERY));
+    }
+
+    /// Case B: the same role arrives as an authentication-time external role of a fresh session. It is
+    /// effective for authorization AND its profile is installed: value applied, constraint enforced.
+    {
+        auto login_context = Context::createCopy(context);
+        login_context->makeQueryContext();
+        login_context->setUser(
+            user_id,
+            /*external_roles=*/ {role_id},
+            /*authentication_grants=*/ nullptr,
+            /*authentication_valid_until=*/ 0,
+            /*external_roles_for_settings_profiles=*/ {role_id});
+        EXPECT_TRUE(contains(login_context->getCurrentRoles(), role_id));
+        EXPECT_EQ(login_context->getExternalRoles(), std::vector<UUID>{role_id});
+        EXPECT_EQ(login_context->getSettingsRef().get("max_result_rows").safeGet<UInt64>(), 555u);
+        bool threw_constraint_violation = false;
+        try
+        {
+            login_context->checkSettingsConstraints(over_the_cap, SettingSource::QUERY);
+        }
+        catch (const Exception & e)
+        {
+            threw_constraint_violation = (e.code() == ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+        }
+        EXPECT_TRUE(threw_constraint_violation);
+    }
 }

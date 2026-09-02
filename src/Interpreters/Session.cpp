@@ -392,8 +392,11 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         /// Roles attached to this authentication by an external user directory (e.g. the `http`
         /// directory). Session-scoped: they ride the same external-role machinery as interserver
         /// pushed roles, but are not gated by push_external_roles_in_interserver_queries because
-        /// they are a local access-storage decision, not a remote push.
-        external_roles = auth_result.external_roles;
+        /// they are a local access-storage decision, not a remote push. They are kept apart from
+        /// the pushed roles appended below, because only they are authentication-time input for
+        /// settings-profile initialization. Both are replaced on every authentication.
+        authentication_external_roles = auth_result.external_roles;
+        external_roles = authentication_external_roles;
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
 
@@ -604,7 +607,8 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+    /// A fresh authenticated context: the authentication-returned roles also initialize profiles.
+    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil(), authentication_external_roles);
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -669,7 +673,9 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         /// Set user information for the new context: current profiles, roles, access rights.
         if (!access->tryGetUser())
         {
-            new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+            /// A fresh authenticated context: the authentication-returned roles also initialize
+            /// profiles; this is the creation-time state that reattachment does not rebuild.
+            new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil(), authentication_external_roles);
             max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
 
             /// Apply session settings received from the authentication server once, when the
@@ -857,8 +863,11 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.
+    /// This is the first context built from this session's authentication (no session context),
+    /// so the authentication-returned roles initialize profiles; the initiator's pushed roles in
+    /// `effective_external_roles` are authorization-only.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+        query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil(), authentication_external_roles);
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);

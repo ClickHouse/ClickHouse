@@ -2209,7 +2209,12 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
+void Context::setUser(
+    const UUID & user_id_,
+    const std::vector<UUID> & external_roles_,
+    const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
+    time_t authentication_valid_until_,
+    const std::vector<UUID> & external_roles_for_settings_profiles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -2219,12 +2224,12 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto user = access_control.read<User>(user_id_);
 
     auto default_roles = user->granted_roles.findGranted(user->default_roles);
-    /// External roles (helper-returned or interserver-pushed) must participate in the
-    /// same role calculation as locally assigned roles when profiles and constraints
-    /// are derived; ContextAccess appends them for access rights, but the initial
-    /// profile/constraint calculation happens here.
+    /// Only the authentication-time external roles take part in the profile/constraint
+    /// calculation, together with the locally assigned default roles. All external roles
+    /// still become effective for access rights through `setExternalRolesWithLock` below;
+    /// a role set that is merely propagated or replayed must not rebuild profile state.
     auto roles_for_profiles = default_roles;
-    roles_for_profiles.insert(roles_for_profiles.end(), external_roles_.begin(), external_roles_.end());
+    roles_for_profiles.insert(roles_for_profiles.end(), external_roles_for_settings_profiles_.begin(), external_roles_for_settings_profiles_.end());
     auto enabled_roles = access_control.getEnabledRolesInfo(roles_for_profiles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;

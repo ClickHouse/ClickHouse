@@ -139,7 +139,12 @@ private:
 
     mutable UserPtr user;
     std::optional<UUID> user_id;
+    /// Effective external roles for authorization: the ones returned by the authentication
+    /// (external user directory) plus roles pushed by the initiator of an interserver query.
     std::vector<UUID> external_roles;
+    /// The authentication-returned subset of `external_roles`. Only these participate in the
+    /// settings-profile initialization of a freshly created context; pushed roles never do.
+    std::vector<UUID> authentication_external_roles;
     AuthenticationData user_authenticated_with;
 
     /// TLS client certificate presented on this connection, if any.

@@ -921,7 +921,18 @@ public:
     /// Callers that switch the principal within the SAME authenticated session (e.g. `EXECUTE AS`)
     /// must read both limits back from the source context and pass them here, so the session cannot
     /// escape its credential's limit by impersonating a less restricted principal.
-    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
+    /// `external_roles_` are the effective external roles for authorization (privileges, row policies,
+    /// role hierarchy, quotas). `external_roles_for_settings_profiles_` is the authentication-time subset
+    /// of them that also participates in the settings-profile initialization of a FRESH authenticated
+    /// context (e.g. roles returned by an external user directory on login). Callers that merely
+    /// propagate or replay an already-established role set (interserver, DDL worker, deferred
+    /// executors, `EXECUTE AS`) leave it empty: a propagated current-role list is not fresh profile input.
+    void setUser(
+        const UUID & user_id_,
+        const std::vector<UUID> & external_roles_ = {},
+        const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr,
+        time_t authentication_valid_until_ = 0,
+        const std::vector<UUID> & external_roles_for_settings_profiles_ = {});
     UserPtr getUser() const;
 
     /// Replaces the external roles of this context (including replacement by an empty set).
