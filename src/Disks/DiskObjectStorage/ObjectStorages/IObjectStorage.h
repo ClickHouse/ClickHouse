@@ -2,6 +2,7 @@
 
 #include <string>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -24,8 +25,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
-#include <Processors/ISimpleTransform.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -64,6 +63,30 @@ private:
     std::chrono::system_clock::time_point expires_on;
 };
 
+/// A credential backed by an external token source (e.g. the OneLake catalog client, which
+/// renews access tokens with an Entra ID refresh token). The SDK invokes GetToken per request
+/// and caches the result until near ExpiresOn, so renewal is transparent to long reads.
+class TokenProviderCredential : public Azure::Core::Credentials::TokenCredential
+{
+public:
+    using TokenProvider = std::function<std::pair<std::string, std::chrono::system_clock::time_point>()>;
+
+    explicit TokenProviderCredential(TokenProvider provider_)
+        : provider(std::move(provider_))
+    {}
+
+    Azure::Core::Credentials::AccessToken GetToken(
+        Azure::Core::Credentials::TokenRequestContext const &,
+        Azure::Core::Context const &) const override
+    {
+        auto [token, expires_on] = provider();
+        return Azure::Core::Credentials::AccessToken { .Token = std::move(token), .ExpiresOn = expires_on };
+    }
+
+private:
+    TokenProvider provider;
+};
+
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
@@ -72,7 +95,8 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
-    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
+    std::shared_ptr<AzureBlobStorage::StaticCredential>,
+    std::shared_ptr<AzureBlobStorage::TokenProviderCredential>>;
 
 
 struct ConnectionParams;
@@ -381,8 +405,18 @@ public:
 
     virtual bool supportParallelWrite() const { return false; }
 
-    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+    /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
+    /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches
+    /// of the same path can prove the object was not overwritten in between. Web origins may
+    /// legitimately omit all of them (no `ETag`, no `Content-Length`, no `Last-Modified`), so callers
+    /// that must reread the same generation of an object (e.g. lazy materialization) have to skip
+    /// such storages instead of failing close at read time.
+    virtual bool supportsObjectGenerationComparison() const { return true; }
 
+    void setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_);
+    std::pair<String, String> getIOSchedulingResourceNames() const;
+
+    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
     virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
@@ -431,6 +465,11 @@ public:
     /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
+
+private:
+    mutable std::mutex io_scheduling_mutex;
+    String read_resource_name;
+    String write_resource_name;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

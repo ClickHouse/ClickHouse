@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -852,6 +853,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (engine_args.size() > 2)
         read_only = checkAndGetLiteralArgument<bool>(engine_args[2], "read_only");
 
+    /// An explicit `rocksdb_dir` opens a directory under `user_files_path` and needs the same `FILE` grant
+    /// as `file`; the argument-less form touches only the table's own data directory, and `clickhouse-local`
+    /// has no `user_files` fence to authorize. A replayed definition was authorized when it was introduced.
+    auto local_context = args.getLocalContext();
+    const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+    if (!rocksdb_dir.empty() && !from_existing_metadata
+        && local_context->getApplicationType() != Context::ApplicationType::LOCAL)
+    {
+        const AccessFlags required
+            = read_only ? AccessFlags(AccessType::READ) : (AccessType::READ | AccessType::WRITE);
+        local_context->checkAccess(required, toStringSource(AccessTypeObjects::Source::FILE));
+    }
+
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
@@ -1291,7 +1305,7 @@ ORDER BY key ASC
 
 ### More information on Joins {#more-information-on-joins}
 - [`join_algorithm` setting](/reference/settings/session-settings/join#join_algorithm)
-- [JOIN clause](/sql-reference/statements/select/join.md)
+- [JOIN clause](/reference/statements/select/join)
 )DOCS_MD",
         .syntax = "ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(key)",
         .related = {"Redis"}});

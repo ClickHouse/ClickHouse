@@ -70,7 +70,9 @@ Para uma descrição detalhada dos parâmetros, consulte a instrução [CREATE T
 
 `ENGINE` — Nome e parâmetros do motor. `ENGINE = MergeTree()`. O motor `MergeTree` não tem parâmetros.
 
-<div id="order_by">
+<a id="order_by" />
+
+<div id="order-by">
   #### ORDER BY
 </div>
 
@@ -198,12 +200,12 @@ O tamanho do grânulo é limitado pelas configurações `index_granularity` e `i
 Considere a chave primária `(CounterID, Date)` como exemplo. Nesse caso, a ordenação e o índice podem ser ilustrados da seguinte forma:
 
 ```text
-Dados completos: [---------------------------------------------]
+Whole data:     [---------------------------------------------]
 CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
 Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
-Marcas:          |      |      |      |      |      |      |      |      |      |      |
+Marks:           |      |      |      |      |      |      |      |      |      |      |
                 a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
-Números de marcas: 0      1      2      3      4      5      6      7      8      9      10
+Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
 ```
 
 Se a consulta de dados especificar:
@@ -220,7 +222,7 @@ Um índice esparso permite que dados adicionais sejam lidos. Ao ler um único in
 
 O ClickHouse não exige uma chave primária exclusiva. Você pode inserir várias linhas com a mesma chave primária.
 
-Você pode usar expressões do tipo `Nullable` nas cláusulas `PRIMARY KEY` e `ORDER BY`, mas isso é fortemente desaconselhado. Para permitir esse recurso, ative a configuração [allow&#95;nullable&#95;key](/pt-BR/reference/settings/merge-tree-settings#allow_nullable_key). O princípio [NULLS&#95;LAST](/pt-BR/reference/statements/select/order-by#sorting-of-special-values) se aplica aos valores `NULL` na cláusula `ORDER BY`.
+Você pode usar expressões do tipo `Nullable` nas cláusulas `PRIMARY KEY` e `ORDER BY`, mas isso é fortemente desaconselhado. Para permitir esse recurso, ative a configuração [allow&#95;nullable&#95;key](/pt-BR/reference/settings/merge-tree-settings/allow#allow_nullable_key). O princípio [NULLS&#95;LAST](/pt-BR/reference/statements/select/order-by#sorting-of-special-values) se aplica aos valores `NULL` na cláusula `ORDER BY`.
 
 <div id="selecting-a-primary-key">
   ### Selecionando uma chave primária
@@ -245,9 +247,9 @@ O número de colunas na chave primária não é explicitamente limitado. Depende
 
 Uma chave primária longa afetará negativamente o desempenho das inserções e o consumo de memória, mas colunas extras na chave primária não afetam o desempenho do ClickHouse durante consultas `SELECT`.
 
-Você pode criar uma tabela sem chave primária usando a sintaxe `ORDER BY tuple()`. Nesse caso, o ClickHouse armazena os dados na ordem de inserção. Se você quiser preservar a ordem dos dados ao inseri-los com consultas `INSERT ... SELECT`, defina [max&#95;insert&#95;threads = 1](/pt-BR/reference/settings/session-settings#max_insert_threads).
+Você pode criar uma tabela sem chave primária usando a sintaxe `ORDER BY tuple()`. Nesse caso, o ClickHouse armazena os dados na ordem de inserção. Se você quiser preservar a ordem dos dados ao inseri-los com consultas `INSERT ... SELECT`, defina [max&#95;insert&#95;threads = 1](/pt-BR/reference/settings/session-settings/max-insert#max_insert_threads).
 
-Para selecionar dados na ordem original, use consultas `SELECT` [single-threaded](/pt-BR/reference/settings/session-settings#max_threads).
+Para selecionar dados na ordem original, use consultas `SELECT` [single-threaded](/pt-BR/reference/settings/session-settings/max-threads#max_threads).
 
 <div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
   ### Escolhendo uma chave primária diferente da chave de ordenação
@@ -260,7 +262,7 @@ Esse recurso é útil ao usar os motores de tabela [SummingMergeTree](/pt-BR/ref
 
 Nesse caso, faz sentido manter apenas algumas colunas na chave primária para garantir varreduras de intervalo eficientes e adicionar as colunas de dimensão restantes à tupla da chave de ordenação.
 
-O [ALTER](/pt-BR/reference/statements/alter/index) da chave de ordenação é uma operação leve porque, quando uma nova coluna é adicionada simultaneamente à tabela e à chave de ordenação, as partes de dados existentes não precisam ser alteradas. Como a chave de ordenação antiga é um prefixo da nova chave de ordenação e não há dados na coluna recém-adicionada, os dados ficam ordenados tanto pela chave de ordenação antiga quanto pela nova no momento da modificação da tabela.
+O [ALTER](/pt-BR/reference/statements/alter/skipping-index) da chave de ordenação é uma operação leve porque, quando uma nova coluna é adicionada simultaneamente à tabela e à chave de ordenação, as partes de dados existentes não precisam ser alteradas. Como a chave de ordenação antiga é um prefixo da nova chave de ordenação e não há dados na coluna recém-adicionada, os dados ficam ordenados tanto pela chave de ordenação antiga quanto pela nova no momento da modificação da tabela.
 
 <div id="use-of-indexes-and-partitions-in-queries">
   ### Uso de índices e partições em consultas
@@ -307,7 +309,7 @@ No exemplo abaixo, o índice não pode ser usado.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-Para verificar se o ClickHouse pode usar o índice ao executar uma consulta, use as configurações [force&#95;index&#95;by&#95;date](/pt-BR/reference/settings/session-settings#force_index_by_date) e [force&#95;primary&#95;key](/pt-BR/reference/settings/session-settings#force_primary_key).
+Para verificar se o ClickHouse pode usar o índice ao executar uma consulta, use as configurações [force&#95;index&#95;by&#95;date](/pt-BR/reference/settings/session-settings/force#force_index_by_date) e [force&#95;primary&#95;key](/pt-BR/reference/settings/session-settings/force#force_primary_key).
 
 A chave de partição por mês permite ler apenas os blocos de dados que contêm datas dentro do intervalo correto. Nesse caso, o bloco de dados pode conter dados de várias datas (até um mês inteiro). Dentro de um bloco, os dados são ordenados pela chave primária, que talvez não tenha a data como primeira coluna. Por isso, usar uma consulta com apenas uma condição de data, sem especificar o prefixo da chave primária, fará com que mais dados sejam lidos do que no caso de uma única data.
 
@@ -693,7 +695,7 @@ Funções com um argumento constante menor que o tamanho do ngram não podem ser
 Projeções são como [visões materializadas](/pt-BR/reference/statements/create/view), mas são definidas no nível das partes. Elas oferecem garantias de consistência e são usadas automaticamente nas consultas.
 
 <Note>
-  Ao implementar projeções, você também deve considerar a configuração [force&#95;optimize&#95;projection](/pt-BR/reference/settings/session-settings#force_optimize_projection).
+  Ao implementar projeções, você também deve considerar a configuração [force&#95;optimize&#95;projection](/pt-BR/reference/settings/session-settings/force-optimize#force_optimize_projection).
 </Note>
 
 Projeções não são compatíveis com instruções `SELECT` com o modificador [FINAL](/pt-BR/reference/statements/select/from#final-modifier).
@@ -975,7 +977,7 @@ Se você executar a consulta `SELECT` entre as mesclagens, poderá obter dados e
 
 **Veja também**
 
-* configuração [ttl&#95;only&#95;drop&#95;parts](/pt-BR/reference/settings/merge-tree-settings#ttl_only_drop_parts)
+* configuração [ttl&#95;only&#95;drop&#95;parts](/pt-BR/reference/settings/merge-tree-settings/other#ttl_only_drop_parts)
 
 <div id="disk-types">
   ## Tipos de disco
@@ -1011,7 +1013,7 @@ Uma parte de dados é a menor unidade móvel das tabelas com motor `MergeTree`. 
 </div>
 
 * Disco — Dispositivo de bloco montado no sistema de arquivos.
-* Disco padrão — Disco que armazena o caminho especificado na configuração de servidor [path](/pt-BR/reference/settings/server-settings/settings#path).
+* Disco padrão — Disco que armazena o caminho especificado na configuração de servidor [path](/pt-BR/reference/settings/server-settings/settings/other#path).
 * Volume — Conjunto ordenado de disks idênticos (semelhante a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 * Política de armazenamento — Conjunto de volumes e das regras para mover dados entre eles.
 
@@ -1176,7 +1178,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 A política de armazenamento `default` pressupõe o uso de apenas um volume, que consiste em apenas um disco definido em `<path>`.
 Você pode alterar a política de armazenamento após a criação da tabela com a consulta [ALTER TABLE ... MODIFY SETTING], e a nova política deve incluir todos os disks e volumes antigos com os mesmos nomes.
 
-O número de threads que executam movimentações em segundo plano de partes de dados pode ser alterado pela configuração [background&#95;move&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings#background_move_pool_size).
+O número de threads que executam movimentações em segundo plano de partes de dados pode ser alterado pela configuração [background&#95;move&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings/background#background_move_pool_size).
 
 <div id="details">
   ### Detalhes
@@ -1206,7 +1208,7 @@ A movimentação de dados não interfere na replicação. Portanto, diferentes p
 Após a conclusão das mesclagens em segundo plano e das mutações, as partes antigas só são removidas depois de um certo tempo (`old_parts_lifetime`).
 Durante esse período, elas não são movidas para outros volumes ou disks. Portanto, até que sejam finalmente removidas, ainda são consideradas no cálculo do espaço em disco ocupado.
 
-O usuário pode distribuir novas partes grandes entre diferentes disks de um volume [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) de forma equilibrada usando a configuração [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/pt-BR/reference/settings/merge-tree-settings#min_bytes_to_rebalance_partition_over_jbod).
+O usuário pode distribuir novas partes grandes entre diferentes disks de um volume [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) de forma equilibrada usando a configuração [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/pt-BR/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod).
 
 <div id="table_engine-mergetree-s3">
   ## Usando armazenamento externo para dados
@@ -1428,16 +1430,16 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
   Um conjunto compacto de resumos de valor único derivados de uma coluna. Dependendo do tipo da coluna, os seguintes elementos são preenchidos:
 
+  * para qualquer coluna: o número de linhas iguais ao valor padrão do tipo (`0` para inteiros e floats, `''` para `String`, `[]` para `Array`, `NULL` para `Nullable` etc.), o que permite ao otimizador estimar predicados `col = <default>` e filtros `IS NULL`;
   * para qualquer coluna cujos valores sejam representados por um número (inteiros, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): os valores mínimo e máximo, que permitem estimar a seletividade de filtros por intervalo e habilitam a poda de partes;
-  * para colunas `String` e `FixedString`: o comprimento total em bytes dos valores não `NULL` (a partir do qual é possível derivar o comprimento médio das strings);
-  * para colunas `Nullable` e `LowCardinality(Nullable)`: a contagem de valores `NULL`, que o otimizador usa para descontar linhas `NULL` das estimativas de seletividade.
+  * para colunas `String` e `FixedString`: o comprimento total em bytes dos valores não `NULL` (a partir do qual é possível derivar o comprimento médio das strings).
 
-    Uma única estatística `basic` pode preencher vários desses elementos ao mesmo tempo — por exemplo, em uma coluna `Nullable(UInt32)`, ela rastreia tanto o mínimo/máximo numérico quanto a contagem de nulos. Em comparação com `minmax`, `basic` também funciona em colunas `String` / `FixedString` e pode ser declarada em wrappers `Nullable` de tipos como `UUID` ou `IPv6` apenas para rastrear a contagem de nulos.
+    Uma única estatística `basic` pode preencher vários desses elementos ao mesmo tempo — por exemplo, em uma coluna `Nullable(UInt32)`, ela rastreia tanto o mínimo/máximo numérico quanto a contagem de `NULL`. Como uma contagem de valores padrão é definida para todos os tipos de coluna, `basic` pode ser declarada em qualquer coluna, incluindo tipos compostos como `Array`, `Tuple` e `Map`.
 
 * `minmax` (obsoleto)
 
 <Note>
-  As estatísticas `minmax` estão obsoletas e não podem mais ser criadas (`CREATE TABLE ... STATISTICS(minmax)` e `ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` retornam um erro). Tabelas e partes existentes com estatísticas `minmax` continuam funcionando. Use estatísticas `basic` no lugar.
+  As estatísticas `minmax` estão obsoletas. Use estatísticas `basic` no lugar, pois são um superconjunto de `minmax`.
 </Note>
 
 * `tdigest`
@@ -1465,36 +1467,42 @@ Sketches [TDigest](https://github.com/tdunning/t-digest) que permitem calcular p
 Sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que fornecem uma contagem aproximada da frequência de cada valor em uma coluna.
 
 <div id="supported-data-types">
-  ### Tipos de dados suportados
+  ### Tipos de dados compatíveis
 </div>
 
-|             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String ou FixedString |
-| ----------- | -------------------------------------------------- | ---- | --------------------- |
-| basic       | ✔                                                  | ✔    | ✔                     |
-| countmin    | ✔                                                  | ✔    | ✔                     |
-| minmax      | ✔                                                  | ✔    | ✗                     |
-| tdigest     | ✔                                                  | ✗    | ✗                     |
-| uniq        | ✔                                                  | ✔    | ✔                     |
-| uniq&#95;v2 | ✔                                                  | ✔    | ✔                     |
+|             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String ou FixedString | Qualquer outro tipo                   |
+| ----------- | -------------------------------------------------- | ---- | --------------------- | ------------------------------------- |
+| basic       | ✔                                                  | ✔    | ✔                     | ✔ (apenas contagem de valores padrão) |
+| countmin    | ✔                                                  | ✔    | ✔                     | ✗                                     |
+| minmax      | ✔                                                  | ✔    | ✗                     | ✗                                     |
+| tdigest     | ✔                                                  | ✗    | ✗                     | ✗                                     |
+| uniq        | ✔                                                  | ✔    | ✔                     | ✗                                     |
+| uniq&#95;v2 | ✔                                                  | ✔    | ✔                     | ✗                                     |
 
-Todos os itens acima também aceitam wrappers `Nullable` e `LowCardinality(Nullable)` dos tipos listados. `Basic` também pode ser declarado em wrappers `Nullable` de tipos como `UUID` ou `IPv6` exclusivamente para rastrear a contagem de valores nulos.
+Todos os itens acima também aceitam wrappers `Nullable` e `LowCardinality(Nullable)` dos tipos listados. Além disso, `basic` pode ser declarado em qualquer outro tipo (incluindo tipos compostos, como `Array`, `Tuple` e `Map`), registrando apenas a contagem de valores padrão.
 
 <div id="supported-operations">
-  ### Operações suportadas
+  ### Operações compatíveis
 </div>
 
-|             | Filtros de igualdade (==) | Filtros por intervalo (`>, >=, <, <=`) |
-| ----------- | ------------------------- | -------------------------------------- |
-| basic       | ✗                         | ✔ (somente colunas numéricas)          |
-| countmin    | ✔                         | ✗                                      |
-| minmax      | ✗                         | ✔ (somente colunas numéricas)          |
-| tdigest     | ✗                         | ✔ (somente colunas numéricas)          |
-| uniq        | ✔                         | ✗                                      |
-| uniq&#95;v2 | ✔                         | ✗                                      |
+|             | Filtros de igualdade (==) | Filtros de intervalo (`>, >=, <, <=`) |
+| ----------- | ------------------------- | ------------------------------------- |
+| basic       | ✔ (apenas valor padrão)   | ✔ (apenas colunas numéricas)          |
+| countmin    | ✔                         | ✗                                     |
+| minmax      | ✗                         | ✔ (apenas colunas numéricas)          |
+| tdigest     | ✗                         | ✔ (apenas colunas numéricas)          |
+| uniq        | ✔                         | ✗                                     |
+| uniq&#95;v2 | ✔                         | ✗                                     |
 
-Para `basic` em colunas `String` / `FixedString`, a estatística registra apenas o comprimento total, em bytes, dos valores não NULL
-(usado para estimar o comprimento médio da string) e a contagem de nulos;
-filtros por intervalo e poda de partes não usam essa estatística.
+`basic` responde a um filtro de igualdade com exatidão apenas quando o valor comparado corresponde ao valor
+padrão do armazenamento interno da coluna (inteiro bruto `0` para tipos numéricos, `''` / N bytes nulos para `String` /
+`FixedString`, `NULL` para colunas `Nullable` etc.). Em especial, para tipos `Enum`, o caminho rápido
+é acionado apenas quando o literal do enumerador é mapeado para o inteiro bruto `0`; se nenhum enumerador tiver o valor bruto `0`,
+a estatística não contribui para a estimativa de igualdade. Para outros valores, o otimizador recorre
+a outras estatísticas.
+Para `basic` em colunas `String` / `FixedString`, a estatística registra o comprimento total, em bytes, de valores não `NULL`
+(usado para estimar o comprimento médio das strings), além da contagem de valores padrão/`NULL`; filtros de intervalo e a
+poda de partes não são baseados nela.
 
 <div id="column-level-settings">
   ## Configurações em nível de coluna
