@@ -1,7 +1,10 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
@@ -38,6 +41,9 @@ constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
 constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
+constexpr auto KEY_MISSING_COLUMNS = "missing_columns";
+constexpr auto KEY_MISSING_COL_NAME = "name";
+constexpr auto KEY_MISSING_COL_TYPE = "type";
 
 void writeJSONKey(std::string_view key, WriteBuffer & out)
 {
@@ -460,7 +466,36 @@ MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+    return !empty() || !missing_columns.empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+}
+
+bool SerializationInfoByName::isMissingColumn(const String & name) const
+{
+    return getMissingColumnInfo(name) != nullptr;
+}
+
+void SerializationInfoByName::setMissingColumns(MissingColumns columns)
+{
+    chassert(columns.empty() || settings.version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+    std::sort(columns.begin(), columns.end());
+    auto duplicate = std::adjacent_find(columns.begin(), columns.end(), [](const auto & lhs, const auto & rhs)
+    {
+        return lhs.name == rhs.name;
+    });
+    if (duplicate != columns.end())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicate missing column '{}' in serialization infos", duplicate->name);
+    missing_columns = std::move(columns);
+}
+
+const SerializationInfoByName::MissingColumnInfo * SerializationInfoByName::getMissingColumnInfo(const String & name) const
+{
+    /// missing_columns is sorted by name, use binary search
+    auto it = std::lower_bound(
+        missing_columns.begin(), missing_columns.end(), name,
+        [](const MissingColumnInfo & info, const String & n) { return info.name < n; });
+    if (it != missing_columns.end() && it->name == name)
+        return &(*it);
+    return nullptr;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
@@ -513,6 +548,29 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         writeChar('}', out);
     }
 
+    if (version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS && !missing_columns.empty())
+    {
+        writeChar(',', out);
+        writeJSONKey(KEY_MISSING_COLUMNS, out);
+        writeChar('[', out);
+
+        /// missing_columns is kept sorted by name for deterministic checksums.
+        bool first_missing = true;
+        for (const auto & mc : missing_columns)
+        {
+            if (!first_missing)
+                writeChar(',', out);
+            first_missing = false;
+
+            writeChar('{', out);
+            writeJSONKeyValue(KEY_MISSING_COL_NAME, mc.name, out);
+            writeChar(',', out);
+            writeJSONKeyValue(KEY_MISSING_COL_TYPE, mc.type_name, out);
+            writeChar('}', out);
+        }
+        writeChar(']', out);
+    }
+
     writeChar(',', out);
     writeJSONKeyValue(KEY_VERSION, static_cast<size_t>(version), out);
     writeChar('}', out);
@@ -523,6 +581,7 @@ SerializationInfoByName SerializationInfoByName::clone() const
     SerializationInfoByName res(settings);
     for (const auto & [name, info] : *this)
         res.emplace(name, info->clone());
+    res.missing_columns = missing_columns;
     return res;
 }
 
@@ -545,6 +604,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     Poco::JSON::Array::Ptr columns_array;
     Poco::JSON::Object::Ptr type_versions_obj;
+    Poco::JSON::Array::Ptr missing_columns_array;
     bool propagate_types_serialization_versions_to_nested_types = false;
     for (const auto & [key, value] : *object)
     {
@@ -563,6 +623,10 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         else if (key == KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES)
         {
             propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
+        }
+        else if (version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS && key == KEY_MISSING_COLUMNS)
+        {
+            missing_columns_array = value.extract<Poco::JSON::Array::Ptr>();
         }
         else
         {
@@ -650,6 +714,29 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             info->fromJSON(*elem_object);
             infos.emplace(name, std::move(info));
         }
+    }
+
+    if (missing_columns_array)
+    {
+        MissingColumns missing_columns;
+        missing_columns.reserve(missing_columns_array->size());
+        const auto physical_column_names = columns.getNameSet();
+        for (const auto & elem : *missing_columns_array)
+        {
+            const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+            for (const auto & [key, _] : *elem_object)
+                if (key != KEY_MISSING_COL_NAME && key != KEY_MISSING_COL_TYPE)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected field '{}' in missing_columns entry", key);
+
+            MissingColumnInfo mc;
+            mc.name = elem_object->getValue<String>(KEY_MISSING_COL_NAME);
+            mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
+            if (physical_column_names.contains(mc.name))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Column '{}' is both physical and missing in serialization infos", mc.name);
+            DataTypeFactory::instance().get(mc.type_name);
+            missing_columns.push_back(std::move(mc));
+        }
+        infos.setMissingColumns(std::move(missing_columns));
     }
 
     return infos;
