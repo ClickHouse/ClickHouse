@@ -48,9 +48,13 @@ public:
     /// True once a kernel snapshot state is installed (the object is usable as a cache entry).
     bool isInitialized() const;
 
-    /// False when a build is in flight with client options different from `client_options`:
-    /// this PR forwards query-level S3 timeouts, so such a query must not adopt that build.
+    /// False when a build is in flight — or reserved, before the first load started — with
+    /// client options different from `client_options`: query-level S3 timeouts are forwarded
+    /// into the build, so such a query must not adopt it.
     bool canShareInflightLoad(const KernelClientOptions & client_options) const;
+
+    /// Records the options the first load of this object must use (see canShareInflightLoad).
+    void reserveClientOptions(const KernelClientOptions & client_options);
 
     std::optional<size_t> getTotalRows() const;
     std::optional<size_t> getTotalBytes() const;
@@ -134,6 +138,10 @@ private:
         KernelClientOptions client_options;
     };
     mutable std::shared_ptr<InflightSnapshotLoad> inflight_load TSA_GUARDED_BY(mutex);
+    /// Client options this object is meant to load with, recorded by the metadata layer before
+    /// the object is published, so that a query with other options is turned away even before
+    /// the first load has started (see canShareInflightLoad).
+    mutable std::optional<KernelClientOptions> reserved_client_options TSA_GUARDED_BY(mutex);
 
     struct SchemaInfo
     {

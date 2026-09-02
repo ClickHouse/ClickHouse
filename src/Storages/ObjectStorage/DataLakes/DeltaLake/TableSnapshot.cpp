@@ -731,7 +731,17 @@ bool TableSnapshot::isInitialized() const
 bool TableSnapshot::canShareInflightLoad(const KernelClientOptions & client_options) const
 {
     std::lock_guard lock(mutex);
-    return !inflight_load || inflight_load->client_options == client_options;
+    if (inflight_load)
+        return inflight_load->client_options == client_options;
+    if (reserved_client_options)
+        return *reserved_client_options == client_options;
+    return true;
+}
+
+void TableSnapshot::reserveClientOptions(const KernelClientOptions & client_options)
+{
+    std::lock_guard lock(mutex);
+    reserved_client_options = client_options;
 }
 
 size_t TableSnapshot::getVersionUnlocked() const
@@ -976,7 +986,12 @@ void TableSnapshot::initOrUpdateSnapshot() const
         /// versions and rebuilds ever start a second load on the same object.
         if (!load || (version_to_build.has_value() && (given_up || other_options)))
         {
-            load = startKernelSnapshotLoad(helper, version_to_build, client_options);
+            /// The first load of an object reserved by the metadata layer runs with the reserved
+            /// options (they equal this query's: other queries were turned away by then).
+            const auto load_options = (!kernel_snapshot_state && reserved_client_options)
+                ? *reserved_client_options
+                : client_options;
+            load = startKernelSnapshotLoad(helper, version_to_build, load_options);
             inflight_load = load;
         }
 

@@ -175,6 +175,9 @@ DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resol
                 kernel_helper,
                 object_storage,
                 log);
+            /// Reserved before publishing, so that a concurrent caller with other options does
+            /// not grab this object in the window before its first load has started.
+            latest_snapshot_in_flight->reserveClientOptions(client_options);
         }
         snapshot = latest_snapshot_in_flight;
     }
