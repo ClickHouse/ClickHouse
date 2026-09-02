@@ -216,9 +216,8 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
     ///
     /// Note what this is NOT: the generic "resolve the profile unlocked, compare it
     /// unlocked, return when equal" shortcut. That one is also sound today, but it
-    /// re-creates the unlocked resolve-then-compare shape that two successive review
-    /// rounds each found a bug in, with correctness resting on an invariant a later edit
-    /// can silently break. It is deliberately not taken; see the implementer notes.
+    /// re-creates an unlocked resolve-then-compare shape whose correctness rests on an
+    /// invariant a later edit can silently break. It is deliberately not taken.
     if (default_profile.empty())
     {
         if (auto id = memory_storage.find<User>(user_name))
@@ -229,7 +228,7 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
     /// exactly what keeps the bound soft — simultaneous materializations of DIFFERENT new
     /// usernames each observe capacity independently and may overshoot the configured
     /// value by the number of in-flight authentications, with no reservation protocol and
-    /// no capacity serialization (per the ADR).
+    /// no capacity serialization.
     ///
     /// The observation must NOT decide the outcome by itself, though. Whether this
     /// username is still new is decided by the authoritative lookup under the mutex
@@ -319,11 +318,11 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
         return *id;
     }
 
-    /// Authoritatively a new username, and the cache was observed full: reject. Task 11
-    /// increments `HTTPUserDirectoryCacheLimitExceeded` right here — an atomic
+    /// Authoritatively a new username, and the cache was observed full: reject.
+    /// `HTTPUserDirectoryCacheLimitExceeded` is incremented right here — an atomic
     /// `ProfileEvents` add, so holding the mutex across it costs nothing. The capacity is
     /// NOT re-observed under the mutex: that would serialize capacity and make the bound
-    /// strict, which the ADR explicitly does not want.
+    /// strict, which is deliberately not the contract.
     if (observed_cache_full)
     {
         ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryCacheLimitExceeded);
@@ -454,7 +453,7 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
     /// let AlwaysAllowCredentials (handled above) or BasicCredentials through.
 
     /// The try below covers exactly the external-auth + validation + materialization stage
-    /// of this applicable Basic attempt (Task 11): `HTTPUserDirectoryAuthFailures` counts
+    /// of this applicable Basic attempt: `HTTPUserDirectoryAuthFailures` counts
     /// what fails closed inside it, and nothing else — not the applicability
     /// classification, not the networks check, not the `AlwaysAllowCredentials` path above,
     /// all of which stay outside.

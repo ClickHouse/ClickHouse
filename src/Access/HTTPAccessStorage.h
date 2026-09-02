@@ -47,7 +47,7 @@ public:
     /// restart. Overriding only this no-argument form is SUFFICIENT and no per-id override
     /// is needed: `MultipleAccessStorage::isEphemeral(id)` resolves the owning storage and
     /// calls its `isEphemeral(id)`, and the base `IAccessStorage::isEphemeral(const UUID &)`
-    /// forwards to `isEphemeral`. (Verified on `origin/master`.)
+    /// forwards to `isEphemeral`.
     bool isEphemeral() const override { return true; }
     bool exists(const UUID & id) const override;
 
@@ -110,7 +110,7 @@ private: // IAccessStorage implementations.
     /// Remote HTTP I/O is never performed under this mutex: authentication against the
     /// external server has already completed by the time getOrCreateUser is called, and
     /// everything inside is an in-memory AccessControl/MemoryAccessStorage lookup, so
-    /// distinct usernames still authenticate fully concurrently (the ADR's requirement).
+    /// distinct usernames still authenticate fully concurrently.
     /// The max_cached_users capacity is deliberately NOT observed under this mutex — it is
     /// a soft bound, observed on the cache size outside. Only the decision to apply that
     /// observation is inside, because it depends on the authoritative new-vs-cached
@@ -136,7 +136,7 @@ private: // IAccessStorage implementations.
     /// the increment and the load in `getOrCreateUser`: this is a capacity statistic feeding
     /// a soft, approximate bound, not the synchronization mechanism for the cached entity
     /// itself — the mutex above already provides that. Also used by the destructor instead
-    /// of `findAll<User>().size` (Task 11).
+    /// of `findAll<User>().size`.
     mutable std::atomic<size_t> cached_user_count{0};
 };
 
