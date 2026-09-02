@@ -105,7 +105,8 @@ StorageNATS::StorageNATS(
     const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode,
-    bool authentication_determined_by_table_)
+    bool authentication_determined_by_table_,
+    bool fresh_definition_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
@@ -119,6 +120,7 @@ StorageNATS::StorageNATS(
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
+    , fresh_definition(fresh_definition_)
 {
     auto nats_username = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_username]);
     auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
@@ -188,7 +190,9 @@ StorageNATS::StorageNATS(
     }
     catch (...)
     {
-        if (throw_on_startup_failure)
+        /// A certificate the server cannot load is a mistake in the definition, unlike a broker which
+        /// is unreachable, so a definition the user supplies now is rejected instead of being kept.
+        if (throw_on_startup_failure || (fresh_definition && getCurrentExceptionCode() == ErrorCodes::BAD_ARGUMENTS))
         {
             stopEventLoop();
             throw;
@@ -1287,7 +1291,8 @@ void registerStorageNATS(StorageFactory & factory)
             args.comment,
             std::move(nats_settings),
             args.mode,
-            authentication_determined_by_table);
+            authentication_determined_by_table,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     };
 
     factory.registerStorage(

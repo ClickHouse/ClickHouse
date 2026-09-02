@@ -91,6 +91,16 @@
             <nats_client_cert_file>/etc/clickhouse-server/server.crt</nats_client_cert_file>
             <nats_client_key_file>/etc/clickhouse-server/server.key</nats_client_key_file>
         </nats_config_certificates>
+        <!-- The same TLS material with a path that does not exist, so loading the certificate fails. -->
+        <nats_config_unreadable_certificate>
+            <nats_url>127.0.0.1:1</nats_url>
+            <nats_subjects>subject</nats_subjects>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_startup_connect_tries>1</nats_startup_connect_tries>
+            <nats_reconnect_wait>1</nats_reconnect_wait>
+            <nats_secure>1</nats_secure>
+            <nats_ca_file>/etc/clickhouse-server/no_such_ca.pem</nats_ca_file>
+        </nats_config_unreadable_certificate>
         <!-- A collection without credentials: an empty `nats_credentials` has nothing to drop there. -->
         <nats_config_no_credentials>
             <nats_url>127.0.0.1:1</nats_url>

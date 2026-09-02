@@ -103,3 +103,12 @@ CREATE NAMED COLLECTION 05029_nats_certificates_without_secure AS
     nats_ca_file = '/etc/clickhouse-server/server.crt';
 CREATE TABLE nats_certificates_without_secure (key UInt64) ENGINE = NATS(05029_nats_certificates_without_secure); -- { serverError BAD_ARGUMENTS }
 DROP NAMED COLLECTION 05029_nats_certificates_without_secure;
+
+-- A certificate the server cannot read is a mistake in the definition, so it is rejected for every
+-- fresh definition. A full-definition `ATTACH` is user input just like `CREATE`.
+CREATE TABLE nats_unreadable_certificate (key UInt64) ENGINE = NATS(nats_config_unreadable_certificate); -- { serverError BAD_ARGUMENTS }
+
+ATTACH TABLE nats_unreadable_certificate_attached UUID 'c6d2423a-9ab2-4a37-8e56-10e479542003' (key UInt64)
+ENGINE = NATS(nats_config_unreadable_certificate)
+SETTINGS nats_num_consumers = 1; -- { serverError BAD_ARGUMENTS }
+DROP TABLE IF EXISTS nats_unreadable_certificate_attached;
