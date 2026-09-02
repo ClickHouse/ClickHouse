@@ -191,10 +191,24 @@ public:
         /// client settings do not reach. Give it the same per-request bounds as the server's
         /// S3 client (`s3_connect_timeout_ms` / `s3_request_timeout_ms`), so that a request the
         /// object store never answers fails instead of hanging.
+        /// A value of `0` means "no timeout" for the server's S3 client, but object_store cannot
+        /// be given an unbounded timeout through its string options (a literal `0` makes every
+        /// request time out immediately), so `0` intentionally leaves the option unset and
+        /// object_store's built-in defaults (30 s request / 5 s connect) stay in effect.
         if (connect_timeout_ms)
             set_option("connect_timeout", fmt::format("{}ms", connect_timeout_ms));
+        else
+            LOG_WARNING(
+                log,
+                "s3_connect_timeout_ms = 0 (no timeout) cannot be forwarded to the delta-kernel "
+                "object store client; its default connect timeout stays in effect");
         if (request_timeout_ms)
             set_option("timeout", fmt::format("{}ms", request_timeout_ms));
+        else
+            LOG_WARNING(
+                log,
+                "s3_request_timeout_ms = 0 (no timeout) cannot be forwarded to the delta-kernel "
+                "object store client; its default request timeout stays in effect");
 
         LOG_TRACE(
             log,

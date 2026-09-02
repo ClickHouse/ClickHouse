@@ -22,6 +22,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentMetrics.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -40,6 +41,7 @@
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
 
+#include <atomic>
 #include <chrono>
 #include <future>
 
@@ -48,6 +50,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DELTA_KERNEL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 namespace DB::Setting
@@ -70,6 +73,11 @@ namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
     extern const char delta_kernel_snapshot_load_pause[];
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric DeltaLakeSnapshotLoadsStuck;
 }
 
 namespace DeltaLake
@@ -928,6 +936,25 @@ void TableSnapshot::initOrUpdateSnapshot() const
         kernel_snapshot_state->snapshot_version);
 }
 
+namespace
+{
+    /// Who is responsible for the stuck-worker bookkeeping when a snapshot-load wait is aborted.
+    /// The waiter and the worker race for the state with `exchange`: whoever loses the race
+    /// (sees the other side's value) performs the transition's bookkeeping.
+    enum class SnapshotLoadWorkerState
+    {
+        Running,
+        Finished,   /// Set by the worker when the kernel call returned.
+        Abandoned,  /// Set by the waiter when it gave up the wait (KILL QUERY or a timeout).
+    };
+
+    /// Hard cap on abandoned snapshot-load workers that are still stuck inside the kernel call.
+    /// Each of them occupies one `GlobalThreadPool` worker until the kernel returns, so without
+    /// a cap a dead object store retried in a loop would leak pool workers without bound and
+    /// could eventually exhaust `max_thread_pool_size`. At the cap, new loads fail fast instead.
+    constexpr Int64 MAX_STUCK_SNAPSHOT_LOAD_WORKERS = 16;
+}
+
 std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::buildKernelSnapshotState(std::optional<size_t> version_to_build) const
 {
     /// The kernel FFI is synchronous and has no cancellation hook: `snapshot_builder_build` reads
@@ -940,6 +967,17 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::buildKernelSn
     /// its status on every poll: `KILL QUERY`, `max_execution_time` and
     /// `delta_lake_snapshot_load_timeout_ms` all abort the wait. An abandoned worker does not touch
     /// `this`; it keeps the kernel handles alive and releases them when the kernel call returns.
+    /// Stuck workers are counted by the `DeltaLakeSnapshotLoadsStuck` metric and bounded by
+    /// `MAX_STUCK_SNAPSHOT_LOAD_WORKERS`: at the cap, new loads fail fast instead of leaking
+    /// another `GlobalThreadPool` worker.
+    if (CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck) >= MAX_STUCK_SNAPSHOT_LOAD_WORKERS)
+        throw DB::Exception(
+            DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
+            "Refusing to load the snapshot of the Delta Lake table at {}: {} previous snapshot loads were "
+            "abandoned and are still stuck inside delta-kernel (see the DeltaLakeSnapshotLoadsStuck metric); "
+            "not starting another worker until one of them returns",
+            helper->getTableLocation(), MAX_STUCK_SNAPSHOT_LOAD_WORKERS);
+
     DB::QueryStatusPtr process_list_element;
     UInt64 timeout_ms = 0;
     auto context = DB::CurrentThread::tryGetQueryContext();
@@ -951,6 +989,8 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::buildKernelSn
         timeout_ms = context->getSettingsRef()[DB::Setting::delta_lake_snapshot_load_timeout_ms].totalMilliseconds();
     }
 
+    auto worker_state = std::make_shared<std::atomic<SnapshotLoadWorkerState>>(SnapshotLoadWorkerState::Running);
+
     auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
         [kernel_helper = helper, version_to_build]
         {
@@ -961,11 +1001,14 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::buildKernelSn
     auto future = task->get_future();
 
     ThreadFromGlobalPool thread(
-        [task, thread_group = DB::CurrentThread::getGroup()]
+        [task, worker_state, thread_group = DB::CurrentThread::getGroup()]
         {
             /// Attach to the query thread group to keep memory accounting and the query id in logs.
             DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
             (*task)();
+            /// If the waiter already gave up, undoing the stuck-worker accounting is ours to do.
+            if (worker_state->exchange(SnapshotLoadWorkerState::Finished) == SnapshotLoadWorkerState::Abandoned)
+                CurrentMetrics::sub(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
         });
 
     Stopwatch watch;
@@ -974,12 +1017,24 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::buildKernelSn
     SCOPE_EXIT({
         if (thread.joinable())
         {
-            LOG_WARNING(
-                log,
-                "Abandoning the delta-kernel snapshot load of the table at {} after {} ms; "
-                "the worker thread keeps running until the kernel call returns",
-                helper->getTableLocation(), watch.elapsedMilliseconds());
-            thread.detach();
+            /// The wait was aborted (`KILL QUERY` or a timeout threw). If the worker finished in
+            /// the meantime, join it: nothing leaks and nothing has to be counted.
+            if (worker_state->exchange(SnapshotLoadWorkerState::Abandoned) == SnapshotLoadWorkerState::Finished)
+            {
+                thread.join();
+            }
+            else
+            {
+                CurrentMetrics::add(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
+                LOG_WARNING(
+                    log,
+                    "Abandoning the delta-kernel snapshot load of the table at {} after {} ms; "
+                    "the worker thread keeps running until the kernel call returns "
+                    "(stuck workers: {}, new snapshot loads fail fast at {})",
+                    helper->getTableLocation(), watch.elapsedMilliseconds(),
+                    CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck), MAX_STUCK_SNAPSHOT_LOAD_WORKERS);
+                thread.detach();
+            }
         }
     });
 

@@ -6162,6 +6162,14 @@ def release_paused_snapshot_load(instance):
     instance.query(f"SYSTEM DISABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
 
 
+def get_stuck_snapshot_loads(instance):
+    return int(
+        instance.query(
+            "SELECT value FROM system.metrics WHERE metric = 'DeltaLakeSnapshotLoadsStuck'"
+        )
+    )
+
+
 def test_kill_query_during_snapshot_load(started_cluster):
     """A snapshot load stuck inside delta-kernel must not make the query unkillable:
     KILL QUERY has to abort the waiting query although the kernel call has not returned yet."""
@@ -6198,9 +6206,18 @@ def test_kill_query_during_snapshot_load(started_cluster):
         instance.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
         error = query_future.result(timeout=60)
         assert "QUERY_WAS_CANCELLED" in error, error
+        # The abandoned worker is visible in system.metrics until the kernel call returns.
+        assert get_stuck_snapshot_loads(instance) == 1
     finally:
         release_paused_snapshot_load(instance)
         executor.shutdown(wait=False)
+
+    # Once the kernel call returns, the abandoned worker unregisters itself.
+    for _ in range(300):
+        if get_stuck_snapshot_loads(instance) == 0:
+            break
+        time.sleep(0.1)
+    assert get_stuck_snapshot_loads(instance) == 0
 
     # The cancelled CREATE left nothing behind and the table is readable once the kernel answers.
     assert instance.query(f"EXISTS TABLE {TABLE_NAME}").strip() == "0"
