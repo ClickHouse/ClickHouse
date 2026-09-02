@@ -28,6 +28,7 @@
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingsFields.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 
@@ -42,6 +43,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -121,6 +123,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_shuffle_query;
+    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -204,6 +208,36 @@ namespace fs = std::filesystem;
 namespace
 {
 
+bool fieldToBool(const Field & field)
+{
+    return SettingFieldBool(field);
+}
+
+bool hasLimitShuffleWithDisabledSetting(const ASTPtr & ast, bool allow_experimental_shuffle_query)
+{
+    if (!ast)
+        return false;
+
+    bool allow_experimental_shuffle_query_for_node = allow_experimental_shuffle_query;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+    {
+        if (const auto * settings = select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr)
+        {
+            if (const auto * value = settings->changes.tryGet("allow_experimental_shuffle_query"))
+                allow_experimental_shuffle_query_for_node = fieldToBool(*value);
+        }
+
+        if (select->limit_shuffle && !allow_experimental_shuffle_query_for_node)
+            return true;
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (hasLimitShuffleWithDisabledSetting(child, allow_experimental_shuffle_query_for_node))
+            return true;
+    }
+
+    return false;
 /// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
 /// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
 /// engine with a function body. Key expressions live in several places (storage, a view's inner
@@ -965,7 +999,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            if (hasLimitShuffleWithDisabledSetting(create.select, getContext()->getSettingsRef()[Setting::allow_experimental_shuffle_query]))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled (turn on setting `allow_experimental_shuffle_query`)");
+
             return properties;
+        }
 
         if (create.aliases_list)
         {

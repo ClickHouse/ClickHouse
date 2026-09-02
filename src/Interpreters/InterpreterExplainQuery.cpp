@@ -32,6 +32,7 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -75,6 +76,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool explain_syntax_single_record;
     extern const SettingsBool format_display_secrets_in_show_and_select;
@@ -93,10 +95,64 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
+    bool hasLimitShuffle(const ASTPtr & ast)
+    {
+        if (!ast)
+            return false;
+
+        if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+            return true;
+
+        for (const auto & child : ast->children)
+        {
+            if (hasLimitShuffle(child))
+                return true;
+        }
+
+        return false;
+    }
+
+    void checkLimitShuffleWithAnalyzer(const ASTExplainQuery & explain, const ContextPtr & context)
+    {
+        if (!context->getSettingsRef()[Setting::allow_experimental_analyzer] && hasLimitShuffle(explain.getExplainedQuery()))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE requires the query analyzer");
+    }
+
+    /// Resolve a "table function" call that is actually a parameterized view into its storage.
+    /// Returns nullptr for a registered table function - it takes precedence over a view with the
+    /// same name, matching `QueryAnalyzer::resolveTableFunction`, so without this check a user view
+    /// shadowing a built-in table function would be resolved here while regular execution would
+    /// still resolve the built-in - and for anything that is not a parameterized view.
+    StoragePtr tryGetParameterizedViewStorage(const ASTFunction & function, const ContextPtr & context)
+    {
+        if (TableFunctionFactory::instance().isTableFunctionName(function.name))
+            return nullptr;
+
+        String database_name = context->getCurrentDatabase();
+        String table_name = function.name;
+        if (function.isCompoundName())
+        {
+            std::vector<std::string> parts;
+            splitInto<'.'>(parts, function.name);
+            if (parts.size() != 2)
+                return nullptr;
+            database_name = parts[0];
+            table_name = parts[1];
+        }
+
+        auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, context);
+        const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+        if (!storage_view || !storage_view->isParameterizedView())
+            return nullptr;
+
+        return storage;
+    }
+
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
     /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
     ///
@@ -161,31 +217,8 @@ namespace
 
             auto query_context = data.getContext()->getQueryContext();
 
-            /// A registered table function (e.g. `numbers`) takes precedence over a view with
-            /// the same name, matching `QueryAnalyzer::resolveTableFunction`. Without this check
-            /// a user view shadowing a built-in table function would be expanded here while
-            /// regular execution would still resolve the built-in.
-            if (TableFunctionFactory::instance().isTableFunctionName(func->name))
-                return;
-
-            String database_name = query_context->getCurrentDatabase();
-            String table_name = func->name;
-            if (func->isCompoundName())
-            {
-                std::vector<std::string> parts;
-                splitInto<'.'>(parts, func->name);
-                if (parts.size() != 2)
-                    return;
-                database_name = parts[0];
-                table_name = parts[1];
-            }
-
-            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            auto storage = tryGetParameterizedViewStorage(*func, query_context);
             if (!storage)
-                return;
-
-            const auto * storage_view = storage->as<StorageView>();
-            if (!storage_view || !storage_view->isParameterizedView())
                 return;
 
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
@@ -210,7 +243,7 @@ namespace
             /// so the rendered `EXPLAIN SYNTAX` keeps referring to the view.
             String alias = table_expr.table_function->tryGetAlias();
             if (alias.empty())
-                alias = table_name;
+                alias = storage->getStorageID().table_name;
 
             table_expr.table_function = nullptr;
             table_expr.subquery = make_intrusive<ASTSubquery>(std::move(view_query));
@@ -243,6 +276,37 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            /// A select with `LIMIT SHUFFLE` is supported only by the analyzer, and the legacy
+            /// `InterpreterSelectQuery` constructed below would reject it. This visitor can reach
+            /// such a select even when the user has the analyzer enabled: for a non-SELECT
+            /// top-level query (e.g. `EXPLAIN SYNTAX INSERT ... SELECT ... LIMIT 1 SHUFFLE`)
+            /// `executeImpl` falls back to this legacy path with the analyzer force-disabled in
+            /// the context. `checkLimitShuffleWithAnalyzer` has already rejected the query if
+            /// the user's analyzer is disabled (except for the purely syntactic `EXPLAIN AST`,
+            /// where skipping is desirable anyway), so at this point just skip the analysis
+            /// (it is only needed to expand views) and leave the select as is.
+            if (select.limit_shuffle)
+            {
+                if (!data.getContext()->getSettingsRef()[Setting::allow_experimental_shuffle_query])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled by setting allow_experimental_shuffle_query");
+                return;
+            }
+
+            /// `ExpandParameterizedViewsMatcher` may have inlined a parameterized view whose stored query
+            /// uses `LIMIT SHUFFLE` into a subquery of this select. `needChildVisit` stops at the enclosing
+            /// select, so the check above does not see it, while `InterpreterSelectQuery` below would reject
+            /// it. The stored query carries its own `allow_experimental_shuffle_query`, so just skip.
+            if (hasLimitShuffle(node))
+                return;
+
+            /// Stored view queries with `LIMIT SHUFFLE` are supported only by the analyzer, and
+            /// `InterpreterSelectQuery` below would throw from `StorageView::replaceWithSubquery`
+            /// while resolving such a view. This legacy syntax-explain visitor cannot expand them
+            /// correctly anyway, so leave the table reference intact instead of turning syntax
+            /// explain into an execution guard.
+            if (selectReadsFromLimitShuffleView(select, data.getContext()))
+                return;
+
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
@@ -252,6 +316,44 @@ namespace
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }
+        }
+
+        static bool selectReadsFromLimitShuffleView(const ASTSelectQuery & select, const ContextPtr & context)
+        {
+            const auto * table_expression = getTableExpression(select, 0);
+            if (!table_expression)
+                return false;
+
+            /// A parameterized view call that `ExpandParameterizedViewsMatcher` deliberately left intact,
+            /// e.g. because it uses `FINAL` or `SAMPLE`, or because the view is not `SQL SECURITY INVOKER`.
+            /// `InterpreterSelectQuery` resolves such a call itself, so the stored query has to be checked
+            /// here as well, not only for a plain `database.table` view read.
+            if (const auto * function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr)
+            {
+                auto storage = tryGetParameterizedViewStorage(*function, context);
+                if (!storage)
+                    return false;
+
+                auto view_metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+                return hasLimitShuffle(view_metadata_snapshot->getSelectQuery().inner_query);
+            }
+
+            if (!table_expression->database_and_table_name)
+                return false;
+
+            auto table_id = context->tryResolveStorageID(table_expression->database_and_table_name);
+            if (!table_id)
+                return false;
+
+            auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            const auto * view = typeid_cast<const StorageView *>(table.get());
+            if (!view)
+                return false;
+
+            /// An ordinary view fills only `inner_query` of its select description
+            /// (see the `StorageView` constructor), so do not gate on `hasSelectQuery`.
+            auto metadata_snapshot = view->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            return hasLimitShuffle(metadata_snapshot->getSelectQuery().inner_query);
         }
     };
 
@@ -897,6 +999,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
     InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
     query_context = std::move(explain_query_context);
+
+    if (ast.getKind() != ASTExplainQuery::ParsedAST)
+        checkLimitShuffleWithAnalyzer(ast, query_context);
 
     switch (ast.getKind())
     {

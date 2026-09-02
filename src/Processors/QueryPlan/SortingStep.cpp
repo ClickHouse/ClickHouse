@@ -96,6 +96,7 @@ namespace Setting
 
 namespace QueryPlanSerializationSetting
 {
+    extern const QueryPlanSerializationSettingsBool sorting_allow_unordered_output;
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_sort;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_sort;
@@ -733,6 +734,7 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     sort_settings.updatePlanSettings(settings);
+    settings[QueryPlanSerializationSetting::sorting_allow_unordered_output] = allow_unordered_output;
 }
 
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
@@ -828,6 +830,9 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     if (finish_sorting)
         step->convertToFinishSorting(std::move(prefix_description), use_buffering, apply_virtual_row_conversions);
+
+    if (ctx.settings[QueryPlanSerializationSetting::sorting_allow_unordered_output])
+        step->setAllowUnorderedOutput();
 
     return step;
 }

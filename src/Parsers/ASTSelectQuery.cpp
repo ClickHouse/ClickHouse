@@ -70,6 +70,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_with_cube);
     hash_state.update(group_by_with_grouping_sets);
     hash_state.update(limit_with_ties);
+    hash_state.update(limit_shuffle);
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
@@ -286,6 +287,8 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         limitLength()->format(ostr, s, state, frame);
         if (limit_with_ties)
             ostr << s.nl_or_ws << indent_str << " WITH TIES";
+        if (limit_shuffle)
+            ostr << " SHUFFLE";
     }
     else if (limitOffset())
     {
@@ -676,6 +679,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("order_by_all", true);
     if (limit_with_ties)
         w.writeBool("limit_with_ties", true);
+    if (limit_shuffle)
+        w.writeBool("limit_shuffle", true);
     if (limit_by_all)
         w.writeBool("limit_by_all", true);
 
@@ -716,6 +721,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     group_by_with_grouping_sets = r.getBool("group_by_with_grouping_sets");
     order_by_all = r.getBool("order_by_all");
     limit_with_ties = r.getBool("limit_with_ties");
+    limit_shuffle = r.getBool("limit_shuffle");
     limit_by_all = r.getBool("limit_by_all");
 
     auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
@@ -877,6 +883,11 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// Reject the parser-impossible shape at the JSON boundary.
     if (limit_with_ties && !orderBy())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires an ORDER BY clause during AST JSON deserialization");
+
+    if (limit_shuffle && !limitLength())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_shuffle requires a LIMIT length clause during AST JSON deserialization");
+    if (limit_shuffle && (limitOffset() || limit_with_ties || orderBy()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_shuffle cannot be used with LIMIT OFFSET, LIMIT WITH TIES, or ORDER BY during AST JSON deserialization");
 }
 
 }

@@ -514,12 +514,15 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// reached, and deferring the unneeded ones pays off the same way as with a sort.
     QueryPlan::Node * chain_top_node = root.children.front();
 
+    bool allow_unordered_output = false;
+
     if (sorting_step)
     {
         if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
             return false;
 
         reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
+        allow_unordered_output = sorting_step->allowsUnorderedOutput();
 
         chain_top_node = root.children.front()->children.front();
     }
@@ -823,7 +826,11 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     const auto & lhs_plan_header = main_plan.getCurrentHeader();
     const auto & rhs_plan_header = lazy_plan.getCurrentHeader();
 
-    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(lhs_plan_header, rhs_plan_header, lazy_materializing_rows);
+    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(
+        lhs_plan_header,
+        rhs_plan_header,
+        lazy_materializing_rows,
+        !allow_unordered_output);
 
     QueryPlan result_plan;
 
