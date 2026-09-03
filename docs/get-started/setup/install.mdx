@@ -7,13 +7,29 @@ title: 'Installation instructions'
 doc_type: 'guide'
 ---
 
-import {galaxyOnClick} from "/snippets/lib/galaxy.jsx";
+export const withDocsBase = (href) => {
+  if (!href || !href.startsWith('/')) return href;
+  const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+  return base + href;
+};
 
-<Card title="ClickHouse Cloud" icon="cloud" href="/get-started/setup/cloud" cta="View guide">
-  Start building instantly without having to size and scale your cluster. ClickHouse Cloud takes care of sizing, scaling
-    , security, reliability and upgrades.
-</Card>
-<br/>
+<div className="ch-install-cloud-card">
+  <span className="ch-install-cloud-badge">Recommended</span>
+  <span className="ch-install-cloud-icon" aria-hidden="true"></span>
+  <p className="ch-install-cloud-title">ClickHouse Cloud</p>
+  <p className="ch-install-cloud-description">
+    Start building instantly without having to size and scale your cluster. ClickHouse Cloud takes care of sizing,
+    scaling, security, reliability and upgrades.
+  </p>
+  <div className="ch-install-cloud-actions">
+    <a className="ch-install-cloud-cta" href="https://clickhouse.cloud/signUp?loc=docs-install-page-banner">
+      Get started free
+    </a>
+    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href={withDocsBase('/get-started/setup/cloud')}>
+      Read the quickstart tutorial
+    </a>
+  </div>
+</div>
 
 If you prefer to self-manage, select one of the open-source ClickHouse options below.
 Use the quick install script or the `clickhousectl` CLI for a local setup, or install

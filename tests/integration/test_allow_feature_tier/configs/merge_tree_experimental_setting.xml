@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- An EXPERIMENTAL `MergeTree` setting set by the operator. If its tier changes, use another one -->
+    <merge_tree>
+        <allow_commit_order_projection>1</allow_commit_order_projection>
+    </merge_tree>
+</clickhouse>

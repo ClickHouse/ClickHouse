@@ -2,6 +2,7 @@
 #include <functional>
 #include <iterator>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -1179,6 +1180,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 database_name,
                 table_name,
                 RowPolicyFilterType::SELECT_FILTER);
+            /// `Merge` reads matched tables directly, so include the target policy when a matched table is an `Alias`.
+            if (const auto * alias = storage->as<StorageAlias>())
+            {
+                const auto target_storage_id = alias->getTargetTable()->getStorageID();
+                auto target_row_policy_filter = modified_context->getRowPolicyFilter(
+                    target_storage_id.getDatabaseName(),
+                    target_storage_id.getTableName(),
+                    RowPolicyFilterType::SELECT_FILTER);
+                row_policy_filter_ptr = combineRowPolicyFilters(
+                    std::move(row_policy_filter_ptr), std::move(target_row_policy_filter));
+            }
+
             if (row_policy_filter_ptr && !row_policy_filter_ptr->isAlwaysTrue())
             {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
