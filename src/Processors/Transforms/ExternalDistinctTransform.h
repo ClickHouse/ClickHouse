@@ -58,11 +58,10 @@ private:
 /// hash set of the seen keys and streams the first occurrence of each key downstream immediately. If a
 /// spill happens, the set of the already emitted rows must be recoverable: for most set methods the keys
 /// are extracted back from the hash table itself (DistinctSetFilter::extractKeyColumns) - no memory
-/// overhead before the spill, one transient copy of the keys at the spill moment. When the extraction
-/// cannot rebuild the rows - the chosen method is irreversible (`hashed` keeps just a 128-bit hash per
-/// key), or a non-key column carries per-row data (see nonKeyColumnsAreRebuildable) - the transform
-/// retains the emitted chunks in a buffer instead (only column pointers are copied, but the emitted
-/// columns stay referenced in memory until the first spill).
+/// overhead before the spill, one transient copy of the keys at the spill moment. Only when the chosen
+/// method is irreversible (`hashed` keeps just a 128-bit hash per key) the transform retains the emitted
+/// chunks in a buffer instead (only column pointers are copied, but the emitted columns stay referenced
+/// in memory until the first spill).
 ///
 /// When the memory usage of the query exceeds the threshold, the transform switches to the external mode:
 ///  - The already emitted rows (extracted from the set, or taken from the buffer when the extraction
@@ -131,12 +130,8 @@ private:
     /// sorts by the key columns.
     Chunk prepareSpillChunk(Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const;
 
-    /// Whether the first run can be rebuilt from the set at spill time (then the emitted chunks do not
-    /// have to be retained in memory). Meaningful once at least one chunk was filtered.
-    bool firstRunFromExtraction() const;
-    /// Assembles a spill-layout chunk (without the flag column) from the extracted key columns. Only
-    /// used when every non-key column is a rebuildable constant, so the spilled columns are exactly
-    /// the keys.
+    /// Assembles a spill-layout chunk (without the flag column) of the first run from the extracted key
+    /// columns; the spilled non-key columns are filled with default values.
     Chunk buildChunkFromKeys(MutableColumns && key_columns) const;
     /// Removes the arrival number column (the last one) from a merged chunk when the input order is
     /// preserved.
@@ -152,8 +147,6 @@ private:
 
     /// The pre-spill deduplication, shared with DistinctTransform (freed when the first spill happens).
     DistinctSetFilter distinct_set;
-    /// All the non-key columns are constants with a known value (see firstRunFromExtraction).
-    const bool non_key_columns_rebuildable;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;
 

@@ -2,10 +2,10 @@
 SET max_bytes_ratio_before_external_distinct = 0;
 
 -- The final DISTINCT of a query with an ORDER BY expression runs above the sort, and its header
--- carries the sort column as a non-key, non-constant column. Such a column cannot be rebuilt from the
--- header, so the spill takes the buffered-chunks path and writes the column into the runs. The set of
--- distinct rows must match the in-memory result. The 1-byte threshold (with exact memory tracking and a
--- pinned block size) makes the spill deterministic.
+-- carries the sort column as a non-key, non-constant column, which is written into the spilled runs
+-- (the first run, rebuilt from the extracted keys, gets default values for it: its rows are never
+-- emitted). The set of distinct rows must match the in-memory result. The 1-byte threshold (with exact
+-- memory tracking and a pinned block size) makes the spill deterministic.
 SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 300000 AS k FROM numbers_mt(3000000) ORDER BY k + 1 DESC) SETTINGS max_bytes_before_external_distinct = 0;
 SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 300000 AS k FROM numbers_mt(3000000) ORDER BY k + 1 DESC) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0, log_comment = '05049_external_distinct_non_key_columns/spill';
 

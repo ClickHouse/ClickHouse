@@ -55,32 +55,6 @@ SortDescription buildSortDescription(const Block & header, const ColumnNumbers &
     return description;
 }
 
-/// Whether all the non-key columns of the header are constants, so that at spill time the first run
-/// can be assembled from the keys extracted out of the hash set (see buildChunkFromKeys). True e.g.
-/// for `SELECT DISTINCT 7 AS c, k FROM t`: `c` is a constant excluded from the DISTINCT key. False
-/// when a non-key column carries per-row data: for `SELECT DISTINCT k FROM t ORDER BY k + 1` the
-/// final DISTINCT runs above the sort and its header carries the `k + 1` column, and a deduplication
-/// by a subset of the columns (the shape of `OPTIMIZE TABLE t DEDUPLICATE BY a, b`) must keep the
-/// whole surviving rows. Such values exist only in the rows themselves, so the emitted chunks are
-/// buffered for the first run instead (see emitted_buffer).
-bool nonKeyColumnsAreRebuildable(const Block & header, const ColumnNumbers & key_columns_pos)
-{
-    std::vector<UInt8> is_key(header.columns(), 0);
-    for (const auto pos : key_columns_pos)
-        is_key[pos] = 1;
-
-    for (size_t pos = 0; pos < header.columns(); ++pos)
-    {
-        if (is_key[pos])
-            continue;
-
-        const auto & column = header.getByPosition(pos).column;
-        if (!column || !isColumnConst(*column))
-            return false;
-    }
-    return true;
-}
-
 /// Positions of the columns that are written to the spilled runs: all the non-constant columns of the
 /// header, in the header order. The constant columns are not spilled - their values are known from the
 /// header, so they are re-attached to the merged stream instead (see restoreConstantColumns).
@@ -288,7 +262,6 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     bool preserve_input_order_)
     : IProcessor({header_}, {header_})
     , distinct_set(*header_, columns_, set_size_limits_)
-    , non_key_columns_rebuildable(nonKeyColumnsAreRebuildable(*header_, distinct_set.getKeyColumnsPositions()))
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
     , max_bytes_before_external_distinct(max_bytes_before_external_distinct_)
@@ -311,11 +284,6 @@ ExternalDistinctTransform::ExternalDistinctTransform(
 
 ExternalDistinctTransform::~ExternalDistinctTransform() = default;
 
-bool ExternalDistinctTransform::firstRunFromExtraction() const
-{
-    return non_key_columns_rebuildable && distinct_set.supportsKeyExtraction();
-}
-
 size_t ExternalDistinctTransform::minBytesInRun() const
 {
     return std::min(max_bytes_before_external_distinct, MIN_BYTES_IN_RUN);
@@ -323,14 +291,20 @@ size_t ExternalDistinctTransform::minBytesInRun() const
 
 Chunk ExternalDistinctTransform::buildChunkFromKeys(MutableColumns && key_columns) const
 {
-    /// The extraction requires every non-key column to be a rebuildable constant, so the spilled
-    /// columns are exactly the keys (in the header order).
-    chassert(spill_columns_pos.size() == key_columns.size());
-
+    const auto & header = inputs.front().getHeader();
     const size_t num_rows = key_columns[0]->size();
+
     Columns columns(spill_columns_pos.size());
     for (size_t i = 0; i < key_columns.size(); ++i)
         columns[spill_key_columns_pos[i]] = std::move(key_columns[i]);
+
+    /// The rows of the first run only suppress the equal rows during the merge and are never emitted, so
+    /// the values of their non-key columns are never read: default values stand in for them.
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (!columns[i])
+            columns[i] = header.getByPosition(spill_columns_pos[i]).type->createColumn()->cloneResized(num_rows);
+    }
 
     return Chunk(std::move(columns), num_rows);
 }
@@ -435,12 +409,11 @@ void ExternalDistinctTransform::startFirstSpill()
         run_chunks.push_back(std::move(prepared));
     };
 
-    if (firstRunFromExtraction())
+    if (distinct_set.supportsKeyExtraction())
     {
-        /// The rows of the first run only suppress the equal rows during the merge and are never
-        /// emitted themselves, so the keys extracted from the set are all it needs. The set is freed
-        /// right after the extraction, before the sorting: this way the transient peak is the set plus
-        /// the raw keys, not plus the sorted copies.
+        /// The keys extracted from the set are all the first run needs (see buildChunkFromKeys). The set
+        /// is freed right after the extraction, before the sorting: this way the transient peak is the
+        /// set plus the raw keys, not plus the sorted copies.
         auto key_batches = distinct_set.extractKeyColumns(max_block_size_rows);
         distinct_set.clear();
 
@@ -765,8 +738,9 @@ void ExternalDistinctTransform::consume(Chunk chunk)
             emitted_rows += filtered.getNumRows();
 
             /// Retain the emitted rows only when the first run cannot be rebuilt from the set at spill
-            /// time (only the column pointers are copied here, but the emitted columns stay referenced).
-            if (!firstRunFromExtraction())
+            /// time - the `hashed` method keeps just a hash per key (only the column pointers are copied
+            /// here, but the emitted columns stay referenced).
+            if (!distinct_set.supportsKeyExtraction())
                 emitted_buffer.push_back(filtered.clone());
             generated_chunk = std::move(filtered);
 
