@@ -1,0 +1,21 @@
+1	Laptop	999.99
+2	Mouse	25.5
+1	Gaming Laptop	['electronics','gaming','computers']	('weight',2.5)	([100,50,25],{'warehouse_A':'available','warehouse_B':'limited'})	1599.99
+2	Wireless Mouse	['electronics','peripherals']	('battery_life',12)	([200],{'warehouse_A':'in_stock'})	45.99
+3	Mechanical Keyboard	['electronics','peripherals','gaming']	('switch_type',1)	([75,30],{'warehouse_A':'available','warehouse_C':'out_of_stock'})	129.99
+id	UInt64
+name	String
+price	Float64
+id	UInt64
+inventory_data	Tuple(Array(UInt32), Map(String, String))
+metadata	Tuple(String, Float64)
+name	String
+price	Float64
+tags	Array(String)
+Gaming Laptop	['electronics','gaming','computers']	weight	2.5	[100,50,25]	{'warehouse_A':'available','warehouse_B':'limited'}
+Mechanical Keyboard	['electronics','peripherals','gaming']	switch_type	1	[75,30]	{'warehouse_A':'available','warehouse_C':'out_of_stock'}
+KeyValue	Tuple(K, V)	K, V	\N	\N	\N	CREATE TYPE KeyValue(K, V) AS Tuple(K, V)
+NestedData	Tuple(Array(T), Map(String, U))	T, U	\N	\N	\N	CREATE TYPE NestedData(T, U) AS Tuple(Array(T), Map(String, U))
+ProductId	UInt64	\N	\N	\N	0	CREATE TYPE ProductId AS UInt64 DEFAULT \'0\'
+ProductList	Array(T)	T	\N	\N	\N	CREATE TYPE ProductList(T) AS Array(T)
+ProductName	String	\N	\N	\N	Unknown Product	CREATE TYPE ProductName AS String DEFAULT \'Unknown Product\'

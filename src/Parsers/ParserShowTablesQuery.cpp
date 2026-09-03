@@ -939,6 +939,32 @@ The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [
 ```sql title="Syntax"
 SHOW CREATE MASKING POLICY name ON [database.]table
 ```
+
+## SHOW TYPES {#show-types}
+
+The `SHOW TYPES` statement lists the names of all user-defined types created with
+[`CREATE TYPE`](/reference/statements/create/type).
+
+### Syntax {#syntax-27}
+
+```sql title="Syntax"
+SHOW TYPES [INTO OUTFILE filename] [FORMAT format]
+```
+
+### See Also {#see-also-8}
+
+- [`system.user_defined_types`](/reference/system-tables/user_defined_types) table
+
+## SHOW TYPE {#show-type}
+
+The `SHOW TYPE` statement shows the definition of a single user-defined type. Requesting
+an unknown type raises the `UNKNOWN_TYPE` exception.
+
+### Syntax {#syntax-28}
+
+```sql title="Syntax"
+SHOW TYPE name [INTO OUTFILE filename] [FORMAT format]
+```
 )DOCS_MD",
         .syntax = R"(
 SHOW [CREATE] TABLE | DICTIONARY | VIEW | DATABASE [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -959,6 +985,8 @@ SHOW FILESYSTEM CACHES
 SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
 SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
 SHOW MERGES [[NOT] LIKE|ILIKE '<table_pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW TYPES [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW TYPE <name> [INTO OUTFILE <filename>] [FORMAT <format>]
 )",
         .related = {"DESCRIBE TABLE", "EXISTS", "SELECT", "GRANT"},
     });

@@ -1,0 +1,4 @@
+EmptyClauses	0	0	0
+NoClauses	1	1	1
+EmptyClauses	UInt64	\N				CREATE TYPE EmptyClauses AS UInt64 INPUT \'\' OUTPUT \'\' DEFAULT \'\'
+NoClauses	UInt64	\N	\N	\N	\N	CREATE TYPE NoClauses AS UInt64

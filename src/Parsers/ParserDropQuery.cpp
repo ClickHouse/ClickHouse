@@ -343,6 +343,28 @@ CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 DROP FUNCTION linear_equation;
 ```
 
+## DROP TYPE {#drop-type}
+
+Deletes a user-defined type created by [CREATE TYPE](/reference/statements/create/type). Built-in types
+can not be dropped.
+
+**Syntax**
+
+```sql
+DROP TYPE [IF EXISTS] name
+```
+
+Dropping a non-existent type without `IF EXISTS` raises the `UNKNOWN_TYPE` exception.
+Tables that already use the type are not affected, because the type is expanded to its
+definition when a table is created.
+
+**Example**
+
+```sql
+CREATE TYPE UserId AS UInt64;
+DROP TYPE UserId;
+```
+
 ## DROP NAMED COLLECTION {#drop-named-collection}
 
 Deletes a named collection.
@@ -372,6 +394,7 @@ DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_nam
 DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
+DROP TYPE [IF EXISTS] name
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 )",
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},

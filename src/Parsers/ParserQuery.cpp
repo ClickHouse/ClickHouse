@@ -2,6 +2,7 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserCreateResourceQuery.h>
+#include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
@@ -13,6 +14,7 @@
 #include <Parsers/ParserCreateHandlerQuery.h>
 #include <Parsers/ParserDropHandlerQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserDropTypeQuery.h>
 #include <Parsers/ParserParallelWithQuery.h>
 #include <Parsers/ParserHypotheticalIndexQuery.h>
 #include <Parsers/ParserInsertQuery.h>
@@ -111,6 +113,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSetQuery set_p;
     ParserSystemQuery system_p;
     ParserCreateFunctionQuery create_function_p;
+    ParserCreateTypeQuery create_type_p;
     ParserDropFunctionQuery drop_function_p;
     ParserCreateWorkloadQuery create_workload_p;
     ParserDropWorkloadQuery drop_workload_p;
@@ -124,6 +127,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateIndexQuery create_index_p;
     ParserDropIndexQuery drop_index_p;
     ParserHypotheticalIndexQuery hypothetical_index_p;
+    ParserDropTypeQuery drop_type_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
@@ -137,6 +141,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || system_p.parse(pos, node, expected)
         || parseCreateAccessEntityQuery(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
+        || create_type_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
         || create_workload_p.parse(pos, node, expected)
         || drop_workload_p.parse(pos, node, expected)
@@ -151,6 +156,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_index_p.parse(pos, node, expected)
         || hypothetical_index_p.parse(pos, node, expected)
         || parseGrantOrDropAccessEntityQuery(pos, node, expected)
+        || drop_type_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
         || update_p.parse(pos, node, expected)

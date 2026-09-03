@@ -140,6 +140,7 @@
 #include <DistributedCache/Utils.h>
 #endif
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Storages/System/StorageSystemUserDefinedTypes.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
@@ -353,6 +354,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", "Contains all unicode codepoints.");
 #endif
+    attach<StorageSystemUserDefinedTypes>(context, system_database, "user_defined_types", "Contains a list of all currently existing user-defined types.");
 
     if (has_zookeeper)
     {
