@@ -2,9 +2,8 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-# A released version whose filesystem cache loader does not know the current cache
-# file name format. It must ignore the files it cannot interpret instead of loading
-# them into the cache and then failing to find them on read.
+# A released version whose cache loader does not know the current cache file name.
+# It must skip such files instead of loading them and then failing to find them on read.
 OLD_VERSION = "26.6.4.55"
 
 
@@ -12,9 +11,8 @@ OLD_VERSION = "26.6.4.55"
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        # System logs are disabled so that only the filesystem cache decides whether the
-        # older server can start: a system log table created by the newer server may be
-        # unloadable by the older one for reasons unrelated to this test.
+        # System logs are disabled so that only the filesystem cache decides whether the older
+        # server starts: its log tables can be unloadable for reasons unrelated to this test.
         cluster.add_instance(
             "node",
             image="clickhouse/clickhouse-server",
@@ -50,9 +48,8 @@ def test_downgrade_with_populated_cache(started_cluster):
     node.query("SYSTEM DROP FILESYSTEM CACHE")
     assert node.query("SELECT sum(a) FROM test") == "4950\n"
 
-    # Restart so that the files read while loading the table (`format_version.txt` among
-    # them) also end up in the cache. In the reported incident it is exactly such a file
-    # that the older server fails to read, which aborts metadata loading on startup.
+    # Restart so that the files read while loading the table (`format_version.txt` among them)
+    # also end up in the cache. Failing to read such a file breaks startup of the older server.
     node.restart_clickhouse()
     assert node.query("SELECT sum(a) FROM test") == "4950\n"
     assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0

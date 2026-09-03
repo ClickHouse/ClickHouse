@@ -240,14 +240,10 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
             /// `<offset>.<size>` once the segment is fully downloaded, just `<offset>` while
             /// it is still being written (final size not yet known).
             ///
-            /// The separator is a dot rather than an underscore so that a server old enough
-            /// not to know this name rejects the file instead of misreading it. Such a server
-            /// splits the name on `_` and parses the part before it as the offset, so it would
-            /// accept `<offset>_<size>` as the segment at `<offset>`, register it as
-            /// `DOWNLOADED` and then look for it under the name `<offset>`, which does not
-            /// exist - failing to load every table whose files are in the cache. `<offset>.<size>`
-            /// has no `_`, and `tryParse<UInt64>` requires the whole name to be consumed, so the
-            /// name does not parse at all and the file is skipped as unknown.
+            /// The separator is a dot, not an underscore: an older server splits a cache file name
+            /// on `_` and parses the prefix as the offset, so it would take `<offset>_<size>` for
+            /// the segment at `<offset>` and then fail to find that file. A dot makes the name
+            /// unparsable for it, so it skips the file instead.
             if (size.has_value())
                 return std::to_string(offset) + "." + std::to_string(*size);
             return std::to_string(offset);

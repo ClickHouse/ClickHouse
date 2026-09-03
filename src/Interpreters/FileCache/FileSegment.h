@@ -110,9 +110,8 @@ public:
 
     bool isUnbound() const { return is_unbound; }
 
-    /// Whether the segment's file on disk currently has its size encoded in the name
-    /// (`<offset>.<size>`). True once a regular segment is fully downloaded (or was loaded
-    /// from such a file on startup); false while still downloading or for legacy files.
+    /// Whether the file on disk is named `<offset>.<size>`. True once a regular segment is fully
+    /// downloaded, or was loaded from such a file on startup.
     bool hasSizeInFileName() const { return size_in_filename; }
 
     String getPath() const;
@@ -298,9 +297,8 @@ private:
     const bool is_unbound;
     const bool background_download_enabled;
 
-    /// Whether the on-disk file is named `<offset>.<size>` (size encoded) rather than `<offset>`.
-    /// Only ever transitions false -> true, under `segment_guard`, when the segment becomes
-    /// fully downloaded; reads in `getPath` are lock-free and safe because of this.
+    /// Whether the on-disk file is named `<offset>.<size>` rather than `<offset>`. Only ever goes
+    /// false -> true, under `segment_guard`, so the lock-free reads in `getPath` are safe.
     std::atomic<bool> size_in_filename;
 
     std::atomic<State> download_state;

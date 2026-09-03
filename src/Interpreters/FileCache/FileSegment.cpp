@@ -107,13 +107,9 @@ FileSegment::FileSegment(
         case State::DOWNLOADED:
         {
             reserved_size = downloaded_size = size_;
-            /// When the size was read from the file name (`<offset>.<size>`), we deliberately trust it
-            /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
-            /// An externally truncated or corrupted `<offset>.<size>` file is handled lazily on read:
-            /// `getCacheReadBuffer` already has the file open, so it compares the on-disk size against
-            /// the recorded one and discards the broken entry (re-fetching from the source) rather than
-            /// raising a server-bug-class error. Asserting the on-disk size here would both re-introduce
-            /// the `stat` and turn that discardable inconsistency into an abort in debug/sanitizer builds.
+            /// The size read from the name `<offset>.<size>` is trusted without a `stat`.
+            /// A truncated file is detected later by `getCacheReadBuffer`, which discards the entry
+            /// and re-fetches from the source; asserting here would restore the `stat` we avoid.
             chassert(size_in_filename || fs::file_size(getPath()) == size_);
             chassert(queue_iterator);
             chassert(key_metadata.lock());
@@ -773,13 +769,8 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
 
     resetDownloadDataUnlocked(lock);
 
-    /// The file is now fully written and closed; encode its size into the file name so that
-    /// startup metadata loading can avoid a `stat` per file. This is best-effort: the segment is
-    /// already fully downloaded and valid under its legacy `<offset>` name, so a rename failure must
-    /// not abort completion. `renameToIncludeSizeInNameUnlocked` therefore never throws — on failure
-    /// it keeps the legacy name (the loader falls back to a `stat`). Doing it here, before publishing
-    /// the `DOWNLOADED` state, also keeps `getPath` (which depends on `size_in_filename`) consistent
-    /// with the file's actual on-disk name for the assertions below.
+    /// Encode the size into the file name before publishing the `DOWNLOADED` state,
+    /// so that `getPath` always matches the real on-disk name.
     renameToIncludeSizeInNameUnlocked(lock);
 
     download_state = State::DOWNLOADED;
@@ -809,16 +800,10 @@ void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock
         return;
     }
 
-    /// Encoding the size in the name is only a startup optimization, so the rename is best-effort.
-    /// The segment is already fully downloaded and valid under its legacy `<offset>` name; if the
-    /// rename fails we keep that name (`size_in_filename` stays false and the loader falls back to a
-    /// `stat`) and do not propagate the error. Letting it escape would be unsafe: this runs from
-    /// `setDownloadedUnlocked` while the segment is still `DOWNLOADING` (the `DOWNLOADED` state is
-    /// published only after this returns), so a throw would leave the segment owned by the unwinding
-    /// query (no other reader could acquire it to retry), and `FileSegmentsHolder::reset` would hit
-    /// its `chassert(false)` on the way out.
-    /// `rename` is atomic, so a crash leaves either the old (`<offset>`) or the new
-    /// (`<offset>.<size>`) name, both of which the loader handles correctly.
+    /// The rename is best-effort and must not throw: it runs while the segment is still
+    /// `DOWNLOADING`, so a throw would leave the segment owned by the unwinding query.
+    /// `rename` is atomic, so a crash leaves either `<offset>` or `<offset>.<size>`; the loader
+    /// handles both.
     try
     {
         fs::rename(old_path, new_path);
@@ -1310,13 +1295,9 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
 
-            /// When the size was read from the file name (`<offset>.<size>`), we deliberately trust it
-            /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
-            /// An externally truncated or corrupted `<offset>.<size>` file is handled lazily on read:
-            /// `getCacheReadBuffer` compares the on-disk size against the recorded one and discards the
-            /// broken entry (re-fetching from the source). Asserting the on-disk size here would both
-            /// re-introduce the `stat` and turn that discardable inconsistency into a startup abort in
-            /// debug/sanitizer builds (`FileCache::assertCacheCorrectness` runs right after metadata load).
+            /// The size read from the name `<offset>.<size>` is trusted without a `stat`.
+            /// A truncated file is detected later by `getCacheReadBuffer`, which discards the entry.
+            /// Asserting here would restore the `stat` and fail on startup in debug builds instead.
             if (!size_in_filename)
             {
                 auto file_size = fs::file_size(getPath());

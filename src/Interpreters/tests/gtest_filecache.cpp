@@ -3766,13 +3766,9 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
 TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
 {
-    /// Regression: encoding the segment size in the file name (`<offset>` -> `<offset>.<size>`) is a
-    /// best-effort startup optimization done from `setDownloadedUnlocked` while the segment is still
-    /// `DOWNLOADING` with its downloader set. If the `rename` were allowed to throw, completion would
-    /// abort before clearing the downloader, leaving the segment owned by the unwinding query (no other
-    /// reader could acquire it), and `FileSegmentsHolder::reset` would hit its `chassert(false)`.
-    /// Here we force the rename to fail and assert the segment still completes consistently: it becomes
-    /// `DOWNLOADED`, the downloader is cleared, and the file keeps its legacy `<offset>` name.
+    /// Regression: the rename to `<offset>.<size>` runs while the segment is still `DOWNLOADING`, so a
+    /// throw there would leave the segment owned by the unwinding query. Force the rename to fail and
+    /// check that the segment still completes and keeps its legacy `<offset>` name.
 
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -3848,11 +3844,9 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     seg.reset();
     cache.reset();
 
-    /// Reopen the cache from disk (a real restart). The persisted state is now the real segment under
-    /// its legacy `<offset>` name next to the stale `<offset>.<size>` directory. `loadMetadataForKey`
-    /// must restore the segment from the legacy file and must not treat the directory as a second
-    /// segment for the same offset — otherwise it hits the duplicate-offset `chassert(false)` in
-    /// debug/sanitizer builds or nondeterministically deletes the real file in release.
+    /// Reopen the cache from disk (a real restart). `loadMetadataForKey` must restore the segment from
+    /// the legacy `<offset>` file and must not treat the stale `<offset>.<size>` directory next to it
+    /// as a second segment for the same offset.
     auto reloaded = std::make_shared<DB::FileCache>("rename_size_in_name_failure_reload", settings);
     reloaded->initialize();
 

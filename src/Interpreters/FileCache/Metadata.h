@@ -137,9 +137,8 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     std::string getFileSegmentPath(const FileSegment & file_segment) const;
 
-    /// Build the path for a segment file directly from its components.
-    /// When `size` is set, the size is encoded into the file name (`<offset>.<size>`),
-    /// which lets startup metadata loading avoid a `stat` per file.
+    /// Build the path for a segment file directly from its components. When `size` is set, the name
+    /// is `<offset>.<size>`, which lets startup metadata loading avoid a `stat` per file.
     std::string getFileSegmentPath(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size) const;
 
     bool checkAccess(const UserID & user_id_) const;

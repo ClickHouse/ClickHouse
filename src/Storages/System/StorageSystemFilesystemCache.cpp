@@ -110,9 +110,8 @@ protected:
                 col_cache_name->insert(cache_name);
                 col_cache_base_path->insert(cache->getBasePath());
 
-                /// `file_segment.path` is captured when the snapshot is taken and reflects the real
-                /// on-disk name (including the `.<size>` suffix for downloaded segments). Do not
-                /// recompute it from the offset here, as that cannot know the size suffix.
+                /// `file_segment.path` is captured with the snapshot and holds the real on-disk name,
+                /// including the `.<size>` suffix. Recomputing it from the offset would lose the suffix.
                 col_path->insert(file_segment.path);
                 col_key->insert(file_segment.key.toString());
                 col_range_begin->insert(file_segment.range_left);

@@ -208,10 +208,8 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_cache_file_size_in_name(cluster, node_name):
     """
-    A fully downloaded regular cache file is named `<offset>.<size>`, which lets startup
-    metadata loading read the size from the file name instead of `stat`-ing every file.
-    This test verifies the on-disk naming, and that legacy `<offset>` files (without the
-    size suffix) are still loaded correctly by falling back to a `stat`.
+    Check the on-disk name `<offset>.<size>` of a fully downloaded cache file, and that a
+    legacy `<offset>` file is still loaded by falling back to a `stat`.
     """
     node = cluster.instances[node_name]
     node.query(
@@ -287,10 +285,9 @@ def test_cache_file_size_in_name(cluster, node_name):
     wait_for_cache_initialized(node, "size_in_name_test")
     assert cache_state <= cache_segments()
 
-    # Backward compatibility: rename the files to the legacy `<offset>` form (no size suffix)
-    # and make sure they are still loaded on the next startup (the size is obtained with a stat).
-    # The server must be stopped while we rewrite the file names: a running server keeps the
-    # in-memory `<offset>.<size>` name (`hasSizeInFileName`) and would not find the renamed file.
+    # Backward compatibility: rename the files to the legacy `<offset>` form and check they are
+    # still loaded on the next startup. The server must be stopped while we rename: a running one
+    # keeps the in-memory `<offset>.<size>` name and would not find the renamed file.
     node.stop_clickhouse()
     node.exec_in_container(
         [
@@ -313,12 +310,9 @@ def test_cache_file_size_in_name(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_cache_file_truncated_size_in_name(cluster, node_name):
     """
-    A fully downloaded regular cache file is named `<offset>.<size>`, and startup metadata loading
-    trusts that size without a `stat`. If such a file is truncated outside ClickHouse, the segment is
-    restored as fully downloaded but the on-disk file is shorter than recorded. Reading it must not raise
-    a `LOGICAL_ERROR`: the broken cache entry is discarded and the data is re-fetched from the source.
-
-    This covers both a shorter-than-recorded file and a zero-length file.
+    The size in the name `<offset>.<size>` is trusted without a `stat`, so a file truncated outside
+    ClickHouse is restored as fully downloaded but is shorter than recorded. Reading it must not raise
+    a `LOGICAL_ERROR`: the entry is discarded and the data is re-fetched. Covers a short and an empty file.
     """
     node = cluster.instances[node_name]
     node.query(
@@ -418,12 +412,9 @@ def test_cache_file_truncated_size_in_name_concurrent_readers(cluster, node_name
     """
     Concurrent-reader variant of `test_cache_file_truncated_size_in_name`.
 
-    When several readers race on the same externally truncated `<offset>.<size>` cache file, one reader
-    can discard/detach the segment between another reader opening the short file and re-checking its
-    state. The losing reader must still bypass the cache and re-fetch from the source rather than keep its
-    truncated descriptor and surface a `LOGICAL_ERROR`. Fire many parallel scans of the truncated data so
-    that at least some of them read the corrupted segment simultaneously, and assert none of them raises a
-    `LOGICAL_ERROR` and the data stays intact.
+    One reader can detach the truncated `<offset>.<size>` segment while another one is opening it.
+    The losing reader must also bypass the cache instead of keeping its truncated descriptor and
+    raising a `LOGICAL_ERROR`. Run many parallel scans so that the readers overlap.
     """
     node = cluster.instances[node_name]
     node.query(

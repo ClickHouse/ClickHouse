@@ -68,13 +68,9 @@ void preadSegmentNode(
     }
     catch (const Exception & e)
     {
-        /// A fully downloaded segment's file is renamed from `<offset>` to
-        /// `<offset>.<size>` on completion, and `getPath` is lock-free, so the name
-        /// computed above can go stale between it and the open. The rename surfaces
-        /// only as `FILE_DOESNT_EXIST`; recompute the path under the segment lock -
-        /// the rename runs under the same lock, so this observes the final name -
-        /// and retry once. An unchanged path means the missing file is not explained
-        /// by a rename: propagate.
+        /// `getPath` is lock-free, so a concurrent rename to `<offset>.<size>` can make the
+        /// name computed above stale, which shows up as `FILE_DOESNT_EXIST`. Recompute the
+        /// path under the segment lock, which the rename also takes, and retry once.
         if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
             throw;
         String current_path;

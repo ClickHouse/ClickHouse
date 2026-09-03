@@ -2467,22 +2467,16 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         bool legacy_size_in_filename; /// the size is encoded the old way, `<offset>_<size>`
     };
     std::vector<SegmentToLoad> segments;
-    /// Deduplicate by offset. Encoding the size in the name (`<offset>` -> `<offset>.<size>`, see
-    /// `renameToIncludeSizeInNameUnlocked`) is best-effort: if the target name is already occupied the
-    /// rename fails and the real segment stays under its legacy `<offset>` name next to a stale
-    /// `<offset>.<size>` artifact. Both parse to the same offset, so without deduplication we would
-    /// build two priority entries for one offset and later hit the duplicate-offset path in phase 3
-    /// (a `chassert(false)` in debug builds; a nondeterministic deletion of the real file in release).
+    /// Deduplicate by offset. The rename to `<offset>.<size>` is best-effort, so a stale
+    /// `<offset>.<size>` file can be left next to the real `<offset>` one. Both parse to the same
+    /// offset, and two priority entries for one offset break phase 3.
     std::unordered_map<UInt64, size_t> offset_to_index;
 
     for (; offset_it != fs::directory_iterator(); ++offset_it)
     {
-        /// Only regular files hold cache segments. A rename target occupied by a non-regular entry
-        /// (e.g. a leftover directory, as exercised by `RenameToIncludeSizeInNameFailureKeepsSegmentConsistent`)
-        /// is exactly what makes the best-effort rename fail; skip it here so its name is never parsed
-        /// and trusted as a segment (the size of a `<offset>.<size>` entry is read from the name without
-        /// a `stat`). Uses the directory-entry type cached by `directory_iterator` (no extra syscall on
-        /// local filesystems, which always report the entry type).
+        /// Only regular files hold cache segments. A leftover directory is what makes the best-effort
+        /// rename fail; skip it so that its name is never parsed and trusted as a segment. The entry
+        /// type comes from `directory_iterator`, so this costs no extra syscall on a local filesystem.
         if (!offset_it->is_regular_file())
         {
             LOG_WARNING(log, "Unexpected non-regular entry in cache directory: {}", offset_it->path().string());
@@ -2555,11 +2549,9 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             continue;
         }
 
-        /// If two names map to the same offset (a legacy `<offset>` next to a stale `<offset>.<size>`
-        /// left by a failed best-effort rename), keep the legacy file — its size comes from a real
-        /// `stat`, and it is the segment whose rename failed — and ignore the suffixed duplicate,
-        /// whose size is trusted from the name. Leaving the stale artifact on disk is deliberate:
-        /// removing it here would be a destructive action on this recovery path.
+        /// Two names for one offset: a legacy `<offset>` next to a stale `<offset>.<size>` left by a
+        /// failed rename. Keep the legacy file, its size comes from a real `stat`. The stale file is
+        /// left on disk on purpose: this recovery path must not delete anything.
         if (auto [it, is_new] = offset_to_index.try_emplace(offset, segments.size()); !is_new)
         {
             auto & existing = segments[it->second];
@@ -2582,12 +2574,9 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             size_from_name.has_value(), legacy_size_in_name});
     }
 
-    /// Bring `<offset>_<size>` files to the current `<offset>.<size>` name. A server which knows
-    /// neither name skips an `<offset>.<size>` file as unknown, but misreads `<offset>_<size>` as
-    /// the segment at `<offset>` and then cannot find it (see `getFileNameForFileSegment`), so
-    /// leaving the old name in place would keep a downgrade from this cache directory broken.
-    /// Done only once the scan is over: renaming entries of a directory while iterating over it
-    /// has unspecified behaviour.
+    /// Bring `<offset>_<size>` files to the current `<offset>.<size>` name, so that a downgrade from
+    /// this cache directory stays safe (see `getFileNameForFileSegment`). Done after the scan:
+    /// renaming entries of a directory while iterating over it has unspecified behaviour.
     std::erase_if(segments, [&](SegmentToLoad & segment)
     {
         if (!segment.legacy_size_in_filename)
@@ -2596,10 +2585,9 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         const auto renamed_path = key_directory
             / CacheMetadata::getFileNameForFileSegment(segment.offset, segment.kind, segment.size);
 
-        /// The current name can already be taken by a file this scan ignored as a duplicate of
-        /// the same offset. Renaming over it would destroy it, so keep both names instead and
-        /// drop this segment: `FileSegment` derives its path from the current name only, so a
-        /// segment left under the old name would be registered but never found on read.
+        /// The current name can already be taken by a file this scan ignored as a duplicate of the
+        /// same offset. Renaming over it would destroy it, so drop this segment instead: `FileSegment`
+        /// derives its path from the current name, so a file left under the old name is never read.
         if (fs::exists(renamed_path))
         {
             LOG_WARNING(
