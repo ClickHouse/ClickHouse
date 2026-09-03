@@ -64,8 +64,10 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 ///
 /// @param key_expression_type  the actual result type of the key expression from the DAG node
 /// @param value_field          the constant value being compared against
+/// @param value_type           the declared type of that constant, i.e. what it is converted FROM
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
-    const Field & value_field);
+    const Field & value_field,
+    const DataTypePtr & value_type);
 
 }

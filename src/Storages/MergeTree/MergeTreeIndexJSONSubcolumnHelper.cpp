@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -119,7 +121,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
-    const Field & value_field)
+    const Field & value_field,
+    const DataTypePtr & value_type)
 {
     /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
     /// store NULL for missing paths — always safe to skip.
@@ -128,8 +131,17 @@ bool isJSONPathFilterSafe(
 
     /// Non-nullable type: missing path produces the type's default value.
     /// If comparing to the default, we cannot safely skip the granule.
-    /// Convert value_field to the key expression type before comparing.
-    auto converted = convertFieldToType(value_field, *key_expression_type);
+    /// An `Enum` constant keeps its labels in its own type and the comparison uses the label rather
+    /// than the underlying number, so it has to be converted with that type. Every other source type
+    /// already converts the way the comparison does.
+    DataTypePtr unwrapped_value_type;
+    const IDataTypeEnum * enum_source = nullptr;
+    if (value_type)
+    {
+        unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
+        enum_source = dynamic_cast<const IDataTypeEnum *>(unwrapped_value_type.get());
+    }
+    auto converted = convertFieldToType(value_field, *key_expression_type, enum_source);
     if (converted == key_expression_type->getDefault())
         return false;
 
