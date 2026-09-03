@@ -653,6 +653,17 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     UInt64 max_sessions_for_user = 0;
     SessionTracker::SessionTrackerHandle new_session_tracker_handle;
 
+    /// State of a reused session that this call replaces, kept so a failed reattachment can
+    /// restore it and leave the session exactly as it was.
+    struct ReusedSessionState
+    {
+        ClientInfo client_info;
+        std::vector<UUID> external_roles;
+        std::shared_ptr<const AccessRightsElements> authentication_grants;
+        time_t authentication_valid_until = 0;
+    };
+    std::optional<ReusedSessionState> reused_session_state;
+
     /// `acquireSession` has already published a newly created session into the named-session map
     /// (and taken a reused one off its close schedule) before this initialization runs. Every step
     /// below that can throw - including the admission check in `trackSession` - must therefore be
@@ -662,6 +673,13 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     try
     {
         new_session_context->makeSessionContext();
+
+        if (!new_named_session_created)
+            reused_session_state = ReusedSessionState{
+                .client_info = new_session_context->getClientInfo(),
+                .external_roles = new_session_context->getExternalRoles(),
+                .authentication_grants = new_session_context->getAuthenticationGrants(),
+                .authentication_valid_until = new_session_context->getAuthenticationValidUntil()};
 
         /// Copy prepared client info to the session context, no matter it's been just created or not.
         /// If we continue using a previously created session context found by session ID
@@ -735,9 +753,17 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         }
         else
         {
-            /// `acquireSession` removed the reused session from its close schedule; the
-            /// destructor of `this` will not release it because it was never assigned to
-            /// `named_session`, so restore the timeout scheduling here.
+            /// Undo the replacements made above, so the refused reattachment leaves the
+            /// session as the previous authentication left it, then put it back on the
+            /// close schedule that `acquireSession` removed it from (the destructor of
+            /// `this` will not release it, because it was never assigned to `named_session`).
+            if (reused_session_state)
+            {
+                new_session_context->setClientInfo(reused_session_state->client_info);
+                new_session_context->setExternalRoles(reused_session_state->external_roles);
+                new_session_context->setAuthenticationGrants(reused_session_state->authentication_grants);
+                new_session_context->setAuthenticationValidUntil(reused_session_state->authentication_valid_until);
+            }
             new_named_session->release();
         }
         throw;
