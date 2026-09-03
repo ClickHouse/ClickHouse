@@ -194,6 +194,8 @@ struct SystemLogSettings
     String union_table_cluster;
 };
 
+class ColumnsDescription;
+
 template <typename LogElement>
 class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, public WithContext
 {
@@ -241,6 +243,8 @@ public:
     {
         flush_policy->prepareManualFlush(target_index);
     }
+
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     LoggerPtr log;
