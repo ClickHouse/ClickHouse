@@ -1,7 +1,10 @@
 #include <Common/SipHash.h>
+#include <Common/transformEndianness.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
 #include <IO/WriteHelpers.h>
+
+#include <bit>
 
 namespace DB
 {
@@ -146,17 +149,34 @@ void SerializationIP<IPv>::deserializeBinary(DB::Field & field, DB::ReadBuffer &
     field = NearestFieldType<IPv>(x);
 }
 
+/// The `IPv4` binary wire format is documented as unconditionally little-endian, independent of
+/// host endianness (see `docs/reference/formats/RowBinary/RowBinary.mdx` and
+/// `docs/reference/interfaces/specs/NativeFormat.mdx`). The `Field`-based overloads above already
+/// use `writeBinaryLittleEndian`/`readBinaryLittleEndian` for `IPv4` since commit `319ae440b6b`
+/// ("Implement Variant data type", 2023-12-19) - that's also the format of `MergeTree`
+/// `minmax_<column>.idx` files (see `IMergeTreeDataPart::MinMaxIndex::store`). The `IColumn`-based
+/// and bulk overloads below just make that pre-existing contract consistent across all paths; on
+/// little-endian hosts (which is everything `ClickHouse` ships to production) the `if constexpr`
+/// branches below are no-ops. This mirrors the same unconditional, unversioned pattern already used
+/// by `SerializationNumber<T>` and `SerializationUUID`.
 template <typename IPv>
 void SerializationIP<IPv>::serializeBinary(const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings &) const
 {
-    writeBinary(assert_cast<const ColumnVector<IPv> &>(column).getData()[row_num], ostr);
+    IPv x = assert_cast<const ColumnVector<IPv> &>(column).getData()[row_num];
+    if constexpr (std::is_same_v<IPv, IPv6>)
+        writeBinary(x, ostr);
+    else
+        writeBinaryLittleEndian(x.toUnderType(), ostr);
 }
 
 template <typename IPv>
 void SerializationIP<IPv>::deserializeBinary(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings &) const
 {
     IPv x;
-    readBinary(x.toUnderType(), istr);
+    if constexpr (std::is_same_v<IPv, IPv6>)
+        readBinary(x.toUnderType(), istr);
+    else
+        readBinaryLittleEndian(x.toUnderType(), istr);
     assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
 }
 
@@ -170,7 +190,15 @@ void SerializationIP<IPv>::serializeBinaryBulk(const DB::IColumn & column, DB::W
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    if (limit)
+    if (limit == 0)
+        return;
+
+    /// IPv4 uses the little-endian wire format, the same as the row-wise overloads above
+    /// (IPv6 is serialized as raw bytes in both).
+    if constexpr (std::endian::native == std::endian::big && std::is_same_v<IPv, IPv4>)
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(x[i], ostr);
+    else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(IPv) * limit);
 }
 
@@ -182,6 +210,10 @@ void SerializationIP<IPv>::deserializeBinaryBulk(DB::IColumn & column, DB::ReadB
     x.resize(initial_size + limit);
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit);
     x.resize(initial_size + size / sizeof(IPv));
+
+    if constexpr (std::endian::native == std::endian::big && std::is_same_v<IPv, IPv4>)
+        for (size_t i = initial_size; i < x.size(); ++i)
+            transformEndianness<std::endian::big, std::endian::little>(x[i]);
 }
 
 template <typename IPv>

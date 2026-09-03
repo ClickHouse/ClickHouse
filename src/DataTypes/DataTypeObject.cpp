@@ -1248,6 +1248,8 @@ and is controlled by the same settings:
 
 - [input_format_try_infer_dates](/reference/settings/formats/input-format#input_format_try_infer_dates)
 - [input_format_try_infer_datetimes](/reference/settings/formats/input-format#input_format_try_infer_datetimes)
+- [input_format_try_infer_ipv4](/reference/settings/formats/input-format#input_format_try_infer_ipv4)
+- [input_format_try_infer_ipv6](/reference/settings/formats/input-format#input_format_try_infer_ipv6)
 - [schema_inference_make_columns_nullable](/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)
 - [input_format_json_try_infer_numbers_from_strings](/reference/settings/formats/input-format#input_format_json_try_infer_numbers_from_strings)
 - [input_format_json_infer_incomplete_types_as_strings](/reference/settings/formats/input-format#input_format_json_infer_incomplete_types_as_strings)

@@ -1841,6 +1841,9 @@ private:
                 if (auto type = tryInferDateOrDateTimeFromString(data, format_settings))
                     return type;
 
+                if (auto type = tryInferIPv4OrIPv6FromString(data, format_settings))
+                    return type;
+
                 if (format_settings.json.try_infer_numbers_from_strings)
                 {
                     if (auto type = tryInferJSONNumberFromString(data, format_settings, &json_inference_info))
@@ -2313,9 +2316,10 @@ private:
             {
                 std::string_view data = element.getString();
 
-                /// With String value we should consider Date/DateTime/DateTime64 inference.
-                /// If inference is disabled, just insert String.
-                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
+                /// With String value we should consider Date/DateTime/DateTime64/IPv4/IPv6 inference.
+                /// If all inference is disabled, just insert String.
+                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes
+                    && !format_settings.try_infer_ipv4 && !format_settings.try_infer_ipv6)
                 {
                     if (variant_info.variant_name_to_discriminator.contains("String") || column_dynamic.addNewVariant(getDataTypesCache().getType("String"), "String"))
                     {
@@ -2354,6 +2358,32 @@ private:
                     {
                         insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
                         return true;
+                    }
+                }
+
+                if (format_settings.try_infer_ipv4)
+                {
+                    if (auto it = variant_info.variant_name_to_discriminator.find("IPv4"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        IPv4 value;
+                        if (IPv4Node<JSONParser>::tryParse(value, data))
+                        {
+                            insertValueIntoNumericVariant<ColumnIPv4, IPv4>(variant_info, variant_column, value, "IPv4");
+                            return true;
+                        }
+                    }
+                }
+
+                if (format_settings.try_infer_ipv6 && data.contains(':'))
+                {
+                    if (auto it = variant_info.variant_name_to_discriminator.find("IPv6"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        IPv6 value;
+                        if (IPv6Node<JSONParser>::tryParse(value, data))
+                        {
+                            insertValueIntoNumericVariant<ColumnIPv6, IPv6>(variant_info, variant_column, value, "IPv6");
+                            return true;
+                        }
                     }
                 }
 
@@ -2406,7 +2436,8 @@ private:
             {
                 std::string_view data = element.getString();
 
-                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
+                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes
+                    && !format_settings.try_infer_ipv4 && !format_settings.try_infer_ipv6)
                 {
                     encodeDataType(getDataTypesCache().getType("String"), buf);
                     writeStringBinary(data, buf);
@@ -2444,6 +2475,24 @@ private:
                         writeBinaryLittleEndian(value, buf);
                         return true;
                     }
+                }
+
+                if (format_settings.try_infer_ipv6 && data.contains(':'))
+                {
+                    IPv6 ipv6_value;
+                    if (IPv6Node<JSONParser>::tryParse(ipv6_value, data))
+                    {
+                        encodeDataType(getDataTypesCache().getType("IPv6"), buf);
+                        writeBinary(ipv6_value, buf);
+                        return true;
+                    }
+                }
+
+                if (format_settings.try_infer_ipv4)
+                {
+                    IPv4 ipv4_value;
+                    if (IPv4Node<JSONParser>::tryParse(ipv4_value, data))
+                        break; /// Route through dynamic_serialization->serializeBinary to avoid Field/IColumn byte-order mismatch.
                 }
 
                 encodeDataType(getDataTypesCache().getType("String"), buf);

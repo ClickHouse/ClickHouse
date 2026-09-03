@@ -637,6 +637,16 @@ Enabled by default.
     DECLARE(Bool, input_format_try_infer_datetimes_only_datetime64, false, R"(
 When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not DateTime types
 )", 0) \
+    DECLARE(Bool, input_format_try_infer_ipv4, false, R"(
+If enabled, ClickHouse will try to infer type `IPv4` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as IPv4 addresses, the result type will be `IPv4`, if at least one field was not parsed as an IPv4 address, the result type will be `String`.
+
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, input_format_try_infer_ipv6, false, R"(
+If enabled, ClickHouse will try to infer type `IPv6` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as IPv6 addresses, the result type will be `IPv6`, if at least one field was not parsed as an IPv6 address, the result type will be `String`.
+
+Disabled by default.
+)", 0) \
     DECLARE(Bool, input_format_try_infer_exponent_floats, false, R"(
 Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)
 )", 0) \
