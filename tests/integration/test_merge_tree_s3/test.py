@@ -2,6 +2,7 @@ import ast
 import concurrent.futures
 import logging
 import os
+import signal
 import time
 import uuid
 
@@ -262,6 +263,61 @@ def test_prefetch_stops_after_max_execution_time(cluster):
     )
     assert node.query(f"SELECT sum(id) FROM {table}").strip() == str(sum(range(4096)))
 
+    check_no_objects_after_drop(cluster, table_name=table)
+
+
+def test_prefetch_stops_after_native_client_cancel(cluster):
+    node = cluster.instances["node"]
+    table = "s3_prefetch_native_client_cancellation"
+    query_id = uuid.uuid4().hex
+    failpoint = "s3_read_before_get_object"
+
+    create_table(node, table, min_bytes_for_wide_part=0)
+    node.query(
+        f"INSERT INTO {table} SELECT toDate('2020-01-01'), number, repeat('x', 1024) FROM numbers(4096)"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    query_request = node.get_query_request(
+        f"SELECT sum(id) FROM {table} SETTINGS "
+        "max_threads=1, allow_prefetched_read_pool_for_remote_filesystem=1, "
+        "remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, "
+        "filesystem_prefetches_limit=1, enable_filesystem_cache=0, use_uncompressed_cache=0",
+        query_id=query_id,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        query_request.process.send_signal(signal.SIGINT)
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=20,
+            sleep_time=0.25,
+        )
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+        answer, error = query_request.get_answer_and_error()
+        assert answer == "", answer
+        assert error == "", error
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        if query_request.process.poll() is None:
+            query_request.process.kill()
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        node.query(
+            "SELECT errorCodeToName(exception_code), sum(ProfileEvents['S3GetObject']), "
+            "sum(ProfileEvents['ReadBufferFromS3RequestsErrors']) FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type='ExceptionWhileProcessing' "
+            "GROUP BY exception_code"
+        ).strip()
+        == "QUERY_WAS_CANCELLED_BY_CLIENT\t0\t0"
+    )
+    assert node.query(f"SELECT sum(id) FROM {table}").strip() == str(sum(range(4096)))
     check_no_objects_after_drop(cluster, table_name=table)
 
 

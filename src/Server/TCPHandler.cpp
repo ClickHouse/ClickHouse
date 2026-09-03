@@ -3151,7 +3151,12 @@ void TCPHandler::processCancel(QueryState & state)
     state.read_all_data = true;
     state.stop_query = true;
 
-    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+    auto exception = std::make_exception_ptr(
+        Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query."));
+    if (auto process_list_element = state.query_context->getProcessListElementSafe())
+        process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
+
+    std::rethrow_exception(exception);
 }
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
