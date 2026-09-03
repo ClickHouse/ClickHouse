@@ -397,7 +397,8 @@ void serializeSortDescription(const SortDescription & sort_description, WriteBuf
                     "Serialization of a WITH FILL sort description requires query plan serialization version >= {}; "
                     "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
 
-            /// The alias is how `FillingTransform` finds the column of an aliased `ORDER BY` element.
+            /// The alias travels for the `INTERPOLATE` conflict check in `FillingTransform`, which rejects
+            /// a fill column that is also an interpolate output under either of its names.
             writeStringBinary(desc.alias, out);
             serializeFillColumnDescription(desc.fill_description, out);
         }

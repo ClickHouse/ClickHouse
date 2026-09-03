@@ -12,6 +12,8 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -41,7 +43,7 @@ namespace
 {
 
 /// The columns to fill are exactly the `WITH FILL` elements of the `ORDER BY`, in the same order.
-SortDescription getFillDescription(const SortDescription & sort_description)
+SortDescription extractWithFillColumns(const SortDescription & sort_description)
 {
     SortDescription fill_description;
     for (const auto & description : sort_description)
@@ -69,7 +71,7 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     if (pipeline.getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
 
-    const auto fill_description = getFillDescription(sort_description);
+    const auto fill_description = extractWithFillColumns(sort_description);
 
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
