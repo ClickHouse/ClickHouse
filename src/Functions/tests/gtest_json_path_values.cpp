@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/JSONPathValues.h>
+#include <Functions/JSONPathValuesExtractor.h>
 #include <Functions/JSONValueEnumerator.h>
 
 #include <vector>
@@ -32,17 +33,21 @@ String toHex(std::string_view value)
 
 struct RejectingJSONValueConsumer
 {
-    bool shouldConsumePath(std::string_view) const { return true; }
+    struct PreparedPath
+    {
+    };
 
-    bool shouldConsumeValue(std::string_view, const IDataType &)
+    const PreparedPath * preparePath(std::string_view, const IDataType * = nullptr) { return &prepared_path; }
+
+    bool shouldConsumeValue(const PreparedPath &, const IDataType &)
     {
         ++value_checks;
         return false;
     }
 
-    void consumeSharedScalar(std::string_view, BinaryTypeIndex, std::string_view) { ++consumed_values; }
+    void consumeSharedScalar(const PreparedPath &, BinaryTypeIndex, std::string_view) { ++consumed_values; }
     void consumeValue(
-        std::string_view,
+        const PreparedPath &,
         const IDataType &,
         std::string_view,
         const ISerialization &,
@@ -59,8 +64,18 @@ struct RejectingJSONValueConsumer
 
     size_t value_checks = 0;
     size_t consumed_values = 0;
+    PreparedPath prepared_path;
 };
 
+struct CountingTokenConsumer
+{
+    void setRow(size_t) { }
+    void finishRows(size_t rows_) { rows = rows_; }
+    void addToken(std::string_view) { ++tokens; }
+
+    size_t rows = 0;
+    size_t tokens = 0;
+};
 }
 
 GTEST_TEST(JSONPathValues, SharedValuesAreRejectedBeforeDeserialization)
@@ -77,6 +92,35 @@ GTEST_TEST(JSONPathValues, SharedValuesAreRejectedBeforeDeserialization)
 
     EXPECT_EQ(consumer.value_checks, 2);
     EXPECT_EQ(consumer.consumed_values, 0);
+}
+
+GTEST_TEST(JSONPathValues, TypedPathRegexpFilteringManyRows)
+{
+    using namespace JSONPathValues;
+
+    constexpr size_t rows = 1000;
+    const auto type = DataTypeFactory::instance().get(
+        "JSON(max_dynamic_paths = 0, request_id String, created_at String, message String, private_id String, ignored String)");
+    auto column = type->createColumn();
+    for (size_t row = 0; row != rows; ++row)
+    {
+        column->insert(
+            Object{
+                {"request_id", Field{"request"}},
+                {"created_at", Field{"time"}},
+                {"message", Field{"text"}},
+                {"private_id", Field{"private"}},
+                {"ignored", Field{"ignored"}},
+            });
+    }
+
+    const PathMatcher matcher({}, {"_id$", "_at$", "^message$"}, {}, {"^private_", "^internal_"});
+    CountingTokenConsumer consumer;
+    Extractor<CountingTokenConsumer> extractor(64, matcher, consumer);
+    enumerateJSONValues(assert_cast<const ColumnObject &>(*column), assert_cast<const DataTypeObject &>(*type), extractor);
+
+    EXPECT_EQ(consumer.rows, rows);
+    EXPECT_EQ(consumer.tokens, rows * 3);
 }
 
 GTEST_TEST(JSONPathValues, StableTokenBytes)
