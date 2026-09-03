@@ -20,7 +20,7 @@ struct StringKey24
 
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
-    chassert(n != 0);
+    assert(n != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
     else
@@ -28,7 +28,7 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 }
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
-    chassert(n.items[1] != 0);
+    assert(n.items[1] != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
     else
@@ -36,7 +36,7 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 }
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
-    chassert(n.c != 0);
+    assert(n.c != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
     else
@@ -132,17 +132,15 @@ struct StringHashTableHash
 };
 
 template <typename Cell>
-struct StringHashTableEmpty // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
+struct StringHashTableEmpty
 {
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
-
-    void prefetchByHash(size_t) const {} /// No-op: empty key storage is trivially small
 
     void setHasZero()
     {
@@ -257,38 +255,6 @@ protected:
     T3 m3;
     Ts ms;
 
-    /// The size-class submaps by index, for `dispatchOnKeyClass` resolvers: 0 = empty key,
-    /// 1..3 = the fixed-size classes, 4 = the generic (long / trailing-zero) submap.
-    template <size_t key_class>
-    auto & submapForClass()
-    {
-        if constexpr (key_class == 0)
-            return m0;
-        else if constexpr (key_class == 1)
-            return m1;
-        else if constexpr (key_class == 2)
-            return m2;
-        else if constexpr (key_class == 3)
-            return m3;
-        else
-            return ms;
-    }
-
-    template <size_t key_class>
-    const auto & submapForClass() const
-    {
-        if constexpr (key_class == 0)
-            return m0;
-        else if constexpr (key_class == 1)
-            return m1;
-        else if constexpr (key_class == 2)
-            return m2;
-        else if constexpr (key_class == 3)
-            return m3;
-        else
-            return ms;
-    }
-
 public:
     using Key = std::string_view;
     using key_type = Key;
@@ -299,19 +265,6 @@ public:
     using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type>;
     using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type>;
 
-    /// Visits the size-class sub-tables of two tables of the same type as pairs, in matching order.
-    template <typename Func>
-    static void forEachSubMapPair(Self & lhs, Self & rhs, Func && func)
-    {
-        func(lhs.m1, rhs.m1);
-        func(lhs.m2, rhs.m2);
-        func(lhs.m3, rhs.m3);
-        func(lhs.ms, rhs.ms);
-    }
-
-    /// The dedicated slot of the empty-string key, which the sub-table dispatch hashes to 0.
-    T0 & emptyStringSlot() { return m0; }
-
     StringHashTable() = default;
 
     explicit StringHashTable(size_t reserve_for_num_elements)
@@ -320,14 +273,6 @@ public:
         , m3{reserve_for_num_elements / 4}
         , ms{reserve_for_num_elements / 4}
     {
-    }
-
-    void reserve(size_t num_elements)
-    {
-        m1.reserve(num_elements / 4);
-        m2.reserve(num_elements / 4);
-        m3.reserve(num_elements / 4);
-        ms.reserve(num_elements / 4);
     }
 
     StringHashTable(StringHashTable && rhs) noexcept
@@ -359,32 +304,33 @@ public:
     // 2. Use switch case extension to generate fast dispatching table
     // 3. Funcs are named callables that can be force_inlined
     //
-    /// Note: the key bytes must be readable in 8-byte chunks (a `std::string` cannot be passed
-    /// here, while e.g. `ColumnString::getDataAt` can), because the packing copies 8 bytes at a
-    /// time.
-    template <typename Resolver, typename KeyHolder, typename HashProvider, typename Func>
-    static auto ALWAYS_INLINE dispatchOnKeyClass(Resolver && resolver, KeyHolder && key_holder, HashProvider && hash_of, Func && func)
+    //
+    // NOTE: It requires padded to 8 bytes keys (IOW you cannot pass
+    // std::string here, but you can pass i.e. ColumnString::getDataAt()),
+    // since it copies 8 bytes at a time.
+    template <typename Self, typename KeyHolder, typename Func>
+    static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
+        StringHashTableHash hash;
         const auto & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size();
         if (sz == 0)
         {
             keyHolderDiscardKey(key_holder);
-            return func(resolver(std::integral_constant<size_t, 0>{}, 0), VoidKey{}, 0);
+            return func(self.m0, VoidKey{}, 0);
         }
 
         if (x[sz - 1] == 0)
         {
             // Strings with trailing zeros are not representable as fixed-size
             // string keys. Put them to the generic table.
-            const size_t res = hash_of(x);
-            return func(resolver(std::integral_constant<size_t, 4>{}, res), std::forward<KeyHolder>(key_holder), res);
+            return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
         }
 
         const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
-        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        union
         {
             StringKey8 k8;
             StringKey16 k16;
@@ -413,9 +359,8 @@ public:
                     else
                         n[0] <<= s;
                 }
-                const size_t res = hash_of(k8);
                 keyHolderDiscardKey(key_holder);
-                return func(resolver(std::integral_constant<size_t, 1>{}, res), k8, res);
+                return func(self.m1, k8, hash(k8));
             }
             case 1: // 9..16 bytes
             {
@@ -426,9 +371,8 @@ public:
                     n[1] >>= s;
                 else
                     n[1] <<= s;
-                const size_t res = hash_of(k16);
                 keyHolderDiscardKey(key_holder);
-                return func(resolver(std::integral_constant<size_t, 2>{}, res), k16, res);
+                return func(self.m2, k16, hash(k16));
             }
             case 2: // 17..24 bytes
             {
@@ -439,54 +383,14 @@ public:
                     n[2] >>= s;
                 else
                     n[2] <<= s;
-                const size_t res = hash_of(k24);
                 keyHolderDiscardKey(key_holder);
-                return func(resolver(std::integral_constant<size_t, 3>{}, res), k24, res);
+                return func(self.m3, k24, hash(k24));
             }
             default: // >= 25 bytes
             {
-                const size_t res = hash_of(x);
-                return func(resolver(std::integral_constant<size_t, 4>{}, res), std::forward<KeyHolder>(key_holder), res);
+                return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
             }
         }
-    }
-
-    template <typename Self, typename KeyHolder, typename Func>
-    static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
-    {
-        return dispatchOnKeyClass(
-            [&](auto key_class, size_t) -> auto & { return self.template submapForClass<decltype(key_class)::value>(); },
-            std::forward<KeyHolder>(key_holder),
-            StringHashTableHash{},
-            std::forward<Func>(func));
-    }
-
-    /// Same as `dispatch`, but uses a hash the caller saved from an earlier `hash(x)` instead of recomputing it.
-    template <typename Self, typename KeyHolder, typename Func>
-    static auto ALWAYS_INLINE dispatchWithHash(Self & self, KeyHolder && key_holder, size_t hash_value, Func && func)
-    {
-        return dispatchOnKeyClass(
-            [&](auto key_class, size_t) -> auto & { return self.template submapForClass<decltype(key_class)::value>(); },
-            std::forward<KeyHolder>(key_holder),
-            [hash_value](const auto &) { return hash_value; },
-            std::forward<Func>(func));
-    }
-
-    /// The canonical hash of a key: the same value `emplace` / `find` would compute for it, so it
-    /// can be saved and handed back to the `hash_value` overloads.
-    ///
-    /// Carries the same precondition as `dispatchOnKeyClass` above, because it is the very same
-    /// packing: the key bytes must be readable in 8-byte chunks, so pass only keys whose memory
-    /// allows that - a `ColumnString` / `ColumnFixedString` data slice, or an arena key holder -
-    /// and never a `std::string` or a lone unpadded buffer. Every caller already satisfies it by
-    /// construction: they hash exactly the keys they then `emplace` or `find` in the same table.
-    size_t ALWAYS_INLINE hash(const Key & x) const
-    {
-        return dispatchOnKeyClass(
-            [&](auto, size_t) -> const auto & { return m0; },
-            x,
-            StringHashTableHash{},
-            [](const auto &, const auto &, size_t res) { return res; });
     }
 
     struct EmplaceCallable
@@ -512,43 +416,6 @@ public:
         this->dispatch(*this, key_holder, EmplaceCallable(it, inserted));
     }
 
-    template <typename KeyHolder>
-    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t hash_value)
-    {
-        this->dispatchWithHash(*this, key_holder, hash_value, EmplaceCallable(it, inserted));
-    }
-
-    /// Whether the key is stored in the raw-string submap `ms`: keys over 24 bytes, and short
-    /// keys with a trailing zero byte, which the packed representations cannot distinguish
-    /// from their own padding.
-    static bool usesStringViewSubmap(std::string_view key)
-    {
-        return key.size() > 24 || (!key.empty() && key.back() == 0);
-    }
-
-    void reserveAdditionalStringViewKeys(size_t additional) { ms.reserve(ms.size() + additional); }
-
-    struct PrefetchCallable
-    {
-        template <typename Map, typename KeyHolder>
-        void ALWAYS_INLINE operator()(Map & map, KeyHolder && key_holder, size_t hash)
-        {
-            map.prefetchByHash(hash);
-            /// Release any temporary key memory held by the holder. Needed for the `ms` (long string) and
-            /// trailing-zero dispatch paths where `dispatch` forwards the holder without discarding.
-            /// For the short-string dispatch paths the holder was already discarded inside `dispatch`,
-            /// and the parameter received here is a `StringKey8`/`StringKey16`/`StringKey24`/`VoidKey`
-            /// for which `keyHolderDiscardKey` is a no-op.
-            keyHolderDiscardKey(key_holder);
-        }
-    };
-
-    template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
-    {
-        dispatch(*this, std::forward<KeyHolder>(key_holder), PrefetchCallable{});
-    }
-
     struct FindCallable
     {
         // find() doesn't need any key memory management, so we don't work with
@@ -569,35 +436,14 @@ public:
         return dispatch(*this, x, FindCallable{});
     }
 
-    LookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value)
-    {
-        return dispatchWithHash(*this, x, hash_value, FindCallable{});
-    }
-
-    ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
-    {
-        return dispatchWithHash(*this, x, hash_value, FindCallable{});
-    }
-
-    template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder, size_t hash_value) const
-    {
-        dispatchWithHash(*this, std::forward<KeyHolder>(key_holder), hash_value, PrefetchCallable{});
-    }
-
     ConstLookupResult ALWAYS_INLINE find(const Key & x) const
     {
         return dispatch(*this, x, FindCallable{});
     }
 
-    bool ALWAYS_INLINE has(const Key & x) const
+    bool ALWAYS_INLINE has(const Key & x, size_t = 0) const
     {
         return dispatch(*this, x, FindCallable{}) != nullptr;
-    }
-
-    bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
-    {
-        return dispatchWithHash(*this, x, hash_value, FindCallable{}) != nullptr;
     }
 
     void write(DB::WriteBuffer & wb) const

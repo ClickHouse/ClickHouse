@@ -14,13 +14,13 @@ class  PromQLParser : public antlr4::Parser {
 public:
   enum {
     NUMBER = 1, STRING = 2, ADD = 3, SUB = 4, MULT = 5, DIV = 6, MOD = 7, 
-    POW = 8, AND = 9, OR = 10, UNLESS = 11, ATAN2 = 12, EQ = 13, DEQ = 14, 
-    NE = 15, GT = 16, LT = 17, GE = 18, LE = 19, RE = 20, NRE = 21, BY = 22, 
-    WITHOUT = 23, ON = 24, IGNORING = 25, GROUP_LEFT = 26, GROUP_RIGHT = 27, 
-    OFFSET = 28, BOOL = 29, AGGREGATION_OPERATOR = 30, FUNCTION = 31, LEFT_BRACE = 32, 
-    RIGHT_BRACE = 33, LEFT_PAREN = 34, RIGHT_PAREN = 35, LEFT_BRACKET = 36, 
-    RIGHT_BRACKET = 37, COMMA = 38, AT = 39, SUBQUERY_RANGE = 40, SELECTOR_RANGE = 41, 
-    METRIC_NAME = 42, LABEL_NAME = 43, WS = 44, SL_COMMENT = 45
+    POW = 8, AND = 9, OR = 10, UNLESS = 11, EQ = 12, DEQ = 13, NE = 14, 
+    GT = 15, LT = 16, GE = 17, LE = 18, RE = 19, NRE = 20, BY = 21, WITHOUT = 22, 
+    ON = 23, IGNORING = 24, GROUP_LEFT = 25, GROUP_RIGHT = 26, OFFSET = 27, 
+    BOOL = 28, AGGREGATION_OPERATOR = 29, FUNCTION = 30, LEFT_BRACE = 31, 
+    RIGHT_BRACE = 32, LEFT_PAREN = 33, RIGHT_PAREN = 34, LEFT_BRACKET = 35, 
+    RIGHT_BRACKET = 36, COMMA = 37, AT = 38, SUBQUERY_RANGE = 39, SELECTOR_RANGE = 40, 
+    METRIC_NAME = 41, LABEL_NAME = 42, WS = 43, SL_COMMENT = 44
   };
 
   enum {
@@ -28,13 +28,12 @@ public:
     RuleMultOp = 4, RuleAddOp = 5, RuleCompareOp = 6, RuleAndUnlessOp = 7, 
     RuleOrOp = 8, RuleSubqueryOp = 9, RuleOffsetOp = 10, RuleVector = 11, 
     RuleParens = 12, RuleTimestamp = 13, RuleDuration = 14, RuleOffsetValue = 15, 
-    RuleInstantSelector = 16, RuleLabelMatcher = 17, RuleSelectorIdentifier = 18, 
-    RuleLabelMatcherOperator = 19, RuleLabelMatcherList = 20, RuleRangeSelector = 21, 
-    RuleSelectorWithOffset = 22, RuleFunction_ = 23, RuleParameter = 24, 
-    RuleParameterList = 25, RuleAggregation = 26, RuleBy = 27, RuleWithout = 28, 
-    RuleGrouping = 29, RuleOn_ = 30, RuleIgnoring = 31, RuleGroupLeft = 32, 
-    RuleGroupRight = 33, RuleLabelName = 34, RuleLabelNameList = 35, RuleMetricName = 36, 
-    RuleKeyword = 37, RuleLiteral = 38
+    RuleInstantSelector = 16, RuleLabelMatcher = 17, RuleLabelMatcherOperator = 18, 
+    RuleLabelMatcherList = 19, RuleRangeSelector = 20, RuleSelectorWithOffset = 21, 
+    RuleFunction_ = 22, RuleParameter = 23, RuleParameterList = 24, RuleAggregation = 25, 
+    RuleBy = 26, RuleWithout = 27, RuleGrouping = 28, RuleOn_ = 29, RuleIgnoring = 30, 
+    RuleGroupLeft = 31, RuleGroupRight = 32, RuleLabelName = 33, RuleLabelNameList = 34, 
+    RuleMetricName = 35, RuleKeyword = 36, RuleLiteral = 37
   };
 
   explicit PromQLParser(antlr4::TokenStream *input);
@@ -72,7 +71,6 @@ public:
   class OffsetValueContext;
   class InstantSelectorContext;
   class LabelMatcherContext;
-  class SelectorIdentifierContext;
   class LabelMatcherOperatorContext;
   class LabelMatcherListContext;
   class RangeSelectorContext;
@@ -174,7 +172,6 @@ public:
     antlr4::tree::TerminalNode *MULT();
     antlr4::tree::TerminalNode *DIV();
     antlr4::tree::TerminalNode *MOD();
-    antlr4::tree::TerminalNode *ATAN2();
     GroupingContext *grouping();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -399,7 +396,7 @@ public:
   public:
     LabelMatcherContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    SelectorIdentifierContext *selectorIdentifier();
+    LabelNameContext *labelName();
     LabelMatcherOperatorContext *labelMatcherOperator();
     antlr4::tree::TerminalNode *STRING();
 
@@ -411,22 +408,6 @@ public:
   };
 
   LabelMatcherContext* labelMatcher();
-
-  class  SelectorIdentifierContext : public antlr4::ParserRuleContext {
-  public:
-    SelectorIdentifierContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    LabelNameContext *labelName();
-    antlr4::tree::TerminalNode *STRING();
-
-    virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
-    virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
-
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  SelectorIdentifierContext* selectorIdentifier();
 
   class  LabelMatcherOperatorContext : public antlr4::ParserRuleContext {
   public:
@@ -746,7 +727,6 @@ public:
     antlr4::tree::TerminalNode *AND();
     antlr4::tree::TerminalNode *OR();
     antlr4::tree::TerminalNode *UNLESS();
-    antlr4::tree::TerminalNode *ATAN2();
     antlr4::tree::TerminalNode *BY();
     antlr4::tree::TerminalNode *WITHOUT();
     antlr4::tree::TerminalNode *ON();

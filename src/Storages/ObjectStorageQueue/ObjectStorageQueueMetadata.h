@@ -1,4 +1,5 @@
 #pragma once
+#include "config.h"
 
 #include <filesystem>
 #include <optional>
@@ -11,7 +12,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/CacheBase.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
@@ -195,8 +195,6 @@ public:
 
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
-
-    size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
 
 private:
     void cleanupThreadFunc();

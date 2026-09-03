@@ -92,7 +92,6 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(
 
 }
 
-void registerAggregateFunctionStudentTTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_studentTTest = R"(
@@ -104,7 +103,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 **See Also**
 
 - [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
-- [welchTTest function](/reference/functions/aggregate-functions/welchTTest)
+- [welchTTest function](/sql-reference/aggregate-functions/reference/welchttest)
     )";
     FunctionDocumentation::Syntax syntax_studentTTest = R"(
 studentTTest([confidence_level])(sample_data, sample_index)

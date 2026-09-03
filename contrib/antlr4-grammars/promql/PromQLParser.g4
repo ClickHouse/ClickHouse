@@ -66,7 +66,7 @@ powOp
     ;
 
 multOp
-    : (MULT | DIV | MOD | ATAN2) grouping?
+    : (MULT | DIV | MOD) grouping?
     ;
 
 addOp
@@ -130,13 +130,7 @@ instantSelector
     ;
 
 labelMatcher
-    : selectorIdentifier labelMatcherOperator STRING
-    | STRING
-    ;
-
-selectorIdentifier
-    : labelName
-    | STRING
+    : labelName labelMatcherOperator STRING
     ;
 
 labelMatcherOperator
@@ -233,7 +227,6 @@ keyword
     : AND
     | OR
     | UNLESS
-    | ATAN2
     | BY
     | WITHOUT
     | ON

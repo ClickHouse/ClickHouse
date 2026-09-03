@@ -1,6 +1,7 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -167,14 +168,14 @@ public:
         throwNotImplementedForColumnUnique("updatePermutation");
     }
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
+    std::vector<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
     {
         throwNotImplementedForColumnUnique("scatter");
     }
 
-    void computeHashInto(size_t /*row_begin*/, size_t /*row_end*/, UInt32 * /*hash_out*/, bool /*initial*/) const override
+    WeakHash32 getWeakHash32() const override
     {
-        throwNotImplementedForColumnUnique("computeHashInto");
+        throwNotImplementedForColumnUnique("getWeakHash32");
     }
 
     void updateHashFast(SipHash &) const override
@@ -185,11 +186,6 @@ public:
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throwNotImplementedForColumnUnique("compareColumn");
-    }
-
-    [[nodiscard]] Int64 compareTrackAt(size_t, size_t, const IColumn &, int) const override
-    {
-        throwNotImplementedForColumnUnique("compareTrackAt");
     }
 
     bool hasEqualValues() const override
@@ -217,7 +213,7 @@ public:
      * @see DB::ReverseIndex
      * @see DB::ColumnUnique
      *
-     * The most common example uses https://clickhouse.com/docs/reference/data-types/lowcardinality columns.
+     * The most common example uses https://clickhouse.com/docs/sql-reference/data-types/lowcardinality/ columns.
      * Consider data type @e LC(String). The inner type here is @e String which is more or less a contiguous memory
      * region, so it can be easily represented as a @e std::string_view. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.

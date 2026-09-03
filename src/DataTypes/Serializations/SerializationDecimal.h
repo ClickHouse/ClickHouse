@@ -8,22 +8,17 @@ namespace DB
 template <typename T>
 class SerializationDecimal final : public SerializationDecimalBase<T>
 {
-private:
-    SerializationDecimal(UInt32 precision_, UInt32 scale_)
-        : SerializationDecimalBase<T>(precision_, scale_) {}
-
 public:
     using typename SerializationDecimalBase<T>::ColumnType;
 
-    static UInt128 getHash(UInt32 precision_, UInt32 scale_);
-    static SerializationPtr create(UInt32 precision_, UInt32 scale_);
+    SerializationDecimal(UInt32 precision_, UInt32 scale_)
+        : SerializationDecimalBase<T>(precision_, scale_) {}
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
     bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

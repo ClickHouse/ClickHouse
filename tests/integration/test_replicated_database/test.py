@@ -344,13 +344,13 @@ def get_table_uuid(database, name):
 
 @pytest.fixture(scope="module", name="attachable_part")
 def fixture_attachable_part(started_cluster):
-    main_node.query("CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
+    main_node.query(f"CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
     main_node.query(
-        "CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)"
+        f"CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)"
     )
-    main_node.query("INSERT INTO testdb_attach_atomic.test VALUES (123)")
+    main_node.query(f"INSERT INTO testdb_attach_atomic.test VALUES (123)")
     main_node.query(
-        "ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'"
+        f"ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'"
     )
     table_uuid = get_table_uuid("testdb_attach_atomic", "test")
     return os.path.join(
@@ -425,17 +425,10 @@ def test_alter_drop_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
-        # A part covered by a pending drop is never fetched, so sync before dropping.
-        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
-        assert (
-            dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part")
-            == "123\n"
-        )
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
         # The DROP operation is still replicated at the table engine level
-        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
         )
@@ -467,14 +460,11 @@ def test_alter_detach_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
-        # A part covered by a pending detach is never fetched, so sync before detaching.
-        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
     if engine == "ReplicatedMergeTree":
         # The detach operation is still replicated at the table engine level
-        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
         assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
     else:
         assert dummy_node.query(detached_parts_query) == ""
@@ -497,11 +487,6 @@ def test_alter_drop_detached_part(started_cluster, engine):
         f"CREATE TABLE {database}.alter_drop_detached (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
     main_node.query(f"INSERT INTO {database}.alter_drop_detached VALUES (123)")
-    if engine == "ReplicatedMergeTree":
-        # A part covered by a pending detach is never fetched, so sync before detaching.
-        dummy_node.query(
-            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
-        )
     main_node.query(
         f"ALTER TABLE {database}.alter_drop_detached DETACH PART '{part_name}'"
     )
@@ -515,10 +500,6 @@ def test_alter_drop_detached_part(started_cluster, engine):
     )
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_drop_detached'"
     assert main_node.query(detached_parts_query) == ""
-    if engine == "ReplicatedMergeTree":
-        dummy_node.query(
-            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
-        )
     assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
 
     main_node.query(f"DROP DATABASE {database} SYNC")
@@ -1238,14 +1219,13 @@ def test_sync_replica(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
 
-        # Single client invocation: one process spawn instead of N.
-        create_queries = "\n".join(
-            "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n;".format(
-                i
+        for i in range(number_of_tables):
+            main_node.query(
+                "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n".format(
+                    i
+                ),
+                settings=settings,
             )
-            for i in range(number_of_tables)
-        )
-        main_node.query(create_queries, settings=settings)
 
     # wait for host to reconnect
     dummy_node.query_with_retry("SELECT * FROM system.zookeeper WHERE path='/'")
@@ -1389,7 +1369,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("CREATE TABLE table_structure.mem (n int) ENGINE=Memory")
-    dummy_node.query("DETACH DATABASE table_structure SYNC")
+    dummy_node.query("DETACH DATABASE table_structure")
 
     settings = {"distributed_ddl_task_timeout": 0}
     main_node.query(
@@ -1398,7 +1378,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    competing_node.query("DETACH DATABASE table_structure SYNC")
+    competing_node.query("DETACH DATABASE table_structure")
 
     main_node.query(
         "ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings
@@ -1409,7 +1389,7 @@ def test_replicated_table_structure_alter(started_cluster):
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
     metadata_path = competing_node.query(
-        "SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
+        f"SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
     ).strip()
     db_disk_name = get_database_disk_name(competing_node)
     competing_node.exec_in_container(
@@ -1510,7 +1490,7 @@ def test_table_metadata_corruption(started_cluster):
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
 
     metadata_path = dummy_node.query(
-        "SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
+        f"SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
     ).strip()
     # Server should handle this by throwing an exception during table loading, which should lead to server shutdown
 
@@ -1540,7 +1520,7 @@ def test_table_metadata_corruption(started_cluster):
             # Server did not shut down as expected, kill it so we can fix metadata
             dummy_node.stop_clickhouse(kill=True)
 
-        print("Fix corrupted metadata")
+        print(f"Fix corrupted metadata")
         replace_text_in_metadata(
             dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
         )
@@ -1706,60 +1686,66 @@ def test_lag_after_recovery(started_cluster):
         "create table lag_after_recovery.t (n int) engine=ReplicatedMergeTree order by n"
     )
 
-    # Delay recovery so t1..t9 below are enqueued while replica2 is still
-    # recovering -> it ends up unsynced-after-recovery (REPLICA_UNSYNCED_MARKER).
     dummy_node.query("system enable failpoint database_replicated_delay_recovery")
-    # Freeze replica2's worker before the check that clears the marker, so the
-    # marker stays set for the whole window deterministically (the old random
-    # delay failpoint raced it and cleared the marker before t10 ~1 run in N).
-    # Same pauseable idiom as test_sync_database_replica_strict.
     dummy_node.query(
-        "system enable failpoint database_replicated_stop_entry_execution"
+        "system enable failpoint database_replicated_delay_entry_execution"
     )
-    try:
+    dummy_node.query(
+        "create database lag_after_recovery engine=Replicated('/clickhouse/databases/lag_after_recovery', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=1"
+    )
+
+    settings = {"distributed_ddl_task_timeout": 0}
+    main_node.query(
+        "create table lag_after_recovery.t1 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t2 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t3 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t4 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t5 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t6 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t7 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t8 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t9 (n int) engine=Memory", settings=settings
+    )
+
+    assert_eq_with_retry(
+        dummy_node,
+        "select is_active from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'",
+        "1\n",
+    )
+
+    settings = {
+        "distributed_ddl_task_timeout": 1,
+        "distributed_ddl_output_mode": "none_only_active",
+    }
+    main_node.query(
+        "create table lag_after_recovery.t10 (n int) engine=Memory", settings=settings
+    )
+    assert (
         dummy_node.query(
-            "create database lag_after_recovery engine=Replicated('/clickhouse/databases/lag_after_recovery', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=1"
+            "select replication_lag=0 from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
         )
+        == "0\n"
+    )
 
-        settings = {"distributed_ddl_task_timeout": 0}
-        for i in range(1, 10):
-            main_node.query(
-                f"create table lag_after_recovery.t{i} (n int) engine=Memory",
-                settings=settings,
-            )
-
-        assert_eq_with_retry(
-            dummy_node,
-            "select is_active from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'",
-            "1\n",
-        )
-
-        settings = {
-            "distributed_ddl_task_timeout": 1,
-            "distributed_ddl_output_mode": "none_only_active",
-        }
-        # unsynced replica2 is treated as offline, so the coordinator does not
-        # wait for it and the create returns quickly instead of timing out.
-        main_node.query(
-            "create table lag_after_recovery.t10 (n int) engine=Memory",
-            settings=settings,
-        )
-        # replication_lag is still nonzero (replica2 is frozen and behind).
-        assert (
-            dummy_node.query(
-                "select replication_lag=0 from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
-            )
-            == "0\n"
-        )
-    finally:
-        dummy_node.query(
-            "system disable failpoint database_replicated_stop_entry_execution"
-        )
-        dummy_node.query(
-            "system disable failpoint database_replicated_delay_recovery"
-        )
-
-    # With the worker unfrozen, replica2 catches up and clears the unsynced marker.
+    dummy_node.query(
+        "system disable failpoint database_replicated_delay_entry_execution"
+    )
     dummy_node.query("system sync database replica lag_after_recovery strict")
     assert (
         dummy_node.query(
@@ -1767,102 +1753,6 @@ def test_lag_after_recovery(started_cluster):
         )
         == "0\n"
     )
-
-
-def test_sync_database_replica_strict(started_cluster):
-    # Differential test for SYSTEM SYNC DATABASE REPLICA ... STRICT.
-    #
-    # It pins down two things that a plain (DEFAULT) sync cannot:
-    #
-    #   1. STRICT actually takes effect (the interpreter forwards
-    #      query.sync_replica_mode). We freeze replica2's DDL worker mid-queue
-    #      with the pauseable failpoint and keep the lag *below*
-    #      max_replication_lag_to_enqueue. DEFAULT sync needs the exact snapshot
-    #      processed -> it times out (TIMEOUT_EXCEEDED). STRICT sync only needs
-    #      our_log_ptr + max_replication_lag_to_enqueue >= max_log_ptr -> it
-    #      succeeds. The opposite outcomes under identical conditions can only
-    #      happen if STRICT is honored; if STRICT were ignored it would time out
-    #      exactly like DEFAULT.
-    #
-    #   2. The Keeper-component guard in
-    #      DatabaseReplicated::waitForReplicaToProcessAllEntries. The STRICT path
-    #      reads .../max_log_ptr directly via getZooKeeper()->get on the query
-    #      thread (the DEFAULT path goes through the DDL worker, which sets its
-    #      own component). Integration nodes run with
-    #      enforce_keeper_component_tracking=true, so without the guard that read
-    #      throws LOGICAL_ERROR "Current component is empty" (release) or aborts
-    #      the server (debug). Here STRICT instead succeeds, which only holds
-    #      with the guard in place.
-    main_node.query("drop database if exists strict_sync sync")
-    dummy_node.query("drop database if exists strict_sync sync")
-
-    main_node.query(
-        "create database strict_sync engine=Replicated('/clickhouse/databases/strict_sync', 'shard1', 'replica1')"
-    )
-    # Generous threshold so a small lag stays well within it (became_synced).
-    dummy_node.query(
-        "create database strict_sync engine=Replicated('/clickhouse/databases/strict_sync', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=100"
-    )
-
-    # Make sure replica2 is fully caught up before we freeze it.
-    assert_eq_with_retry(
-        dummy_node,
-        "select replication_lag from system.clusters where name='strict_sync' and database_replica_name='replica2'",
-        "0\n",
-    )
-
-    # Freeze replica2's worker on the next entry it tries to execute, so it
-    # stays a few entries behind max_log_ptr (but within the threshold).
-    dummy_node.query(
-        "system enable failpoint database_replicated_stop_entry_execution"
-    )
-    try:
-        settings = {"distributed_ddl_task_timeout": 0}
-        for i in range(3):
-            main_node.query(
-                f"create table strict_sync.t{i} (n int) engine=Memory",
-                settings=settings,
-            )
-
-        # `receive_timeout` (set server-side via HTTP `params`) is the sync's wait
-        # budget. STRICT checks became_synced before waiting on the worker, so it
-        # returns almost immediately here (lag 3 <= threshold 100); DEFAULT needs
-        # the frozen snapshot fully processed, so it waits out the whole budget and
-        # times out. We drive both over HTTP so the python read timeout (`timeout=`)
-        # is independent of the server-side `receive_timeout`: that lets us assert
-        # the DEFAULT *server-side* TIMEOUT_EXCEEDED with a generous read window
-        # instead of coupling it to the native client's socket timeout, which fires
-        # at the same `receive_timeout` and would make the timeout's origin a flaky
-        # client/server race.
-        sync_params = {"receive_timeout": 3}
-
-        # DEFAULT: needs the frozen snapshot fully processed -> times out.
-        default_error = dummy_node.http_query_and_get_error(
-            "system sync database replica strict_sync",
-            params=sync_params,
-            timeout=60,
-        )
-        assert "TIMEOUT_EXCEEDED" in default_error, default_error
-
-        # STRICT: lag is within max_replication_lag_to_enqueue, so the guarded
-        # getZooKeeper()->get(max_log_ptr) runs and became_synced is true ->
-        # the query succeeds (it would time out like DEFAULT if STRICT were
-        # ignored, and would raise "Current component is empty" / crash without
-        # the guard).
-        dummy_node.http_query(
-            "system sync database replica strict_sync strict",
-            params=sync_params,
-            timeout=60,
-        )
-    finally:
-        dummy_node.query(
-            "system disable failpoint database_replicated_stop_entry_execution"
-        )
-
-    assert dummy_node.query("select 1") == "1\n"
-
-    main_node.query("drop database if exists strict_sync sync")
-    dummy_node.query("drop database if exists strict_sync sync")
 
 
 def test_system_database_replicas_with_ro(started_cluster):
@@ -2154,314 +2044,3 @@ def test_alias_with_dropped_target(started_cluster):
     # Cleanup
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
-
-
-def _drive_comment_alter_race(db, cycles=14, wide_columns=1500, extra_url_settings=""):
-    """Reproduce the issue #110036 race: a comment-only ALTER (executed locally on
-    every replica of a Replicated database) pins its metadata snapshot at
-    access-check time (query-scoped metadata cache), while a concurrent table-level
-    ALTER_METADATA applies ADD COLUMN. If the comment ALTER acquires the alter lock
-    after executeMetadataAlter commits, it overwrites the in-memory metadata and the
-    local .sql with the stale pre-ADD-COLUMN structure - silently dropping the new
-    column while the persisted replica metadata_version stays equal to the ZooKeeper
-    /metadata version.
-
-    Returns the name of the lost column, or None if every synchronized cycle
-    preserved it. Raises if a synchronized cycle's comment ALTER returned an error
-    (the fix promises it succeeds under overlap), or if no cycle ever synchronized
-    (SYNC_FOUND stayed 0), so a run where the race window never opened cannot
-    silently false-pass.
-    """
-    main_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
-    competing_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
-
-    main_node.query(
-        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'replica1');"
-    )
-    competing_node.query(
-        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'replica2');"
-    )
-
-    # A wide table makes executeMetadataAlter slow (metadata parse/format cost),
-    # widening the race window between the comment ALTER's access check and its
-    # alter-lock acquisition.
-    wide = ", ".join(f"c{j} String" for j in range(wide_columns))
-    main_node.query(
-        f"CREATE TABLE {db}.rmt (n int, v UInt64, {wide}) ENGINE=ReplicatedMergeTree ORDER BY n"
-    )
-    competing_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
-
-    synced_cycles = 0
-    for i in range(cycles):
-        # Hold back the table-level queue on competing so the ALTER_METADATA of the
-        # next ADD COLUMN executes at a controlled moment.
-        competing_node.query(f"SYSTEM STOP REPLICATION QUEUES {db}.rmt")
-        main_node.query(f"ALTER TABLE {db}.rmt ADD COLUMN m{i} Int32")
-        # Give the (still running) pull task a moment to copy the entry into the queue.
-        for _ in range(30):
-            if (
-                competing_node.query(
-                    f"SELECT count() FROM system.replication_queue "
-                    f"WHERE database='{db}' AND table='rmt' AND type='ALTER_METADATA'"
-                ).strip()
-                != "0"
-            ):
-                break
-            time.sleep(0.1)
-
-        # Release the queue and, the instant the ALTER_METADATA starts applying
-        # locally ("Applying changes locally", logged by setTableStructure right
-        # after executeMetadataAlter takes the alter lock), fire the comment-only
-        # ALTER over HTTP so its access-check metadata pin lands inside the window.
-        # SYNC_FOUND=1 is the positive overlap signal; a cycle without it never
-        # opened the race window and must not count as a pass.
-        script = f"""
-LOG=/var/log/clickhouse-server/clickhouse-server.log
-PAT='{db}\\.rmt.*Applying changes locally'
-BASE=$(grep -cE "$PAT" $LOG || true)
-curl -sS 'http://127.0.0.1:8123/' --data-binary 'SYSTEM START REPLICATION QUEUES {db}.rmt' > /dev/null
-FOUND=0
-for k in $(seq 1 3000); do
-  CUR=$(grep -cE "$PAT" $LOG || true)
-  if [ "$CUR" -gt "$BASE" ]; then FOUND=1; break; fi
-done
-echo "SYNC_FOUND=$FOUND"
-curl -sS --max-time 600 'http://127.0.0.1:8123/?{extra_url_settings}' \\
-  --data-binary "ALTER TABLE {db}.rmt COMMENT COLUMN v 'c{i}'"
-echo "ALTER_DONE"
-"""
-        race_out = competing_node.exec_in_container(["bash", "-c", script])
-        logging.info("comment-alter race cycle %s output: %s", i, race_out)
-
-        competing_node.query(f"SYSTEM START REPLICATION QUEUES {db}.rmt")
-        competing_node.query(f"SYSTEM SYNC REPLICA {db}.rmt")
-
-        # If the ADD COLUMN never started applying locally while the comment ALTER
-        # ran, this cycle did not set up the race - retry rather than let a
-        # non-overlapping run silently false-pass.
-        if "SYNC_FOUND=1" not in race_out:
-            logging.info("comment-alter race cycle %s did not synchronize; retrying", i)
-            continue
-        synced_cycles += 1
-
-        present = competing_node.query(
-            f"SELECT count() FROM system.columns "
-            f"WHERE database='{db}' AND table='rmt' AND name='m{i}'"
-        ).strip()
-        if present != "1":
-            # The replica lost the column: the stale comment commit won. Stop here -
-            # any further metadata ALTER would repair the structure and hide the bug.
-            return f"m{i}"
-
-        # A synchronized cycle must complete without a user-visible error: the fix
-        # promises the comment ALTER succeeds even when it overlaps the applied
-        # ALTER_METADATA. Failing here closes the false-pass mode where the race
-        # regresses from "silent clobber" to "always throw under overlap".
-        if "DB::Exception" in race_out or "Code:" in race_out:
-            raise Exception(
-                f"comment-alter race cycle {i} synchronized but the comment-only "
-                f"ALTER returned an error instead of succeeding: {race_out}"
-            )
-
-    if synced_cycles == 0:
-        raise Exception(
-            f"comment-alter race never synchronized in {cycles} cycles "
-            f"(SYNC_FOUND stayed 0): the test could not set up the race window, "
-            f"so a pass here would be meaningless"
-        )
-    return None
-
-
-def test_alter_comment_races_replicated_alter_metadata(started_cluster):
-    # Regression test for the actual mechanism of issue #110036 (no database
-    # recovery involved): the comment-only ALTER must never clobber a concurrently
-    # applied ALTER_METADATA.
-    lost = _drive_comment_alter_race("comment_race")
-    assert lost is None, (
-        f"replica competing lost column {lost} of comment_race.rmt: a comment-only "
-        f"ALTER committed a stale metadata snapshot over a concurrently applied "
-        f"ALTER_METADATA"
-    )
-    main_node.query("DROP DATABASE IF EXISTS comment_race SYNC")
-    competing_node.query("DROP DATABASE IF EXISTS comment_race SYNC")
-
-
-
-def _drive_mixed_alter_race(db, cycles=8, wide_columns=6000, extra_url_settings=""):
-    """Probe the second occurrence of the stale query-scoped metadata-cache read in
-    StorageReplicatedMergeTree::alter (the `current_metadata` read inside the ZK
-    retry loop, src/Storages/StorageReplicatedMergeTree.cpp:6927): a MIXED
-    structural+comment ALTER (which routes to the full replicated-ALTER path and
-    still executes the local comment/settings commit from `*current_metadata`)
-    races a concurrently applied ALTER_METADATA on the same replica.
-
-    Plain ReplicatedMergeTree tables in an Atomic database are used, because
-    Replicated databases reject mixed replicated/non-replicated ALTERs
-    (validateReplicatedDatabaseSegments).
-
-    Interleaving needed for the stale-commit outcome: the mixed ALTER's access
-    check (which pins the query-scoped metadata cache) must run while
-    executeMetadataAlter is already inside its alter-lock critical section, so
-    that the pin reads the pre-ADD-COLUMN structure and lockForAlter is acquired
-    only after the commit. To hit it, an in-container script busy-greps the
-    server log for "Applying changes locally" (logged right after
-    executeMetadataAlter takes the alter lock) and immediately fires the mixed
-    ALTER over HTTP; the wide table keeps executeMetadataAlter under the lock
-    long enough for the pin to land inside the window.
-
-    Returns (lost_column, alter_error, forensics) for the first cycle where the
-    replica lost the concurrently added column, or (None, last_error, None).
-    Raises if a synchronized cycle's mixed ALTER returned an error (the fix
-    promises it succeeds under overlap), or if no cycle ever synchronized.
-    """
-    for node in [main_node, competing_node]:
-        node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
-        node.query(f"CREATE DATABASE {db}")
-
-    wide = ", ".join(f"c{j} String" for j in range(wide_columns))
-    for node, r in [(main_node, "r1"), (competing_node, "r2")]:
-        node.query(
-            f"CREATE TABLE {db}.rmt (n int, v UInt64, {wide}) "
-            f"ENGINE=ReplicatedMergeTree('/clickhouse/tables/{db}/rmt', '{r}') "
-            f"ORDER BY n"
-        )
-
-    last_error = None
-    synced_cycles = 0
-    for i in range(cycles):
-        # Hold back the table queue on competing so the ALTER_METADATA of the next
-        # ADD COLUMN executes at a controlled moment.
-        competing_node.query(f"SYSTEM STOP REPLICATION QUEUES {db}.rmt")
-        main_node.query(f"ALTER TABLE {db}.rmt ADD COLUMN m{i} Int32")
-        for _ in range(60):
-            if (
-                competing_node.query(
-                    f"SELECT count() FROM system.replication_queue "
-                    f"WHERE database='{db}' AND table='rmt' AND type='ALTER_METADATA'"
-                ).strip()
-                != "0"
-            ):
-                break
-            time.sleep(0.1)
-
-        script = f"""
-LOG=/var/log/clickhouse-server/clickhouse-server.log
-PAT='{db}\\.rmt.*Applying changes locally'
-BASE=$(grep -cE "$PAT" $LOG || true)
-curl -sS 'http://127.0.0.1:8123/' --data-binary 'SYSTEM START REPLICATION QUEUES {db}.rmt' > /dev/null
-FOUND=0
-for k in $(seq 1 3000); do
-  CUR=$(grep -cE "$PAT" $LOG || true)
-  if [ "$CUR" -gt "$BASE" ]; then FOUND=1; break; fi
-done
-echo "SYNC_FOUND=$FOUND"
-curl -sS --max-time 600 'http://127.0.0.1:8123/?{extra_url_settings}' \
-  --data-binary "ALTER TABLE {db}.rmt ADD COLUMN x{i} Int32, MODIFY COMMENT 'mix{i}'"
-echo "ALTER_DONE"
-"""
-        race_out = competing_node.exec_in_container(["bash", "-c", script])
-        alter_error = None
-        if "DB::Exception" in race_out or "Code:" in race_out:
-            alter_error = race_out
-            last_error = alter_error
-        logging.info("mixed-alter race cycle %s output: %s", i, race_out)
-
-        competing_node.query(f"SYSTEM START REPLICATION QUEUES {db}.rmt")
-        competing_node.query(f"SYSTEM SYNC REPLICA {db}.rmt")
-
-        # The mixed ALTER must overlap the concurrent ADD COLUMN to exercise the
-        # stale current_metadata window. "Applying changes locally" (SYNC_FOUND=1)
-        # confirms the ADD COLUMN was applied locally while the mixed ALTER ran. If
-        # the poll missed it, this cycle did not set up the race - retry rather than
-        # let a non-overlapping run silently false-pass.
-        if "SYNC_FOUND=1" not in race_out:
-            logging.info("mixed-alter race cycle %s did not synchronize; retrying", i)
-            continue
-        synced_cycles += 1
-
-        present = competing_node.query(
-            f"SELECT count() FROM system.columns "
-            f"WHERE database='{db}' AND table='rmt' AND name='m{i}'"
-        ).strip()
-        if present != "1":
-            # Forensics: persistence of the loss and metadata-version divergence.
-            time.sleep(5)
-            competing_node.query(f"SYSTEM SYNC REPLICA {db}.rmt")
-            still_lost = competing_node.query(
-                f"SELECT count() FROM system.columns "
-                f"WHERE database='{db}' AND table='rmt' AND name='m{i}'"
-            ).strip()
-            on_main = main_node.query(
-                f"SELECT count() FROM system.columns "
-                f"WHERE database='{db}' AND table='rmt' AND name='m{i}'"
-            ).strip()
-            zk_path, replica_path = (
-                competing_node.query(
-                    f"SELECT zookeeper_path, replica_path FROM system.replicas "
-                    f"WHERE database='{db}' AND table='rmt' FORMAT TSV"
-                )
-                .strip()
-                .split("\t")
-            )
-            zk_metadata_version = competing_node.query(
-                f"SELECT version FROM system.zookeeper "
-                f"WHERE path='{zk_path}' AND name='metadata'"
-            ).strip()
-            replica_metadata_version = competing_node.query(
-                f"SELECT value FROM system.zookeeper "
-                f"WHERE path='{replica_path}' AND name='metadata_version'"
-            ).strip()
-            comment_now = competing_node.query(
-                f"SELECT comment FROM system.tables "
-                f"WHERE database='{db}' AND name='rmt'"
-            ).strip()
-            create_q = competing_node.query(f"SHOW CREATE TABLE {db}.rmt")
-            forensics = {
-                "cycle": i,
-                "alter_error": alter_error,
-                "still_lost_after_5s_and_sync": still_lost != "1",
-                "column_present_on_main": on_main == "1",
-                "zk_shared_metadata_stat_version": zk_metadata_version,
-                "replica_persisted_metadata_version": replica_metadata_version,
-                "table_comment_on_competing": comment_now,
-                "create_has_lost_column": f"m{i} " in create_q
-                or f"`m{i}`" in create_q,
-            }
-            logging.info("mixed-alter race fired: %s", forensics)
-            return (f"m{i}", alter_error, forensics)
-
-        # A synchronized cycle must complete without a user-visible error: with the
-        # fix, the mixed ALTER re-reads fresh metadata inside the ZK retry loop and
-        # succeeds even when it overlaps the applied ALTER_METADATA. Failing here
-        # closes the false-pass mode where the race regresses from "silent clobber"
-        # to "always throw under overlap".
-        if alter_error is not None:
-            raise Exception(
-                f"mixed-alter race cycle {i} synchronized but the mixed ALTER "
-                f"returned an error instead of succeeding: {alter_error}"
-            )
-
-    if synced_cycles == 0:
-        raise Exception(
-            f"mixed-alter race never synchronized in {cycles} cycles "
-            f"(SYNC_FOUND stayed 0): the test could not set up the race window, "
-            f"so a pass here would be meaningless"
-        )
-    return (None, last_error, None)
-
-
-
-def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
-    # Probe for the still-unfixed stale `current_metadata` read at
-    # StorageReplicatedMergeTree.cpp:6927 (see _drive_mixed_alter_race). A failure
-    # of this assertion means the bug REPRODUCED: the mixed ALTER committed the
-    # stale cached snapshot locally (dropping the concurrently added column) before
-    # failing the versioned ZooKeeper write.
-    lost, alter_error, forensics = _drive_mixed_alter_race("mixed_race")
-    assert lost is None, (
-        f"replica competing lost column {lost} of mixed_race.rmt via the "
-        f"structural-ALTER path (:6927 stale cache). ALTER error: {alter_error!r}. "
-        f"Forensics: {forensics}"
-    )
-    main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
-    competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")

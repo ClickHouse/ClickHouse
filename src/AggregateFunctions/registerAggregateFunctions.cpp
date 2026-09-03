@@ -21,8 +21,6 @@ void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory &);
-void registerAggregateFunctionGroupFormat(AggregateFunctionFactory &);
-void registerAggregateFunctionMVTEncode(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory &);
@@ -97,12 +95,10 @@ void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & f
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
-void registerAggregateFunctionMergedJSONPatch(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
-void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -116,7 +112,6 @@ void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactor
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
-void registerAggregateFunctionCombinatorTuple(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
@@ -138,8 +133,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionGroupArrayInsertAt(factory);
         registerAggregateFunctionGroupArrayIntersect(factory);
         registerAggregateFunctionGroupConcat(factory);
-        registerAggregateFunctionGroupFormat(factory);
-        registerAggregateFunctionMVTEncode(factory);
         registerAggregateFunctionsQuantile(factory);
         registerAggregateFunctionsQuantileDeterministic(factory);
         registerAggregateFunctionsQuantileExact(factory);
@@ -214,11 +207,9 @@ void registerAggregateFunctions()
         registerAggregateFunctionLargestTriangleThreeBuckets(factory);
         registerAggregateFunctionDistinctDynamicTypes(factory);
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
-        registerAggregateFunctionMergedJSONPatch(factory);
         registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
         registerAggregateFunctionTimeseriesGroupArray(factory);
-        registerAggregateFunctionTimeSeriesTopKMasks(factory);
 
         registerWindowFunctions(factory);
     }
@@ -237,7 +228,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorResample(factory);
         registerAggregateFunctionCombinatorDistinct(factory);
         registerAggregateFunctionCombinatorMap(factory);
-        registerAggregateFunctionCombinatorTuple(factory);
         registerAggregateFunctionCombinatorsArgMinArgMax(factory);
     }
 }

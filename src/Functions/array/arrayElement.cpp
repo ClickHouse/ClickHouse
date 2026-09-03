@@ -1,7 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -15,14 +14,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionLowCardinalityFastPath.h>
 #include <Functions/IFunction.h>
-#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -60,6 +56,7 @@ class FunctionArrayElement : public IFunction
 public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);
     static constexpr auto name = (mode == ArrayElementExceptionMode::Zero) ? "arrayElement" : "arrayElementOrNull";
+    static FunctionPtr create(ContextPtr context_);
 
     String getName() const override;
 
@@ -67,19 +64,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
-    /// Keep the inherited getReturnTypeImpl(ColumnsWithTypeAndName) visible alongside the
-    /// overload declared below; FunctionWithLowCardinalityFastPath calls it by qualified name.
-    using IFunction::getReturnTypeImpl;
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
-
-    /// Fast path hook for FunctionWithLowCardinalityFastPath (see FunctionLowCardinalityFastPath.h):
-    /// element access over Array(LowCardinality(String)) and Map with LowCardinality string keys
-    /// without materializing the dictionary into full columns. Returns nullptr to decline.
-    ColumnPtr tryExecuteLowCardinality(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
 private:
     ColumnPtr perform(
@@ -172,9 +160,6 @@ private:
      *  However, optimizations are possible.
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
-
-    ColumnPtr executeWithArrayIndex(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     using Offsets = ColumnArray::Offsets;
 
@@ -275,7 +260,7 @@ struct ArrayElementNumImpl
 
             if (index < array_size)
             {
-                size_t j = 0;
+                size_t j;
                 if constexpr (negative)
                     j = offsets[i] - index - 1;
                 else
@@ -598,7 +583,7 @@ struct ArrayElementArrayStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - offsets[i - 1];
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
@@ -631,7 +616,7 @@ struct ArrayElementArrayStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - offsets[i - 1];
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
@@ -694,7 +679,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -702,7 +687,7 @@ struct ArrayElementStringImpl
 
             if (index < array_size)
             {
-                size_t adjusted_index = 0;
+                size_t adjusted_index;
                 if constexpr (negative)
                     adjusted_index = array_size - index - 1;
                 else
@@ -756,12 +741,12 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
@@ -883,6 +868,13 @@ struct ArrayElementGenericImpl
 };
 
 }
+
+template <ArrayElementExceptionMode mode>
+FunctionPtr FunctionArrayElement<mode>::create(ContextPtr)
+{
+    return std::make_shared<FunctionArrayElement>();
+}
+
 
 template <ArrayElementExceptionMode mode>
 template <typename DataType>
@@ -1838,20 +1830,49 @@ void FunctionArrayElement<mode>::executeMatchKeyToIndex(
     const Offsets & offsets, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher)
 {
     size_t rows = offsets.size();
+    size_t expected_match_pos = 0;
+    bool matched = false;
+    if (!rows)
+        return;
 
-    /// `m[key]` returns the value of the FIRST occurrence of the key in the row, so each
-    /// row is scanned left to right and the first match is taken (index encoded as
-    /// position + 1, with 0 meaning "not found"). Duplicate keys in a Map are a legal
-    /// (if degenerate) state, so a cross-row position-prediction shortcut is not used: it
-    /// could accept a later duplicate at the predicted offset while an earlier occurrence
-    /// exists, yielding a value that depends on the preceding rows in the block (see issue
-    /// #111203). Ruling out an earlier duplicate still requires scanning from the start,
-    /// so there is no correct constant-time shortcut to prefer over the scan.
-    for (size_t i = 0; i < rows; ++i)
+    /// In practice, map keys are usually in the same order, it is worth a try to
+    /// predict the next key position. So it can avoid a lot of unnecessary comparisons.
+    for (size_t j = offsets[-1], end = offsets[0]; j < end; ++j)
     {
-        const auto & begin = offsets[ssize_t(i) - 1];
+        if (matcher.match(j, 0))
+        {
+            matched_idxs.push_back(j - offsets[-1] + 1);
+            matched = true;
+            expected_match_pos = end + j - offsets[-1];
+            break;
+        }
+    }
+    if (!matched)
+    {
+        expected_match_pos = offsets[0];
+        matched_idxs.push_back(0);
+    }
+    size_t i = 1;
+    for (; i < rows; ++i)
+    {
+        const auto & begin = offsets[i - 1];
         const auto & end = offsets[i];
-        bool matched = false;
+        if (expected_match_pos < end && matcher.match(expected_match_pos, i))
+        {
+            auto map_key_index = expected_match_pos - begin;
+            matched_idxs.push_back(map_key_index + 1);
+            expected_match_pos = end + map_key_index;
+        }
+        else
+            break;
+    }
+
+    // fallback to linear search
+    for (; i < rows; ++i)
+    {
+        matched = false;
+        const auto & begin = offsets[i - 1];
+        const auto & end = offsets[i];
         for (size_t j = begin; j < end; ++j)
         {
             if (matcher.match(j, i))
@@ -1896,56 +1917,17 @@ bool castColumnString(const IColumn * column, F && f)
     return castTypeToEither<ColumnString, ColumnFixedString>(column, std::forward<F>(f));
 }
 
-bool isStringOrFixedStringColumn(const IColumn & column)
-{
-    return typeid_cast<const ColumnString *>(&column) || typeid_cast<const ColumnFixedString *>(&column);
-}
-
 template <ArrayElementExceptionMode mode>
 bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     const IColumn & data, const Offsets & offsets, const Field & index, PaddedPODArray<UInt64> & matched_idxs)
 {
-    if (index.getType() != Field::Types::String)
-        return false;
-
-    /// The dictionary lookup below is defined only for String and FixedString keys. For other
-    /// LowCardinality key types, fall through so that the regular dispatch reports the type error
-    /// instead of silently finding no match.
-    const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&data);
-    if (low_cardinality_data
-        && isStringOrFixedStringColumn(*low_cardinality_data->getDictionary().getNestedNotNullableColumn()))
-    {
-        const auto & requested_key = index.safeGet<String>();
-        auto dictionary_index = low_cardinality_data->getDictionary().getOrFindValueIndex(requested_key);
-        matched_idxs.reserve(offsets.size());
-
-        if (!dictionary_index)
-        {
-            matched_idxs.resize_fill(offsets.size());
-            return true;
-        }
-
-        struct MatcherLowCardinalityStringConst
-        {
-            const ColumnLowCardinality & data;
-            UInt64 dictionary_index;
-
-            bool match(size_t row_data, size_t /* row_index */) const
-            {
-                return data.getIndexAt(row_data) == dictionary_index;
-            }
-        };
-
-        MatcherLowCardinalityStringConst matcher{*low_cardinality_data, *dictionary_index};
-        executeMatchKeyToIndex(offsets, matched_idxs, matcher);
-        return true;
-    }
-
     return castColumnString(
         &data,
         [&](const auto & data_column)
         {
             using DataColumn = std::decay_t<decltype(data_column)>;
+            if (index.getType() != Field::Types::String)
+                return false;
             MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
             executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             return true;
@@ -2069,7 +2051,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 {
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
-    chassert(col_map || col_const_map);
+    assert(col_map || col_const_map);
 
     if (col_const_map)
         col_map = typeid_cast<const ColumnMap *>(&col_const_map->getDataColumn());
@@ -2120,309 +2102,6 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 }
 
 template <ArrayElementExceptionMode mode>
-ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-{
-    const auto * result_array_type = checkAndGetDataType<DataTypeArray>(result_type.get());
-    chassert(result_array_type);
-    const auto & result_element_type = result_array_type->getNestedType();
-
-    const ColumnArray * col_data_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
-    const ColumnArray * col_data_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
-    if (!col_data_array && !col_data_array_const)
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column {} of first argument of function {}",
-            arguments[0].column->getName(),
-            getName());
-
-    const ColumnArray & data_array = col_data_array ? *col_data_array : *col_data_array_const;
-    bool is_data_const = (col_data_array_const != nullptr);
-
-    const ColumnArray * col_index_array = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
-    ColumnPtr materialized_index;
-    if (!col_index_array)
-    {
-        materialized_index = arguments[1].column->convertToFullColumnIfConst();
-        col_index_array = checkAndGetColumn<ColumnArray>(materialized_index.get());
-        if (!col_index_array)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of second argument of function {}",
-                arguments[1].column->getName(),
-                getName());
-    }
-
-    /// The result element type has `LowCardinality` removed, just like for the scalar index,
-    /// so materialize the dictionary before copying elements out of it.
-    ColumnPtr data_column_holder = recursiveRemoveLowCardinality(data_array.getDataPtr());
-    const IColumn & data_col = *data_column_holder;
-    const auto & data_offsets = data_array.getOffsets();
-    const auto & index_offsets = col_index_array->getOffsets();
-
-    /// The index elements may be `LowCardinality` and/or `Nullable`, just like a scalar index.
-    /// A `NULL` index behaves exactly like index `0`: the scalar form returns `NULL` when the
-    /// result can be nullable, and the default value otherwise.
-    ColumnPtr index_column_holder = recursiveRemoveLowCardinality(col_index_array->getDataPtr());
-    const ColumnNullable * nullable_index = checkAndGetColumn<ColumnNullable>(index_column_holder.get());
-    const IColumn & index_data_col = nullable_index ? nullable_index->getNestedColumn() : *index_column_holder;
-    const NullMap * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
-
-    const ColumnNullable * nullable_data = checkAndGetColumn<ColumnNullable>(&data_col);
-    const IColumn & inner_data = nullable_data ? nullable_data->getNestedColumn() : data_col;
-    const NullMap * source_null_map = nullable_data ? &nullable_data->getNullMapData() : nullptr;
-
-    /// For const source, every row uses the same single array (offset 0..data_offsets[0])
-    const size_t const_array_size = is_data_const ? data_offsets[0] : 0;
-
-    bool result_is_nullable = result_element_type->isNullable();
-
-    /// An out-of-range index yields the default value of the element type, which is `NULL` only when
-    /// the element type is nullable on its own -- in `arrayElementOrNull` mode or for a nullable
-    /// source element type. A nullable *index* element type must not turn an out-of-range index into
-    /// `NULL`, exactly like the scalar form: `[10, 20, 30][toNullable(5)]` is `0`, not `NULL`.
-    bool out_of_bounds_is_null = result_is_nullable && (is_null_mode || nullable_data != nullptr);
-
-    size_t total_indices = input_rows_count ? index_offsets[input_rows_count - 1] : 0;
-
-    /// Result offsets are identical to index offsets
-    auto result_offsets_col = ColumnArray::ColumnOffsets::create();
-    auto & result_offsets = result_offsets_col->getData();
-    result_offsets.assign(index_offsets.begin(), index_offsets.begin() + input_rows_count);
-
-    /// Index resolution: converts 1-based/negative index to 0-based offset within the row's array slice.
-    /// Returns array_size (sentinel) for out-of-bounds.
-    auto resolve_index = []<typename IndexType>(IndexType idx, size_t array_size) -> size_t
-    {
-        if constexpr (std::is_signed_v<IndexType>)
-        {
-            if (idx > 0 && static_cast<size_t>(idx) <= array_size)
-                return static_cast<size_t>(idx) - 1;
-            if (idx < 0 && -static_cast<size_t>(idx) <= array_size)
-                return array_size - (-static_cast<size_t>(idx));
-        }
-        else
-        {
-            if (idx > 0 && static_cast<size_t>(idx) <= array_size)
-                return static_cast<size_t>(idx) - 1;
-        }
-        return array_size;
-    };
-
-    /// Try numeric fast paths: direct PODArray access, no virtual calls
-    ColumnPtr fast_result_data;
-    auto try_numeric = [&](const auto * col_numeric) -> bool
-    {
-        if (!col_numeric)
-            return false;
-
-        using ColVecType = std::decay_t<decltype(*col_numeric)>;
-        using DataType = typename ColVecType::ValueType;
-
-        const auto & src_data = col_numeric->getData();
-        typename ColVecType::MutablePtr result_col;
-        if constexpr (is_decimal<DataType>)
-            result_col = ColVecType::create(0, col_numeric->getScale());
-        else
-            result_col = ColVecType::create();
-        auto & result_vec = result_col->getData();
-        result_vec.resize(total_indices);
-
-        NullMap * result_null_map = nullptr;
-        MutableColumnPtr null_map_holder;
-        if (result_is_nullable)
-        {
-            null_map_holder = ColumnUInt8::create(total_indices, UInt8(0));
-            result_null_map = &assert_cast<ColumnUInt8 &>(*null_map_holder).getData();
-        }
-
-        auto fill = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
-        {
-            size_t out = 0;
-            for (size_t row = 0; row < input_rows_count; ++row)
-            {
-                size_t data_start = is_data_const ? 0 : (row > 0 ? data_offsets[row - 1] : 0);
-                size_t array_size = is_data_const ? const_array_size : (data_offsets[row] - data_start);
-                size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
-                size_t idx_end = index_offsets[row];
-
-                for (size_t k = idx_start; k < idx_end; ++k, ++out)
-                {
-                    if (index_null_map && (*index_null_map)[k])
-                    {
-                        result_vec[out] = DataType();
-                        if (result_null_map)
-                            (*result_null_map)[out] = UInt8(1);
-                        continue;
-                    }
-
-                    size_t resolved = resolve_index(indices[k], array_size);
-                    if (resolved < array_size)
-                    {
-                        size_t source_pos = data_start + resolved;
-                        if (source_null_map && (*source_null_map)[source_pos])
-                        {
-                            result_vec[out] = DataType();
-                            if (result_null_map)
-                                (*result_null_map)[out] = UInt8(1);
-                        }
-                        else
-                        {
-                            result_vec[out] = src_data[source_pos];
-                        }
-                    }
-                    else
-                    {
-                        result_vec[out] = DataType();
-                        if (result_null_map && out_of_bounds_is_null)
-                            (*result_null_map)[out] = UInt8(1);
-                    }
-                }
-            }
-        };
-
-        auto dispatch_fill = [&](const auto * idx_col) -> bool
-        {
-            if (!idx_col)
-                return false;
-            fill(idx_col->getData());
-            return true;
-        };
-
-        if (!dispatch_fill(checkAndGetColumn<ColumnVector<UInt8>>(&index_data_col))
-            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt16>>(&index_data_col))
-            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt32>>(&index_data_col))
-            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt64>>(&index_data_col))
-            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int8>>(&index_data_col))
-            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int16>>(&index_data_col))
-            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int32>>(&index_data_col))
-            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int64>>(&index_data_col)))
-            return false;
-
-        if (null_map_holder)
-            fast_result_data = ColumnNullable::create(std::move(result_col), std::move(null_map_holder));
-        else
-            fast_result_data = std::move(result_col);
-        return true;
-    };
-
-    if (try_numeric(checkAndGetColumn<ColumnVector<UInt8>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<UInt16>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<UInt32>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<UInt64>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<UInt128>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<UInt256>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<Int8>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<Int16>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<Int32>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<Int64>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<Int128>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<Int256>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<Float32>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<Float64>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<UUID>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<IPv4>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnVector<IPv6>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal32>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal64>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal128>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal256>>(&inner_data))
-        || try_numeric(checkAndGetColumn<ColumnDecimal<DateTime64>>(&inner_data)))
-    {
-        return ColumnArray::create(fast_result_data, std::move(result_offsets_col));
-    }
-
-    /// Generic fallback path using insertFrom (handles String, Array, Tuple, etc.)
-    auto result_nested_col = removeNullable(result_element_type)->createColumn();
-    result_nested_col->reserve(total_indices);
-
-    NullMap * result_null_map = nullptr;
-    MutableColumnPtr null_map_holder;
-    if (result_is_nullable)
-    {
-        null_map_holder = ColumnUInt8::create(total_indices, UInt8(0));
-        result_null_map = &assert_cast<ColumnUInt8 &>(*null_map_holder).getData();
-    }
-
-    auto generic_process = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
-    {
-        size_t out = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            size_t data_start = is_data_const ? 0 : (row > 0 ? data_offsets[row - 1] : 0);
-            size_t array_size = is_data_const ? const_array_size : (data_offsets[row] - data_start);
-            size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
-            size_t idx_end = index_offsets[row];
-
-            for (size_t k = idx_start; k < idx_end; ++k, ++out)
-            {
-                if (index_null_map && (*index_null_map)[k])
-                {
-                    result_nested_col->insertDefault();
-                    if (result_null_map)
-                        (*result_null_map)[out] = UInt8(1);
-                    continue;
-                }
-
-                size_t resolved = resolve_index(indices[k], array_size);
-                if (resolved < array_size)
-                {
-                    size_t source_pos = data_start + resolved;
-                    if (source_null_map && (*source_null_map)[source_pos])
-                    {
-                        result_nested_col->insertDefault();
-                        if (result_null_map)
-                            (*result_null_map)[out] = UInt8(1);
-                    }
-                    else
-                    {
-                        result_nested_col->insertFrom(inner_data, source_pos);
-                    }
-                }
-                else
-                {
-                    result_nested_col->insertDefault();
-                    if (result_null_map && out_of_bounds_is_null)
-                        (*result_null_map)[out] = UInt8(1);
-                }
-            }
-        }
-    };
-
-    auto try_dispatch_generic = [&](const auto * col) -> bool
-    {
-        if (!col)
-            return false;
-        generic_process(col->getData());
-        return true;
-    };
-
-    if (!try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt8>>(&index_data_col))
-        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt16>>(&index_data_col))
-        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt32>>(&index_data_col))
-        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt64>>(&index_data_col))
-        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int8>>(&index_data_col))
-        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int16>>(&index_data_col))
-        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int32>>(&index_data_col))
-        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int64>>(&index_data_col)))
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column {} of second argument of function {}",
-            arguments[1].column->getName(),
-            getName());
-    }
-
-    ColumnPtr result_data;
-    if (null_map_holder)
-        result_data = ColumnNullable::create(std::move(result_nested_col), std::move(null_map_holder));
-    else
-        result_data = std::move(result_nested_col);
-
-    return ColumnArray::create(result_data, std::move(result_offsets_col));
-}
-
-template <ArrayElementExceptionMode mode>
 String FunctionArrayElement<mode>::getName() const
 {
     return name;
@@ -2433,7 +2112,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 {
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
     {
-        auto value_type = recursiveRemoveLowCardinality(map_type->getValueType());
+        auto value_type = map_type->getValueType();
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
@@ -2447,104 +2126,17 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[0]->getName());
     }
 
-    if (const auto * index_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
-    {
-        auto index_element_type = recursiveRemoveLowCardinality(index_array_type->getNestedType());
-        bool index_element_is_nullable = index_element_type->isNullable();
-        if (!isNativeInteger(removeNullable(index_element_type)))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function '{}' must be integer or array of integers, got '{}' instead",
-                getName(),
-                arguments[1]->getName());
-        }
-
-        /// `arr[indexes]` is equivalent to `arrayMap(i -> arr[i], indexes)`, so an element of the
-        /// result has exactly the type the scalar form returns for the same array. In particular,
-        /// a `NULL` index makes the scalar form return `NULL`, so a nullable index element type
-        /// makes the result element type nullable as well.
-        auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
-        if ((is_null_mode || index_element_is_nullable) && nested_type->canBeInsideNullable())
-            nested_type = makeNullable(nested_type);
-        return std::make_shared<DataTypeArray>(nested_type);
-    }
-
-    auto index_type = removeNullable(removeLowCardinality(arguments[1]));
-    if (!isNativeInteger(index_type))
+    if (!isNativeInteger(arguments[1]))
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Second argument for function '{}' must be integer or array of integers, got '{}' instead",
+            "Second argument for function '{}' must be integer, got '{}' instead",
             getName(),
             arguments[1]->getName());
     }
 
-    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
+    auto nested_type = array_type->getNestedType();
     return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
-}
-
-template <ArrayElementExceptionMode mode>
-ColumnPtr FunctionArrayElement<mode>::tryExecuteLowCardinality(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-{
-    if (arguments.size() != 2 || !isColumnConst(*arguments[1].column))
-        return nullptr;
-
-    /// An array of indexes is handled by `executeWithArrayIndex`, which produces an array result
-    /// this path does not know how to build.
-    if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
-        return nullptr;
-
-    /// Nullable and LowCardinality(Nullable) arguments make the result type Nullable,
-    /// which this path does not produce. Leave them to the default implementations.
-    for (const auto & argument : arguments)
-        if (isNullableOrLowCardinalityNullable(argument.type))
-            return nullptr;
-
-    Field index = (*arguments[1].column)[0];
-    if ((index.getType() == Field::Types::UInt64 && index.safeGet<UInt64>() == 0)
-        || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() == 0))
-        return nullptr;
-
-    /// Only optimize arrayElement here. arrayElementOrNull would need to build the null map
-    /// for out-of-bounds rows, which is a separate path from the measured materialization hot spot.
-    if constexpr (!is_null_mode)
-    {
-        if (const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
-        {
-            const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&col_array->getData());
-            const auto & array_type = assert_cast<const DataTypeArray &>(*arguments[0].type);
-            if (low_cardinality_data
-                && isStringOrFixedString(removeLowCardinality(array_type.getNestedType()))
-                && (index.getType() == Field::Types::UInt64 || index.getType() == Field::Types::Int64))
-                return LowCardinalityExecutionHelpers::LowCardinalityArrayView{
-                    .elements = *low_cardinality_data,
-                    .offsets = col_array->getOffsets(),
-                    .rows = input_rows_count,
-                }.arrayElementConst(index, *result_type);
-        }
-    }
-
-    const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
-    if (!col_map)
-        return nullptr;
-
-    const auto & map_column = *col_map;
-    if (!typeid_cast<const ColumnLowCardinality *>(&map_column.getNestedData().getColumn(0)))
-        return nullptr;
-
-    /// The string key lookup below is defined only for String and FixedString keys. For other
-    /// LowCardinality key types, leave the arguments to the default implementations so that the
-    /// regular dispatch reports the type error, exactly as without the specialized path.
-    const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
-    if (!isStringOrFixedString(removeLowCardinality(map_type.getKeyType())))
-        return nullptr;
-
-    if (index.getType() != Field::Types::String)
-        return nullptr;
-
-    return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count));
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2556,10 +2148,6 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     if (col_map || col_const_map)
         return executeMap(arguments, result_type, input_rows_count);
-
-    /// Array-of-indices mode: arr1[arr2] where arr2 is Array(Int*)
-    if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
-        return executeWithArrayIndex(arguments, result_type, input_rows_count);
 
     /// Check nullability.
     bool is_array_of_nullable = false;
@@ -2744,13 +2332,6 @@ Gets the element of the provided array with index `n` where `n` can be any integ
 If the index falls outside of the bounds of an array, it returns a default value (0 for numbers, an empty string for strings, etc.),
 except for arguments of a non-constant array and a constant index 0. In this case there will be an error `Array indices are 1-based`.
 
-When `n` is an array of integers, returns an array of the elements at the specified positions (a gather operation).
-This is equivalent to `arrayMap(i -> arr[i], n)`, but has a separate, more efficient implementation.
-Out-of-bounds positions produce the default value, the same as for a scalar index.
-The index elements may be nullable. A `NULL` index produces `NULL` (and makes the result element type nullable) when the element type can be
-wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), a `NULL` index produces the
-default value instead. This is the same behavior as for a scalar `NULL` index.
-
 :::note
 Arrays in ClickHouse are one-indexed.
 :::
@@ -2761,32 +2342,25 @@ Operator `[n]` provides the same functionality.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array)."},
-        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array)."}
+        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Any", "Array(T)", "Array(Nullable(T))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
         {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"},
-        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"},
-        {"Array of indices", "SELECT [10, 20, 30, 40][[2, 4, 1]]", "[20,40,10]"}
+        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Zero>>>(documentation);
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(documentation);
 
     FunctionDocumentation::Description description_null = R"(
 Gets the element of the provided array with index `n` where `n` can be any integer type.
-If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value,
-as long as the result type can be nullable. For element types that are not already nullable and cannot be
-put inside `Nullable` (such as `Array`, `Map`), the default value of the element type is returned instead.
-
-When `n` is an array of integers, returns an array of the elements at the specified positions.
-This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
-Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array, following the same rule as for a scalar index.
+If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
 
 :::note
 Arrays in ClickHouse are one-indexed.
@@ -2794,22 +2368,20 @@ Arrays in ClickHouse are one-indexed.
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 )";
-    FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arr, n)";
+    FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arrays)";
     FunctionDocumentation::Arguments arguments_null = {
-        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array)."},
-        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array)."}
+        {"arrays", "Arbitrary number of array arguments.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Any", "Nullable(T)", "Array(T)", "Array(Nullable(T))"}};
+    FunctionDocumentation::ReturnedValue returned_value_null = {"Returns a single combined array from the provided array arguments.", {"Array(T)"}};
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"},
-        {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"}
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
-    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Null>>>(documentation_null);
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation_null);
 }
 }
