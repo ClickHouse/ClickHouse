@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -77,6 +78,11 @@ DataLakeStorageSettings DataLakeStorageSettings::deserialize(ReadBuffer & in)
 void DataLakeStorageSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
 {
     fillEngineSettingsColumnsFromImpl<DataLakeStorageSettingsImpl>(params);
+}
+
+TableSettings DataLakeStorageSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
 }
 
 }
