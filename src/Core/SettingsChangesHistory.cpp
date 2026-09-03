@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
+            {"allow_experimental_alter_modify_engine", false, false, "New experimental setting to allow `ALTER TABLE ... MODIFY ENGINE` to change a MergeTree-family table's engine in place."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -166,7 +167,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_compatibility_multiple_joins_qualify_column_names", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"},
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
-            {"allow_experimental_alter_modify_engine", false, false, "New experimental setting to allow `ALTER TABLE ... MODIFY ENGINE` to change a MergeTree-family table's engine in place."},
             {"optimize_trivial_view_pushdown_to_distributed", false, true, "New setting to push the full outer query to shards for trivial views over Distributed tables."},
             {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
