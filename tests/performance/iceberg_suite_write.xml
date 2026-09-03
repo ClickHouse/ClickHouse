@@ -1,0 +1,79 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
+<!-- Scale factor: 10 -->
+<test profile_all_queries="1" run_all_queries="1">
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <mutations_sync>2</mutations_sync>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+    </settings>
+
+    <!-- WRITE suite: one lineitem-shaped IcebergLocal table fed from tpch10; run_all_queries runs the stages in file order as a deterministic pipeline both servers walk in lockstep, keeping the comparison of modifying queries fair. -->
+
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values>
+                <value>iceberg_suite_write</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE DATABASE IF NOT EXISTS {database}</create_query>
+    <create_query>DROP TABLE IF EXISTS {database}.lineitem</create_query>
+
+    <!-- Measures are Float64 and fixed text is String because Iceberg::getIcebergType maps neither Decimal nor FixedString. -->
+    <create_query>
+        CREATE TABLE {database}.lineitem
+        (
+            l_orderkey Int32, l_partkey Int32, l_suppkey Int32, l_linenumber Int32,
+            l_quantity Float64, l_extendedprice Float64, l_discount Float64, l_tax Float64,
+            l_returnflag String, l_linestatus String,
+            l_shipdate Date, l_commitdate Date, l_receiptdate Date,
+            l_shipinstruct String, l_shipmode String, l_comment String
+        )
+        ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_write_lineitem_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')
+    </create_query>
+
+    <!-- insert_large: a 100K-row lineitem SF10 prefix as one ordered stream/block/commit (max_threads=1 pins the row set), so per-run cost is dominated by Parquet encoding not metadata. -->
+    <query>
+        INSERT INTO {database}.lineitem SELECT * FROM tpch10.lineitem LIMIT 100000
+        SETTINGS max_threads = 1, max_insert_threads = 1,
+                 min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0
+    </query>
+
+    <!-- insert_small_commits: 10 tiny commits/run (payload comparable to per-commit metadata) that deepen the shared snapshot history by 10 each run; lives in an external .sql so perf.py times the batch as one profiled unit with {database} substitution and the test's settings. -->
+    <query file="write_small_commits.sql"/>
+
+    <!-- optimize_table: runs while the history is still append-only (compaction's tryGetAppendUpdate throws on the UPDATE stages' overwrite snapshots); with no position deletes nothing is rewritten, so it measures the planning pass over every manifest of every snapshot. -->
+    <query>OPTIMIZE TABLE {database}.lineitem SETTINGS allow_experimental_iceberg_compaction = 1</query>
+
+    <!-- update_no_match: mutation planning over every data file, predicate pruned by column stats so nothing is scanned/rewritten and state stays stable; zero-match mutations commit no snapshot. -->
+    <query>ALTER TABLE {database}.lineitem UPDATE l_quantity = l_quantity + 1 WHERE l_partkey &lt; 0</query>
+
+    <!-- update_every_file: l_partkey % 10 hits every data file so the mutation scans all and rewrites matches; later runs pay the full history replay over prior overwrite snapshots - the steady state measured. -->
+    <query>ALTER TABLE {database}.lineitem UPDATE l_quantity = l_quantity + 1 WHERE l_partkey % 10 = 0</query>
+
+    <!-- modify_column: pure metadata schema commit (no snapshot); first run does the real Int32 -> Int64 promotion, later runs re-commit the same type via the identical read-generate-write path. -->
+    <query>ALTER TABLE {database}.lineitem MODIFY COLUMN l_suppkey Int64</query>
+
+    <!-- read_after_type_promotion: read casts the still-Int32 pre-promotion files after modify_column set the schema to Int64. -->
+    <query>SELECT count(), sum(l_suppkey) FROM {database}.lineitem</query>
+
+    <!-- delete_position_deletes: row-level DELETE writing Iceberg position delete files; placed after optimize_table, whose compaction needs an append-only history. -->
+    <query>ALTER TABLE {database}.lineitem DELETE WHERE l_orderkey % 7 = 0</query>
+
+    <!-- mor_read_position_deletes_roaring: full scan applying the position deletes above via the roaring-bitmap merge-on-read path. -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.lineitem SETTINGS use_roaring_bitmap_iceberg_positional_deletes = 1</query>
+
+    <!-- optimize_manifests: tolerates the mutation snapshots; first run consolidates the accumulated manifests, later runs measure the manifest-list read + the early-returning threshold check. -->
+    <query>
+        OPTIMIZE TABLE {database}.lineitem MANIFEST
+        SETTINGS allow_experimental_iceberg_compaction = 1, iceberg_manifest_min_count_to_compact = 8
+    </query>
+
+    <!-- deep_history_scan: cache-off full scan over the pipeline's accumulated snapshot history, measuring manifest-list/manifest read planning. -->
+    <query>SELECT count(), sum(l_quantity) FROM {database}.lineitem SETTINGS use_iceberg_metadata_files_cache = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS {database}.lineitem</drop_query>
+</test>
