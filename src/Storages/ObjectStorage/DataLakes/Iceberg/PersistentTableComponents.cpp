@@ -38,8 +38,21 @@ void PersistentTableComponents::checkMetadataBelongsToValidatedTable(
     const auto validated_uuid = trusted_table_uuid->getForPinnedIncarnation(validated_incarnation);
     checkTableWasNotReplaced(validated_incarnation, operation);
 
-    if (!validated_uuid.has_value() || !metadata_object->has(f_table_uuid))
+    if (!validated_uuid.has_value())
         return;
+
+    /// `table-uuid` is required from `format-version` 2 on, and a table never loses the one it
+    /// carried, so a file at this path that carries none is not the table that was validated. Fail
+    /// closed: treating it as "nothing to compare" would let a `format-version` 1 replacement of a
+    /// validated table through untouched.
+    if (!metadata_object->has(f_table_uuid))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The Iceberg table at {} was replaced while {} was running: the metadata now in storage carries no `table-uuid`, "
+            "while the statement was validated against table {}. Retry the statement.",
+            table_path,
+            operation,
+            *validated_uuid);
 
     const auto metadata_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
     if (metadata_uuid != *validated_uuid)
