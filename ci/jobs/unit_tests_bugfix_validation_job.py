@@ -724,6 +724,8 @@ def main():
                 )
             ],
             "Skipped: not a bugfix PR.",
+            # A job digest hashes files and submodule revisions, never the PR's labels.
+            do_not_cache=True,
         )
         return
 
