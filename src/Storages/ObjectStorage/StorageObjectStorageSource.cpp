@@ -809,7 +809,7 @@ Chunk StorageObjectStorageSource::generate()
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (dynamic_cast<const DeltaLakeMetadata *>(configuration->getExternalMetadata()))
+                if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
                 {
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.

@@ -424,7 +424,7 @@ if __name__ == "__main__":
             gen_report_res.files.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
             _html_files, _html_assets = collect_html_report_files("llvm_coverage_html_report")
             gen_report_res.files.extend(_html_files)
-            gen_report_res.assets.extend(_html_assets)
+            gen_report_res.set_assets(_html_assets)
     else:
         gen_report_res = Result.create_from(
             name="Generate LLVM Coverage Report",
@@ -539,7 +539,7 @@ if __name__ == "__main__":
                 "llvm_coverage_diff_html_report", entry_point="index_diff.html"
             )
             diff_res.files.extend(_diff_files)
-            diff_res.assets.extend(_diff_assets)
+            diff_res.set_assets(_diff_assets)
         else:
             _diff_msg = diff_report_message(_diff_outcome)
             print(_diff_msg)
