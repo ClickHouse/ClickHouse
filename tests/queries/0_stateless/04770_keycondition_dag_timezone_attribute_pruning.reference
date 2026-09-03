@@ -36,6 +36,8 @@ control_nullable_key_row_matches	1
 control_nullable_key_element_carries_key_timezone	1
 control_nullable_key_other_instant	0
 control_nullable_key_pruning_used	1
+control_custom_composite_pruning_used	1
+control_custom_composite_count	1
 oracle_array	1
 partition_array	1
 oracle_array_dt64	1

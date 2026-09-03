@@ -70,6 +70,7 @@ DROP TABLE IF EXISTS k_nul_key_dt64;
 DROP TABLE IF EXISTS k_lc_key;
 DROP TABLE IF EXISTS k_arr_nul_key;
 DROP TABLE IF EXISTS k_nul_prune;
+DROP TABLE IF EXISTS k_point;
 
 -- The oracle: identical data and predicate, no key transform to get wrong.
 CREATE TABLE oracle_utc (ts DateTime('UTC')) ENGINE = Memory;
@@ -231,6 +232,17 @@ INSERT INTO k_nul_prune SELECT toDateTime(1675195200, 'UTC') + number * 3600 FRO
 SELECT 'control_nullable_key_pruning_used',
        countIf(explain LIKE '%Granules:%') > 0 AND countIf(explain LIKE '%Granules: 16/16%') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_nul_prune WHERE ts = toDateTime(1675195200 + 5 * 3600));
+
+-- A key column whose type is a custom name over a composite must keep that name through the relabel.
+-- `Point` is a named `Tuple` and `wkb` selects its implementation from the type name, so handing the
+-- transform a plain `Tuple` makes it throw and the atom is declined. The count stays right either way,
+-- which is why this row asserts the plan: without the name it reads `Condition: true` over all granules.
+CREATE TABLE k_point (p Point) ENGINE = MergeTree ORDER BY wkb(p) SETTINGS index_granularity = 1;
+INSERT INTO k_point SELECT (number, number) FROM numbers(16);
+SELECT 'control_custom_composite_pruning_used',
+       countIf(explain LIKE '%Granules:%') > 0 AND countIf(explain LIKE '%Granules: 16/16%') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM k_point WHERE p = (5., 5.)::Point);
+SELECT 'control_custom_composite_count', count() FROM k_point WHERE p = (5., 5.)::Point;
 
 -- Carriers 21-28: the same defect at arbitrary wrapper depth. `Array`, `Map`, `Tuple` and
 -- `LowCardinality` all delegate `equals` to their children, so a nested timezone is exactly as
@@ -533,3 +545,4 @@ DROP TABLE k_nul_key_dt64;
 DROP TABLE k_lc_key;
 DROP TABLE k_arr_nul_key;
 DROP TABLE k_nul_prune;
+DROP TABLE k_point;

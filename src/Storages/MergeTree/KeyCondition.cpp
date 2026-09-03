@@ -2145,6 +2145,8 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
     if (dag_which.isNullable() && !elem_which.isNullable())
         return adoptDateTimeLeafTimezones(elem_type, removeNullable(dag_type));
 
+    /// Adopting is unconditional here: two `DateTime` types can both report the bare name `DateTime` and
+    /// still have captured different zones, so the name cannot say whether the leaf needs to move.
     if (elem_which.isDateTimeOrDateTime64())
         return dag_type->equals(*elem_type) ? dag_type : nullptr;
 
@@ -2154,19 +2156,25 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
         return nullptr;
 
     /// Recurse through the types that delegate `equals` to their children, so a timezone one or more
-    /// wrappers down is just as invisible as a bare one.
+    /// wrappers down is just as invisible as a bare one. Rebuilding a composite drops its type
+    /// customizations (`Point` is a named `Tuple`) and a transform may pick its implementation by type
+    /// name, so each branch returns `elem_type` untouched unless a leaf timezone actually moved.
     if (elem_which.isNullable())
     {
-        auto nested = adoptDateTimeLeafTimezones(
-            removeNullable(elem_type), removeNullable(dag_type));
-        return nested ? makeNullable(nested) : nullptr;
+        const DataTypePtr elem_nested = removeNullable(elem_type);
+        auto nested = adoptDateTimeLeafTimezones(elem_nested, removeNullable(dag_type));
+        if (!nested)
+            return nullptr;
+        return nested.get() == elem_nested.get() ? elem_type : makeNullable(nested);
     }
 
     if (elem_which.isLowCardinality())
     {
-        auto nested = adoptDateTimeLeafTimezones(
-            removeLowCardinality(elem_type), removeLowCardinality(dag_type));
-        return nested ? std::make_shared<DataTypeLowCardinality>(nested) : nullptr;
+        const DataTypePtr elem_nested = removeLowCardinality(elem_type);
+        auto nested = adoptDateTimeLeafTimezones(elem_nested, removeLowCardinality(dag_type));
+        if (!nested)
+            return nullptr;
+        return nested.get() == elem_nested.get() ? elem_type : std::make_shared<DataTypeLowCardinality>(nested);
     }
 
     if (elem_which.isArray())
@@ -2174,9 +2182,11 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
         const auto * dag_array = typeid_cast<const DataTypeArray *>(dag_type.get());
         if (!dag_array)
             return nullptr;
-        auto nested = adoptDateTimeLeafTimezones(
-            assert_cast<const DataTypeArray &>(*elem_type).getNestedType(), dag_array->getNestedType());
-        return nested ? std::make_shared<DataTypeArray>(nested) : nullptr;
+        const DataTypePtr elem_nested = assert_cast<const DataTypeArray &>(*elem_type).getNestedType();
+        auto nested = adoptDateTimeLeafTimezones(elem_nested, dag_array->getNestedType());
+        if (!nested)
+            return nullptr;
+        return nested.get() == elem_nested.get() ? elem_type : std::make_shared<DataTypeArray>(nested);
     }
 
     if (elem_which.isMap())
@@ -2187,7 +2197,11 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
         const auto & elem_map = assert_cast<const DataTypeMap &>(*elem_type);
         auto key = adoptDateTimeLeafTimezones(elem_map.getKeyType(), dag_map->getKeyType());
         auto value = adoptDateTimeLeafTimezones(elem_map.getValueType(), dag_map->getValueType());
-        return (key && value) ? std::make_shared<DataTypeMap>(key, value) : nullptr;
+        if (!key || !value)
+            return nullptr;
+        if (key.get() == elem_map.getKeyType().get() && value.get() == elem_map.getValueType().get())
+            return elem_type;
+        return std::make_shared<DataTypeMap>(key, value);
     }
 
     if (elem_which.isTuple())
@@ -2198,13 +2212,17 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
             return nullptr;
         DataTypes elems;
         elems.reserve(elem_tuple.getElements().size());
+        bool moved = false;
         for (size_t i = 0; i < elem_tuple.getElements().size(); ++i)
         {
             auto nested = adoptDateTimeLeafTimezones(elem_tuple.getElements()[i], dag_tuple->getElements()[i]);
             if (!nested)
                 return nullptr;
+            moved |= nested.get() != elem_tuple.getElements()[i].get();
             elems.push_back(std::move(nested));
         }
+        if (!moved)
+            return elem_type;
         if (elem_tuple.hasExplicitNames())
             return std::make_shared<DataTypeTuple>(elems, elem_tuple.getElementNames());
         return std::make_shared<DataTypeTuple>(elems);
