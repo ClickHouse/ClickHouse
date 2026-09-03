@@ -38,5 +38,39 @@ SELECT indexOf(materialize([toUInt64(1), toUInt64(2), toUInt64(3)]), 2);
 SELECT has(materialize([nan]), nan), has([nan], nan);
 SELECT id FROM t_array_index_accurate WHERE has(arr, toUInt64(5)) ORDER BY id;
 
+SELECT 'LowCardinality dictionary path';
+-- The dictionary fast path resolves the constant needle with a plain narrowing cast, so it has to
+-- answer from a dictionary entry only when the constant survived that cast.
+SET allow_suspicious_low_cardinality_types = 1;
+DROP TABLE IF EXISTS t_array_index_accurate_lc;
+CREATE TABLE t_array_index_accurate_lc
+(
+    id UInt8,
+    a8 Array(LowCardinality(UInt8)),
+    a64 Array(LowCardinality(UInt64)),
+    af32 Array(LowCardinality(Float32))
+)
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_array_index_accurate_lc VALUES (1, [255], [18446744073709551615], [16777216]), (2, [5], [5], [5]);
+SELECT id FROM t_array_index_accurate_lc WHERE has(a8, -1) ORDER BY id;
+SELECT id FROM t_array_index_accurate_lc WHERE has(a64, -1) ORDER BY id;
+SELECT id FROM t_array_index_accurate_lc WHERE has(af32, 16777217) ORDER BY id;
+SELECT id FROM t_array_index_accurate_lc WHERE indexOf(a8, -1) > 0 ORDER BY id;
+SELECT sum(countEqual(a8, -1)) FROM t_array_index_accurate_lc;
+SELECT id FROM t_array_index_accurate_lc WHERE arrayExists(x -> x = -1, a8) ORDER BY id;
+SELECT id FROM t_array_index_accurate_lc WHERE arrayExists(x -> x = -1, a8) ORDER BY id SETTINGS optimize_rewrite_array_exists_to_has = 0;
+
+SELECT 'LowCardinality matching pairs still match';
+SELECT id FROM t_array_index_accurate_lc WHERE has(a8, 5) ORDER BY id;
+SELECT id FROM t_array_index_accurate_lc WHERE has(a8, toInt32(255)) ORDER BY id;
+SELECT id FROM t_array_index_accurate_lc WHERE has(a64, 5) ORDER BY id;
+SELECT id FROM t_array_index_accurate_lc WHERE has(af32, 5) ORDER BY id;
+SELECT id, indexOf(a8, 255), countEqual(a64, 18446744073709551615) FROM t_array_index_accurate_lc ORDER BY id;
+
+SELECT 'LowCardinality strings keep their padding semantics';
+SELECT has(materialize(CAST(['ab'], 'Array(LowCardinality(FixedString(3)))')), 'ab');
+SELECT has(materialize(CAST(['ab'], 'Array(LowCardinality(String))')), 'ab');
+
 DROP TABLE t_array_index_accurate;
 DROP TABLE t_array_index_accurate_float;
+DROP TABLE t_array_index_accurate_lc;
