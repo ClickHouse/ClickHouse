@@ -1010,7 +1010,7 @@ ALTER DATABASE db MODIFY SETTING max_tables = 200;
 
 Lowering the limit below the current number of tables does not drop any tables. It only prevents new ones from being created until the count drops below the limit again.
 
-`CREATE OR REPLACE TABLE` briefly creates the replacement under a temporary name before swapping it in, so replacing a table while the database is exactly at `max_tables` fails with `TOO_MANY_TABLES` even though the final table count would not grow. Moving a table into the database with `RENAME TABLE` is also subject to the limit.
+`CREATE OR REPLACE TABLE` briefly creates the replacement under a temporary name before swapping it in, so replacing a table while the database is exactly at `max_tables` fails with `TOO_MANY_TABLES` even though the final table count would not grow. Moving an object into the database with `RENAME TABLE` or `RENAME DICTIONARY` is also subject to the limit.
 
 A materialized view created without a `TO` clause has a hidden inner table that counts toward the limit as a table of its own.
 

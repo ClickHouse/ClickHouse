@@ -223,7 +223,7 @@ size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnes
 
     if (create.is_time_series_table)
     {
-        for (auto target_kind : StorageTimeSeries::getAllTargetKinds())
+        for (auto target_kind : StorageTimeSeries::getTargetKinds())
         {
             /// The recent samples target exists only if the create query has a `RECENT SAMPLES` clause.
             if ((target_kind == ViewTarget::RecentSamples) && (!create.targets || !create.targets->tryGetTarget(target_kind)))
