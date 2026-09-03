@@ -5,6 +5,14 @@ pv in a nested subquery: ACCESS_DENIED
 pv joined inside a subquery: ACCESS_DENIED
 -- Over-denial control: the same statements without the view stay allowed
 granted table in a subquery: OK
+-- Column grant on the parameterized view: the granted column is allowed in every shape, the rest denied
+granted column, pv as the table expression: OK
+granted column, pv in a FROM subquery: OK
+granted column, real SELECT: OK
+ungranted column, pv as the table expression: ACCESS_DENIED
+ungranted column, pv in a FROM subquery: ACCESS_DENIED
+ungranted column, real SELECT: ACCESS_DENIED
+all columns, pv in a FROM subquery: ACCESS_DENIED
 -- With SELECT on the parameterized view everything is allowed
 pv in a FROM subquery: OK
 pv as the table expression: OK

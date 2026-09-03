@@ -54,6 +54,20 @@ run "pv joined inside a subquery"  "CREATE VIEW ${db}.leak4 AS SELECT * FROM (SE
 echo "-- Over-denial control: the same statements without the view stay allowed"
 run "granted table in a subquery"  "CREATE VIEW ${db}.ok1 AS SELECT * FROM (SELECT * FROM ${db}.plain)"
 
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(y) ON ${db}.pv TO ${user}"
+
+# The top-level table-expression path checks the parameterized view with the selected columns, so a
+# column-level grant is enough to read that column; the subquery path must honour it the same way
+# instead of demanding the whole view, and must keep denying the columns that are not granted.
+echo "-- Column grant on the parameterized view: the granted column is allowed in every shape, the rest denied"
+run "granted column, pv as the table expression"   "CREATE VIEW ${db}.col1 AS SELECT y FROM ${db}.pv(n = 1)"
+run "granted column, pv in a FROM subquery"        "CREATE VIEW ${db}.col2 AS SELECT * FROM (SELECT y FROM ${db}.pv(n = 1))"
+run "granted column, real SELECT"                  "SELECT y FROM (SELECT y FROM ${db}.pv(n = 1))"
+run "ungranted column, pv as the table expression" "CREATE VIEW ${db}.col3 AS SELECT z FROM ${db}.pv(n = 1)"
+run "ungranted column, pv in a FROM subquery"      "CREATE VIEW ${db}.col4 AS SELECT * FROM (SELECT z FROM ${db}.pv(n = 1))"
+run "ungranted column, real SELECT"                "SELECT z FROM (SELECT z FROM ${db}.pv(n = 1))"
+run "all columns, pv in a FROM subquery"           "CREATE VIEW ${db}.col5 AS SELECT * FROM (SELECT * FROM ${db}.pv(n = 1))"
+
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${db}.pv TO ${user}"
 
 echo "-- With SELECT on the parameterized view everything is allowed"
@@ -62,6 +76,7 @@ run "pv as the table expression"   "CREATE VIEW ${db}.ok3 AS SELECT * FROM ${db}
 
 ${CLICKHOUSE_CLIENT} --query "
 DROP VIEW IF EXISTS ${db}.leak1, ${db}.leak2, ${db}.leak3, ${db}.leak4, ${db}.ok1, ${db}.ok2, ${db}.ok3;
+DROP VIEW IF EXISTS ${db}.col1, ${db}.col2, ${db}.col3, ${db}.col4, ${db}.col5;
 DROP VIEW ${db}.pv;
 DROP TABLE ${db}.base;
 DROP TABLE ${db}.plain;
