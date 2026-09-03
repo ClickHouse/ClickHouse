@@ -1657,8 +1657,9 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
     return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
 }
 
-/// `date_time_as_numbers` is set while descending into a named `Variant` member, where the member's own
-/// type name is asserted on the receiving side and the value must re-parse into exactly that type.
+/// `date_time_as_numbers` renders a `DateTime` leaf as its raw Unix timestamp named by its own type. It is
+/// set by a consumer that re-applies the constant's declared type, and while descending into a named
+/// `Variant` member, whose own type name is asserted on the receiving side.
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
     /// Subtrees the default literal path already serializes exactly are left unchanged.
@@ -1697,7 +1698,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             return makeASTFunction(
                 "_CAST", makeExactDecimalCarrierAST((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
         case TypeIndex::DateTime:
-            /// Under a named `Variant` member the raw Unix timestamp is used instead of the text form.
+            /// The timestamp is named by its own type here, so the value is exact with no enclosing cast.
             if (date_time_as_numbers)
                 return makeASTFunction(
                     "_CAST", make_intrusive<ASTLiteral>((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
@@ -1820,9 +1821,10 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
 
 }
 
-ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type)
+ASTPtr columnConstantToExactLiteralAST(
+    const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
-    return columnConstantToExactLiteralASTImpl(column, row, type, /*date_time_as_numbers=*/false);
+    return columnConstantToExactLiteralASTImpl(column, row, type, date_time_as_numbers);
 }
 
 ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name)

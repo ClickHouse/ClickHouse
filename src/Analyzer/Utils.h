@@ -260,7 +260,11 @@ bool typeNeedsExactLiteralSerialization(const IDataType & type);
 /// leaf is reached through `Nullable`, `Array`, `Tuple`, `Map`, `Variant`, `Dynamic` and `Object`; under any
 /// other wrapper (notably `LowCardinality`) it keeps the plain literal form. Other values use the same
 /// representation as `getFieldFromColumnForASTLiteral`.
-ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type);
+/// With `date_time_as_numbers`, a `DateTime` leaf is rendered as its raw Unix timestamp named by its own
+/// type, instead of local date-time text, which two instants share across a DST overlap. Clear it for a
+/// consumer that parses this text itself, such as an external database, where `_CAST` is not valid syntax.
+ASTPtr columnConstantToExactLiteralAST(
+    const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
 /// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar

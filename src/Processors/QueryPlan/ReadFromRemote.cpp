@@ -297,7 +297,8 @@ ASTPtr tryBuildAdditionalFilterAST(
                 /// Serialize constants whose type or value a plain literal cannot carry exactly (decimal-backed
                 /// leaves, and the active member of a `Variant`, including nested ones) so the shard does not
                 /// re-parse them through `Float64`, `DateTime64` text heuristics, or a wrong `Variant` member.
-                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
+                literal = columnConstantToExactLiteralAST(
+                    node->column, 0, node->result_type, /*date_time_as_numbers=*/true);
             else
                 /// Other types keep their raw `Field` literal. In particular a `DateTime` serialized as local
                 /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants

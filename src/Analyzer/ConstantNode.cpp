@@ -221,10 +221,12 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     /// column, naming each such leaf explicitly, then cast the whole value to the final type. This must run
     /// even when `add_cast_for_constants` is false (e.g. the right-hand side of `IN`/`notIn`, where casts are
     /// suppressed): a bare decimal in the set would be parsed as `Float64` on the shard and round, so an
-    /// `OR`-to-`IN` rewrite over high-scale `Decimal` values could filter on rounded constants.
+    /// `OR`-to-`IN` rewrite over high-scale `Decimal` values could filter on rounded constants. A `DateTime`
+    /// leaf keeps its text form there, because a consumer that suppresses the cast may parse the text itself.
     if (typeNeedsExactLiteralSerialization(*constant_value_type))
     {
-        auto exact_ast = columnConstantToExactLiteralAST(constant_value.getColumn(), 0, constant_value_type);
+        auto exact_ast = columnConstantToExactLiteralAST(
+            constant_value.getColumn(), 0, constant_value_type, options.add_cast_for_constants);
         if (!options.add_cast_for_constants)
             return exact_ast;
         /// `columnConstantToExactLiteralAST` already casts a scalar `Decimal`/`DateTime64`/`Time64` value to its
