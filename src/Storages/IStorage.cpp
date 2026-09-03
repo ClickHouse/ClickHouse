@@ -1,4 +1,7 @@
 #include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/FieldVisitorToString.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
@@ -222,6 +225,30 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
+}
+
+TableSettings IStorage::getTableSettings(ContextPtr context) const
+{
+    /// Only what the table's own `SETTINGS` clause states. Values are read straight out of the
+    /// stored AST, so unlike an override backed by a settings struct there is no accessor to give a
+    /// type-faithful rendering, nor a default, type, description or tier to report.
+    const auto metadata_snapshot = getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+    if (!metadata_snapshot || !metadata_snapshot->settings_changes)
+        return {};
+
+    const auto & changes = metadata_snapshot->settings_changes->as<const ASTSetQuery &>().changes;
+
+    TableSettings result;
+    result.reserve(changes.size());
+    for (const auto & change : changes)
+    {
+        TableSetting setting;
+        setting.name = change.name;
+        setting.value = convertFieldToString(change.value);
+        setting.origin = TableSettingOrigin::Definition;
+        result.push_back(std::move(setting));
+    }
+    return result;
 }
 
 void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const

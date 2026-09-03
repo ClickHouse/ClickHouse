@@ -11,6 +11,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/TableSetting.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -255,6 +256,21 @@ public:
     {
         return metadata.get();
     }
+
+    /// Report this table's settings as they are actually in effect, for `system.table_settings`.
+    ///
+    /// The base implementation answers from the table's own `SETTINGS` clause, which is all a
+    /// storage that keeps no settings struct can say - `File`, `URL`, `Join` and the `Log` family
+    /// name global query settings there rather than settings of their own, so for them this is the
+    /// complete answer rather than a fallback.
+    ///
+    /// An engine that keeps a settings struct overrides this to report every setting it has,
+    /// including values that never reach the `CREATE` query: compiled defaults, values taken from a
+    /// named collection, values held in replicated metadata, and values the engine adjusted while
+    /// running. Those last two are why this is a method on the storage rather than a static
+    /// enumeration of the settings type - see `StorageObjectStorageQueue`, which reconstructs its
+    /// settings from Keeper.
+    virtual TableSettings getTableSettings(ContextPtr context) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
