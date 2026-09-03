@@ -7,10 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/re2.h>
-#include <Common/transformEndianness.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -39,6 +35,10 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/re2.h>
+#include <Common/transformEndianness.h>
 
 #include <iterator>
 #include <list>
@@ -54,11 +54,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
-    extern const int INCORRECT_DATA;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
-    extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int CORRUPTED_DATA;
+extern const int INCORRECT_DATA;
+extern const int INCORRECT_NUMBER_OF_COLUMNS;
+extern const int LOGICAL_ERROR;
 }
 
 class JSONBloomPathMatcher
@@ -137,10 +137,7 @@ bool JSONBloomPathMatcher::matchesAnyPathOrSubtree(std::string_view path, const 
     while (true)
     {
         const auto it = std::lower_bound(
-            paths.begin(),
-            paths.end(),
-            path,
-            [](const String & lhs, std::string_view rhs) { return lhs.compare(rhs) < 0; });
+            paths.begin(), paths.end(), path, [](const String & lhs, std::string_view rhs) { return lhs.compare(rhs) < 0; });
         if (it != paths.end() && *it == path)
             return true;
 
@@ -173,18 +170,12 @@ void JSONBloomPathMatcher::compileRegexps(const std::vector<String> & regexp_str
 {
     auto unique_regexp_strings = regexp_strings;
     std::sort(unique_regexp_strings.begin(), unique_regexp_strings.end());
-    unique_regexp_strings.erase(
-        std::unique(unique_regexp_strings.begin(), unique_regexp_strings.end()),
-        unique_regexp_strings.end());
+    unique_regexp_strings.erase(std::unique(unique_regexp_strings.begin(), unique_regexp_strings.end()), unique_regexp_strings.end());
     for (const auto & regexp_string : unique_regexp_strings)
     {
         regexps.emplace_back(regexp_string);
         if (!regexps.back().ok())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Invalid `jsonbf_v1` path regexp '{}': {}",
-                regexp_string,
-                regexps.back().error());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `jsonbf_v1` path regexp '{}': {}", regexp_string, regexps.back().error());
     }
 }
 
@@ -194,9 +185,7 @@ bool JSONBloomPathMatcher::shouldIndex(std::string_view path) const
     if (matchesAnyPathOrSubtree(path, skip_paths) || matchesAnyRegexp(path, skip_regexps))
         return false;
 
-    return !hasIncludeFilter()
-        || matchesAnyPathOrSubtree(path, include_paths)
-        || matchesAnyRegexp(path, include_regexps);
+    return !hasIncludeFilter() || matchesAnyPathOrSubtree(path, include_paths) || matchesAnyRegexp(path, include_regexps);
 }
 
 bool JSONBloomPathMatcher::shouldVisit(std::string_view path) const
@@ -206,18 +195,15 @@ bool JSONBloomPathMatcher::shouldVisit(std::string_view path) const
         return false;
 
     /// An arbitrary include or skip regexp can match a descendant differently from its ancestor.
-    return !hasIncludeFilter()
-        || matchesAnyPathOrSubtree(path, include_paths)
-        || matchesAnyAncestor(path, include_paths)
+    return !hasIncludeFilter() || matchesAnyPathOrSubtree(path, include_paths) || matchesAnyAncestor(path, include_paths)
         || !include_regexps.empty();
 }
 
 namespace
 {
 
-std::pair<DataTypePtr, SerializationPtr> decodeJSONDataType(
-    ReadBuffer & buffer,
-    UnorderedMapWithMemoryTracking<String, SerializationPtr> & serializations_cache)
+std::pair<DataTypePtr, SerializationPtr>
+decodeJSONDataType(ReadBuffer & buffer, UnorderedMapWithMemoryTracking<String, SerializationPtr> & serializations_cache)
 {
     char type_index = 0;
     if (!buffer.peek(type_index))
@@ -264,12 +250,7 @@ void updateTokenHash(XXH3_state_t & hash, std::string_view value)
     XXH_INLINE_XXH3_64bits_update(&hash, value.data(), value.size());
 }
 
-UInt64 hashToken(
-    std::string_view path,
-    JSONBloomRole role,
-    JSONBloomDomain domain,
-    std::string_view type,
-    std::string_view value)
+UInt64 hashToken(std::string_view path, JSONBloomRole role, JSONBloomDomain domain, std::string_view type, std::string_view value)
 {
     XXH3_state_t hash;
     XXH_INLINE_XXH3_64bits_reset(&hash);
@@ -293,9 +274,9 @@ UInt64 unsupportedDynamicTypeHash(std::string_view path, JSONBloomRole role)
     return hashToken(path, role, JSONBloomDomain::UnsupportedDynamicType, {}, {});
 }
 
-UInt64 dynamicTypePresenceHash(std::string_view path, JSONBloomRole role, const IDataType & type)
+UInt64 dynamicTypePresenceHash(std::string_view path, JSONBloomRole role, std::string_view type_name)
 {
-    return hashToken(path, role, JSONBloomDomain::DynamicTypePresence, type.getName(), {});
+    return hashToken(path, role, JSONBloomDomain::DynamicTypePresence, type_name, {});
 }
 
 UInt64 dynamicComplexPresenceHash(std::string_view path, JSONBloomRole role)
@@ -372,28 +353,30 @@ std::optional<UnwrappedColumn> unwrapColumn(DataTypePtr type, const IColumn & so
 UInt64 hashTypedValue(
     std::string_view path,
     JSONBloomRole role,
-    const DataTypePtr & type,
+    const IDataType & type,
+    const ISerialization & serialization,
+    std::string_view type_name,
+    bool is_float,
     const IColumn & column,
-    size_t row)
+    size_t row,
+    WriteBufferFromOwnString & value)
 {
-    WriteBufferFromOwnString value;
-    if (WhichDataType(type).isFloat() && column.getFloat64(row) == 0)
+    value.restart();
+    if (is_float && column.getFloat64(row) == 0)
     {
-        const auto zero = type->createColumnConst(1, Field(0.0))->convertToFullColumnIfConst();
-        type->getDefaultSerialization()->serializeBinary(*zero, 0, value, {});
+        const auto zero = type.createColumnConst(1, Field(0.0))->convertToFullColumnIfConst();
+        serialization.serializeBinary(*zero, 0, value, {});
     }
     else
-        type->getDefaultSerialization()->serializeBinary(column, row, value, {});
-    return hashToken(path, role, JSONBloomDomain::Typed, type->getName(), value.str());
+        serialization.serializeBinary(column, row, value, {});
+    return hashToken(path, role, JSONBloomDomain::Typed, type_name, value.stringView());
 }
 
 const std::vector<DataTypePtr> & getDynamicScalarTypes();
 
 bool isKnownDynamicScalar(const IDataType & type)
 {
-    return std::ranges::any_of(
-        getDynamicScalarTypes(),
-        [&](const auto & known_type) { return known_type->equals(type); });
+    return std::ranges::any_of(getDynamicScalarTypes(), [&](const auto & known_type) { return known_type->equals(type); });
 }
 
 String appendPath(std::string_view prefix, std::string_view suffix)
@@ -405,11 +388,7 @@ String appendPath(std::string_view prefix, std::string_view suffix)
     return Nested::concatenateName(String(prefix), String(suffix));
 }
 
-String appendMapKey(
-    std::string_view path,
-    const DataTypePtr & key_type,
-    const IColumn & key_column,
-    size_t row)
+String appendMapKey(std::string_view path, const DataTypePtr & key_type, const IColumn & key_column, size_t row)
 {
     WriteBufferFromOwnString encoded_key;
     key_type->getDefaultSerialization()->serializeBinary(key_column, row, encoded_key, {});
@@ -442,6 +421,38 @@ public:
     }
 
 private:
+    struct TypeInfo
+    {
+        DataTypePtr type;
+        SerializationPtr serialization;
+        String name;
+        WhichDataType which;
+        bool has_json_path_descendants = false;
+        bool has_dynamic_structure = false;
+        bool is_dynamic_complex = false;
+        bool is_known_dynamic_scalar = false;
+    };
+
+    const TypeInfo & getTypeInfo(const DataTypePtr & type, SerializationPtr serialization = {})
+    {
+        auto [it, inserted] = type_infos.try_emplace(type.get());
+        if (!inserted)
+            return it->second;
+
+        auto & info = it->second;
+        info.type = type;
+        info.name = type->getName();
+        info.which = WhichDataType(type);
+        info.has_json_path_descendants = hasJSONPathDescendants(type);
+        info.has_dynamic_structure = type->hasDynamicStructure();
+        info.is_dynamic_complex = typeid_cast<const DataTypeObject *>(type.get()) || typeid_cast<const DataTypeArray *>(type.get())
+            || typeid_cast<const DataTypeMap *>(type.get()) || typeid_cast<const DataTypeTuple *>(type.get()) || info.has_dynamic_structure;
+        info.is_known_dynamic_scalar = isKnownDynamicScalar(*type);
+        if (!isDynamic(type) && !info.which.isNothing() && !info.which.isVariant() && !info.is_dynamic_complex)
+            info.serialization = serialization ? std::move(serialization) : type->getDefaultSerialization();
+        return info;
+    }
+
     void emitObject(
         std::string_view hash_prefix,
         std::string_view logical_prefix,
@@ -453,11 +464,17 @@ private:
     {
         struct PathInfo
         {
-            std::string_view path;
+            String logical_path;
+            String hash_path;
             DataTypePtr type;
             ColumnPtr owned_column;
             const IColumn * column = nullptr;
+            const TypeInfo * type_info = nullptr;
+            std::vector<const TypeInfo *> dynamic_type_infos;
             bool is_dynamic = false;
+            bool should_visit = false;
+            bool should_index = false;
+            bool has_json_path_descendants = false;
         };
 
         const auto & typed_path_types = type_object.getTypedPaths();
@@ -466,6 +483,15 @@ private:
         VectorWithMemoryTracking<PathInfo> paths;
         paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
 
+        auto initialize_dynamic_type_infos = [&](PathInfo & entry)
+        {
+            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*entry.column);
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type);
+            entry.dynamic_type_infos.reserve(variant_type.getVariants().size());
+            for (const auto & variant : variant_type.getVariants())
+                entry.dynamic_type_infos.push_back(&getTypeInfo(variant));
+        };
+
         for (const auto & [path, type] : typed_path_types)
         {
             const auto & column = typed_path_columns.at(path);
@@ -473,16 +499,47 @@ private:
             const auto full_column = recursiveRemoveLowCardinality(column);
             const auto value_type = removeNullableOrLowCardinalityNullable(full_type);
             const bool is_dynamic = DB::isDynamic(value_type);
-            paths.push_back({
-                path,
-                full_type,
-                full_column,
-                full_column.get(),
-                is_dynamic});
+            auto logical_path = appendPath(logical_prefix, path);
+            auto hash_path = appendPath(hash_prefix, path);
+            const bool should_visit = path_matcher.shouldVisit(logical_path);
+            const bool should_index = path_matcher.shouldIndex(logical_path);
+            const auto & type_info = getTypeInfo(value_type);
+            paths.push_back(
+                {std::move(logical_path),
+                 std::move(hash_path),
+                 full_type,
+                 full_column,
+                 full_column.get(),
+                 &type_info,
+                 {},
+                 is_dynamic,
+                 should_visit,
+                 should_index,
+                 type_info.has_json_path_descendants});
+            if (is_dynamic)
+                initialize_dynamic_type_infos(paths.back());
         }
 
         for (const auto & [path, column] : dynamic_path_columns)
-            paths.push_back({path, nullptr, column, column.get(), true});
+        {
+            auto logical_path = appendPath(logical_prefix, path);
+            auto hash_path = appendPath(hash_prefix, path);
+            const bool should_visit = path_matcher.shouldVisit(logical_path);
+            const bool should_index = path_matcher.shouldIndex(logical_path);
+            paths.push_back(
+                {std::move(logical_path),
+                 std::move(hash_path),
+                 nullptr,
+                 column,
+                 column.get(),
+                 nullptr,
+                 {},
+                 true,
+                 should_visit,
+                 should_index,
+                 false});
+            initialize_dynamic_type_infos(paths.back());
+        }
 
         UnorderedMapWithMemoryTracking<String, SerializationPtr> object_serializations_cache;
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> shared_columns_cache;
@@ -491,43 +548,34 @@ private:
         const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
         const FormatSettings format_settings;
 
-        auto emit_shared = [&](std::string_view path, std::string_view value_data)
+        auto emit_shared = [&](std::string_view hash_path, std::string_view logical_path, bool should_index, std::string_view value_data)
         {
-            const auto logical_path = appendPath(logical_prefix, path);
-            if (!path_matcher.shouldVisit(logical_path))
-                return;
-
             ReadBufferFromMemory buffer(value_data);
             auto [type, serialization] = decodeJSONDataType(buffer, object_serializations_cache);
-            if (isNothing(type))
+            const auto & type_info = getTypeInfo(type, serialization);
+            if (type_info.which.isNothing())
                 return;
 
-            auto [column_it, inserted] = shared_columns_cache.try_emplace(type->getName());
+            auto [column_it, inserted] = shared_columns_cache.try_emplace(type_info.name);
             if (inserted)
                 column_it->second = type->createColumn();
 
             auto & temporary_column = *column_it->second;
             serialization->deserializeBinary(temporary_column, buffer, format_settings);
-            emitValue(appendPath(hash_prefix, path), logical_path, role, type, temporary_column, 0, true);
+            emitValue(hash_path, logical_path, role, type, temporary_column, 0, true, type_info, should_index);
             temporary_column.popBack(1);
         };
 
         auto emit_path = [&](PathInfo & entry, size_t row)
         {
-            const auto logical_path = appendPath(logical_prefix, entry.path);
-            if (!path_matcher.shouldVisit(logical_path) || entry.column->isNullAt(row))
+            if (!entry.should_visit || (!entry.should_index && !entry.is_dynamic && !entry.has_json_path_descendants)
+                || entry.column->isNullAt(row))
                 return;
 
             if (!entry.is_dynamic)
             {
                 emitValue(
-                    appendPath(hash_prefix, entry.path),
-                    logical_path,
-                    role,
-                    entry.type,
-                    *entry.column,
-                    row,
-                    false);
+                    entry.hash_path, entry.logical_path, role, entry.type, *entry.column, row, false, *entry.type_info, entry.should_index);
                 return;
             }
 
@@ -538,20 +586,22 @@ private:
 
             if (discriminator == dynamic_column.getSharedVariantDiscriminator())
             {
-                emit_shared(entry.path, dynamic_column.getSharedVariant().getDataAt(variant_row));
+                emit_shared(
+                    entry.hash_path, entry.logical_path, entry.should_index, dynamic_column.getSharedVariant().getDataAt(variant_row));
                 return;
             }
 
-            const auto * type
-                = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariant(discriminator).get();
+            const auto & type_info = *entry.dynamic_type_infos[discriminator];
             emitValue(
-                appendPath(hash_prefix, entry.path),
-                logical_path,
+                entry.hash_path,
+                entry.logical_path,
                 role,
-                type->getPtr(),
+                type_info.type,
                 variant_column.getVariantByGlobalDiscriminator(discriminator),
                 variant_row,
-                true);
+                true,
+                type_info,
+                entry.should_index);
         };
 
         chassert(start_row <= shared_data_offsets.size());
@@ -564,7 +614,17 @@ private:
             const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
             const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
             for (size_t shared_index = start; shared_index != end; ++shared_index)
-                emit_shared(shared_data_paths->getDataAt(shared_index), shared_data_values->getDataAt(shared_index));
+            {
+                const auto path = shared_data_paths->getDataAt(shared_index);
+                const auto logical_path = appendPath(logical_prefix, path);
+                if (!path_matcher.shouldVisit(logical_path))
+                    continue;
+                emit_shared(
+                    appendPath(hash_prefix, path),
+                    logical_path,
+                    path_matcher.shouldIndex(logical_path),
+                    shared_data_values->getDataAt(shared_index));
+            }
         }
     }
 
@@ -573,7 +633,8 @@ private:
         std::string_view logical_path,
         JSONBloomRole role,
         const ColumnDynamic & dynamic_column,
-        size_t row)
+        size_t row,
+        bool should_index)
     {
         if (dynamic_column.isNullAt(row))
             return;
@@ -586,15 +647,17 @@ private:
         {
             ReadBufferFromMemory buffer(dynamic_column.getSharedVariant().getDataAt(variant_row));
             auto [type, serialization] = decodeJSONDataType(buffer, serializations_cache);
+            const auto & type_info = getTypeInfo(type, serialization);
 
             auto column = type->createColumn();
             serialization->deserializeBinary(*column, buffer, {});
-            emitValue(hash_path, logical_path, role, type, *column, 0, true);
+            emitValue(hash_path, logical_path, role, type, *column, 0, true, type_info, should_index);
             return;
         }
 
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type);
         const auto & type = variant_type.getVariant(discriminator);
+        const auto & type_info = getTypeInfo(type);
         emitValue(
             hash_path,
             logical_path,
@@ -602,7 +665,9 @@ private:
             type,
             variant_column.getVariantByGlobalDiscriminator(discriminator),
             variant_row,
-            true);
+            true,
+            type_info,
+            should_index);
     }
 
     void emitArray(
@@ -611,13 +676,15 @@ private:
         const DataTypeArray & array_type,
         const ColumnArray & array_column,
         size_t row,
-        bool is_dynamic)
+        bool is_dynamic,
+        bool should_index)
     {
         const auto & nested_type = array_type.getNestedType();
         const auto & nested_column = array_column.getData();
         const auto & offsets = array_column.getOffsets();
         const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
         const size_t end = offsets[row];
+        const auto & nested_type_info = getTypeInfo(removeJSONBloomWrappers(nested_type));
 
         for (size_t element = begin; element != end; ++element)
             emitValue(
@@ -627,7 +694,9 @@ private:
                 nested_type,
                 nested_column,
                 element,
-                is_dynamic || isDynamic(nested_type));
+                is_dynamic || isDynamic(nested_type),
+                nested_type_info,
+                should_index);
     }
 
     void emitMap(
@@ -637,7 +706,8 @@ private:
         const DataTypeMap & map_type,
         const ColumnMap & map_column,
         size_t row,
-        bool is_dynamic)
+        bool is_dynamic,
+        bool should_index)
     {
         if (is_dynamic)
         {
@@ -654,6 +724,7 @@ private:
         const auto & offsets = map_column.getNestedColumn().getOffsets();
         const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
         const size_t end = offsets[row];
+        const auto & value_type_info = getTypeInfo(removeJSONBloomWrappers(value_type));
 
         for (size_t element = begin; element != end; ++element)
             emitValue(
@@ -663,7 +734,9 @@ private:
                 value_type,
                 values,
                 element,
-                false);
+                false,
+                value_type_info,
+                should_index);
     }
 
     void emitTuple(
@@ -679,14 +752,22 @@ private:
         const auto & element_names = tuple_type.getElementNames();
         const auto & columns = tuple_column.getColumns();
         for (size_t i = 0; i != element_types.size(); ++i)
+        {
+            auto element_logical_path = appendPath(logical_path, element_names[i]);
+            if (!path_matcher.shouldVisit(element_logical_path))
+                continue;
+            const auto & element_type_info = getTypeInfo(removeJSONBloomWrappers(element_types[i]));
             emitValue(
                 appendPath(hash_path, element_names[i]),
-                appendPath(logical_path, element_names[i]),
+                element_logical_path,
                 role,
                 element_types[i],
                 *columns[i],
                 row,
-                is_dynamic);
+                is_dynamic,
+                element_type_info,
+                path_matcher.shouldIndex(element_logical_path));
+        }
     }
 
     void emitScalar(
@@ -695,15 +776,17 @@ private:
         const DataTypePtr & type,
         const IColumn & column,
         size_t row,
-        bool is_dynamic)
+        bool is_dynamic,
+        const TypeInfo & type_info)
     {
         if (is_dynamic)
-            hashes.insert(dynamicTypePresenceHash(path, role, *type));
+            hashes.insert(dynamicTypePresenceHash(path, role, type_info.name));
 
-        if (is_dynamic && !isKnownDynamicScalar(*type))
+        if (is_dynamic && !type_info.is_known_dynamic_scalar)
             hashes.insert(unsupportedDynamicTypeHash(path, role));
 
-        hashes.insert(hashTypedValue(path, role, type, column, row));
+        hashes.insert(hashTypedValue(
+            path, role, *type, *type_info.serialization, type_info.name, type_info.which.isFloat(), column, row, value_buffer));
     }
 
     void emitValue(
@@ -713,16 +796,13 @@ private:
         DataTypePtr type,
         const IColumn & source_column,
         size_t row,
-        bool is_dynamic)
+        bool is_dynamic,
+        const TypeInfo & supplied_type_info,
+        bool index_path)
     {
-        if (!path_matcher.shouldVisit(logical_path))
-            return;
-
-        const bool index_path = path_matcher.shouldIndex(logical_path);
-
         if (isDynamic(type))
         {
-            emitDynamic(hash_path, logical_path, role, assert_cast<const ColumnDynamic &>(source_column), row);
+            emitDynamic(hash_path, logical_path, role, assert_cast<const ColumnDynamic &>(source_column), row, index_path);
             return;
         }
 
@@ -732,17 +812,12 @@ private:
 
         type = unwrapped->type;
         const IColumn & column = *unwrapped->column;
+        const auto & type_info = supplied_type_info.type.get() == type.get() ? supplied_type_info : getTypeInfo(type);
 
-        if (!index_path && !hasJSONPathDescendants(type))
+        if (!index_path && !type_info.has_json_path_descendants)
             return;
 
-        if (index_path
-            && is_dynamic
-            && (typeid_cast<const DataTypeObject *>(type.get())
-                || typeid_cast<const DataTypeArray *>(type.get())
-                || typeid_cast<const DataTypeMap *>(type.get())
-                || typeid_cast<const DataTypeTuple *>(type.get())
-                || type->hasDynamicStructure()))
+        if (index_path && is_dynamic && type_info.is_dynamic_complex)
             hashes.insert(dynamicComplexPresenceHash(hash_path, role));
 
         if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()))
@@ -753,7 +828,7 @@ private:
 
         if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
-            emitArray(hash_path, logical_path, *array_type, assert_cast<const ColumnArray &>(column), row, is_dynamic);
+            emitArray(hash_path, logical_path, *array_type, assert_cast<const ColumnArray &>(column), row, is_dynamic, index_path);
             return;
         }
 
@@ -761,7 +836,7 @@ private:
         {
             if (is_dynamic && !index_path)
                 return;
-            emitMap(hash_path, logical_path, role, *map_type, assert_cast<const ColumnMap &>(column), row, is_dynamic);
+            emitMap(hash_path, logical_path, role, *map_type, assert_cast<const ColumnMap &>(column), row, is_dynamic, index_path);
             return;
         }
 
@@ -774,21 +849,22 @@ private:
         if (!index_path)
             return;
 
-        const WhichDataType which(type);
-        if (which.isNothing())
+        if (type_info.which.isNothing())
             return;
-        if (which.isVariant() || type->hasDynamicStructure())
+        if (type_info.which.isVariant() || type_info.has_dynamic_structure)
         {
             hashes.insert(unsupportedDynamicTypeHash(hash_path, role));
             return;
         }
 
-        emitScalar(hash_path, role, type, column, row, is_dynamic);
+        emitScalar(hash_path, role, type, column, row, is_dynamic, type_info);
     }
 
     HashSet<UInt64> & hashes;
     const JSONBloomPathMatcher & path_matcher;
     UnorderedMapWithMemoryTracking<String, SerializationPtr> serializations_cache;
+    UnorderedMapWithMemoryTracking<const IDataType *, TypeInfo> type_infos;
+    WriteBufferFromOwnString value_buffer;
 };
 
 bool hashMatchesFilter(const BloomFilterPtr & bloom_filter, UInt64 hash, size_t hash_functions)
@@ -849,17 +925,14 @@ DataTypePtr resolveJSONStructuralParent(
 }
 
 bool isStructuralJSONSubcolumn(
-    const DataTypeObject & object_type,
-    const String & path,
-    const std::vector<ArrayJSONBridge> & array_json_bridges)
+    const DataTypeObject & object_type, const String & path, const std::vector<ArrayJSONBridge> & array_json_bridges)
 {
     const auto delimiter = path.rfind('.');
     if (delimiter == String::npos || object_type.getTypedPaths().contains(path))
         return false;
 
     const auto last_component = path.substr(delimiter + 1);
-    const bool is_array_size = last_component.starts_with("size")
-        && last_component.size() > 4
+    const bool is_array_size = last_component.starts_with("size") && last_component.size() > 4
         && std::ranges::all_of(last_component.substr(4), [](char c) { return c >= '0' && c <= '9'; });
 
     for (size_t prefix_end = delimiter; prefix_end != String::npos; prefix_end = path.rfind('.', prefix_end - 1))
@@ -926,10 +999,7 @@ bool isStructuralJSONSubcolumn(
                 continue;
             }
             if (typeid_cast<const DataTypeMap *>(parent_type.get()))
-                return is_array_size
-                    || last_component == "keys"
-                    || last_component == "values"
-                    || last_component.starts_with("key_");
+                return is_array_size || last_component == "keys" || last_component == "values" || last_component.starts_with("key_");
             break;
         }
     }
@@ -972,7 +1042,6 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
                 nullptr,
                 JSONBloomRole::MapValue};
         }
-
     }
 
     for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(node.getColumnName()))
@@ -1026,22 +1095,18 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
         bool indexes_missing_values = object_type.getTypedPaths().contains(path);
         if (!indexes_missing_values && !subcolumn_type->hasDynamicStructure())
         {
-            indexes_missing_values = std::ranges::any_of(object_type.getTypedPaths(), [&](const auto & typed_path)
-            {
-                return path.starts_with(typed_path.first)
-                    && path.size() > typed_path.first.size()
-                    && path[typed_path.first.size()] == '.';
-            });
+            indexes_missing_values = std::ranges::any_of(
+                object_type.getTypedPaths(),
+                [&](const auto & typed_path)
+                {
+                    return path.starts_with(typed_path.first) && path.size() > typed_path.first.size()
+                        && path[typed_path.first.size()] == '.';
+                });
         }
 
         String logical_path = path;
         return JSONPathMatch{
-            std::move(path),
-            std::move(logical_path),
-            subcolumn_type,
-            nullptr,
-            JSONBloomRole::Scalar,
-            indexes_missing_values};
+            std::move(path), std::move(logical_path), subcolumn_type, nullptr, JSONBloomRole::Scalar, indexes_missing_values};
     }
 
     return std::nullopt;
@@ -1053,18 +1118,15 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
         return tryMatchDirectJSONPath(node, header);
 
     const auto function = node.toFunctionNode();
-    if ((function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST")
-        && function.getArgumentsSize() == 2)
+    if ((function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST") && function.getArgumentsSize() == 2)
     {
         auto match = tryMatchJSONPath(function.getArgumentAt(0), header);
         const auto * dag_node = node.getDAGNode();
         if (!match || !dag_node || match->cast_type)
             return std::nullopt;
         match->cast_type = removeJSONBloomWrappers(dag_node->result_type);
-        if (typeid_cast<const DataTypeObject *>(match->cast_type.get())
-            || typeid_cast<const DataTypeArray *>(match->cast_type.get())
-            || typeid_cast<const DataTypeMap *>(match->cast_type.get())
-            || typeid_cast<const DataTypeTuple *>(match->cast_type.get())
+        if (typeid_cast<const DataTypeObject *>(match->cast_type.get()) || typeid_cast<const DataTypeArray *>(match->cast_type.get())
+            || typeid_cast<const DataTypeMap *>(match->cast_type.get()) || typeid_cast<const DataTypeTuple *>(match->cast_type.get())
             || match->cast_type->hasDynamicStructure())
             return std::nullopt;
         return match;
@@ -1083,8 +1145,7 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
         const String & element_name = element.safeGet<String>();
         const auto parent_type = removeJSONBloomWrappers(match->type);
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(parent_type.get());
-        if ((!tuple_type || !tuple_type->hasExplicitNames() || !tuple_type->tryGetPositionByName(element_name))
-            && !isObject(parent_type))
+        if ((!tuple_type || !tuple_type->hasExplicitNames() || !tuple_type->tryGetPositionByName(element_name)) && !isObject(parent_type))
             return std::nullopt;
 
         match->path = appendPath(match->path, element_name);
@@ -1155,7 +1216,11 @@ bool appendTypedProbe(
 
     auto column = target_type->createColumn();
     column->insert(converted);
-    hashes.push_back(hashTypedValue(path, role, target_type, *column, 0));
+    const auto serialization = target_type->getDefaultSerialization();
+    const String type_name = target_type->getName();
+    WriteBufferFromOwnString value_buffer;
+    hashes.push_back(hashTypedValue(
+        path, role, *target_type, *serialization, type_name, WhichDataType(target_type).isFloat(), *column, 0, value_buffer));
     return true;
 }
 
@@ -1163,15 +1228,12 @@ bool comparisonUsesExactConversion(const IDataType & left, const IDataType & rig
 {
     /// A failed strict conversion proves inequality only inside the numeric comparison domain.
     /// Other type pairs need a presence probe because execution can match or throw.
-    const auto is_number = [](const IDataType & type)
-    {
-        return isBool(type.getPtr()) || isNativeNumber(type) || WhichDataType(type).isDecimal();
-    };
+    const auto is_number
+        = [](const IDataType & type) { return isBool(type.getPtr()) || isNativeNumber(type) || WhichDataType(type).isDecimal(); };
     if ((WhichDataType(left).isDecimal() && WhichDataType(right).isNativeFloat())
         || (WhichDataType(right).isDecimal() && WhichDataType(left).isNativeFloat()))
         return false;
-    return left.equals(right)
-        || (is_number(left) && is_number(right));
+    return left.equals(right) || (is_number(left) && is_number(right));
 }
 
 std::vector<UInt64> makeDynamicCastProbes(
@@ -1196,10 +1258,10 @@ std::vector<UInt64> makeDynamicCastProbes(
             if (comparisonUsesExactConversion(*runtime_type, *removeJSONBloomWrappers(value_type)))
                 appendTypedProbe(hashes, path, role, value, value_type, runtime_type, format_settings);
             else
-                hashes.push_back(dynamicTypePresenceHash(path, role, *runtime_type));
+                hashes.push_back(dynamicTypePresenceHash(path, role, runtime_type->getName()));
         }
         else
-            hashes.push_back(dynamicTypePresenceHash(path, role, *runtime_type));
+            hashes.push_back(dynamicTypePresenceHash(path, role, runtime_type->getName()));
     }
     hashes.push_back(dynamicComplexPresenceHash(path, role));
     hashes.push_back(unsupportedDynamicTypeHash(path, role));
@@ -1226,17 +1288,15 @@ std::vector<UInt64> makeValueProbes(
             if (comparisonUsesExactConversion(*dynamic_type, *unwrapped_source_type))
                 appendTypedProbe(hashes, path, role, value, source_type, dynamic_type, format_settings);
             else
-                hashes.push_back(dynamicTypePresenceHash(path, role, *dynamic_type));
+                hashes.push_back(dynamicTypePresenceHash(path, role, dynamic_type->getName()));
         }
         hashes.push_back(dynamicComplexPresenceHash(path, role));
         hashes.push_back(unsupportedDynamicTypeHash(path, role));
         return hashes;
     }
 
-    if (target_type->hasDynamicStructure()
-        || typeid_cast<const DataTypeArray *>(target_type.get())
-        || typeid_cast<const DataTypeMap *>(target_type.get())
-        || typeid_cast<const DataTypeTuple *>(target_type.get())
+    if (target_type->hasDynamicStructure() || typeid_cast<const DataTypeArray *>(target_type.get())
+        || typeid_cast<const DataTypeMap *>(target_type.get()) || typeid_cast<const DataTypeTuple *>(target_type.get())
         || typeid_cast<const DataTypeVariant *>(target_type.get()))
         return hashes;
 
@@ -1272,12 +1332,7 @@ std::vector<UInt64> makeArrayElementProbes(
         for (const auto & element : value.safeGet<Array>())
         {
             auto element_hashes = makeArrayElementProbes(
-                path,
-                role,
-                target_array_type->getNestedType(),
-                element,
-                source_array_type->getNestedType(),
-                format_settings);
+                path, role, target_array_type->getNestedType(), element, source_array_type->getNestedType(), format_settings);
             if (element_hashes.empty())
                 return {};
             hashes.insert(hashes.end(), element_hashes.begin(), element_hashes.end());
@@ -1291,10 +1346,8 @@ std::vector<UInt64> makeArrayElementProbes(
         return makeValueProbes(path, role, target_type, value, source_type, format_settings);
 
     source_type = removeJSONBloomWrappers(std::move(source_type));
-    if (WhichDataType(source_type).isNothing()
-        || source_type->hasDynamicStructure()
-        || typeid_cast<const DataTypeArray *>(source_type.get())
-        || typeid_cast<const DataTypeMap *>(source_type.get())
+    if (WhichDataType(source_type).isNothing() || source_type->hasDynamicStructure()
+        || typeid_cast<const DataTypeArray *>(source_type.get()) || typeid_cast<const DataTypeMap *>(source_type.get())
         || typeid_cast<const DataTypeTuple *>(source_type.get()))
         return {};
 
@@ -1308,9 +1361,7 @@ std::vector<UInt64> makeArrayElementProbes(
 }
 
 MergeTreeIndexGranuleJSONBloomFilter::MergeTreeIndexGranuleJSONBloomFilter(
-    size_t bits_per_row_,
-    size_t hash_functions_,
-    std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
+    size_t bits_per_row_, size_t hash_functions_, std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
     : MergeTreeIndexGranuleBloomFilter(bits_per_row_, hash_functions_, 1)
     , hash_functions(hash_functions_)
     , path_matcher(std::move(path_matcher_))
@@ -1400,22 +1451,17 @@ MergeTreeIndexConditionJSONBloomFilter::MergeTreeIndexConditionJSONBloomFilter(
     }
 
     RPNBuilder<RPNElement> builder(
-        predicate,
-        context,
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+        predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
 }
 
 bool MergeTreeIndexConditionJSONBloomFilter::alwaysUnknownOrTrue() const
 {
-    return rpnEvaluatesAlwaysUnknownOrTrue(
-        rpn,
-        {RPNElement::FUNCTION_ANY, RPNElement::FUNCTION_ALL, RPNElement::ALWAYS_FALSE});
+    return rpnEvaluatesAlwaysUnknownOrTrue(rpn, {RPNElement::FUNCTION_ANY, RPNElement::FUNCTION_ALL, RPNElement::ALWAYS_FALSE});
 }
 
 bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
-    MergeTreeIndexGranulePtr granule,
-    const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const
+    MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const
 {
     const auto * bloom_granule = typeid_cast<const MergeTreeIndexGranuleJSONBloomFilter *>(granule.get());
     if (!bloom_granule || bloom_granule->getFilters().size() != 1)
@@ -1431,21 +1477,16 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
         bool element_is_unknown = element.function == RPNElement::FUNCTION_UNKNOWN;
         switch (element.function)
         {
-            case RPNElement::FUNCTION_UNKNOWN:
-                stack.emplace_back(true, true);
-                break;
-            case RPNElement::FUNCTION_ANY:
-            {
+            case RPNElement::FUNCTION_UNKNOWN: stack.emplace_back(true, true); break;
+            case RPNElement::FUNCTION_ANY: {
                 if (!part_path_matcher.shouldIndex(element.path))
                 {
                     element_is_unknown = true;
                     stack.emplace_back(true, true);
                     break;
                 }
-                const bool matches = std::ranges::any_of(element.hashes, [&](UInt64 hash)
-                {
-                    return hashMatchesFilter(filter, hash, part_hash_functions);
-                });
+                const bool matches = std::ranges::any_of(
+                    element.hashes, [&](UInt64 hash) { return hashMatchesFilter(filter, hash, part_hash_functions); });
                 stack.emplace_back(matches, true);
                 break;
             }
@@ -1459,57 +1500,45 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
                 if (!element.alternatives.empty())
                 {
                     stack.emplace_back(
-                        std::ranges::all_of(element.alternatives, [&](const auto & alternative)
-                        {
-                            return !alternative.empty() && std::ranges::any_of(alternative, [&](UInt64 hash)
+                        std::ranges::all_of(
+                            element.alternatives,
+                            [&](const auto & alternative)
                             {
-                                return hashMatchesFilter(filter, hash, part_hash_functions);
-                            });
-                        }),
+                                return !alternative.empty()
+                                    && std::ranges::any_of(
+                                        alternative, [&](UInt64 hash) { return hashMatchesFilter(filter, hash, part_hash_functions); });
+                            }),
                         true);
                 }
                 else
                 {
                     stack.emplace_back(
                         !element.hashes.empty()
-                            && std::ranges::all_of(element.hashes, [&](UInt64 hash)
-                            {
-                                return hashMatchesFilter(filter, hash, part_hash_functions);
-                            }),
+                            && std::ranges::all_of(
+                                element.hashes, [&](UInt64 hash) { return hashMatchesFilter(filter, hash, part_hash_functions); }),
                         true);
                 }
                 break;
-            case RPNElement::FUNCTION_NOT:
-                stack.back() = !stack.back();
-                break;
-            case RPNElement::FUNCTION_AND:
-            {
+            case RPNElement::FUNCTION_NOT: stack.back() = !stack.back(); break;
+            case RPNElement::FUNCTION_AND: {
                 const auto right = stack.back();
                 stack.pop_back();
                 stack.back() = stack.back() & right;
                 break;
             }
-            case RPNElement::FUNCTION_OR:
-            {
+            case RPNElement::FUNCTION_OR: {
                 const auto right = stack.back();
                 stack.pop_back();
                 stack.back() = stack.back() | right;
                 break;
             }
-            case RPNElement::ALWAYS_FALSE:
-                stack.emplace_back(false, true);
-                break;
-            case RPNElement::ALWAYS_TRUE:
-                stack.emplace_back(true, false);
-                break;
+            case RPNElement::ALWAYS_FALSE: stack.emplace_back(false, true); break;
+            case RPNElement::ALWAYS_TRUE: stack.emplace_back(true, false); break;
         }
 
         if (update_partial_result_disjunction_fn)
         {
-            update_partial_result_disjunction_fn(
-                element_index,
-                stack.back().can_be_true,
-                element_is_unknown);
+            update_partial_result_disjunction_fn(element_index, stack.back().can_be_true, element_is_unknown);
             ++element_index;
         }
     }
@@ -1571,11 +1600,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         {
             Field value;
             set_column->get(row, value);
-            if (!isJSONPathFilterSafe(
-                    key_node.getDAGNode()->result_type,
-                    value,
-                    comparison_format_settings,
-                    path->indexes_missing_values))
+            if (!isJSONPathFilterSafe(key_node.getDAGNode()->result_type, value, comparison_format_settings, path->indexes_missing_values))
                 return false;
             auto probes = makeValueProbes(path->path, path->role, path->type, value, set_type, comparison_format_settings);
             out.hashes.insert(out.hashes.end(), probes.begin(), probes.end());
@@ -1605,22 +1630,12 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
     if (function_name == "equals")
     {
-        if (!isJSONPathFilterSafe(
-                key_node->getDAGNode()->result_type,
-                constant,
-                comparison_format_settings,
-                path->indexes_missing_values))
+        if (!isJSONPathFilterSafe(key_node->getDAGNode()->result_type, constant, comparison_format_settings, path->indexes_missing_values))
             return false;
         if (path->cast_type)
         {
             out.hashes = makeDynamicCastProbes(
-                path->path,
-                path->role,
-                path->type,
-                path->cast_type,
-                constant,
-                constant_type,
-                comparison_format_settings);
+                path->path, path->role, path->type, path->cast_type, constant, constant_type, comparison_format_settings);
         }
         else
             out.hashes = makeValueProbes(path->path, path->role, path->type, constant, constant_type, comparison_format_settings);
@@ -1701,16 +1716,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule() con
     return std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(bits_per_row, hash_functions, path_matcher);
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule(
-    const MergeTreeIndexPartMetadataPtr & part_metadata) const
+MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule(const MergeTreeIndexPartMetadataPtr & part_metadata) const
 {
     const auto metadata = std::dynamic_pointer_cast<const MergeTreeIndexJSONBloomFilterPartMetadata>(part_metadata);
     if (!metadata)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing `jsonbf_v1` part metadata");
-    return std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(
-        metadata->bits_per_row,
-        metadata->hash_functions,
-        metadata->path_matcher);
+    return std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(metadata->bits_per_row, metadata->hash_functions, metadata->path_matcher);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexJSONBloomFilter::createIndexAggregator() const
@@ -1719,9 +1730,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexJSONBloomFilter::createIndexAggregator
         bits_per_row, hash_functions, index.column_names.front(), index.data_types.front(), path_matcher);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexJSONBloomFilter::createIndexCondition(
-    const ActionsDAG::Node * predicate,
-    ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexJSONBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(predicate, context, index.sample_block, path_matcher);
 }
@@ -1756,9 +1765,7 @@ MergeTreeIndexSubstreams MergeTreeIndexJSONBloomFilter::getSubstreams() const
 }
 
 MergeTreeIndexFormat MergeTreeIndexJSONBloomFilter::getPhysicalFormat(
-    const MergeTreeDataPartChecksums & checksums,
-    const IDataPartStorage & storage,
-    const std::string & relative_path_prefix) const
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
 {
     if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", &storage))
         return {2, getSubstreams()};
@@ -1766,9 +1773,7 @@ MergeTreeIndexFormat MergeTreeIndexJSONBloomFilter::getPhysicalFormat(
 }
 
 MergeTreeIndexSubstreams MergeTreeIndexJSONBloomFilter::getAllSubstreamsInPart(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & relative_path_prefix,
-    const IDataPartStorage * storage) const
+    const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix, const IDataPartStorage * storage) const
 {
     MergeTreeIndexSubstreams result;
     if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
@@ -1790,8 +1795,7 @@ void MergeTreeIndexJSONBloomFilter::serializePartMetadata(MergeTreeIndexOutputSt
     writeStrings(path_matcher->getSkipPathRegexps(), out);
 }
 
-MergeTreeIndexPartMetadataPtr MergeTreeIndexJSONBloomFilter::deserializePartMetadata(
-    MergeTreeIndexInputStreams & streams) const
+MergeTreeIndexPartMetadataPtr MergeTreeIndexJSONBloomFilter::deserializePartMetadata(MergeTreeIndexInputStreams & streams) const
 {
     auto & in = *streams.at(MergeTreeIndexSubstream::Type::Regular)->getDataBuffer();
     UInt64 metadata_version = 0;
@@ -1800,9 +1804,7 @@ MergeTreeIndexPartMetadataPtr MergeTreeIndexJSONBloomFilter::deserializePartMeta
     readVarUInt(metadata_version, in);
     readVarUInt(part_bits_per_row, in);
     readVarUInt(part_hash_functions, in);
-    if (metadata_version != JSON_BLOOM_PART_METADATA_VERSION
-        || part_bits_per_row == 0
-        || part_hash_functions == 0
+    if (metadata_version != JSON_BLOOM_PART_METADATA_VERSION || part_bits_per_row == 0 || part_hash_functions == 0
         || part_hash_functions > std::size(BloomFilterHash::bf_hash_seed))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid `jsonbf_v1` part metadata");
 
@@ -1813,11 +1815,7 @@ MergeTreeIndexPartMetadataPtr MergeTreeIndexJSONBloomFilter::deserializePartMeta
     return std::make_shared<MergeTreeIndexJSONBloomFilterPartMetadata>(
         part_bits_per_row,
         part_hash_functions,
-        std::make_shared<JSONBloomPathMatcher>(
-            std::move(include_paths),
-            include_path_regexps,
-            std::move(skip_paths),
-            skip_path_regexps));
+        std::make_shared<JSONBloomPathMatcher>(std::move(include_paths), include_path_regexps, std::move(skip_paths), skip_path_regexps));
 }
 
 namespace
@@ -1882,9 +1880,7 @@ JSONBloomOptions getJSONBloomOptions(const IndexDescription & index)
     {
         const Field value = getFieldFromIndexArgumentAST(it->second);
         if (value.getType() != Field::Types::Float64 || value.safeGet<Float64>() < 0 || value.safeGet<Float64>() > 1)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`jsonbf_v1` argument `false_positive_rate` must be a `Float64` between 0 and 1");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`jsonbf_v1` argument `false_positive_rate` must be a `Float64` between 0 and 1");
         false_positive_rate = value.safeGet<Float64>();
         options.erase(it);
     }
@@ -1902,19 +1898,13 @@ JSONBloomOptions getJSONBloomOptions(const IndexDescription & index)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected `jsonbf_v1` argument `{}`", options.begin()->first);
     return {
         false_positive_rate,
-        std::make_shared<JSONBloomPathMatcher>(
-            std::move(include_paths),
-            include_paths_regexp,
-            std::move(skip_paths),
-            skip_paths_regexp)};
+        std::make_shared<JSONBloomPathMatcher>(std::move(include_paths), include_paths_regexp, std::move(skip_paths), skip_paths_regexp)};
 }
 
 }
 
-MergeTreeIndexPtr jsonBloomFilterIndexCreator(
-    StorageMetadataPtr metadata_snapshot,
-    const IndexDescription & index,
-    const MergeTreeSettings &)
+MergeTreeIndexPtr
+jsonBloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings &)
 {
     auto options = getJSONBloomOptions(index);
     const auto [bits_per_row, hash_functions] = BloomFilterHash::calculationBestPractices(options.false_positive_rate);
