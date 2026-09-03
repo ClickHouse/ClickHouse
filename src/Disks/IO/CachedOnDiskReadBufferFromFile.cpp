@@ -326,9 +326,8 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     auto path = file_segment.getPath();
     if (info.cache_file_reader)
     {
-        /// A reader opened while the segment was still downloading carries the old name `<offset>`.
-        /// Reopen it under the current name. The caller `prepareReadFromFileSegmentState` seeks the
-        /// returned buffer, so this is safe.
+        /// A reader opened while the segment was still downloading carries the old name `<offset>`,
+        /// which the rename on completion makes stale.
         if (info.cache_file_reader->getFileName() == path)
             return info.cache_file_reader;
 
