@@ -258,15 +258,14 @@ def test_recovery_skips_sent_prefix_before_broken_file(started_cluster):
     # squashed together with `C`, raise `uniq_values` of that row to 2).
     sink_state = node1.query("select count(), sum(uniq_values) from dist_data")
     assert sink_state.split() == ["2", "2"]
-    # `A` must be finalized locally rather than retried, and the queue must drain.
+    # `A` must be finalized locally rather than retried, and the queue directory must
+    # drain. (`system.distribution_queue` is not consulted here: `B` was quarantined
+    # by this test with an out-of-band `mv`, so the in-memory file counter still
+    # accounts for it.)
     remaining_files = node1.exec_in_container(
         ["bash", "-c", f"ls -1 {queue_path}/*.bin 2>/dev/null || true"]
     ).strip()
     assert remaining_files == ""
-    pending_files = node1.query(
-        "select sum(data_files) from system.distribution_queue where table='dist'"
-    )
-    assert int(pending_files) == 0
 
 
 def test_broken_file_during_split_removes_sent_files(started_cluster):
