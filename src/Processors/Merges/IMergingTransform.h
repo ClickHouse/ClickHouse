@@ -53,6 +53,8 @@ protected:
         bool has_input = false;
         bool is_finished = false;
         bool need_data = false;
+        /// Serve `need_data` only once the output port is needed again.
+        bool need_data_on_demand = false;
         bool no_data = false;
         size_t next_input_to_read = 0;
 
@@ -147,6 +149,7 @@ public:
             // std::cerr << "Required data for input " << status.required_source << std::endl;
             state.next_input_to_read = status.required_source;
             state.need_data = true;
+            state.need_data_on_demand = status.required_source_on_demand;
         }
 
         if (status.is_finished)

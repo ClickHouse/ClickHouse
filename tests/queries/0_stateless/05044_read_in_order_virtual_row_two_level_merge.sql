@@ -10,37 +10,36 @@ create table tab (x UInt64, v UInt64) engine = MergeTree order by x;
 
 system stop merges tab;
 
-insert into tab select number + 0 * 100000, number from numbers(100000);
-insert into tab select number + 1 * 100000, number from numbers(100000);
-insert into tab select number + 2 * 100000, number from numbers(100000);
-insert into tab select number + 3 * 100000, number from numbers(100000);
-insert into tab select number + 4 * 100000, number from numbers(100000);
-insert into tab select number + 5 * 100000, number from numbers(100000);
-insert into tab select number + 6 * 100000, number from numbers(100000);
-insert into tab select number + 7 * 100000, number from numbers(100000);
+-- 32 parts of 100000 rows with disjoint key ranges in key order.
+insert into tab select number, number from numbers(3200000)
+settings max_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
--- Force two-level merging with several groups.
+select count() from system.parts where database = currentDatabase() and table = 'tab' and active;
+
+-- Force two-level merging with 16 groups of two parts.
 select x from tab order by x limit 3
-settings read_in_order_two_level_merge_threshold = 0, max_threads = 4,
+settings read_in_order_two_level_merge_threshold = 0, max_threads = 16,
          read_in_order_use_virtual_row = 1, use_query_condition_cache = 0,
          log_comment = '05044_two_level_lazy';
 
 select x from tab order by x limit 3
-settings read_in_order_two_level_merge_threshold = 0, max_threads = 4,
+settings read_in_order_two_level_merge_threshold = 0, max_threads = 16,
          read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1,
          use_query_condition_cache = 0,
          log_comment = '05044_two_level_lazy_per_block';
 
 system flush logs query_log;
 
--- Both modes: only the front group's front part contributes; the deferred groups must
--- stay (nearly) unread. Allow the read-ahead window one block per group.
-select read_rows <= 100000 from system.query_log
+-- Only the front group's front part contributes: its merge keeps a few 8192-row blocks in
+-- flight when the limit stops the query, and the deferred groups add none. Without the
+-- deferral every group reads 3-4 blocks (48-64 blocks here).
+select read_rows <= 24 * 8192 from system.query_log
 where current_database = currentDatabase() and log_comment = '05044_two_level_lazy'
     and type = 'QueryFinish' and event_date >= (today() - 1) and event_time >= now() - 600
 order by event_time desc limit 1;
 
-select read_rows <= 100000 from system.query_log
+-- Per block, the announcement after the first block parks the front group as well.
+select read_rows <= 3 * 8192 from system.query_log
 where current_database = currentDatabase() and log_comment = '05044_two_level_lazy_per_block'
     and type = 'QueryFinish' and event_date >= (today() - 1) and event_time >= now() - 600
 order by event_time desc limit 1;

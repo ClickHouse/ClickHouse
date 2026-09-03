@@ -372,6 +372,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::forwardVirtualRow(size_t sourc
 
     Status result(std::move(chunk));
     result.required_source = source_num;
+    result.required_source_on_demand = true;
     return result;
 }
 

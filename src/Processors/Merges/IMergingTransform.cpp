@@ -206,6 +206,15 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     if (state.need_data)
     {
+        /// After a forwarded boundary the consumer decides whether this merge continues at
+        /// all, so the source is read only once the output is wanted again.
+        if (state.need_data_on_demand)
+        {
+            if (!output.canPush())
+                return Status::PortFull;
+            state.need_data_on_demand = false;
+        }
+
         auto & input = input_states[state.next_input_to_read].port;
         if (!input.isFinished())
         {

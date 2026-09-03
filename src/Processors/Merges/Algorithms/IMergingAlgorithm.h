@@ -20,6 +20,10 @@ public:
         Chunk chunk;
         bool is_finished = false;
         ssize_t required_source = -1;
+        /// Read `required_source` only once the consumer asks for more output. Set when the
+        /// chunk announces a boundary (a forwarded virtual row): the consumer may park this
+        /// merge behind it for good, and a source read meanwhile would be wasted.
+        bool required_source_on_demand = false;
 
         explicit Status(Chunk chunk_) : chunk(std::move(chunk_)) {}
         explicit Status(Chunk chunk_, bool is_finished_) : chunk(std::move(chunk_)), is_finished(is_finished_) {}
