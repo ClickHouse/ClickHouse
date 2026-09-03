@@ -20,6 +20,20 @@ SELECT toDecimal32(-toFloat64(c0) * 1e9, 2) FROM t_jit_float_cast; -- { serverEr
 SELECT toUInt8(toFloat64(c0) / (toFloat64(c0) - toFloat64(c0))) FROM t_jit_float_cast; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(toFloat64(c0) / (toFloat64(c0) - toFloat64(c0)) AS UInt8) FROM t_jit_float_cast; -- { serverError CANNOT_CONVERT_TYPE }
 
+-- `Bool` is the one float to integer destination that stays compiled, because it is lowered as
+-- `value != 0` rather than as a conversion, which is exact for every value.
+SELECT CAST(-toFloat64(c0) * 1e30 AS Bool),
+       CAST(toFloat64(c0) / (toFloat64(c0) - toFloat64(c0)) AS Bool)
+FROM t_jit_float_cast
+ORDER BY c0;
+
+SET compile_expressions = 0;
+SELECT CAST(-toFloat64(c0) * 1e30 AS Bool),
+       CAST(toFloat64(c0) / (toFloat64(c0) - toFloat64(c0)) AS Bool)
+FROM t_jit_float_cast
+ORDER BY c0;
+SET compile_expressions = 1, min_count_to_compile_expression = 0;
+
 -- The value an out-of-range float converts to is not defined by the language, so compare the compiled
 -- and the interpreted evaluation of the same expression instead of pinning a literal.
 CREATE TABLE t_jit_float_cast_arms (c0 UInt8, lte UInt8) ENGINE = Memory;
