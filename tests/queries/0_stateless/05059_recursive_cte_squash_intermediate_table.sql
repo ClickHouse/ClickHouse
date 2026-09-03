@@ -1,7 +1,24 @@
+SET enable_analyzer = 1;
+
 -- Each recursive step writes its result into the intermediate (working) table, and the next step
 -- reads that table back. The chunks are squashed before the write, so a step that produces many
 -- small chunks does not leave many tiny blocks behind. `blockSize` evaluated while scanning the
 -- working table makes the block layout of the previous step observable.
+
+-- The anchor produces three chunks of 2, 2 and 1 rows, all smaller than `max_block_size`. Without
+-- squashing each of them becomes a separate block of the working table; with squashing the first
+-- recursive step reads them as a single block of 5 rows.
+SET max_block_size = 10;
+
+WITH RECURSIVE t AS
+(
+    SELECT number AS n, toUInt64(0) AS bs FROM numbers(25) WHERE number % 5 = 0
+    UNION ALL
+    SELECT n, blockSize() FROM t WHERE bs = 0
+)
+SELECT uniqExact(bs), max(bs) FROM t WHERE bs > 0;
+
+SET max_block_size = DEFAULT;
 
 -- The third step reads the 400 rows produced by the second one as a single block.
 WITH RECURSIVE t AS

@@ -208,10 +208,10 @@ private:
             return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
         });
 
-        /// Squash small chunks before writing them into the intermediate table. Each recursive
-        /// step appends one block per produced chunk, and the next step reads the working table
-        /// block by block, so without squashing deep recursions accumulate a lot of tiny blocks
-        /// and the per-step reads degrade.
+        /// Squash small chunks before writing them into the intermediate table. A recursive step
+        /// writes one block per produced chunk, and the next step reads the working table block by
+        /// block, so without squashing a step that produces many small chunks leaves many tiny
+        /// blocks behind and the read of the next step degrades.
         ///
         /// The thresholds follow the same policy as a regular `INSERT` into the same storage: the
         /// intermediate table is a `Memory` table, which prefers smaller blocks for cache locality,
