@@ -18,8 +18,6 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -27,8 +25,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
-
-#include <algorithm>
 
 #include <fmt/ranges.h>
 
@@ -38,13 +34,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsOverflowMode distinct_overflow_mode;
-    extern const SettingsBool exact_rows_before_limit;
-    extern const SettingsUInt64 limit;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
-    extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_distinct_in_order;
 }
 
@@ -80,12 +73,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             }
         }
     }
-
-    const Settings & settings = context->getSettingsRef();
-    if (options.subquery_depth == 0 && (settings[Setting::limit] > 0 || settings[Setting::offset] > 0))
-        settings_limit_offset_needed = true;
-
-    context_for_children = context;
 
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
@@ -126,78 +113,11 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
-    if (num_children > 1 && settings_limit_offset_needed && !options.settings_limit_offset_done)
-    {
-        /// The `limit`/`offset` settings cap the whole UNION result. Child interpreters must not see
-        /// them: normal branches would apply the cap per branch, and range branches could leak it to
-        /// remote shards before LIMIT AFTER/UNTIL is evaluated on the initiator. The union's own
-        /// context keeps the original values, and buildQueryPlan adds one final settings step there.
-        context_for_children = Context::createCopy(context);
-        context_for_children->setSetting("limit", Field(UInt64(0)));
-        context_for_children->setSetting("offset", Field(UInt64(0)));
-    }
-    else if (num_children == 1 && settings_limit_offset_needed && !options.settings_limit_offset_done)
-    {
-        const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
-        ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
-        if (!select_query)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type in list_of_selects: {}", first_select_ast->getID());
-
-        /// With LIMIT AFTER/UNTIL the explicit LIMIT is a per-window length, so the `limit`/`offset`
-        /// settings must not be folded into it. They are applied below as an outer LIMIT/OFFSET step
-        /// (the "for SETTINGS" step) after the range step, acting as a global cap on the whole result.
-        /// Clear them from the context so they don't leak to distributed shards.
-        if (select_query->limitAfter() || select_query->limitUntil())
-        {
-            settings_limit_for_range = settings[Setting::limit];
-            settings_offset_for_range = settings[Setting::offset];
-            context->setSetting("limit", Field(UInt64(0)));
-            context->setSetting("offset", Field(UInt64(0)));
-            removeLimitOffsetSettings(*select_query);
-        }
-        else if (!select_query->withFill() && !select_query->limit_with_ties)
-        {
-            UInt64 limit_length = 0;
-            UInt64 limit_offset = 0;
-
-            const ASTPtr limit_offset_ast = select_query->limitOffset();
-            if (limit_offset_ast)
-            {
-                limit_offset = evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
-                UInt64 new_limit_offset = settings[Setting::offset] + limit_offset;
-                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(new_limit_offset);
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
-            }
-            else if (settings[Setting::offset])
-            {
-                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(settings[Setting::offset].value);
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
-            }
-
-            const ASTPtr limit_length_ast = select_query->limitLength();
-            if (limit_length_ast)
-            {
-                limit_length = evaluateConstantExpressionAsLiteral(limit_length_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
-
-                UInt64 new_limit_length = 0;
-                if (settings[Setting::offset] == 0)
-                    new_limit_length = std::min(limit_length, settings[Setting::limit].value);
-                else if (settings[Setting::offset] < limit_length)
-                    new_limit_length = settings[Setting::limit] ? std::min(settings[Setting::limit].value, limit_length - settings[Setting::offset].value)
-                                                       : (limit_length - settings[Setting::offset].value);
-
-                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(new_limit_length);
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
-            }
-            else if (settings[Setting::limit])
-            {
-                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(settings[Setting::limit].value);
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
-            }
-
-            options.settings_limit_offset_done = true;
-        }
-    }
+    /// The `limit` / `offset` settings are applied earlier, in `applyQueryConstructionSettings`
+    /// (`executeQuery`), by wrapping the top-level query as a derived table with an outer
+    /// `LIMIT`/`OFFSET` and clearing the settings on the context. So there is nothing to apply here.
+    /// Subquery-level `SETTINGS limit/offset` (e.g. `view(SELECT … SETTINGS limit = 5)`) is handled
+    /// by the analyzer in `QueryTreeBuilder`.
 
     for (size_t query_num = 0; query_num < num_children; ++query_num)
     {
@@ -295,9 +215,7 @@ SharedHeader InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const 
     /// The header probe must also plan in its own settings scope: a probed branch (e.g. FINAL)
     /// may disable parallel replicas on its context, and passing the mutable parent context here
     /// would leak that into the siblings built afterwards, just like the real construction path.
-    /// Copy from context_for_children so that the `limit`/`offset` settings reset (when the union
-    /// applies them itself) is preserved.
-    auto child_context = Context::createCopy(context_for_children);
+    auto child_context = Context::createCopy(context);
 
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return InterpreterSelectWithUnionQuery(ast_ptr_, child_context, options.copy().analyze().noModify(), required_result_column_names)
@@ -313,9 +231,7 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
     /// Each branch must plan in its own settings scope: a branch may disable parallel replicas
     /// for itself (e.g. on FINAL), and that must not retroactively change a sibling's already
     /// decided processing stage through a shared mutable context.
-    /// Copy from context_for_children so that the `limit`/`offset` settings reset (when the union
-    /// applies them itself) is preserved.
-    auto child_context = Context::createCopy(context_for_children);
+    auto child_context = Context::createCopy(context);
 
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, child_context, options, current_required_result_column_names);
@@ -410,6 +326,20 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             /// Add distinct transform
             SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+            /// UNION concatenates its branches' streams instead of merging them, so a preliminary
+            /// DISTINCT runs in parallel and shrinks what the final single-stream DISTINCT must merge.
+            if (preliminaryDistinctIsUseful(max_threads))
+            {
+                auto pre_distinct_step = std::make_unique<DistinctStep>(
+                    query_plan.getCurrentHeader(),
+                    limits,
+                    0,
+                    result_header->getNames(),
+                    true);
+                pre_distinct_step->setStepDescription("Preliminary DISTINCT");
+                query_plan.addStep(std::move(pre_distinct_step));
+            }
+
             auto distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentHeader(),
                 limits,
@@ -418,46 +348,6 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 false);
 
             query_plan.addStep(std::move(distinct_step));
-        }
-    }
-
-    if (settings_limit_offset_needed && !options.settings_limit_offset_done)
-    {
-        /// Use saved values when they were cleared from context (range-limit path).
-        const UInt64 effective_limit = settings_limit_for_range ? settings_limit_for_range : settings[Setting::limit].value;
-        const UInt64 effective_offset = settings_offset_for_range ? settings_offset_for_range : settings[Setting::offset].value;
-
-        if (effective_limit > 0)
-        {
-            bool always_read_till_end = settings[Setting::exact_rows_before_limit];
-
-            /// When a child query uses LIMIT AFTER/UNTIL with WITH TOTALS (directly or in a
-            /// subquery), LimitRangeTransform is configured to drain input for totals. The outer
-            /// settings LimitStep must not close the pipeline before that drain completes.
-            const auto * ast = query_ptr->as<ASTSelectWithUnionQuery>();
-            if (ast)
-            {
-                for (const auto & child : ast->list_of_selects->children)
-                {
-                    if (rangeBranchNeedsTotalsDrain(child))
-                    {
-                        always_read_till_end = true;
-                        break;
-                    }
-                }
-            }
-
-            auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), effective_limit, effective_offset, always_read_till_end, false, SortDescription{});
-            limit->markAsResultCap();
-            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
-            query_plan.addStep(std::move(limit));
-        }
-        else if (effective_offset > 0)
-        {
-            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), effective_offset);
-            offset->setStepDescription("OFFSET for SETTINGS");
-            query_plan.addStep(std::move(offset));
         }
     }
 

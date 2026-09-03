@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <Core/NamesAndAliases.h>
+#include <Core/QualifiedTableName.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/IInterpreter.h>
@@ -76,7 +77,10 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false);
+    /// check_defaults_over_virtual_columns rejects DEFAULT/MATERIALIZED expressions over virtual columns;
+    /// pass false for objects that never evaluate their own column defaults over an insert block
+    /// (ordinary views and external-target materialized views).
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
     static ConstraintsDescription
     getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 
@@ -116,7 +120,56 @@ private:
     void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;
 #endif
     /// Inserts data in created table if it's CREATE ... SELECT
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check = false);
+
+    /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
+    /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.
+    bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
+
+    /// The name of the single source table an atomically populated materialized view would be subscribed
+    /// to (the table of its FROM clause), or std::nullopt when the view has no such single source. Pure
+    /// AST analysis - it does not touch the catalog, so it can be called before the view is created.
+    std::optional<QualifiedTableName> tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const;
+
+    /// Resolves the single source table that an atomically populated materialized view is subscribed to,
+    /// if it can provide a pinned point-in-time snapshot. Returns nullptr when atomic population does not
+    /// apply: the view has no single source table, or the source cannot be pinned (a view, `Distributed`,
+    /// `Merge`, `Log` family, or a table not in an `Atomic` database). In the last case it logs a warning;
+    /// the caller then falls back to the legacy non-atomic population. Throws UNKNOWN_TABLE when the
+    /// source, which existed when the view's SELECT was validated, is gone - dropped, renamed or exchanged
+    /// away before the caller acquired the source-name DDL guard; the caller runs inside
+    /// fillMaterializedViewAtomically's rollback scope, so the just-published view is dropped rather than
+    /// left behind by a legacy population that would fail on the vanished name outside that scope.
+    StoragePtr getValidatedAtomicPopulateSource(const ASTCreateQuery & create);
+
+    /// Atomically populate a freshly created materialized view: subscribe the view to new inserts of its
+    /// source table and capture a pinned snapshot of the existing source data together, under a brief
+    /// exclusive lock on the source, then populate the view from that snapshot without holding the lock.
+    /// This guarantees every row inserted concurrently with the population is delivered to the view exactly
+    /// once. Returns std::nullopt when atomic population does not apply - there is no single source table to
+    /// subscribe to, or it cannot provide a pinned snapshot (see getValidatedAtomicPopulateSource); the
+    /// caller then falls back to the regular, non-atomic path.
+    ///
+    /// The view itself was already created and started by doCreateTable before this runs, so on any failure
+    /// here - an exclusive-lock timeout on a busy source, or a runtime failure of the population itself,
+    /// which executes eagerly inside this scope - the just-created view is dropped before the exception is
+    /// rethrown. Otherwise the failed CREATE would leave behind a view that is not registered as a dependent
+    /// of its source, which future inserts would silently never populate - or, for an execution-time
+    /// failure, a subscribed view with partial data that a retry would refuse to re-create.
+    ///
+    /// `ddl_guard` is the guard of the view being created, still held by the caller. It is kept until the
+    /// view is subscribed to its source and released before the (potentially long) population runs, so that
+    /// concurrent DDL on the view name cannot slip in between publishing the view and subscribing it.
+    ///
+    /// `source_ddl_guard` is the guard of the source table's name, held by the caller across the cut for
+    /// the same reason on the source side: without it, a concurrent RENAME or EXCHANGE of the source could
+    /// change the owner of the name between resolving the source and registering the subscription (which
+    /// is keyed by name), wiring the view to one table while backfilling it from another, or leaving the
+    /// subscription on a name nobody owns. It is likewise released before the population runs.
+    std::optional<BlockIO> fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard);
+
+    /// The body of fillMaterializedViewAtomically; the wrapper adds the drop-on-failure rollback.
+    std::optional<BlockIO> fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 

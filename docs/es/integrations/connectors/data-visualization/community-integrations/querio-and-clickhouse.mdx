@@ -10,20 +10,18 @@ integration:
   - category: 'data_visualization'
 ---
 
-import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
-Querio es un espacio de trabajo de análisis e inteligencia empresarial impulsado por IA que permite a los equipos consultar, explorar, visualizar y generar información valiosa a partir de los datos mediante SQL, Python y lenguaje natural. Cuando conectas Querio a tu base de datos o warehouse de ClickHouse, puedes ejecutar análisis en tiempo real a gran escala y crear tableros, notebooks e informes asistidos por IA sobre tus datos de ClickHouse sin moverlos.
+Querio es un espacio de trabajo de analítica e inteligencia empresarial impulsado por IA que permite a los equipos consultar, explorar, visualizar y generar información valiosa a partir de los datos mediante SQL, Python y lenguaje natural. Cuando conectas Querio a tu base de datos o warehouse de ClickHouse, puedes ejecutar analítica en tiempo real a gran escala y crear tableros, notebooks e informes asistidos por IA sobre tus datos de ClickHouse sin moverlos.
 
 <div id="setup-clickhouse-for-querio">
   ## Configura ClickHouse para Querio
 </div>
 
 <Steps>
-  <Step>
-    ### Crea un usuario dedicado
-
+  <Step title="Crea un usuario dedicado" id="create-dedicated-user">
     Como práctica recomendada de seguridad, crea una cuenta de usuario dedicada exclusivamente a Querio con los privilegios mínimos necesarios:
 
     ```sql
@@ -35,9 +33,7 @@ Querio es un espacio de trabajo de análisis e inteligencia empresarial impulsad
     </Tip>
   </Step>
 
-  <Step>
-    ### Concede acceso de solo lectura a la base de datos
-
+  <Step title="Concede acceso de solo lectura a la base de datos" id="grant-read-only-access">
     Limita los permisos de Querio únicamente a las bases de datos y tablas que necesita consultar:
 
     ```sql
@@ -53,9 +49,7 @@ Querio es un espacio de trabajo de análisis e inteligencia empresarial impulsad
     Repite este proceso para cada base de datos a la que Querio necesite acceso.
   </Step>
 
-  <Step>
-    ### Recopila los detalles de conexión
-
+  <Step title="Recopila los detalles de conexión" id="gather-connection-details">
     Para conectar Querio a ClickHouse, necesitarás la siguiente información de conexión:
 
     | Parámetro  | Descripción                                                                                        |
@@ -98,5 +92,5 @@ Después de conectar Querio a ClickHouse, puedes explorar y analizar tus datos d
   ## Recursos adicionales
 </div>
 
-* [Documentación de Querio](https://docs.querio.ai/integrations/clickhouse)
+* [Documentación de Querio](https://docs.querio.ai/)
 * [Guías y tutoriales de primeros pasos de Querio](https://www.querio.ai)

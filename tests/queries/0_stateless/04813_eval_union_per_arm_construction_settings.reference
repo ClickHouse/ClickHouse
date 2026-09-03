@@ -1,0 +1,13 @@
+-- { echoOn }
+-- A construction setting on a non-last arm caps only that arm, not the whole union.
+SELECT count() FROM eval('(SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL SELECT number FROM numbers(3)');
+4
+-- A non-last arm's `filter` and `limit` shape only that arm.
+SELECT number FROM eval('(SELECT number FROM numbers(10) SETTINGS filter = ''number % 2 = 0'', limit = 2) UNION ALL SELECT number FROM numbers(2)') ORDER BY number;
+0
+0
+1
+2
+-- The mixed non-last-arm / last-arm construction `SETTINGS` form is rejected as ambiguous,
+-- the same as for a directly executed query.
+SELECT count() FROM eval('(SELECT number FROM numbers(10) SETTINGS limit = 1) UNION ALL SELECT number FROM numbers(10) SETTINGS limit = 3'); -- { serverError BAD_ARGUMENTS }

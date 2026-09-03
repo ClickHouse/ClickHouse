@@ -46,7 +46,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </div>
 
 <Note>
-  ClickPipes は Azure プライベートリンク接続をサポートしていません。Azure Flexible Server for MySQL インスタンスへのパブリックアクセスを許可しない場合は、[SSH トンネルを使用して](/ja/integrations/clickpipes/mysql/source/azure-flexible-server-mysql#configure-network-access) 安全に接続できます。Azure プライベートリンクは今後サポートされる予定です。
+  ClickPipes はまだ Azure プライベートリンクをサポートしていません。パブリックアクセスを許可していないインスタンスにアクセスするには、SSH トンネルを使用します。詳細については、[ClickPipes ネットワーク](/ja/integrations/clickpipes/networking) を参照してください。
 </Note>
 
 次に、ClickPipes から Azure Flexible Server for MySQL インスタンスへの接続を許可する必要があります。
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     2. **設定** で **ネットワーク** を選択します。**パブリック アクセス** が有効になっていることを確認します。
 
-    3. **ファイアウォール ルール** セクションで、サービスがデプロイされているリージョンの [ClickPipes 静的 IP アドレスの一覧](/ja/integrations/clickpipes/home#list-of-static-ips) を入力します。
+    3. **ファイアウォール ルール** セクションで、サービスがデプロイされているリージョンの [ClickPipes 静的 IP アドレスの一覧](/ja/integrations/clickpipes/networking/static-ips) を入力します。
 
        <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="IP 許可リストによるパブリックアクセス用のネットワーク設定" size="lg" border />
 
@@ -71,7 +71,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
        * VM が Azure Flexible Server for MySQL インスタンスと同じ Virtual Network (VNet) 内、または接続可能なピアリング済み VNet 内にあることを確認します。
        * VM に [静的パブリック IP アドレス](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/virtual-network-public-ip-address) が割り当てられていることを確認します。この IP アドレスは、ClickPipes を SSH 踏み台サーバーに接続する際に使用します。
 
-    2. SSH 踏み台サーバーの Network Security Group (NSG) ルールを更新し、サービスがデプロイされているリージョンの [ClickPipes 静的 IP アドレスの一覧](/ja/integrations/clickpipes/home#list-of-static-ips) からのトラフィックを許可します。
+    2. SSH 踏み台サーバーの Network Security Group (NSG) ルールを更新し、サービスがデプロイされているリージョンの [ClickPipes 静的 IP アドレスの一覧](/ja/integrations/clickpipes/networking/static-ips) からのトラフィックを許可します。
 
     3. Azure Flexible Server for MySQL インスタンスのファイアウォール ルールを更新し、SSH 踏み台サーバーの [プライベート IP アドレス](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/private-ip-addresses) からのトラフィックを許可します。
   </Tab>
@@ -81,4 +81,4 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 次のステップ
 </div>
 
-これで、[ClickPipe を作成](/ja/integrations/clickpipes/mysql/index)して、Azure Flexible Server for MySQL インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。インスタンスのセットアップ時に使用した接続情報は、ClickPipe の作成時に必要になるため、必ず控えておいてください。
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/mysql/index)し、Azure Flexible Server for MySQL インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。ClickPipe の作成時に必要になるため、インスタンスの設定時に使用した接続情報は必ず控えておいてください。

@@ -101,7 +101,7 @@ CREATE TABLE test.visits
 
 This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
 
-When [flatten_nested](/operations/settings/settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
+When [flatten_nested](/reference/settings/session-settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
 
 In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
@@ -176,10 +176,20 @@ The ALTER query for elements in a nested data structure has limitations.
 
 DataTypePtr createNested(const DataTypes & types, const Names & names)
 {
-    auto custom_desc = std::make_unique<DataTypeCustomDesc>(
-        std::make_unique<DataTypeNestedCustomName>(types, names));
+    if (types.empty())
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Nested cannot be empty");
 
-    return DataTypeFactory::instance().getCustom(std::move(custom_desc));
+    /// Construct the underlying `Array(Tuple(...))` directly, exactly as `create` above does.
+    /// Do not go through `DataTypeFactory::getCustom`: it would render the already built element
+    /// types back into a type name and parse that text again. Besides being pure waste, the text
+    /// parse starts with a fresh `max_parser_backtracks` budget, so a `Nested` decoded from
+    /// untrusted binary type encoding (`decodeDataType`) could spend that whole budget once per
+    /// `Nested` node in the input.
+    auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(types, names));
+    data_type->setCustomization(std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeNestedCustomName>(types, names)));
+
+    return data_type;
 }
 
 }

@@ -52,7 +52,7 @@ OpenCelliD Project 采用 Creative Commons Attribution-ShareAlike 4.0 Internatio
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="加载蜂窝基站数据集" />
 
-    ### 查看 cell_towers 表的 schema
+    ### 查看 cell&#95;towers 表的 schema
 
     ```sql
     DESCRIBE TABLE cell_towers
@@ -109,7 +109,7 @@ OpenCelliD Project 采用 Creative Commons Attribution-ShareAlike 4.0 Internatio
     2. 从公共 S3 bucket 导入数据集 (686 MB) ：
 
     ```sql
-    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', NOSIGN, 'CSVWithNames')
     ```
   </Tab>
 </Tabs>
@@ -319,7 +319,7 @@ WHERE pointInPolygon((lon, lat), (SELECT * FROM moscow))
 </Note>
 
 <div id="add-your-connection-details">
-  #### 添加连接信息
+  #### 添加连接详情
 </div>
 
 <Tip>

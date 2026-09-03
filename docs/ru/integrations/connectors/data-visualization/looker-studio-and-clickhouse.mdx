@@ -14,7 +14,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 import MySQLCloudSetup from '/snippets/ru/_clickhouse_mysql_cloud_setup.mdx';
 import MySQLOnPremiseSetup from '/snippets/ru/_clickhouse_mysql_on_premise_setup.mdx';
 
-import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -36,7 +36,7 @@ Looker Studio может подключаться к ClickHouse через ин�
   ## Подключение Looker Studio к ClickHouse
 </div>
 
-Сначала войдите на https://lookerstudio.google.com с помощью своей учетной записи Google и создайте новый источник данных:
+Сначала войдите в [Looker Studio](https://lookerstudio.google.com) под своим аккаунтом Google и создайте новый источник данных:
 
 <Image size="md" img="/images/integrations/data-visualization/looker_studio_01.webp" alt="Создание нового источника данных в интерфейсе Looker Studio" border />
 
@@ -61,19 +61,19 @@ Looker Studio может подключаться к ClickHouse через ин�
 
 <br />
 
-Либо можно указать пользовательский запрос, чтобы получить данные:
+Либо можно указать пользовательский запрос для получения данных:
 
 <Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="Использование пользовательского SQL-запроса для получения данных из ClickHouse в Looker Studio" border />
 
 <br />
 
-Наконец, вы должны увидеть определённую автоматически структуру таблицы и при необходимости скорректировать типы данных.
+Наконец, вы увидите автоматически определённую структуру таблицы и при необходимости сможете скорректировать типы данных.
 
 <Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="Просмотр автоматически определённой структуры таблицы ClickHouse в Looker Studio" border />
 
 <br />
 
-Теперь вы можете перейти к изучению данных или созданию нового отчета!
+Теперь можно перейти к изучению данных или созданию нового отчёта!
 
 <div id="using-looker-studio-with-clickhouse-cloud">
   ## Использование Looker Studio с ClickHouse Cloud

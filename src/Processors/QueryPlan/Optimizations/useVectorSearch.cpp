@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
@@ -36,7 +37,7 @@ namespace DB::QueryPlanOptimizations
 /// where
 /// - distance_function is function 'L2Distance', 'cosineDistance', or 'dotProduct',
 /// - vec is a column of tab (*),
-/// - reference_vec is a literal of type Array(Float32/Float64)
+/// - reference_vec is a literal of type Array(Float32 / Float64 / BFloat16 / (U)Int8 / (U)Int16 / (U)Int32 / (U)Int64)
 ///
 /// This function extracts distance_function, reference_vec, and N from the query plan without rewriting it.
 /// The extracted values are then passed to ReadFromMergeTree which can then use the vector similarity index
@@ -116,6 +117,12 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
 
+    /// LIMIT ... WITH TIES can return more rows than n. The vector search optimization
+    /// bounds the ANN search to exactly n candidates, so rows tied with the n-th row
+    /// are never retrieved. Skip the optimization and fall back to brute force.
+    if (limit_step->withTies())
+        return no_layers_updated;
+
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
     if (n > settings.max_limit_for_vector_search_queries)
         return no_layers_updated;
@@ -178,16 +185,13 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
-            /// Is it an Array(Float32), Array(Float64) or Array(BFloat16) column?
+            /// Is it an Array(Float32), Array(Float64), Array(BFloat16), Array((U)Int8/16/32/64) column?
             const DataTypePtr & data_type = child->result_type;
             const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
             if (data_type_array == nullptr)
                 continue;
-            DataTypePtr data_type_array_nested = data_type_array->getNestedType();
-            const auto * data_type_nested_float64 = typeid_cast<const DataTypeFloat64 *>(data_type_array_nested.get());
-            const auto * data_type_nested_float32 = typeid_cast<const DataTypeFloat32 *>(data_type_array_nested.get());
-            const auto * data_type_nested_bfloat16 = typeid_cast<const DataTypeBFloat16 *>(data_type_array_nested.get());
-            if (data_type_nested_float64 == nullptr && data_type_nested_float32 == nullptr && data_type_nested_bfloat16 == nullptr)
+            WhichDataType which_data_type_array_nested(data_type_array->getNestedType());
+            if (!which_data_type_array_nested.isFloat() && !which_data_type_array_nested.isNativeInteger())
                 continue;
 
             /// Read value from column
@@ -199,9 +203,10 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
             for (const auto & field_array_value : field_array)
             {
                 Field::Types::Which field_array_value_type = field_array_value.getType();
-                if (field_array_value_type != Field::Types::Float64)
+                if (field_array_value_type != Field::Types::Float64 && field_array_value_type != Field::Types::UInt64
+                    && field_array_value_type != Field::Types::Int64)
                     return no_layers_updated;
-                Float64 float64 = field_array_value.safeGet<Float64>();
+                Float64 float64 = applyVisitor(FieldVisitorConvertToNumber<Float64>(), field_array_value);
                 reference_vector.push_back(float64);
             }
         }
@@ -340,12 +345,13 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     /// is slightly at odds with vector search optimizations. There are two optimizations in vector
     /// search -
     /// 1. Lookup the vector index and shortlist a handful of granules containing neighbours.
-    /// 2. The rescoring optimization goes even further and does not read the 'heavy' vector column at all and
-    ///    only sends the exact neighbour rows to the Sorting + Output step.
+    /// 2. Apply the candidate-row filter from the vector index before distance
+    ///    computation for rescoring queries, or use `_distance` from the index
+    ///    for non-rescoring queries.
     /// Thus, explicit or implicit PREWHERE after above two optimizations does not bring additional benefit. Also,
-    /// the PREWHERE filter implementation conflicts with rescoring optimization filter. If explicit PREWHERE is
-    /// requested, we turn the rescoring optimization off. If there is a WHERE clause and even with
-    /// optimize_move_to_prewhere = 1, we retain the rescoring optimization and disable the implicit PREWHERE
+    /// the PREWHERE filter implementation conflicts with the vector-search candidate-row filter. If explicit PREWHERE
+    /// is requested, we turn the vector-search optimization off. If there is a WHERE clause and even with
+    /// optimize_move_to_prewhere = 1, we retain vector-search optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
         return false;
@@ -381,6 +387,10 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     ActionsDAG & expression = expression_step->getExpression();
 
     bool optimize_plan = !settings.vector_search_with_rescoring;
+    /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
+    /// vector row hints only describe the original candidates and must not filter
+    /// rows added for the final merge.
+    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
@@ -488,7 +498,55 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
-    return true;
+    if (apply_row_filter_for_rescoring)
+    {
+        auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
+        analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
+
+        bool can_apply_row_filter = analyzed_result != nullptr;
+        if (can_apply_row_filter)
+        {
+            for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty() && !part_with_ranges.read_hints.vector_search_results.has_value())
+                {
+                    can_apply_row_filter = false;
+                    break;
+                }
+            }
+        }
+
+        if (can_apply_row_filter)
+        {
+            for (auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty())
+                    part_with_ranges.read_hints.use_vector_search_result_filter = true;
+            }
+        }
+        else
+        {
+            apply_row_filter_for_rescoring = false;
+        }
+    }
+
+    const bool vector_optimization_applied = optimize_plan || apply_row_filter_for_rescoring;
+
+    /// Both vector-search optimizations narrow each granule to the candidate rows returned by the
+    /// vector index before the WHERE/PREWHERE filter runs. The query condition cache key encodes
+    /// only the filter predicate, so a granule whose candidates all fail the filter would be
+    /// recorded as "the predicate matches nothing" and a later ordinary query with the same
+    /// predicate would skip it and lose rows. Same reasoning as the SAMPLE exclusion in
+    /// ReadFromMergeTree::initializePipeline. Reading and index analysis are already excluded for
+    /// vector search (MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache and
+    /// ReadFromMergeTree::selectRangesToRead); this covers the remaining write paths.
+    if (vector_optimization_applied)
+        read_from_mergetree_step->disableQueryConditionCache();
+
+    if (!vector_optimization_applied && settings.optimize_prewhere && filter_step)
+        optimizePrewhere(*filter_or_prewhere_node, settings.remove_unused_columns, false);
+
+    return vector_optimization_applied;
 }
 
 }

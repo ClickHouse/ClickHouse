@@ -10,7 +10,7 @@ integration:
 keywords: ['apache beam', 'traitement de flux', 'traitement par lots', 'connecteur JDBC', 'pipeline de données']
 ---
 
-import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -161,7 +161,7 @@ Vous pouvez ajuster la configuration de `ClickHouseIO.Write` à l’aide des fon
 Veuillez tenir compte des limitations suivantes lors de l&#39;utilisation du connecteur :
 
 * À ce jour, seule l&#39;opération Sink est prise en charge. Le connecteur ne prend pas en charge l&#39;opération Source.
-* ClickHouse effectue une déduplication lors de l&#39;insertion dans une table `ReplicatedMergeTree` ou dans une table `Distributed` basée sur une table `ReplicatedMergeTree`. Sans réplication, l&#39;insertion dans une table MergeTree standard peut entraîner des doublons si une insertion échoue puis aboutit lors d&#39;une nouvelle tentative. Cependant, chaque bloc est inséré de manière atomique, et la taille du bloc peut être configurée à l&#39;aide de `ClickHouseIO.Write.withMaxInsertBlockSize(long)`. La déduplication s&#39;appuie sur les sommes de contrôle des blocs insérés. Pour plus d&#39;informations sur la déduplication, veuillez consulter [Déduplication](/fr/concepts/features/operations/insert/deduplication) et [Configuration de la déduplication à l&#39;insertion](/fr/reference/settings/session-settings#insert_deduplicate).
+* ClickHouse effectue une déduplication lors de l&#39;insertion dans une table `ReplicatedMergeTree` ou dans une table `Distributed` basée sur une table `ReplicatedMergeTree`. Sans réplication, l&#39;insertion dans une table MergeTree standard peut entraîner des doublons si une insertion échoue puis aboutit lors d&#39;une nouvelle tentative. Cependant, chaque bloc est inséré de manière atomique, et la taille du bloc peut être configurée à l&#39;aide de `ClickHouseIO.Write.withMaxInsertBlockSize(long)`. La déduplication s&#39;appuie sur les sommes de contrôle des blocs insérés. Pour plus d&#39;informations sur la déduplication, veuillez consulter [Déduplication](/fr/concepts/features/operations/insert/deduplication) et [Configuration de la déduplication à l&#39;insertion](/fr/reference/settings/session-settings/insert#insert_deduplicate).
 * Le connecteur n&#39;exécute aucune instruction DDL ; par conséquent, la table cible doit exister avant toute insertion.
 
 <div id="related-content">
