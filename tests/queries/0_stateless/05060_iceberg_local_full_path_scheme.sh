@@ -133,3 +133,14 @@ scheme_only = on == 'file://' + off.replace('rel0', 'rel1')
 print('J relative  ' + (off.replace('rel0', 'rel') + ' ' + on.replace('rel1', 'rel')
                         if scheme_only else 'UNEXPECTED ' + off + ' ' + on))
 "
+
+# K names the other half of the same mismatch, so J's stamped value is pinned against where the
+# data really is rather than on its own, and reading it back shows the table stays readable here.
+echo -n 'K datapath  '
+(
+    cd "${TEST_DIR}" || exit 1
+    ${CLICKHOUSE_LOCAL} -q "
+    SELECT DISTINCT if(startsWith(_path, '/'), 'UNEXPECTED ' || _path, 'relative ' || toString(count() OVER ()))
+    FROM icebergLocal('rel1/');
+    " < /dev/null
+)
