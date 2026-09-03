@@ -58,6 +58,20 @@ def outcome(sock):
     return "UNEXPECTED REPLY " + repr(data[:64])
 
 
+def first_reply(sock):
+    """Describe the first reply message, for a case where the server rejects the message but keeps
+    the connection open, so waiting for it to close would only hit the timeout."""
+    try:
+        data = sock.recv(4096)
+    except (socket.timeout, ConnectionResetError):
+        return "TIMEOUT"
+    if data[0:1] == b"E":
+        return "error response"
+    if not data:
+        return "NO REPLY"
+    return "UNEXPECTED REPLY " + repr(data[:64])
+
+
 # A SASL initial response that declares a two-gigabyte mechanism in a thirty-byte message.
 sock = connect()
 startup(sock, user_scram)
@@ -110,7 +124,7 @@ sock.sendall(b"p" + struct.pack(">i", 4 + 2) + b"x\x00")
 read_until_ready(sock)
 body = b"SELECT 1\x00" + b"SELECT 2\x00"
 sock.sendall(b"Q" + struct.pack(">i", 4 + len(body)) + body)
-print("query with a smuggled tail:", outcome(sock))
+print("query with a smuggled tail:", first_reply(sock))
 sock.close()
 
 # An oversized `Sync`, whose parser reads nothing at all: its payload must not survive the message
