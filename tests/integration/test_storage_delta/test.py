@@ -5033,6 +5033,8 @@ def test_table_statistics(started_cluster):
         "",
     )
 
+    assert 1300 == int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
+
     result = instance.query(
         f"SELECT total_rows, total_bytes FROM system.tables WHERE name = '{TABLE_NAME}'"
     )
