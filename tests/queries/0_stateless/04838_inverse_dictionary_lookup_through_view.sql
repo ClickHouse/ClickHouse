@@ -9,6 +9,7 @@ SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET optimize_or_like_chain = 0;
 
+DROP VIEW IF EXISTS view_lookup_nested_v;
 DROP VIEW IF EXISTS view_lookup_v;
 DROP VIEW IF EXISTS view_lookup_grouped_v;
 DROP VIEW IF EXISTS view_lookup_no_key_v;
@@ -67,9 +68,25 @@ SET optimize_inverse_dictionary_lookup = 1;
 EXPLAIN indexes = 1
 SELECT count() FROM view_lookup_no_key_v WHERE name = 'match';
 
+-- A view over another view (recursion through the TableNode/view path twice) still rewrites.
+CREATE VIEW view_lookup_nested_v AS SELECT * FROM view_lookup_v;
+
+SET optimize_inverse_dictionary_lookup = 1;
+EXPLAIN indexes = 1
+SELECT count() FROM view_lookup_nested_v WHERE name = 'match';
+
+-- A plain subquery (QueryNode source, no view/StorageView involved) also rewrites. `id` must stay
+-- referenced in the outer query, otherwise unused-column elimination removes it from the
+-- subquery's projection before this pass runs, and the key can no longer be re-expressed.
+SET optimize_inverse_dictionary_lookup = 1;
+EXPLAIN indexes = 1
+SELECT id FROM (SELECT id, dictGetString('view_lookup_dict', 'name', id) AS name FROM view_lookup_data) AS view_lookup_sub
+WHERE name = 'match';
+
 DROP VIEW view_lookup_v;
 DROP VIEW view_lookup_grouped_v;
 DROP VIEW view_lookup_no_key_v;
+DROP VIEW view_lookup_nested_v;
 DROP DICTIONARY view_lookup_dict;
 DROP TABLE view_lookup_data;
 DROP TABLE view_lookup_ref;
