@@ -680,6 +680,32 @@ void SerializationObjectSharedData::deserializeStructureGranuleSuffix(ReadBuffer
     readBinaryLittleEndian(structure_granule.paths_substreams_metadata_stream_mark.offset_in_decompressed_block, buf);
 }
 
+void SerializationObjectSharedData::checkGranulesMatchFirstBucket(
+    const StructureGranules & granules, const StructureGranules & first_bucket_granules, size_t bucket)
+{
+    if (granules.size() != first_bucket_granules.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Bucket {} of Object shared data has {} granules, but bucket 0 has {} granules",
+            bucket,
+            granules.size(),
+            first_bucket_granules.size());
+
+    for (size_t granule = 0; granule != granules.size(); ++granule)
+    {
+        if (granules[granule].limit != first_bucket_granules[granule].limit || granules[granule].offset != first_bucket_granules[granule].offset)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Granule {} of bucket {} of Object shared data has {} rows at offset {}, but the same granule of bucket 0 has {} rows at offset {}",
+                granule,
+                bucket,
+                granules[granule].limit,
+                granules[granule].offset,
+                first_bucket_granules[granule].limit,
+                first_bucket_granules[granule].offset);
+    }
+}
+
 std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationObjectSharedData::deserializeStructure(
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
@@ -1304,6 +1330,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             std::vector<std::vector<String>> granules_paths;
             /// Collect the number of rows to read for each granule.
             std::vector<size_t> granules_limits;
+            std::shared_ptr<StructureGranules> first_bucket_structure_granules;
 
             for (size_t bucket = 0; bucket != buckets; ++bucket)
             {
@@ -1319,35 +1346,19 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 /// Initialize granules_paths/granules_limits on first bucket.
                 if (bucket == 0)
                 {
+                    first_bucket_structure_granules = structure_granules;
                     granules_paths.resize(structure_granules->size());
                     granules_limits.reserve(structure_granules->size());
                     for (size_t granule = 0; granule != structure_granules->size(); ++granule)
                         granules_limits.push_back((*structure_granules)[granule].limit);
                 }
-                /// All buckets store the same rows, so they must be split into the same granules.
-                else if (structure_granules->size() != granules_limits.size())
+                else
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Bucket {} of Object shared data has {} granules, but bucket 0 has {} granules",
-                        bucket,
-                        structure_granules->size(),
-                        granules_limits.size());
+                    checkGranulesMatchFirstBucket(*structure_granules, *first_bucket_structure_granules, bucket);
                 }
 
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
-                {
-                    if ((*structure_granules)[granule].limit != granules_limits[granule])
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Granule {} of bucket {} of Object shared data has {} rows, but the same granule of bucket 0 has {} rows",
-                            granule,
-                            bucket,
-                            (*structure_granules)[granule].limit,
-                            granules_limits[granule]);
-
                     granules_paths[granule].insert(granules_paths[granule].end(), (*structure_granules)[granule].all_paths.begin(), (*structure_granules)[granule].all_paths.end());
-                }
 
                 settings.path.pop_back();
             }

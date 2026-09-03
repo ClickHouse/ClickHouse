@@ -217,6 +217,10 @@ private:
         DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
         SubstreamsCache * cache);
 
+    /// All buckets store the same rows and are split into the same granules, and the readers apply the
+    /// granule layout of the first bucket to all of them.
+    static void checkGranulesMatchFirstBucket(const StructureGranules & granules, const StructureGranules & first_bucket_granules, size_t bucket);
+
     /// Deserialize prefix of the granule in ObjectSharedDataStructure(Prefix) stream that contains:
     ///   - number of rows in the granule
     ///   - list of all paths stored in the granule
