@@ -180,7 +180,12 @@ void VirtualRowReadAheadTransform::recomputeSet()
     for (size_t lane_num : ranked_lanes)
     {
         Lane & lane = lanes[lane_num];
-        bool eligible = set_lanes.size() < read_ahead_window && underCaps(lane) && !lane.input->isFinished();
+        /// A lane with nothing left to read neither takes a slot nor bounds the others: the merge
+        /// will drain its buffer without any further read, so data beyond its bound is not premature.
+        if (lane.input->isFinished())
+            continue;
+
+        bool eligible = set_lanes.size() < read_ahead_window && underCaps(lane);
         if (eligible)
         {
             lane.in_set = true;
