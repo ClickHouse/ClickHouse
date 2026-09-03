@@ -17,6 +17,8 @@ doc_type: 'reference'
 
 الاسم المستعار: `timeSeriesLastToGrid`.
 
+إذا كانت عدة عيّنات تحمل الطابع الزمني نفسه، فلا يُستخدم سوى واحدة منها: العيّنة ذات القيمة الأكبر. تخسر قيمة NaN أمام أي قيمة أخرى، لذا لا تُستخدم قيمة NaN إلا إذا كانت جميع العيّنات عند هذا الطابع الزمني هي NaN.
+
 <Warning>
   هذه الدالة تجريبية. فعّلها بتعيين `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>

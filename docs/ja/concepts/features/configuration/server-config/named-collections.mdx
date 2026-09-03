@@ -6,17 +6,17 @@ title: '名前付きコレクション'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge />
-
 名前付きコレクションは、外部ソースとのインテグレーションを設定するためのキー・バリューのペアの集合を保存する仕組みです。名前付きコレクションは、辞書、テーブル、テーブル関数、オブジェクトストレージで使用できます。
+
+<Note>
+  DDL で作成された名前付きコレクションは、一部の ClickHouse Cloud サービスで有効にできます。利用可能かどうかはサポートにお問い合わせください。ClickHouse Cloud では、ユーザーがサーバー設定ファイルを変更できないため、設定ファイルで定義した名前付きコレクションは利用できません。
+</Note>
 
 名前付きコレクションは DDL または設定ファイルで設定でき、ClickHouse の起動時に適用されます。これにより、オブジェクトの作成が簡単になるほか、管理者アクセス権のないユーザーに認証情報を見せずに済みます。
 
 名前付きコレクション内のキーは、対応する関数、テーブルエンジン、データベースなどのパラメータ名と一致している必要があります。以下の例では、各タイプごとにパラメータ一覧へのリンクを示しています。
 
-名前付きコレクションで設定したパラメータは SQL で上書きできます。これについては以下の例で示します。この動作は、`[NOT] OVERRIDABLE` キーワード、XML 属性、および/または設定オプション `allow_named_collection_override_by_default` を使って制限できます。
+名前付きコレクションで設定したパラメータは SQL でオーバーライドできます。これについては以下の例で示します。この動作は、`[NOT] OVERRIDABLE` キーワード、XML 属性、および/または設定オプション `allow_named_collection_override_by_default` を使って制限できます。
 
 <Warning>
   上書きが許可されている場合、管理者アクセス権のないユーザーが

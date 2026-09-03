@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -65,18 +65,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_max_reconnect` – 非推奨であり、効果はありません。再接続は `nats&#95;reconnect&#95;wait` タイムアウトで恒久的に実行されます。
 * `nats_reconnect_wait` – 再接続試行のたびに待機する時間 (ミリ秒単位) 。デフォルト: `2000`。
 * `nats_server_list` - 接続先の server 一覧。NATS クラスターに接続するために指定できます。
-* `nats_skip_broken_messages` - ブロックごとに許容する、スキーマ非互換の NATS message の数。デフォルト: `0`。`nats_skip_broken_messages = N` の場合、このエンジンは解析できない *N* 件の NATS message をスキップします (1 message は 1 行のデータに相当します) 。
+* `nats_skip_broken_messages` - ブロックごとに許容する、スキーマ非互換の NATS メッセージ の数。デフォルト: `0`。`nats_skip_broken_messages = N` の場合、このエンジンは解析できない *N* 件の NATS メッセージ をスキップします (1 メッセージ は 1 行のデータに相当します) 。
 * `nats_max_block_size` - NATS からデータを flush するために poll で収集する行数。デフォルト: [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `nats_flush_interval_ms` - NATS から読み取ったデータを flush するまでのタイムアウト。デフォルト: [stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings/stream#stream_flush_interval_ms)。
-* `nats_wait_for_flush_interval` - `true` の場合、background streaming cycle は、コンシューマー queue が空になるとすぐに終了するのではなく、flush interval 全体 (`nats_flush_interval_ms`、指定されていない場合は `stream_flush_interval_ms`) にわたって開いたままとなります。これにより、最大 1 flush interval 分の追加インジェストレイテンシーと引き換えに、より多くの message を単一のブロックに蓄積できます。デフォルト: `false` (低レイテンシーの drain-and-go 動作) 。
-* `nats_username` - NATS username。
-* `nats_password` - NATS password。
-* `nats_token` - NATS auth token。
-* `nats_credential_file` - NATS credentials file への path。
+* `nats_wait_for_flush_interval` - `true` の場合、background streaming cycle は、コンシューマー queue が空になるとすぐに終了するのではなく、flush interval 全体 (`nats_flush_interval_ms`、指定されていない場合は `stream_flush_interval_ms`) にわたって開いたままとなります。これにより、最大 1 flush interval 分の追加インジェストレイテンシーと引き換えに、より多くの メッセージ を単一のブロックに蓄積できます。デフォルト: `false` (低レイテンシーの drain-and-go 動作) 。
+* `nats_username` - NATS username。サーバー設定ファイルで定義された named collection に保存されている場合、クエリでその collection の `nats_url` または `nats_server_list` を override することはできません。
+* `nats_password` - NATS password。サーバー設定ファイルで定義された named collection に保存されている場合、クエリでその collection の `nats_url` または `nats_server_list` を override することはできません。
+* `nats_token` - NATS auth token。サーバー設定ファイルで定義された named collection に保存されている場合、クエリでその collection の `nats_url` または `nats_server_list` を override することはできません。
+* `nats_credential_file` - NATS credentials file への path。server が自身の権限で path を開くため、クエリによって `nats_url` と `nats_server_list` が override されない、サーバー設定ファイルで定義された named collection からのみ受け付けられます。クエリでは、代わりにファイルの内容を `nats_credentials` に渡します。
+* `nats_credentials` - NATS credentials の内容 (user JWT と seed を含む `.creds` file と同じペイロード)。クエリで使用できる唯一の指定方法であるため、`<nats_credential_file overridable="false">` により operator がその path をロックしている場合を除き、競合するのではなく named collection から継承した `nats_credential_file` を置き換えます。named collection が保持する credentials を削除するために空文字列を割り当てることはできません。
 * `nats_startup_connect_tries` - 起動時の接続試行回数。デフォルト: `5`。
-* `nats_max_rows_per_message` — 行ベースのフォーマットで、1 つの NATS message に書き込まれる最大行数。 (デフォルト: `1`) 。
-* `nats_commit_on_select` - クエリ実行時に message を commit します。JetStream にのみ適用されます。core NATS には acknowledgement はありません。デフォルト: `0`。
-* `nats_handle_error_mode` — NATS エンジンでの error の処理方法。設定可能な値: default (message の解析に失敗すると exception が throw されます) 、stream (exception message と raw message が仮想カラム `_error` および `_raw_message` に保存されます) 。
+* `nats_max_rows_per_message` — 行ベースのフォーマットで、1 つの NATS メッセージ に書き込まれる最大行数。 (デフォルト: `1`) 。
+* `nats_commit_on_select` - クエリ実行時に メッセージ を commit します。JetStream にのみ適用されます。core NATS には acknowledgement はありません。デフォルト: `0`。
+* `nats_handle_error_mode` — NATS エンジンでの error の処理方法。設定可能な値: default (メッセージ の解析に失敗すると exception が throw されます) 、stream (exception メッセージ と raw メッセージ が仮想カラム `_error` および `_raw_message` に保存されます) 。
 
 SSL 接続:
 
@@ -86,10 +87,10 @@ SSL 接続:
 
 NATSテーブルへの書き込み:
 
-テーブルが1つのサブジェクトのみを読み取る場合、いかなるINSERTも同じサブジェクトにパブリッシュされます。
-ただし、テーブルが複数のサブジェクトを読み取る場合は、どのサブジェクトにパブリッシュするかを指定する必要があります。
-そのため、複数のサブジェクトを持つテーブルにINSERTする際は、`stream_like_engine_insert_queue`を設定する必要があります。
-テーブルが読み取るサブジェクトのいずれかを選択して、そこにデータをパブリッシュできます。例:
+テーブルが1つのsubjectのみを読み取る場合、いかなるINSERTも同じsubjectにパブリッシュされます。
+ただし、テーブルが複数のsubjectを読み取る場合は、どのsubjectにパブリッシュするかを指定する必要があります。
+そのため、複数のsubjectを持つテーブルにINSERTする際は、`stream_like_engine_insert_queue`を設定する必要があります。
+テーブルが読み取るsubjectのいずれかを選択して、そこにデータをパブリッシュできます。例:
 
 ```sql
 CREATE TABLE queue (
