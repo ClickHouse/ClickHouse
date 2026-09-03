@@ -127,6 +127,8 @@ public:
         return sizeAt(n) == 0;
     }
 
+    bool hasOnlyTypeDefaults() const override;
+
     void insert(const Field & x) override
     {
         const String & s = x.safeGet<String>();
