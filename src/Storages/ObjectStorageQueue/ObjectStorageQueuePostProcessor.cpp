@@ -349,7 +349,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                 continue;
             }
             task_tracker.add(
-                [&, &object_from, object_to = std::move(destination)]
+                [&, object_to = std::move(destination)]
                 {
                     try
                     {
