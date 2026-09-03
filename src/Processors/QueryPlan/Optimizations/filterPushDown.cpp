@@ -768,12 +768,20 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (!replaced || !replaced->type->equals(*supertype))
                 return;
 
-            /// The pushed-down filter computes this key and the JOIN computes it again, so a key that is
-            /// not stable within the query would be compared against two different values.
+            /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
+            /// the same value twice within one query and must not change the number of rows. The pass requires
+            /// the same two of the filter it pushes.
             const auto source_dag = JoinExpressionActions::getSubDAG(source);
             for (const auto & node : source_dag.getNodes())
             {
-                if (node.type == ActionsDAG::ActionType::FUNCTION && !node.function_base->isDeterministicInScopeOfQuery())
+                if (node.type == ActionsDAG::ActionType::FUNCTION)
+                {
+                    if (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery())
+                        return;
+                }
+                else if (node.type != ActionsDAG::ActionType::INPUT
+                    && node.type != ActionsDAG::ActionType::COLUMN
+                    && node.type != ActionsDAG::ActionType::ALIAS)
                     return;
             }
 

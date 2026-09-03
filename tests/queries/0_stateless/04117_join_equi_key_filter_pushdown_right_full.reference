@@ -61,3 +61,8 @@ INNER JOIN ON, cross-type equi-key: result
 INNER JOIN ON, cross-type equi-key that is not stable within the query: result
 5
 6
+INNER JOIN ON, cross-type equi-key that changes the number of rows: result
+5
+5
+6
+6

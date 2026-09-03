@@ -258,3 +258,22 @@ SETTINGS max_threads = 1;
 
 DROP TABLE inner_nd_wide;
 DROP TABLE inner_nd_narrow;
+
+-- A key that changes the number of rows is not substitutable either: the pushed-down filter expands the
+-- rows and the JOIN expands them again, so a match is reported once per extra copy. The array repeats its
+-- element so that the second expansion changes the result and not just an intermediate row count.
+
+DROP TABLE IF EXISTS inner_aj_wide;
+DROP TABLE IF EXISTS inner_aj_narrow;
+CREATE TABLE inner_aj_wide   (a Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE inner_aj_narrow (x Int32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO inner_aj_wide   SELECT number FROM numbers(10);
+INSERT INTO inner_aj_narrow SELECT number FROM numbers(10);
+
+SELECT 'INNER JOIN ON, cross-type equi-key that changes the number of rows: result';
+SELECT l.a FROM inner_aj_wide AS l INNER JOIN inner_aj_narrow AS r
+    ON l.a = toInt32(arrayJoin([r.x, r.x]))
+WHERE l.a BETWEEN 5 AND 6 ORDER BY 1;
+
+DROP TABLE inner_aj_wide;
+DROP TABLE inner_aj_narrow;
