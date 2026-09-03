@@ -1340,6 +1340,13 @@ void pushOrderByIntoView(
     if (outer->hasOffset())
         return;
 
+    /// `LIMIT n AFTER ... [UNTIL ...]` counts rows only from the boundary row onwards, and the
+    /// boundary is located on the coordinator over the ordered stream. Pushing `LIMIT_LENGTH` into
+    /// the view would keep the first n rows of every shard instead, so the boundary row may never
+    /// reach the coordinator and the range would return too few rows or none at all.
+    if (outer->hasLimitAfter() || outer->hasLimitUntil())
+        return;
+
     /// LIMIT ... WITH TIES decides ties globally after ordering. Pushing
     /// LIMIT_LENGTH into the view would truncate per-shard before the global
     /// tie set is known.
