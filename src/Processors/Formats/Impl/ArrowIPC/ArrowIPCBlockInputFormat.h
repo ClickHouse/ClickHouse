@@ -62,6 +62,12 @@ private:
     /// fields (per `requested_top_level_fields`), so the reader skips the DictionaryBatch bodies of
     /// dictionaries used only by unrequested columns. Requires `arrow_schema` and the requested-fields set.
     void computeReachableDictionaryIds();
+    /// Decodes the values of one `DictionaryBatch` with `batch_decoder` and registers them in `dictionaries`
+    /// under the batch's id, decoding them under the requested type hint of the field(s) encoding that
+    /// dictionary (`dictionary_value_hints`). `body_length` is the message's declared body length, already
+    /// validated by the caller.
+    void decodeDictionaryBatch(
+        ArrowIPC::RecordBatchDecoder & batch_decoder, const ArrowIPC::flatbuf::DictionaryBatch & dict_batch, Int64 body_length);
     Chunk buildChunk(ArrowIPC::RecordBatchDecoder::DecodedColumns & decoded, size_t num_rows);
     /// Reinterprets the raw bytes of decoded fixed_size_binary / binary leaves as UUID / IPv6 / big integer
     /// in place when the requested header type asks for it (recursing through Nullable/Array/Tuple/Map), so
@@ -98,6 +104,11 @@ private:
     /// columns and its body is skipped rather than decoded, so a subset read does not pay for — or fail on —
     /// an unrequested column's dictionary.
     UnorderedSetWithMemoryTracking<Int64> reachable_dictionary_ids;
+    /// For each Arrow dictionary id, the requested type hint its values are decoded under — absent when no
+    /// requested type reaches the encoding field, or when several encoding fields resolve different hints
+    /// (see `RecordBatchDecoder::collectDictionaryValueHints`). Computed from the requested header before
+    /// any dictionary batch is decoded.
+    UnorderedMapWithMemoryTracking<Int64, DataTypePtr> dictionary_value_hints;
     bool prepared = false;
     PODArray<char> body_buffer;
 

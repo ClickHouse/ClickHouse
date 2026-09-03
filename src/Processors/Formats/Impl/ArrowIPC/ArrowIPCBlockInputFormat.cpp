@@ -376,7 +376,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// `Nested`/struct subcolumn of it (a header column `name.sub` keeps the field `name`) — mirroring how
     /// `buildChunk` maps columns. This depends only on the header, so compute it before reading the file:
     /// the file reader uses it below to skip the dictionaries of unrequested columns. Names are lower-cased
-    /// when case-insensitive matching is on, matching the lookup in `decodeColumns`.
+    /// when case-insensitive matching is on, matching the lookup in `decodeBatch`.
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
     requested_top_level_fields.clear();
@@ -423,11 +423,12 @@ void ArrowIPCBlockInputFormat::prepareReader()
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
 
     /// Collect the dictionary ids the requested columns actually reference, so the stream reader can skip
-    /// the DictionaryBatch bodies of dictionaries used only by unrequested columns. (The file reader has
-    /// already computed and used this set above, before decoding its dictionaries up front; recomputing it
-    /// here is cheap and keeps the stream path — whose dictionaries are decoded lazily while reading —
-    /// correct.)
+    /// the DictionaryBatch bodies of dictionaries used only by unrequested columns, and the requested type
+    /// hint each dictionary's values are decoded under. (The file reader has already computed and used
+    /// both above, before decoding its dictionaries up front; recomputing them here is cheap and keeps the
+    /// stream path — whose dictionaries are decoded lazily while reading — correct.)
     computeReachableDictionaryIds();
+    dictionary_value_hints = decoder->collectDictionaryValueHints(&requested_top_level_fields, &requested_field_target_types);
 
     prepared = true;
 }
@@ -442,7 +443,7 @@ void ArrowIPCBlockInputFormat::computeReachableDictionaryIds()
         if (case_insensitive)
             boost::to_lower(name);
         /// A top-level field is kept iff its normalized name is requested — the same condition
-        /// `decodeColumns` uses to decide whether to decode or skip it. Every dictionary in a kept field's
+        /// `decodeBatch` uses to decide whether to decode or skip it. Every dictionary in a kept field's
         /// subtree is reachable; dictionaries referenced only by skipped fields are not.
         if (requested_top_level_fields.contains(name))
             collectDictionaryIdsInSubtree(field, reachable_dictionary_ids);
@@ -526,6 +527,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
         computeReachableDictionaryIds();
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+        dictionary_value_hints = temp_decoder->collectDictionaryValueHints(&requested_top_level_fields, &requested_field_target_types);
         for (const auto & block : footer.dictionary_blocks)
         {
             seekable->seek(block.offset, SEEK_SET);
@@ -553,30 +555,51 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC dictionary batch body length {} does not match the footer block length {}",
                     msg.body_length, block.body_length);
-            /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
-            /// than dereferencing null below.
-            if (!dict_batch->data())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
-            auto field_it = dictionary_value_fields.find(id);
-            if (field_it == dictionary_value_fields.end())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
-
-            /// Reject a batch declaring buffers/nodes beyond its single value field before materializing the
-            /// body, so surplus buffers are never read or decompressed only to be ignored.
-            const ArrowIPC::ArrowFields value_fields{field_it->second};
-            temp_decoder->validateBatchLayout(*dict_batch->data(), value_fields);
-            message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
-            auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
-            checkDictionaryUnique(decoded.at(0).column);
-            dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
-            /// A delta batch merges into the existing dictionary; re-validate the merged values. The
-            /// per-batch check above only proves the delta is internally unique, but a unique delta can
-            /// still repeat a value already present in the base dictionary, which would violate the
-            /// LowCardinality dictionary uniqueness invariant the non-delta path enforces.
-            if (dict_batch->isDelta())
-                checkDictionaryUnique(dictionaries.get(id));
+            decodeDictionaryBatch(*temp_decoder, *dict_batch, msg.body_length);
         }
     }
+}
+
+void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
+    ArrowIPC::RecordBatchDecoder & batch_decoder, const ArrowIPC::flatbuf::DictionaryBatch & dict_batch, Int64 body_length)
+{
+    const Int64 id = dict_batch.id();
+    /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather than
+    /// dereferencing null below.
+    if (!dict_batch.data())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
+    auto field_it = dictionary_value_fields.find(id);
+    if (field_it == dictionary_value_fields.end())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
+    const ArrowIPC::ArrowField & value_field = field_it->second;
+
+    /// Reject a batch declaring buffers/nodes beyond its single value field before materializing the body,
+    /// so surplus buffers are never read or decompressed only to be ignored.
+    const ArrowIPC::ArrowFields value_fields{value_field};
+    batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
+    message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
+
+    /// Decode the values under the requested type hint of the field(s) encoding this dictionary, so they
+    /// get the same hint-driven decoding as inline values in a record batch. The registered type must
+    /// describe the registered column: the raw-byte rewrite the record-batch columns go through
+    /// reinterprets fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the
+    /// decoder already converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from
+    /// a consistent (values, type) pair.
+    const auto hint_it = dictionary_value_hints.find(id);
+    const DataTypePtr hint = hint_it == dictionary_value_hints.end() ? nullptr : hint_it->second;
+    auto decoded = batch_decoder.decodeDictionaryValues(*dict_batch.data(), body_buffer, value_field, hint);
+    ColumnWithTypeAndName values(decoded.column, decoded.type, value_field.name);
+    if (hint)
+        reinterpretRawByteColumns(values, hint);
+
+    checkDictionaryUnique(values.column);
+    dictionaries.set(id, values.column, values.type, dict_batch.isDelta());
+    /// A delta batch merges into the existing dictionary; re-validate the merged values. The per-batch
+    /// check above only proves the delta is internally unique, but a unique delta can still repeat a value
+    /// already present in the base dictionary, which would violate the LowCardinality dictionary
+    /// uniqueness invariant the non-delta path enforces.
+    if (dict_batch.isDelta())
+        checkDictionaryUnique(dictionaries.get(id).column);
 }
 
 namespace
@@ -1098,29 +1121,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                     message_reader->skipBody(msg.body_length);
                     continue;
                 }
-                /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
-                /// than dereferencing null below.
-                if (!dict_batch->data())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
-                auto field_it = dictionary_value_fields.find(id);
-                if (field_it == dictionary_value_fields.end())
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
-
-                /// Reject a batch declaring buffers/nodes beyond its single value field before materializing
-                /// the body, so surplus buffers are never read or decompressed only to be ignored.
-                const ArrowIPC::ArrowFields value_fields{field_it->second};
-                decoder->validateBatchLayout(*dict_batch->data(), value_fields);
-                message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
-                auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
-                checkDictionaryUnique(decoded.at(0).column);
-                dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
-                /// A delta batch merges into the existing dictionary; re-validate the merged values. The
-                /// per-batch check above only proves the delta is internally unique, but a unique delta can
-                /// still repeat a value already present in the base dictionary, which would violate the
-                /// LowCardinality dictionary uniqueness invariant the non-delta path enforces.
-                if (dict_batch->isDelta())
-                    checkDictionaryUnique(dictionaries.get(id));
+                decodeDictionaryBatch(*decoder, *dict_batch, msg.body_length);
                 continue;
             }
             case ArrowIPC::flatbuf::MessageHeader_Schema:
@@ -1197,6 +1198,7 @@ void ArrowIPCBlockInputFormat::resetParser()
     geo_columns.clear();
     message_reader.reset();
     dictionary_value_fields.clear();
+    dictionary_value_hints.clear();
     dictionaries.clear();
     record_batch_blocks.clear();
     record_batch_current = 0;
