@@ -196,7 +196,7 @@ You can also fetch global and per-query heap profiles directly from the UI.
 http://localhost:8123/jemalloc
 ```
 
-The server UI includes all tabs: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, Fragmentation, and Raw Output. The Fragmentation tab (26.9+) renders the [fragmentation report](#analyzing-fragmentation-from-sql) — waste per (arena, size class), the likely pinner stacks, and an attributed-waste flame graph.
+The server UI includes all tabs: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, Fragmentation, and Raw Output.
 
 </Tab>
 <Tab title="Keeper">
@@ -303,21 +303,25 @@ clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemall
 This section is applicable for versions 26.9+.
 </Note>
 
-Two system tables together make memory fragmentation analysis a plain SQL query:
+jemalloc serves small allocations from slabs: fixed-size blocks of memory split into regions of one size class. A slab is freed only when every region in it is free. If most allocations of a size class are freed quickly, but a few of them live for a long time, the slabs stay pinned with mostly free regions. The memory stays resident, but it is not allocated. This is what fragmentation means here.
 
-- `system.jemalloc_arena_bins` gives the ground truth: per (arena, small size class), the `waste` alias is the bytes held in slabs but not occupied by live allocations. The `purpose` column labels dedicated arenas for long-lived state (`mergetree`, `jit`, `cache`) — those hold old allocations by design, so reports usually exclude them with `purpose = ''`. ([`system.jemalloc_bins`](/reference/system-tables/jemalloc_bins) is the same aggregated over arenas.)
-- `system.jemalloc_sampled_allocations` has one row per live sampled allocation (reading it flushes a fresh heap profile): backtrace (`trace`), age (`age_ns`), sizes (`size`, `usize`), `size_class`, `arena`, `thr_uid`.
+Two system tables help find where it comes from:
 
-Estimator semantics:
+- [`system.jemalloc_arena_bins`](/reference/system-tables/jemalloc_bins) shows how much memory each size class wastes in each arena. `waste` is the bytes held in slabs but not used by live allocations. `purpose` marks dedicated arenas (`mergetree`, `jit`, `cache`); they hold long-lived data by design, so filter them out with `purpose = ''` when looking for unexpected fragmentation. `system.jemalloc_bins` has the same data summed over arenas.
+- `system.jemalloc_sampled_allocations` lists the sampled allocations that are currently alive, one row per sample: the backtrace (`trace`), how long it has been alive (`age_ns`), the size and size class, and the arena. Reading the table flushes a new heap profile.
 
-- Only threads with the profiler armed contribute rows (`jemalloc_enable_profiler` setting or `jemalloc_enable_global_profiler` config).
-- Sampling is byte-weighted: a row stands for roughly `weight` similar allocations. Small size classes need a small sampling interval (`jemalloc_profiler_sampling_rate`) to be represented at all.
-- Sampled allocations live outside slabs — the rows model the allocation pattern, never the slab residents; and each live sample costs one page plus a `cache_oblivious` padding page (128 KiB on 64 KiB-page builds) for as long as the sampled allocation is alive (disarming the profiler stops new samples but does not release the existing ones).
+Joining them on arena and size class shows which code allocated the old objects in the wasteful size classes.
 
-A slab cannot be released while at least one allocation in it is live, so long-lived allocations turn churn in the same size class into waste. To find the backtraces likely holding the most wasteful size classes:
+Keep in mind when reading the results:
+
+- Only threads with the profiler enabled produce samples (`jemalloc_enable_global_profiler` in the config or the `jemalloc_enable_profiler` setting).
+- Each row stands for about `weight` real allocations, and small allocations are sampled rarely. Adjust `jemalloc_profiler_sampling_rate` if the size classes you care about have no samples.
+- Sampled allocations are not stored in slabs, so they do not add to `waste` themselves. They only tell you what code allocates in that size class.
+- Every live sample costs two extra pages (128 KiB on builds with 64 KiB pages) until the allocation is freed. Disabling the profiler stops new samples but does not free the existing ones.
+
+The following query lists the backtraces of allocations older than a minute in the size classes that waste more than 1 MiB:
 
 ```sql
--- Top pinner backtraces for the most wasteful (arena, size class) pairs.
 WITH 60e9 AS min_age_ns
 SELECT
     b.arena,
@@ -337,15 +341,14 @@ INNER JOIN
     WHERE age_ns > min_age_ns
     GROUP BY arena, size_class, trace
 ) AS s ON s.size_class = b.index AND s.arena = b.arena
-WHERE b.large = 0 AND b.waste > 1048576
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 1048576
 ORDER BY b.waste DESC, s.est_old_objects DESC
+SETTINGS allow_introspection_functions=1
 ```
-
-Symbolization uses `addressToSymbol` and `demangle`, so the query requires `allow_introspection_functions = 1`.
 
 ### Example: generating a fragmentation flame graph {#example-fragmentation-flamegraph}
 
-A `LEFT JOIN` of the same subquery can attribute each size class's waste to backtraces proportionally to their estimated share of old objects, in FlameGraph-compatible collapsed format. A `(arena, size class)` with waste but no old-enough sample is emitted as an `[unattributed]` frame, so the flame graph totals the full slab waste instead of silently dropping whatever sampling did not cover (an `INNER JOIN` would undercount exactly when coverage is incomplete). Both branches must come from a single read of `system.jemalloc_sampled_allocations` — every read flushes a fresh profile, so two independent subqueries could observe different dumps:
+The same query can split the waste of each size class between its backtraces, in proportion to their number of old allocations, and print the result in the collapsed format for `flamegraph.pl`. Size classes with waste but without old enough samples go under an `[unattributed]` frame, so the total of the flame graph is the total waste. Read `system.jemalloc_sampled_allocations` once per query: every read flushes a new profile, so two subqueries would see different data.
 
 ```sql
 WITH 60e9 AS min_age_ns
@@ -364,11 +367,12 @@ LEFT JOIN
     WHERE age_ns > min_age_ns
     GROUP BY arena, size_class, trace
 ) AS s ON s.size_class = b.index AND s.arena = b.arena
-WHERE b.large = 0 AND b.waste > 0
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 0
+SETTINGS allow_introspection_functions=1
 ```
 
 ```sh
-clickhouse-client --allow_introspection_functions=1 -q "..." | flamegraph.pl --color=mem --title="Fragmentation Flame Graph" --width 2400 > result.svg
+clickhouse-client -q "..." | flamegraph.pl --color=mem --title="Fragmentation Flame Graph" --width 2400 > result.svg
 ```
 
 ## Flushing heap profiles to disk {#flushing-heap-profiles}

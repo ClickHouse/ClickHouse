@@ -2667,8 +2667,8 @@ SETTINGS jemalloc_enable_profiler = 1,
                 <div class="metric-card">
                     <div class="metric-label">Slab Fragmentation</div>
                     <p style="margin-top: 1rem; font-size: 0.9rem; line-height: 1.6;">
-                        A slab cannot be freed while even one of its allocations is live, so long-lived small
-                        allocations turn churn into waste. Waste is measured per (arena, size class) from
+                        A slab cannot be freed while even one of its allocations is live, so a few long-lived
+                        small allocations can pin slabs full of free regions. Waste is measured per (arena, size class) from
                         <code>system.jemalloc_arena_bins</code>; the long-lived allocations likely holding it
                         are estimated from profiler samples (<code>system.jemalloc_sampled_allocations</code>).
                     </p>
