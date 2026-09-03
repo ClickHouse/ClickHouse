@@ -260,20 +260,20 @@ SELECT ngrams('ClickHouse', 3);
 * reverseBySeparator(&#39;a/b/c&#39;, &#39;/&#39;) تعيد &#39;c/b/a&#39;
 * reverseBySeparator(&#39;x::y::z&#39;, &#39;::&#39;) تعيد &#39;z::y::x&#39;
 
-**بناء الجملة**
+**بنية**
 
 ```sql
 reverseBySeparator(string[, separator])
 ```
 
-**الوسيطات**
+**وسيطة الدالة**
 
 * `string` — سلسلة الإدخال المطلوب عكس ترتيب أجزائها. [`String`](/ar/reference/data-types/string)
 * `separator` — سلسلة الفاصل المستخدمة لتحديد الأجزاء. إذا لم يتم توفيرها، فسيُستخدم &#39;.&#39; (نقطة). القيمة الافتراضية: &#39;.&#39; [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تعيد سلسلة تكون فيها المقاطع الفرعية مرتبة من اليمين إلى اليسار مقارنةً بالسلسلة الأصلية، ومتصلة باستخدام الفاصل نفسه. [`String`](/ar/reference/data-types/string)
+تعيد سلسلة تكون فيها السلاسل الفرعية مرتبة من اليمين إلى اليسار مقارنةً بالسلسلة الأصلية، ومتصلة باستخدام الفاصل نفسه. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -284,7 +284,7 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
 **عكس ترتيب المسار**
@@ -294,7 +294,7 @@ SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **فاصل مخصص**
@@ -304,7 +304,7 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
 **حالة خاصة عند استخدام النقاط**
@@ -314,7 +314,7 @@ SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **عنصر واحد**
@@ -324,7 +324,7 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
 **فاصل فارغ**
@@ -334,7 +334,7 @@ SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -356,13 +356,13 @@ SELECT reverseBySeparator('abcde', '')
 * وجود عدة فواصل متتالية
 * إذا كانت السلسلة الأصلية `s` فارغة
 
-**الصياغة**
+**بنية**
 
 ```sql
 splitByChar(separator, s[, max_substrings])
 ```
 
-**الوسيطات**
+**وسيطة الدالة**
 
 * `separator` — يجب أن يكون الفاصل حرفًا من بايت واحد. [`String`](/ar/reference/data-types/string)
 * `s` — السلسلة المراد تقسيمها. [`String`](/ar/reference/data-types/string)
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -451,7 +451,7 @@ SELECT splitByNonAlpha('user@domain.com');
 splitByRegexp(regexp, s[, max_substrings])
 ```
 
-**المعاملات**
+**وسيطة الدالة**
 
 * `regexp` — تعبير نمطي. ثابت. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `s` — السلسلة المراد تقسيمها. [`String`](/ar/reference/data-types/string)
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **تعبير نمطي فارغ**
@@ -493,8 +493,8 @@ SELECT splitByRegexp('', 'abcde');
 
 أُضيف في: v1.1.0
 
-يقسّم سلسلة نصية باستخدام `separator` ثابت يتكوّن من عدة أحرف إلى مصفوفة من السلاسل الفرعية.
-إذا كانت السلسلة النصية `separator` فارغة، فسيُقسَّم النص `s` إلى مصفوفة من الأحرف المفردة.
+يقسّم سلسلة نصية باستخدام `separator` ثابت يتكوّن من عدة محارف إلى مصفوفة من السلاسل الفرعية.
+إذا كانت السلسلة النصية `separator` فارغة، فسيُقسَّم النص `s` إلى مصفوفة من المحارف المفردة.
 
 قد تظهر سلاسل فرعية فارغة في الحالات التالية:
 
@@ -512,7 +512,7 @@ SELECT splitByRegexp('', 'abcde');
 splitByString(separator, s[, max_substrings])
 ```
 
-**الوسائط**
+**وسيطة الدالة**
 
 * `separator` — الفاصل. [`String`](/ar/reference/data-types/string)
 * `s` — السلسلة النصية المراد تقسيمها. [`String`](/ar/reference/data-types/string)
@@ -531,9 +531,9 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
 **فاصل فارغ**
@@ -599,17 +599,18 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 
 * `splitByNonAlpha` يقسّم السلاسل النصية عند محارف ASCII غير الأبجدية الرقمية (راجع أيضًا الدالة [splitByNonAlpha](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` يقسّم السلاسل النصية باستخدام سلاسل الفواصل `S` التي يحدّدها المستخدم (راجع أيضًا الدالة [splitByString](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByString)). يمكن تحديد الفواصل باستخدام معلمة اختيارية، على سبيل المثال: `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. لاحظ أن كل سلسلة يمكن أن تتكوّن من عدة محارف (`', '` في المثال). قائمة الفواصل الافتراضية، إذا لم تُحدَّد صراحةً، هي مسافة بيضاء واحدة `[' ']`.
+* `splitByRegexp(re)` يقسّم السلاسل النصية باستخدام فاصل تعبير نمطي `re` يحدّده المستخدم (راجع أيضًا الدالة [splitByRegexp](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)). التعبير النمطي إلزامي، على سبيل المثال: `tokens(value, 'splitByRegexp', '[^\p{L}\p{N}#+]+')`. وعلى خلاف `splitByString`، يمكن لفاصل التعبير النمطي الحفاظ على الرموز التي تحتوي على محارف خاصة (مثل `C++` أو `C#`).
 * `asciiCJK` يقسّم السلاسل النصية إلى رموز باستخدام قواعد حدود الكلمات في Unicode (على غرار UAX #29). وتُشكّل محارف ASCII الأبجدية الرقمية والشرطات السفلية رموزًا مع الموصلات (`:` للحروف، و`.` و`'` للمحارف من النوع نفسه). أما محارف Unicode غير التابعة لـ ASCII فتتحول إلى رموز من محرف واحد.
 * `chinese` يقسّم النص الصيني إلى كلمات باستخدام قاموس ونموذج ماركوف مخفي (تتبع الخوارزمية [jieba](https://github.com/fxsjy/jieba)؛ وتُشتق بيانات القاموس والنموذج المضمّنة من [cppjieba](https://github.com/yanyiwu/cppjieba)). وعلى خلاف `asciiCJK`، الذي يعامل كل محرف غير تابع لـ ASCII كرمز من محرف واحد، يجمع `chinese` المحارف الصينية المتتالية في كلمات، مما ينتج رموزًا أكثر معنى وجودة بحث أعلى للنص الصيني. تكون وسيطة `granularity` الاختيارية إما `coarse_grained` (الافتراضي) أو `fine_grained`؛ ويقوم الأخير أيضًا بتعداد الكلمات الفرعية المتداخلة، مما يحسّن الاستدعاء على حساب فهرس أكبر.
 * `icu(locale)` يقسّم السلاسل النصية إلى رموز كلمات باستخدام تجزئة كلمات Unicode في مكتبة ICU (UAX #29). بالنسبة إلى أنظمة الكتابة التي لا تستخدم مسافات بيضاء بين الكلمات (مثل الصينية واليابانية والتايلاندية)، تطبّق ICU تجزئة قائمة على القاموس، لذا يُقسَّم هذا النص إلى كلمات ذات معنى. تمثل `locale` الإعدادات المحلية لـ ICU التي تُمرَّر إلى المُقسِّم (يعتمد التقسيم أساسًا على نظام الكتابة والقاموس؛ وتحدد الإعدادات المحلية التخصيصات الخاصة بالإعدادات المحلية في ICU)؛ وهي إلزامية وتُمرَّر كمعامل منفصل، على سبيل المثال: `tokens(value, 'icu', 'ja')`.
 * `japanese` يقسّم النص الياباني إلى كلمات باستخدام المحلل الصرفي MeCab. يتطلب قاموسًا مُعدًا في تكوين الخادم (راجع وثائق [فهرس النص](/ar/reference/engines/table-engines/mergetree-family/textindexes)).
 * `ngrams(N)` يقسّم السلاسل النصية إلى n-grams متساوية الحجم (راجع أيضًا الدالة [ngrams](/ar/reference/functions/regular-functions/splitting-merging-functions#ngrams)). يمكن تحديد طول ngram باستخدام معلمة عددية صحيحة اختيارية بين 1 و8، على سبيل المثال: `tokens(value, 'ngrams', 3)`. حجم ngram الافتراضي، إذا لم يُحدَّد صراحةً، هو 3.
 * `sparseGrams(min_length, max_length, min_cutoff_length)` يقسّم السلاسل النصية إلى n-grams متغيرة الطول لا يقل طولها عن `min_length` ولا يزيد عن `max_length` (شاملًا) من المحارف (راجع أيضًا الدالة [sparseGrams](/ar/reference/functions/regular-functions/string-functions#sparseGrams)). ما لم يُحدَّد ذلك صراحةً، تكون القيمتان الافتراضيتان لـ `min_length` و`max_length` هما 3 و100. وإذا تم تمرير المعلمة `min_cutoff_length`، فستُعاد فقط n-grams التي يكون طولها أكبر من أو مساويًا لـ `min_cutoff_length`. وبالمقارنة مع `ngrams(N)`، ينتج مُقسِّم الرموز `sparseGrams` N-grams متغيرة الطول، مما يتيح تمثيلًا أكثر مرونة للنص الأصلي. على سبيل المثال، `tokens(value, 'sparseGrams', 3, 5, 4)` يُنشئ داخليًا 3- و4- و5-grams من سلسلة الإدخال، ولكن لا تُعاد إلا 4- و5-grams.
-* `array` لا يُجري أي تقسيم النص إلى رموز، أي إن قيمة كل row تُعد رمزًا (راجع أيضًا الدالة [array](/ar/reference/functions/regular-functions/array-functions#array)).
+* `array` لا يُجري أي تقسيم النص إلى رموز، أي إن قيمة كل row تُعد رمزًا (راجع أيضًا الدالة [array](/ar/reference/functions/regular-functions/array-functions#array)). وللتوافق مع الأنظمة الأخرى، يتوفر `keyword` كاسم مستعار لـ `array`.
 
-في حالة مُقسِّم الرموز `splitByString`، إذا كانت الرموز لا تشكّل [prefix code](https://en.wikipedia.org/wiki/Prefix_code)، فغالبًا ما ستحتاج إلى أن تُفضِّل المطابقة الفواصل الأطول أولًا.
-وللقيام بذلك، مرّر الفواصل بترتيب تنازلي حسب الطول.
-على سبيل المثال، مع separators = `['%21', '%']` فإن السلسلة `%21abc` ستُقسَّم إلى رموز على النحو `['abc']`، بينما separators = `['%', '%21']` ستُقسَّم إلى `['21ac']` (وهو على الأرجح ليس ما أردته).
+في حالة مُقسِّم الرموز `splitByString`، إذا كانت الرموز لا تشكّل [شيفرة بادئة](https://en.wikipedia.org/wiki/Prefix_code)، فمن المرجح أن ترغب في أن تُفضّل المطابقة الفواصل الأطول أولًا.
+لتحقيق ذلك، مرّر الفواصل بترتيب تنازلي حسب الطول.
+على سبيل المثال، عند استخدام separators = `['%21', '%']`، ستُقسَّم السلسلة `%21abc` إلى الرموز `['abc']`، بينما عند استخدام separators = `['%', '%21']`، ستُقسَّم إلى `['21ac']` (وهو على الأرجح ليس ما تريده).
 
 **بناء الجملة**
 
@@ -617,6 +618,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
+tokens(value, 'splitByRegexp', regexp)
 tokens(value, 'asciiCJK')
 tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
@@ -629,10 +631,11 @@ tokens(value, 'array')
 **وسيطات الدالة**
 
 * `value` — سلسلة الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
-* `tokenizer` — مُقسِّم الرموز المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`chinese` و`icu` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، فالقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُقسِّم الرموز المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`splitByRegexp` و`asciiCJK` و`chinese` و`icu` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، فالقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 * `locale` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `icu`: الإعدادات المحلية الإلزامية، مثل `'ja'`. [`const String`](/ar/reference/data-types/string)
 * `n` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `ngrams`: معلمة اختيارية تحدد طول الـ ngrams. إذا لم تُحدَّد صراحةً، فالقيمة الافتراضية هي `3`. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `separators` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `split`: معلمة اختيارية تحدد سلاسل الفواصل. إذا لم تُحدَّد صراحةً، فالقيمة الافتراضية هي `[' ']`. [`const Array(String)`](/ar/reference/data-types/array)
+* `regexp` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `splitByRegexp`: معلمة إلزامية تحدد فاصل التعبير النمطي. [`const String`](/ar/reference/data-types/string)
 * `min_length` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأدنى لطول الـ gram، والقيمة الافتراضية هي 3. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `max_length` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأقصى لطول الـ gram، والقيمة الافتراضية هي 100. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `min_cutoff_length` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأدنى لطول القطع. [`const UInt8`](/ar/reference/data-types/int-uint)
@@ -704,6 +707,7 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `locale` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `icu`: الإعدادات المحلية الإلزامية، مثل `'ja'`. [`const String`](/ar/reference/data-types/string)
 * `n` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `ngrams`: معلمة اختيارية تحدد طول ngrams. إذا لم تُحدَّد صراحةً، فستكون القيمة الافتراضية `3`. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `separators` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `split`: معلمة اختيارية تحدد سلاسل الفواصل. إذا لم تُحدَّد صراحةً، فستكون القيمة الافتراضية `[' ']`. [`const Array(String)`](/ar/reference/data-types/array)
+* `regexp` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `splitByRegexp`: معلمة إلزامية تحدد فاصل التعبير النمطي. [`const String`](/ar/reference/data-types/string)
 * `min_length` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأدنى لطول gram، والقيمة الافتراضية هي 3. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `max_length` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأقصى لطول gram، والقيمة الافتراضية هي 100. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `min_cutoff_length` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأدنى لطول القطع. [`const UInt8`](/ar/reference/data-types/int-uint)
