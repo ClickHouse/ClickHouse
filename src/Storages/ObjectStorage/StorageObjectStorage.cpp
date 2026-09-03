@@ -166,8 +166,12 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool catalog_manages_created_location
         = catalog_ && catalog_->managesTableLocation() && mode == LoadingStrictnessLevel::CREATE;
-    const bool do_lazy_init
-        = (lazy_init || catalog_manages_created_location) && !need_resolve_columns_or_format && !need_resolve_sample_path;
+    /// A table attached from its metadata already knows its columns, so resolving the table state
+    /// would only read the object storage. Defer it to the first use of the table, so that ATTACH
+    /// and server startup do not depend on the endpoint.
+    const bool attaching_described_table = mode >= LoadingStrictnessLevel::ATTACH;
+    const bool do_lazy_init = (lazy_init || catalog_manages_created_location || attaching_described_table)
+        && !need_resolve_columns_or_format && !need_resolve_sample_path;
     LOG_DEBUG(
         log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
         "need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
