@@ -1,6 +1,8 @@
 #include <Storages/ConstraintsDescription.h>
 
 #include <Common/quoteString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
@@ -14,6 +16,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Core/Defines.h>
@@ -24,6 +27,8 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Interpreters/Context.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -138,7 +143,44 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
 }
 
-void ConstraintsDescription::assertPreserveRowCount() const
+namespace
+{
+
+/// Whether the expression contains an `arrayJoin` call that multiplies the rows of the block the
+/// constraint is checked on. It can hide behind an alias (the case-insensitive `unnest`, caught by
+/// resolving to the canonical name) or a SQL UDF that is inlined into the expression when it is built
+/// (caught by descending into the UDF body). A call inside a nested subquery has its own scope and does
+/// not multiply the outer rows, so it is skipped - `CHECK x IN (SELECT arrayJoin([1, 2]))` still
+/// produces one boolean per inserted row. This mirrors `expressionContainsArrayJoin` for row policies
+/// and `selectListHasArrayJoinFunction` in `InterpreterSelectQuery`.
+bool expressionContainsArrayJoin(const ASTPtr & ast, std::unordered_set<String> & visited_udfs)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (getFunctionCanonicalNameIfAny(function->name) == "arrayJoin")
+            return true;
+
+        if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+            udf_body && visited_udfs.insert(function->name).second
+                && expressionContainsArrayJoin(udf_body, visited_udfs))
+            return true;
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (!child->as<ASTSelectQuery>() && expressionContainsArrayJoin(child, visited_udfs))
+            return true;
+    }
+
+    return false;
+}
+
+}
+
+void ConstraintsDescription::assertConstraintPreservesRowCount(const ASTPtr & constraint)
 {
     /// `arrayJoin` is the one action that changes the number of rows in a block, while
     /// `CheckConstraintsTransform` indexes the result column positionally against the rows of the block
@@ -150,26 +192,23 @@ void ConstraintsDescription::assertPreserveRowCount() const
     /// at DDL time, because it may name a function or a table that does not resolve yet - a constraint
     /// referencing a table created later, or a function missing from the current build, has to remain
     /// creatable. `CheckConstraintsTransform` refuses a result whose size does not match the block, so
-    /// an `arrayJoin` that only becomes visible after resolution still fails comprehensibly.
-    auto contains_array_join = [](const ASTPtr & ast, const auto & self) -> bool
-    {
-        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "arrayJoin")
-            return true;
+    /// an `arrayJoin` that only becomes visible after resolution (through a UDF created later, say) still
+    /// fails comprehensibly.
+    const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
+    if (!constraint_ptr || constraint_ptr->type != ASTConstraintDeclaration::Type::CHECK)
+        return;
 
-        return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
-    };
+    std::unordered_set<String> visited_udfs;
+    if (expressionContainsArrayJoin(constraint_ptr->expr, visited_udfs))
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
+            backQuote(constraint_ptr->name));
+}
 
+void ConstraintsDescription::assertPreserveRowCount() const
+{
     for (const auto & constraint : constraints)
-    {
-        const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
-        if (constraint_ptr->type != ASTConstraintDeclaration::Type::CHECK)
-            continue;
-
-        if (contains_array_join(constraint_ptr->expr, contains_array_join))
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
-                backQuote(constraint_ptr->name));
-    }
+        assertConstraintPreservesRowCount(constraint);
 }
 
 ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
