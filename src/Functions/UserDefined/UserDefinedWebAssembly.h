@@ -101,10 +101,21 @@ public:
         ASTPtr create_query;
     };
 
+    RegisteredFunction prepareFunction(ASTPtr create_function_query, WasmModuleManager & module_manager) const;
     std::shared_ptr<UserDefinedWebAssemblyFunction> addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager);
+    void addOrReplace(RegisteredFunction registered_function);
+    void replaceAll(VectorWithMemoryTracking<RegisteredFunction> registered_functions);
 
     bool has(const String & function_name) const;
     FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
+
+    /// Fail close before resolving a name that is stored as a WebAssembly UDF.
+    /// A `CREATE FUNCTION ... LANGUAGE WASM` definition lives in SQL object storage and outlives the engine
+    /// that can run it: the server may be restarted with `allow_experimental_webassembly_udf` turned off, or
+    /// on a build that has no WebAssembly engine at all. The definition is then still stored while this
+    /// registry is empty, and without this check the name resolves to `UNKNOWN_FUNCTION` or to an
+    /// empty-registry `RESOURCE_NOT_FOUND` instead of reporting that WebAssembly support is unavailable.
+    static void checkWebAssemblyIsAvailable(const ContextPtr & context);
     /// Returns nullptr if the function is not registered. Useful for non-throwing rewrite-candidate checks.
     FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context);
 

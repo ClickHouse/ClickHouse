@@ -6,6 +6,8 @@
 #include <Common/SymbolIndex.h>
 #include <Common/FramePointers.h>
 #include <Common/ErrnoException.h>
+#include <Common/setThreadName.h>
+#include <Common/StackTraceServiceSignal.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -51,19 +53,27 @@ static std::atomic_bool is_crashed = false;
 static_assert(std::atomic_bool::is_always_lock_free, "is_crashed must be lock-free for use in signal handlers");
 bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
 
+/// Set once the deadly signal handlers are reset to SIG_DFL; makes resetHandledSignals() a no-op afterwards.
+static std::atomic_flag handled_signals_were_reset;
+
 /// After re-raising the signal, the siginfo recorded in the core dump shows SI_TKILL with no si_addr,
 /// so we need to preserve the address for core dump analysis.
 static std::atomic<uintptr_t> saved_fault_address{0};
 static_assert(std::atomic<uintptr_t>::is_always_lock_free, "saved_fault_address must be lock-free for use in signal handlers");
 
 
-void call_default_signal_handler(int sig)
+void call_default_signal_handler([[maybe_unused]] int sig)
 {
+#if !defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Nothing to restore, and nothing to raise it with.
+    return;
+#else
     if (SIG_ERR == signal(sig, SIG_DFL))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
 
     if (0 != raise(sig))
         throw ErrnoException(ErrorCodes::CANNOT_SEND_SIGNAL, "Cannot send signal");
+#endif
 }
 
 
@@ -110,7 +120,19 @@ void childSignalHandler(int sig, siginfo_t * info, void *)
 /// Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
-    if (asynchronous_stack_unwinding && sig == SIGSEGV)
+    /// A fault while asynchronously unwinding another thread's stack (the query profiler and
+    /// system.stack_trace) must be recovered by discarding the capture, not crash the server. Walking a
+    /// bad frame pointer dereferences an invalid address and raises SIGSEGV. On macOS the frame-pointer
+    /// walk in backtrace() can additionally land on a misaligned address (e.g. when the profiler
+    /// interrupts a thread parked in frame-pointer-less libsystem code), which raises SIGBUS, so recover
+    /// from that too there. We siglongjmp back to asynchronous_stack_unwinding_signal_jump_buffer, where
+    /// the handler drops the capture (the profiler also increments ProfileEvents::QueryProfilerErrors).
+    if (asynchronous_stack_unwinding
+        && (sig == SIGSEGV
+#if defined(OS_DARWIN)
+            || sig == SIGBUS
+#endif
+        ))
         siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
 
     DENY_ALLOCATIONS_IN_SCOPE;
@@ -135,7 +157,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(stack_trace, out);
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
-    writePODBinary(current_thread, out);
+    writePODBinary(current_thread.get(), out);
 #if defined(OS_LINUX)
     writeBinary(static_cast<UInt8>(terminate_current_exception_trace_size), out);
     for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
@@ -187,12 +209,10 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
         }
         catch (const std::exception & e)
         {
-            const auto * stack_trace_frames = e.get_stack_trace_frames();
-            const size_t stack_trace_size = e.get_stack_trace_size();
-            __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
-            terminate_current_exception_trace_size = std::min(stack_trace_size, FRAMEPOINTER_CAPACITY);
+            const auto trace = getStackTraceOfThrow(e);
+            terminate_current_exception_trace_size = std::min(trace.size(), FRAMEPOINTER_CAPACITY);
             for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
-                terminate_current_exception_trace[i] = stack_trace_frames[i];
+                terminate_current_exception_trace[i] = trace[i];
         }
         catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
     }
@@ -222,6 +242,45 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
 #if defined(SANITIZER)
 extern "C" void __sanitizer_set_death_callback(void (*)());
+extern "C" void __sanitizer_on_print(const char * str);
+
+/// Captures sanitizer runtime output into a preallocated global buffer,
+/// so that the core dump analyzer can read it.
+extern "C"
+{
+char sanitizer_report[1 << 20];
+unsigned long sanitizer_report_size = 0;
+}
+
+static char sanitizer_report_lock;
+
+static DISABLE_SANITIZER_INSTRUMENTATION void appendToSanitizerReport(const char * str)
+{
+    unsigned long i = sanitizer_report_size;
+    while (*str != '\0' && i < sizeof(sanitizer_report) - 1)
+        sanitizer_report[i++] = *str++;
+    sanitizer_report_size = i;
+}
+
+extern "C" DISABLE_SANITIZER_INSTRUMENTATION void __sanitizer_on_print(const char * str)
+{
+    /// Writing to sanitizer_report_size by previous thread must happen-before reading from sanitizer_report_size by this thread.
+    /// Hence, we need acquire-release.
+    while (__atomic_test_and_set(&sanitizer_report_lock, __ATOMIC_ACQUIRE))
+        ;
+
+    /// The preamble makes the buffer discoverable by scanning the core dump.
+    /// It is assembled from parts so its only full copy is in this buffer.
+    if (sanitizer_report_size == 0)
+    {
+        appendToSanitizerReport("CLICKHOUSE");
+        appendToSanitizerReport(" SANITIZER");
+        appendToSanitizerReport(" REPORT\n");
+    }
+    appendToSanitizerReport(str);
+
+    __atomic_clear(&sanitizer_report_lock, __ATOMIC_RELEASE);
+}
 
 /// You should be very careful on which functions is called from the death callback, in some cases sanitizers will deadlock.
 /// So let's disable instrumentation to avoid possible issues, but note:
@@ -239,26 +298,45 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     /// Sanitizer errors cannot be handled properly with our signal handlers, because it leads to deadlock.
     /// So we need to reset the signal handlers (this does not lead to deadlock),
     /// but closing the pipe leads to deadlock from death callback, so we will not close it.
-    HandledSignals::instance().reset(/* close_pipe= */ false);
+    /// Use resetHandledSignals() (idempotent, does not construct the singleton) instead of
+    /// HandledSignals::instance().reset() to stay safe when called at process exit.
+    resetHandledSignals();
 }
 #endif
 
-void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal)
+void HandledSignals::addSignalHandler(
+    [[maybe_unused]] const std::vector<int> & signals,
+    [[maybe_unused]] signal_function handler,
+    [[maybe_unused]] bool register_signal,
+    [[maybe_unused]] const std::vector<int> & additional_masked_signals,
+    [[maybe_unused]] bool use_alt_stack)
 {
+#if !defined(OS_HAS_SIGNAL_HANDLERS)
+    return;
+#else
     struct sigaction sa{};
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = handler;
     sa.sa_flags = SA_SIGINFO;
 
+    if (use_alt_stack)
+        sa.sa_flags |= SA_ONSTACK;
+
 #if defined(OS_DARWIN)
     sigemptyset(&sa.sa_mask);
     for (auto signal : signals)
+        sigaddset(&sa.sa_mask, signal);
+    for (auto signal : additional_masked_signals)
         sigaddset(&sa.sa_mask, signal);
 #else
     if (sigemptyset(&sa.sa_mask))
         throw Poco::Exception("Cannot set signal handler.");
 
     for (auto signal : signals)
+        if (sigaddset(&sa.sa_mask, signal))
+            throw Poco::Exception("Cannot set signal handler.");
+
+    for (auto signal : additional_masked_signals)
         if (sigaddset(&sa.sa_mask, signal))
             throw Poco::Exception("Cannot set signal handler.");
 #endif
@@ -269,10 +347,14 @@ void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_f
 
     if (register_signal)
         std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
+#endif
 }
 
-void blockSignals(const std::vector<int> & signals)
+void blockSignals([[maybe_unused]] const std::vector<int> & signals)
 {
+#if !defined(OS_HAS_SIGNAL_HANDLERS)
+    return;
+#else
     sigset_t sig_set;
 
 #if defined(OS_DARWIN)
@@ -290,6 +372,43 @@ void blockSignals(const std::vector<int> & signals)
 
     if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         throw Poco::Exception("Cannot block signal.");
+#endif
+}
+
+const std::vector<int> & asynchronousHandledSignals()
+{
+    /// Keep in sync with the handlers installed by `BaseDaemon::initializeTerminationAndSignalProcessing`:
+    /// `SIGTSTP` from `setupCommonDeadlySignalHandlers` (it is the only asynchronous one there),
+    /// `SIGINT`/`SIGQUIT`/`SIGTERM` from `setupCommonTerminateRequestSignalHandlers`, plus `SIGHUP` and `SIGCHLD`.
+    static const std::vector<int> signals{SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP};
+    return signals;
+}
+
+BlockSignalsScope::BlockSignalsScope(const std::vector<int> & signals)
+{
+    sigset_t sig_set;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&sig_set);
+    for (auto signal : signals)
+        sigaddset(&sig_set, signal);
+#else
+    if (sigemptyset(&sig_set))
+        throw Poco::Exception("Cannot block signal.");
+
+    for (auto signal : signals)
+        if (sigaddset(&sig_set, signal))
+            throw Poco::Exception("Cannot block signal.");
+#endif
+
+    if (pthread_sigmask(SIG_BLOCK, &sig_set, &saved_mask))
+        throw Poco::Exception("Cannot block signal.");
+}
+
+BlockSignalsScope::~BlockSignalsScope()
+{
+    /// Nothing sensible can be done if restoring the mask fails, and throwing from a destructor is worse.
+    pthread_sigmask(SIG_SETMASK, &saved_mask, nullptr);
 }
 
 
@@ -300,6 +419,8 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 
 void SignalListener::run()
 {
+    setThreadName(ThreadName::SIGNAL_LISTENER);
+
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
@@ -318,9 +439,12 @@ void SignalListener::run()
 
     static_assert(PIPE_BUF >= 512);
     static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
-    char buf[signal_pipe_buf_size];
+    /// Do not read past one signal ID. In particular, `StopThread` is only a request
+    /// to stop this listener: a handled signal written after it must remain in the
+    /// pipe for a listener started later.
+    char buf[sizeof(int)];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
-    ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
+    ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], sizeof(buf), buf);
 
     while (!in.eof())
     {
@@ -681,7 +805,12 @@ HandledSignals::HandledSignals()
 
 void HandledSignals::reset(bool close_pipe)
 {
+    handled_signals_were_reset.test_and_set();
+
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
+    /// Nothing was ever installed where there are no signals, so `handled_signals` is empty there
+    /// and this loop does nothing; it is compiled out to keep `signal` out of the WebAssembly link.
+#if defined(OS_HAS_SIGNAL_HANDLERS)
     for (int sig : handled_signals)
     {
         if (SIG_ERR == signal(sig, SIG_DFL))
@@ -696,9 +825,19 @@ void HandledSignals::reset(bool close_pipe)
             }
         }
     }
+#endif
 
     if (close_pipe)
         signal_pipe.close();
+}
+
+void resetHandledSignals()
+{
+    /// Already reset: do nothing, and in particular do not touch (or construct) HandledSignals.
+    if (handled_signals_were_reset.test())
+        return;
+
+    HandledSignals::instance().reset(/* close_pipe= */ false);
 }
 
 HandledSignals::~HandledSignals()
@@ -728,7 +867,28 @@ void HandledSignals::setupCommonDeadlySignalHandlers()
 {
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
     /// NOTE: that it is also used by clickhouse-test wrapper
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true);
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// The deadly handler captures the crashed thread's stack via StackTrace(ucontext_t), which uses the
+    /// shared thread-local unwind-fault recovery (asynchronous_stack_unwinding + sigjmp_buf). The query
+    /// profiler (SIGUSR1/SIGUSR2) and system.stack_trace (STACK_TRACE_SERVICE_SIGNAL) handlers use the
+    /// same recovery state and already mask each other; block them here too so they cannot interrupt the
+    /// deadly handler mid-unwind, clobber that buffer, and turn the next unwind fault into an invalid
+    /// siglongjmp or a second fatal signal.
+    const std::vector<int> unwind_recovery_signals{SIGUSR1, SIGUSR2, STACK_TRACE_SERVICE_SIGNAL};
+#else
+    const std::vector<int> unwind_recovery_signals;
+#endif
+    const std::vector<int> fault_signals{SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTRAP};
+    /// Each call masks the other's signals, so both keep the `sa_mask` of the single registration that
+    /// once covered all eight.
+    std::vector<int> fault_masked_signals = unwind_recovery_signals;
+    fault_masked_signals.push_back(SIGTSTP);
+    std::vector<int> tstp_masked_signals = unwind_recovery_signals;
+    tstp_masked_signals.insert(tstp_masked_signals.end(), fault_signals.begin(), fault_signals.end());
+
+    /// Not SIGTSTP: it is never raised by stack exhaustion, and its handler returns.
+    addSignalHandler(fault_signals, signalHandler, true, fault_masked_signals, /*use_alt_stack=*/true);
+    addSignalHandler({SIGTSTP}, signalHandler, true, tstp_masked_signals);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);

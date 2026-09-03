@@ -1,0 +1,8 @@
+CREATE TABLE default.t_allow_statistics_col_decl
+(
+    `x` UInt32 STATISTICS(uniq),
+    `s` UInt64 STATISTICS(tdigest)
+)
+ENGINE = MergeTree
+ORDER BY x
+SETTINGS index_granularity = 8192

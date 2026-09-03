@@ -91,6 +91,10 @@ private:
     /// Create a new column that has another column as a source.
     MutablePtr createView() const;
 
+    /// Whether a state named `state_type_name` can be inserted into this column. The name may differ
+    /// from `type_string` and still denote the same state, see DataTypeAggregateFunction::nameMatchesState.
+    bool acceptsStateTypeName(const String & state_type_name) const;
+
     explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
@@ -141,8 +145,12 @@ public:
 
     bool isDefaultAt(size_t) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
+        /// Aggregate function states have no meaningful default representation, so they are never considered default.
+        /// This is consistent with getNumberOfDefaultRows returning 0.
+        return false;
     }
+
+    bool hasOnlyTypeDefaults() const override { return false; }
 
     std::string_view getDataAt(size_t n) const override;
 
@@ -177,15 +185,19 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 
     size_t byteSize() const override;
+
+    /// Uncompressed size of the states as serialized into a data part. byteSize() cannot be used for this
+    /// because it intentionally ignores states living in shared arenas (see byteSize()). Fixed-layout states
+    /// are sized from sizeOfData() without serializing; variable-size states are serialized exactly so the
+    /// figure never underestimates a skewed column. Used to honor index_granularity_bytes at write time.
+    size_t serializedSizeEstimate() const;
 
     size_t byteSizeAt(size_t n) const override;
 

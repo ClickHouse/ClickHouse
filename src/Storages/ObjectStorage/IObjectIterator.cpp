@@ -48,13 +48,15 @@ ObjectIteratorWithPathAndFileFilter::ObjectIteratorWithPathAndFileFilter(
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_partition_columns_,
     const std::string & object_namespace_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
     , iterator(iterator_)
     , object_namespace(object_namespace_)
     , virtual_columns(virtual_columns_)
     , hive_partition_columns(hive_partition_columns_)
     , filter_actions(getExpressionActions(filter_, virtual_columns, context_))
+    , file_progress_callback(std::move(file_progress_callback_))
 {
 }
 
@@ -74,10 +76,9 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             const auto key = object->getPath();
             std::vector<std::string> keys({key});
 
-            auto path = key;
-            if (path.starts_with("/"))
-                path = path.substr(1);
-            path = std::filesystem::path(object_namespace) / path;
+            /// Must be the formatter the `_path` column is produced with: this filter is
+            /// evaluated against that column's values.
+            const auto path = joinPathUnderPrefix(object_namespace, key);
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,
@@ -90,6 +91,14 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
                 LOG_TRACE(log, "Filtered out object: {}", object->getPath());
                 continue;
             }
+        }
+
+        if (file_progress_callback)
+        {
+            if (auto metadata = object->getObjectMetadata())
+                file_progress_callback(FileProgress(0, metadata->size_bytes));
+            else if (auto hint = object->getFileSizeHint())
+                file_progress_callback(FileProgress(0, *hint));
         }
 
         return object;
@@ -139,9 +148,10 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
+                const auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
-                    last_object_info->getFileName(),
+                    query_condition_cache_key,
                     *format_filter_info->condition_hash);
                 if (matching_marks.has_value())
                 {
@@ -182,10 +192,17 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
     return result;
 }
 
-String ObjectInfo::getIdentifier() const
+String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
-    String result = getPath();
-    if (file_bucket_info)
+    return getIdentifierForPath(getPath(), include_file_bucket_info);
+}
+
+String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const
+{
+    String result = path;
+    if (relative_path_with_metadata.read_source_index)
+        result = std::to_string(*relative_path_with_metadata.read_source_index) + ":" + result;
+    if (include_file_bucket_info && file_bucket_info)
         result += file_bucket_info->getIdentifier();
     return result;
 }

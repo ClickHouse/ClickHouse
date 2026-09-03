@@ -6,10 +6,13 @@
 #include <Coordination/KeeperStateManager.h>
 #include <libnuraft/raft_params.hxx>
 #include <libnuraft/raft_server.hxx>
+#include <libnuraft/timer_task.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/RaftServerConfig.h>
+
+#include <cstdint>
 
 namespace DB
 {
@@ -18,6 +21,11 @@ using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buff
 
 struct KeeperConfiguration;
 using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
+
+/// Translate coordination settings into the `raft_params` NuRaft is started with. Split out of
+/// `KeeperServer::launchRaftServer` so the translation - unit conversions and the narrowing to the
+/// int32 most of these fields are - can be tested without starting a server.
+nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_settings, LoggerPtr log);
 
 class KeeperServer
 {
@@ -66,6 +74,10 @@ private:
         /// Both get_peer_info_all and get_srv_config_all hold the raft lock internally.
         KeeperServer::RespondingCounts getRespondingCounts();
 
+        /// Fill is_alive / is_synced / peer_last_log_index / last_succ_resp_ms for members.
+        /// Must be called only when this raft instance is the leader.
+        void applyPeerHealthToMembers(std::vector<KeeperClusterMemberInfo> & members, uint64_t self_log_idx);
+
         using nuraft::raft_server::raft_server;
 
         /// Keeper context for accessing coordination settings (e.g. commit profiler).
@@ -81,9 +93,9 @@ private:
 
     const int server_id;
 
-    nuraft::ptr<IKeeperStateMachine> state_machine;
-
     nuraft::ptr<KeeperStateManager> state_manager;
+
+    nuraft::ptr<KeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
     nuraft::ptr<nuraft::asio_service> asio_service;
@@ -99,6 +111,21 @@ private:
     std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
+
+    /// Milliseconds since monotonic clock epoch, or 0 if this node is not a leader.
+    std::atomic<UInt64> leader_since_ms = 0;
+
+    mutable std::mutex leader_unavailable_metrics_mutex;
+    UInt64 leader_unavailable_since_ms = 0;
+    UInt64 election_since_ms = 0;
+    UInt64 sum_leader_unavailable_time_ms = 0;
+    UInt64 cnt_leader_unavailable_time = 0;
+    std::optional<UInt64> last_leader_unavailable_time_ms;
+    UInt64 sum_election_time_ms = 0;
+    UInt64 cnt_election_time = 0;
+    std::optional<UInt64> last_leader_election_time_ms;
+    int32_t leader_unavailable_poll_interval_ms = 0;
+    std::optional<nuraft::ptr<nuraft::delayed_task>> leader_unavailable_polling_task;
 
     std::atomic<uint64_t> last_log_idx_on_disk = 0;
 
@@ -120,6 +147,15 @@ private:
 
     void enterRecoveryMode(nuraft::raft_params & params);
 
+    void startLeaderUptimeMetrics();
+    void stopLeaderUptimeMetrics();
+    std::optional<uint64_t> getLeaderUptimeMetrics() const;
+
+    void startLeaderMetricsPolling(int32_t poll_interval_ms);
+    void stopLeaderMetricsPolling();
+    void collectLeaderMetrics();
+    void finishLeaderElectionMetrics();
+
     std::atomic_bool is_recovering = false;
 
     KeeperContextPtr keeper_context;
@@ -136,7 +172,7 @@ public:
         SnapshotsQueue & snapshots_queue_,
         KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
-        IKeeperStateMachine::CommitCallback commit_callback);
+        KeeperStateMachine::CommitCallback commit_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
@@ -154,7 +190,7 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    nuraft::ptr<IKeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
+    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
 
     void forceRecovery();
 
@@ -169,6 +205,8 @@ public:
     bool isExceedingMemorySoftLimit() const;
 
     int64_t getLeaderID() const;
+
+    void resetLeaderMetrics();
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
@@ -205,6 +243,10 @@ public:
 
     KeeperLogInfo getKeeperLogInfo();
 
+    std::vector<KeeperClusterMemberInfo> getClusterMembersInfo() const;
+
+    std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
+
     bool requestLeader();
 
     void yieldLeadership();
@@ -212,6 +254,9 @@ public:
     void recalculateStorageStats();
 
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
+
+    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
+    std::vector<std::pair<std::string, Int32>> getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const;
 
     const KeeperContextPtr & getKeeperContext() const { return keeper_context; }
 };

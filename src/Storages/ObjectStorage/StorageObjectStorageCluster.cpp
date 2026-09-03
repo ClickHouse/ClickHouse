@@ -2,9 +2,12 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/parseGlobs.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -19,6 +22,8 @@
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
+#include <Common/FailPoint.h>
+#include <base/sleep.h>
 namespace DB
 {
 namespace Setting
@@ -33,11 +38,51 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace FailPoints
+{
+    extern const char storage_cluster_read_sleep[];
+}
+
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 {
+    const auto path = configuration->getRawPath();
+
+    /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
+    /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
+    /// known. A glob in the member name requires opening the archive to enumerate its entries, but the sample
+    /// path is needed only to infer hive partitioning, and `parseHivePartitioningKeysAndValues` looks only at
+    /// the directory part of the path - which is fully contained in the outer archive path. So a globbed member
+    /// name is simply omitted from the sample instead of disabling the fast path.
+    const bool is_archive = configuration->isArchive();
+    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
+    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration->getPathInArchive() : "";
+
+    /// For non-glob paths, return directly without any object storage API calls.
+    /// Besides saving a request, this keeps hive partition inference working for an explicitly
+    /// specified key that does not exist (or is filtered out before reading): the path string
+    /// itself carries the partition columns, so it must not depend on the object being present.
+    if (!path.hasGlobs())
+        return path.path + archive_suffix;
+
+    /// For pure brace expansions, one of the expanded path strings is sufficient to infer
+    /// hive partition columns. Avoid probing object metadata, because all explicit keys may
+    /// be absent or later filtered out.
+    if (containsOnlyEnumGlobs(path.path))
+    {
+        auto expanded = expandSelectionGlob(path.path);
+        if (!expanded.empty())
+            return expanded.front() + archive_suffix;
+    }
+
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
+    /// For an explicitly specified key, `throw_on_zero_files_match` is not enough: `KeysIterator` probes
+    /// the object metadata, and that probe throws for a key that does not exist. Sampling a path is only
+    /// needed to infer hive partitioning, so a missing key must leave the sample empty instead of failing
+    /// the query during analysis. A key that is really needed for reading is probed again by the reader,
+    /// which does report the error.
+    query_settings.ignore_non_existent_file = true;
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
@@ -189,7 +234,24 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     if (!endsWith(table_function->name, "Cluster"))
+    {
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+
+        /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
+        /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
+        /// (e.g. `s3Cluster`) and prepend the cluster name argument. This ensures that on the shard,
+        /// `TableFunctionObjectStorageCluster::executeImpl` is called, which correctly handles
+        /// `distributed_processing` for task-based file distribution from the initiator.
+        ///
+        /// Some table functions (e.g. `paimonLocal`, `deltaLakeLocal`) do not have a Cluster variant,
+        /// so we only rename when the target function actually exists.
+        const String cluster_function_name = table_function->name + "Cluster";
+        if (TableFunctionFactory::instance().isTableFunctionName(cluster_function_name))
+        {
+            args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+            table_function->name = cluster_function_name;
+        }
+    }
     else
     {
         ASTPtr cluster_name_arg = args.front();
@@ -219,7 +281,8 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
     new_metadata.setDataLakeTableState(*state);
 
     if (configuration->shouldReloadSchemaForConsistency(query_context))
@@ -289,6 +352,11 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
         {
+            fiu_do_on(FailPoints::storage_cluster_read_sleep,
+            {
+                sleepForSeconds(10);
+            });
+
             auto task = task_distributor->getNextTask(number_of_current_replica);
             if (task)
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
@@ -299,4 +367,3 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 }
 
 }
-

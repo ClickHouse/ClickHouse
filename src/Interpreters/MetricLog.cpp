@@ -83,18 +83,19 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(histogram_sum);
 }
 
-void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time)
+void collectMetricLogElement(
+    MetricLogElement & elem,
+    const std::chrono::system_clock::time_point current_time,
+    std::vector<ProfileEvents::Count> & previous_profile_events,
+    bool show_zero_values_in_histograms)
 {
-    std::lock_guard lock(previous_profile_events_mutex);
-
-    MetricLogElement elem;
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
     elem.profile_events.resize(ProfileEvents::end());
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
-        const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        const ProfileEvents::Count new_value = ProfileEvents::global_counters[i];
         auto & old_value = previous_profile_events[i];
 
         /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
@@ -115,7 +116,7 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
         elem.current_metrics[i] = CurrentMetrics::values[i];
     }
 
-    const bool show_zero_values = getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms];
+    const bool show_zero_values = show_zero_values_in_histograms;
 
     HistogramMetrics::Factory::instance().forEachFamily([&](const HistogramMetrics::MetricFamily & family)
     {
@@ -154,8 +155,21 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
             elem.histogram_sum.push_back(metric.getSum());
         });
     });
+}
 
-    add(std::move(elem));
+void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time)
+{
+    std::lock_guard lock(previous_profile_events_mutex);
+
+    const bool show_zero_values = getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms];
+
+    add([&](MetricLogElement & element)
+    {
+        /// previous_profile_events is guarded by the mutex held above; thread-safety analysis cannot
+        /// see the lock through this callback, so suppress the false positive on this access.
+        collectMetricLogElement(
+            element, current_time, TSA_SUPPRESS_WARNING_FOR_WRITE(previous_profile_events), show_zero_values);
+    });
 }
 
 }

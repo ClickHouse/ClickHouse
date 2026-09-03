@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 
@@ -95,10 +96,10 @@ SELECT today() - 1;
         )",
         R"(
 ┌─yesterday()─┐
-│  2025-06-09 │
+│  2026-08-01 │
 └─────────────┘
 ┌─minus(today(), 1)─┐
-│        2025-06-09 │
+│        2026-08-01 │
 └───────────────────┘
         )"}
     };

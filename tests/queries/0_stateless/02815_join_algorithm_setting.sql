@@ -1,4 +1,5 @@
 -- Tags: use-rocksdb
+SET explain_query_plan_default = 'legacy';
 
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
@@ -12,7 +13,7 @@ INSERT INTO rdb VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e');
 CREATE TABLE t2 ( `k` UInt16 ) ENGINE = TinyLog;
 INSERT INTO t2 VALUES (4), (5), (6);
 
-SELECT value == 'direct,parallel_hash,hash' FROM system.settings WHERE name = 'join_algorithm';
+SELECT value == 'direct,parallel_hash,hash,ie_join' FROM system.settings WHERE name = 'join_algorithm';
 
 SELECT countIf(explain like '%Algorithm: DirectKeyValueJoin%'), countIf(explain like '%Algorithm: HashJoin%') FROM (
     EXPLAIN PLAN actions = 1
@@ -108,7 +109,3 @@ SELECT * FROM ( SELECT number AS key, number * 10 AS key2 FROM numbers_mt(10) ) 
 CROSS JOIN ( SELECT k AS key, k + 100 AS key2 FROM t2 ) AS t2 FORMAT Null
 SETTINGS enable_analyzer = 1;
 
--- ... (not for old analyzer)
-SELECT * FROM ( SELECT number AS key, number * 10 AS key2 FROM numbers_mt(10) ) AS t1
-CROSS JOIN ( SELECT k AS key, k + 100 AS key2 FROM t2 ) AS t2 FORMAT Null
-SETTINGS enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }

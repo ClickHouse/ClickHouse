@@ -5,6 +5,10 @@
 #include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
 
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
+
+#include <optional>
 #include <string>
 
 namespace Poco::Util
@@ -37,6 +41,14 @@ struct ConnectionParameters
     std::string bind_host;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;
+
+    /// The address of `host` that is already known to accept connections on `port`, if any.
+    /// It is tried first, so that the addresses that do not answer do not delay the connection.
+    std::optional<Poco::Net::SocketAddress> preferred_address;
+
+    /// A connection to `preferred_address` that has already been established, to be taken over by the
+    /// `Connection` instead of opening a second one to the same endpoint (see `Connection::setAdoptedSocket`).
+    std::optional<Poco::Net::StreamSocket> adopted_socket;
 
     using Database = StrongTypedef<String, struct DatabaseTag>;
     using Host = StrongTypedef<String, struct HostTag>;

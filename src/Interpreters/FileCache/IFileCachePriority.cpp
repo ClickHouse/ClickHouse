@@ -1,8 +1,9 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -13,8 +14,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-IFileCachePriority::IFileCachePriority(size_t max_size_, size_t max_elements_)
-    : max_size(max_size_), max_elements(max_elements_)
+IFileCachePriority::IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_)
+    : queue_type(queue_type_), max_size(max_size_), max_elements(max_elements_)
 {
 }
 
@@ -37,7 +38,6 @@ IFileCachePriority::Entry::Entry(const Entry & other)
     , offset(other.offset)
     , key_metadata(other.key_metadata)
     , size(other.size.load())
-    , hits(other.hits.load())
 {
 }
 
@@ -47,6 +47,14 @@ std::string IFileCachePriority::Entry::toString(const std::string & prefix) cons
         "{}{}:{}:{} (state: {})",
         prefix, key, offset, size.load(),
         magic_enum::enum_name(state.load(std::memory_order_relaxed)));
+}
+
+KeyMetadataPtr IFileCachePriority::Entry::getKeyMetadata() const
+{
+    auto locked = key_metadata.lock();
+    if (!locked)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key metadata is expired for entry {}", toString());
+    return locked;
 }
 
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
@@ -69,25 +77,17 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
         magic_enum::enum_name(getType()));
 }
 
-void IFileCachePriority::removeEntries(
-    const std::vector<InvalidatedEntryInfo> & entries,
-    const CachePriorityGuard::WriteLock & lock)
-{
-    if (entries.empty())
-        return;
+IFileCachePriority::IPriorityDump::IPriorityDump() = default;
+IFileCachePriority::IPriorityDump::~IPriorityDump() = default;
 
-    for (const auto & [entry, it] : entries)
-    {
-        /// We store `entry` shared pointer in addition to `it`
-        /// (which is an iterator pointing to the same entry)
-        /// because `it` could become invalid,
-        /// so we use `entry` to check validity of the iterator.
-        const auto entry_state = entry->getState();
-        chassert(entry_state == Entry::State::Invalidated || entry_state == Entry::State::Removed,
-                 fmt::format("Unexpected state: {}", magic_enum::enum_name(entry_state)));
-        if (entry_state != Entry::State::Removed)
-            it->remove(lock);
-    }
+IFileCachePriority::IPriorityDump::IPriorityDump(const std::vector<FileSegmentInfo> & infos_)
+    : infos(infos_)
+{
+}
+
+void IFileCachePriority::IPriorityDump::merge(const IPriorityDump & other)
+{
+    infos.insert(infos.end(), other.infos.begin(), other.infos.end());
 }
 
 }

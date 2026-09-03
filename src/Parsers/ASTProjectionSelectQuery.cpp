@@ -1,4 +1,6 @@
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
+#include <base/EnumReflection.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -8,6 +10,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/typeid_cast.h>
 
 
@@ -16,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -39,12 +44,31 @@ ASTPtr ASTProjectionSelectQuery::clone() const
         */
     CLONE(Expression::WITH);
     CLONE(Expression::SELECT);
+    CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::ORDER_BY);
 
 #undef CLONE
 
     return res;
+}
+
+
+void ASTProjectionSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The children carry different roles (SELECT list, GROUP BY, ...) recorded only in `positions`.
+    /// Without hashing the roles, `SELECT a GROUP BY b` and `SELECT a ORDER BY b` would hash equally.
+    /// Iterate over all enumerators so that a newly added one is hashed without changing this code.
+    for (auto expr : magic_enum::enum_values<Expression>())
+    {
+        auto it = positions.find(expr);
+        if (it != positions.end())
+        {
+            hash_state.update(expr);
+            hash_state.update(it->second);
+        }
+    }
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -58,13 +82,28 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     if (with())
     {
         ostr << indent_str << "WITH";
-        s.one_line ? with()->format(ostr, s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        if (s.one_line)
+            with()->format(ostr, s, state, frame);
+        else
+        {
+            /// Put every CTE on its own indented line, even a single one, for consistent formatting.
+            FormatStateStacked with_frame = frame;
+            with_frame.expression_list_always_start_on_new_line = true;
+            with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, with_frame);
+        }
         ostr << s.nl_or_ws;
     }
 
     ostr << indent_str << "SELECT";
 
     s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+
+    if (where())
+    {
+        ostr << s.nl_or_ws << indent_str << "WHERE";
+        ostr << ' ';
+        where()->format(ostr, s, state, frame);
+    }
 
     if (groupBy())
     {
@@ -141,6 +180,13 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
         }
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
     }
+    /// `WHERE` must be inserted before `GROUP BY` to match the canonical child order produced by
+    /// `ParserSelectQuery` (see `ASTSelectQuery::normalizeChildrenOrder`). `ASTSelectQuery` tree hashes
+    /// depend on the `children` order and are used for column identifiers and scalar/cache keys, so a
+    /// non-canonical order here would give a filtered aggregate projection different identifiers than
+    /// the same `SELECT` parsed from text.
+    if (where())
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, where()->clone());
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
 
@@ -161,6 +207,67 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     settings_query->is_standalone = false;
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     return node;
+}
+
+void ASTProjectionSelectQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ProjectionSelectQuery");
+    w.writeChild("with", with());
+    w.writeChild("select", select());
+    w.writeChild("where", where());
+    w.writeChild("group_by", groupBy());
+    w.writeChild("order_by", orderBy());
+}
+
+void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    auto setExpr = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
+    {
+        auto child = r.readChild(key);
+        if (child)
+            this->setExpression(expr, std::move(child));
+    };
+
+    /// `with` and `group_by` are parser-owned `ASTExpressionList`s; `formatImpl` formats them via
+    /// `as<ASTExpressionList &>()`, so reject a non-list node from malformed `clickhouse_json`.
+    auto setExprList = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
+    {
+        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+            this->setExpression(expr, std::move(child));
+    };
+
+    setExprList("with", Expression::WITH);
+
+    /// `formatImpl` always formats the SELECT expression list and unconditionally
+    /// casts it to `ASTExpressionList`, so it must be present and of the right type.
+    auto select_child = r.readChild("select");
+    if (!select_child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'select' during AST JSON deserialization");
+    if (!select_child->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTExpressionList for 'select' during AST JSON deserialization");
+    setExpression(Expression::SELECT, std::move(select_child));
+
+    /// `WHERE` must be inserted between `SELECT` and `GROUP BY` to match the canonical child order
+    /// produced by `ParserProjectionSelectQuery` (see the ordering comment in `clone`).
+    setExpr("where", Expression::WHERE);
+    setExprList("group_by", Expression::GROUP_BY);
+
+    /// `ParserProjectionSelectQuery` stores `ORDER BY` either as a single expression or as a
+    /// `tuple(...)` function whose arguments carry the comma-separated keys — never as a bare
+    /// `ASTExpressionList` or a sort-wrapper node. Such shapes would format as an ordinary
+    /// `ORDER BY a, b` but later fail in projection analysis when `cloneToASTSelect` splices the
+    /// node into the synthetic `SELECT` list, so reject them at the JSON boundary.
+    if (auto order_by_child = r.readChild("order_by"))
+    {
+        if (order_by_child->as<ASTExpressionList>() || order_by_child->as<ASTOrderByElement>()
+            || order_by_child->as<ASTStorageOrderByElement>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected node type for key 'order_by' during AST JSON deserialization: "
+                "projection ORDER BY must be a single expression or a 'tuple' function");
+        setExpression(Expression::ORDER_BY, std::move(order_by_child));
+    }
 }
 
 }
