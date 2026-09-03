@@ -176,24 +176,31 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     if (partition_key_condition.has_value())
     {
         const auto & partition_value = entry->normalized_partition_key_value;
-        std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
-        for (size_t i = 0; i < index_value.size(); ++i)
-        {
-            auto & field = index_value[i];
-            const auto & type = partition_key->data_types.at(i);
-            // NULL_LAST
-            if (field.isNull())
-                field = POSITIVE_INFINITY;
-            else
-                field = normalizePartitionValue(field, type);
-        }
 
-        bool can_be_true = partition_key_condition->mayBeTrueInRange(
-            partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
-
-        if (!can_be_true)
+        /// A spec field whose source column or transform cannot be modelled is left out of the
+        /// partition key, so the key is narrower than the tuple and the two are not index-aligned.
+        /// Only the partition key is unusable then; the min/max conditions below still apply.
+        if (partition_key->data_types.size() == partition_value.size())
         {
-            return PruningReturnStatus::PARTITION_PRUNED;
+            std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
+            for (size_t i = 0; i < index_value.size(); ++i)
+            {
+                auto & field = index_value[i];
+                const auto & type = partition_key->data_types.at(i);
+                // NULL_LAST
+                if (field.isNull())
+                    field = POSITIVE_INFINITY;
+                else
+                    field = normalizePartitionValue(field, type);
+            }
+
+            bool can_be_true = partition_key_condition->mayBeTrueInRange(
+                partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+
+            if (!can_be_true)
+            {
+                return PruningReturnStatus::PARTITION_PRUNED;
+            }
         }
     }
 
