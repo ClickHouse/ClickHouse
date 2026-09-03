@@ -88,7 +88,7 @@ Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de
   </Step>
 
   <Step title="Configurez l’infrastructure BYOC" id="setup-byoc-infrastructure">
-    Vous serez invité à configurer l’infrastructure, notamment les buckets de stockage d’objets, le VPC/VNet et le cluster Kubernetes, depuis la console ClickHouse Cloud. Certains paramètres doivent être définis à ce stade, car ils ne pourront pas être modifiés ultérieurement. Plus précisément :
+    Vous serez invité à configurer l’infrastructure, notamment les buckets de stockage d’objets, le VPC/VNet et le cluster Kubernetes, depuis la console ClickHouse Cloud. Certains paramètres doivent être définis à ce stade, car ils ne pourront pas être modifiés ultérieurement. Plus précisément :
 
     * **Région** : toutes les **régions publiques** répertoriées dans notre documentation sur les [régions prises en charge](/fr/products/cloud/reference/supported-regions) sont disponibles pour les déploiements BYOC. Les régions privées ne sont actuellement pas prises en charge.
 
@@ -102,7 +102,39 @@ Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de
 
     * **Zones de disponibilité** : si vous prévoyez d’utiliser le peering VPC, l’alignement des zones de disponibilité entre les comptes source et BYOC peut contribuer à réduire les coûts de trafic inter-AZ. Par exemple, dans AWS, les suffixes de zone de disponibilité (`a`, `b`, `c`) peuvent correspondre à différents ID de zones physiques selon les comptes. Consultez le [guide AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) pour plus de détails.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="Configuration de l’infrastructure BYOC" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="Configurez l’infrastructure BYOC" background="black" />
+
+    #### Validation préalable
+
+    Lorsque vous cliquez sur **Set up Infrastructure**, ClickHouse Cloud exécute une série de contrôles préalables en **lecture seule** sur votre compte avant de créer la moindre ressource. Si tout est validé, le provisionnement se poursuit. Si un contrôle échoue, la configuration est interrompue et la console indique précisément le problème, afin que vous puissiez le corriger avant que des ressources ne soient créées.
+
+    Les checks confirment que :
+
+    * **Autorisations** — l’identité de gestion (rôle IAM / compte de service / principal de service) dispose des autorisations dont ClickHouse Cloud a besoin pour provisionner et exploiter votre déploiement.
+    * **Services activés** *(GCP)* — les API Google Cloud requises (Compute Engine, Kubernetes Engine, Cloud Storage, Network Connectivity, IAM) sont activées pour votre projet.
+    * **Réseau** *(AWS avec votre propre VPC)* — votre VPC et vos sous-réseaux répondent aux [exigences réseau](/fr/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc) : tailles des sous-réseaux, tags requis, répartition entre les zones de disponibilité, connectivité sortante et adresses IP disponibles.
+    * **Quotas et garde-fous** *(AWS)* — votre compte dispose de quotas de service suffisants (VPC, passerelles NAT, Elastic IP, clusters EKS, vCPU) et aucune stratégie d’organisation (SCP) ne bloque une action requise.
+
+    Lorsque des checks échouent, chacun est répertorié avec l’action à laquelle il correspond et la raison de l’échec (par exemple, `iam:CreateRole · explicitDeny`). Développez **Show passed checks** pour passer en revue tout ce qui a réussi.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="Signalement des vérifications de configuration Cloud ayant échoué lors de la validation préalable de BYOC" background="black" />
+
+    Pour corriger ces échecs, réexécutez la dernière pile CloudFormation ou Terraform de ClickHouse — ou accordez les actions signalées à l’identité de gestion (rôle IAM / compte de service / principal de service) — puis choisissez l’une des options suivantes :
+
+    * **Revérifier** — relance les vérifications préalables. Utilisez cette option après avoir corrigé les problèmes signalés afin de confirmer que votre configuration est prête avant le provisionnement.
+    * **Continuer quand même** — poursuit le provisionnement malgré les vérifications ayant échoué. Utilisez cette option uniquement si vous êtes certain qu’un échec signalé est un faux positif ; sinon, le provisionnement risque d’échouer en cours de route.
+
+    Utilisez le tableau ci-dessous pour résoudre les échecs courants.
+
+    | Erreur de validation                                                                                                                                                                                                    | Cause probable                                                                                                                                        | Comment résoudre le problème                                                                                                                                                            |
+    | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **Impossible d’assumer le rôle de gestion** *(AWS)*                                                                                                                                                                     | La pile d’onboarding n’a pas été appliquée correctement, ou le rôle ou l’ID externe ne correspondent pas                                              | Réexécutez la pile d’onboarding la plus récente et vérifiez que l’[ID externe](#aws-external-id) affiché dans la console correspond à celui figurant dans votre stratégie d’approbation |
+    | **Impossible d’usurper le compte de service de gestion** *(GCP)*                                                                                                                                                        | Le Terraform d’onboarding n’a pas été finalisé, ou le compte de service `clickhouse-management` est absent ou n’autorise pas ClickHouse à l’emprunter | Réexécutez le dernier Terraform d’onboarding et vérifiez que le compte de service `clickhouse-management` existe et autorise ClickHouse à l’emprunter                                   |
+    | **Autorisation manquante** (p. ex. créer un VPC, créer un rôle IAM, créer un cluster Kubernetes)                                                                                                                        | L’identité de gestion ne dispose pas d’une autorisation requise — souvent en raison d’une pile personnalisée ou obsolète                              | Réexécutez la pile d’onboarding la plus récente, qui accorde l’ensemble complet des autorisations ; si vous restreignez intentionnellement les autorisations, ajoutez celle signalée    |
+    | **API requise non activée** *(GCP)*                                                                                                                                                                                     | Une API de service Google Cloud requise est désactivée pour le projet                                                                                 | Activez-la, par exemple avec `gcloud services enable compute.googleapis.com --project <your-project>`                                                                                   |
+    | **Problème de configuration du sous-réseau ou du VPC** *(AWS bring-your-own-VPC)* — plage CIDR trop petite, tag manquant, trop peu de zones de disponibilité, absence d’egress sortant ou trop peu d’adresses IP libres | Le VPC fourni ne satisfait pas aux exigences réseau de BYOC                                                                                           | Ajustez le VPC afin de respecter les [exigences réseau](/fr/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)                                             |
+    | **QUOTA de service insuffisant** *(AWS)*                                                                                                                                                                                | Le quota de votre compte pour une ressource requise est trop faible                                                                                   | Demandez une augmentation de quota à votre fournisseur de services cloud ; consultez les [limites de service AWS](/fr/products/bring-your-own-cloud/reference/aws-service-limits)          |
+    | **Bloqué par une politique d’organisation / SCP** *(AWS)*                                                                                                                                                               | Une règle de protection de l’organisation interdit une action requise pour le compte                                                                  | Collaborez avec votre administrateur cloud pour autoriser cette action pour le compte BYOC                                                                                              |
   </Step>
 </Steps>
 

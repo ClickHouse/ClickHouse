@@ -13,60 +13,61 @@ import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePl
   ## Regiones compatibles
 </div>
 
-Las siguientes tablas enumeran las regiones compatibles por proveedor de nube. Las insignias indican la disponibilidad de regiones privadas, HIPAA y PCI. Las regiones sin insignias no ofrecen actualmente ninguna de estas opciones.
+Las siguientes tablas enumeran las regiones compatibles por proveedor de nube. Las insignias indican la disponibilidad: `Public` para las regiones de disponibilidad general y `Private`, `HIPAA` o `PCI` para las regiones que ofrecen estas opciones.
 
 <Tabs>
   <Tab title="AWS" id="aws-regions" icon="aws">
     | Región           | Disponibilidad                                                                                           |
     | ---------------- | -------------------------------------------------------------------------------------------------------- |
-    | `af-south-1`     | <Badge color="purple">Privada</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `ap-east-1`      | <Badge color="purple">Privada</Badge>                                                                    |
-    | `ap-east-2`      | <Badge color="purple">Privada</Badge>                                                                    |
-    | `ap-northeast-1` | —                                                                                                        |
-    | `ap-northeast-2` | —                                                                                                        |
-    | `ap-south-1`     | —                                                                                                        |
-    | `ap-southeast-1` | —                                                                                                        |
-    | `ap-southeast-2` | —                                                                                                        |
-    | `ap-southeast-3` | <Badge color="purple">Privada</Badge>                                                                    |
-    | `ap-southeast-5` | <Badge color="purple">Privada</Badge>                                                                    |
-    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-north-1`     | <Badge color="purple">Privada</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `il-central-1`   | —                                                                                                        |
-    | `mx-central-1`   | <Badge color="purple">Privada</Badge> <Badge color="blue">PCI</Badge>                                    |
-    | `sa-east-1`      | <Badge color="purple">Privada</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | `af-south-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-northeast-1` | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `ap-northeast-2` | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `ap-south-1`     | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-southeast-1` | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `ap-southeast-2` | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `ap-southeast-3` | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">Private</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-central-1`   | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-north-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-2`      | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `il-central-1`   | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `me-central-1`   | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `mx-central-1`   | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `sa-east-1`      | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-2`      | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west-2`      | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
   </Tab>
 
   <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
-    | Región                    | Disponibilidad                                                     |
-    | ------------------------- | ------------------------------------------------------------------ |
-    | `asia-northeast1`         | —                                                                  |
-    | `asia-southeast1`         | —                                                                  |
-    | `australia-southeast1`    | <Badge color="purple">Privada</Badge>                              |
-    | `europe-west2`            | —                                                                  |
-    | `europe-west3`            | <Badge color="purple">Privada</Badge>                              |
-    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `europe-west6`            | <Badge color="purple">Privada</Badge>                              |
-    | `northamerica-northeast1` | <Badge color="purple">Privada</Badge>                              |
-    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-west1`                | <Badge color="purple">Privada</Badge>                              |
+    | Región                    | Disponibilidad                                                                                           |
+    | ------------------------- | -------------------------------------------------------------------------------------------------------- |
+    | `asia-northeast1`         | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `asia-southeast1`         | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `australia-southeast1`    | <Badge color="purple">Privada</Badge>                                                                    |
+    | `europe-west2`            | <Badge color="yellow">Pública</Badge>                                                                    |
+    | `europe-west3`            | <Badge color="purple">Privada</Badge>                                                                    |
+    | `europe-west4`            | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">Privada</Badge>                                                                    |
+    | `northamerica-northeast1` | <Badge color="purple">Privada</Badge>                                                                    |
+    | `us-central1`             | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="yellow">Pública</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">Privada</Badge>                                                                    |
   </Tab>
 
   <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
     | Región                 | Disponibilidad                        |
     | ---------------------- | ------------------------------------- |
-    | `Australia East`       | <Badge color="purple">Privada</Badge> |
-    | `East US 2`            | —                                     |
-    | `Germany West Central` | —                                     |
-    | `Japan East`           | <Badge color="purple">Privada</Badge> |
-    | `UAE North`            | <Badge color="purple">Privada</Badge> |
-    | `West US 3`            | —                                     |
+    | `Australia East`       | <Badge color="purple">Privado</Badge> |
+    | `East US 2`            | <Badge color="yellow">Público</Badge> |
+    | `Germany West Central` | <Badge color="yellow">Público</Badge> |
+    | `Japan East`           | <Badge color="purple">Privado</Badge> |
+    | `UAE North`            | <Badge color="purple">Privado</Badge> |
+    | `West US 3`            | <Badge color="yellow">Público</Badge> |
   </Tab>
 </Tabs>
 
