@@ -481,17 +481,17 @@ UnityCatalog::UnityCatalog(
 }
 
 /// getCredentialsConfigurationCallback method is supported only for S3 storage
-ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID & table_id)
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(
+    const DB::StorageID & table_id, const TableMetadata & table_metadata)
 {
-    if (!table_id.hasUUID())
+    const auto table_uuid = table_metadata.getTableUUID();
+    if (!table_uuid)
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "Cannot build a Unity credentials refresh callback for `{}`: StorageID has no UUID",
+            "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    const String unity_table_id = toString(table_id.uuid);
-
-    return [this, unity_table_id] () -> std::shared_ptr<IStorageCredentials>    {
+    return [this, unity_table_id = *table_uuid] () -> std::shared_ptr<IStorageCredentials>    {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
         return parseS3Credentials(requestReadCredentials(unity_table_id));

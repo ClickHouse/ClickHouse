@@ -11,6 +11,7 @@
 #include <Poco/JSON/Object.h>
 
 #include <functional>
+#include <string_view>
 #include <unordered_map>
 
 namespace DB
@@ -41,6 +42,14 @@ public:
 
 private:
     std::unordered_map<DB::DatabaseDataLakeCatalogType, Validator> validators;
+};
+
+enum class DataLakeTableFormat : uint8_t
+{
+    UNKNOWN,
+    DELTA,
+    ICEBERG,
+    PAIMON,
 };
 
 struct DataLakeSpecificProperties
@@ -85,6 +94,8 @@ public:
 
     void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
     std::optional<std::string> getTableUUID() const { return table_uuid; }
+    void setTableFormat(DataLakeTableFormat format) { table_format = format; }
+    DataLakeTableFormat getTableFormat() const { return table_format; }
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
@@ -138,6 +149,7 @@ private:
     std::optional<std::string> table_uuid;
 
     bool is_default_readable_table = true;
+    DataLakeTableFormat table_format = DataLakeTableFormat::UNKNOWN;
 
     bool with_location = false;
     bool with_schema = false;
@@ -204,6 +216,13 @@ public:
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
     virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
+
+    /// Format of a table of this catalog.
+    virtual DataLakeTableFormat getTableFormat(const TableMetadata & table_metadata) const = 0;
+
+    /// Name of the table engine which reads this table.
+    std::string_view getTableEngineName(const TableMetadata & table_metadata) const;
+
     virtual ~ICatalog() = default;
 
     /// Does catalog have any tables?
@@ -281,7 +300,8 @@ public:
     /// The Glue catalog does not support such operation.
     virtual bool isTransactional() const { return false; }
 
-    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & /*storage_id*/, const TableMetadata & /*table_metadata*/)
     {
         return std::nullopt;
     }

@@ -8280,6 +8280,9 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 
 Cloud default value: `1`.
 )", BETA, allow_database_unity_catalog) \
+    DECLARE(Bool, allow_experimental_database_unity_v2_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity_v2', which serves both Delta Lake and Iceberg tables from a single Unity Catalog.
+)", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 

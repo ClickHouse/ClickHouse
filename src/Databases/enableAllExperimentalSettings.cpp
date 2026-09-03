@@ -51,6 +51,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_database_iceberg", 1);
     context->setSetting("allow_experimental_database_hms_catalog", 1);
     context->setSetting("allow_experimental_database_unity_catalog", 1);
+    context->setSetting("allow_experimental_database_unity_v2_catalog", 1);
     context->setSetting("allow_experimental_database_glue_catalog", 1);
     context->setSetting("allow_database_unity_catalog", 1);
     context->setSetting("allow_database_glue_catalog", 1);

@@ -330,14 +330,26 @@ def execute_multiple_spark_queries(node, queries_list, retry_on_timeout=False):
     )
 
 
+# The unified `unity_v2` must match the Delta-only `unity` on an all-Delta
+# catalog, so every test runs with both.
+CATALOG_TYPES = ["unity", "unity_v2"]
+
+
+def allow_catalog_setting(catalog_type):
+    if catalog_type == "unity":
+        return "allow_database_unity_catalog"
+    return "allow_experimental_database_unity_v2_catalog"
+
+
+@pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
+def test_embedded_database_and_tables(started_cluster, use_delta_kernel, catalog_type):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
     node1.query(f"drop database if exists unity_test_{test_uuid}")
     node1.query(
-        f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='{catalog_type}', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
+        settings={allow_catalog_setting(catalog_type): "1"},
     )
     default_tables = list(
         sorted(
@@ -379,7 +391,8 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
             assert data_clickhouse == data_spark
 
 
-def test_check_database_unity(started_cluster):
+@pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
+def test_check_database_unity(started_cluster, catalog_type):
     """
     Test CHECK DATABASE query on Unity Catalog with a single schema.
     Creates one schema with multiple tables and verifies CHECK DATABASE works correctly.
@@ -415,8 +428,8 @@ def test_check_database_unity(started_cluster):
 
     # Create ClickHouse database pointing to Unity Catalog
     node1.query(
-        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings={"allow_database_unity_catalog": "1"},
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='{catalog_type}', vended_credentials=false",
+        settings={allow_catalog_setting(catalog_type): "1"},
     )
 
     # Verify tables are visible
@@ -450,7 +463,8 @@ def test_check_database_unity(started_cluster):
             "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
-def test_multiple_schemes_tables(started_cluster):
+@pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
+def test_multiple_schemes_tables(started_cluster, catalog_type):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
     # Combine schema creation, table creation and inserts into a single
@@ -465,8 +479,8 @@ def test_multiple_schemes_tables(started_cluster):
     execute_multiple_spark_queries(node1, queries)
 
     node1.query(
-        f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings={"allow_database_unity_catalog": "1"},
+        f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='{catalog_type}', vended_credentials=false",
+        settings={allow_catalog_setting(catalog_type): "1"},
     )
     multi_schema_tables = list(
         sorted(
@@ -494,8 +508,9 @@ def test_multiple_schemes_tables(started_cluster):
         )
 
 
+@pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_complex_table_schema(started_cluster, use_delta_kernel):
+def test_complex_table_schema(started_cluster, use_delta_kernel, catalog_type):
     node1 = started_cluster.instances["node1"]
     schema_name = (
         f"schema_with_complex_tables_{use_delta_kernel}_{uuid.uuid4()}".replace(
@@ -516,9 +531,9 @@ def test_complex_table_schema(started_cluster, use_delta_kernel):
 drop database if exists complex_schema;
 create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+settings warehouse = 'unity', catalog_type='{catalog_type}', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_database_unity_catalog": "1"},
+        settings={allow_catalog_setting(catalog_type): "1"},
     )
 
     complex_schema_tables = list(
@@ -556,8 +571,9 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
         assert node1.contains_in_log("DeltaLakeMetadata: Initializing snapshot")
 
 
+@pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_timestamp_ntz(started_cluster, use_delta_kernel):
+def test_timestamp_ntz(started_cluster, use_delta_kernel, catalog_type):
     table_name_src = f"ntz_schema_{uuid.uuid4()}".replace("-", "_")
     node1 = started_cluster.instances["node1"]
     node1.query(f"drop database if exists {table_name_src}")
@@ -583,9 +599,9 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel):
 drop database if exists {table_name};
 create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+settings warehouse = 'unity', catalog_type='{catalog_type}', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_database_unity_catalog": "1"},
+        settings={allow_catalog_setting(catalog_type): "1"},
     )
 
     ntz_tables = list(
@@ -720,7 +736,8 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     assert schema_name in get_schemas()
 
 
-def test_used_storages_in_query_log(started_cluster):
+@pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
+def test_used_storages_in_query_log(started_cluster, catalog_type):
     node1 = started_cluster.instances["node1"]
     db_name = f"db_query_log_{uuid.uuid4()}".replace("-", "_")
 
@@ -729,9 +746,9 @@ def test_used_storages_in_query_log(started_cluster):
 drop database if exists {db_name};
 create database {db_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
+settings warehouse = 'unity', catalog_type='{catalog_type}', vended_credentials=false
         """,
-        settings={"allow_database_unity_catalog": "1"},
+        settings={allow_catalog_setting(catalog_type): "1"},
     )
 
     query_id = str(uuid.uuid4()).replace("-", "")
@@ -749,7 +766,8 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
     assert "DeltaLake" in result, f"Expected DeltaLake in used_storages, got {result}"
 
 
-def test_snapshot_version(started_cluster):
+@pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
+def test_snapshot_version(started_cluster, catalog_type):
     """
     Test table in delta lake catalog with CDF settings
     (delta_lake_snapshot_start_version, delta_lake_snapshot_end_version).
@@ -808,9 +826,9 @@ TBLPROPERTIES (
 drop database if exists {db_name};
 create database {db_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
+settings warehouse = 'unity', catalog_type='{catalog_type}', vended_credentials=false
         """,
-        settings={"allow_database_unity_catalog": "1"},
+        settings={allow_catalog_setting(catalog_type): "1"},
     )
 
     # Validate data at version 1
@@ -958,8 +976,9 @@ FROM {db_name}.`{schema_name}.{table_name}`
     )
 
 
+@pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_varchar_char_types_via_unity_catalog(started_cluster, use_delta_kernel):
+def test_varchar_char_types_via_unity_catalog(started_cluster, use_delta_kernel, catalog_type):
     """
     Regression test for: Unsupported DeltaLake type: varchar(n)
 
@@ -997,10 +1016,10 @@ def test_varchar_char_types_via_unity_catalog(started_cluster, use_delta_kernel)
 DROP DATABASE IF EXISTS {db_name};
 CREATE DATABASE {db_name}
 ENGINE DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false,
+SETTINGS warehouse = 'unity', catalog_type = '{catalog_type}', vended_credentials = false,
          allow_experimental_delta_kernel_rs = {use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={allow_catalog_setting(catalog_type): "1"},
     )
 
     tables = (

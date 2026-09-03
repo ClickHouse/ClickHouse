@@ -28,6 +28,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/UnityV2Catalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #if USE_AWS_S3 && USE_SSL
@@ -101,6 +102,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
     extern const SettingsBool allow_experimental_database_unity_catalog;
+    extern const SettingsBool allow_experimental_database_unity_v2_catalog;
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
@@ -385,6 +387,21 @@ void DatabaseDataLake::initialize() const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use 'hive' database engine: ClickHouse was compiled without USE_HIVE built option");
 #endif
         }
+        case DB::DatabaseDataLakeCatalogType::UNITY_V2:
+        {
+            /// Databricks OIDC expects `all-apis`; the default `auth_scope` value targets Iceberg REST catalogs.
+            const std::string unity_auth_scope = settings[DatabaseDataLakeSetting::auth_scope].changed
+                ? settings[DatabaseDataLakeSetting::auth_scope].value
+                : "all-apis";
+            catalog_impl = std::make_shared<DataLake::UnityV2Catalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                unity_auth_scope,
+                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
         case DB::DatabaseDataLakeCatalogType::NONE:
         {
             catalog_impl = nullptr;
@@ -497,12 +514,22 @@ void DatabaseDataLake::resetCatalog(String reason) const
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
-    DataLakeStorageSettingsPtr storage_settings) const
+    DataLakeStorageSettingsPtr storage_settings,
+    DataLake::DataLakeTableFormat table_format) const
 {
     /// TODO: add tests for azure, local storage types.
 
     auto catalog = getCatalog();
-    switch (catalog->getCatalogType())
+    auto catalog_type = catalog->getCatalogType();
+
+    /// The `unity_v2` catalog serves both formats. Iceberg tables need the same configurations as an
+    /// Iceberg REST catalog, Delta tables the same as a Unity catalog, so route each table to that arm.
+    if (catalog_type == DatabaseDataLakeCatalogType::UNITY_V2)
+        catalog_type = table_format == DataLake::DataLakeTableFormat::ICEBERG
+            ? DatabaseDataLakeCatalogType::ICEBERG_REST
+            : DatabaseDataLakeCatalogType::UNITY;
+
+    switch (catalog_type)
     {
         case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
@@ -667,6 +694,8 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #endif
             }
         }
+        case DatabaseDataLakeCatalogType::UNITY_V2:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unity v2 catalog was not routed to a per-format catalog type");
         case DatabaseDataLakeCatalogType::NONE:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
     }
@@ -847,7 +876,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
     }
 
-    const auto configuration = getConfiguration(storage_type, storage_settings);
+    const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -929,7 +958,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             return std::nullopt;
         if (!with_vended_credentials && !catalog_manages_provider_chain)
             return std::nullopt;
-        return catalog->getCredentialsConfigurationCallback(storage_id);
+        return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
 
     const auto catalog_uuid = table_metadata.getTableUUID();
@@ -1377,8 +1406,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
-    if (!table_metadata.isDefaultReadableTable())
-        storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
+    storage->engine->name = String(catalog->getTableEngineName(table_metadata));
 
     storage->settings = {};
 
@@ -1604,7 +1632,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                         throw_invalid_auth();
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::GLUE:
@@ -1617,7 +1644,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_glue_catalog");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::UNITY:
@@ -1630,7 +1656,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_unity_catalog");
                 }
 
-                engine_func->name = "DeltaLake";
                 break;
             }
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
@@ -1643,7 +1668,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_hms_catalog");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::PAIMON_REST:
@@ -1656,7 +1680,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
                 }
 
-                engine_func->name = "Paimon";
                 break;
             }
             case DatabaseDataLakeCatalogType::S3_TABLES:
@@ -1669,7 +1692,35 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
-                engine_func->name = "Iceberg";
+                break;
+            }
+            case DatabaseDataLakeCatalogType::UNITY_V2:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_v2_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DataLake database with Unity v2 catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_unity_v2_catalog");
+                }
+
+                /// `auth_header` is not wired through `UnityV2Catalog`; a bearer token goes into
+                /// `catalog_credential` directly, so reject the setting instead of silently ignoring it.
+                if (!args.create_query.attach && !database_settings[DatabaseDataLakeSetting::auth_header].value.empty())
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Unity v2 catalog does not support `auth_header`. "
+                                    "Pass the token as `catalog_credential = '<token>'`, or an OAuth service principal "
+                                    "as `catalog_credential = '<client_id>:<client_secret>'`");
+                }
+
+                if (!args.create_query.attach && !database_settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "`oauth_server_use_request_body = 0` is not supported for Unity v2 catalog: "
+                                    "the OAuth client-credentials request always sends parameters in the request body");
+                }
+
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:
@@ -1730,6 +1781,7 @@ You will need to enable the relevant settings below to use the `DataLakeCatalog`
 ```sql
 SET allow_experimental_database_iceberg = 1;
 SET allow_experimental_database_unity_catalog = 1;
+SET allow_experimental_database_unity_v2_catalog = 1;
 SET allow_experimental_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
@@ -1749,7 +1801,7 @@ The following settings are supported:
 
 | Setting                 | Description                                                                             |
 |-------------------------|-----------------------------------------------------------------------------------------|
-| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `unity_v2` (Delta and Iceberg), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
@@ -1772,6 +1824,21 @@ The following settings are supported:
 See below sections for examples of using the `DataLakeCatalog` engine:
 
 * [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
+* Unity v2 Catalog
+    Serves both Delta Lake and Iceberg tables from a single Unity Catalog, detecting the format
+    of each table. Can be used by enabling `allow_experimental_database_unity_v2_catalog`.
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog('https://<workspace>.cloud.databricks.com/api/2.1/unity-catalog')
+SETTINGS
+    catalog_type = 'unity_v2',
+    warehouse = 'my_catalog',
+    catalog_credential = '<client_id>:<client_secret>';
+SHOW TABLES FROM database_name;
+SELECT count() FROM database_name.`schema_name.table_name`;
+```
+    `catalog_credential` accepts an OAuth service principal as `<client_id>:<client_secret>`,
+    a personal access token (`dapi...`), or a pre-obtained OAuth token.
 * [Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
     Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
