@@ -29,6 +29,9 @@ namespace
 /// https://github.com/eisenwave/cxx26-bit-permutations/blob/master/bit_permutations.hpp
 /// They could be removed if bit-permutations bacome a standard.
 
+/// Only the portable fallbacks below need these helpers, and `-Wunused-function` is an error.
+#if !defined(__BMI2__) && !defined(__ARM_FEATURE_SVE2)
+
 [[nodiscard]] constexpr int log2Floor(unsigned x) noexcept
 {
     return std::numeric_limits<unsigned>::digits - std::countl_zero(x) - 1;
@@ -52,19 +55,18 @@ namespace
 #endif
 }
 
+#endif
+
 [[nodiscard]] constexpr unsigned long long bitCompress64(unsigned long long x, unsigned long long m) noexcept
 {
+#if defined(__BMI2__)
+    return _pext_u64(x, m);
+#elif defined(__ARM_FEATURE_SVE2)
+    auto sv_result = svbext_u64(svdup_u64(x), svdup_u64(m));
+    return static_cast<unsigned long long>(svorv_u64(svptrue_b64(), sv_result));
+#else
     using T = unsigned long long;
     constexpr int N = std::numeric_limits<T>::digits;
-
-#ifdef __BMI2__
-    return _pext_u64(x, m);
-#endif
-
-#ifdef __ARM_FEATURE_SVE2
-    auto sv_result = svbext_u64(svdup_u64(x), svdup_u64(m));
-    return static_cast<T>(svorv_u64(svptrue_b64(), sv_result));
-#endif
 
     x &= m;
     T mk = ~m << 1;
@@ -82,22 +84,20 @@ namespace
         mk &= ~mk_parity;
     }
     return x;
+#endif
 }
 
 [[nodiscard]] constexpr unsigned long long bitExpand64(unsigned long long x, unsigned long long m) noexcept
 {
+#if defined(__BMI2__)
+    return _pdep_u64(x, m);
+#elif defined(__ARM_FEATURE_SVE2)
+    auto sv_result = svbdep_u64(svdup_u64(x), svdup_u64(m));
+    return static_cast<unsigned long long>(svorv_u64(svptrue_b64(), sv_result));
+#else
     using T = unsigned long long;
     constexpr int N = std::numeric_limits<T>::digits;
     constexpr int log_N = log2Floor(std::bit_ceil<unsigned>(N));
-
-#ifdef __BMI2__
-    return _pdep_u64(x, m);
-#endif
-
-#ifdef __ARM_FEATURE_SVE2
-    auto sv_result = svbdep_u64(svdup_u64(x), svdup_u64(m));
-    return static_cast<T>(svorv_u64(svptrue_b64(), sv_result));
-#endif
 
     const T initial_m = m;
 
@@ -121,6 +121,7 @@ namespace
     }
 
     return x & initial_m;
+#endif
 }
 
 }
