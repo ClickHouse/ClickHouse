@@ -48,3 +48,9 @@ select count() > 0 from (explain query tree run_passes = 1 select arrayMap(x -> 
 -- its own recursion; projecting the decimal keeps that arm honest about the value it travelled with.
 select arrayMap(x -> toUnixTimestamp(x['k']), [map('k', toDateTime(1698541800, 'Europe/Berlin')::Nullable(DateTime('Europe/Berlin')))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
 select arrayMap(x -> (toUnixTimestamp(mapKeys(x)[1]), mapValues(x)[1]), [map(toDateTime(1698541800, 'Europe/Berlin'), toDecimal64(1.5, 2))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
+-- `Nullable` recurses into the type it wraps, so a `Decimal64` under it routes the whole value into exact
+-- serialization, where the `Nullable` is its own recursion. A map value is a separate recursion from its
+-- key, both in a `Map` and in a `Map` typed path of a `JSON`, which is rendered as a JSON object.
+select arrayMap(x -> (toUnixTimestamp(x.1), x.2), [CAST(tuple(toDateTime(1698541800, 'Europe/Berlin'), toDecimal64(1.5, 2)) AS Nullable(Tuple(DateTime('Europe/Berlin'), Decimal64(2))))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0, enable_nullable_tuple_type = 1;
+select arrayMap(x -> (toUnixTimestamp((x['k']).1), (x['k']).2), [map('k', tuple(toDateTime(1698541800, 'Europe/Berlin'), toDecimal64(1.5, 2)))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
+select arrayMap(x -> toUnixTimestamp(x.m['k']), ['{"m":{"k":1698541800}}'::JSON(m Map(String, DateTime('Europe/Berlin')))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
