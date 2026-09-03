@@ -3,9 +3,9 @@
 # ^ no-fasttest: the data lake engines are gated on build flags
 # ^ no-msan: `delta-kernel-rs` is disabled under MSan
 
-# Scanning `system.tables` must answer from metadata that is already loaded. When it instead fetched
-# the metadata itself, every scan cost one failing remote fetch per data lake table whose storage had
-# gone away, which kept a service in "Starting" for tens of minutes.
+# Scanning `system.tables` must not read the table metadata from the storage. When it did, every scan
+# cost one failing remote fetch per data lake table whose storage had gone away, and dictionary
+# loading, which scans `system.tables`, kept a service in "Starting" for tens of minutes.
 # https://github.com/ClickHouse/support-escalation/issues/8579
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -29,3 +29,8 @@ $CLICKHOUSE_LOCAL --multiquery "$ATTACH_TABLES $SCAN" 2>/dev/null
 # No scan reads the storage, however many times the listing is repeated.
 $CLICKHOUSE_LOCAL --send_logs_level=warning --multiquery "$ATTACH_TABLES $SCAN $SCAN $SCAN" 2>&1 \
     | grep -c -F 'StorageSystemTables' || true
+
+# Reading either table still reports the failure.
+for table in t1 t2; do
+    $CLICKHOUSE_LOCAL --multiquery "$ATTACH_TABLES SELECT count() FROM d.$table;" 2>&1 | grep -c -F 'DB::Exception'
+done

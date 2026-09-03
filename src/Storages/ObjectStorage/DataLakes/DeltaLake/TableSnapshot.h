@@ -36,10 +36,6 @@ public:
     /// Get snapshot version.
     size_t getVersion() const;
 
-    /// Whether the kernel snapshot state is already built for the current credentials,
-    /// so that the snapshot can be queried without contacting the storage.
-    bool hasLoadedState() const;
-
     std::optional<size_t> getTotalRows() const;
     std::optional<size_t> getTotalBytes() const;
 

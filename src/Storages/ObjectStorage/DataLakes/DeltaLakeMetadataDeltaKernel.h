@@ -69,8 +69,6 @@ public:
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage_, configuration);
     }
 
-    bool hasLoadedTableState() const override;
-
     std::optional<size_t> totalRows(ContextPtr) const override;
 
     std::optional<size_t> totalBytes(ContextPtr) const override;

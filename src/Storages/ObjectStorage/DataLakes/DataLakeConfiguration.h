@@ -223,12 +223,6 @@ public:
         return std::nullopt;
     }
 
-    bool hasLoadedTableState() const override
-    {
-        auto metadata = tryGetMetadata();
-        return metadata && metadata->hasLoadedTableState();
-    }
-
     bool supportsTotalRows(ContextPtr context, ObjectStorageType storage_type) const override
     {
         return DataLakeMetadata::supportsTotalRows(context, storage_type);

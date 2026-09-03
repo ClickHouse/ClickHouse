@@ -843,13 +843,6 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
     };
 }
 
-bool TableSnapshot::hasLoadedState() const
-{
-    std::lock_guard lock(mutex);
-    return kernel_snapshot_state != nullptr
-        && helper->getCredentialsFingerprint() == kernel_state_credentials_fingerprint;
-}
-
 std::optional<size_t> TableSnapshot::getTotalRows() const
 {
     std::lock_guard lock(mutex);
