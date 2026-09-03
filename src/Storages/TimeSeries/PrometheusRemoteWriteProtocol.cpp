@@ -309,6 +309,8 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     {
         context_->setSetting("distributed_foreground_insert", true);
         context_->setSetting("async_insert", false);
+        /// A shard the sink skipped is a silent drop under a 204: fail the write closed, as the check does.
+        context_->setSetting("skip_unavailable_shards", false);
     }
 }
 
