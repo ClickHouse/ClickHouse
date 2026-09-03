@@ -7,6 +7,7 @@ from ci.defs.defs import (
     ArtifactConfigs,
     ArtifactNames,
     BuildTypes,
+    with_long_retention_tags,
 )
 from ci.defs.job_configs import JobConfigs
 
@@ -31,7 +32,7 @@ workflow = Workflow.Config(
         JobConfigs.jepsen_server.set_run_after(JobConfigs.jepsen_keeper.name),
     ],
     artifacts=[
-        *ArtifactConfigs.clickhouse_binaries,
+        *with_long_retention_tags(ArtifactConfigs.clickhouse_binaries),
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
