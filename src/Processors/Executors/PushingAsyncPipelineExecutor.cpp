@@ -170,10 +170,9 @@ void PushingAsyncPipelineExecutor::start()
     data->thread = ThreadFromGlobalPool(std::move(func));
 }
 
-[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
+[[noreturn]] static void throwOnUnexpectedPipelineFinish(const IProcessor & pushing_source)
 {
-    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
+    if (pushing_source.isCancelled())
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -189,7 +188,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
     data->rethrowExceptionIfHas();
 
     if (!is_pushed)
-        throwOnExecutionStatus(data->executor->getExecutionStatus());
+        throwOnUnexpectedPipelineFinish(*pushing_source);
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)
