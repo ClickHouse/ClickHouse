@@ -14,6 +14,9 @@ DROP TABLE IF EXISTS d_local_112029;
 DROP TABLE IF EXISTS m_local_112029;
 DROP TABLE IF EXISTS d_wide_112029;
 DROP TABLE IF EXISTS m_wide_112029;
+DROP TABLE IF EXISTS t_view_112029;
+DROP VIEW IF EXISTS v_112029;
+DROP TABLE IF EXISTS d_view_112029;
 
 CREATE TABLE t_112029 (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_112029 SELECT number, number % 3 FROM numbers(20);
@@ -81,6 +84,22 @@ ORDER BY m.a DESC LIMIT 5;
 SELECT m.a FROM m_wide_112029 AS m LEFT JOIN r_112029 AS r ON m.b = r.b
 ORDER BY m.a DESC LIMIT 5 WITH TIES;
 
+CREATE TABLE t_view_112029 (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_view_112029 SELECT number, number % 3 FROM numbers(20);
+CREATE VIEW v_112029 AS SELECT a, b FROM t_view_112029;
+CREATE TABLE d_view_112029 (a UInt32, b UInt32)
+    ENGINE = Distributed(test_shard_localhost, currentDatabase(), v_112029);
+
+-- The same malformed child also fails on the initiator, before any shard sees it: a local shard
+-- is planned by `createLocalPlan`, and `collectFiltersForAnalysis` plans that child at the
+-- `Complete` stage, the only planner run that builds a limit step for it, so an orderless child
+-- carrying `WITH TIES` raises a `LOGICAL_ERROR` there. `prefer_localhost_replica` is pinned
+-- because only the local-shard plan reaches that path and the runner randomizes it. The
+-- `ARRAY JOIN` doubles every row, so `a` = 17 is tied and `LIMIT 5` returns six rows.
+SELECT '-- 10 witness: the initiator side, no remote shard needed';
+SELECT a FROM merge(currentDatabase(), '^d_view_112029$') LEFT ARRAY JOIN [1, 2] AS z
+ORDER BY a DESC LIMIT 5 WITH TIES SETTINGS prefer_localhost_replica = 1;
+
 DROP TABLE t_112029;
 DROP TABLE d_112029;
 DROP TABLE m_112029;
@@ -90,3 +109,6 @@ DROP TABLE d_local_112029;
 DROP TABLE m_local_112029;
 DROP TABLE d_wide_112029;
 DROP TABLE m_wide_112029;
+DROP TABLE d_view_112029;
+DROP VIEW v_112029;
+DROP TABLE t_view_112029;
