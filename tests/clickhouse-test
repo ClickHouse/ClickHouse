@@ -1753,6 +1753,7 @@ class SettingsRandomizer:
         # NOTE: optimize_move_to_prewhere_if_final is excluded because it triggers
         # "Logical error: Input-output header mismatch after removing unused columns
         # after pushing down filters to prewhere" (a real code bug).
+        "apply_string_filters_during_scan": lambda: random.random() < 0.5,
         "optimize_rewrite_array_exists_to_has": lambda: random.random() < 0.5,
         "optimize_skip_unused_shards": lambda: random.random() < 0.5,
         "optimize_trivial_approximate_count_query": lambda: random.random() < 0.5,

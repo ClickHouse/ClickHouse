@@ -15,6 +15,7 @@
 #include <Common/checkStackSize.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/extractStringValueFilters.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -1324,6 +1325,33 @@ void Reader::preparePrewhere()
             && pc.idx_in_output_block < extended_sample_block.columns()
             && pc.idx_in_output_block >= sample_block->columns())
             pc.first_step_to_calculate = SIZE_MAX;
+
+    /// Push down substring search conditions from PREWHERE into string decoding: values that do not
+    /// match are decoded as empty strings without copying their data (see `StringValueFilter`).
+    /// This is allowed only when PREWHERE is guaranteed to filter out the non-matching rows
+    /// (`need_filter`), so that the replaced values can never appear in the output. Only columns
+    /// decoded for prewhere steps can benefit: the remaining columns are decoded after the filter
+    /// is applied, i.e. only for the rows that passed it.
+    if (options.format.parquet.apply_string_filters && prewhere_info && prewhere_info->need_filter)
+    {
+        if (auto filters = extractStringValueFilters(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+        {
+            for (auto & pc : primitive_columns)
+            {
+                if (pc.first_step_to_calculate == 0 || pc.first_step_to_calculate == SIZE_MAX)
+                    continue;
+                if (pc.idx_in_output_block >= extended_sample_block.columns())
+                    continue;
+                /// Only plain String leaves, not inside arrays, decoded without conversion.
+                if (pc.max_array_def != 0 || !pc.decoder.string_converter || !pc.decoder.string_converter->isTrivial())
+                    continue;
+
+                auto it = filters->find(extended_sample_block.getByPosition(pc.idx_in_output_block).name);
+                if (it != filters->end())
+                    pc.string_value_filter = it->second;
+            }
+        }
+    }
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -1450,7 +1478,8 @@ bool Reader::decodeDictionaryPage(
             : size_t(header.uncompressed_page_size);
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
-            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
+            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type,
+            column_info.string_value_filter != nullptr && column_info.string_value_filter->isEnabled());
         if (!reservation.tryReserve(reserved_bytes))
             return false;
     }
@@ -1538,6 +1567,13 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     if (header.dictionary_page_header.num_values < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in dictionary page");
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
+
+    /// Check the string filter from PREWHERE once per dictionary entry: the rows referencing
+    /// non-matching entries then materialize empty strings without copying the data.
+    /// Once the shared filter has disabled itself (it turned out to be non-selective), the mask
+    /// would never be consulted, so do not pay for the dictionary scan and the mask allocation.
+    if (column_info.string_value_filter && column_info.string_value_filter->isEnabled())
+        column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter);
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
@@ -1776,7 +1812,9 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
 
         auto values = column_info.decoded_type->createColumn();
         values->reserve(count);
-        column.dictionary.index(*indexes, *values);
+        /// Pruning sees each distinct value once, which says nothing about how often the scan will
+        /// meet it, so this materialization must not feed the shared `StringValueFilter` statistics.
+        column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
         hashes = parquetTryHashColumn(values.get(), &desc);
     }
     if (!hashes.has_value())
@@ -2956,7 +2994,7 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data);
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.

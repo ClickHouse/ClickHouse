@@ -673,6 +673,7 @@ void MergeTreeReaderWide::readData(
     };
 
     deserialize_settings.continuous_reading = continue_reading;
+    deserialize_settings.string_value_filter = getStringValueFilter(name_and_type);
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(

@@ -39,6 +39,7 @@ namespace Setting
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
+    extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_download_buffer_size;
@@ -239,6 +240,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
+    format_settings.parquet.apply_string_filters = settings[Setting::apply_string_filters_during_scan];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
     format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];

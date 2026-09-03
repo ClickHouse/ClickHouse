@@ -1,11 +1,13 @@
 #include <algorithm>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -29,6 +31,7 @@ namespace Setting
     extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
     extern const SettingsBool allow_reorder_prewhere_conditions;
     extern const SettingsBool use_statistics;
+    extern const SettingsBool apply_string_filters_during_scan;
 }
 
 namespace
@@ -155,6 +158,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = select.final();
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
+    where_optimizer_context.apply_string_filters_during_scan = context->getSettingsRef()[Setting::apply_string_filters_during_scan];
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -190,6 +194,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
+    where_optimizer_context.apply_string_filters_during_scan = context->getSettingsRef()[Setting::apply_string_filters_during_scan];
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
@@ -425,8 +430,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
-            /// Do not move conditions involving all queried columns.
-            && info.columns.size() < queried_columns.size();
+            /// Do not move conditions involving all queried columns,
+            /// unless the condition can be used as a string filter during the scan:
+            /// then it is beneficial on its own, because the reader skips copying the non-matching values.
+            && (info.columns.size() < queried_columns.size()
+                || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct)));
 
         infos.push_back(std::move(info));
     }
@@ -581,7 +589,8 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 && !cannotBeMoved(conjunct, where_optimizer_context)
                 && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
                 && columnsSupportPrewhere(columns)
-                && columns.size() < queried_columns.size();
+                && (columns.size() < queried_columns.size()
+                    || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct)));
             res.emplace_back(std::move(cond));
         }
         return res;
@@ -782,6 +791,94 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
             return false;
 
     return true;
+}
+
+bool MergeTreeWhereOptimizer::isConditionSuitableForStringValueFilter(const RPNBuilderTreeNode & node) const
+{
+    if (!node.isFunction())
+        return false;
+
+    auto function_node = node.toFunctionNode();
+    auto function_name = function_node.getFunctionName();
+
+    if (function_node.getArgumentsSize() != 2)
+        return false;
+
+    /// A full String or Nullable(String) column (the scan filter does not support subcolumns).
+    auto is_string_column = [&](const RPNBuilderTreeNode & argument)
+    {
+        if (argument.isFunction() || argument.isConstant() || argument.isSubqueryOrSet())
+            return false;
+
+        auto column = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, argument.getColumnName());
+        return column && !column->isSubcolumn() && isString(removeNullable(column->type));
+    };
+
+    auto get_constant_string = [](const RPNBuilderTreeNode & argument) -> std::optional<String>
+    {
+        Field value;
+        DataTypePtr type;
+        if (!argument.tryGetConstant(value, type) || value.getType() != Field::Types::String)
+            return {};
+        return value.safeGet<String>();
+    };
+
+    /// `position(column, 'needle')` with a non-empty needle.
+    auto is_position = [&](const RPNBuilderTreeNode & argument)
+    {
+        if (!argument.isFunction())
+            return false;
+
+        auto position_node = argument.toFunctionNode();
+        if (position_node.getFunctionName() != "position" || position_node.getArgumentsSize() != 2)
+            return false;
+
+        auto needle = get_constant_string(position_node.getArgumentAt(1));
+        return needle && !needle->empty() && is_string_column(position_node.getArgumentAt(0));
+    };
+
+    if (function_name == "like")
+    {
+        auto pattern = get_constant_string(function_node.getArgumentAt(1));
+        return pattern && likePatternHasStringValueFilterConditions(*pattern) && is_string_column(function_node.getArgumentAt(0));
+    }
+
+    if (function_name == "startsWith" || function_name == "endsWith")
+    {
+        auto needle = get_constant_string(function_node.getArgumentAt(1));
+        return needle && !needle->empty() && is_string_column(function_node.getArgumentAt(0));
+    }
+
+    /// Note: equality with a constant string is not accepted here on purpose, although the scan
+    /// filter supports it. Plain equality is too common: relaxing the rule for it would change
+    /// the plans of too many queries where the primary key index does the job anyway.
+
+    if (function_name == "equals" || function_name == "notEquals" || function_name == "greater" || function_name == "less"
+        || function_name == "greaterOrEquals" || function_name == "lessOrEquals")
+    {
+        /// A comparison of `position(column, 'needle')` with a constant that rejects the zero result.
+        for (size_t position_position : {0, 1})
+        {
+            if (!is_position(function_node.getArgumentAt(position_position)))
+                continue;
+
+            Field constant;
+            DataTypePtr type;
+            if (!function_node.getArgumentAt(1 - position_position).tryGetConstant(constant, type))
+                return false;
+
+            auto result_at_zero = evaluatePositionComparisonAtZero(function_name, constant, position_position == 0);
+            return result_at_zero && !*result_at_zero;
+        }
+
+        return false;
+    }
+
+    /// A `position` result used directly as a condition means it must be non-zero.
+    if (function_name == "position")
+        return is_position(node);
+
+    return false;
 }
 
 bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const

@@ -56,6 +56,8 @@ struct NameAndTypePair;
 
 struct MergeTreeSettings;
 
+class StringValueFilter;
+
 /** Returns the separator byte that the HiveText output format uses at the given nesting level,
   * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
   * 1 the collection-items delimiter, 2 the map-keys delimiter, and deeper levels default to
@@ -538,6 +540,12 @@ public:
         /// Used by `SerializationLowCardinality` as a cheap prefilter before
         /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
         std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
+
+        /// If set, string values that do not match the filter may be replaced with empty strings
+        /// during deserialization. It is extracted from a substring search condition in PREWHERE
+        /// which is guaranteed to filter out the rows with non-matching values, so the replacement
+        /// cannot change the query result. Used only by `SerializationString`.
+        std::shared_ptr<const StringValueFilter> string_value_filter;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.

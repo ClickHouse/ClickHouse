@@ -1005,6 +1005,31 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
     DECLARE(Bool, allow_reorder_prewhere_conditions, true, R"(
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0) \
+    DECLARE(Bool, apply_string_filters_during_scan, false, R"(
+Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
+
+When a `PREWHERE` condition contains a conjunct that searches for a non-empty substring in a `String` (or `Nullable(String)`) column
+(`LIKE`, `position`, `startsWith`, `endsWith`, or equality with a non-empty string), the reader checks every value against this condition
+during deserialization and reads non-matching values as empty strings. This makes reading faster and lowers memory usage when the condition
+is selective, because the data of non-matching values is not copied into the column. The result of the query does not change,
+because the rows with non-matching values are guaranteed to be filtered out by `PREWHERE`, and such conditions never match an empty string.
+
+The filter is disabled adaptively at runtime if it turns out to be non-selective.
+
+Also allows the `WHERE` to `PREWHERE` optimization to move such conditions even when they use all queried columns
+(normally that is pointless, but with this setting the scan itself becomes cheaper).
+
+Supported for reading from `MergeTree` tables and from the `Parquet` format.
+
+Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
+(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
+the amount of data read from disk when the values are replaced by empty strings.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
 Allows you to specify the wait behavior for actions that are to be executed on replicas by [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize) or [`TRUNCATE`](/reference/statements/truncate) queries.

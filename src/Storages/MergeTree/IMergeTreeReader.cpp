@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -88,6 +89,60 @@ IMergeTreeReader::IMergeTreeReader(
             serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
         }
     }
+
+    if (settings.string_value_filters && !settings.string_value_filters->empty())
+    {
+        /// Count how many requested columns read from each storage column
+        /// (e.g. a column requested together with its subcolumn).
+        std::unordered_map<String, size_t> storage_column_use_count;
+        for (const auto & column : getColumns())
+            ++storage_column_use_count[column.getNameInStorage()];
+
+        size_t pos = 0;
+        for (const auto & column : getColumns())
+        {
+            size_t current_pos = pos++;
+
+            /// Only full String and Nullable(String) columns are supported.
+            if (column.isSubcolumn() || !isString(removeNullable(column.type)))
+                continue;
+
+            auto it = settings.string_value_filters->find(column.name);
+            if (it == settings.string_value_filters->end())
+                continue;
+
+            /// If some other requested column reads from the same storage column (e.g. the `.size` subcolumn),
+            /// the deserialized data may be shared between them through caches, so the values must be read in full.
+            if (storage_column_use_count[column.getNameInStorage()] > 1)
+                continue;
+
+            /// If the column is overwritten by an on-fly mutation, PREWHERE is evaluated
+            /// on the values computed by the mutation expression, not on the stored values,
+            /// so the stored values must be read in full.
+            if (alter_conversions && alter_conversions->getAllUpdatedColumns().contains(column.name))
+                continue;
+
+            /// Only the plain serialization reads values one by one and supports filtering.
+            if (serializations[current_pos]->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+                continue;
+
+            /// The key is the name in the part: it may differ from the requested name
+            /// when the column is affected by a pending RENAME.
+            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, it->second);
+        }
+    }
+}
+
+StringValueFilterPtr IMergeTreeReader::getStringValueFilter(const NameAndTypePair & column_in_part) const
+{
+    if (string_value_filters_by_part_column_name.empty())
+        return nullptr;
+
+    auto it = string_value_filters_by_part_column_name.find(column_in_part.name);
+    if (it == string_value_filters_by_part_column_name.end())
+        return nullptr;
+
+    return it->second;
 }
 
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
