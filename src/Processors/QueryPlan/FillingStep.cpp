@@ -161,19 +161,19 @@ void FillingStep::serialize(Serialization & ctx) const
     /// the query's aliases (not part of the plan) that `FillingTransform` matches against header columns.
     /// Everything else - each entry's type, and `result_columns_order`/`result_columns_set` - is rebuilt
     /// from `actions` on the other side, so a stream cannot describe a fill that disagrees with its own DAG.
-    /// The keys are sorted because the map has no stable order and these bytes are also a plan cache key.
-    std::vector<std::string_view> required_column_keys;
-    required_column_keys.reserve(interpolate_description->required_columns_map.size());
-    for (const auto & [key, _] : interpolate_description->required_columns_map)
-        required_column_keys.push_back(key);
-    std::sort(required_column_keys.begin(), required_column_keys.end());
+    /// The pairs are sorted because the map has no stable order and these bytes are also a plan cache key.
+    /// Keys are unique, so ordering the pairs orders them by key.
+    std::vector<std::pair<std::string_view, std::string_view>> required_columns;
+    required_columns.reserve(interpolate_description->required_columns_map.size());
+    for (const auto & [key, name_and_type] : interpolate_description->required_columns_map)
+        required_columns.emplace_back(key, name_and_type.name);
+    std::sort(required_columns.begin(), required_columns.end());
 
-    writeVarUInt(required_column_keys.size(), ctx.out);
-    for (const auto & key : required_column_keys)
+    writeVarUInt(required_columns.size(), ctx.out);
+    for (const auto & [key, name] : required_columns)
     {
-        const auto & name_and_type = interpolate_description->required_columns_map.at(std::string(key));
         writeStringBinary(key, ctx.out);
-        writeStringBinary(name_and_type.name, ctx.out);
+        writeStringBinary(name, ctx.out);
     }
 }
 
