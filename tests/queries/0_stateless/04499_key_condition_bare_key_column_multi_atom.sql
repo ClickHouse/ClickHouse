@@ -1,0 +1,111 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
+
+SET explain_query_plan_default = 'legacy';
+-- The sparsity-stats trivial count would answer `count() WHERE flag` without index analysis,
+-- hiding the `Condition`/`Granules` output this test pins.
+SET optimize_trivial_count_with_sparsity_filter = 0;
+
+-- { echo }
+
+-- A bare boolean key column used as a predicate (`WHERE flag`) is analyzed as `flag != 0`
+-- through the shared comparison machinery, so it produces atoms for every key column it
+-- can constrain, exactly like the explicit predicate.
+
+-- The bare column is itself the leading key column: a single direct atom.
+DROP TABLE IF EXISTS test_bare_direct;
+CREATE TABLE test_bare_direct (flag UInt8, ts DateTime('UTC')) ENGINE = MergeTree
+ORDER BY (flag, toDate(ts), ts)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_bare_direct SELECT number % 2, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(96);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_direct WHERE flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_bare_direct WHERE flag SETTINGS force_primary_key = 1;
+SELECT count() FROM test_bare_direct WHERE flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- The bare leaf composes with a multi-atom leaf in the same conjunction.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_direct WHERE flag AND ts >= toDateTime('2026-01-03 00:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_bare_direct WHERE flag AND ts >= toDateTime('2026-01-03 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT count() FROM test_bare_direct WHERE flag AND ts >= toDateTime('2026-01-03 00:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- The negation inverts the atoms.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_direct WHERE NOT flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_bare_direct WHERE NOT flag SETTINGS force_primary_key = 1;
+SELECT count() FROM test_bare_direct WHERE NOT flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- The bare leaf participates in a disjunction.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_direct WHERE flag OR ts = toDateTime('2026-01-02 00:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_bare_direct WHERE flag OR ts = toDateTime('2026-01-02 00:00:00', 'UTC');
+SELECT count() FROM test_bare_direct WHERE flag OR ts = toDateTime('2026-01-02 00:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+DROP TABLE test_bare_direct;
+
+-- The bare column is not a key column, but two key columns are injective functions of it:
+-- both must be constrained, same as for the explicit `flag != 0`.
+DROP TABLE IF EXISTS test_bare_injective;
+CREATE TABLE test_bare_injective (flag UInt8, x UInt64) ENGINE = MergeTree
+ORDER BY (negate(flag), flag + 1)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_bare_injective SELECT number % 2, number FROM numbers(100);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_injective WHERE flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_bare_injective WHERE flag SETTINGS force_primary_key = 1;
+SELECT count() FROM test_bare_injective WHERE flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- The explicit predicate must produce the same condition.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_injective WHERE flag != 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_injective WHERE NOT flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_bare_injective WHERE NOT flag SETTINGS force_primary_key = 1;
+SELECT count() FROM test_bare_injective WHERE NOT flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+DROP TABLE test_bare_injective;
+
+-- A non-injective wrap of the bare column: `flag != 0` does not imply
+-- `intDiv(flag, 8) != 0`, so the atom is relaxed and must never prune wrongly.
+DROP TABLE IF EXISTS test_bare_noninjective;
+CREATE TABLE test_bare_noninjective (flag UInt8, x UInt64) ENGINE = MergeTree
+ORDER BY intDiv(flag, 8)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_bare_noninjective SELECT number % 2, number FROM numbers(100);
+
+SELECT count() FROM test_bare_noninjective WHERE flag;
+SELECT count() FROM test_bare_noninjective WHERE flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+SELECT count() FROM test_bare_noninjective WHERE NOT flag;
+SELECT count() FROM test_bare_noninjective WHERE NOT flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+DROP TABLE test_bare_noninjective;
+
+-- A `Nullable` bare column must not produce atoms: `WHERE nullable_flag` filters NULL rows,
+-- which the `flag != 0` atom cannot see, and the exact-count optimization would count
+-- NULL-only granules. The counts must stay correct.
+DROP TABLE IF EXISTS test_bare_nullable;
+CREATE TABLE test_bare_nullable (flag Nullable(UInt8), x UInt64) ENGINE = MergeTree
+ORDER BY (flag, x)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0, allow_nullable_key = 1;
+
+INSERT INTO test_bare_nullable SELECT if(number % 3 = 2, NULL, number % 2), number FROM numbers(96);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_nullable WHERE flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_bare_nullable WHERE flag;
+SELECT count() FROM test_bare_nullable WHERE flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+DROP TABLE test_bare_nullable;
+
+-- A `LowCardinality(UInt8)` bare column is handled through the nested type.
+SET allow_suspicious_low_cardinality_types = 1;
+DROP TABLE IF EXISTS test_bare_lc;
+CREATE TABLE test_bare_lc (flag LowCardinality(UInt8), x UInt64) ENGINE = MergeTree
+ORDER BY (flag, x)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_bare_lc SELECT number % 2, number FROM numbers(96);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_lc WHERE flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_bare_lc WHERE flag SETTINGS force_primary_key = 1;
+SELECT count() FROM test_bare_lc WHERE flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+DROP TABLE test_bare_lc;

@@ -1,0 +1,22 @@
+bare key <=> NULL
+1
+Granules: 2/4
+wrapped key <=> NULL
+1
+Granules: 4/4
+wrapped key IS NULL
+1
+Granules: 4/4
+FixedString constant vs String key
+1
+1
+1
+2
+FixedString constant vs wide FixedString key
+1
+Granules: 1/3
+padded FixedString constant matches a family of String keys
+3
+3
+3
+2
