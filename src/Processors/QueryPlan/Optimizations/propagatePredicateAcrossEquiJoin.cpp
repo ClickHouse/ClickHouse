@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Functions/FunctionsComparison.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -129,19 +130,25 @@ std::unordered_set<std::string> collectTargetAtoms(const QueryPlan::Node * targe
     return result;
 }
 
-/// The atom will run on target rows the source never saw, so allow only shapes that cannot throw
+/// Shapes `KeyCondition` can turn into a key atom. `IN` with a constant set gives ranges just like
+/// a comparison does
 bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMap & sub)
 {
     if (!node || node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
         return false;
 
     const auto & name = node->function_base->getName();
-    const bool is_null_check = name == "isNull" || name == "isNotNull";
+    const bool is_set_check = name == "in";
     const bool is_comparison = name == "equals" || name == "notEquals"
         || name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals";
-    /// A constant set is as safe as a comparison, and `KeyCondition` turns it into ranges
-    const bool is_set_check = name == "in";
-    if ((!is_null_check && !is_comparison && !is_set_check) || node->children.size() != (is_null_check ? 1 : 2))
+    if ((!is_comparison && !is_set_check) || node->children.size() != 2)
+        return false;
+
+    /// The atom will also run on target rows the source never saw, so it must not throw on them:
+    /// a comparison across type domains parses one side per row and can fail there
+    if (is_comparison && comparisonCanThrow(node->children[0]->result_type, node->children[1]->result_type))
+        return false;
+    if (!node->function_base->isDeterministic())
         return false;
 
     size_t substituted_keys = 0;
@@ -152,8 +159,9 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
             const auto it = sub.find(child->result_name);
             if (it == sub.end())
                 return false;
-            /// `FunctionIn` rejects a left argument of a different type than the set
-            if (is_set_check && !it->second.type->equals(*child->result_type))
+            /// Substituting a column of another type would change the atom, and `FunctionIn`
+            /// rejects a left argument that does not match the type the set was built with
+            if (!it->second.type->equals(*child->result_type))
                 return false;
             ++substituted_keys;
         }
