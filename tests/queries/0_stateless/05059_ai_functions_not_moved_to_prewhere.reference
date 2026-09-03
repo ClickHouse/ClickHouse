@@ -7,4 +7,5 @@ aiRedact	0	1
 aiEmbed	0	1
 aiSimilarity	0	1
 AI condition written first	0	1
+AI inside a lambda	0	1
 AI condition alone	0
