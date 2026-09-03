@@ -32,6 +32,8 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
 }
@@ -180,11 +182,17 @@ void IStorage::read(
     const bool should_not_resize = context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
         && processed_stage == QueryProcessingStage::Enum::WithMergeableState;
 
-    /// `num_streams` is a read-parallelism request, not a thread budget.
+    /// `num_streams` is a read-parallelism request, not a thread budget: the resize must not create more
+    /// output ports than there are threads to consume them. That budget is the one the plan runs with, which
+    /// `InterpreterSelectQuery` and `PlannerJoinTree` compute as `max_threads` - except for a synchronous
+    /// remote read, where a thread blocks on a socket instead of running and they raise it to
+    /// `max_distributed_connections` (and pass it to `QueryPlan::setMaxThreads`). Make the same choice here,
+    /// so that such a read keeps the fan-out it asked for.
     const auto & settings = context->getSettingsRef();
-    const size_t resize_to = std::min(
-        num_streams,
-        getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]));
+    const size_t max_threads_execute_query = isRemote() && !settings[Setting::async_socket_for_remote]
+        ? settings[Setting::max_distributed_connections]
+        : getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+    const size_t resize_to = std::min(num_streams, max_threads_execute_query);
 
     if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0
         && output_ports < resize_to)
