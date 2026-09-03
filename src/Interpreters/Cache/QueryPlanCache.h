@@ -137,8 +137,13 @@ struct QueryPlanCacheEntryWeight
         size_t weight = entry.serialized_plan.size();
         for (const auto & dep : entry.dependencies)
         {
-            weight += dep.database.size() + dep.table.size() + sizeof(dep.uuid) + sizeof(dep.metadata_version);
+            weight += dep.database.size() + dep.table.size() + sizeof(dep.uuid) + sizeof(dep.metadata_version)
+                + sizeof(dep.row_policy_hash) + sizeof(dep.columns_unknown) + sizeof(dep.is_view);
             for (const auto & col : dep.columns)
+                weight += col.size();
+            /// `access_checked_columns` is a second, usually similarly sized, `Names` vector held by
+            /// every dependency, so leaving it out systematically undercounts complex entries.
+            for (const auto & col : dep.access_checked_columns)
                 weight += col.size();
         }
         for (const auto & policy : entry.used_row_policies)
