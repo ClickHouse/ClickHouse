@@ -18,10 +18,10 @@ namespace DB
   * column holding NULL — NOT as `ColumnPtr{}`.
   *
   * The purpose is to convert constants WITHOUT materializing a `Field`. Cases that can be done
-  * column-natively (plain numeric-to-numeric, and any identity conversion) go through
-  * `IColumn`/CAST; the rest still delegate to `convertFieldToType` (same behavior, just not yet
-  * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
-  * so more column-native fast paths can be added without changing results.
+  * column-natively (plain numeric-to-numeric, and an identity conversion of a `Variant`-carrying type)
+  * go through `IColumn`/CAST; the rest still delegate to `convertFieldToType` (same behavior, just not
+  * yet `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against
+  * `convertFieldToType`, so more column-native fast paths can be added without changing results.
   *
   * The equivalence holds for scalar `Bool` and for `Bool` nested under the structural carriers
   * `Array`/`Tuple`/`Map` (and under `Nullable`/`LowCardinality`), including tag-sensitive conversions
@@ -35,8 +35,11 @@ namespace DB
   * `Variant(Bool, UInt8)` the reconstructed `Field` no longer records which alternative was active, so
   * it cannot be recovered structurally the way the carriers above can; that would need a
   * `ColumnVariant`-aware path before the generic `get`. No current caller needs `Variant`-of-`Bool`
-  * textual conversion. An identity conversion is the one deliberate divergence from the legacy `Field`
-  * path: it returns the input column unchanged, so a `Variant` discriminator survives here and not there.
+  * textual conversion. An identity conversion of a `Variant`-carrying type is the one deliberate
+  * divergence from the legacy `Field` path: it returns the input column unchanged, so a `Variant`
+  * discriminator survives here and not there — and inside such a type a `Bool` alternative's raw byte is
+  * not clamped either, which is inherent to keeping the discriminator. Every other identity conversion
+  * goes through the `Field` path, so it clamps.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,

@@ -127,6 +127,22 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
     }
 }
 
+/// A `Field` does not record which `Variant` alternative a value occupies, so a value of such a type
+/// does not survive being rebuilt from one. Deliberately not shared with the near-twin in
+/// `LogicalExpressionOptimizerPass`, which keys on more than one alternative: that one asks whether a
+/// conversion is faithful, this one only whether a round trip may be skipped.
+bool typeCarriesVariantAlternative(const IDataType & type)
+{
+    if (type.hasDynamicStructure())
+        return true;
+
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= WhichDataType(nested).isVariant(); };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
 }
 
 ColumnPtr convertColumnToTypeOrNull(
@@ -144,11 +160,13 @@ ColumnPtr convertColumnToTypeOrNull(
     /// `Field` fallback reads the value directly.
     const ColumnPtr full = value.convertToFullColumnIfConst();
 
-    /// An identity conversion must not round-trip through a `Field`: a `Field` cannot record which
-    /// `Variant` alternative a value occupies, so rebuilding the column re-selects one. The type names
-    /// must match as well as the types: `IDataType::equals` ignores an `AggregateFunction`'s
-    /// serialization version, which `ColumnAggregateFunction` insertion enforces through the type string.
-    if (from->equals(*to) && from->getName() == to->getName())
+    /// An identity conversion of a `Variant`-carrying type must not round-trip through a `Field`: a
+    /// `Field` cannot record which alternative a value occupies, so rebuilding the column re-selects one.
+    /// Every other identity conversion still goes through the `Field` path, which also normalizes a value
+    /// a column can physically hold outside its type's domain (a raw `Bool` byte). The type names must
+    /// match as well as the types: `IDataType::equals` ignores an `AggregateFunction`'s serialization
+    /// version, which `ColumnAggregateFunction` insertion enforces through the type string.
+    if (from->equals(*to) && from->getName() == to->getName() && typeCarriesVariantAlternative(*from))
         return full;
 
     const IColumn & unwrapped = *full;
