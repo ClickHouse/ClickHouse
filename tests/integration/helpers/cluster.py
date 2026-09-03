@@ -6118,6 +6118,10 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+        # The binary just changed, so the cached answer describes the previous one. Re-probe
+        # now, while this server is known healthy, exactly as `cluster.start()` does.
+        self._is_slow_build = None
+        self.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS)
 
     def restart_with_latest_version(
         self,
@@ -6208,6 +6212,10 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+        # The binary just changed, so the cached answer describes the previous one. Re-probe
+        # now, while this server is known healthy, exactly as `cluster.start()` does.
+        self._is_slow_build = None
+        self.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS)
 
     def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
