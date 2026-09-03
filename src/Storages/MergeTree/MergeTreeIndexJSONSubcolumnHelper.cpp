@@ -132,8 +132,7 @@ bool isJSONPathFilterSafe(
     /// Non-nullable type: missing path produces the type's default value.
     /// If comparing to the default, we cannot safely skip the granule.
     /// An `Enum` constant keeps its labels in its own type and the comparison uses the label rather
-    /// than the underlying number, so it has to be converted with that type. Every other source type
-    /// already converts the way the comparison does.
+    /// than the underlying number, so it has to be converted with that type.
     DataTypePtr unwrapped_value_type;
     const IDataTypeEnum * enum_source = nullptr;
     if (value_type)
