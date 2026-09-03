@@ -34,7 +34,6 @@
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
-#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
@@ -163,6 +162,7 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
+#    include <glibc-rseq/rseq.h>
 #endif
 
 #if USE_SSL
@@ -490,6 +490,10 @@ namespace ServerSetting
     extern const ServerSettingsString logger_shutdown_level;
     extern const ServerSettingsString openssl_server_certificate_file;
     extern const ServerSettingsString openssl_server_private_key_file;
+    extern const ServerSettingsString openssl_server_ca_config;
+    extern const ServerSettingsString openssl_client_certificate_file;
+    extern const ServerSettingsString openssl_client_private_key_file;
+    extern const ServerSettingsString openssl_client_ca_config;
     extern const ServerSettingsString distributed_ddl_path;
     extern const ServerSettingsString distributed_ddl_replicas_path;
     extern const ServerSettingsInt32 distributed_ddl_pool_size;
@@ -914,7 +918,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
-    if (!PerCPU::haveRSeq())
+    if (rseq_cpu_id() < 0)
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
             PreformattedMessage::create(
@@ -2668,26 +2672,25 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    std::string cert_path = server_settings[ServerSetting::openssl_server_certificate_file];
-    std::string key_path = server_settings[ServerSetting::openssl_server_private_key_file];
-
+    /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty())
-        extra_paths.emplace_back(cert_path);
-    if (!key_path.empty())
-        extra_paths.emplace_back(key_path);
+    auto watch_path = [&](const std::string & file_path)
+    {
+        if (!file_path.empty())
+            extra_paths.emplace_back(file_path);
+    };
+    watch_path(server_settings[ServerSetting::openssl_server_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_ca_config]);
+    watch_path(server_settings[ServerSetting::openssl_client_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_ca_config]);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config().keys("protocols", protocols);
     for (const auto & protocol : protocols)
-    {
-        cert_path = config().getString("protocols." + protocol + ".certificateFile", "");
-        key_path = config().getString("protocols." + protocol + ".privateKeyFile", "");
-        if (!cert_path.empty())
-            extra_paths.emplace_back(cert_path);
-        if (!key_path.empty())
-            extra_paths.emplace_back(key_path);
-    }
+        for (const auto * key : {"certificateFile", "privateKeyFile", "caConfig"})
+            watch_path(config().getString("protocols." + protocol + "." + key, ""));
 
     DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
