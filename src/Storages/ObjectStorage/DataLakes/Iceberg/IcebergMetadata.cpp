@@ -290,14 +290,10 @@ void IcebergMetadata::update(const ContextPtr & local_context)
         persistent_components.metadata_compression_method,
         /*force_fetch_latest_metadata=*/false);
 
-    if (!trusted_table_uuid.needsRevalidation(metadata_version, metadata_file_path, metadata_file_identity))
+    if (!trusted_table_uuid.needsRevalidation(metadata_file_path, metadata_file_identity))
     {
-        /// Either the selected version advanced strictly past the last validated one, which no
-        /// replacement restarting the numbering can do, or the selected file is the very same
-        /// unchanged file that was validated before. Either way the trusted UUID still describes
-        /// it and the extra uncached read is skipped. The file still has to become the new
-        /// watermark: leaving the watermark behind would let every later `update` take this same
-        /// branch, and a replacement reusing the version would never be revalidated at all.
+        /// The selected file is the very same unchanged file that was validated before, so the
+        /// trusted UUID still describes it and the extra uncached read is skipped.
         trusted_table_uuid.markValidated(metadata_version, metadata_file_path, metadata_file_identity);
         return;
     }

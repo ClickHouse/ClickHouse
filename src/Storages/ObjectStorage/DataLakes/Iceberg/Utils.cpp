@@ -1686,6 +1686,10 @@ void checkStorageStillHoldsValidatedTable(
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
 
+    /// Read it bypassing the UUID-keyed content cache. The whole point of this read is to learn
+    /// which table is in storage right now, and the cache is keyed by the trusted UUID and the
+    /// path: a replacement reusing the path would be answered with the validated table's own
+    /// cached JSON, which is exactly the answer that must not be trusted here.
     auto current_metadata_object = getMetadataJSONObject(
         current_metadata_path,
         object_storage,
@@ -1693,7 +1697,7 @@ void checkStorageStillHoldsValidatedTable(
         context,
         log,
         getCompressionMethodFromMetadataFile(current_metadata_path),
-        persistent_table_components.getTableUuid());
+        /* table_uuid */ std::nullopt);
 
     persistent_table_components.checkMetadataBelongsToValidatedTable(current_metadata_object, validated_incarnation, operation);
 }

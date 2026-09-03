@@ -75,9 +75,6 @@ public:
     /// {`metadata_version`, `metadata_file_path`}, and record that file as validated.
     ///
     /// Returns true if the trusted value actually changed, i.e. the table was replaced in place.
-    /// A replacement resets the high-water mark to the recreated table's own version, which is
-    /// normally lower: keeping the previous table's higher mark would force an uncached read on
-    /// every query until the new table caught up with it.
     bool commitValidated(
         std::optional<String> new_uuid,
         Int32 metadata_version,
@@ -98,12 +95,7 @@ public:
                 && (metadata_file_path != last_validated->path || identity != last_validated->identity);
         uuid = std::move(new_uuid);
         if (changed)
-        {
             ++incarnation;
-            highest_validated_version = metadata_version;
-        }
-        else
-            advanceHighWaterMark(metadata_version);
         last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity};
         return changed;
     }
@@ -111,64 +103,40 @@ public:
     /// Whether the `table-uuid` of the selected metadata file has to be re-read from storage
     /// before it can be trusted as a content cache key.
     ///
-    /// Iceberg writers advance the metadata version strictly, so a selected version that is
-    /// strictly greater than every version validated so far cannot have been produced by a
-    /// replacement that restarted the numbering, and the extra uncached read is skipped. A
-    /// version that does not advance is the signature of a possible in-place replacement - a
-    /// recreated table restarts the numbering, and the `<V>-<random-uuid>.metadata.json` naming
-    /// even lets it reuse a version number under a different path.
+    /// Only one thing proves that the selected file still describes the table whose `table-uuid`
+    /// is trusted: it being byte-for-byte the file that was validated last - the same path,
+    /// carrying the identity the listing reported back then. Replacing a table in place rewrites
+    /// `metadata.json`, which changes that identity, and a file whose identity the storage cannot
+    /// report is revalidated rather than assumed unchanged.
     ///
-    /// The steady state - the same query re-selecting the very same file, over and over, with no
-    /// writer in sight - must stay free, or the metadata content cache would be defeated on every
-    /// read. So a non-advancing version is still trusted when the selected file is byte-for-byte
-    /// the one that was validated last: the same path, carrying the identity the listing reported
-    /// back then. Replacing a table in place rewrites `metadata.json`, which changes that
-    /// identity. A file whose identity the storage cannot report is always revalidated rather
-    /// than assumed unchanged.
-    ///
-    /// The high-water mark and the validated file are tracked separately on purpose. The mark is
-    /// monotonic, so a version that was never validated cannot slip through unchecked after a
-    /// state that had advanced further is rolled back; the validated file is the exact file that
-    /// was last confirmed, whatever its version, so that a stable lower-version state stays
-    /// cacheable after its first revalidation instead of paying for an uncached read forever.
+    /// A higher version number proves nothing: a table recreated at the same root may start above
+    /// every version validated so far, and trusting the version alone would leave the previous
+    /// table's `table-uuid` recorded for a file that belongs to the replacement - after which
+    /// every statement would reopen that file, see the other UUID and throw, with nothing left to
+    /// re-read it. Any file other than the one validated last is therefore re-read; that is the
+    /// same read the new version needs anyway.
     ///
     /// A table with no `table-uuid` at all is never content-cached under a UUID key, but it is
     /// still revalidated: `commitValidated` detects its replacement from the metadata file that
     /// comes back, and it can only do so when the file is actually re-read.
-    bool needsRevalidation(
-        Int32 metadata_version, const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity) const
+    bool needsRevalidation(const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity) const
     {
         SharedLockGuard lock(mutex);
-        if (!last_validated.has_value() || !highest_validated_version.has_value())
+        if (!last_validated.has_value())
             return true;
-        if (metadata_version > *highest_validated_version)
-            return false;
         return !identity.has_value() || !last_validated->identity.has_value() || metadata_file_path != last_validated->path
             || *identity != *last_validated->identity;
     }
 
-    /// Record the metadata file whose own `table-uuid` is trusted, either because it was just
-    /// read from that file or because the selected version advanced strictly past the high-water
-    /// mark, which no replacement restarting the numbering can do.
-    ///
-    /// The high-water mark only ever moves forward here: two concurrent `update` calls can
-    /// observe different metadata files, and the older observation must not undo the newer one by
-    /// lowering the mark and letting an already-seen version pass unchecked. Only a confirmed
-    /// replacement, through `commitValidated`, moves it back.
+    /// Record the metadata file whose own `table-uuid` is trusted, because it was just read from
+    /// that file or because it is the unchanged file that was validated before.
     void markValidated(Int32 metadata_version, const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity)
     {
         std::lock_guard lock(mutex);
-        advanceHighWaterMark(metadata_version);
         last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity};
     }
 
 private:
-    void advanceHighWaterMark(Int32 metadata_version) TSA_REQUIRES(mutex)
-    {
-        if (!highest_validated_version.has_value() || *highest_validated_version < metadata_version)
-            highest_validated_version = metadata_version;
-    }
-
     struct ValidatedMetadataFile
     {
         Int32 version;
@@ -179,8 +147,6 @@ private:
     mutable SharedMutex mutex;
     std::optional<String> uuid TSA_GUARDED_BY(mutex);
     UInt64 incarnation TSA_GUARDED_BY(mutex) = 0;
-    /// The highest metadata version validated so far; never lowered except by a replacement.
-    std::optional<Int32> highest_validated_version TSA_GUARDED_BY(mutex);
     /// The exact metadata file that was validated last, whichever version it carries.
     std::optional<ValidatedMetadataFile> last_validated TSA_GUARDED_BY(mutex);
 };
