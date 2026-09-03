@@ -527,8 +527,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 if (!left || !right)
                     continue;
 
-                /// Decimal bounds come back moved one integral unit outwards to undo Iceberg's rounding, which
-                /// can order an inverted pair, so the ordering is tested on the values as declared.
+                /// At a non-zero scale the outward shift moves each decimal bound one integral unit, so it
+                /// un-inverts any declared pair no more than `2 * 10^scale` apart. Only the values as
+                /// declared expose that inversion, which is why they are read again here.
                 std::optional<DB::Field> declared_left = left;
                 std::optional<DB::Field> declared_right = right;
                 if (DB::WhichDataType(DB::removeNullable(name_and_type.type)).isDecimal())
@@ -539,9 +540,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                         right_str, name_and_type.type, false, /*compensate_rounding=*/false);
                 }
 
-                /// Nothing orders the bounds read from the manifest, while `mayBeTrueInRange` requires a
-                /// lower bound that does not exceed the upper one. An inverted pair describes an empty
-                /// range, which would prune a file that holds matching rows.
+                /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
+                /// range derived from them is safe to prune on. Dropping the column's bounds is therefore
+                /// right where swapping or clamping them would prune on a value nothing vouches for.
                 if (accurateLess(*declared_right, *declared_left))
                 {
                     LOG_WARNING(
