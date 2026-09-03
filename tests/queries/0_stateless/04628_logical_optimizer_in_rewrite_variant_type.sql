@@ -150,10 +150,22 @@ SELECT count() FROM t_var_disc WHERE (a != [1::UInt64]::Array(Variant(Date, UInt
 
 -- Across a connection the literal must name the alternative's type and the Variant type, or the receiver
 -- re-infers the element type and either re-selects an alternative or refuses the conversion outright.
-SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_var_disc) WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)));
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_var_disc) WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)))
+SETTINGS prefer_localhost_replica = 0;
 -- A predicate pushed down into a distributed subquery is the second consumer: a bare literal there makes the shard re-infer the element type and refuse.
 SELECT count() FROM (SELECT a FROM remote('127.0.0.1', currentDatabase(), t_var_disc))
 WHERE a = [1::UInt64]::Array(Variant(Date, UInt64)) SETTINGS prefer_localhost_replica = 0;
+-- Both shard-bound shapes above must have carried the alternative's type and the `Variant` type, not
+-- a bare literal. NOTE: this test cannot use 'current_database = currentDatabase()' for the secondary
+-- queries, so they are scoped by the database name inside the query text instead.
+SYSTEM FLUSH LOGS query_log;
+SELECT countIf(query LIKE '% IN tuple(array(%Variant(Date, UInt64)%') > 0,
+       countIf(query LIKE '%HAVING equals(%array(%Variant(Date, UInt64)%') > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
+  AND NOT is_initial_query AND type = 'QueryFinish'
+  AND query NOT LIKE '%system%query_log%'
+  AND query LIKE concat('%', currentDatabase(), '%t_var_disc%');
 
 DROP TABLE t_var_disc;
 
@@ -182,3 +194,8 @@ SETTINGS optimize_min_equality_disjunction_chain_length = 100;
 SELECT count() FROM (SELECT materialize(toDateTime(1, 'UTC')) AS v) WHERE v = toDate(1)::Variant(Date, UInt64) OR v = toDate(5)::Variant(Date, UInt64) OR v = toDate(7)::Variant(Date, UInt64);
 SELECT count() FROM (SELECT materialize(toDateTime(1, 'UTC')) AS v) WHERE v = toDate(1)::Variant(Date, UInt64) OR v = toDate(5)::Variant(Date, UInt64) OR v = toDate(7)::Variant(Date, UInt64)
 SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+
+-- A `Bool` is not a `Variant`, so an identity conversion of one keeps going through the `Field` path
+-- that clamps a raw byte, and `x IN (x, ...)` still agrees with `x = x`.
+SELECT reinterpret(toUInt8(2), 'Bool') = reinterpret(toUInt8(2), 'Bool'),
+       reinterpret(toUInt8(2), 'Bool') IN (reinterpret(toUInt8(2), 'Bool'), false);
