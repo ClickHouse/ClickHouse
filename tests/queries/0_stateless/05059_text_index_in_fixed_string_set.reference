@@ -1,0 +1,15 @@
+String IN applies preprocessor and can use text index
+[2]
+1
+String IN with FixedString set keeps query semantics
+[2]
+String IN with FixedString set does not select text index
+0
+String GLOBAL IN with FixedString set keeps query semantics
+[2]
+String GLOBAL IN with FixedString set does not select text index
+0
+String tuple IN with FixedString set keeps query semantics
+[2]
+String tuple IN with FixedString set does not select text index
+0

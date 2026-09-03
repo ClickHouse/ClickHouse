@@ -1916,16 +1916,12 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     RPNElement & out) const
 {
     std::optional<size_t> set_key_position;
-    bool matches_json_all_values_subcolumn = false;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        const bool matches_json_all_values = canUseJSONAllValuesIndexForNode(node);
-        matches_json_all_values_subcolumn |= matches_json_all_values;
-
         return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
-            || matches_json_all_values;
+            || canUseJSONAllValuesIndexForNode(node);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
@@ -1978,8 +1974,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     /// `String IN FixedString` ignores trailing zero padding, while text tokenization does not.
-    /// Tokenizing that padding for a `JSONAllValues` subcolumn could produce false negatives.
-    if (matches_json_all_values_subcolumn && set_column_type.isFixedString())
+    /// Tokenizing that padding for a text-index condition could produce false negatives.
+    if (set_column_type.isFixedString())
         return false;
 
     size_t total_row_count = prepared_set->getTotalRowCount();
