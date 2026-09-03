@@ -2133,7 +2133,8 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 /// Returns a copy of `elem_type` with every `DateTime`/`DateTime64` leaf replaced by the corresponding
 /// leaf of `dag_type`, or nullptr if the two do not describe the same shape. Keeps `elem_type`'s own
 /// structure, so only what `equals` ignores moves: the DAG reads those off the type it is handed.
-static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, const DataTypePtr & dag_type)
+static DataTypePtr adoptDateTimeLeafTimezones(
+    const DataTypePtr & elem_type, const DataTypePtr & dag_type, bool skip_custom_name = false)
 {
     const WhichDataType elem_which(elem_type);
     const WhichDataType dag_which(dag_type);
@@ -2151,9 +2152,15 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
         return dag_type->equals(*elem_type) ? dag_type : nullptr;
 
     /// A custom name `equals` cannot see changes what the transform computes on a leaf (`Bool` renders every
-    /// nonzero `UInt8` as `true`) but only renames a composite, where `dag_type` also keeps the moved leaves.
-    if ((elem_type->hasCustomName() || dag_type->hasCustomName()) && elem_type->getName() != dag_type->getName())
-        return elem_type->haveSubtypes() && elem_type->equals(*dag_type) ? dag_type : nullptr;
+    /// nonzero `UInt8` as `true`) but only renames a composite, so take `dag_type` whole once the recursion
+    /// has cleared the children: rebuilding `elem_type` below would drop the name along the way.
+    if (!skip_custom_name && (elem_type->hasCustomName() || dag_type->hasCustomName())
+        && elem_type->getName() != dag_type->getName())
+    {
+        if (!elem_type->haveSubtypes() || !elem_type->equals(*dag_type))
+            return nullptr;
+        return adoptDateTimeLeafTimezones(elem_type, dag_type, /*skip_custom_name=*/ true) ? dag_type : nullptr;
+    }
 
     /// Recurse through the types that delegate `equals` to their children, so a timezone one or more
     /// wrappers down is as invisible as a bare one. Rebuilding a composite drops its customizations

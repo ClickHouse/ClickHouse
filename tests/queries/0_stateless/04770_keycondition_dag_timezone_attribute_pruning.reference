@@ -78,6 +78,9 @@ oracle_outer_simpleaggregatefunction	1
 partition_outer_simpleaggregatefunction	1
 control_outer_simpleaggregatefunction_other_month	0
 control_outer_simpleaggregatefunction_pruning_used	1
+oracle_outer_bool_negation	2
+control_outer_bool_negation	2
+control_outer_bool_neq	2
 control_timezone_blind_dag	1
 control_no_key_transform	1
 control_element_carries_key_timezone	1

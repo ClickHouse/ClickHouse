@@ -73,6 +73,8 @@ DROP TABLE IF EXISTS k_nul_prune;
 DROP TABLE IF EXISTS k_point;
 DROP TABLE IF EXISTS oracle_saf_outer;
 DROP TABLE IF EXISTS k_saf_outer;
+DROP TABLE IF EXISTS oracle_saf_outer_bool;
+DROP TABLE IF EXISTS k_saf_outer_bool;
 
 -- The oracle: identical data and predicate, no key transform to get wrong.
 CREATE TABLE oracle_utc (ts DateTime('UTC')) ENGINE = Memory;
@@ -417,6 +419,21 @@ SELECT 'control_outer_simpleaggregatefunction_other_month', count() FROM (SELECT
 SELECT 'control_outer_simpleaggregatefunction_pruning_used', countIf(explain LIKE '%arraySum%') > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_saf_outer WHERE a IN (SELECT [toDateTime(1675195200)]));
 
+-- The leaf refusal must survive an outer custom name: `Array(UInt8)` is `equals`-equal to
+-- `SimpleAggregateFunction(anyLast, Array(Bool))`, so relabelling the pair before checking its children
+-- would render the element `[2]` as `[true]` and let an exact `NOT IN` / `!=` prune the row holding it.
+-- Correct here and on master; both rows read 1 if the outer name is restored without that check.
+CREATE TABLE oracle_saf_outer_bool (a Array(Bool)) ENGINE = Memory;
+INSERT INTO oracle_saf_outer_bool SELECT [false];
+INSERT INTO oracle_saf_outer_bool SELECT [true];
+CREATE TABLE k_saf_outer_bool (a SimpleAggregateFunction(anyLast, Array(Bool))) ENGINE = MergeTree
+    PARTITION BY toString(a) ORDER BY tuple();
+INSERT INTO k_saf_outer_bool SELECT [false];
+INSERT INTO k_saf_outer_bool SELECT [true];
+SELECT 'oracle_outer_bool_negation', count() FROM (SELECT a FROM oracle_saf_outer_bool WHERE a NOT IN (SELECT [2::UInt8]));
+SELECT 'control_outer_bool_negation', count() FROM (SELECT a FROM k_saf_outer_bool WHERE a NOT IN (SELECT [2::UInt8]));
+SELECT 'control_outer_bool_neq', count() FROM (SELECT a FROM k_saf_outer_bool WHERE a != [2::UInt8]);
+
 -- Controls. Each was measured correct before the fix, so they are what proves the carriers above
 -- discriminate rather than the whole file simply reading 1.
 CREATE TABLE k_unixts (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toUnixTimestamp(ts) ORDER BY tuple();
@@ -568,3 +585,5 @@ DROP TABLE k_nul_prune;
 DROP TABLE k_point;
 DROP TABLE oracle_saf_outer;
 DROP TABLE k_saf_outer;
+DROP TABLE oracle_saf_outer_bool;
+DROP TABLE k_saf_outer_bool;
