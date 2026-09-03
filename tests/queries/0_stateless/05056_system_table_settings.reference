@@ -1,0 +1,23 @@
+-- structure
+database	String
+table	String
+engine	LowCardinality(String)
+name	String
+value	String
+changed	UInt8
+source	Enum8(\'default\' = 0, \'config\' = 1, \'compatibility\' = 2, \'definition\' = 3, \'named_collection\' = 4, \'shared_metadata\' = 5, \'runtime\' = 6, \'other\' = 7)
+is_masked	UInt8
+description	String
+type	String
+-- every engine reports its SETTINGS clause
+jn	Join	persistent	0	1	definition
+lg	Log	disk	default	1	definition
+mt	MergeTree	index_granularity	4096	1	definition
+-- a secret is masked, and says so
+kafka_sasl_password	[HIDDEN]	1
+-- a setting that is not secret is not masked
+0
+-- an engine with no secret settings masks nothing
+0
+-- filtering by database reaches the scan
+0
