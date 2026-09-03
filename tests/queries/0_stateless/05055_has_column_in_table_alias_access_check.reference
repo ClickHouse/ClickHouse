@@ -1,0 +1,12 @@
+-- SHOW COLUMNS on the alias only: denied (existing column of the target)
+ACCESS_DENIED
+-- SHOW COLUMNS on the alias only: denied (non-existing column, no oracle)
+ACCESS_DENIED
+-- SHOW COLUMNS on the alias only: DESCRIBE is denied too
+ACCESS_DENIED
+-- SHOW COLUMNS on the target: existing column
+1
+-- SHOW COLUMNS on the target: non-existing column
+0
+-- SHOW COLUMNS on the target: DESCRIBE works too
+2
