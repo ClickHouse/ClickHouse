@@ -294,6 +294,14 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
+size_t Set::getSetElementsBytes() const
+{
+    size_t bytes = 0;
+    for (const auto & column : set_elements)
+        bytes += column->byteSize();
+    return bytes;
+}
+
 Columns Set::getSetElements() const
 {
     checkIsCreated();

@@ -1,8 +1,10 @@
 #include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/StatelessWorker/StatelessTaskExecutor.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
 #include <Server/StatelessWorker/StatelessWorkerProtocol.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPResponse.h>
@@ -10,12 +12,15 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Core/ProtocolDefines.h>
+#include <unordered_set>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -36,7 +41,6 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
     return endpoint_name + path;
 }
 
-void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
     writeVarUInt(task_description.serialization_version, out);
@@ -96,10 +100,38 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeStringBinary(change.name, out);
         writeFieldBinary(change.value, out);
     }
-}
 
-namespace
-{
+    if (task_description.serialization_version < 3 && !task.runtime_filter_descriptors.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Distributed task serialization version {} cannot carry runtime filter receive descriptors",
+            task_description.serialization_version);
+
+    if (task_description.serialization_version >= 3)
+    {
+        writeVarUInt(task.runtime_filter_descriptors.size(), out);
+        for (const auto & descriptor : task.runtime_filter_descriptors)
+        {
+            writeStringBinary(descriptor.filter_key, out);
+            writeStringBinary(descriptor.filter_name, out);
+            encodeDataType(descriptor.key_column_type, out);
+            writeVarUInt(descriptor.geometry.exact_values_limit, out);
+            writeVarUInt(descriptor.geometry.exact_bytes_limit, out);
+            writeVarUInt(descriptor.geometry.bloom_filter_bytes, out);
+            writeVarUInt(descriptor.geometry.bloom_filter_hash_functions, out);
+            writeBinary(descriptor.geometry.pass_ratio_threshold_for_disabling, out);
+            writeVarUInt(descriptor.geometry.blocks_to_skip_before_reenabling, out);
+            writeBinary(descriptor.geometry.max_ratio_of_set_bits_in_bloom_filter, out);
+            writeVarUInt(descriptor.streams.size(), out);
+            for (const auto & stream : descriptor.streams)
+            {
+                writeStringBinary(stream.exchange_id, out);
+                writeStringBinary(stream.source_bucket, out);
+                writeStringBinary(stream.destination_bucket, out);
+            }
+        }
+    }
+}
 
 void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
 {
@@ -192,8 +224,55 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
             task_description.settings_changes.emplace_back(name, value);
         }
     }
-}
 
+    if (version >= 3)
+    {
+        size_t descriptors_size = 0;
+        readVarUInt(descriptors_size, in);
+        /// A legitimate initiator emits one descriptor per admitted filter and one stream per
+        /// build/root task.
+        constexpr size_t max_runtime_filter_receive_descriptors = 1000;
+        constexpr size_t max_streams_per_runtime_filter_descriptor = 1000;
+        if (descriptors_size > max_runtime_filter_receive_descriptors)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too many runtime filter receive descriptors: {}", descriptors_size);
+        task.runtime_filter_descriptors.resize(descriptors_size);
+        std::unordered_set<String> seen_filter_keys;
+        for (size_t i = 0; i < descriptors_size; ++i)
+        {
+            auto & descriptor = task.runtime_filter_descriptors[i];
+            readStringBinary(descriptor.filter_key, in);
+            readStringBinary(descriptor.filter_name, in);
+            /// Trusted server-to-server task: decode types without the input complexity limit.
+            descriptor.key_column_type = decodeDataType(in, /*max_complexity=*/0);
+            readVarUInt(descriptor.geometry.exact_values_limit, in);
+            readVarUInt(descriptor.geometry.exact_bytes_limit, in);
+            readVarUInt(descriptor.geometry.bloom_filter_bytes, in);
+            readVarUInt(descriptor.geometry.bloom_filter_hash_functions, in);
+            readBinary(descriptor.geometry.pass_ratio_threshold_for_disabling, in);
+            readVarUInt(descriptor.geometry.blocks_to_skip_before_reenabling, in);
+            readBinary(descriptor.geometry.max_ratio_of_set_bits_in_bloom_filter, in);
+            size_t streams_size = 0;
+            readVarUInt(streams_size, in);
+            if (streams_size > max_streams_per_runtime_filter_descriptor)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many streams on a runtime filter receive descriptor: {}", streams_size);
+            descriptor.streams.resize(streams_size);
+            for (size_t j = 0; j < streams_size; ++j)
+            {
+                readStringBinary(descriptor.streams[j].exchange_id, in);
+                readStringBinary(descriptor.streams[j].source_bucket, in);
+                readStringBinary(descriptor.streams[j].destination_bucket, in);
+            }
+
+            if (descriptor.filter_key.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter receive descriptor has an empty filter key");
+            if (descriptor.streams.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter receive descriptor has no streams");
+            if (!seen_filter_keys.insert(descriptor.filter_key).second)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "Duplicate runtime filter receive descriptor for key {}", descriptor.filter_key);
+            descriptor.geometry.validateTransported();
+        }
+    }
 }
 
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)

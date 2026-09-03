@@ -1,0 +1,6 @@
+-- mixed local+remote apply
+10
+-- local apply pruned the same-stage probe
+1
+-- remote apply still arrived over the exchange
+1

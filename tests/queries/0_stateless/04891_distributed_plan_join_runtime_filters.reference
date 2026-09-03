@@ -1,0 +1,28 @@
+-- shuffle join, setting off
+GatherExchange
+JoinLogical
+ShuffleExchange (by hash([__table1.bid]))
+Filter column: __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) (removed)
+FUNCTION __applyFilter(_runtime_filter_UNIQ_ID :: 1, bid :: 0) -> __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) UInt8 : 3
+ShuffleExchange (by hash([__table2.sid]))
+BuildRuntimeFilter (Build runtime join filter on __table2.sid)
+Filter id: _runtime_filter_UNIQ_ID
+100
+-- shuffle join, setting on
+100
+-- broadcast join, setting on
+100
+-- multiple keys, setting on
+100
+-- empty build side, setting on
+0
+-- anti join keeps its local filter
+99900
+-- shuffle join, setting on: states crossed the exchange
+1
+-- broadcast join, setting on: single-task build still ships the filter
+1
+-- multiple keys, setting on: each key is sent
+1
+-- anti join keeps its local filter: not sent
+1

@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -121,7 +122,8 @@ void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & o
         "distributed_plan_default_reader_bucket_count");
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+RelationStats estimateReadRowsCount(
+    QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -1215,6 +1217,23 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     /// and memory (see the TODO at the bucket_count reads) instead of using the raw setting value.
     validateDistributedPlanBucketCounts(optimization_settings);
 
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+    {
+        /// Stamp build-side row estimates before the cut. After the cut a build that is another
+        /// stage's output ends at an exchange source and has nothing to estimate from.
+        std::vector<QueryPlan::Node *> annotation_stack{root};
+        while (!annotation_stack.empty())
+        {
+            auto * node = annotation_stack.back();
+            annotation_stack.pop_back();
+            if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()); build_step && !node->children.empty())
+                build_step->setEstimatedBuildRows(
+                    estimateReadRowsCount(*node->children.front(), nullptr, /*for_runtime_filter_transport=*/true).estimated_rows);
+            for (auto * child : node->children)
+                annotation_stack.push_back(child);
+        }
+    }
+
     size_t exchange_id = 0;
 
     DistributedQueryPlan distributed_plan;
@@ -1557,6 +1576,17 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         distributed_plan.stages["main"] = std::move(stage);
         distributed_plan.stage_depends_on["main"] = main_stage_depends_on;
     }
+
+    /// Now that the stages and their task lists exist, wire exchanges for runtime filters whose
+    /// build and apply sites landed in different stages (matched by the rendezvous key). The
+    /// filter exchanges start from the same kind as the data exchanges above, so a forced or
+    /// auto-selected Persisted plan does not plan Streaming filter exchanges.
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+        wireRuntimeFilterExchangeTopology(
+            distributed_plan,
+            exchange_id,
+            optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted
+                                                                                      : ExchangeDescription::Kind::Streaming);
 
     return distributed_plan;
 }

@@ -9055,6 +9055,9 @@ A heuristic for the rule-based distributed planner. When the cost-based optimize
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
+Send join runtime filters between stages of a distributed query plan. Probe-side tasks prune before the exchange.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \

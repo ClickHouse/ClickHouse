@@ -6,8 +6,10 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
+#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <functional>
@@ -316,6 +318,17 @@ struct QueryPlanParameters
     std::unordered_map<String, Field> parameters;
 };
 
+/// One transported runtime filter this task receives: the executor reads the partial states from
+/// `streams`, unions them, and registers the result under `filter_key` in the task's filter lookup.
+struct RuntimeFilterReceiveDescriptor
+{
+    String filter_key;
+    String filter_name;
+    DataTypePtr key_column_type;
+    RuntimeFilterGeometry geometry;
+    std::vector<ExchangeStreamId> streams;
+};
+
 /// Represents a single local task in a distributed query plan
 struct DistributedQueryTask
 {
@@ -323,6 +336,7 @@ struct DistributedQueryTask
     QueryPlanParameters parameters;
     std::vector<ExchangeStreamId> input_exchange_streams;
     std::vector<ExchangeStreamId> output_exchange_streams;
+    std::vector<RuntimeFilterReceiveDescriptor> runtime_filter_descriptors;
 };
 
 /// A group of tasks with the same plan fragment and differenet parameters
@@ -331,6 +345,12 @@ struct DistributedQueryStage
 {
     QueryPlan query_plan_fragment;   /// Common for all tasks
     std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
+
+    /// A stage whose only output is a runtime filter (an `rf_merge_*` merge stage). The driver
+    /// starts it like any other stage but does not wait for it to finish: once the data stages
+    /// are done an undelivered filter has nobody left to serve, and query cleanup cancels the
+    /// tasks (a clean finish for them, not an error).
+    bool filter_only = false;
 };
 
 /// Represents a graph of stages

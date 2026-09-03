@@ -22,12 +22,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_name_,
     String filter_key_,
     size_t filters_to_merge_,
-    UInt64 exact_values_limit_,
-    UInt64 bloom_filter_bytes_,
-    UInt64 bloom_filter_hash_functions_,
-    Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_,
+    const RuntimeFilterGeometry & geometry_,
     bool allow_to_use_not_exact_filter_,
     bool track_key_range_,
     std::optional<UInt64> distinct_keys_hint_,
@@ -49,26 +44,18 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     {
         if (ApproximateRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
-            built_filter = std::make_unique<ApproximateRuntimeFilter>(
-                filters_to_merge_,
-                filter_column_target_type,
-                pass_ratio_threshold_for_disabling_,
-                blocks_to_skip_before_reenabling_,
-                bloom_filter_bytes_,
-                exact_values_limit_,
-                bloom_filter_hash_functions_,
-                max_ratio_of_set_bits_in_bloom_filter_,
-                distinct_keys_hint_);
+            built_filter
+                = std::make_unique<ApproximateRuntimeFilter>(filters_to_merge_, filter_column_target_type, geometry_, distinct_keys_hint_);
         }
         else
         {
             built_filter = std::make_unique<ExactContainsRuntimeFilter>(
                 filters_to_merge_,
                 filter_column_target_type,
-                pass_ratio_threshold_for_disabling_,
-                blocks_to_skip_before_reenabling_,
-                bloom_filter_bytes_,
-                exact_values_limit_);
+                geometry_.pass_ratio_threshold_for_disabling,
+                geometry_.blocks_to_skip_before_reenabling,
+                geometry_.exact_bytes_limit,
+                geometry_.exact_values_limit);
         }
     }
     else
@@ -76,10 +63,10 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
         built_filter = std::make_unique<ExactNotContainsRuntimeFilter>(
             filters_to_merge_,
             filter_column_target_type,
-            pass_ratio_threshold_for_disabling_,
-            blocks_to_skip_before_reenabling_,
-            bloom_filter_bytes_,
-            exact_values_limit_);
+            geometry_.pass_ratio_threshold_for_disabling,
+            geometry_.blocks_to_skip_before_reenabling,
+            geometry_.exact_bytes_limit,
+            geometry_.exact_values_limit);
     }
 
     /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.

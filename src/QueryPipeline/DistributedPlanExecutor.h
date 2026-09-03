@@ -177,10 +177,12 @@ struct ExchangeStreamSources
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> stream_hosts;
 };
 
-/// Minimal serialization version for a task. A version-1 task carries no per-stream ports: the
-/// receiving worker dials every producer on its own fallback exchange port. So v1 is safe only
-/// when every producer's port equals the destination worker's exchange port; else v2.
-UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 destination_exchange_port);
+/// Minimal serialization version for a task. v3 if the task carries runtime filter receive
+/// descriptors. Else a version-1 task carries no per-stream ports: the receiving worker dials
+/// every producer on its own fallback exchange port, so v1 is safe only when every producer's
+/// port equals the destination worker's exchange port; else v2.
+UInt64 chooseTaskSerializationVersion(
+    const DistributedQueryTask & task, const ExchangeStreamSources & exchange_stream_sources, UInt64 destination_exchange_port);
 
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription

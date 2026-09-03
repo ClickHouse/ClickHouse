@@ -108,6 +108,7 @@ namespace DB
     DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.", 0) \
     \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, "Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.", 0) \
+    DECLARE(UInt64, join_runtime_filter_exact_bytes_limit, 512 * 1024, "Max bytes of the exact key set before switching to bloom. Transported filters may raise this above the bloom size from plan-time row estimates.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512 * 1024, "Size in bytes of a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, "Number of hash functions in a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, "If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.", 0) \

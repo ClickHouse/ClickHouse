@@ -1,0 +1,5 @@
+-- nested joins: both filters register on the fact scan fragment
+100
+100
+-- both filters registered on fact-scan tasks
+1

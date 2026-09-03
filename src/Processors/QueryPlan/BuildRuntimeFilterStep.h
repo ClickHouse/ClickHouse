@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 
 #include <optional>
 
@@ -18,12 +19,7 @@ public:
         const DataTypePtr & filter_column_type_,
         String filter_name_,
         String filter_key_,
-        UInt64 exact_values_limit_,
-        UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_,
-        Float64 pass_ratio_threshold_for_disabling,
-        UInt64 blocks_to_skip_before_reenabling,
-        Float64 max_ratio_of_set_bits_in_bloom_filter,
+        RuntimeFilterGeometry geometry_,
         bool allow_to_use_not_exact_filter_,
         bool track_key_range_,
         std::optional<UInt64> distinct_keys_hint_ = std::nullopt);
@@ -35,6 +31,47 @@ public:
 
     const String & getFilterColumnName() const { return filter_column_name; }
     const String & getFilterName() const { return filter_name; }
+    const String & getFilterKey() const { return filter_key; }
+    /// Only for restoring a deserialized step from a sibling `__applyFilter` in the same fragment.
+    void setFilterKey(String filter_key_)
+    {
+        chassert(filter_key.empty());
+        filter_key = std::move(filter_key_);
+    }
+    const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
+    bool allowsNotExactFilter() const { return allow_to_use_not_exact_filter; }
+    const RuntimeFilterGeometry & getGeometry() const { return geometry; }
+    void setGeometry(const RuntimeFilterGeometry & geometry_) { geometry = geometry_; }
+
+    struct FilterExchange
+    {
+        String exchange_id;
+        Strings destination_buckets;
+    };
+
+    struct TreeExchange
+    {
+        String exchange_id;
+        /// Ordered buckets of the build stage; a task's parent is `own index / fan_in`.
+        Strings source_buckets;
+        size_t fan_in = 0;
+    };
+
+    /// Destinations are the consuming-stage task buckets. One filter may be applied in several
+    /// stages, so the partials go out over one exchange per receiving stage. Used when the build
+    /// stage has a single task (the task is then the root of the merge tree and broadcasts directly).
+    void addExchange(String exchange_id_, Strings destination_buckets_);
+
+    /// The build stage has several tasks and the partials go through a merge tree: each build task
+    /// sends its partial once, to its parent merge task, computed from the task's position in
+    /// `source_buckets` (the ordered buckets of the build stage) as `index / fan_in`. Mutually
+    /// exclusive with `addExchange`.
+    void setTreeExchange(String exchange_id_, Strings source_buckets_, size_t fan_in_);
+
+    bool hasFilterExchanges() const { return !exchanges.empty() || tree_exchange; }
+
+    void setEstimatedBuildRows(std::optional<UInt64> estimated_build_rows_) { estimated_build_rows = estimated_build_rows_; }
+    std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
@@ -50,6 +87,7 @@ public:
 
 private:
     void updateOutputHeader() override;
+    void transformPipelineForTransport(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings);
 
     String filter_column_name;
     DataTypePtr filter_column_type;
@@ -58,15 +96,11 @@ private:
     String filter_name;
     /// Random per-plan-build key the built filter is registered under in the `IRuntimeFilterLookup`;
     /// the matching `__applyFilter` looks it up by the same key. Kept off the plan (not shown, not
-    /// serialized) so it never enters a plan-step hash. Empty for a deserialized step (then inert).
+    /// serialized) so it never enters a plan-step hash. After deserialize it is restored from a
+    /// sibling `__applyFilter` in the same fragment.
     String filter_key;
 
-    UInt64 exact_values_limit;
-    UInt64 bloom_filter_bytes;
-    UInt64 bloom_filter_hash_functions;
-    Float64 pass_ratio_threshold_for_disabling;
-    UInt64 blocks_to_skip_before_reenabling;
-    Float64 max_ratio_of_set_bits_in_bloom_filter;
+    RuntimeFilterGeometry geometry;
 
     bool allow_to_use_not_exact_filter;
     /// Record the key values/range for left-side index analysis; off avoids an extra build-side scan.
@@ -74,6 +108,15 @@ private:
 
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
     std::optional<UInt64> distinct_keys_hint;
+
+    /// Both empty: local build mode (register in this task's lookup). The distributed split assigns
+    /// the filter exchange(s) afterwards; then exactly one of the two is set.
+    std::vector<FilterExchange> exchanges;
+    std::optional<TreeExchange> tree_exchange;
+
+    /// Row estimate stamped before the plan is cut; consumed only by the initiator when sizing the
+    /// exact phase. Not serialized.
+    std::optional<UInt64> estimated_build_rows;
 };
 
 }
