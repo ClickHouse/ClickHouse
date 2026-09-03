@@ -538,14 +538,24 @@ struct ReplaceRegexpImpl
                     /// The reject runs here rather than ahead of the lookup so that non-adjacent repeats
                     /// of a rejecting value are served by the cache instead of re-running a reject that
                     /// may have to scan the whole haystack.
-                    if (precheck_non_matching
-                        && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
+                    /// The check scans the haystack whichever way it goes, and a hit then scans it a
+                    /// second time inside `processString`, which charges only what it copies. Charged
+                    /// ahead of the outcome so that a matching row does not advance the budget by less
+                    /// than a rejected one and postpone the cancellation checkpoint by a whole scan.
+                    bool precheck_rejected = false;
+                    if (precheck_non_matching)
+                    {
+                        budget.charge(haystack.size());
+                        precheck_rejected
+                            = !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0);
+                    }
+
+                    if (precheck_rejected)
                     {
                         res_data.resize(res_data.size() + haystack.size());
                         memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
                         res_offset += haystack.size();
                         budget.charge();
-                        budget.charge(haystack.size());
                         row_matched = false;
                     }
                     else
@@ -561,14 +571,21 @@ struct ReplaceRegexpImpl
                 /// adjacent-duplicate compare) back once the rows turn repetitive. A rejected row plus
                 /// the copy is exactly the plain loop's cost. It is non-matching by definition, so
                 /// leaving `matched_in_window` untouched counts it correctly.
-                if (precheck_non_matching
-                    && !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
+                /// The attempt is charged ahead of its outcome, as on the cached path above.
+                bool precheck_rejected = false;
+                if (precheck_non_matching)
+                {
+                    budget.charge(haystack.size());
+                    precheck_rejected
+                        = !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0);
+                }
+
+                if (precheck_rejected)
                 {
                     res_data.resize(res_data.size() + haystack.size());
                     memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
                     res_offset += haystack.size();
                     budget.charge();
-                    budget.charge(haystack.size());
                 }
                 else
                     row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);

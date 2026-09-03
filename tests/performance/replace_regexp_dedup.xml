@@ -31,6 +31,11 @@
          without ever re-evaluating either. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat(if(number % 32000 &lt; 25000, 'nonmatching:', 'https://example.com/'), toString(number)), '^https?://([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 32000</query>
 
+    <!-- Mostly short rejecting rows with a long matching row every 64th: the pre-check stays engaged
+         across the matching rows, so each of them is scanned once by the check and once by the
+         replacement itself, and both scans have to reach the cancellation budget. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(if(number % 64 = 0, concat('https://example.com/', repeat('longpathcomponent/', 100)), concat('nonmatching:', toString(number))), '^https?://([^/]+)/.*$', '\\1'))</query>
+
     <!-- One repeated rejecting haystack: every row after the first is served by the adjacent-duplicate
          compare, and the ratio checkpoint ahead of it must keep firing without disturbing that path. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(materialize(concat('https://example.com/', repeat('longpathcomponent/', 25))), '^missing', 'X'))</query>
