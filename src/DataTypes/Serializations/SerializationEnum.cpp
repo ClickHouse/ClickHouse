@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 template <typename Type>
 void SerializationEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -259,6 +264,12 @@ size_t SerializationEnum<Type>::allocatedBytes() const
     if (own_enum_values)
         bytes += own_enum_values->allocatedBytes();
     return bytes;
+}
+
+template <typename Type>
+void SerializationEnum<Type>::serializeTextHive(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Enum is not supported by the HiveText output format");
 }
 
 template class SerializationEnum<Int8>;

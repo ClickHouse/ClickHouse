@@ -558,6 +558,59 @@ struct ConverterNumberAsFixedString
     size_t fixedStringSize() { return sizeof(T); }
 };
 
+/// Serialize a wide integer as a Parquet fixed-length `DECIMAL`. The extra leading byte preserves
+/// the full unsigned range and sign-extends signed values. Building the result byte by byte makes
+/// the conversion independent of host endianness.
+template <typename T>
+struct ConverterWideIntegerAsDecimal
+{
+    static constexpr size_t encoded_size = sizeof(T) + 1;
+    static constexpr size_t num_limbs = sizeof(T) / sizeof(UInt64);
+    static_assert(sizeof(T) % sizeof(UInt64) == 0);
+    using Statistics = StatisticsFixedStringCopy<encoded_size, /*SIGNED=*/ true>;
+
+    const ColumnVector<T> & column;
+    PODArray<uint8_t> data_buf;
+    PODArray<parquet::FixedLenByteArray> ptr_buf;
+
+    explicit ConverterWideIntegerAsDecimal(const ColumnPtr & c) : column(assert_cast<const ColumnVector<T> &>(*c)) {}
+
+    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    {
+        data_buf.resize(count * encoded_size);
+        ptr_buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            uint8_t * out = data_buf.data() + i * encoded_size;
+            const T & source = column.getData()[offset + i];
+            if constexpr (std::numeric_limits<T>::is_signed)
+                out[0] = source < 0 ? 0xff : 0;
+            else
+                out[0] = 0;
+
+            /// `wide::integer` stores limbs in native order. Visit them from least to most
+            /// significant and emit each limb from least to most significant byte into the output
+            /// buffer backwards, producing big-endian bytes without repeatedly shifting `T`.
+            for (size_t limb_idx = 0; limb_idx < num_limbs; ++limb_idx)
+            {
+                const size_t native_limb_idx = std::endian::native == std::endian::little
+                    ? limb_idx
+                    : num_limbs - limb_idx - 1;
+                const UInt64 limb = source.items[native_limb_idx];
+                for (size_t byte_idx = 0; byte_idx < sizeof(UInt64); ++byte_idx)
+                {
+                    const size_t output_idx = encoded_size - 1 - limb_idx * sizeof(UInt64) - byte_idx;
+                    out[output_idx] = static_cast<uint8_t>(limb >> (byte_idx * 8));
+                }
+            }
+            ptr_buf[i].ptr = out;
+        }
+        return ptr_buf.data();
+    }
+
+    size_t fixedStringSize() { return encoded_size; }
+};
+
 struct ConverterJSON
 {
     using Statistics = StatisticsStringCopy;
@@ -699,6 +752,9 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 method,
                 level,
                 /*zstd_window_log*/ 0,
+                /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
+                /// this dispatch never sees it, so the snappy mode here is irrelevant.
+                SnappyMode::Basic,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());
@@ -740,6 +796,38 @@ void addToEncodingsUsed(ColumnChunkWriteState & s, parq::Encoding::type e)
         s.column_chunk.meta_data.encodings.push_back(e);
 }
 
+/// Maintain PageEncodingStats as we write pages. Readers use it to tell whether a column chunk is
+/// fully dictionary-encoded (so the dictionary holds the complete set of values), which enables
+/// dictionary-based row group filtering.
+void addToEncodingStats(ColumnChunkWriteState & s, const parq::PageHeader & header)
+{
+    parq::Encoding::type encoding{};
+    if (header.__isset.dictionary_page_header)
+        encoding = header.dictionary_page_header.encoding;
+    else if (header.__isset.data_page_header)
+        encoding = header.data_page_header.encoding;
+    else if (header.__isset.data_page_header_v2)
+        encoding = header.data_page_header_v2.encoding;
+    else
+        return;
+
+    auto & stats = s.column_chunk.meta_data.encoding_stats;
+    for (parq::PageEncodingStats & st : stats)
+    {
+        if (st.page_type == header.type && st.encoding == encoding)
+        {
+            st.__set_count(st.count + 1);
+            return;
+        }
+    }
+    parq::PageEncodingStats st;
+    st.__set_page_type(header.type);
+    st.__set_encoding(encoding);
+    st.__set_count(1);
+    stats.push_back(std::move(st));
+    s.column_chunk.meta_data.__isset.encoding_stats = true;
+}
+
 void writePage(const parq::PageHeader & header, const PODArray<char> & compressed, ColumnChunkWriteState & s, bool add_to_offset_index, size_t first_row_index, WriteBuffer & out)
 {
     size_t header_size = serializeThriftStruct(header, out);
@@ -764,6 +852,8 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
 
     s.column_chunk.meta_data.total_uncompressed_size += header.uncompressed_page_size + header_size;
     s.column_chunk.meta_data.total_compressed_size += compressed_page_size;
+
+    addToEncodingStats(s, header);
 }
 
 void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
@@ -1079,21 +1169,26 @@ void writeColumnImpl(
 
             if (hashes_for_bloom_filter.has_value())
             {
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
                 for (size_t i = 0; i < data_count; ++i)
                 {
                     UInt64 h = 0;
                     constexpr UInt64 seed = 0;
                     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
-                        h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
                     else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-                        h = XXH64(converted[i].ptr, converted[i].len, seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converted[i].len, seed);
                     else
                     {
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
-                        h = XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
+                        h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
                     hashes_for_bloom_filter->insert(h);
                 }
+#pragma clang diagnostic pop
             }
 
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
@@ -1188,6 +1283,8 @@ void writeColumnChunkBody(
 
     /// We'll be updating these as we go.
     s.column_chunk.meta_data.__set_encodings({});
+    s.column_chunk.meta_data.encoding_stats.clear();
+    s.column_chunk.meta_data.__isset.encoding_stats = false;
     s.column_chunk.meta_data.__set_total_compressed_size(0);
     s.column_chunk.meta_data.__set_total_uncompressed_size(0);
     s.column_chunk.meta_data.__set_data_page_offset(-1);
@@ -1292,14 +1389,22 @@ void writeColumnChunkBody(
             break;
 
         #define F(source_type) \
-            writeColumnImpl<parquet::FLBAType>( \
-                s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
+            if (options.output_wide_integer_as_decimal) \
+                writeColumnImpl<parquet::FLBAType>( \
+                    s, options, out, ConverterWideIntegerAsDecimal<source_type>(s.primitive_column)); \
+            else \
+                writeColumnImpl<parquet::FLBAType>( \
+                    s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
         case TypeIndex::UInt128: F(UInt128); break;
         case TypeIndex::UInt256: F(UInt256); break;
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
-        case TypeIndex::IPv6:    F(IPv6); break;
         #undef F
+
+        case TypeIndex::IPv6:
+            writeColumnImpl<parquet::FLBAType>(
+                s, options, out, ConverterNumberAsFixedString<IPv6>(s.primitive_column));
+            break;
 
         case TypeIndex::UUID:
             writeColumnImpl<parquet::FLBAType>(s,
@@ -1497,6 +1602,7 @@ void writeFileFooter(FileWriteState & file,
         {
             if (type->getCustomName() &&
                 (type->getCustomName()->getName() == WKBPointTransform::name ||
+                type->getCustomName()->getName() == WKBMultiPointTransform::name ||
                 type->getCustomName()->getName() == WKBLineStringTransform::name ||
                 type->getCustomName()->getName() == WKBPolygonTransform::name ||
                 type->getCustomName()->getName() == WKBMultiLineStringTransform::name ||

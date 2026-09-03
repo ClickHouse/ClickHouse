@@ -7,7 +7,7 @@ keywords: ['подключение postgresql', 'строка подключен
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
@@ -22,7 +22,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Доступ к сведениям о подключении
 </div>
 
-Чтобы подключить приложения к Managed Postgres, перейдите в представление **Connect** на левой боковой панели вашего экземпляра.
+Чтобы подключить приложения к ClickHouse Managed Postgres, перейдите в представление **Connect** на левой боковой панели вашего экземпляра.
 
 <Image img="/images/managed-postgres/connect-button.webp" alt="Нажмите Connect на левой боковой панели, чтобы просмотреть сведения о подключении" size="md" border />
 
@@ -34,10 +34,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 * **Username**: пользователь базы данных (по умолчанию: `postgres`)
 * **Password**: пароль базы данных (по умолчанию скрыт; нажмите значок глаза, чтобы показать его)
-* **Server**: имя хоста вашего экземпляра Managed Postgres
+* **Server**: имя хоста вашего экземпляра ClickHouse Managed Postgres
 * **Port**: порт PostgreSQL (по умолчанию: `5432`)
 
-Managed Postgres предоставляет superuser-доступ к вашей базе данных. Используйте эти учетные данные для подключения с правами superuser — это позволяет создавать дополнительных пользователей и управлять объектами базы данных.
+ClickHouse Managed Postgres предоставляет superuser-доступ к вашей базе данных. Используйте эти учетные данные для подключения с правами superuser — это позволяет создавать дополнительных пользователей и управлять объектами базы данных.
 
 <div id="connection-string">
   ## Форматы строк подключения
@@ -59,7 +59,7 @@ Managed Postgres предоставляет superuser-доступ к вашей
   ## Пулинг соединений с PgBouncer
 </div>
 
-Managed Postgres включает встроенный экземпляр [PgBouncer](https://www.pgbouncer.org/) для пулинга соединений на стороне сервера. PgBouncer помогает улучшить управление соединениями, производительность и использование ресурсов, особенно для приложений, которые:
+ClickHouse Managed Postgres включает встроенный экземпляр [PgBouncer](https://www.pgbouncer.org/) для пулинга соединений на стороне сервера. PgBouncer помогает улучшить управление соединениями, производительность и использование ресурсов, особенно для приложений, которые:
 
 * Открывают много одновременных соединений
 * Часто создают и закрывают соединения
@@ -79,7 +79,7 @@ Managed Postgres включает встроенный экземпляр [PgBou
   ## Настройка TLS
 </div>
 
-Все экземпляры Managed Postgres защищены с использованием TLS. Минимально поддерживаемая версия — **TLS 1.3**.
+Все экземпляры ClickHouse Managed Postgres защищены с использованием TLS. Минимально поддерживаемая версия — **TLS 1.3**.
 
 <div id="quick-connection">
   ### Быстрое подключение (с шифрованием TLS)
@@ -99,7 +99,7 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 <Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Скачайте CA‑сертификат на вкладке Settings" size="md" border />
 
-CA‑сертификат уникален для вашего экземпляра Managed Postgres и не будет работать с другими экземплярами.
+CA‑сертификат уникален для вашего экземпляра ClickHouse Managed Postgres и не будет работать с другими экземплярами.
 
 Чтобы установить проверенное TLS‑соединение, добавьте `sslmode=verify-full` и путь к скачанному сертификату:
 

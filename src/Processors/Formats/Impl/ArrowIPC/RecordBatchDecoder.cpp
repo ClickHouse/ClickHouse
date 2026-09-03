@@ -17,6 +17,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -26,6 +27,7 @@
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Core/UUID.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -206,6 +208,14 @@ const flatbuf::FieldNode & RecordBatchDecoder::nextNode()
     if (!nodes || node_index >= nodes->size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has fewer field nodes than the schema requires");
     return *nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index++));
+}
+
+Int64 RecordBatchDecoder::peekNextNodeLength() const
+{
+    const auto * nodes = current_batch->nodes();
+    if (!nodes || node_index >= nodes->size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has fewer field nodes than the schema requires");
+    return nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index))->length();
 }
 
 RecordBatchDecoder::Slice RecordBatchDecoder::nextBuffer()
@@ -419,7 +429,35 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 /// (`readColumnWithDate32Data`): a day number outside ClickHouse's allowed Date32 range is
                 /// saturated or rejected according to `date_time_overflow_behavior` (its default `Ignore`,
                 /// like `Throw`, rejects — preserving the pre-`date_time_overflow_behavior` behavior)
-                /// instead of leaving an invalid Date32 in the result.
+                /// instead of leaving an invalid Date32 in the result. When the requested header type is
+                /// `Date`, enforce the narrower Date range [0, 65535] instead: `buildChunk` later casts the
+                /// intermediate Date32 column to `Date` without checks, narrowing the day number to UInt16,
+                /// so an unchecked extended Date32 value would wrap into an unrelated in-range `Date`.
+                /// Similarly, when the requested header type is `DateTime`, enforce the
+                /// [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses: the later context-less cast
+                /// ignores `date_time_overflow_behavior` and wraps day numbers whose midnight does not fit.
+                /// A `DateTime64` header type needs the same treatment, but its window is scale-dependent: the
+                /// context-less cast clamps whole seconds the target scale cannot represent, and a scale-9
+                /// `DateTime64` stops at `2262-04-11`, far below the Date32 upper bound.
+                const DataTypePtr stripped_hint = effective_hint ? stripHint(effective_hint) : nullptr;
+                const bool date32_as_date = stripped_hint && isDate(*stripped_hint);
+                const bool date32_as_datetime = stripped_hint && isDateTime(*stripped_hint);
+                const auto * dt64_hint = stripped_hint ? typeid_cast<const DataTypeDateTime64 *>(stripped_hint.get()) : nullptr;
+                const auto [dt64_min_day, dt64_max_day] = dt64_hint
+                    ? getDateTime64DayNumRange(
+                          DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone())
+                    : std::pair<Int32, Int32>{DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                const Int32 min_day = (date32_as_date || date32_as_datetime) ? 0
+                    : dt64_hint ? dt64_min_day
+                    : DATE_LUT_MIN_EXTEND_DAY_NUM;
+                const Int32 max_day = date32_as_date ? DATE_LUT_MAX_DAY_NUM
+                    : date32_as_datetime ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
+                    : dt64_hint ? dt64_max_day
+                    : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                const String target_type_name = date32_as_date ? "Date"
+                    : date32_as_datetime ? "DateTime"
+                    : dt64_hint ? stripped_hint->getName()
+                    : "Date32";
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "date32");
                 auto & data = assert_cast<ColumnInt32 &>(*column).getData();
                 data.resize(rows);
@@ -428,15 +466,15 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 for (size_t i = 0; i < rows; ++i)
                 {
                     Int32 days = src[i];
-                    if (days > DATE_LUT_MAX_EXTEND_DAY_NUM || days < -DAYNUM_OFFSET_EPOCH)
+                    if (days > max_day || days < min_day)
                     {
                         if (saturate)
-                            days = days < -DAYNUM_OFFSET_EPOCH ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                            days = days < min_day ? min_day : max_day;
                         else
                             throw Exception(
                                 ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                "Arrow IPC date32 value {} is out of the allowed Date32 range [{}, {}]",
-                                days, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM);
+                                "Arrow IPC date32 value {} is out of the allowed {} range [{}, {}]",
+                                days, target_type_name, min_day, max_day);
                     }
                     data[i] = days;
                 }
@@ -633,6 +671,17 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                     ErrorCodes::INCORRECT_DATA, "Arrow IPC fixed-size-list has a non-positive list size {}", type.list_size);
             const size_t list_size = static_cast<size_t>(type.list_size);
             const size_t expected_child = requiredBytes(rows, list_size);
+            /// When there are no rows the child is empty; reject a non-zero child FieldNode length BEFORE
+            /// decodeField so a buffer-less child type (e.g. Null) cannot drive an unbounded allocation
+            /// that the expected-child size check below could not prevent.
+            if (rows == 0)
+            {
+                const Int64 child_len = peekNextNodeLength();
+                if (child_len != 0)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow IPC empty fixed-size-list references no elements but its child declares {} rows", child_len);
+            }
             ColumnPtr child = decodeField(type.children.at(0), /*allow_low_cardinality=*/false, arrayElementHint(effective_hint), path);
             if (child->size() != expected_child)
                 throw Exception(
@@ -653,6 +702,18 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             for (size_t i = 0; i < type.children.size(); ++i)
             {
                 const ArrowField & child = type.children[i];
+                /// An empty struct has no rows, so every field references zero rows; reject a non-zero
+                /// field FieldNode length BEFORE decodeField. A buffer-less field type (e.g. a Null
+                /// field) derives its size from the length alone, so a forged-huge length would
+                /// otherwise drive an unbounded allocation that the size check below could not prevent.
+                if (rows == 0)
+                {
+                    const Int64 field_len = peekNextNodeLength();
+                    if (field_len != 0)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Arrow IPC empty struct field '{}' declares {} rows", child.name, field_len);
+                }
                 ColumnPtr element = decodeField(
                     child, /*allow_low_cardinality=*/false,
                     tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
@@ -673,22 +734,45 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
         {
             /// Map is List<Struct<key, value>>: read the list offsets, then the entries struct.
             const Slice offsets_slice = nextBuffer();
-            checkBufferSize(offsets_slice, requiredBytes(rows + 1, sizeof(Int32)), "map offsets");
+            /// A zero-row map may omit its offsets buffer entirely (Apache Arrow Java < 19.0.0 emits a
+            /// 0-byte offsets buffer for an empty nested Map). No offset is read for zero rows.
+            /// Validate the buffer BEFORE allocating `offsets_col`: this bounds `rows` to the actual
+            /// buffer size, so a forged-huge `rows` cannot drive an allocation before being rejected.
+            if (rows > 0)
+                checkBufferSize(offsets_slice, requiredBytes(rows + 1, sizeof(Int32)), "map offsets");
             const auto * arrow_offsets = reinterpret_cast<const Int32 *>(offsets_slice.ptr);
-            const Int64 base = arrow_offsets[0];
-            if (base < 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has a negative first offset {}", base);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
-            /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
-            Int64 prev = base;
-            for (size_t i = 0; i < rows; ++i)
+            Int64 base = 0;
+            Int64 prev = 0;
+            if (rows > 0)
             {
-                const Int64 end = arrow_offsets[i + 1];
-                if (end < prev)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has non-monotonic offsets");
-                offs[i] = static_cast<UInt64>(end - base);
-                prev = end;
+                base = arrow_offsets[0];
+                if (base < 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has a negative first offset {}", base);
+                /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
+                prev = base;
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    const Int64 end = arrow_offsets[i + 1];
+                    if (end < prev)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has non-monotonic offsets");
+                    offs[i] = static_cast<UInt64>(end - base);
+                    prev = end;
+                }
+            }
+
+            /// An empty map references no entries, so the entries struct must also be empty. Reject a
+            /// non-zero entries FieldNode length BEFORE decodeField: a buffer-less entry type (e.g.
+            /// Map(_, Null)) derives its size from the length alone, so a forged-huge length would
+            /// otherwise drive an unbounded allocation that the later cut(0, 0) could not prevent.
+            if (rows == 0)
+            {
+                const Int64 entries_len = peekNextNodeLength();
+                if (entries_len != 0)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow IPC empty map references no entries but its entries struct declares {} rows", entries_len);
             }
 
             /// The entries struct's (key, value) get their hints from a synthetic Tuple(keyType, valueType)
@@ -728,7 +812,13 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
 {
     const Slice offsets_slice = nextBuffer();
     const size_t offset_size = large ? sizeof(Int64) : sizeof(Int32);
-    checkBufferSize(offsets_slice, requiredBytes(rows + 1, offset_size), "list offsets");
+
+    /// A zero-row list may omit its offsets buffer entirely (Apache Arrow Java < 19.0.0 emits a 0-byte
+    /// offsets buffer for an empty nested List). No offset is read for zero rows, so require no bytes.
+    /// Validate the buffer BEFORE allocating `offsets_col`: this bounds `rows` to the actual buffer
+    /// size, so a forged-huge `rows` cannot drive an `rows * 8` byte allocation before being rejected.
+    if (rows > 0)
+        checkBufferSize(offsets_slice, requiredBytes(rows + 1, offset_size), "list offsets");
 
     auto read_offset = [&](size_t i) -> Int64
     {
@@ -737,21 +827,39 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
         return reinterpret_cast<const Int32 *>(offsets_slice.ptr)[i];
     };
 
-    const Int64 base = read_offset(0);
-    /// The first offset must be non-negative; the per-row offsets below are stored relative to it.
-    if (base < 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has a negative first offset {}", base);
     auto offsets_col = ColumnUInt64::create(rows);
     auto & offs = offsets_col->getData();
-    /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
-    Int64 prev = base;
-    for (size_t i = 0; i < rows; ++i)
+    Int64 base = 0;
+    Int64 prev = 0;
+    if (rows > 0)
     {
-        const Int64 end = read_offset(i + 1);
-        if (end < prev)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has non-monotonic offsets");
-        offs[i] = static_cast<UInt64>(end - base);
-        prev = end;
+        base = read_offset(0);
+        /// The first offset must be non-negative; the per-row offsets below are stored relative to it.
+        if (base < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has a negative first offset {}", base);
+        /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
+        prev = base;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const Int64 end = read_offset(i + 1);
+            if (end < prev)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has non-monotonic offsets");
+            offs[i] = static_cast<UInt64>(end - base);
+            prev = end;
+        }
+    }
+
+    /// An empty list references no child elements, so the child subtree must also be empty. Reject a
+    /// non-zero child FieldNode length BEFORE decodeField: a buffer-less child type (e.g. List(Null))
+    /// derives its size from the length alone, so a forged-huge length would otherwise drive an
+    /// unbounded null-map allocation that the later child->cut(0, 0) could not prevent.
+    if (rows == 0)
+    {
+        const Int64 child_len = peekNextNodeLength();
+        if (child_len != 0)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC empty list references no elements but its child declares {} rows", child_len);
     }
 
     /// `target_hint`/`path` are this list's element hint and dotted name, threaded for the recursive
@@ -1407,6 +1515,17 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "Unsupported Arrow IPC compression type {}", static_cast<int>(compression_type));
 
+    /// A decompressed body this large cannot be allocated on any real machine, and `PODArray::resize`
+    /// rounds its request up to a power of two, so stay an octave below the allocator's own ceiling
+    /// rather than restating its arithmetic here. The per-buffer frame bound below caps every
+    /// `out_len` far short of this, so keep it as the backstop on the running total.
+    static constexpr size_t MAX_DECOMPRESSED_BODY_SIZE = 1ULL << 62;
+    auto checkBodySize = [](size_t n)
+    {
+        if (n >= MAX_DECOMPRESSED_BODY_SIZE)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size {} is too large to allocate", n);
+    };
+
     /// First pass: lay out each buffer's decompressed slot (8-byte aligned) without touching the data,
     /// so the destination buffer can be allocated once and the buffers decompressed in parallel.
     struct Placement { size_t offset; size_t length; const char * src; size_t src_size; bool raw; };
@@ -1431,6 +1550,8 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         if (pos > std::numeric_limits<size_t>::max() - 7)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size overflows");
         pos = (pos + 7) & ~size_t(7);
+        /// Check the aligned running total here, before the zero-length `continue` below can skip it.
+        checkBodySize(pos);
         if (length == 0)
         {
             placements[i] = {pos, 0, nullptr, 0, true};
@@ -1460,10 +1581,25 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC compressed buffer declares {} uncompressed bytes but carries no payload", out_len);
+
+        /// Check this prefix against the payload before allocating for it. A size the codec pledges is
+        /// a second copy of the prefix, so any difference means the prefix is forged; otherwise the
+        /// payload's structure only bounds what it can produce, so only exceeding it is forged.
+        if (uncompressed_length >= 0 && length > 8)
+        {
+            const auto bound = frameContentBound(codec, src + 8, static_cast<size_t>(length - 8));
+            if (bound.exact ? out_len != bound.size : out_len > bound.size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC compressed buffer declares {} uncompressed bytes but its {}-byte codec frame "
+                    "declares {}", out_len, length - 8, bound.size);
+        }
+
         if (out_len > std::numeric_limits<size_t>::max() - pos)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size overflows");
         placements[i] = {pos, out_len, src + 8, static_cast<size_t>(length - 8), uncompressed_length < 0};
         pos += out_len;
+        checkBodySize(pos);
     }
 
     decompressed_body.resize(pos);

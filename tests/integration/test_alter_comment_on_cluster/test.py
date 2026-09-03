@@ -61,3 +61,19 @@ def test_comment(started_cluster):
     expected = "CREATE TABLE default.test_table (`id` Int64 COMMENT \\'column_comment_2\\') ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\') ORDER BY id SETTINGS index_granularity = 8192 COMMENT \\'table_comment_2\\'"
     assert_create_query([node_1, node_2], "default", "test_table", expected)
     node_1.query("DROP TABLE test_table ON CLUSTER 'cluster'")
+
+
+def test_comment_with_statistics(started_cluster):
+    # A type-less MODIFY COLUMN that carries STATISTICS(...) next to the COMMENT is not a
+    # comment-only ALTER: DDLWorker must route it through the single-leader replicated path
+    # (not to every replica), and the result must still converge on all replicas.
+    node_1.query(
+        "CREATE TABLE test_table_stat ON CLUSTER 'cluster' (id Int64) ENGINE=ReplicatedMergeTree() ORDER BY id"
+    )
+    node_1.query(
+        "ALTER TABLE test_table_stat ON CLUSTER 'cluster' MODIFY COLUMN id COMMENT 'stat_comment' STATISTICS(tdigest)"
+    )
+
+    expected = "CREATE TABLE default.test_table_stat (`id` Int64 COMMENT \\'stat_comment\\' STATISTICS(tdigest)) ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\') ORDER BY id SETTINGS index_granularity = 8192"
+    assert_create_query([node_1, node_2], "default", "test_table_stat", expected)
+    node_1.query("DROP TABLE test_table_stat ON CLUSTER 'cluster'")

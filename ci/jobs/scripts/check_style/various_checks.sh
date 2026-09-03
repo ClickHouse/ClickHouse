@@ -88,6 +88,12 @@ for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ 
 # ClickHouse-owned images with ${VAR:-latest} pattern are excluded since the variable is set in CI.
 find "${ROOT_PATH}/tests/integration/compose" -name '*.yml' -print0 | xargs -0 grep -P 'image:\s*\S+:latest\s*$' | grep -v '\${\|clickhouse/' && echo "Docker compose files should use pinned versions instead of :latest for third-party images"
 
+# A leaf test file cannot share a fixture with another file, so a session-scoped fixture there only
+# defers its teardown to the end of the pytest session, keeping the cluster's containers and their
+# memory for the rest of the job. tests/integration/conftest.py is where session scope belongs.
+grep -rlE --include='test*.py' "scope[[:space:]]*=[[:space:]]*['\"]session['\"]" "${ROOT_PATH}"/tests/integration/test_*/ \
+    && echo "Integration test fixtures should be module-scoped, not session-scoped"
+
 # Check for executable bit on non-executable files
 git ls-files -s $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} | \
     awk '$1 != "120000" && $1 != "100644" { print $4 }' | grep -E '\.(cpp|h|sql|j2|xml|reference|txt|md)$' && echo "These files should not be executable."
@@ -113,6 +119,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionJoinGet.cpp
     -e /generateSerialID.cpp
     -e /evalMLMethod.cpp
+    -e /FunctionNaiveBayesClassifier.cpp
     -e /FunctionBinaryArithmetic.h
     -e /FunctionUnaryArithmetic.h
     -e /ITupleFunction.h
@@ -123,6 +130,11 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /UserDefined/
     -e /FunctionBaseAI.h
     -e /aiEmbed.cpp
+    -e /aiSimilarity.cpp
+    # `KQLPlanBuilder` is an analysis-time helper, not a function: it is created inside
+    # `buildImpl`, uses the context only to look up the delegates it composes, and is
+    # destroyed before the resulting `FunctionKQLPlan` (which holds no context) executes.
+    -e /Kusto/KQLPlan.h
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 
@@ -130,7 +142,6 @@ find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | gr
 FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # It is OK to have WithContext for derived classes from IFunctionOverloadResolver
     -e /FunctionJoinGet.cpp
-    -e /CastOverloadResolver.cpp
     -e /reverse.cpp
     -e /formatRow.cpp
     # Store global context
@@ -151,9 +162,16 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     -e /getSetting.cpp
     -e /hasColumnInTable.cpp
     -e /initializeAggregation.cpp
+    # Overload resolvers for the KQL dialect: they only need the context to look up the
+    # function they delegate to, and that happens during analysis, not execution.
+    -e /Kusto/
     # Diagnostic helper, the file is disabled via `#if 0` in production builds;
     # `WithContext` is required so `trap('access context')` exercises runtime context access.
     -e /trap.cpp
+    # Holds the context weakly and only touches it from getReturnTypeImpl (type analysis, while the
+    # context is alive); executeImpl uses builders precomputed at construction time and never reaches
+    # getContext(), so a stored expression stays evaluable after its query context is gone. See #54890.
+    -e /FunctionBinaryArithmetic.h
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'WithContext(' | grep -v "${FUNCTIONS_WITH_CONTEXT_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid using WithContext in Functions"
 
@@ -185,12 +203,23 @@ done
 
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e 'system\s*flush\s*logs\s*(;|$|")' && echo "Please use SYSTEM FLUSH LOGS log_name over global SYSTEM FLUSH LOGS"
 
+# Global SYSTEM FLUSH ASYNC INSERT QUEUE drains buffered async inserts of every
+# table on the server, so it corrupts parallel tests that keep entries buffered
+# (e.g. to flush after an ALTER). Always scope it to a table.
+# Skip comment lines and EXPLAIN SYNTAX (the parser grammar test uses the bare form).
+find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e "system\s*flush\s*async\s*insert\s*queue\s*(;|\$|\"|')" | grep -vE ':[[:space:]]*(--|#)' | grep -vi 'EXPLAIN' && echo "Please use SYSTEM FLUSH ASYNC INSERT QUEUE table over global SYSTEM FLUSH ASYNC INSERT QUEUE"
+
 # Tests with SYSTEM DROP should have no-parallel tag, because SYSTEM DROP commands
 # (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
 # and interfere with other tests running concurrently.
+#
+# Known exceptions where the command is not actually executed:
+# - 04307, 04339, 04350: the SYSTEM DROP text appears only inside SQL string literals passed to
+#   parseQueryToJSON/formatQueryFromJSON for AST round-trip and validation testing; nothing is executed.
 tests_with_system_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep -liP 'system\s+drop' |
+        grep -vP '04307_ast_json_roundtrip_lossless|04339_ast_json_review_followup_hardening|04350_ast_json_parser_impossible_field_combinations' |
         sort -u
 ) )
 for test_case in "${tests_with_system_drop[@]}"; do
@@ -246,6 +275,7 @@ LARGE_FILE_WHITELIST=(
     -e string_int_list_inconsistent_offset_multiple_batches.parquet
     -e known_failures.txt
     -e keeper-java-client-test.jar
+    -e docs/gt-lock.json
 )
 # GNU stat (Linux) uses -c, BSD stat (macOS) uses -f — detect once instead of failing per file.
 if stat -c '%s %n' /dev/null >/dev/null 2>&1; then

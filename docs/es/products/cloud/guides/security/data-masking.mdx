@@ -483,7 +483,7 @@ ORDER BY user_id ASC
   ## Utilice reglas de enmascaramiento de consultas para datos de logs
 </div>
 
-Si usa ClickHouse OSS y desea enmascarar específicamente los datos de logs, puede usar [query masking rules](/es/reference/settings/server-settings/settings#query_masking_rules) (enmascaramiento de logs) para enmascarar datos.
+Si usa ClickHouse OSS y desea enmascarar específicamente los datos de logs, puede usar [query masking rules](/es/reference/settings/server-settings/settings/query#query_masking_rules) (enmascaramiento de logs) para enmascarar datos.
 
 Para ello, puede definir reglas de enmascaramiento basadas en expresiones regulares en la configuración del servidor.
 Estas reglas se aplican a las consultas y a todos los mensajes de log antes de almacenarse en los logs del servidor o en las tablas del sistema (como `system.query_log`, `system.text_log` y `system.processes`).

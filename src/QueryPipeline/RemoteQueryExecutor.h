@@ -10,6 +10,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
+#include <atomic>
 
 
 namespace DB
@@ -128,6 +129,9 @@ public:
     ///                     and it should pass INITIAL_QUERY.
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
     void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {}) TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Stage used when a remote replica is too old to receive the query plan and the executor sends SQL instead.
+    void setQueryPlanFallbackStage(QueryProcessingStage::Enum stage_) { query_plan_fallback_stage = stage_; }
 
     int sendQueryAsync();
 
@@ -272,6 +276,7 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum query_plan_fallback_stage = QueryProcessingStage::Complete;
 
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
@@ -295,6 +300,12 @@ private:
       */
     bool finished = false;
 
+    /** Test-only. True only while this executor's reading thread is parked at the
+      * `remote_query_executor_receive_packet_pause` failpoint, so that the drain pause in
+      * `finish` cannot be satisfied by a sibling shard. False unless the failpoints are enabled.
+      */
+    std::atomic_bool in_receive_packet_window = false;
+
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
@@ -302,6 +313,14 @@ private:
       */
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
+
+    /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
+    /// owe us is that announcement - see `tryCancel`.
+    std::atomic_bool announcement_received = false;
+
+    /// Set when `tryCancel` left a packet undrained, so the destructor knows the connection is
+    /// unsynchronised and must be disconnected rather than returned to the pool.
+    std::atomic_bool drain_was_skipped = false;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
@@ -372,4 +391,5 @@ private:
     ReadResult processPacket(Packet packet);
 };
 
+ThrottlerPtr getThrottler(const ContextPtr & context);
 }

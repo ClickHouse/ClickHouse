@@ -33,6 +33,8 @@ DEFINE_ICEBERG_FIELD(name);
 DEFINE_ICEBERG_FIELD(required);
 DEFINE_ICEBERG_FIELD(schema);
 DEFINE_ICEBERG_FIELD(schemas);
+/// The Avro file-header metadata key that stores the writer schema (Avro spec, "avro.schema").
+DEFINE_ICEBERG_FIELD_ALIAS(avro_schema, avro.schema);
 DEFINE_ICEBERG_FIELD(sequence_number);
 DEFINE_ICEBERG_FIELD(snapshots);
 DEFINE_ICEBERG_FIELD(status);
@@ -65,6 +67,7 @@ DEFINE_ICEBERG_FIELD(record_count);
 DEFINE_ICEBERG_FIELD(file_path);
 DEFINE_ICEBERG_FIELD(file_format);
 DEFINE_ICEBERG_FIELD(file_size_in_bytes);
+DEFINE_ICEBERG_FIELD(sort_order_id);
 DEFINE_ICEBERG_FIELD(refs);
 DEFINE_ICEBERG_FIELD(branch);
 DEFINE_ICEBERG_FIELD(tag);
@@ -80,10 +83,16 @@ DEFINE_ICEBERG_FIELD(statistics);
 DEFINE_ICEBERG_FIELD(properties);
 DEFINE_ICEBERG_FIELD(owner);
 DEFINE_ICEBERG_FIELD(column_sizes);
+DEFINE_ICEBERG_FIELD(value_counts);
 DEFINE_ICEBERG_FIELD(null_value_counts);
 DEFINE_ICEBERG_FIELD(lower_bounds);
 DEFINE_ICEBERG_FIELD(upper_bounds);
 DEFINE_ICEBERG_FIELD(partitions);
+/// Fields of a manifest-list `partitions` field_summary record.
+DEFINE_ICEBERG_FIELD(contains_null);
+DEFINE_ICEBERG_FIELD(contains_nan);
+DEFINE_ICEBERG_FIELD(lower_bound);
+DEFINE_ICEBERG_FIELD(upper_bound);
 DEFINE_ICEBERG_FIELD(key_metadata);
 DEFINE_ICEBERG_FIELD(replace);
 
@@ -92,6 +101,7 @@ DEFINE_ICEBERG_FIELD(replace);
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(first_row_id, first-row-id);
+DEFINE_ICEBERG_FIELD_ALIAS(manifest_first_row_id, first_row_id);
 DEFINE_ICEBERG_FIELD_ALIAS(added_rows, added-rows);
 DEFINE_ICEBERG_FIELD_ALIAS(next_row_id, next-row-id);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_snapshot_id, snapshot-id);
@@ -178,6 +188,11 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, key_metadata);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, first_row_id);
+
+constexpr Int32 row_id_field_id = 2147483540;
+constexpr Int32 last_updated_sequence_number_field_id = 2147483539;
 
 /// Fallback defaults for snapshot retention policy when table properties are absent.
 /// These values follow the Java reference implementation; the Iceberg spec does not

@@ -3,7 +3,10 @@ SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lightweight (id UInt64, c1 UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2',
+         -- the patch parts are listed one by one below, so only the explicit OPTIMIZE FINAL
+         -- (which ignores this limit) may merge them
+         max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO t_lightweight SELECT number, number FROM numbers(20);
 
@@ -14,12 +17,13 @@ UPDATE t_lightweight SET c1 = 13000 WHERE id = 10;
 UPDATE t_lightweight SET c1 = 15000 WHERE id = 15;
 
 SELECT * FROM t_lightweight ORDER BY id SETTINGS apply_patch_parts = 1;
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' AND active ORDER BY min_block_number;
+-- Mask the merge level in patch part names: a background merge may bump the level before the explicit OPTIMIZE FINAL below, which is irrelevant to what this test checks.
+SELECT replaceRegexpOne(name, '^(patch-[0-9a-f]+-all_[0-9]+_[0-9]+)_[0-9]+(_[0-9]+)$', '\\1_<lvl>\\2'), rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' AND active ORDER BY min_block_number;
 
-OPTIMIZE TABLE t_lightweight PARTITION ID 'patch-3e1a7650697c132eb044cc6f1d82bc92-all' FINAL;
+OPTIMIZE TABLE t_lightweight PARTITION ID 'patch-fa2434eb4a6545e335e6f73a442431b7-all' FINAL;
 
 SELECT * FROM t_lightweight ORDER BY id SETTINGS apply_patch_parts = 1;
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' AND active ORDER BY min_block_number;
+SELECT replaceRegexpOne(name, '^(patch-[0-9a-f]+-all_[0-9]+_[0-9]+)_[0-9]+(_[0-9]+)$', '\\1_<lvl>\\2'), rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' AND active ORDER BY min_block_number;
 SELECT count() FROM t_lightweight WHERE c1 != id;
 
 DROP TABLE t_lightweight SYNC;

@@ -438,6 +438,10 @@ public:
         if (configs == new_configs)
             return;
 
+        /// The reader has not collected any configuration yet, so there is nothing to apply.
+        if (!new_configs)
+            return;
+
         /// The following check prevents a race when two threads are trying to update configuration
         /// at almost the same time:
         /// 1) first thread reads a configuration (for example as a part of periodic updates)
@@ -667,6 +671,22 @@ public:
         return infos.contains(name);
     }
 
+    bool unload(const String & name)
+    {
+        std::lock_guard lock{mutex};
+        Info * info = getInfo(name);
+        return unload(info);
+    }
+
+    void unloadAll()
+    {
+        std::lock_guard lock{mutex};
+        for (auto & [_, info] : infos)
+        {
+            unload(&info);
+        }
+    }
+
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
@@ -812,6 +832,38 @@ private:
         std::exception_ptr exception; /// Last error occurred.
         TimePoint next_update_time = TimePoint::max(); /// Time of the next update, `TimePoint::max()` means "never".
     };
+
+    void resetInfoToUnloaded(const String & name, Info & info)
+    {
+        /// Reset state so that the next access triggers lazy reload.
+        LOG_TRACE(log, "Unloading {} '{}'", type_name, name);
+        info.object = nullptr;
+        info.exception = nullptr;
+        info.state_id = 0;
+        info.loading_id = 0;
+    }
+
+    bool unload(Info * info)
+    {
+        if (!info)
+            return false;
+
+        if (info->isLoading())
+        {
+            LOG_TRACE(log, "{} '{}' is being loaded, skipping the operation", type_name, info->name);
+            return false;
+        }
+
+        if (!info->loaded())
+        {
+            LOG_TRACE(log, "{} '{}' is not loaded, nothing to unload", type_name, info->name);
+            return false;
+        }
+
+        resetInfoToUnloaded(info->name, *info);
+
+        return true;
+    }
 
     Info * getInfo(const String & name)
     {
@@ -1519,6 +1571,16 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
 bool ExternalLoader::has(const String & name) const
 {
     return loading_dispatcher->has(name);
+}
+
+bool ExternalLoader::unload(const String & name) const
+{
+    return loading_dispatcher->unload(name);
+}
+
+void ExternalLoader::unloadAll() const
+{
+    loading_dispatcher->unloadAll();
 }
 
 Strings ExternalLoader::getAllTriedToLoadNames() const

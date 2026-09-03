@@ -1,25 +1,21 @@
 #pragma once
 
 #include <Processors/Port.h>
-#include <Common/MemorySpillScheduler.h>
+#include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
 
 #include <atomic>
 #include <list>
 #include <memory>
 #include <vector>
+#include <Processors/ProcessorsProfileLogInfo.h>
+#include <Processors/IProcessor_fwd.h>
 #include <fmt/format.h>
 
 class EventCounter;
 
-
 namespace DB
 {
-
-class InputPort;
-class OutputPort;
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
 
 class IQueryPlanStep;
 
@@ -32,6 +28,11 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>;
+
+class StepWallClock;
+
+
+using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
@@ -125,6 +126,7 @@ protected:
     OutputPorts outputs;
 
 public:
+
     IProcessor();
 
     IProcessor(InputPorts inputs_, OutputPorts outputs_);
@@ -301,10 +303,17 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
-    /// Step of QueryPlan from which processor was created.
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
+    /// Step of QueryPlan from which processor was created
+    void setQueryPlanStep(const IQueryPlanStep * step, size_t group = 0);
 
-    IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    void setQueryPlanStepGroup(size_t group) { query_plan_step_group = group; }
+
+    /// Copy the query step fields from parent processor to child processor
+    /// The group can be adjusted manually, since even though the processors can be
+    /// coming from the same step, they can belong to different groups (stages)
+    void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
+
+    const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     const String & getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
     const String & getPlanStepName() const { return plan_step_name; }
@@ -313,6 +322,17 @@ public:
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
     uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
+
+    struct PortDataCounters
+    {
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+
+    /// The getter can be used only after running the query, for counting
+    /// the exact number of rows/bytes per port
+    /// Should be used only on the pors belonging to the processor
+    PortDataCounters getPortDataCounters(const Port & port) const;
 
     struct ProcessorDataStats
     {
@@ -324,26 +344,6 @@ public:
 
     ProcessorDataStats getProcessorDataStats() const;
 
-    /// Information for system.processors_profile_log
-    struct ProcessorsProfileLogInfo
-    {
-        UInt64 id = 0;
-        std::vector<UInt64> parent_ids;
-        UInt64 plan_step = 0;
-        String plan_step_name;
-        String plan_step_description;
-        UInt64 plan_group = 0;
-        String processor_uniq_id;
-        String step_uniq_id;
-        String processor_name;
-        UInt64 elapsed_us = 0;
-        UInt64 input_wait_elapsed_us = 0;
-        UInt64 output_wait_elapsed_us = 0;
-        UInt64 input_rows = 0;
-        UInt64 input_bytes = 0;
-        UInt64 output_rows = 0;
-        UInt64 output_bytes = 0;
-    };
     ProcessorsProfileLogInfo getProcessorsProfileLogInfo() const;
 
     struct ReadProgressCounters
@@ -418,7 +418,7 @@ private:
 
     size_t stream_number = NO_STREAM;
 
-    IQueryPlanStep * query_plan_step = nullptr;
+    const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
     size_t query_plan_step_group = 0;
 
