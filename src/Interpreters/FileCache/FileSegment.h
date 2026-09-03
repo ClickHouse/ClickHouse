@@ -111,7 +111,7 @@ public:
     bool isUnbound() const { return is_unbound; }
 
     /// Whether the segment's file on disk currently has its size encoded in the name
-    /// (`<offset>_<size>`). True once a regular segment is fully downloaded (or was loaded
+    /// (`<offset>.<size>`). True once a regular segment is fully downloaded (or was loaded
     /// from such a file on startup); false while still downloading or for legacy files.
     bool hasSizeInFileName() const { return size_in_filename; }
 
@@ -272,7 +272,7 @@ private:
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
 
-    /// Rename a fully downloaded regular segment's file from `<offset>` to `<offset>_<size>`,
+    /// Rename a fully downloaded regular segment's file from `<offset>` to `<offset>.<size>`,
     /// so that startup metadata loading can read the size from the name instead of `stat`-ing
     /// each file. No-op for ephemeral segments or if the size is already encoded.
     void renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &);
@@ -298,7 +298,7 @@ private:
     const bool is_unbound;
     const bool background_download_enabled;
 
-    /// Whether the on-disk file is named `<offset>_<size>` (size encoded) rather than `<offset>`.
+    /// Whether the on-disk file is named `<offset>.<size>` (size encoded) rather than `<offset>`.
     /// Only ever transitions false -> true, under `segment_guard`, when the segment becomes
     /// fully downloaded; reads in `getPath` are lock-free and safe because of this.
     std::atomic<bool> size_in_filename;

@@ -870,7 +870,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         download(cache.getOrSet(key, 0, 10, file_size, {}, 0, user));
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
-        /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`).
+        /// A fully downloaded regular segment encodes its size in the file name (`<offset>.<size>`).
         ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */10)));
 
         cache.removeAllReleasable(user.user_id);
@@ -3766,7 +3766,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
 TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
 {
-    /// Regression: encoding the segment size in the file name (`<offset>` -> `<offset>_<size>`) is a
+    /// Regression: encoding the segment size in the file name (`<offset>` -> `<offset>.<size>`) is a
     /// best-effort startup optimization done from `setDownloadedUnlocked` while the segment is still
     /// `DOWNLOADING` with its downloader set. If the `rename` were allowed to throw, completion would
     /// abort before clearing the downloader, leaving the segment owned by the unwinding query (no other
@@ -3814,7 +3814,7 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     ASSERT_EQ(seg->state(), State::DOWNLOADING);
     ASSERT_EQ(seg->getDownloadedSize(), 8u);
 
-    /// Make `fs::rename` fail: occupy the target `<offset>_<size>` name with a directory, so renaming
+    /// Make `fs::rename` fail: occupy the target `<offset>.<size>` name with a directory, so renaming
     /// the regular file onto it is rejected by the filesystem.
     const auto new_path = cache->getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */8);
     const auto legacy_path = cache->getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */std::nullopt);
@@ -3849,7 +3849,7 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     cache.reset();
 
     /// Reopen the cache from disk (a real restart). The persisted state is now the real segment under
-    /// its legacy `<offset>` name next to the stale `<offset>_<size>` directory. `loadMetadataForKey`
+    /// its legacy `<offset>` name next to the stale `<offset>.<size>` directory. `loadMetadataForKey`
     /// must restore the segment from the legacy file and must not treat the directory as a second
     /// segment for the same offset — otherwise it hits the duplicate-offset `chassert(false)` in
     /// debug/sanitizer builds or nondeterministically deletes the real file in release.

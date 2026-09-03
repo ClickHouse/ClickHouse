@@ -69,7 +69,7 @@ void preadSegmentNode(
     catch (const Exception & e)
     {
         /// A fully downloaded segment's file is renamed from `<offset>` to
-        /// `<offset>_<size>` on completion, and `getPath` is lock-free, so the name
+        /// `<offset>.<size>` on completion, and `getPath` is lock-free, so the name
         /// computed above can go stale between it and the open. The rename surfaces
         /// only as `FILE_DOESNT_EXIST`; recompute the path under the segment lock -
         /// the rename runs under the same lock, so this observes the final name -

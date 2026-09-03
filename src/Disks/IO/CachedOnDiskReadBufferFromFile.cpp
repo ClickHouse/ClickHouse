@@ -326,7 +326,7 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     auto path = file_segment.getPath();
     if (info.cache_file_reader)
     {
-        /// A fully downloaded regular segment's file is renamed from `<offset>` to `<offset>_<size>`
+        /// A fully downloaded regular segment's file is renamed from `<offset>` to `<offset>.<size>`
         /// (see `FileSegment::renameToIncludeSizeInNameUnlocked`), so a reader opened while the segment
         /// was still downloading carries the old name. Reopen it under the current name in that case;
         /// the caller (`prepareReadFromFileSegmentState`) seeks the returned buffer, so this is safe.
@@ -374,7 +374,7 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     }
     catch (const Exception & e)
     {
-        /// A fully downloaded regular segment is renamed from `<offset>` to `<offset>_<size>`
+        /// A fully downloaded regular segment is renamed from `<offset>` to `<offset>.<size>`
         /// (`FileSegment::renameToIncludeSizeInNameUnlocked`) while we may still be reading it —
         /// reads are allowed before the segment is fully downloaded. `getPath` is lock-free, so the
         /// name computed above can become stale if the rename happens right before we open the file,
@@ -399,7 +399,7 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
         info.cache_file_reader = open_cache_file(path);
     }
 
-    /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`), and
+    /// A fully downloaded regular segment encodes its size in the file name (`<offset>.<size>`), and
     /// startup metadata loading trusts that size without a `stat` (see `FileCache::loadMetadataForKey`).
     /// If such a file was truncated outside ClickHouse, the segment is restored as fully `DOWNLOADED`
     /// but the on-disk file is shorter than recorded. Detect that here -- the file is already open, so
@@ -424,7 +424,7 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     /// rare, so the small accounting drift until then is acceptable.
     ///
     /// The recovery is gated on `hasSizeInFileName`: it applies only to a segment whose size was trusted
-    /// from the file name without a `stat`. Such a segment is renamed to `<offset>_<size>` only once it is
+    /// from the file name without a `stat`. Such a segment is renamed to `<offset>.<size>` only once it is
     /// fully downloaded, after which the file is immutable at `downloaded_size` bytes -- so a shorter
     /// on-disk file can only mean an external truncation. A segment *without* the size suffix can legitimately
     /// be shorter than `downloaded_size` under normal operation and must not trip this recovery: a legacy
@@ -443,7 +443,7 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     /// `createReadFromFileSegmentState`: a `DOWNLOADING` segment routes to `ReadType::CACHED` when the
     /// requested offset is within the downloaded prefix). If the size were sampled first and the state
     /// observed afterwards, a concurrent download completing in between -- `setDownloadedUnlocked` writes
-    /// the final bytes, renames to `<offset>_<size>`, then publishes `DOWNLOADED` -- would leave us
+    /// the final bytes, renames to `<offset>.<size>`, then publishes `DOWNLOADED` -- would leave us
     /// comparing a stale, partial length against the now-final `downloaded_size` and reporting a spurious
     /// truncation (observed as `... is shorter than its recorded size ...` warnings during ordinary reads
     /// that repopulate the cache). Because we observe the final state first, and a size-in-filename

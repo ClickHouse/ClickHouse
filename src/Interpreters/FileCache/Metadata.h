@@ -138,7 +138,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     std::string getFileSegmentPath(const FileSegment & file_segment) const;
 
     /// Build the path for a segment file directly from its components.
-    /// When `size` is set, the size is encoded into the file name (`<offset>_<size>`),
+    /// When `size` is set, the size is encoded into the file name (`<offset>.<size>`),
     /// which lets startup metadata loading avoid a `stat` per file.
     std::string getFileSegmentPath(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size) const;
 
@@ -208,6 +208,8 @@ public:
         FileSegmentKind segment_kind,
         const OriginInfo & origin,
         std::optional<size_t> size = std::nullopt) const;
+
+    static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size = std::nullopt);
 
     void iterate(IterateFunc && func, const UserID & user_id);
 
@@ -300,8 +302,6 @@ private:
     std::atomic<size_t> download_threads_num;
     std::vector<std::shared_ptr<DownloadThread>> download_threads;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
-
-    static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size = std::nullopt);
 
     MetadataBucket & getMetadataBucket(const Key & key);
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory) const;

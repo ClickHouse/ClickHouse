@@ -1,0 +1,25 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <local_blob>
+                <type>local_blob_storage</type>
+                <path>/var/lib/clickhouse/local_disk/</path>
+            </local_blob>
+            <cached_local_blob>
+                <type>cache</type>
+                <disk>local_blob</disk>
+                <path>/var/lib/clickhouse/filesystem_cache/</path>
+                <max_size>10Gi</max_size>
+            </cached_local_blob>
+        </disks>
+        <policies>
+            <cached>
+                <volumes>
+                    <main>
+                        <disk>cached_local_blob</disk>
+                    </main>
+                </volumes>
+            </cached>
+        </policies>
+    </storage_configuration>
+</clickhouse>

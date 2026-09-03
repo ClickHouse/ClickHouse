@@ -237,10 +237,19 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
             /// in encoding their size; keep the historic "_temporary" marker instead.
             return std::to_string(offset) + "_temporary";
         case FileSegmentKind::Regular:
-            /// `<offset>_<size>` once the segment is fully downloaded, just `<offset>` while
+            /// `<offset>.<size>` once the segment is fully downloaded, just `<offset>` while
             /// it is still being written (final size not yet known).
+            ///
+            /// The separator is a dot rather than an underscore so that a server old enough
+            /// not to know this name rejects the file instead of misreading it. Such a server
+            /// splits the name on `_` and parses the part before it as the offset, so it would
+            /// accept `<offset>_<size>` as the segment at `<offset>`, register it as
+            /// `DOWNLOADED` and then look for it under the name `<offset>`, which does not
+            /// exist - failing to load every table whose files are in the cache. `<offset>.<size>`
+            /// has no `_`, and `tryParse<UInt64>` requires the whole name to be consumed, so the
+            /// name does not parse at all and the file is skipped as unknown.
             if (size.has_value())
-                return std::to_string(offset) + "_" + std::to_string(*size);
+                return std::to_string(offset) + "." + std::to_string(*size);
             return std::to_string(offset);
     }
 }

@@ -208,7 +208,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_cache_file_size_in_name(cluster, node_name):
     """
-    A fully downloaded regular cache file is named `<offset>_<size>`, which lets startup
+    A fully downloaded regular cache file is named `<offset>.<size>`, which lets startup
     metadata loading read the size from the file name instead of `stat`-ing every file.
     This test verifies the on-disk naming, and that legacy `<offset>` files (without the
     size suffix) are still loaded correctly by falling back to a `stat`.
@@ -262,11 +262,11 @@ def test_cache_file_size_in_name(cluster, node_name):
 
     files = list_segment_files()
     assert len(files) > 0
-    # Every regular segment file encodes its size in the name as `<offset>_<size>`,
+    # Every regular segment file encodes its size in the name as `<offset>.<size>`,
     # and that size matches the file's actual size on disk.
     for name, size in files:
-        assert "_" in name, f"segment file {name} has no size suffix"
-        name_size = int(name.split("_", 1)[1])
+        assert "." in name, f"segment file {name} has no size suffix"
+        name_size = int(name.split(".", 1)[1])
         assert name_size == size, f"{name}: size in name {name_size} != actual {size}"
 
     def cache_segments():
@@ -290,18 +290,18 @@ def test_cache_file_size_in_name(cluster, node_name):
     # Backward compatibility: rename the files to the legacy `<offset>` form (no size suffix)
     # and make sure they are still loaded on the next startup (the size is obtained with a stat).
     # The server must be stopped while we rewrite the file names: a running server keeps the
-    # in-memory `<offset>_<size>` name (`hasSizeInFileName`) and would not find the renamed file.
+    # in-memory `<offset>.<size>` name (`hasSizeInFileName`) and would not find the renamed file.
     node.stop_clickhouse()
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"find {cache_path} -type f -name '*_*' ! -name '*_temporary' "
-            "-exec bash -c 'mv \"$1\" \"$(dirname \"$1\")/$(basename \"$1\" | cut -d_ -f1)\"' _ {} ';'",
+            f"find {cache_path} -type f -name '*.*' "
+            "-exec bash -c 'mv \"$1\" \"$(dirname \"$1\")/$(basename \"$1\" | cut -d. -f1)\"' _ {} ';'",
         ]
     )
     # No file should carry a size suffix anymore.
-    assert all("_" not in name for name, _ in list_segment_files())
+    assert all("." not in name for name, _ in list_segment_files())
 
     node.start_clickhouse()
     wait_for_cache_initialized(node, "size_in_name_test")
@@ -313,7 +313,7 @@ def test_cache_file_size_in_name(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_cache_file_truncated_size_in_name(cluster, node_name):
     """
-    A fully downloaded regular cache file is named `<offset>_<size>`, and startup metadata loading
+    A fully downloaded regular cache file is named `<offset>.<size>`, and startup metadata loading
     trusts that size without a `stat`. If such a file is truncated outside ClickHouse, the segment is
     restored as fully downloaded but the on-disk file is shorter than recorded. Reading it must not raise
     a `LOGICAL_ERROR`: the broken cache entry is discarded and the data is re-fetched from the source.
@@ -365,7 +365,7 @@ def test_cache_file_truncated_size_in_name(cluster, node_name):
         files = []
         for line in out.splitlines():
             full_path, name, size = line.rsplit(" ", 2)
-            if name == "status" or name.endswith("_temporary") or "_" not in name:
+            if name == "status" or name.endswith("_temporary") or "." not in name:
                 continue
             files.append((full_path, int(size)))
         return files
@@ -418,7 +418,7 @@ def test_cache_file_truncated_size_in_name_concurrent_readers(cluster, node_name
     """
     Concurrent-reader variant of `test_cache_file_truncated_size_in_name`.
 
-    When several readers race on the same externally truncated `<offset>_<size>` cache file, one reader
+    When several readers race on the same externally truncated `<offset>.<size>` cache file, one reader
     can discard/detach the segment between another reader opening the short file and re-checking its
     state. The losing reader must still bypass the cache and re-fetch from the source rather than keep its
     truncated descriptor and surface a `LOGICAL_ERROR`. Fire many parallel scans of the truncated data so
@@ -472,7 +472,7 @@ def test_cache_file_truncated_size_in_name_concurrent_readers(cluster, node_name
         files = []
         for line in out.splitlines():
             full_path, name, size = line.rsplit(" ", 2)
-            if name == "status" or name.endswith("_temporary") or "_" not in name:
+            if name == "status" or name.endswith("_temporary") or "." not in name:
                 continue
             files.append((full_path, int(size)))
         return files

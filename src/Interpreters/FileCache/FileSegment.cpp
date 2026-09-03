@@ -107,9 +107,9 @@ FileSegment::FileSegment(
         case State::DOWNLOADED:
         {
             reserved_size = downloaded_size = size_;
-            /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
+            /// When the size was read from the file name (`<offset>.<size>`), we deliberately trust it
             /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
-            /// An externally truncated or corrupted `<offset>_<size>` file is handled lazily on read:
+            /// An externally truncated or corrupted `<offset>.<size>` file is handled lazily on read:
             /// `getCacheReadBuffer` already has the file open, so it compares the on-disk size against
             /// the recorded one and discards the broken entry (re-fetching from the source) rather than
             /// raising a server-bug-class error. Asserting the on-disk size here would both re-introduce
@@ -818,7 +818,7 @@ void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock
     /// query (no other reader could acquire it to retry), and `FileSegmentsHolder::reset` would hit
     /// its `chassert(false)` on the way out.
     /// `rename` is atomic, so a crash leaves either the old (`<offset>`) or the new
-    /// (`<offset>_<size>`) name, both of which the loader handles correctly.
+    /// (`<offset>.<size>`) name, both of which the loader handles correctly.
     try
     {
         fs::rename(old_path, new_path);
@@ -1310,9 +1310,9 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
 
-            /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
+            /// When the size was read from the file name (`<offset>.<size>`), we deliberately trust it
             /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
-            /// An externally truncated or corrupted `<offset>_<size>` file is handled lazily on read:
+            /// An externally truncated or corrupted `<offset>.<size>` file is handled lazily on read:
             /// `getCacheReadBuffer` compares the on-disk size against the recorded one and discards the
             /// broken entry (re-fetching from the source). Asserting the on-disk size here would both
             /// re-introduce the `stat` and turn that discardable inconsistency into a startup abort in
