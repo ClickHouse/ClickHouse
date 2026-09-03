@@ -4,7 +4,7 @@ Output: A_Description, B_Data, C_Value, D_LookupCode
 
 Join (JOIN FillRightFirst)
 │  T3[1000] ⋈ T4[1] ⋈ (T2[1000] ⋈ T1[1])
-│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Result rows: 1000
 │  Join conditions: R1_A_ID = A_ID
 │  Output:
@@ -12,7 +12,7 @@ Join (JOIN FillRightFirst)
 │    Right: A_Description, B_Data
 ├──Join (JOIN FillRightFirst)
 │  │  T3[1000] ⋈ T4[1]
-│  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  │  Type: inner | Strictness: all | Algorithm: HashJoin
 │  │  Result rows: 100
 │  │  Join conditions: R4_D_ID = D_ID
 │  │  Output:
@@ -30,7 +30,7 @@ Join (JOIN FillRightFirst)
 │        Prewhere filter column:  D_LookupCode = \'Lookup S\'
 └──Join (JOIN FillRightFirst)
    │  T2[1000] ⋈ T1[1]
-   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Type: inner | Strictness: all | Algorithm: HashJoin
    │  Result rows: 100
    │  Join conditions: R1_A_ID = A_ID
    │  Output:
@@ -53,7 +53,7 @@ Output: A_Description, B_Data, C_Value, D_LookupCode
 
 Join (JOIN FillRightFirst)
 │  T2[1000] ⋈ (T3[1000] ⋈ T1[1] ⋈ T4[1])
-│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Result rows: 1000
 │  Join conditions: R1_A_ID = A_ID
 │  Output:
@@ -65,7 +65,7 @@ Join (JOIN FillRightFirst)
 │     Output: B_Data, R1_A_ID
 └──Join (JOIN FillRightFirst)
    │  T3[1000] ⋈ T1[1] ⋈ T4[1]
-   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Type: inner | Strictness: all | Algorithm: HashJoin
    │  Result rows: 10
    │  Join conditions: R4_D_ID = D_ID
    │  Output:
@@ -73,7 +73,7 @@ Join (JOIN FillRightFirst)
    │    Right: D_LookupCode
    ├──Join (JOIN FillRightFirst)
    │  │  T3[1000] ⋈ T1[1]
-   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  │  Type: inner | Strictness: all | Algorithm: HashJoin
    │  │  Result rows: 100
    │  │  Join conditions: R1_A_ID = A_ID
    │  │  Output:

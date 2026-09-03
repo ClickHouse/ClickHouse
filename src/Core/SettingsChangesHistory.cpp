@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
             {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
+            {"max_bytes_ratio_before_external_join", 0., 0., "Retrospectively disable automatic spilling, because it interfeers with read-in-order-through-join optimization."},
             {"distributed_cache_client_id", "", "", "New setting (CI tests only) to override the distributed cache client id per query."},
             {"read_through_distributed_cache", false, false, "The setting moved to the server configuration and is ignored as a profile setting: reading from the distributed cache is now switched by the server setting `enable_read_through_distributed_cache`, which is applied without a restart (so that merges, mutations and `Buffer` flushes follow it too, instead of being pinned to the value the server started with). Use `force_read_through_distributed_cache` to deviate from the server setting per query."},
             {"write_through_distributed_cache", false, false, "The setting moved to the server configuration and is ignored as a profile setting: writing to the distributed cache is now switched by the server setting `enable_write_through_distributed_cache`, which is applied without a restart (so that merges, mutations and `Buffer` flushes follow it too, instead of being pinned to the value the server started with). Use `force_write_through_distributed_cache` to deviate from the server setting per query."},
@@ -119,6 +120,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_metadata_only_named_tuple_alter", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
             {"enable_parallel_single_level_merge", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."},
+            {"max_bytes_ratio_before_external_join", 0., 0., "Retrospectively disable automatic spilling, because it interfeers with read-in-order-through-join optimization."},
             {"ai_function_text_default_credentials", "", "", "New setting"},
             {"ai_function_embedding_default_credentials", "", "", "New setting"},
             {"shrink_over_allocated_columns_min_waste_ratio", 1.0, 1.0, "New setting to shrink over-allocated columns to fit on INSERT to reduce peak memory usage. Disabled by default (1.0)."},
@@ -178,6 +180,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
+            {"max_bytes_ratio_before_external_join", 0., 0., "Retrospectively disable automatic spilling, because it interfeers with read-in-order-through-join optimization."},
             {"query_plan_optimize_lazy_materialization_for_object_storage", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
@@ -282,6 +285,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_transitive_predicates", false, true, "Turn on enable_join_transitive_predicates by default"},
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
+            {"max_bytes_ratio_before_external_join", 0., 0., "Retrospectively disable automatic spilling, because it interfeers with read-in-order-through-join optimization."},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
         });
 
@@ -311,7 +315,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_avro_schema_registry_send_timeout", 1, 1, "New setting to control the send timeout (in seconds) for the Confluent Schema Registry HTTP client used by AvroConfluent format."},
             {"format_avro_schema_registry_receive_timeout", 1, 1, "New setting to control the receive timeout (in seconds) for the Confluent Schema Registry HTTP client used by AvroConfluent format."},
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
-            {"max_bytes_ratio_before_external_join", 0., 0.5, "New setting: ratio of available memory used as the spill threshold for hash joins. Enabled by default at `0.5`, mirroring `max_bytes_ratio_before_external_group_by` and `max_bytes_ratio_before_external_sort`. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
+            {"max_bytes_ratio_before_external_join", 0., 0., "New setting: ratio of available memory used as the spill threshold for hash joins. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
             {"dynamic_disk_allow_from_env", false, false, "New setting to allow `from_env` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default for security."},
             {"dynamic_disk_allow_include", false, false, "New setting to allow `include` in dynamic disk configuration (the `disk()` function). Disabled by default."},

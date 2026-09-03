@@ -42,6 +42,11 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         if (reading->willOutputEachPartitionThroughSeparatePort())
             return nullptr;
 
+        /// A distributed read is already split across nodes; reading by layers would discard
+        /// that split, and every node would read everything and duplicate the join result.
+        if (reading->getDistributedReadBucketCount() > 0)
+            return nullptr;
+
         return reading;
     }
 

@@ -268,6 +268,55 @@ StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) c
     /// so every join it reaches must have been told to collect statistics
     chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
 
+    /// A join sharded by primary-key ranges runs on per-shard clones and the original `join`
+    /// stays empty. The shards partition both inputs into disjoint key ranges, so the
+    /// quantities are summed over the clones.
+    if (!shard_joins.empty())
+    {
+        JoinAnalysisCounters counters;
+        MatchedRowsAccumulator matched_left;
+        MatchedRowsAccumulator matched_right;
+        UInt64 unique_keys = 0;
+        UInt64 memory = 0;
+
+        for (const auto & shard_join : shard_joins)
+        {
+            auto shard_report = shard_join->getAnalysisReport();
+
+            if (const auto * left = findGroup(shard_report, MetricGroupKey::Left))
+            {
+                counters.left_rows += findQuantity(*left, MetricKey::Rows).value_or(0);
+                matched_left.add(findQuantity(*left, MetricKey::Matched));
+            }
+            else
+                matched_left.add(std::nullopt);
+
+            if (const auto * right = findGroup(shard_report, MetricGroupKey::Right))
+            {
+                counters.right_rows += findQuantity(*right, MetricKey::Rows).value_or(0);
+                matched_right.add(findQuantity(*right, MetricKey::Matched));
+            }
+            else
+                matched_right.add(std::nullopt);
+
+            if (const auto * hash_table = findGroup(shard_report, MetricGroupKey::HashTable))
+            {
+                unique_keys += findQuantity(*hash_table, MetricKey::UniqueKeys).value_or(0);
+                memory += findQuantity(*hash_table, MetricKey::Memory).value_or(0);
+            }
+        }
+
+        counters.matched_left = matched_left.get();
+        counters.matched_right = matched_right.get();
+
+        auto report = buildMatchedRowsReport(counters);
+        MetricList hash_table_metrics;
+        hash_table_metrics.emplace_back(MetricKey::UniqueKeys, unique_keys);
+        hash_table_metrics.emplace_back(MetricKey::Memory, memory);
+        report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
+        return report;
+    }
+
     if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
         return join->getAnalysisReport();
 
