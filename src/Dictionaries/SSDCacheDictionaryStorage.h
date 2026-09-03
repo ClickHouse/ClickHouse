@@ -3,6 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
 #include <chrono>
+#include <limits>
 
 #include <pcg_random.hpp>
 #include <filesystem>
@@ -1182,11 +1183,29 @@ private:
 
             auto key = keys[key_index];
 
+            /// Values are prefixed with a header of their serialized sizes,
+            /// so that on fetch the columns that were not requested can be skipped.
+            const size_t sizes_header_size = columns_to_serialize_size * sizeof(UInt32);
+            if (sizes_header_size)
+            {
+                temporary_values_pool.allocContinue(sizes_header_size, block_start);
+                allocated_size_for_columns += sizes_header_size;
+            }
+
             for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
             {
                 auto & column = columns[column_index];
                 temporary_column_data[column_index] = column->serializeValueIntoArena(key_index, temporary_values_pool, block_start, nullptr);
                 allocated_size_for_columns += temporary_column_data[column_index].size();
+            }
+
+            char * sizes_header_start = const_cast<char *>(block_start);
+            for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
+            {
+                size_t serialized_size = temporary_column_data[column_index].size();
+                if (serialized_size > std::numeric_limits<UInt32>::max())
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Serialized column value size is too large for SSD cache");
+                unalignedStore<UInt32>(sizes_header_start + column_index * sizeof(UInt32), static_cast<UInt32>(serialized_size));
             }
 
             SSDCacheKeyType ssd_cache_key { key, allocated_size_for_columns, block_start };
