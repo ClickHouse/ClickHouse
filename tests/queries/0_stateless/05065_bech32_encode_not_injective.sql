@@ -19,3 +19,31 @@ SELECT count() FROM (SELECT bech32Encode('bc', repeat('x', 60) || toString(numbe
 
 SELECT 'valid data still round-trips';
 SELECT bech32Decode(bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)).2 = unhex('751e76e8199196d454941c45d1b3a323f1433bd6');
+
+SELECT 'order by truncation';
+-- `optimize_truncate_order_by_after_group_by_keys` drops the ORDER BY elements after the ones that
+-- cover every `GROUP BY` key, and an injective function of a key covers that key. Dropping the `s`
+-- tiebreaker here would leave the order among the rows that encode to an empty string unspecified.
+SELECT countSubstrings(arrayStringConcat(groupArray(explain), '\n'), 'SORT id')
+FROM (EXPLAIN QUERY TREE
+    SELECT s FROM (SELECT repeat('x', 60) || toString(number) AS s FROM numbers(4))
+    GROUP BY s ORDER BY bech32Encode('bc', s), s);
+SELECT countSubstrings(arrayStringConcat(groupArray(explain), '\n'), 'SORT id')
+FROM (EXPLAIN QUERY TREE
+    SELECT s FROM (SELECT repeat('x', 60) || toString(number) AS s FROM numbers(4))
+    GROUP BY s ORDER BY bech32Encode('bc', s), s
+    SETTINGS optimize_truncate_order_by_after_group_by_keys = 0);
+
+SELECT 'independent aggregation per partition';
+-- Aggregating every partition on its own is correct only when equal `GROUP BY` keys imply one
+-- partition, which the planner concludes by stripping injective functions off the keys. All the
+-- values below encode to an empty string while living in eight different partitions.
+DROP TABLE IF EXISTS bech32_partitioned;
+CREATE TABLE bech32_partitioned (p String, v UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY p;
+INSERT INTO bech32_partitioned SELECT repeat('x', 60) || toString(number), number FROM numbers(8);
+SET optimize_injective_functions_in_group_by = 0;
+SELECT count() FROM (SELECT sum(v) FROM bech32_partitioned GROUP BY bech32Encode('bc', p))
+SETTINGS allow_aggregate_partitions_independently = 1, force_aggregate_partitions_independently = 1;
+SELECT count() FROM (SELECT sum(v) FROM bech32_partitioned GROUP BY bech32Encode('bc', p))
+SETTINGS allow_aggregate_partitions_independently = 0;
+DROP TABLE bech32_partitioned;
