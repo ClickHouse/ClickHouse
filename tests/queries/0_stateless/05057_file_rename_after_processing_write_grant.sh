@@ -6,8 +6,8 @@
 # would hold `WRITE` and none of the denials asserted below would fire.
 
 # `rename_files_after_processing` renames the files a `SELECT` has read, so it is a write to the
-# source and requires `WRITE ON FILE` on top of `READ ON FILE`. It is also a per-query rule, so it
-# must not be cached in a `Filesystem` database and applied to another query.
+# source and requires `WRITE ON FILE` on top of `READ ON FILE`. It is also a per-query rule: in a
+# `Filesystem` database it must not reach another query, and it must be shared within its own.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +24,7 @@ RENAME="rename_files_after_processing='processed_%a'"
 # One input file per renaming scenario: a successful rename consumes the name.
 for name in direct_select wrapped_url cluster_initiator cluster_no_setting cluster_granted \
             explain_pipeline explain_plan granted_write urldb_denied urldb_granted \
-            cached_armed_for_reader cached_armed_for_owner cached_unarmed \
+            cached_armed_for_reader cached_armed_for_owner cached_unarmed repeated_ref \
             cluster_unoptimized dist_insert_denied dist_insert_granted; do
     echo 7 > "${FILES_DIR}/${name}.csv"
 done
@@ -164,6 +164,14 @@ ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
 file_state cached_unarmed
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${FS_DB}.\`cached_unarmed.csv\` SETTINGS ${RENAME}"
 file_state cached_unarmed
+
+echo '--- two references to one armed table in a query read the same table, renamed once at the end'
+# A reference resolved to its own table would rename the file while the other one still has it open,
+# and that one then fails to find it. Both counts are printed, so a reader losing its rows shows up
+# here rather than as a missing rename.
+${CLICKHOUSE_CLIENT} -q "SELECT (SELECT count() FROM ${FS_DB}.\`repeated_ref.csv\`) AS from_scalar,
+                                count() AS from_outer FROM ${FS_DB}.\`repeated_ref.csv\` SETTINGS ${RENAME}"
+file_state repeated_ref
 
 echo '--- a URL database over file:// is gated the same way'
 # Its own resolution path: the delegate is built on a `Context::createCopy`, so the rule survives and
