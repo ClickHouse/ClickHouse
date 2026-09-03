@@ -1936,7 +1936,13 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "EXECUTE supplies {} argument(s) but the prepared statement has {} parameter(s)",
                 execute->arguments.size(), it->second.parameter_count);
-        return substitute(it->second.body, execute->arguments);
+
+        /// `EXECUTE` arguments are bare literals, so spaces keep them separate from adjacent tokens.
+        VectorWithMemoryTracking<String> arguments;
+        arguments.reserve(execute->arguments.size());
+        for (const auto & argument : execute->arguments)
+            arguments.push_back(fmt::format(" {} ", argument));
+        return substitute(it->second.body, arguments);
     }
 
     void deleteStatement(const String & function_name)
@@ -2268,11 +2274,12 @@ private:
         return ci_equals(value, "true") || ci_equals(value, "false");
     }
 
-    /// Preserve unambiguous numeric and boolean literals for OID 0 inference. Quote all other values.
+    /// Preserve unambiguous numeric and boolean literals for OID 0 inference.
+    /// Quote all other values. Spaces keep bare values separate from adjacent tokens.
     static String formatInferredParameter(const String & value)
     {
         if (isSingleNumericLiteral(value) || isBooleanLiteral(value))
-            return value;
+            return fmt::format(" {} ", value);
         return quoteString(value);
     }
 
@@ -2308,11 +2315,7 @@ private:
                 }
                 if (index >= 1 && index <= arguments.size())
                 {
-                    /// Surrounding spaces keep the argument a separate token: a value such as `-1`
-                    /// next to an operator would otherwise form `--` and comment out the remainder.
-                    result += ' ';
                     result += arguments[index - 1];
-                    result += ' ';
                     continue;
                 }
             }

@@ -800,19 +800,42 @@ TEST(PostgreSQLProtocol, ExecuteArityMatchesPlaceholderCount)
     /// Exact arity is accepted and substituted (a repeated placeholder counts once).
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
-        prepare(manager, "SELECT $1, $2");
-        EXPECT_EQ(execute(manager, {"1", "2"}), "SELECT 1, 2");
+        prepare(manager, "SELECT $1 AS a, $2 AS b");
+        EXPECT_EQ(execute(manager, {"1", "2"}), "SELECT  1  AS a,  2  AS b");
     }
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         prepare(manager, "SELECT $1 + $1");
-        EXPECT_EQ(execute(manager, {"7"}), "SELECT 7 + 7");
+        EXPECT_EQ(execute(manager, {"7"}), "SELECT  7  +  7 ");
     }
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         prepare(manager, "SELECT 1");
         EXPECT_EQ(execute(manager, {}), "SELECT 1");
     }
+}
+
+TEST(PostgreSQLProtocol, ExecuteArgumentStaysASeparateToken)
+{
+    /// A bare argument next to an operator must not merge with it: `--` would start a comment
+    /// and drop the rest of the statement.
+    PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+    ASTPreparedStatement statement;
+    statement.function_name = "s";
+    statement.function_body = "SELECT 5-$1 AS v, 'tail' AS t";
+    manager.addStatement(&statement);
+
+    auto execute = [&](const String & argument)
+    {
+        ASTExecute ast;
+        ast.function_name = "s";
+        ast.arguments.push_back(argument);
+        return manager.getStatement(&ast);
+    };
+
+    EXPECT_EQ(execute("-1"), "SELECT 5- -1  AS v, 'tail' AS t");
+    /// Control: an argument that cannot merge is substituted the same way.
+    EXPECT_EQ(execute("1"), "SELECT 5- 1  AS v, 'tail' AS t");
 }
 
 TEST(PostgreSQLProtocol, ExecuteRejectsNonLiteralArguments)
