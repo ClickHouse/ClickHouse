@@ -498,6 +498,9 @@ See also:
     DECLARE(Milliseconds, rabbitmq_max_wait_ms, 5000, R"(
 The wait time for reading from RabbitMQ before retry.
 )", 0) \
+    DECLARE(Milliseconds, pulsar_max_wait_ms, 5000, R"(
+The wait time for reading from Pulsar before retry.
+)", 0) \
     DECLARE(UInt64, poll_interval, DBMS_DEFAULT_POLL_INTERVAL, R"(
 Block at the query wait loop on the server for the specified number of seconds.
 )", 0) \
@@ -8794,6 +8797,11 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 )", EXPERIMENTAL) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_pulsar_storage_engine, false, R"(
+Allows creation of tables with the `Pulsar` table engine. Possible values:
+- 0 — the `Pulsar` table engine is disabled.
+- 1 — the `Pulsar` table engine is enabled.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.

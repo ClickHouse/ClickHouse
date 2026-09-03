@@ -185,6 +185,11 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+if (TARGET ch_contrib::pulsar)
+    add_headers_and_sources(dbms Storages/Pulsar)
+endif()
+
+
 if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
@@ -670,6 +675,10 @@ endif()
 
 if (TARGET ch_contrib::rdkafka)
     target_link_libraries(dbms PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
+endif()
+
+if (TARGET ch_contrib::pulsar)
+    target_link_libraries(dbms PRIVATE ch_contrib::pulsar)
 endif()
 
 if (TARGET ch_contrib::nats_io)
