@@ -1,5 +1,10 @@
 SET enable_analyzer = 1;
 
+-- `USING KEY` is experimental and rejected unless it is explicitly enabled.
+WITH RECURSIVE off USING KEY (x) AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM off WHERE x < 3) SELECT * FROM off; -- { serverError SUPPORT_IS_DISABLED }
+
+SET allow_experimental_keyed_recursive_cte = 1;
+
 -- 1. Keyed recursion terminates on CYCLIC graphs without an explicit cycle guard:
 -- re-derived identical rows do not change the accumulated state and are not propagated.
 DROP TABLE IF EXISTS cyc_edges;

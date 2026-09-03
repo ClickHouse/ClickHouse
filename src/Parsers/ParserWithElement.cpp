@@ -641,7 +641,7 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 
 By default a recursive `CTE` is evaluated naively: every step re-derives rows from the whole working table and the result is the concatenation of all steps, so a recursive query over cyclic data does not terminate on its own and has to be guarded explicitly (see [Cycle detection](#cycle-detection)).
 
-The optional `USING KEY (<key columns>)` modifier switches the `CTE` to keyed (semi-naive) evaluation:
+The optional `USING KEY (<key columns>)` modifier switches the `CTE` to keyed (semi-naive) evaluation. It is experimental and requires the setting `allow_experimental_keyed_recursive_cte` to be enabled:
 
 - The recursion accumulates one row per key. A produced row whose key is already accumulated replaces the accumulated row.
 - Only rows that actually changed the accumulated state form the working table of the next step, so a row that is re-derived unchanged is not propagated. This is what makes the recursion terminate on cyclic data without a cycle guard.
@@ -650,9 +650,16 @@ The optional `USING KEY (<key columns>)` modifier switches the `CTE` to keyed (s
 
 The key columns must be a subset of the projection columns of the non-recursive term, and the `CTE` must actually be recursive; otherwise `BAD_ARGUMENTS` is raised.
 
+Two further points to keep in mind:
+
+- The name `<cte_name>_settled` is injected into the scope of the recursive members, so within them it shadows any table or `CTE` of that name.
+- Unlike the default evaluation, keyed evaluation produces no rows before it converges, so a `LIMIT` in the outer query cannot stop the recursion early.
+
 **Example:** Reachability over a cyclic graph
 
 ```sql
+SET allow_experimental_keyed_recursive_cte = 1;
+
 CREATE TABLE edges (u UInt64, v UInt64) ENGINE = Memory;
 INSERT INTO edges VALUES (1, 2), (2, 3), (3, 1), (3, 4);
 
@@ -677,6 +684,8 @@ SELECT node FROM reach ORDER BY node;
 **Example:** Shortest paths, refuting non-improving candidates with `<cte_name>_settled`
 
 ```sql
+SET allow_experimental_keyed_recursive_cte = 1;
+
 CREATE TABLE w_edges (u UInt64, v UInt64, w Float64) ENGINE = Memory;
 INSERT INTO w_edges VALUES (1, 2, 1), (2, 3, 1), (1, 3, 5), (3, 4, 1), (1, 4, 10);
 

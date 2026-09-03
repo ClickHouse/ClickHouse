@@ -8782,6 +8782,9 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_keyed_recursive_cte, false, R"(
+Allows the `USING KEY` modifier of a recursive common table expression (`WITH RECURSIVE name USING KEY (columns) AS (...)`), which switches the recursion to keyed (semi-naive) evaluation.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.

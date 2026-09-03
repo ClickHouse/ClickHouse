@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool allow_experimental_keyed_recursive_cte;
 }
 
 
@@ -83,6 +84,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -757,6 +759,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
         if (with_element->key_columns)
         {
+            if (!context->getSettingsRef()[Setting::allow_experimental_keyed_recursive_cte])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Keyed recursive common table expressions (USING KEY) are experimental. "
+                    "Set allow_experimental_keyed_recursive_cte = 1 to enable them");
+
             for (const auto & key_column : with_element->key_columns->children)
                 cte_data.key_columns.push_back(key_column->as<ASTIdentifier &>().name());
         }
