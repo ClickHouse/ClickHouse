@@ -463,6 +463,29 @@ SELECT count() > 0 FROM (
              parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
 ) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
 
+-- Only one child of the nested global join reaches a temporary table. With the ineligible table on
+-- the other one it is still read by every replica, so the outer JOIN has to be globalized after all.
+
+SELECT '-- ineligible table on the surviving side of a nested global join: the outer JOIN is globalized';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (
+        SELECT a.key AS key FROM t_merge_left AS a GLOBAL LEFT JOIN t_mid AS b ON a.key = b.key
+    ) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
+
+SELECT '-- ineligible table on the surviving side of a nested global join: the raw read is not sent to the replicas';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (
+        SELECT a.key AS key FROM t_merge_left AS a GLOBAL LEFT JOIN t_mid AS b ON a.key = b.key
+    ) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%t_merge_left%';
+
 SELECT '-- explicit GLOBAL nested join on the materialized left: results are correct';
 SELECT r.key FROM (
     SELECT a.key AS key FROM t_mid AS a GLOBAL LEFT JOIN t_merge_left AS b ON a.key = b.key
