@@ -152,9 +152,9 @@
       "group": "Guides",
       "pages": [
         {
+          "expanded": true,
           "group": "Ingesting data",
           "pages": [
-            "clickstack/ingesting-data/index",
             "clickstack/ingesting-data/overview",
             "clickstack/ingesting-data/opentelemetry",
             "clickstack/ingesting-data/vector",
