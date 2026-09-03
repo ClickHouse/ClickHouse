@@ -4,40 +4,40 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "c7d2f5a6864f3565df4f4b74d498f4d1ee612258917bfed76e14c4182978a510",
+      "versionId": "5e8eb2f148cc34089a58ef566bc0123f2ef0726c9083366bf4815bd39bf74645",
       "translations": {
+        "ko": {
+          "updatedAt": "2026-09-03T10:37:07.429Z",
+          "fileName": "docs.json"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-03T10:37:07.603Z",
+          "fileName": "docs.json"
+        },
         "zh": {
-          "updatedAt": "2026-09-03T09:40:56.299Z",
+          "updatedAt": "2026-09-03T10:37:07.801Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-03T09:40:56.603Z",
-          "fileName": "docs.json",
-          "postProcessHash": "ee3d04da887184927fcab36e6f8db1d95b4a6d99f5bde88cc2cd600821f2b00c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-03T09:40:56.004Z",
+          "updatedAt": "2026-09-03T10:37:07.994Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-03T09:40:55.575Z",
-          "fileName": "docs.json"
-        },
-        "ru": {
-          "updatedAt": "2026-09-03T09:40:56.161Z",
+          "updatedAt": "2026-09-03T10:37:08.194Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-03T09:40:56.446Z",
+          "updatedAt": "2026-09-03T10:37:08.394Z",
+          "fileName": "docs.json"
+        },
+        "ru": {
+          "updatedAt": "2026-09-03T10:37:08.572Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-03T09:40:55.739Z",
-          "fileName": "docs.json"
-        },
-        "ko": {
-          "updatedAt": "2026-09-03T09:40:55.873Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-03T10:37:08.765Z",
+          "fileName": "docs.json",
+          "postProcessHash": "d880ba91112ffbd5d2e2077ef4a738ea2e1ae52e8c184bf9611a02d8adda995e"
         }
       },
       "fileName": "docs.json"
@@ -137489,6 +137489,53 @@
         }
       },
       "fileName": "products/managed-postgres/migrations/neon.mdx"
+    },
+    {
+      "fileId": "924eea064d804bd280452be85113fffeb911114ef523e0b9c7040a8ad0d8c71c",
+      "versionId": "4790f32b33054c8710c76a4b1b73a89cfb97d15f3e0ae5b344930027aa9ab138",
+      "translations": {
+        "fr": {
+          "updatedAt": "2026-09-03T10:37:08.573Z",
+          "fileName": "fr/clickstack/demo-days/2026/2026-08-21.mdx",
+          "postProcessHash": "1b8be8355394513014bb5f24087fd455e36ad7b4bea23e7a2130b4298cec0ce8"
+        },
+        "zh": {
+          "updatedAt": "2026-09-03T10:37:08.766Z",
+          "fileName": "zh/clickstack/demo-days/2026/2026-08-21.mdx",
+          "postProcessHash": "0c246f4bf521d8fc72c3956b42c983b654c8876efa5603220229a726c647b16c"
+        },
+        "ko": {
+          "updatedAt": "2026-09-03T10:37:08.767Z",
+          "fileName": "ko/clickstack/demo-days/2026/2026-08-21.mdx",
+          "postProcessHash": "22c6f162b58050764ac3b58347a87dacd9e7328e1e70f4aa5b63849a2576989f"
+        },
+        "ja": {
+          "updatedAt": "2026-09-03T10:37:08.768Z",
+          "fileName": "ja/clickstack/demo-days/2026/2026-08-21.mdx",
+          "postProcessHash": "9732d2cb246035d3574db3bc93372baf43c9cf52061ff14867341a25af0c4073"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-03T10:37:08.769Z",
+          "fileName": "pt-BR/clickstack/demo-days/2026/2026-08-21.mdx",
+          "postProcessHash": "c9fb565348791575e4e4504664af28f9ae44b9d7006b1f9ff43b206af9459a07"
+        },
+        "es": {
+          "updatedAt": "2026-09-03T10:37:08.769Z",
+          "fileName": "es/clickstack/demo-days/2026/2026-08-21.mdx",
+          "postProcessHash": "c03a18fdbb0d63916bd6f22fa35970d2a4a1ddee8493d1940cc6181db9dc840c"
+        },
+        "ru": {
+          "updatedAt": "2026-09-03T10:37:08.769Z",
+          "fileName": "ru/clickstack/demo-days/2026/2026-08-21.mdx",
+          "postProcessHash": "ee8cc3af433e4380233e3028e079ef94b57b220c9edfda5095e31504c8cdaa06"
+        },
+        "ar": {
+          "updatedAt": "2026-09-03T10:37:08.770Z",
+          "fileName": "ar/clickstack/demo-days/2026/2026-08-21.mdx",
+          "postProcessHash": "f04395feb897f2f73b25eebdfbb9c4ace22ed7a47522899e20dca433a71e83a1"
+        }
+      },
+      "fileName": "clickstack/demo-days/2026/2026-08-21.mdx"
     }
   ]
 }

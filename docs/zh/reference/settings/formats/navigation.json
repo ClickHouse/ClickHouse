@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Format Settings",
+  "group": "格式设置",
   "pages": [
     "zh/reference/settings/formats/bool",
     "zh/reference/settings/formats/date-time",
