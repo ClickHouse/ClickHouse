@@ -11,6 +11,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -247,15 +248,6 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
         getNestedColumn().deserializeAndInsertFromArena(in, settings);
     else
         getNestedColumn().insertDefault();
-}
-
-void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 val = 0;
-    readBinaryLittleEndian<UInt8>(val, in);
-
-    if (val == 0)
-        getNestedColumn().skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -1215,6 +1207,14 @@ ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     }
 
     return removeNullable(column);
+}
+
+bool ColumnNullable::hasOnlyTypeDefaults() const
+{
+    const auto & data = getNullMapData();
+    if (data.empty())
+        return true;
+    return memoryIsByte(data.data(), 0, data.size(), 1);
 }
 
 }
