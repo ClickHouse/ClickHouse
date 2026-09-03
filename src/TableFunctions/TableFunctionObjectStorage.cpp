@@ -2373,7 +2373,7 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionDeltaLake>(
          {.description = R"DOCS_MD(
-Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (from v25.10)
+Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9)
 
 ## Syntax {#syntax}
 

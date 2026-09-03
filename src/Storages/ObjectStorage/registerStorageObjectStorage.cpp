@@ -2228,7 +2228,7 @@ import TabItem from '@theme/TabItem';
 
 # DeltaLake table engine
 
-This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (from v25.10).
+This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9).
 
 ## Create a DeltaLake table {#create-table}
 
