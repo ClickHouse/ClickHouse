@@ -805,7 +805,9 @@ def main():
     # which would otherwise leak base-tip contrib sources into the merge-base build.
     # Either way the "before" binary would be built against the wrong submodule content
     # (or miss a merge-base-only submodule entirely) and the validator could report a
-    # false reproduction or refutation. Inconclusive (ERROR), not a pass.
+    # false reproduction or refutation. Never a validation either way: a PR-side or
+    # unattributable difference reports ERROR, base-only motion reports SKIPPED, and
+    # `is_success` counts neither.
     checkout_head = Shell.get_output("git rev-parse HEAD").strip()
     assert (
         checkout_head
