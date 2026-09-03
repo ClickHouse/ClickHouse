@@ -20,11 +20,19 @@ ColumnPtr FunctionToExecutableFunctionAdaptor::executeDryRunImpl(const ColumnsWi
 
 bool FunctionToFunctionBaseAdaptor::isInjective(const ColumnsWithTypeAndName & sample_columns) const
 {
-    /// A result type admitting at most one value maps the whole argument domain onto that value, so
-    /// injectivity could only hold over a single-valued domain. The overload resolver produces such a
-    /// type by itself (a NULL constant argument, or a `Nothing` one), bypassing the implementation.
+    /// A `Nothing` or `Nullable(Nothing)` result holds at most one value, so it maps the whole argument
+    /// domain onto that value. Injectivity then survives only over a domain that is itself at most one
+    /// tuple wide, and the overload resolver forms this result type without consulting `function`.
     if (isNothing(removeNullable(getResultType())))
-        return false;
+    {
+        /// The argument types decide how wide the domain is; an empty sample decides nothing.
+        if (sample_columns.empty())
+            return false;
+
+        for (const auto & argument : sample_columns)
+            if (!isNothing(removeNullable(argument.type)))
+                return false;
+    }
 
     return function->isInjective(sample_columns);
 }
