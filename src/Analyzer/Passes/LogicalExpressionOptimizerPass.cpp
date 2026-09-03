@@ -1049,7 +1049,6 @@ static void convertNotEqualsChainToNotIn(
     const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    auto not_in_function_resolver = FunctionFactory::instance().get("notIn", context);
 
     for (auto & [expression, not_equals_entries] : node_to_not_equals_functions)
     {
@@ -1063,6 +1062,15 @@ static void convertNotEqualsChainToNotIn(
         /// `notIn` rejects arguments with a dynamic structure outright, and resolving the function is
         /// what would throw, so this must be checked before building it.
         if (expression.node->getResultType()->hasDynamicStructure())
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
+        }
+
+        /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+        const auto not_in_function_name
+            = getInFunctionNameForPassCreatedNode("notIn", expression.node->getResultType(), context);
+        if (!not_in_function_name)
         {
             std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
             continue;
@@ -1110,7 +1118,7 @@ static void convertNotEqualsChainToNotIn(
         /// the resulting `notIn` would compare different values than the notEquals it replaces.
         auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
-        auto not_in_function = std::make_shared<FunctionNode>("notIn");
+        auto not_in_function = std::make_shared<FunctionNode>(*not_in_function_name);
         not_in_function->markAsOperator();
 
         QueryTreeNodes not_in_arguments;
@@ -1119,7 +1127,7 @@ static void convertNotEqualsChainToNotIn(
         not_in_arguments.push_back(std::move(rhs_node));
 
         not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
-        not_in_function->resolveAsFunction(not_in_function_resolver);
+        not_in_function->resolveAsFunction(FunctionFactory::instance().get(*not_in_function_name, context));
 
         /// `notIn` may be nullable where the notEquals it replaces was not (a Variant expression
         /// resolves through the variant adaptor to Nullable(UInt8)). Ancestors already captured the
@@ -2577,8 +2585,6 @@ private:
                 or_operands.push_back(argument);
         }
 
-        auto in_function_resolver = FunctionFactory::instance().get("in", getContext());
-
         for (auto & [expression, equals_functions] : node_to_equals_functions)
         {
             const auto & settings = getSettings();
@@ -2592,6 +2598,15 @@ private:
             /// `in` rejects Dynamic-structure arguments outright, so building it would turn a working
             /// OR chain into an error. Keep the original comparisons.
             if (expression.node->getResultType()->hasDynamicStructure())
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
+
+            /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+            const auto in_function_name
+                = getInFunctionNameForPassCreatedNode("in", expression.node->getResultType(), getContext());
+            if (!in_function_name)
             {
                 std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
                 continue;
@@ -2638,7 +2653,7 @@ private:
 
             auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
-            auto in_function = std::make_shared<FunctionNode>("in");
+            auto in_function = std::make_shared<FunctionNode>(*in_function_name);
             in_function->markAsOperator();
 
             QueryTreeNodes in_arguments;
@@ -2647,7 +2662,7 @@ private:
             in_arguments.push_back(std::move(rhs_node));
 
             in_function->getArguments().getNodes() = std::move(in_arguments);
-            in_function->resolveAsFunction(in_function_resolver);
+            in_function->resolveAsFunction(FunctionFactory::instance().get(*in_function_name, getContext()));
 
             DataTypePtr result_type = in_function->getResultType();
             const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
