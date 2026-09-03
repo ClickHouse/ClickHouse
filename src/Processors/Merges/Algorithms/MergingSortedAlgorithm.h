@@ -62,9 +62,6 @@ private:
     /// bounded by its queue minimum, so the announcement is as valid for the merged stream
     /// as it was for the member, and the top-level merge can keep the whole group deferred.
     const bool emit_boundary_virtual_rows;
-    /// Whether the current chunk of a source is a virtual row (`skip_last_row` alone does not
-    /// tell: parallel FINAL uses it for real data).
-    std::vector<char> input_is_virtual_row;
 
     /// Chunks currently being merged.
     Inputs current_inputs;

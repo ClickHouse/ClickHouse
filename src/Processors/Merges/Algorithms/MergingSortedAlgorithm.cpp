@@ -104,7 +104,6 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , filter_column_position(filter_column_name_ ? header->getPositionByName(filter_column_name_.value()) : -1)
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
     , emit_boundary_virtual_rows(emit_boundary_virtual_rows_)
-    , input_is_virtual_row(num_inputs, 0)
     , current_inputs(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
@@ -136,7 +135,6 @@ void MergingSortedAlgorithm::addInput()
     current_inputs.emplace_back();
     cursors.emplace_back();
     virtual_row_boundary.emplace_back();
-    input_is_virtual_row.emplace_back(0);
 }
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
@@ -144,8 +142,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         auto & input = inputs[i];
-        input_is_virtual_row[i] = isVirtualRow(input.chunk);
-        if (!input_is_virtual_row[i])
+        if (!isVirtualRow(input.chunk))
             continue;
 
         auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
@@ -200,7 +197,6 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     bool is_virtual_row = isVirtualRow(input.chunk);
-    input_is_virtual_row[source_num] = is_virtual_row;
     if (is_virtual_row)
     {
         auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
@@ -391,7 +387,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
         {
             size_t source_num = current.impl->order;
 
-            if (emit_boundary_virtual_rows && input_is_virtual_row[source_num])
+            if (emit_boundary_virtual_rows && isVirtualRow(current_inputs[source_num].chunk))
             {
                 /// Rows merged before this boundary must leave first, or downstream would
                 /// see data below a boundary it was already given.
@@ -490,7 +486,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             {
                 size_t source_num = current.impl->order;
 
-                if (emit_boundary_virtual_rows && input_is_virtual_row[source_num])
+                if (emit_boundary_virtual_rows && isVirtualRow(current_inputs[source_num].chunk))
                 {
                     /// See mergeImpl: flush merged rows before forwarding the boundary.
                     if (merged_data.mergedRows() != 0)
