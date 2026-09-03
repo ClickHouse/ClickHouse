@@ -456,3 +456,6 @@
 [submodule "contrib/librtcx"]
 	path = contrib/librtcx
 	url = https://github.com/rapidsai/librtcx.git
+[submodule "contrib/spdlog"]
+	path = contrib/spdlog
+	url = https://github.com/gabime/spdlog.git
