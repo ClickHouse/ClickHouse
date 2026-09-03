@@ -14,6 +14,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/QueryExecutionCounters.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -178,7 +179,8 @@ private:
                 recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth].value,
                 recursive_cte_union_node->formatASTForErrorMessage());
 
-        auto & query_to_execute = recursive_step > 0 ? recursive_query : non_recursive_query;
+        const bool is_recursive_member = recursive_step > 0;
+        auto & query_to_execute = is_recursive_member ? recursive_query : non_recursive_query;
         ++recursive_step;
 
         SelectQueryOptions select_query_options;
@@ -187,7 +189,24 @@ private:
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
-        auto pipeline_builder = interpreter->buildQueryPipeline();
+
+        QueryPipelineBuilder pipeline_builder;
+        {
+            /// The recursive member is planned and built again for every iteration, and all of these
+            /// builds report into the counters of the query, because they share
+            /// `recursive_query_context`. Mark the region, so that the joins of the recursive member are
+            /// counted once instead of once per iteration, which would otherwise make
+            /// `used_number_of_joins` grow with the recursion depth.
+            ///
+            /// The non-recursive member is left outside the scope on purpose: it is built exactly once,
+            /// so it needs no deduplication, and it is a different subquery, so sharing the scope of the
+            /// recursive member would make the two sets of joins share ordinals and hide one of them.
+            std::optional<QueryExecutionCounters::RepeatedPipelineBuildScope> repeated_build_scope;
+            if (is_recursive_member)
+                repeated_build_scope.emplace(recursive_table_name);
+
+            pipeline_builder = interpreter->buildQueryPipeline();
+        }
 
         pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
         {

@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -155,6 +156,17 @@ public:
 
         if (plan.isInitialized())
         {
+            /// The loop restarts the inner relation every time its pipeline is exhausted, and every one
+            /// of those builds reports into the counters of the query, because `inner_context` is a copy
+            /// of its context and shares them. Mark the region, so that the joins of the looped relation
+            /// are counted once instead of once per pass, which would otherwise make
+            /// `used_number_of_joins` depend on how many rows the query asked for.
+            ///
+            /// `inner_storage` is the same object for every pass, including the table function case, so
+            /// its table name is a stable name for this pipeline.
+            QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(
+                inner_storage->getStorageID().getFullTableName());
+
             auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);

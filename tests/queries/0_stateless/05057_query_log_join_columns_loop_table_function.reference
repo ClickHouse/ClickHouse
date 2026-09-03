@@ -1,0 +1,3 @@
+one join in a view restarted by the loop table function
+10
+05057_loop_one_join	1	['HASH']	['INNER']	['ALL']
