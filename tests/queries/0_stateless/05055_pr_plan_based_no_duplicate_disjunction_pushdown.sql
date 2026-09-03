@@ -1,5 +1,5 @@
 -- Tags: no-old-analyzer
--- The plan-based parallel-replicas path and `JoinStepLogical` exist only in the new analyzer.
+-- The old analyzer has neither the plan-based parallel-replicas path nor `JoinStepLogical`.
 
 -- Join reordering rebuilds the join steps, which used to reset the guard that says the disjunction
 -- push-down already ran. A plan optimized twice - which is what the plan-based parallel-replicas path

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-old-analyzer
-# The plan-based parallel-replicas path and `JoinStepLogical` exist only in the new analyzer.
+# The old analyzer has neither the plan-based parallel-replicas path nor `JoinStepLogical`.
 
 # The plan-based parallel-replicas path ships an already-optimized plan to the replicas, which optimize
 # it again before building the pipeline. `JoinStepLogical` used to drop `disjunctions_optimization_applied`
