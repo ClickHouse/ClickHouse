@@ -102,6 +102,20 @@ seen AS MATERIALIZED
 )
 SELECT * FROM walk; -- { serverError UNSUPPORTED_METHOD }
 
+-- The materialized subquery must not depend on the scope of any of its reference sites, including
+-- a reference inside the recursive member where an identifier resolves to a column of the recursive CTE.
+WITH RECURSIVE snap AS MATERIALIZED
+(
+    SELECT x < 10 AS c, rand64() AS r FROM numbers(3)
+),
+walk AS
+(
+    SELECT 1 AS x, snap.r AS v FROM snap
+    UNION ALL
+    SELECT x + 1, snap.r FROM walk CROSS JOIN snap WHERE x < 4
+)
+SELECT uniqExact(v) FROM walk; -- { serverError UNSUPPORTED_METHOD }
+
 -- Without `enable_materialized_cte`, MATERIALIZED is only a hint and the helper is an ordinary CTE.
 SET enable_materialized_cte = 0;
 

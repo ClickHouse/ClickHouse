@@ -6061,6 +6061,19 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     auto & subquery = table_node->getMaterializedCTESubquery();
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
 
+                    /// The snapshot is shared by all reference sites, so the subquery must not depend on the scope
+                    /// of any of them. A clone resolved in a different scope may bind an identifier to an outer
+                    /// column even when the first resolved clone did not, e.g. when this reference is inside
+                    /// a recursive member and the identifier resolves to a column of the recursive CTE.
+                    bool is_correlated = subquery->as<QueryNode>()
+                        ? subquery->as<QueryNode>()->isCorrelated()
+                        : subquery->as<UnionNode>()->isCorrelated();
+                    if (is_correlated)
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Materialized CTE '{}' cannot be correlated. In scope {}",
+                            materialized_cte_ptr->cte_name,
+                            scope.scope_node->formatASTForErrorMessage());
+
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
                     verifyMaterializedCTESubqueryMatchesStorage(
                         subquery,
