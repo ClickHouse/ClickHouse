@@ -11,6 +11,12 @@ node = cluster.add_instance(
     # `ATTACH TABLE ... AS REPLICATED` expands the `{shard}` and `{replica}` macros in the
     # default replica path/name (`/clickhouse/tables/{uuid}/{shard}`), so they must be defined.
     macros={"shard": "s1", "replica": "r1"},
+    # Transactions refuse to start unless Keeper advertises these.
+    keeper_required_feature_flags=[
+        "filtered_list",
+        "multi_read",
+        "list_with_stat_and_data",
+    ],
 )
 
 

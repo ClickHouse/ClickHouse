@@ -9,6 +9,12 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     stay_alive=True,
     with_zookeeper=True,
+    # Transactions refuse to start unless Keeper advertises these.
+    keeper_required_feature_flags=[
+        "filtered_list",
+        "multi_read",
+        "list_with_stat_and_data",
+    ],
 )
 
 
