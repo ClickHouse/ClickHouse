@@ -8281,12 +8281,13 @@ async function fetchFlameGraphStacks(source, trace_type)
     /// For memory, only the allocations: each sampled deallocation is a negative `size` that
     /// `flameGraph` would subtract, leaving a graph of what was still allocated at the end.
     const size_filter = trace_type === 'MemorySample' ? ' AND size > 0' : '';
-    /// The table is ordered by `event_date, event_time`, so bound the lookup to the run: the page knows
-    /// when the query started; an hour (and a day on the partition-pruning date column) of slack
-    /// covers the browser and server clocks disagreeing. Without the bound this is a full scan of a
-    /// table that grows quickly on a busy server with profiling enabled.
-    const since = source.started_at_sec - 3600;
-    const time_filter = ` AND event_date >= toDate(toDateTime(${since})) - 1 AND event_time >= toDateTime(${since})`;
+    /// The table is ordered by `event_date, event_time`, so bound the lookup to the run. Without the
+    /// bound this is a full scan of a table that grows quickly on a busy server with profiling enabled.
+    /// The bound is computed in the server's clock: the page passes how long ago the run started (a
+    /// difference of two browser timestamps, so the browser and server clocks disagreeing does not
+    /// matter) and the server subtracts it from its `now()`; the slack covers the request latency.
+    const age_sec = Math.ceil((Date.now() - source.started_at_ms) / 1000) + 300;
+    const time_filter = ` AND event_date >= toDate(now() - ${age_sec}) - 1 AND event_time >= now() - ${age_sec}`;
     const query = `SELECT arrayJoin(${stack}) AS stack FROM system.trace_log`
         + ` WHERE query_id = ${quoteStringLiteral(source.query_id)} AND trace_type = ${quoteStringLiteral(trace_type)}${time_filter}${size_filter}`;
 
@@ -11002,7 +11003,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// `system.trace_log` (see `setProfileSource`). The profiler period is the one selected in that
     /// view; unset leaves the server's `query_profiler_*_time_period_ns` defaults in effect.
     const query_id = randomQueryId();
-    const started_at_sec = Math.floor(Date.now() / 1000);
+    const started_at_ms = Date.now();
     url += '&query_id=' + encodeURIComponent(query_id);
     const profiler_period_ns = profilerPeriodNs();
     if (profiler_period_ns)
@@ -11203,7 +11204,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 
         /// The server has accepted (or already rejected) the query under our `query_id`, so its profiler
         /// samples can be looked up in `system.trace_log` on the same connection.
-        targetResultEl.setProfileSource({ query_id, server_address, user, password, started_at_sec });
+        targetResultEl.setProfileSource({ query_id, server_address, user, password, started_at_ms });
 
         /// An image output format (`PNG`) is detected by the `X-ClickHouse-Format` header as well as
         /// by the `Content-Type`: with a framing format the `Content-Type` is `text/event-stream`, so
