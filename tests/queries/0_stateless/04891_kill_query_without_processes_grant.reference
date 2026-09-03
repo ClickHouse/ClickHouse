@@ -7,8 +7,9 @@
 3 alive=1
 4 killed=1
 4 alive=0
-5 killed=1
-5 alive=0
+5 killed=0
+5 exception=0
+5 alive=1
 6 distinct_users_killed=1
 6 own=0 foreign=1
 7 hidden killed=0
@@ -22,14 +23,23 @@
 9 alive=1
 12 killed=1
 12 alive=0
-13 killed=1
-13 own=0 foreign=1
+13 hidden killed=0
+13 hidden exception=0
+13 hidden alive=1
+13 admitted killed=1
+13 admitted alive=0
 14 killed=1
 14 alive=0
-15 killed=1
-15 alive=0
+15 hidden killed=0
+15 hidden exception=0
+15 hidden alive=1
+15 admitted killed=1
+15 admitted alive=0
 16 killed=1
 16 alive=0
 17 killed=0
 17 exception=1
 17 alive=1
+18 own=1 foreign=6
+18 killed=1
+18 exception=0

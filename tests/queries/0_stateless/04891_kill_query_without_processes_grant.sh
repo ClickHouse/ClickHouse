@@ -8,22 +8,27 @@ U1="u1_${CLICKHOUSE_DATABASE}"
 U2="u2_${CLICKHOUSE_DATABASE}"
 P_ALL="pall_${CLICKHOUSE_DATABASE}"
 P_U1="pu1_${CLICKHOUSE_DATABASE}"
+Q1="q1_${CLICKHOUSE_DATABASE}"
 SUFFIX="_${CLICKHOUSE_DATABASE}"
 # The marker keeps the victims out of reach of other tests that kill by query text.
 LONG="SELECT sleep(1) FROM numbers(10000) WHERE ignore('$CLICKHOUSE_DATABASE') = 0 SETTINGS max_block_size = 1, max_rows_to_read = 0"
+# One row every 3 seconds instead of every second, for the arm that bounds how many rows a victim may
+# read before its own quota stops it.
+SLOW="SELECT sleep(3) FROM numbers(10000) WHERE ignore('$CLICKHOUSE_DATABASE') = 0 SETTINGS max_block_size = 1, max_rows_to_read = 0"
 VICTIMS=""
 
 $CLICKHOUSE_CLIENT -q "
     DROP ROW POLICY IF EXISTS $P_U1 ON system.processes;
     DROP ROW POLICY IF EXISTS $P_ALL ON system.processes;
+    DROP QUOTA IF EXISTS $Q1;
     DROP USER IF EXISTS $U1;
     DROP USER IF EXISTS $U2;
     CREATE USER $U1 IDENTIFIED WITH no_password;
     CREATE USER $U2 IDENTIFIED WITH no_password;
 "
 
-start_victim() { # user, query_id
-    $CLICKHOUSE_CLIENT --user "$1" --query_id "$2" -q "$LONG" > /dev/null 2>&1 &
+start_victim() { # user, query_id, [query]
+    $CLICKHOUSE_CLIENT --user "$1" --query_id "$2" -q "${3:-$LONG}" > /dev/null 2>&1 &
     VICTIMS="$VICTIMS $!"
     # Detach so that the shell does not report the signal when a still running victim is stopped.
     disown %% 2> /dev/null
@@ -65,6 +70,7 @@ reset_arm() {
     $CLICKHOUSE_CLIENT -q "
         DROP ROW POLICY IF EXISTS $P_U1 ON system.processes;
         DROP ROW POLICY IF EXISTS $P_ALL ON system.processes;
+        DROP QUOTA IF EXISTS $Q1;
         REVOKE ALL ON *.* FROM $U1;
         REVOKE ALL ON *.* FROM $U2;
     "
@@ -112,12 +118,14 @@ $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE processes.query_id = 'own4$
 gone "own4$SUFFIX"; echo "4 alive=$(alive "own4$SUFFIX")"
 reset_arm
 
-# 5: KILL QUERY alone is enough to kill another user's query.
+# 5: holding KILL QUERY does not widen what a caller who cannot read system.processes reaches. The
+# foreign query is ignored, exactly as in arm 3, rather than killed or reported as an error.
 $CLICKHOUSE_CLIENT -q "GRANT KILL QUERY ON *.* TO $U1"
 start_victim "$U2" "foreign5$SUFFIX"
-echo -n "5 killed="
-$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'foreign5$SUFFIX' SYNC" 2>&1 | killed "foreign5$SUFFIX"
-gone "foreign5$SUFFIX"; echo "5 alive=$(alive "foreign5$SUFFIX")"
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'foreign5$SUFFIX' SYNC" 2>&1)
+echo "5 killed=$(printf '%s\n' "$out" | killed "foreign5$SUFFIX")"
+echo "5 exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
+echo "5 alive=$(alive "foreign5$SUFFIX")"
 reset_arm
 
 # 6: a predicate matching everything reaches the caller's own queries only.
@@ -172,14 +180,18 @@ $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own12$SUFFIX' S
 gone "own12$SUFFIX"; echo "12 alive=$(alive "own12$SUFFIX")"
 reset_arm
 
-# 13: a policy qualified with the table name resolves.
-policy_on_u1 "processes.user = currentUser()"
+# 13: a policy qualified with the table name resolves, and is applied. The policy rejects the caller's
+# own victim, so a policy that compiled but was never applied would kill a query that must survive.
+policy_on_u1 "processes.query_id != 'own13$SUFFIX'"
 start_victim "$U1" "own13$SUFFIX"
-start_victim "$U2" "foreign13$SUFFIX"
-echo -n "13 killed="
-$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id LIKE '%\\$SUFFIX' SYNC" 2>&1 | killed "own13$SUFFIX"
-gone "own13$SUFFIX"
-echo "13 own=$(alive "own13$SUFFIX") foreign=$(alive "foreign13$SUFFIX")"
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own13$SUFFIX' SYNC" 2>&1)
+echo "13 hidden killed=$(printf '%s\n' "$out" | killed "own13$SUFFIX")"
+echo "13 hidden exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
+echo "13 hidden alive=$(alive "own13$SUFFIX")"
+$CLICKHOUSE_CLIENT -q "DROP ROW POLICY $P_U1 ON system.processes"
+echo -n "13 admitted killed="
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own13$SUFFIX' SYNC" 2>&1 | killed "own13$SUFFIX"
+gone "own13$SUFFIX"; echo "13 admitted alive=$(alive "own13$SUFFIX")"
 reset_arm
 
 # 14: additional_table_filters must not reach the read that runs with full access.
@@ -190,12 +202,18 @@ $CLICKHOUSE_CLIENT --user "$U1" --additional_table_filters="{'system.processes':
 gone "own14$SUFFIX"; echo "14 alive=$(alive "own14$SUFFIX")"
 reset_arm
 
-# 15: a policy may contain a subquery.
-policy_on_u1 "user IN (SELECT currentUser())"
+# 15: a policy may contain a subquery, is applied, and resolves when spelled with the database too. An
+# unbuilt set would surface as an exception, which is a different observable from a skipped policy.
+policy_on_u1 "system.processes.query_id NOT IN (SELECT 'own15$SUFFIX')"
 start_victim "$U1" "own15$SUFFIX"
-echo -n "15 killed="
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own15$SUFFIX' SYNC" 2>&1)
+echo "15 hidden killed=$(printf '%s\n' "$out" | killed "own15$SUFFIX")"
+echo "15 hidden exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
+echo "15 hidden alive=$(alive "own15$SUFFIX")"
+$CLICKHOUSE_CLIENT -q "DROP ROW POLICY $P_U1 ON system.processes"
+echo -n "15 admitted killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own15$SUFFIX' SYNC" 2>&1 | killed "own15$SUFFIX"
-gone "own15$SUFFIX"; echo "15 alive=$(alive "own15$SUFFIX")"
+gone "own15$SUFFIX"; echo "15 admitted alive=$(alive "own15$SUFFIX")"
 reset_arm
 
 # 16: the caller's width and AST limits bound their own predicate, not the read behind it.
@@ -215,6 +233,21 @@ out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'foreign17
 echo "17 killed=$(printf '%s\n' "$out" | killed "foreign17$SUFFIX")"
 echo "17 exception=$(printf '%s\n' "$out" | matched "attempts to kill query created by")"
 echo "17 alive=$(alive "foreign17$SUFFIX")"
+reset_arm
+
+# 18: the caller's quota is charged for one logical read once. The statement returns the caller's own
+# row plus their KILL statement, so two rows; the read behind it scans every user's row, so charging
+# that one too would cost nine here and more on a busier server. The bound sits between the two.
+# The foreign queries inflate only the second count, because $U2 is not subject to $U1's quota. The
+# caller's own victim reads a row every three seconds and is started last, so it cannot consume the
+# budget the statement is measured against.
+$CLICKHOUSE_CLIENT -q "CREATE QUOTA $Q1 FOR INTERVAL 1 HOUR MAX READ ROWS = 8 TO $U1"
+for n in 1 2 3 4 5 6; do start_victim "$U2" "foreign18$n$SUFFIX"; done
+start_victim "$U1" "own18$SUFFIX" "$SLOW"
+echo "18 own=$(alive "own18$SUFFIX") foreign=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'foreign18%\\$SUFFIX'")"
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id LIKE '%\\$SUFFIX' SYNC" 2>&1)
+echo "18 killed=$(printf '%s\n' "$out" | killed "own18$SUFFIX")"
+echo "18 exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
 reset_arm
 
 $CLICKHOUSE_CLIENT -q "DROP USER $U1, $U2"
