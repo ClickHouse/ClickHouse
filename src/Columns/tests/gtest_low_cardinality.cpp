@@ -50,6 +50,20 @@ TEST(ColumnLowCardinality, Insert)
     testLowCardinalityNumberInsert<Float64>(std::make_shared<DataTypeFloat64>());
 }
 
+TEST(ColumnLowCardinality, HasOnlyTypeDefaults)
+{
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto column = low_cardinality_type->createColumn();
+
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
+    column->insertDefault();
+    column->insert(Field{UInt64{0}});
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
+
+    column->insert(Field{UInt64{1}});
+    ASSERT_FALSE(column->hasOnlyTypeDefaults());
+}
+
 TEST(ColumnLowCardinality, Clone)
 {
     auto data_type = std::make_shared<DataTypeInt32>();

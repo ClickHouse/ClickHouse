@@ -28,10 +28,19 @@ KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
 INTEGRATION_DIND_ROOT_RESERVE = 1 * 1024**3
 # Everything not charged to `/docker`: pytest, its xdist workers, the post-teardown steps, and the
 # per-test subprocesses - `helpers/cluster.py` runs each node's `clickhouse-client` and
-# `helpers/iceberg_utils.py` runs Spark's `local` driver on the host, not in a container. That
-# scales with xdist concurrency, hence a share of the job limit; the floor keeps the smallest
-# supported host runnable and the cap keeps the container budget from losing a worker.
-INTEGRATION_DIND_INIT_RESERVE = min(max(LIMITED_MEM // 3, 8 * 1024**3), 16 * 1024**3)
+# `helpers/iceberg_utils.py` runs Spark's `local` driver on the host, not in a container.
+#
+# A flat floor rather than the third of the job limit this used to take, because the share was
+# claiming memory `/docker` cannot do without. Measured over 58 integration jobs on the 61.78 GiB
+# runner: `/docker` peaks at its cap in every single one, while `/init` peaks at 20.8 GiB
+# (median) against this reserve and `/dockerd` at 18.3 GiB against its 2 GiB one, and the job
+# cgroup never breaches - the two overruns are page cache (the log archiving here, the image
+# layers there) and reclaim gives them back. `/docker` is the opposite: read off a kernel OOM
+# report, its 40.35 GiB charge is anonymous memory against 753664 bytes of cache, so not one page
+# of it is reclaimable and its cap is the only one that binds. Sizing the unreclaimable leaf last
+# is what put `Container memory budget exceeded (/docker)` on nearly every run of the ASan+UBSan
+# shards.
+INTEGRATION_DIND_INIT_RESERVE = 8 * 1024**3
 # Holds dockerd, containerd and one containerd-shim per nested container, so it scales with
 # concurrency rather than staying at the daemon's own footprint. An absolute floor, never a
 # fraction of the job limit: too small and the daemons cannot boot at all.
@@ -46,9 +55,10 @@ INTEGRATION_NESTED_BUDGET = max(
     - INTEGRATION_DIND_DAEMON_RESERVE,
     0,
 )
-# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out, and its
-# charge is anon, so reclaim cannot meet a cap the way it can for `/docker`'s page cache. It
-# overlaps `/docker`, so this cap alone is within the job limit but the three together are not.
+# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
+# cache of the logs it reads and archives, and neither is bounded by the reserve above. It
+# overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
+# which is what lets the reserve shrink without `/init` losing any room it actually uses.
 INTEGRATION_DIND_INIT_LIMIT = max(
     LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
     INTEGRATION_DIND_INIT_RESERVE,
@@ -1858,6 +1868,18 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+        ),
+    )
+    libfuzzer_corpus_minimization_job = Job.Config(
+        name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command=(
+            "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
+            "'libFuzzer corpus minimization'"
+        ),
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],

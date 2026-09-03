@@ -8,11 +8,11 @@
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
           "PATCH /v1/organizations/{organizationId}",
-          "pt-BR/products/cloud/api-reference/organization/organization-quotas-get-list",
-          "pt-BR/products/cloud/api-reference/organization/organization-quota-get",
+          "products/cloud/api-reference/organization/organization-quotas-get-list",
+          "products/cloud/api-reference/organization/organization-quota-get",
           "GET /v1/organizations/{organizationId}/activities",
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
-          "pt-BR/products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
+          "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
@@ -22,8 +22,8 @@
         "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
-          "pt-BR/products/cloud/api-reference/billing/active-balances-get",
-          "pt-BR/products/cloud/api-reference/billing/credit-balances-get"
+          "products/cloud/api-reference/billing/active-balances-get",
+          "products/cloud/api-reference/billing/credit-balances-get"
         ]
       },
       {
@@ -52,18 +52,18 @@
       {
         "group": "UDF",
         "pages": [
-          "pt-BR/products/cloud/api-reference/udf/udf-attach",
-          "pt-BR/products/cloud/api-reference/udf/udf-attachment-get",
-          "pt-BR/products/cloud/api-reference/udf/udf-detach",
-          "pt-BR/products/cloud/api-reference/udf/udf-attachment-list",
-          "pt-BR/products/cloud/api-reference/udf/udf-create",
-          "pt-BR/products/cloud/api-reference/udf/udf-list",
-          "pt-BR/products/cloud/api-reference/udf/udf-delete",
-          "pt-BR/products/cloud/api-reference/udf/udf-get",
-          "pt-BR/products/cloud/api-reference/udf/udf-upload-session-create",
-          "pt-BR/products/cloud/api-reference/udf/udf-version-create",
-          "pt-BR/products/cloud/api-reference/udf/udf-version-list",
-          "pt-BR/products/cloud/api-reference/udf/udf-version-delete"
+          "products/cloud/api-reference/udf/udf-attach",
+          "products/cloud/api-reference/udf/udf-attachment-get",
+          "products/cloud/api-reference/udf/udf-detach",
+          "products/cloud/api-reference/udf/udf-attachment-list",
+          "products/cloud/api-reference/udf/udf-create",
+          "products/cloud/api-reference/udf/udf-list",
+          "products/cloud/api-reference/udf/udf-delete",
+          "products/cloud/api-reference/udf/udf-get",
+          "products/cloud/api-reference/udf/udf-upload-session-create",
+          "products/cloud/api-reference/udf/udf-version-create",
+          "products/cloud/api-reference/udf/udf-version-list",
+          "products/cloud/api-reference/udf/udf-version-delete"
         ]
       }
     ]
@@ -85,21 +85,21 @@
           "DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
-          "pt-BR/products/cloud/api-reference/service/instance-scaling-update",
+          "products/cloud/api-reference/service/instance-scaling-update",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
-          "pt-BR/products/cloud/api-reference/service/scaling-schedule-get",
-          "pt-BR/products/cloud/api-reference/service/scaling-schedule-upsert",
-          "pt-BR/products/cloud/api-reference/service/scaling-schedule-delete",
+          "products/cloud/api-reference/service/scaling-schedule-get",
+          "products/cloud/api-reference/service/scaling-schedule-upsert",
+          "products/cloud/api-reference/service/scaling-schedule-delete",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
-          "pt-BR/products/cloud/api-reference/service/service-clickhouse-settings-list-get",
-          "pt-BR/products/cloud/api-reference/service/service-clickhouse-settings-update",
-          "pt-BR/products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
-          "pt-BR/products/cloud/api-reference/service/service-clickhouse-setting-get",
-          "pt-BR/products/cloud/api-reference/service/service-clickhouse-setting-delete"
+          "products/cloud/api-reference/service/service-clickhouse-settings-list-get",
+          "products/cloud/api-reference/service/service-clickhouse-settings-update",
+          "products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
+          "products/cloud/api-reference/service/service-clickhouse-setting-get",
+          "products/cloud/api-reference/service/service-clickhouse-setting-delete"
         ]
       },
       {
@@ -109,10 +109,10 @@
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
-          "pt-BR/products/cloud/api-reference/backup/backup-bucket-get",
-          "pt-BR/products/cloud/api-reference/backup/backup-bucket-create",
-          "pt-BR/products/cloud/api-reference/backup/backup-bucket-update",
-          "pt-BR/products/cloud/api-reference/backup/backup-bucket-delete"
+          "products/cloud/api-reference/backup/backup-bucket-get",
+          "products/cloud/api-reference/backup/backup-bucket-create",
+          "products/cloud/api-reference/backup/backup-bucket-update",
+          "products/cloud/api-reference/backup/backup-bucket-delete"
         ]
       }
     ]
@@ -130,11 +130,11 @@
   {
     "group": "Prometheus",
     "pages": [
-      "pt-BR/products/cloud/api-reference/prometheus/organization-prometheus-get",
-      "pt-BR/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+      "products/cloud/api-reference/prometheus/organization-prometheus-get",
+      "products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
-      "pt-BR/products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
-      "pt-BR/products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
+      "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
+      "products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
     ]
   },
   {
@@ -147,7 +147,7 @@
       "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
       "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
-      "pt-BR/products/cloud/api-reference/clickpipes/click-pipe-schema-discovery",
+      "products/cloud/api-reference/clickpipes/click-pipe-schema-discovery",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
@@ -162,58 +162,58 @@
   {
     "group": "ClickStack",
     "pages": [
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-list-dashboards",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-create-dashboard",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-get-dashboard",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-update-dashboard",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-delete-dashboard",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-validate-dashboard",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-list-alerts",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-create-alert",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-list-sources",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-create-source",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-get-source",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-update-source",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-delete-source",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-get-alert",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-update-alert",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-delete-alert",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-list-webhooks",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-create-webhook",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-update-webhook",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-delete-webhook",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-list-roles",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-create-role",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-get-role",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-update-role",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-delete-role",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-list-saved-searches",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-create-saved-search",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-get-saved-search",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-update-saved-search",
-      "pt-BR/products/cloud/api-reference/clickstack/click-stack-delete-saved-search"
+      "products/cloud/api-reference/clickstack/click-stack-list-dashboards",
+      "products/cloud/api-reference/clickstack/click-stack-create-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-get-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-update-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-delete-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-validate-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-list-alerts",
+      "products/cloud/api-reference/clickstack/click-stack-create-alert",
+      "products/cloud/api-reference/clickstack/click-stack-list-sources",
+      "products/cloud/api-reference/clickstack/click-stack-create-source",
+      "products/cloud/api-reference/clickstack/click-stack-get-source",
+      "products/cloud/api-reference/clickstack/click-stack-update-source",
+      "products/cloud/api-reference/clickstack/click-stack-delete-source",
+      "products/cloud/api-reference/clickstack/click-stack-get-alert",
+      "products/cloud/api-reference/clickstack/click-stack-update-alert",
+      "products/cloud/api-reference/clickstack/click-stack-delete-alert",
+      "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
+      "products/cloud/api-reference/clickstack/click-stack-create-webhook",
+      "products/cloud/api-reference/clickstack/click-stack-update-webhook",
+      "products/cloud/api-reference/clickstack/click-stack-delete-webhook",
+      "products/cloud/api-reference/clickstack/click-stack-list-roles",
+      "products/cloud/api-reference/clickstack/click-stack-create-role",
+      "products/cloud/api-reference/clickstack/click-stack-get-role",
+      "products/cloud/api-reference/clickstack/click-stack-update-role",
+      "products/cloud/api-reference/clickstack/click-stack-delete-role",
+      "products/cloud/api-reference/clickstack/click-stack-list-saved-searches",
+      "products/cloud/api-reference/clickstack/click-stack-create-saved-search",
+      "products/cloud/api-reference/clickstack/click-stack-get-saved-search",
+      "products/cloud/api-reference/clickstack/click-stack-update-saved-search",
+      "products/cloud/api-reference/clickstack/click-stack-delete-saved-search"
     ]
   },
   {
     "group": "Postgres",
     "pages": [
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-create",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-get-list",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-get",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-delete",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-patch",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-certs-get",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-restore",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-set-password",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-patch-state",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-config-get",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-config-post",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-config-patch",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-metrics-get",
-      "pt-BR/products/cloud/api-reference/postgres/slow-query-patterns-get-list",
-      "pt-BR/products/cloud/api-reference/postgres/slow-query-pattern-get",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-logs-get-list"
+      "products/cloud/api-reference/postgres/postgres-service-create",
+      "products/cloud/api-reference/postgres/postgres-service-get-list",
+      "products/cloud/api-reference/postgres/postgres-service-get",
+      "products/cloud/api-reference/postgres/postgres-service-delete",
+      "products/cloud/api-reference/postgres/postgres-service-patch",
+      "products/cloud/api-reference/postgres/postgres-service-certs-get",
+      "products/cloud/api-reference/postgres/postgres-instance-restore",
+      "products/cloud/api-reference/postgres/postgres-service-set-password",
+      "products/cloud/api-reference/postgres/postgres-service-patch-state",
+      "products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
+      "products/cloud/api-reference/postgres/postgres-instance-config-get",
+      "products/cloud/api-reference/postgres/postgres-instance-config-post",
+      "products/cloud/api-reference/postgres/postgres-instance-config-patch",
+      "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+      "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
+      "products/cloud/api-reference/postgres/slow-query-pattern-get",
+      "products/cloud/api-reference/postgres/postgres-logs-get-list"
     ]
   }
 ]

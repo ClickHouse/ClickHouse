@@ -862,7 +862,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), mode);
+                auto projection = ProjectionDescription::getProjectionFromAST(
+                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
                 properties.projections.add(std::move(projection));
             }
 
