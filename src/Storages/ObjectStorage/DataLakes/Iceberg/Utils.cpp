@@ -1674,7 +1674,7 @@ void checkStorageStillHoldsValidatedTable(
 
     auto log = getLogger("IcebergValidatedTableCheck");
 
-    const auto [_version, current_metadata_path, _compression, _identity] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [current_version, current_metadata_path, _compression, current_identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -1700,6 +1700,21 @@ void checkStorageStillHoldsValidatedTable(
         /* table_uuid */ std::nullopt);
 
     persistent_table_components.checkMetadataBelongsToValidatedTable(current_metadata_object, validated_incarnation, operation);
+
+    /// A format-version 1 table may carry no `table-uuid` at all, and then the check above has
+    /// nothing to compare: it would let a statement validated against one table publish over the
+    /// table that replaced it at the same root. The metadata file that was just listed is the only
+    /// witness such a table has, so it is the one consulted here.
+    if (persistent_table_components.trusted_table_uuid->isReplacementOfValidatedFile(
+            current_version, current_metadata_path, current_identity))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The Iceberg table at {} was replaced while {} was running: the metadata now in storage is {} at version {}, which is not the "
+            "file the statement was validated against, and the table carries no `table-uuid` to tell the two apart. Retry the statement.",
+            persistent_table_components.table_path,
+            operation,
+            current_metadata_path,
+            current_version);
 }
 
 }
