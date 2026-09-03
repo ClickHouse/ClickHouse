@@ -47,5 +47,14 @@
     <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third', 'quarter'])</query>
     <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['dense', 'medium'])</query>
 
+    <!-- Leapfrog intersection on long posting lists: the density threshold of 1 forces it for tokens that would
+         otherwise take the brute-force path. `third` and `sparse` co-occur on a third of the sparse rows, so the
+         sparse cursor leads and the dense one jumps about 17 postings per advance. -->
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third']) SETTINGS text_index_lazy_intersection_density_threshold = 1</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third', 'quarter', 'fifth']) SETTINGS text_index_lazy_intersection_density_threshold = 1</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['third', 'sparse'])</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third']) SETTINGS text_index_lazy_intersection_density_threshold = 1, max_threads = 4</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third', 'quarter', 'fifth']) SETTINGS text_index_lazy_intersection_density_threshold = 1, max_threads = 4</query>
+
     <drop_query>DROP TABLE IF EXISTS text_index_lazy_wide</drop_query>
 </test>
