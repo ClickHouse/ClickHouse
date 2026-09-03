@@ -35,7 +35,7 @@ ClickHouse ① は、テーブルの主キーに対するフィルタを含む�
 
 <br />
 
-`n` 本の並列処理レーンの数は、[`max_threads`](/ja/reference/settings/session-settings#max_threads) 設定で制御されます。デフォルトでは、server 上で ClickHouse が使用できる単一 CPU のコア数 (スレッド数) に一致します。上の例では、`4` コアを想定しています。
+`n` 本の並列処理レーンの数は、[`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) 設定で制御されます。デフォルトでは、server 上で ClickHouse が使用できる単一 CPU のコア数 (スレッド数) に一致します。上の例では、`4` コアを想定しています。
 
 `8` コアのマシンでは、より多くのレーンが並列にデータを処理できるため、クエリ処理のスループットはおおよそ 2 倍になります (ただし、それに応じてメモリ使用量も増加します) 。
 
@@ -225,17 +225,17 @@ WHERE town = 'LONDON';
 
 shared-nothing クラスターの場合:
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ja/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ja/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read)
 
 共有ストレージを使用するクラスター (例: ClickHouse Cloud) の場合:
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ja/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ja/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
 
-さらに、読み取り task size には厳格な下限があり、次の設定で制御されます:
+さらに、読み取りタスクサイズには厳格な下限があり、次の設定で制御されます:
 
-* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ja/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ja/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+* [merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_per_task_for_remote_reading)
 
 <Warning>
   **これらの設定は変更しないでください**

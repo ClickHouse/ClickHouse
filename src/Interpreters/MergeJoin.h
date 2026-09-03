@@ -47,9 +47,12 @@ public:
 
     void setTotals(const Block &) override;
 
+    bool hasPostBuildPhase() const override { return true; }
+    void runPostBuildPhase() override;
+
     size_t getTotalRowCount() const override { return right_blocks.row_count; }
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
-    /// Has to be called only after setTotals()/mergeRightBlocks()
+    /// Has to be called only after `runPostBuildPhase`
     bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;

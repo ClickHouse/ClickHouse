@@ -25,7 +25,7 @@ sqlite('db_path', 'table_name')
 * `db_path` — Caminho para um arquivo de banco de dados SQLite. [String](/pt-BR/reference/data-types/string).
 * `table_name` — Nome de uma tabela no banco de dados SQLite ou uma consulta passada ao SQLite como está (consulte [Passando uma consulta em vez de um nome de tabela](#passing-a-query)). [String](/pt-BR/reference/data-types/string).
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor retornado
 </div>
 
@@ -47,7 +47,7 @@ Essa tabela é somente leitura: não é permitido fazer `INSERT` nela. A mesma s
 <Note>
   A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e reserializada antes de ser enviada ao SQLite. Portanto, ela deve ser um SQL válido do ClickHouse. Para usar uma sintaxe específica do SQLite que o ClickHouse não analisa, use a forma `query('...')`, cujo texto é enviado ao SQLite literalmente.
 
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é aplicado à consulta fornecida — ele é aplicado no ClickHouse depois que o resultado completo da consulta é buscado. Para restringir os dados lidos do SQLite, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings#external_table_strict_query), um filtro externo que não pode ser aplicado é rejeitado com uma exceção, em vez de ser aplicado localmente.
+  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é aplicado à consulta fornecida — ele é aplicado no ClickHouse depois que o resultado completo da consulta é buscado. Para restringir os dados lidos do SQLite, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo que não pode ser aplicado é rejeitado com uma exceção, em vez de ser aplicado localmente.
 </Note>
 
 <div id="example">

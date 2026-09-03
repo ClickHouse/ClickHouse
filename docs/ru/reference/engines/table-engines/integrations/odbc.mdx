@@ -1,5 +1,5 @@
 ---
-description: 'Позволяет ClickHouse подключаться к внешним базам данных через ODBC.'
+description: 'Позволяет ClickHouse подключаться к внешним СУБД через ODBC.'
 sidebarTitle: 'ODBC'
 slug: /engines/table-engines/integrations/odbc
 title: 'Движок таблицы ODBC'
@@ -12,7 +12,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 <CloudNotSupportedBadge />
 
-Позволяет ClickHouse подключаться к внешним базам данных через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+Позволяет ClickHouse подключаться к внешним СУБД через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 Для безопасной работы с подключениями ODBC ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC загружается напрямую из `clickhouse-server`, проблемы с драйвером могут привести к сбою сервера ClickHouse. При необходимости ClickHouse автоматически запускает `clickhouse-odbc-bridge`. Программа моста ODBC устанавливается из того же пакета, что и `clickhouse-server`.
 
@@ -38,7 +38,7 @@ ENGINE = ODBC(datasource, external_database, external_table)
 
 * Имена столбцов должны совпадать с именами в исходной таблице, но можно использовать только часть этих столбцов и в любом порядке.
 * Типы столбцов могут отличаться от типов в исходной таблице. ClickHouse пытается [привести](/ru/reference/functions/regular-functions/type-conversion-functions#CAST) значения к типам данных ClickHouse.
-* Настройка [external&#95;table&#95;functions&#95;use&#95;nulls](/ru/reference/settings/session-settings#external_table_functions_use_nulls) определяет, как обрабатывать столбцы с типом Nullable. Значение по умолчанию: 1. Если 0, табличная функция не создаёт столбцы с типом Nullable и вместо null вставляет значения по умолчанию. Это также применимо к значениям NULL внутри массивов.
+* Настройка [external&#95;table&#95;functions&#95;use&#95;nulls](/ru/reference/settings/session-settings/external-table#external_table_functions_use_nulls) определяет, как обрабатывать столбцы с типом Nullable. Значение по умолчанию: 1. Если 0, табличная функция не создаёт столбцы с типом Nullable и вместо null вставляет значения по умолчанию. Это также применимо к значениям NULL внутри массивов.
 
 **Параметры движка**
 

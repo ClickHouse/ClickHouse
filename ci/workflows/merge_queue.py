@@ -13,6 +13,7 @@ from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_merge_queue_jo
 workflow = Workflow.Config(
     name="MergeQueueCI",
     event=Workflow.Event.MERGE_QUEUE,
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
         JobConfigs.fast_test,

@@ -1207,7 +1207,7 @@ def test_mysqljs_client(started_cluster, nodejs_container):
         ),
         demux=True,
     )
-    assert code == 1
+    assert code == 1, stderr
     assert (
         "MySQL is requesting the sha256_password authentication method, which is not supported."
         in stderr.decode()
@@ -1219,23 +1219,26 @@ def test_mysqljs_client(started_cluster, nodejs_container):
         ),
         demux=True,
     )
-    assert code == 0
+    assert code == 0, stderr
 
-    code, (_, _) = nodejs_container.exec_run(
+    code, (_, stderr) = nodejs_container.exec_run(
         "node test.js {host} {port} user_with_double_sha1 abacaba".format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
         demux=True,
     )
-    assert code == 0
+    assert code == 0, stderr
 
-    code, (_, _) = nodejs_container.exec_run(
+    code, (_, stderr) = nodejs_container.exec_run(
         "node test.js {host} {port} user_with_empty_password 123".format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
         demux=True,
     )
-    assert code == 1
+    assert code == 1, stderr
+    # An uncaught error anywhere in the client also exits 1, so the exit code alone
+    # does not tell a refused password from a client that never reached the server.
+    assert b"Authentication failed" in (stderr or b""), stderr
 
 
 def test_java_client_text(started_cluster, java_container):

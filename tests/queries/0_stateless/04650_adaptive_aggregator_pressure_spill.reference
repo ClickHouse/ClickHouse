@@ -1,0 +1,14 @@
+Routing table spills once it crosses the key floor
+1
+The drain processed multiple spill floors of records
+1
+The spill was exercised
+1
+Learning-phase tables spill under the external threshold
+1
+The learning phase stood down under pressure
+1
+A learning-phase query fits in a limit only spilling can meet
+3000000
+No pressure, no stand-down
+0
