@@ -319,6 +319,31 @@ class FuzzerLogParser:
                 return ""
         return ""
 
+    def find_unnamed_fatals(self, limit=MATCH_WINDOW_LINES):
+        """`<Fatal>` lines that no `EXPECTED_PATTERNS` line explains.
+
+        `parse_failure` returns `UNKNOWN_ERROR` whenever no `ERROR_PATTERNS` entry got a
+        genuine match, which is not the same as there being nothing left to report: a fatal
+        the parser cannot classify produces the same verdict. Callers about to explain an
+        `UNKNOWN_ERROR` away must check here first, or that fatal is silently dropped.
+        `dolor.py` fails a run on the same evidence (any `<Fatal>` bar the expected kill),
+        so the two verdicts agree.
+        """
+        found = []
+        for log in self.server_logs:
+            if not log:
+                continue
+            output = Shell.get_output(
+                f"rg -z --text -o -m {self.SCAN_MATCHES} '.*<Fatal>.*' {log}",
+                strict=False,
+            )
+            for line in output.splitlines():
+                if line.strip() and not re.search(SANITIZER_OOM_PATTERN, line):
+                    found.append(line)
+                    if len(found) >= limit:
+                        return found
+        return found
+
     def parse_failure(self, allow_expected_only=False):
         """`allow_expected_only` lets a caller that already knows the run failed name it
         after an `EXPECTED_PATTERNS` line. Off by default so a detector cannot turn a line

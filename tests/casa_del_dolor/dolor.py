@@ -649,6 +649,9 @@ if args.with_arrowflight:
 
 # This is the main loop, run while client and server are running
 all_running = True
+# `start_clickhouse` clears `clickhouse_forced_stop`, so a shutdown that hung mid-run would
+# be forgotten by the time teardown looks at it. Remember which servers it happened to.
+forced_stop_during_run: set[str] = set()
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 # Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -723,12 +726,22 @@ while all_running and (not reached_limit):
             if stopped is False:
                 # `False` (not an exception) means it was already gone: `start_clickhouse`
                 # below would then wipe `clickhouse_exec_id`/`clickhouse_last_exit_code`
-                # before teardown can classify the death. Not falsy - the force-kill
-                # escalation path returns `None` and is a normal restart.
+                # before teardown can classify the death. Not falsy - the escalation path
+                # returns `None` too, so it is read off the flag below instead.
                 logger.error(
                     f"The server {next_pick.name} was already gone before the scheduled restart could stop it"
                 )
                 all_running = False
+            if next_pick.clickhouse_forced_stop:
+                # Escalation only: an intentional `kill=True` never sets this, so it marks a
+                # graceful stop that hung. Log the message the report keys on before
+                # `start_clickhouse` clears the flag, or the hang is lost and the run can
+                # still finish green once the replacement server comes up.
+                logger.error(
+                    f"Server {next_pick.name} did not shut down gracefully and had to be "
+                    "force killed during a scheduled restart"
+                )
+                forced_stop_during_run.add(next_pick.name)
         except Exception as ex:
             logger.error(f"Failed to stop ClickHouse: {ex}")
             logger.info(f"The server {next_pick.name} is not running")
@@ -976,6 +989,14 @@ for server in servers:
     if server.clickhouse_forced_stop:
         logging.error(
             f"Server {server.name} did not shut down gracefully and had to be force killed"
+        )
+        log_server_backtrace(server)
+        good_exit = False
+    elif server.name in forced_stop_during_run:
+        # A restart earlier in the run had to force kill it. `start_clickhouse` cleared the
+        # flag, but a hung shutdown is a failure whether or not the replacement came up.
+        logging.error(
+            f"Server {server.name} had to be force killed during a scheduled restart earlier in the run"
         )
         log_server_backtrace(server)
         good_exit = False

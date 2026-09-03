@@ -563,10 +563,17 @@ def analyze_job_logs(
         # a failure from it.
         parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
         if parsed_name == FuzzerLogParser.UNKNOWN_ERROR:
+            # `UNKNOWN_ERROR` only says no `ERROR_PATTERNS` entry matched, not that the
+            # expected lines are the whole story: a `<Fatal>` the parser cannot classify
+            # gives the same verdict. Downgrading on an OOM found elsewhere would drop it,
+            # so the flip below is gated on there being no such evidence left.
+            unnamed_fatals = fuzzer_log_parser.find_unnamed_fatals()
             expected_name, expected_info, expected_files = (
                 fuzzer_log_parser.parse_failure(allow_expected_only=True)
             )
-            if expected_name != FuzzerLogParser.UNKNOWN_ERROR and re.search(
+            if unnamed_fatals:
+                parsed_info += "Unclassified fatal:\n" + "\n".join(unnamed_fatals) + "\n"
+            elif expected_name != FuzzerLogParser.UNKNOWN_ERROR and re.search(
                 SANITIZER_OOM_REPORT_PATTERN, expected_info
             ):
                 info.append(

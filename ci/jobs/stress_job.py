@@ -398,7 +398,13 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
+            # Only a named crash may end the scan early. The memory limit, an unnamed
+            # `<Fatal>` and the expected-only lines are each held in their own slot and
+            # ranked after the loop, so no replica's benign verdict can stop the search
+            # before another replica's crash has been looked for.
             definitive_result = None
+            memory_limit_result = None
+            fatal_result = None
             fallback_result = None
 
             for replica_name, server_log_files, stderr_log_files in replica_log_pairs:
@@ -416,6 +422,17 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     # under `server_died or crash_evidence`, so an expected-only line may
                     # still name the run as it did before - but only as a fallback.
                     name, description, files = log_parser.parse_failure()
+                    if name == FuzzerLogParser.MEMORY_LIMIT_ERROR:
+                        # Named, but an out-of-memory run rather than a crash, so it must
+                        # not end the scan: another replica may still hold the crash this
+                        # run would otherwise be downgraded past.
+                        if memory_limit_result is None:
+                            memory_limit_result = (
+                                name,
+                                f"{file_pair_info}\n{description}",
+                                files,
+                            )
+                        continue
                     if name != FuzzerLogParser.UNKNOWN_ERROR:
                         definitive_result = (
                             name,
@@ -423,6 +440,18 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                             files,
                         )
                         break
+                    # `UNKNOWN_ERROR` covers a `<Fatal>` the parser cannot classify, which is
+                    # crash evidence and has to outrank any replica's expected-only verdict.
+                    unnamed_fatals = log_parser.find_unnamed_fatals()
+                    if unnamed_fatals and fatal_result is None:
+                        fatal_result = (
+                            name,
+                            f"{file_pair_info}\n{description}"
+                            + "Unclassified fatal:\n"
+                            + "\n".join(unnamed_fatals)
+                            + "\n",
+                            files,
+                        )
                     name, description, files = log_parser.parse_failure(
                         allow_expected_only=True
                     )
@@ -444,22 +473,25 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                         f"Server logs should still be collected."
                     )
 
-            result = definitive_result or fallback_result
-            # A definitive verdict is a bug the parser recognised, except for the memory
-            # limit, which is what an out-of-memory run reports rather than a crash.
-            crash_named = (
-                definitive_result is not None
-                and definitive_result[0] != FuzzerLogParser.MEMORY_LIMIT_ERROR
-            )
+            # Ranked only now that every replica has been scanned: a crash anywhere beats
+            # the memory limit, which beats the expected-only lines.
+            crash_result = definitive_result or fatal_result
+            result = crash_result or memory_limit_result or fallback_result
+            # A crash the parser recognised, or a `<Fatal>` it could not - either is a bug.
+            # The memory limit is not: it is what an out-of-memory run reports.
+            crash_named = crash_result is not None
+            # The expected-only verdicts explain the run only when nothing better was found
+            # on any replica, so they are read off the ranking above rather than off
+            # `definitive_result` alone.
+            using_fallback = fallback_result is not None and result is fallback_result
             # An expected-only verdict names a run that something else already declared
             # failed. When `crash_evidence` alone brought us here it declared nothing: with
             # rotated logs in scope the `<Fatal>` it found can be the expected kill itself,
             # and reporting that would fail a run for its own restart. A `<Fatal>` the
-            # parser cannot name is not expected-only, and still reports below.
+            # parser cannot name is not expected-only, and reports as `fatal_result` above.
             expected_only = (
-                definitive_result is None
+                using_fallback
                 and not server_died
-                and fallback_result is not None
                 and fallback_result[0] != FuzzerLogParser.UNKNOWN_ERROR
             )
             # OOM is allowed in stress tests outright - `is_oom` above already passes the
@@ -469,8 +501,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             # `server_died` says only that the process crashed, not why, so this is
             # checked independently of the `not server_died` guard above.
             expected_only_oom = (
-                definitive_result is None
-                and fallback_result is not None
+                using_fallback
                 and fallback_result[0] != FuzzerLogParser.UNKNOWN_ERROR
                 and re.search(SANITIZER_OOM_REPORT_PATTERN, fallback_result[1])
             )
