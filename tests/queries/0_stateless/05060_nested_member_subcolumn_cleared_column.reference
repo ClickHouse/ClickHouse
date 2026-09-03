@@ -1,0 +1,6 @@
+-- the cleared member and its `size0` subcolumn read together
+[(0)]	1
+-- the same pair in the other order
+1	[(0)]
+-- the subcolumn alone was already correct and must stay so
+1
