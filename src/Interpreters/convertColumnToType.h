@@ -37,7 +37,7 @@ namespace DB
   * `ColumnVariant`-aware path before the generic `get`. No current caller needs `Variant`-of-`Bool`
   * textual conversion. An identity conversion of a `Variant`-carrying type is the one deliberate
   * divergence from the legacy `Field` path: it returns the input column unchanged, so a `Variant`
-  * discriminator survives here and not there — and inside such a type a `Bool` alternative's raw byte is
+  * discriminator survives here and not there, and inside such a type a `Bool` alternative's raw byte is
   * not clamped either, which is inherent to keeping the discriminator. Every other identity conversion
   * goes through the `Field` path, so it clamps.
   */
