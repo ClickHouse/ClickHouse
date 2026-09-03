@@ -1,4 +1,5 @@
 #include <Databases/DatabasesCommon.h>
+#include <Storages/StorageTableProxy.h>
 #include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
@@ -559,19 +560,35 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
     return tryGetTableNoWait(table_name);
 }
 
+/// A table of a database with `lazy_load_tables` is kept in the catalog as a stand-in that materializes
+/// the real storage on first access, and the catalog keeps the stand-in afterwards. Consumers of this
+/// iterator - the `system.parts` / `system.replicas` family, the `SYSTEM` commands, the asynchronous
+/// metrics - recognize an engine by downcasting the storage they get, which the stand-in defeats, so
+/// such a table stayed invisible to them even after it had been loaded. Hand out the real storage once
+/// it exists; a table that has not been accessed yet is left as is, because materializing it here would
+/// load every lazy table of the server, which is exactly what the setting avoids.
+static StoragePtr unwrapMaterializedLazyTable(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(storage.get()))
+    {
+        if (auto nested = proxy->tryGetNested())
+            return nested;
+    }
+
+    return storage;
+}
+
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     ensurePopulated();
     std::lock_guard lock(mutex);
-    if (!filter_by_table_name)
-        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 
-    Tables filtered_tables;
+    Tables snapshot_tables;
     for (const auto & [table_name, storage] : tables)
-        if (filter_by_table_name(table_name))
-            filtered_tables.emplace(table_name, storage);
+        if (!filter_by_table_name || filter_by_table_name(table_name))
+            snapshot_tables.emplace(table_name, unwrapMaterializedLazyTable(storage));
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(snapshot_tables), database_name);
 }
 
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(

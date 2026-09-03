@@ -153,6 +153,30 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
 
+    /// The capability predicates have to be forwarded as well: they are answered before the operation
+    /// that would materialize the nested storage, so a lazy stand-in that keeps the `IStorage` defaults
+    /// rejects `DELETE` and every mutation for the whole lifetime of the server process.
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
+
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
+
+    /// Not forwarding these makes `BACKUP` write the table definition with no data at all, and the
+    /// restore of such a backup silently succeeds with an empty table.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    }
+
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    }
+
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
     void startup() override { getNested()->startup(); }
