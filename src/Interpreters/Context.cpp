@@ -68,6 +68,7 @@
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
@@ -1709,6 +1710,10 @@ void Context::dropStorageCacheEntry(const StorageID & id) const
 
 std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const
 {
+    /// Disk probes cannot publish from where they run, since they are reached from constructors
+    /// that may already hold `shared->mutex`; drained here, before this function takes it.
+    flushExt4CorruptionKernelBugWarning(*this);
+
     std::unordered_map<Context::WarningType, PreformattedMessage> common_warnings;
     {
         SharedLockGuard lock(shared->mutex);
@@ -1968,6 +1973,9 @@ catch (...)
 
 static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
 {
+    /// No ext4 probe here: both callers hold `shared->mutex` and reporting a warning takes it
+    /// again. `setTemporaryStoragePath` probes before it locks, and the cache path that
+    /// `setTemporaryStorageInCache` passes is already probed by `FileCache` itself.
     auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
     VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     return volume;
@@ -1975,6 +1983,9 @@ static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poc
 
 void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 {
+    /// Before the lock: reporting a warning takes `shared->mutex`, which is not recursive.
+    warnIfAffectedByExt4CorruptionKernelBug(path, "the temporary storage path");
+
     std::lock_guard lock(shared->mutex);
 
     if (shared->root_temp_data_on_disk)
@@ -7490,6 +7501,9 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
             shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"storage_configuration.disks", getSettingsRef());
     }
 
+    /// Disks and caches built by the reload above only recorded their probe; publish it here, where
+    /// none of the locks taken above is held, so a reload logs it instead of waiting for a reader.
+    flushExt4CorruptionKernelBugWarning(*this);
 }
 
 

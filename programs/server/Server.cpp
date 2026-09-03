@@ -20,6 +20,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
+#include <Common/VersionNumber.h>
+#include <Common/atomicRename.h>
 #include <base/phdr_cache.h>
 #include <Common/ErrorHandlers.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -115,6 +117,7 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
@@ -918,6 +921,70 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
+    try
+    {
+        String first_slow_governor;
+        fs::path cpu_dir("/sys/devices/system/cpu");
+        if (fs::exists(cpu_dir))
+        {
+            for (const auto & entry : fs::directory_iterator(cpu_dir))
+            {
+                const auto name = entry.path().filename().string();
+                if (name.size() < 4 || !name.starts_with("cpu") || name[3] < '0' || name[3] > '9')
+                    continue;
+
+                auto governor_path = entry.path() / "cpufreq" / "scaling_governor";
+                if (!fs::exists(governor_path))
+                    continue;
+
+                try
+                {
+                    String governor = readLine(governor_path.string());
+                    if (governor != "performance" && first_slow_governor.empty())
+                        first_slow_governor = governor;
+                }
+                catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+                {
+                    /// One unreadable CPU must not hide the governors of the others.
+                }
+            }
+        }
+        if (!first_slow_governor.empty())
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_CPU_SCALING_GOVERNOR_NOT_PERFORMANCE,
+                PreformattedMessage::create(
+                    "Linux CPU scaling governor is set to \"{}\" instead of \"performance\" for some CPUs."
+                    " Performance can be degraded. Check /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
+                    first_slow_governor));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        /// Ranges of Linux kernel versions with bugs known to affect ClickHouse (see #18794).
+        VersionNumber linux_version(Poco::Environment::osVersion());
+        std::optional<PreformattedMessage> kernel_warning;
+        if (linux_version < VersionNumber{3, 2, 0})
+            kernel_warning = PreformattedMessage::create(
+                "Linux kernel version {} is too old: IPv6 packets can be dropped randomly. Consider upgrading the kernel.",
+                linux_version.toString());
+        else if (linux_version >= VersionNumber{5, 5, 0} && linux_version < VersionNumber{5, 6, 13})
+            kernel_warning = PreformattedMessage::create(
+                "Linux kernel version {} has broken nested epoll_wait (fixed in 5.6.13). Consider upgrading the kernel.",
+                linux_version.toString());
+        server.context()->addOrUpdateWarningMessage(Context::WarningType::LINUX_KERNEL_WITH_KNOWN_ISSUES, kernel_warning);
+
+        /// The 4.16.0-4.16.3 ext4 corruption warning lives with the disks: every local disk and
+        /// filesystem cache checks its own constructor-normalized root, so here only the server's
+        /// data path is probed.
+        warnIfAffectedByExt4CorruptionKernelBug(data_path, "the server's data path");
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
     if (!PerCPU::haveRSeq())
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
@@ -983,6 +1050,22 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     try
     {
+        const char * filename = "/proc/sys/fs/file-max";
+        /// The value can be as large as 2^63 - 1, so don't use the int-typed readNumber() here.
+        ReadBufferFromFile in(filename);
+        UInt64 system_wide_max_open_files = 0;
+        readText(system_wide_max_open_files, in);
+        if (system_wide_max_open_files < 500000)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_MAX_OPEN_FILES_SYSTEM_WIDE_TOO_LOW,
+                PreformattedMessage::create("Linux system-wide limit on the number of open files is too low. Check {}", String(filename)));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
         const char * filename = "/proc/sys/kernel/task_delayacct";
         if (readNumber(filename) == 0)
             server.context()->addOrUpdateWarningMessage(
@@ -1013,6 +1096,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
         {
             std::optional<PreformattedMessage> resync_warning;
             std::optional<PreformattedMessage> degraded_warning;
+            std::optional<PreformattedMessage> stripe_cache_warning;
 
             for (const auto & entry : fs::directory_iterator(sys_block))
             {
@@ -1020,32 +1104,53 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 if (!name.starts_with("md"))
                     continue;
 
-                auto sync_action_path = entry.path() / "md" / "sync_action";
-                if (fs::exists(sync_action_path))
+                try
                 {
-                    String sync_action = readLine(sync_action_path.string());
-                    if (sync_action != "idle")
+                    auto sync_action_path = entry.path() / "md" / "sync_action";
+                    if (fs::exists(sync_action_path))
                     {
-                        resync_warning = PreformattedMessage::create(
-                            "Linux mdraid array {} is currently performing `{}`. Disk I/O performance can be degraded. Check {}",
-                            name, sync_action, sync_action_path.string());
+                        String sync_action = readLine(sync_action_path.string());
+                        if (sync_action != "idle")
+                        {
+                            resync_warning = PreformattedMessage::create(
+                                "Linux mdraid array {} is currently performing `{}`. Disk I/O performance can be degraded. Check {}",
+                                name, sync_action, sync_action_path.string());
+                        }
+                    }
+
+                    auto array_state_path = entry.path() / "md" / "array_state";
+                    if (fs::exists(array_state_path))
+                    {
+                        static const std::unordered_set<String> normal_states = {"active", "active-idle", "clean", "write-pending", "readonly", "read-auto"};
+                        String array_state = readLine(array_state_path.string());
+                        if (!normal_states.contains(array_state))
+                        {
+                            degraded_warning = PreformattedMessage::create(
+                                "Linux mdraid array {} has state `{}`. Check {}",
+                                name, array_state, array_state_path.string());
+                        }
+                    }
+
+                    auto level_path = entry.path() / "md" / "level";
+                    auto stripe_cache_path = entry.path() / "md" / "stripe_cache_size";
+                    if (fs::exists(level_path) && fs::exists(stripe_cache_path))
+                    {
+                        String level = readLine(level_path.string());
+                        /// The default stripe cache size of 256 pages is known to be insufficient for good RAID 4/5/6 write performance.
+                        if ((level == "raid4" || level == "raid5" || level == "raid6") && readNumber(stripe_cache_path.string()) < 1024)
+                        {
+                            stripe_cache_warning = PreformattedMessage::create(
+                                "Linux mdraid array {} with level `{}` has a low stripe cache size. Write performance can be degraded. Check {}",
+                                name, level, stripe_cache_path.string());
+                        }
                     }
                 }
-
-                auto array_state_path = entry.path() / "md" / "array_state";
-                if (fs::exists(array_state_path))
+                catch (const std::exception &) // NOLINT(bugprone-empty-catch)
                 {
-                    static const std::unordered_set<String> normal_states = {"active", "active-idle", "clean", "write-pending", "readonly", "read-auto"};
-                    String array_state = readLine(array_state_path.string());
-                    if (!normal_states.contains(array_state))
-                    {
-                        degraded_warning = PreformattedMessage::create(
-                            "Linux mdraid array {} has state `{}`. Check {}",
-                            name, array_state, array_state_path.string());
-                    }
+                    /// One unreadable /sys leaf must not hide the state of the other arrays.
                 }
 
-                if (resync_warning && degraded_warning)
+                if (resync_warning && degraded_warning && stripe_cache_warning)
                     break;
             }
 
@@ -1053,7 +1158,264 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MDRAID_IS_BEING_RESYNCHRONIZED, resync_warning);
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MDRAID_IS_DEGRADED, degraded_warning);
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_MDRAID_INSUFFICIENT_STRIPE_CACHE, stripe_cache_warning);
         }
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        UInt64 corrected_errors = 0;
+        UInt64 uncorrected_errors = 0;
+        fs::path edac_dir("/sys/devices/system/edac/mc");
+        if (fs::exists(edac_dir))
+        {
+            for (const auto & entry : fs::directory_iterator(edac_dir))
+            {
+                auto read_count = [&](const char * name) -> UInt64
+                {
+                    auto path = entry.path() / name;
+                    if (!fs::exists(path))
+                        return 0;
+                    ReadBufferFromFile in(path.string());
+                    UInt64 count = 0;
+                    readText(count, in);
+                    return count;
+                };
+                try
+                {
+                    corrected_errors += read_count("ce_count");
+                    uncorrected_errors += read_count("ue_count");
+                }
+                catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+                {
+                    /// One unreadable controller must not hide the counts of the others.
+                }
+            }
+        }
+        if (corrected_errors >= 100)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_HIGH_CORRECTED_ECC_ERRORS_COUNT,
+                PreformattedMessage::create(
+                    "Memory controllers reported {} corrected ECC errors: a RAM module may be failing."
+                    " Check /sys/devices/system/edac/mc/mc*/ce_count",
+                    corrected_errors));
+        if (uncorrected_errors > 0)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_UNCORRECTED_ECC_ERRORS,
+                PreformattedMessage::create(
+                    "Memory controllers reported {} uncorrected ECC errors: memory contents were corrupted."
+                    " The RAM module should be replaced. Check /sys/devices/system/edac/mc/mc*/ue_count",
+                    uncorrected_errors));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/proc/sys/vm/zone_reclaim_mode";
+        if (readNumber(filename) != 0)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_ZONE_RECLAIM_MODE_ENABLED,
+                PreformattedMessage::create(
+                    "NUMA zone reclaim is enabled. It can cause severe latency spikes on multi-socket machines;"
+                    " the recommended value is 0. Check {}", String(filename)));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        /// defrag = "always" causes allocation stalls even when THP is only enabled for madvise.
+        const char * defrag_filename = "/sys/kernel/mm/transparent_hugepage/defrag";
+        const char * enabled_filename = "/sys/kernel/mm/transparent_hugepage/enabled";
+        if (readLine(defrag_filename).contains("[always]") && !readLine(enabled_filename).contains("[never]"))
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_DEFRAG_SET_TO_ALWAYS,
+                PreformattedMessage::create(
+                    "Linux transparent hugepage defragmentation is set to \"always\"."
+                    " It can cause allocation stalls. Check {}", String(defrag_filename)));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        UInt64 throttle_events = 0;
+        fs::path cpu_dir("/sys/devices/system/cpu");
+        if (fs::exists(cpu_dir))
+        {
+            for (const auto & entry : fs::directory_iterator(cpu_dir))
+            {
+                const auto name = entry.path().filename().string();
+                if (name.size() < 4 || !name.starts_with("cpu") || name[3] < '0' || name[3] > '9')
+                    continue;
+                auto throttle_path = entry.path() / "thermal_throttle" / "core_throttle_count";
+                if (!fs::exists(throttle_path))
+                    continue;
+                try
+                {
+                    ReadBufferFromFile in(throttle_path.string());
+                    UInt64 count = 0;
+                    readText(count, in);
+                    throttle_events += count;
+                }
+                catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+                {
+                    /// One unreadable core must not hide the throttling of the others.
+                }
+            }
+        }
+        if (throttle_events > 0)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_CPU_THERMAL_THROTTLING_DETECTED,
+                PreformattedMessage::create(
+                    "CPU cores reported {} thermal throttling events since boot. Performance can be degraded and unstable."
+                    " Check the cooling of the machine.",
+                    throttle_events));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        bool turbo_disabled = false;
+        const char * intel_no_turbo = "/sys/devices/system/cpu/intel_pstate/no_turbo";
+        const char * cpufreq_boost = "/sys/devices/system/cpu/cpufreq/boost";
+        if (fs::exists(intel_no_turbo))
+            turbo_disabled = readNumber(intel_no_turbo) == 1;
+        else if (fs::exists(cpufreq_boost))
+            turbo_disabled = readNumber(cpufreq_boost) == 0;
+        if (turbo_disabled)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_CPU_TURBO_BOOST_DISABLED,
+                PreformattedMessage::create(
+                    "CPU turbo frequency boost is disabled. Performance can be degraded."
+                    " Check {} and {}", String(intel_no_turbo), String(cpufreq_boost)));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        /// The first line of /proc/swaps is a header; any further line is an active swap area.
+        ReadBufferFromFile in("/proc/swaps");
+        String header;
+        readStringUntilNewlineInto(header, in);
+        if (!in.eof())
+            in.ignore();
+        String first_swap_area;
+        readStringUntilNewlineInto(first_swap_area, in);
+        if (!first_swap_area.empty())
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_SWAP_IS_ENABLED,
+                PreformattedMessage::create(
+                    "Swap is enabled on the host. It can cause severe latency degradation under memory pressure."
+                    " It is recommended to disable swap on ClickHouse servers. Check /proc/swaps"));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        std::string renameat2_message;
+        if (!supportsAtomicRename(&renameat2_message))
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_RENAMEAT2_UNAVAILABLE,
+                PreformattedMessage::create(
+                    "The kernel does not support the renameat2 system call ({})."
+                    " Atomic operations such as EXCHANGE TABLES will not work."
+                    " This check reads the kernel version only: EXCHANGE TABLES can also fail on a filesystem"
+                    " without RENAME_EXCHANGE support, which is not detected here.", renameat2_message));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        const String canonical_data_path = fs::canonical(data_path).string();
+        /// Only filesystems that are plausible durable homes for the data directory.
+        const std::unordered_set<String> durable_fs_types = {"ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs"};
+
+        String data_fs_type;
+        String largest_fs_mount_point;
+        UInt64 largest_fs_capacity = 0;
+        size_t longest_mount_point_match = 0;
+        std::unordered_set<String> seen_devices;
+
+        ReadBufferFromFile mounts_file("/proc/self/mounts");
+        while (!mounts_file.eof())
+        {
+            String line;
+            readStringUntilNewlineInto(line, mounts_file);
+            if (!mounts_file.eof())
+                mounts_file.ignore();
+
+            /// Fields: device, mount point, filesystem type. Skip mount points with escaped characters.
+            size_t p1 = line.find(' ');
+            size_t p2 = (p1 == String::npos) ? String::npos : line.find(' ', p1 + 1);
+            size_t p3 = (p2 == String::npos) ? String::npos : line.find(' ', p2 + 1);
+            if (p3 == String::npos)
+                continue;
+            String device = line.substr(0, p1);
+            String mount_point = line.substr(p1 + 1, p2 - p1 - 1);
+            String fs_type = line.substr(p2 + 1, p3 - p2 - 1);
+            if (mount_point.contains('\\'))
+                continue;
+
+            bool contains_data_path = canonical_data_path == mount_point
+                || (canonical_data_path.starts_with(mount_point)
+                    && (mount_point == "/" || canonical_data_path[mount_point.size()] == '/'));
+            if (contains_data_path && mount_point.size() >= longest_mount_point_match)
+            {
+                longest_mount_point_match = mount_point.size();
+                data_fs_type = fs_type;
+            }
+
+            if (durable_fs_types.contains(fs_type) && seen_devices.insert(device).second)
+            {
+                std::error_code ec;
+                auto space = fs::space(mount_point, ec);
+                if (!ec && space.capacity > largest_fs_capacity)
+                {
+                    largest_fs_capacity = space.capacity;
+                    largest_fs_mount_point = mount_point;
+                }
+            }
+        }
+
+        if (data_fs_type == "overlay")
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::DATA_PATH_ON_OVERLAY_FS,
+                PreformattedMessage::create(
+                    "The <path> directory {} is located on an overlay filesystem, which reduces I/O performance."
+                    " If this is the writable layer of a container, what is stored there will also be lost when the container is removed;"
+                    " mount a volume for it instead. Tables on other configured disks are not covered by this check.",
+                    String(data_path)));
+
+        std::error_code ec;
+        auto data_space = fs::space(canonical_data_path, ec);
+        /// Require a 2x difference so that volumes of comparable size don't trigger the warning.
+        if (!ec && largest_fs_capacity > 0 && static_cast<UInt64>(data_space.capacity) * 2 < largest_fs_capacity)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::DATA_PATH_NOT_ON_LARGEST_FILESYSTEM,
+                PreformattedMessage::create(
+                    "The <path> directory {} is on a filesystem of size {}, while a much larger filesystem ({}) is mounted at {}."
+                    " Make sure it is on the intended volume. Tables on other configured disks are not covered by this check.",
+                    String(data_path),
+                    formatReadableSizeWithBinarySuffix(data_space.capacity),
+                    formatReadableSizeWithBinarySuffix(largest_fs_capacity),
+                    largest_fs_mount_point));
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
@@ -4039,6 +4401,11 @@ try
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
+
+            /// Everything constructed during startup has probed by now, and nothing here holds the
+            /// context lock, so the finding is logged as part of startup instead of waiting for
+            /// someone to read `system.warnings`.
+            flushExt4CorruptionKernelBugWarning(*global_context);
 
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");

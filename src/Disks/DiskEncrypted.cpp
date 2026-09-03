@@ -2,6 +2,8 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
+#include <filesystem>
 #include <IO/ReadPipeline.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -348,6 +350,44 @@ private:
     std::unique_ptr<IReservation> reservation;
 };
 
+namespace
+{
+    /// The encrypted root is its own subpath of the wrapped disk, so a nested mount there is not
+    /// covered by the wrapped disk's own check (see #18794). Which path is a real host path depends
+    /// on the delegate: a local disk exposes one directly, while a remote one exposes only its
+    /// metadata root - and that root is local exactly when its metadata storage says so. An object
+    /// storage's own getPath() is not usable here, since it can be a bare remote key prefix.
+    void warnIfEncryptedRootIsAffectedByExt4Bug(
+        IDisk & delegate, const String & disk_path, const String & disk_absolute_path, const String & encrypted_name)
+    {
+        const auto description = fmt::format("the path of encrypted disk '{}'", encrypted_name);
+        if (!delegate.isRemote())
+        {
+            warnIfAffectedByExt4CorruptionKernelBug(disk_absolute_path, description);
+            return;
+        }
+
+        try
+        {
+            auto metadata_storage = delegate.getMetadataStorage();
+            if (metadata_storage && metadata_storage->getType() == MetadataStorageType::Local)
+                warnIfAffectedByExt4CorruptionKernelBug(
+                    (std::filesystem::path(metadata_storage->getPath()) / disk_path).string(), description);
+
+            /// `isRemote()` above is the disk's, and a DiskObjectStorage reports it whatever its backend
+            /// is. A local object storage resolves blob keys under its key prefix on this host, so with
+            /// plain metadata that prefix, not the metadata root, is where the encrypted data lands.
+            auto object_storage = delegate.getObjectStorage();
+            if (object_storage && !object_storage->isRemote())
+                warnIfAffectedByExt4CorruptionKernelBug(
+                    (std::filesystem::path(object_storage->getCommonKeyPrefix()) / disk_path).string(), description);
+        }
+        catch (...) /// Ok: a delegate with neither of those simply has no local root to check. // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
+}
+
 DiskEncrypted::DiskEncrypted(
     const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_)
     : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_), config_, config_prefix_)
@@ -364,6 +404,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
+    warnIfEncryptedRootIsAffectedByExt4Bug(*delegate, disk_path, disk_absolute_path, encrypted_name);
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
@@ -375,6 +416,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
+    warnIfEncryptedRootIsAffectedByExt4Bug(*delegate, disk_path, disk_absolute_path, encrypted_name);
 }
 
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
