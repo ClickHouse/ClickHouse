@@ -134,6 +134,11 @@ size_t LazyOutput::buildOutput(
 
 void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
+    /// A join that emits no right column still records refs when `EXPLAIN ANALYZE matches = 1` asks
+    /// for an exact match count, and then there is nothing to emit from them.
+    if (columns.empty())
+        return;
+
     chassert(!has_row_store || !join_data_sorted, "Row store should be disabled when join data rerange optimization is used.");
 
     /// The reranged build side is the one producer of the range shape.
