@@ -1,5 +1,41 @@
 [
   {
+    "destination": "/get-started/setup/cloud",
+    "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ar/get-started/setup/cloud",
+    "source": "/ar/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/es/get-started/setup/cloud",
+    "source": "/es/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/fr/get-started/setup/cloud",
+    "source": "/fr/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ja/get-started/setup/cloud",
+    "source": "/ja/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ko/get-started/setup/cloud",
+    "source": "/ko/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/pt-BR/get-started/setup/cloud",
+    "source": "/pt-BR/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ru/get-started/setup/cloud",
+    "source": "/ru/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/zh/get-started/setup/cloud",
+    "source": "/zh/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
     "destination": "/clickstack/ingesting-data/overview",
     "source": "/clickstack/ingesting-data"
   },
@@ -1288,7 +1324,7 @@
     "source": "/changelogs/26.5"
   },
   {
-    "destination": "/resources/changelogs/oss/2026#266",
+    "destination": "/resources/changelogs/cloud/release-notes/26_6",
     "source": "/changelogs/26.6"
   },
   {
