@@ -109,6 +109,7 @@ private:
                                 static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch())
                                 .count()),
                         .etag = blob.Details.ETag.ToString(),
+                        .version_id = {},
                         .tags = {},
                         .attributes = {},
                     }));
@@ -222,6 +223,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                                 static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch())
                                 .count()),
                         .etag = blob.Details.ETag.ToString(),
+                        .version_id = {},
                         .tags = {},
                         .attributes = {},
                     }));

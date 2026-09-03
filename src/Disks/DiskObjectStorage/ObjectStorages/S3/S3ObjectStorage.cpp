@@ -198,6 +198,7 @@ private:
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
                     .etag = object.GetETag(),
+                    .version_id = {},
                     .tags = {},
                     .attributes = {},
                 };
@@ -385,6 +386,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                         .size_bytes = static_cast<uint64_t>(object.GetSize()),
                         .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
                         .etag = object.GetETag(),
+                        .version_id = {},
                         .tags = {},
                         .attributes = {},
                     }));

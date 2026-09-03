@@ -340,16 +340,16 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
 
     try
     {
-        for (size_t i = 0; i < objects.size(); ++i)
+        for (const auto & object_from : objects)
         {
-            auto object_to = applyMovePrefixIfPresent(objects[i], move_prefix, preserve_path);
-            if (!destinations.insert(object_to.remote_path).second)
+            auto destination = applyMovePrefixIfPresent(object_from, move_prefix, preserve_path);
+            if (!destinations.insert(destination.remote_path).second)
             {
-                reportMoveCollision(objects[i], object_to);
+                reportMoveCollision(object_from, destination);
                 continue;
             }
             task_tracker.add(
-                [&, &object_from = objects[i], object_to = std::move(object_to)]
+                [&, &object_from, object_to = std::move(destination)]
                 {
                     try
                     {
@@ -485,9 +485,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 = (!move_prefix.empty() && !settings.after_processing_move_preserve_path) ? "*" : "";
             std::unordered_set<String> destinations;
             const String src_bucket = s3_storage->getObjectsNamespace();
-            for (size_t i = 0; i < objects.size(); ++i)
+            for (const auto & object_from : objects)
             {
-                const auto & object_from = objects[i];
                 auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
                 if (!destinations.insert(object_to.remote_path).second)
                 {
@@ -621,9 +620,8 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
             auto request_settings = azure_storage->getSettings();
             const auto read_settings = azure_storage->patchSettings(getReadSettings());
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(IObjectStorage::getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
-            for (size_t i = 0; i < objects.size(); ++i)
+            for (const auto & object_from : objects)
             {
-                const auto & object_from = objects[i];
                 auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
                 if (!destinations.insert(object_to.remote_path).second)
                 {
