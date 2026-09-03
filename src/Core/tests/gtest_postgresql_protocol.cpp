@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
 
+#include <limits>
 #include <string>
 
 namespace DB::ErrorCodes
@@ -293,4 +294,20 @@ TEST(PostgreSQLProtocol, ReceiveRealignsAfterFailedParsing)
     std::unique_ptr<Messaging::Query> next;
     ASSERT_NO_THROW(next = mt.receive<Messaging::Query>());
     EXPECT_EQ(next->query, "SELECT 4");
+}
+
+TEST(PostgreSQLProtocol, CommandCompletePreservesUInt64RowCount)
+{
+    WriteBufferFromOwnString out;
+    Messaging::CommandComplete response(Messaging::CommandComplete::SELECT, std::numeric_limits<UInt64>::max());
+    response.serialize(out);
+    out.finalize();
+
+    std::string expected;
+    expected.push_back('C');
+    putInt32(expected, 32);
+    expected += "SELECT 18446744073709551615";
+    expected.push_back('\0');
+
+    EXPECT_EQ(out.str(), expected);
 }
