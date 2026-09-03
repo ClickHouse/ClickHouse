@@ -72,7 +72,7 @@ SeaweedFS 是开源的分布式文件和对象存储，提供兼容 S3 的网关
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -101,7 +101,7 @@ networks:
     driver: bridge
 ```
 
-`mini` 命令会在单个容器中启动完整的 SeaweedFS 技术栈。`-tableBucket=analytics` 标志会预先创建一个名为 `analytics` 的 S3 Tables 存储桶，作为 Iceberg 仓库。
+`mini` 命令会在单个容器中启动完整的 SeaweedFS 技术栈。`-tableBucket=analytics` 标志会预先创建一个名为 `analytics` 的 S3 Tables 存储桶，作为 Iceberg 仓库。`-admin.port=12646` 可确保 SeaweedFS 据此派生的管理 gRPC 端口低于 Linux 临时端口范围，否则启动时建立的连接可能会抢先占用该端口。
 
 **第 3 步：**运行以下命令启动服务：
 

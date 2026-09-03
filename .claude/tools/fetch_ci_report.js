@@ -7,7 +7,7 @@
  *
  * URL formats supported:
  *   - GitHub PR URLs: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports)
- *   - HTML URLs: https://s3.amazonaws.com/.../json.html?PR=...&sha=...&name_0=...
+ *   - HTML URLs: https://s3.amazonaws.com/.../praktika.html?PR=...&sha=...&name_0=...
  *   - Direct JSON URLs: https://s3.amazonaws.com/.../result_*.json
  *
  * Options:
@@ -24,7 +24,7 @@
  *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171"
  *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --failed --cidb
  *   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --report 2
- *   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&..."
+ *   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/praktika.html?PR=94537&..."
  *   node fetch_ci_report.js "https://s3.amazonaws.com/.../result_integration_tests.json"
  *   node fetch_ci_report.js "<url>" --test peak_memory --links
  *   node fetch_ci_report.js "<url>" --failed --download-logs
@@ -215,9 +215,15 @@ async function parseReportUrl(htmlUrl, credentials = null) {
 /**
  * Construct JSON URL for a given task name
  */
-function constructJsonUrl(baseUrl, suffix, sha, taskName) {
+function constructJsonUrl(baseUrl, suffix, sha, workflowName, taskName) {
+  // The S3 layout inserts the normalized workflow name (name_0) as a path segment:
+  //   <suffix>/<sha>/<normalized_workflow>/result_<job>.json
+  // Both the workflow-index report (result_<workflow>.json) and every per-job report
+  // (result_<job>.json) live under that same <normalized_workflow> directory. See
+  // fetchData/buildResultPath in ci/praktika/praktika.html for the ground truth.
+  const workflowSegment = normalizeTaskName(workflowName);
   const normalizedTask = normalizeTaskName(taskName);
-  return `${baseUrl}/${suffix}/${encodeURIComponent(sha)}/result_${normalizedTask}.json`;
+  return `${baseUrl}/${suffix}/${encodeURIComponent(sha)}/${workflowSegment}/result_${normalizedTask}.json`;
 }
 
 /**
@@ -441,12 +447,12 @@ function extractArtifactLinks(jsonData) {
 
   extractFromResults(jsonData.results);
 
-  // Filter to artifact/log links and the ClickHouse binary; exclude json.html navigation links.
+  // Filter to artifact/log links and the ClickHouse binary; exclude praktika.html/json.html navigation links.
   return links.filter(link => {
     const h = link.href;
     const name = h.split('/').pop();
     // Exclude CI navigation/report links
-    if (h.includes('json.html')) return false;
+    if (h.includes('json.html') || h.includes('praktika.html')) return false;
     // ClickHouse binary: starts with 'clickhouse' and has no dots (no file extension).
     // Matches 'clickhouse', 'clickhouse-stripped', etc. but not log/config files.
     if (name.startsWith('clickhouse') && !name.includes('.')) return true;
@@ -456,7 +462,7 @@ function extractArtifactLinks(jsonData) {
     if (h.includes('.log') || h.includes('.log.zst')) return true;
     if (h.includes('.tar.gz') || h.includes('.tar.zst') || h.includes('.tgz')) return true;
     if (h.includes('.zst')) return true;
-    if (h.includes('.html') && !h.includes('json.html')) return true;
+    if (h.includes('.html') && !h.includes('json.html') && !h.includes('praktika.html')) return true;
     if (h.includes('.tsv')) return true;
     if (h.includes('configs')) return true;
     if (h.includes('artifact_report')) return true;
@@ -500,7 +506,7 @@ async function getCIReportsFromPR(prUrl) {
     // quote chars so a URL quoted in markdown (e.g. inside the AI-review text) is not captured with
     // trailing junk, strip trailing punctuation, and dedupe -- otherwise the same report is fetched
     // twice and the summary is doubled.
-    const reportUrlPattern = /https:\/\/s3\.amazonaws\.com\/clickhouse-test-reports\/json\.html\?[^\s)`'"]+/g;
+    const reportUrlPattern = /https:\/\/s3\.amazonaws\.com\/clickhouse(?:-private)?-test-reports\/(?:praktika|json)\.html\?[^\s)`'"]+/g;
     for (const comment of comments) {
       if (!comment.body) continue;
       let urls = comment.body.match(reportUrlPattern);
@@ -523,8 +529,8 @@ async function getCIReportsFromPR(prUrl) {
  * Fetch and parse the CI report
  */
 /**
- * Given a top-level index report URL (json.html?...&name_0=X, no name_1) and its raw JSON, return
- * the per-job report URLs (json.html?...&name_1=<job>) for the FAILED jobs. Child names come from
+ * Given a top-level index report URL (praktika.html?...&name_0=X, no name_1) and its raw JSON, return
+ * the per-job report URLs (praktika.html?...&name_1=<job>) for the FAILED jobs. Child names come from
  * the report's IMMEDIATE children (the job/check rows) -- never from flattened leaf tests, whose
  * names (e.g. "Server died") are not valid name_1 job identifiers.
  */
@@ -566,7 +572,7 @@ async function renderMultiReport(ciUrls, options) {
   if (options.binary) {
     process.stderr.write(
       'Error: --binary requires a concrete build report URL, e.g.:\n' +
-      '  ...json.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)\n' +
+      '  ...praktika.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)\n' +
       'PR URLs and top-level index URLs do not carry binary artifacts.\n'
     );
     process.exit(1);
@@ -707,7 +713,7 @@ async function fetchReport(inputUrl, options = {}) {
 
       // If the bot comment exposed only the top-level `PR` report (name_0=PR, no name_1), treat it
       // as an INDEX: its leaves are job/check names, not test cases, so descend into each FAILED
-      // job by synthesizing its per-job report URL (json.html?...&name_1=<job>, the same form the
+      // job by synthesizing its per-job report URL (praktika.html?...&name_1=<job>, the same form the
       // loop below already fetches). Without this, a failing PR URL would yield only failed job
       // names -- no test names, labels, or CIDB links for steps 2-3.
       const hasNested = ciUrls.some(u => /[?&]name_1=/.test(u));
@@ -758,18 +764,22 @@ async function fetchReport(inputUrl, options = {}) {
       }
     }
 
-    // A direct top-level workflow result JSON (result_pr.json / result_masterci.json / result_ref.json
-    // located directly under the <sha> dir — NOT under a job subdir) is a workflow index, just like
-    // the json.html?...&name_0=PR form. Rewrite it to that HTML form so the index handling below
-    // applies uniformly (expand into per-job reports; refuse per-job --download-logs) instead of
-    // treating the whole PR/workflow as a single job. Concrete job reports are result_<job>.json
-    // (or live under <sha>/<job>/...), so they never match this and stay on the single-report path.
-    const topJson = inputUrl.match(/\/(?:PRs\/(\d+)|REFs\/([^/]+))\/([0-9a-f]{40})\/result_(?:pr|masterci|ref)\.json(?:$|\?)/i);
+    // A direct top-level workflow result JSON (result_pr.json / result_masterci.json / result_ref.json)
+    // is a workflow index, just like the praktika.html?...&name_0=PR form. In the S3 layout it lives
+    // under the normalized-workflow directory: <sha>/<workflow>/result_<workflow>.json, where the
+    // directory name equals the file's workflow token (pr/masterci/ref). Rewrite it to the HTML form
+    // so the index handling below applies uniformly (expand into per-job reports; refuse per-job
+    // --download-logs) instead of treating the whole PR/workflow as a single job. Concrete job reports
+    // are result_<job>.json under the same directory, so they never match this and stay on the
+    // single-report path. Setting name_0 to the captured workflow token reconstructs the same
+    // <workflow> directory segment via constructJsonUrl.
+    const topJson = inputUrl.match(/\/(?:PRs\/(\d+)|REFs\/([^/]+))\/([0-9a-f]{40})\/(?:[^/?]+\/)?result_(pr|masterci|ref)\.json(?:$|\?)/i);
     if (topJson) {
       const prefix = inputUrl.slice(0, topJson.index);
+      const workflowToken = topJson[4].toLowerCase();
       inputUrl = topJson[1]
-        ? `${prefix}/json.html?PR=${topJson[1]}&sha=${topJson[3]}&name_0=PR`
-        : `${prefix}/json.html?REF=${encodeURIComponent(topJson[2])}&sha=${topJson[3]}&name_0=MasterCI`;
+        ? `${prefix}/praktika.html?PR=${topJson[1]}&sha=${topJson[3]}&name_0=${workflowToken}`
+        : `${prefix}/praktika.html?REF=${encodeURIComponent(topJson[2])}&sha=${topJson[3]}&name_0=${workflowToken}`;
     }
 
     // Check if this is a direct JSON URL or an HTML URL with parameters
@@ -799,7 +809,7 @@ async function fetchReport(inputUrl, options = {}) {
       }
 
       // Construct JSON URL for the primary task (name_0)
-      const jsonUrl = constructJsonUrl(baseUrl, suffix, sha, nameParams[0]);
+      const jsonUrl = constructJsonUrl(baseUrl, suffix, sha, nameParams[0], nameParams[0]);
       if (!options.isSingleReport) {
         console.log(`Fetching JSON: ${jsonUrl}\n`);
       }
@@ -844,10 +854,10 @@ async function fetchReport(inputUrl, options = {}) {
         return await renderMultiReport(displayList, options);
       }
 
-      // Fetch name_0 JSON data, and name_1 separately if present (matching json.html behavior)
+      // Fetch name_0 JSON data, and name_1 separately if present (matching praktika.html behavior)
       const fetchTasks = [fetchUrl(jsonUrl, options.credentials)];
       if (nameParams.length > 1) {
-        const json1Url = constructJsonUrl(baseUrl, suffix, sha, nameParams[1]);
+        const json1Url = constructJsonUrl(baseUrl, suffix, sha, nameParams[0], nameParams[1]);
         if (!options.isSingleReport) {
           console.log(`Fetching JSON (name_1): ${json1Url}\n`);
         }
@@ -1031,7 +1041,7 @@ Usage: node fetch_ci_report.js <url> [options]
 
 URL formats:
   - GitHub PR: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports)
-  - CI HTML:   https://s3.amazonaws.com/.../json.html?PR=...&sha=...&name_0=...
+  - CI HTML:   https://s3.amazonaws.com/.../praktika.html?PR=...&sha=...&name_0=...
   - Direct JSON: https://s3.amazonaws.com/.../result_*.json
 
 Options:
@@ -1049,7 +1059,7 @@ Examples:
   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171"
   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --failed --cidb
   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --report 2
-  node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&sha=abc123&name_0=Integration%20tests"
+  node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/praktika.html?PR=94537&sha=abc123&name_0=PR&name_1=Integration%20tests"
   node fetch_ci_report.js "<url>" --test peak_memory --links
   node fetch_ci_report.js "<url>" --binary
   node fetch_ci_report.js "<url>" --failed --download-logs
