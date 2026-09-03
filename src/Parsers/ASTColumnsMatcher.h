@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -22,8 +21,6 @@ public:
     void setPattern(String pattern);
     const String & getPattern() const;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr expression;
     ASTPtr transformers;
@@ -50,8 +47,6 @@ public:
     String getID(char) const override { return "ColumnsListMatcher"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr expression;
     ASTPtr column_list;
@@ -72,8 +67,6 @@ public:
     void setPattern(String pattern_);
     const String & getPattern() const;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr qualifier;
     ASTPtr transformers;
@@ -97,8 +90,6 @@ public:
     String getID(char) const override { return "QualifiedColumnsListMatcher"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr qualifier;
     ASTPtr column_list;

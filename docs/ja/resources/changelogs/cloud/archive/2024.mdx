@@ -106,7 +106,7 @@ ClickHouse はすでに、[距離関数]https://clickhouse.com/blog/reinvent-202
   ### ClickPipes が AWS でクロス VPC リソースアクセスをサポート
 </div>
 
-AWS MSK のような特定のデータソースに対して、一方向のアクセスを許可できるようになりました。AWS PrivateLink と VPC Lattice を利用したクロス VPC リソースアクセスにより、VPC やアカウントの境界をまたいで個々のリソースを共有できるほか、パブリックネットワークを経由する場合でもプライバシーとセキュリティを損なうことなく、オンプレミスのネットワークから共有することもできます。利用を開始してリソース共有を設定するには、[発表記事](https://clickhouse.com/blog/clickpipes-crossvpc-resource-endpoints?utm_medium=web\&utm_source=changelog)をご覧ください。
+AWS MSK のような特定のデータソースに対して、一方向のアクセスを許可できるようになりました。AWS PrivateLink と VPC Lattice を利用したクロス VPC リソースアクセスにより、VPC やアカウントの境界をまたいで個別のリソースを共有できるほか、オンプレミスのネットワークからでも、パブリックネットワークを経由する際のプライバシーやセキュリティを損なうことなく共有できます。利用を開始してリソース共有を設定するには、[発表記事](https://clickhouse.com/blog/clickpipes-crossvpc-resource-endpoints?utm_medium=web\&utm_source=changelog)をご覧ください。
 
 <Image img="/images/cloud/reference/cross-vpc-clickpipes.webp" size="lg" alt="ClickPipes が AWS MSK に接続するためのクロス VPC リソースアクセスのアーキテクチャを示す図" border />
 
@@ -130,7 +130,7 @@ AWS MSK ClickPipes で、IAM 認証を使用して MSK ブローカーに接続�
   ### ClickHouse Cloud 向けの組み込み高度オブザーバビリティダッシュボード
 </div>
 
-これまで、ClickHouse server のメトリクスやハードウェアのリソース使用状況を監視できる高度オブザーバビリティダッシュボードは、オープンソース版の ClickHouse でのみ利用可能でした。この機能が ClickHouse Cloud コンソールでも利用できるようになりました。
+これまで、ClickHouse server のメトリクスやハードウェアのリソース使用状況を監視できる高度オブザーバビリティダッシュボードは、オープンソース版の ClickHouse でのみ利用可能でした。この機能が ClickHouse Cloudコンソールでも利用できるようになりました。
 
 このダッシュボードでは、[system.dashboards](/ja/reference/system-tables/dashboards) テーブルに基づくクエリをオールインワンの UI で確認できます。今すぐ高度オブザーバビリティダッシュボードの利用を開始するには、**監視 &gt; Service Health** ページにアクセスしてください。
 
@@ -212,7 +212,7 @@ Kafka 向け ClickPipes で、SASL とパブリック SSL/TLS を使用する Ka
 
 <br />
 
-*Kafka と Kinesis 向けスケーリング制御 (プライベートベータ)*
+*Kafka と Kinesis 向けスケーリング制御 (プライベートベータ)&#x20;*
 
 高スループットなワークロードでは、データ量やレイテンシの要件を満たすために、追加のリソースが必要になることがあります。ClickPipes に水平スケーリングを導入し、Cloud Console から直接利用できるようになりました。この機能は現在プライベートベータとして提供されており、要件に応じてリソースをより効果的にスケールできます。ベータへの参加をご希望の場合は、[support](https://clickhouse.com/support/program) までご連絡ください。
 
@@ -339,10 +339,10 @@ Cloud コンソール の新しいクエリインサイト UI により、ClickH
 </div>
 
 <div id="configurable-offsets-for-kafka-clickpipes-connector-beta">
-  ### Kafka ClickPipes Connector のオフセットを設定可能に (ベータ)
+  ### Kafka ClickPipes Connector のオフセット設定に対応 (ベータ)
 </div>
 
-最近まで、新しい [ClickPipes 向け Kafka Connector](/ja/integrations/clickpipes/kafka/index) を設定すると、常に Kafka トピックの先頭からデータを消費していました。そのため、履歴データを再処理したい場合や、新たに流入するデータを監視したい場合、あるいは正確な位置から再開したい場合など、特定のユースケースには十分な柔軟性がありませんでした。
+最近まで、新しい [ClickPipes 向け Kafka Connector](/ja/integrations/clickpipes/kafka/index) を設定すると、常に Kafka トピックの先頭からデータを消費していました。そのため、履歴データを再処理したい場合や、新しく到着するデータを監視したい場合、あるいは特定の位置から再開したい場合など、用途によっては十分な柔軟性がありませんでした。
 
 Kafka 向け ClickPipes に、Kafka トピックからのデータ消費をより柔軟かつ細かく制御できる新機能が追加されました。これにより、どのオフセットからデータの消費を開始するかを設定できるようになりました。
 
@@ -355,10 +355,10 @@ Kafka 向け ClickPipes に、Kafka トピックからのデータ消費をよ�
 <Image img="/images/cloud/reference/june-13-kafka-config.webp" size="lg" alt="オフセット選択オプションを表示する ClickPipes Kafka コネクタの設定インターフェイス" border />
 
 <div id="enroll-services-to-the-fast-release-channel">
-  ### サービスを Fast release channel に登録する
+  ### サービスを Fast リリースチャネルに登録する
 </div>
 
-Fast release channel では、サービスが release schedule より早く更新を受け取れます。以前は、この機能を有効にするにはサポートチームの支援が必要でした。現在は、ClickHouse Cloud コンソール からサービスに対してこの機能を直接有効にできます。**Settings** に移動し、**Enroll in fast releases** をクリックするだけです。これで、サービスは更新が利用可能になり次第すぐに受け取れるようになります。
+Fast リリースチャネルでは、サービスがリリーススケジュールより早く更新を受け取れます。以前は、この機能を有効にするにはサポートチームの支援が必要でした。現在は、ClickHouse Cloud console からサービスに対してこの機能を直接有効にできます。**Settings** に移動し、**Enroll in fast releases** をクリックするだけです。これで、サービスは更新が利用可能になり次第すぐに受け取れるようになります。
 
 <Image img="/images/cloud/reference/june-13-fast-releases.webp" size="lg" alt="Fast リリースへの登録オプションが表示された ClickHouse Cloud の設定ページ" border />
 
@@ -414,7 +414,7 @@ SQLクエリを作成すると、そのクエリはチーム内のほかのメ�
 
 ClickPipesは、コードを書くことなくデータを取り込める ClickHouse Cloud 提供のサービスです。Amazon Kinesisは、データストリームを取り込んで保存し、処理できるようにするAWSの完全マネージド型ストリーミングサービスです。特にご要望の多かったインテグレーションの1つである、Amazon Kinesis向けClickPipesベータを公開できることを大変うれしく思います。ClickPipesには今後さらに多くのインテグレーションを追加していく予定ですので、対応してほしいデータソースがあればぜひお知らせください。この機能の詳細は[こちら](https://clickhouse.com/blog/clickpipes-amazon-kinesis)をご覧ください。
 
-クラウドコンソールで、ClickPipes向けの新しいAmazon Kinesisインテグレーションを試すことができます。
+Cloud Consoleで、ClickPipes向けの新しいAmazon Kinesisインテグレーションを試すことができます。
 
 <Image img="/images/cloud/reference/may-17-kinesis.webp" size="lg" alt="Amazon Kinesisインテグレーションの設定オプションを表示するClickPipesインターフェイス" border />
 
@@ -428,7 +428,7 @@ ClickPipesは、コードを書くことなくデータを取り込める ClickH
   ### SQLクエリからAPIを作成 (ベータ)
 </div>
 
-ClickHouse向けのSQLクエリを作成しても、そのクエリをアプリケーションから利用できるようにするには、引き続きドライバー経由でClickHouseに接続する必要があります。そこで、新しい **Query Endpoints** 機能を使えば、設定不要でAPIから直接SQLクエリを実行できます。クエリエンドポイントが JSON、CSV、または TSV を返すように指定することも可能です。お使いのクエリでこの新機能を試すには、クラウドコンソール の「Share」ボタンをクリックしてください。Query Endpoints の詳細は[こちら](https://clickhouse.com/blog/automatic-query-endpoints)をご覧ください。
+ClickHouse向けのSQLクエリを作成しても、そのクエリをアプリケーションから利用できるようにするには、引き続きドライバー経由でClickHouseに接続する必要があります。そこで、新しい **Query Endpoints** 機能を使えば、設定不要でAPIから直接SQLクエリを実行できます。クエリエンドポイントが JSON、CSV、または TSV を返すように指定することも可能です。お使いのクエリでこの新機能を試すには、Cloud Console の「Share」ボタンをクリックしてください。Query Endpoints の詳細は[こちら](https://clickhouse.com/blog/automatic-query-endpoints)をご覧ください。
 
 <Image img="/images/cloud/reference/may-17-query-endpoints.webp" size="lg" alt="出力フォーマットのオプションを備えた Query Endpoints の設定を示す ClickHouse Cloud インターフェイス" border />
 
@@ -446,9 +446,9 @@ ClickHouse Developトレーニングコースには、無料のトレーニン�
   ### ClickPipes を使用して S3 と GCS からデータを読み込む
 </div>
 
-新たにリリースされた クラウドコンソール に、「Data sources」という新しいセクションが追加されていることにお気づきかもしれません。「Data sources」ページは ClickPipes を基盤としており、これは ClickHouse Cloud にネイティブに備わった機能で、さまざまなソースから ClickHouse Cloud へデータを簡単に取り込めます。
+新たにリリースされた Cloud Console に、「Data sources」という新しいセクションが追加されていることにお気づきかもしれません。「Data sources」ページは ClickPipes を基盤としており、これは ClickHouse Cloud にネイティブに備わった機能で、さまざまなソースから ClickHouse Cloud へデータを簡単に取り込めます。
 
-今回の ClickPipes の最新アップデートでは、Amazon S3 と Google Cloud Storage からデータを直接アップロードできるようになりました。引き続き組み込みのテーブル関数を使用することもできますが、ClickPipes は UI 経由で利用できるフルマネージドサービスで、数回クリックするだけで S3 や GCS からデータを取り込めます。この機能は現在もプライベートプレビュー段階ですが、今すぐ クラウドコンソール からお試しいただけます。
+今回の ClickPipes の最新アップデートでは、Amazon S3 と Google Cloud Storage からデータを直接アップロードできるようになりました。引き続き組み込みのテーブル関数を使用することもできますが、ClickPipes は UI 経由で利用できるフルマネージドサービスで、数回クリックするだけで S3 や GCS からデータを取り込めます。この機能は現在もプライベートプレビュー段階ですが、今すぐ Cloud Console からお試しいただけます。
 
 <Image img="/images/cloud/reference/clickpipes-s3-gcs.webp" size="lg" alt="S3 と GCS バケットからデータを読み込むための構成オプションを表示する ClickPipes インターフェイス" border />
 
@@ -510,18 +510,18 @@ ClickHouse は大規模なデータセット全体を高速にクエリできま
 </div>
 
 <div id="introducing-the-new-clickhouse-cloud-console">
-  ### 新しい ClickHouse Cloud コンソール のご紹介
+  ### 新しい ClickHouse Cloud console のご紹介
 </div>
 
-このリリースでは、新しい クラウドコンソール のプライベートプレビューを提供します。
+このリリースでは、新しい Cloud console のプライベートプレビューを提供します。
 
 ClickHouse では、開発者体験をどう向上させるかを常に考えています。最速のリアルタイムデータウェアハウスを提供するだけでは十分ではなく、使いやすく、管理しやすいことも重要だと考えています。
 
-毎月、何千もの ClickHouse Cloud ユーザーが当社の SQL コンソール で数十億件ものクエリを実行しています。そのため、ClickHouse Cloud サービスをこれまで以上に簡単に操作できるよう、世界水準の console への投資をさらに強化することにしました。新しい クラウドコンソール では、独立した SQL エディタと管理 console を、直感的な 1 つの UI に統合しています。
+毎月、何千もの ClickHouse Cloud ユーザーが当社の SQL コンソール で数十億件ものクエリを実行しています。そのため、ClickHouse Cloud サービスをこれまで以上に簡単に操作できるよう、世界水準の console への投資をさらに強化することにしました。新しい Cloud console では、独立した SQL エディタと管理 console を、直感的な 1 つの UI に統合しています。
 
-一部のお客様には、新しい クラウドコンソール のプレビューをご提供します。これは、ClickHouse 内のデータを探索し、管理するための、統合された没入感のある新しい体験です。優先アクセスをご希望の場合は、support@clickhouse.com までお問い合わせください。
+一部のお客様には、新しい Cloud console のプレビューをご提供します。これは、ClickHouse 内のデータを探索し、管理するための、統合された没入感のある新しい体験です。優先アクセスをご希望の場合は、support@clickhouse.com までお問い合わせください。
 
-<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="統合された SQL エディタと管理機能を備えた新しい ClickHouse Cloud コンソール インターフェイスを示すアニメーション" border />
+<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="統合された SQL エディタと管理機能を備えた新しい ClickHouse Cloud console インターフェイスを示すアニメーション" border />
 
 <div id="march-28-2024">
   ## 2024年3月28日
@@ -739,4 +739,4 @@ ClickHouse では、開発者体験をどう向上させるかを常に考えて
   ### 信頼性に関する変更
 </div>
 
-* ユーザー向けの後方互換性を持たない変更: これまで、2 つの機能 ([is&#95;deleted](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) と `OPTIMIZE CLEANUP`) は、特定の条件下で ClickHouse のデータ破損を引き起こす可能性がありました。ユーザーのデータ整合性を保護しつつ機能の中核は維持するため、この機能の動作を調整しました。具体的には、MergeTree の設定 `clean_deleted_rows` は現在非推奨で、すでに効果はありません。`CLEANUP` キーワードはデフォルトでは使用できません (使用するには `allow_experimental_replacing_merge_with_cleanup` を有効にする必要があります) 。`CLEANUP` を使用する場合は、必ず `FINAL` と組み合わせて使用し、さらに `OPTIMIZE FINAL CLEANUP` の実行後に古いバージョンの行が挿入されないことを保証する必要があります。
+* ユーザー向けの後方互換性を持たない変更: 以前は、特定の条件下で 2 つの機能 ([is&#95;deleted](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) と `OPTIMIZE CLEANUP`) によって ClickHouse のデータが破損する可能性がありました。ユーザーのデータの整合性を保護しつつ機能の中核は維持するため、この機能の動作を調整しました。具体的には、MergeTree の設定 `clean_deleted_rows` は現在非推奨で、効果はありません。`CLEANUP` キーワードはデフォルトでは許可されていません (使用するには `allow_experimental_replacing_merge_with_cleanup` を有効にする必要があります) 。`CLEANUP` を使用する場合は、必ず `FINAL` と併用する必要があり、さらに `OPTIMIZE FINAL CLEANUP` を実行した後は、古いバージョンの行が一切挿入されないことを保証しなければなりません。

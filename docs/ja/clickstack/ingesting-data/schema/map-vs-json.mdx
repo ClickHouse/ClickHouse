@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickstack', 'json', 'map', '属性', 'スキーマ', 'オブザーバビリティ']
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 ClickStack の[デフォルトスキーマ](/ja/clickstack/ingesting-data/schemas)では、resource、scope、log、span の属性は `Map(LowCardinality(String), String)` カラムに保存されます。ClickHouse は厳密に型付けされた [`JSON` 型](/ja/reference/formats/JSON/JSON) もサポートしており、ClickStack では `Map` の代わりにこれを使用するためのベータサポートも提供されています。
 
@@ -113,9 +113,13 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
 [デフォルトのMapベースのスキーマ](/ja/clickstack/ingesting-data/schemas) から移行するには、次の手順に従ってください。
 
 <Steps>
-  <Step title="OTel collector を停止する" id="stop-the-collector" />
+  <Step>
+    ### OTel collector を停止する
+  </Step>
 
-  <Step title="既存のテーブル名を変更し、データソースを更新する" id="rename-existing-tables-sources">
+  <Step>
+    ### 既存のテーブル名を変更し、データソースを更新する
+
     既存のテーブル名を変更し、HyperDX のデータソースを更新します。
 
     たとえば、次のようにします。
@@ -126,17 +130,23 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     ```
   </Step>
 
-  <Step title="OTel collector をデプロイする" id="deploy-the-collector">
+  <Step>
+    ### OTel collector をデプロイする
+
     `OTEL_AGENT_FEATURE_GATE_ARG` を設定して OTel collector をデプロイします。
   </Step>
 
-  <Step title="JSONスキーマ対応を有効にして HyperDX コンテナーを再起動する" id="restart-the-hyperdx-container">
+  <Step>
+    ### JSONスキーマ対応を有効にして HyperDX コンテナーを再起動する
+
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
-  <Step title="新しいデータソースを作成する" id="create-new-data-sources">
+  <Step>
+    ### 新しいデータソースを作成する
+
     JSONテーブルを参照する新しいデータソースを HyperDX で作成します。
   </Step>
 </Steps>

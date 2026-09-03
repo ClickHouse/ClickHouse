@@ -149,7 +149,7 @@ WHERE is_done = 0;
   ### 外部集約
 </div>
 
-メモリ使用量の多い処理では、外部集約を有効にします。処理速度は遅くなりますが、ディスクにスピルすることでメモリ不足によるクラッシュを防げます。これには `max_bytes_before_external_group_by` を使用します。これは、大規模な `GROUP BY` 操作でメモリ不足によるクラッシュを防ぐのに役立ちます。この設定の詳細は[こちら](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)をご覧ください。
+メモリ使用量の多い処理では、外部集約を有効にします。処理速度は遅くなりますが、ディスクにスピルすることでメモリ不足によるクラッシュを防げます。これには `max_bytes_before_external_group_by` を使用します。これは、大規模な `GROUP BY` 操作でメモリ不足によるクラッシュを防ぐのに役立ちます。この設定の詳細は[こちら](/ja/reference/settings/session-settings#max_bytes_before_external_group_by)をご覧ください。
 
 ```sql
 SELECT 
@@ -159,7 +159,7 @@ SELECT
     SUM(value) as total
 FROM large_table
 GROUP BY column1, column2
-SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB threshold
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GBのしきい値
 ```
 
 <div id="async-insert-details">

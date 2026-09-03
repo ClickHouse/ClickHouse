@@ -96,6 +96,7 @@ View can be reattached
 test for MV with inner table
 MV is working
 1
+1
 View can be reattached
 ##################
 DETACH DATABASE is not implemented (proper error)

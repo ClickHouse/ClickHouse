@@ -22,14 +22,6 @@ Extract the PR number from `$0`. If not provided, use `AskUserQuestion` to ask f
 
 Validate that the PR number contains only digits. Reject any non-numeric input immediately — do not pass unvalidated input to shell commands or GraphQL queries.
 
-Determine which repository you are operating in — the public `ClickHouse/ClickHouse` or the private `ClickHouse/clickhouse-private`:
-
-```bash
-gh repo view --json nameWithOwner --jq .nameWithOwner   # or: git remote get-url origin
-```
-
-Remember it as `$REPO` and use it everywhere below instead of the literal `ClickHouse/ClickHouse` in `gh` commands, API URLs, and GraphQL `repository(owner:, name:)` arguments. The repository also decides whom to ask about unrelated CI failures (step 4, item 5): `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private`.
-
 Fetch PR metadata using `gh` if available, otherwise use `WebFetch` on the GitHub API:
 
 ```bash
@@ -43,47 +35,15 @@ If `gh` is not available or not authenticated, use WebFetch to get the data. App
 
 Report the PR title, author, branch, and current state to the user.
 
-### 1a. Verify "already integrated" claims before closing
-
-Treat closing a PR as already integrated or obsolete as a high-confidence decision. Verify both of these independently against freshly fetched refs:
-
-1. **Historical ancestry:** Resolve and print the exact base and PR-head OIDs, then check the candidate commit in this direction only:
-   ```bash
-   HEAD_REMOTE=origin
-   if [ "$IS_CROSS_REPOSITORY" = "true" ]; then
-       HEAD_REMOTE="pr-$AUTHOR_LOGIN"
-       git remote add "$HEAD_REMOTE" "$FORK_URL" 2>/dev/null || git remote set-url "$HEAD_REMOTE" "$FORK_URL"
-   fi
-   git fetch origin "$BASE_BRANCH"
-   git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
-   git rev-parse "origin/$BASE_BRANCH" "$HEAD_REMOTE/$HEAD_BRANCH"
-   git merge-base --is-ancestor "$CANDIDATE_COMMIT" "origin/$BASE_BRANCH"
-   ```
-   Derive `$IS_CROSS_REPOSITORY`, `$AUTHOR_LOGIN`, and `$FORK_URL` from the PR metadata as in step 2. Exit status `0` means the base contains the commit; any other status means it does not. Never check against `HEAD`, the PR branch, `--all`, or a worktree and describe that result as containment by the base branch. If this check is nonzero, do not claim the commit is in the base and do not close the PR as integrated.
-2. **Current effective state:** An ancestor commit may have been reverted or backed out later. Ancestry, `git branch --contains`, `git cherry`, and patch-equivalence results are historical evidence only; none proves that the change remains effective. Inspect all later base-branch commits touching the changed paths, search for explicit and manual reverts/backouts, compare the current base tree with the PR's intended effect, and run the reproducer or regression test against the current base when feasible. If the change was fully or partially reverted, count it as **not integrated**. If the current effect cannot be established confidently, leave the PR open for human review.
-
-Before posting a closure comment, state the fetched base OID and the evidence for both ancestry and the current effective state. Do not close from a remembered ref, a stale local branch, a matching subject, or a commit merely visible somewhere in the repository.
-
 ### 2. Check out the PR branch locally
-
-Before checking out the PR, require a clean worktree. This interactive skill
-can run in a developer's normal checkout, so it must fail closed rather than
-discarding staged, unstaged, or untracked work:
-
-```bash
-test -z "$(git status --porcelain)" || {
-    echo "The worktree is dirty; use a clean worktree before continuing this PR" >&2
-    exit 1
-}
-```
 
 Determine whether the PR branch is in the main repository or in the author's fork.
 
 **If the branch is in the main repository (`ClickHouse/ClickHouse`):**
 ```bash
-HEAD_REMOTE=origin
-git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
-git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
+git fetch origin "$HEAD_BRANCH"
+git checkout -b "$HEAD_BRANCH" "origin/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
+git pull origin "$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
@@ -94,33 +54,10 @@ Derive the fork clone URL from the PR metadata (`headRepository.url` or `headRep
 REMOTE_NAME="pr-$AUTHOR_LOGIN"
 FORK_URL="https://github.com/$FORK_OWNER/$FORK_REPO.git"  # from headRepository in PR metadata
 git remote add "$REMOTE_NAME" "$FORK_URL" 2>/dev/null || git remote set-url "$REMOTE_NAME" "$FORK_URL"
-HEAD_REMOTE="$REMOTE_NAME"
-git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
-git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
+git fetch "$REMOTE_NAME" "$HEAD_BRANCH"
+git checkout -b "$HEAD_BRANCH" "$REMOTE_NAME/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
+git pull "$REMOTE_NAME" "$HEAD_BRANCH"
 ```
-
-After the clean checkout, record the immutable baseline; it is the only
-authoritative record of the PR surface that existed when the worker began:
-
-```bash
-git fetch origin "$BASE_BRANCH"
-mkdir -p tmp
-PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
-rm -rf "$PR_BASELINE_DIR"
-mkdir -p "$PR_BASELINE_DIR"
-INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
-test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
-INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
-printf '%s\n%s\n' "$INITIAL_PR_HEAD" "$INITIAL_BASE_HEAD" > "$PR_BASELINE_DIR/state"
-git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
-git diff --stat "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/stat"
-git diff --binary "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/diff"
-```
-
-Do not modify, stage, or delete this artifact during the session. It must remain
-available through the push safety gate in step 7. The deterministic path and
-`state` file are required because each resumed worker turn starts a fresh shell
-process.
 
 ### 3. Resolve conflicts with the base branch (if any)
 
@@ -176,8 +113,8 @@ For each CI failure:
 
 4. If the only failure is "CH Inc sync", fix it using the /fix-sync skill.
 
-5. If you are confident that the failure is unrelated to the changes, post a comment, asking the reviewer for `$REPO` (step 1) — `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private` — to investigate the failure:
-   🕵 @<reviewer>, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
+5. If you are confident that the failure is unrelated to the changes, post a comment, asking @groeneai to investigate the failure:
+   @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
 
 6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
 
@@ -295,47 +232,12 @@ Determine where to push based on step 2:
 
 **If the branch is in the main repository:**
 ```bash
-PUSH_REMOTE=origin
+git push origin "$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
 ```bash
-PUSH_REMOTE="$REMOTE_NAME"
-```
-
-Before every commit and push, run this safety gate. It is a hard stop:
-
-1. Restore and validate the recorded state before using it; resumed turns do not inherit shell variables:
-   ```bash
-   PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
-   mapfile -t BASELINE_STATE < "$PR_BASELINE_DIR/state"
-   test "${#BASELINE_STATE[@]}" = 2
-   INITIAL_PR_HEAD=${BASELINE_STATE[0]}
-   INITIAL_BASE_HEAD=${BASELINE_STATE[1]}
-   git cat-file -e "$INITIAL_PR_HEAD^{commit}"
-   git cat-file -e "$INITIAL_BASE_HEAD^{commit}"
-   git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
-   ```
-   Preserve `INITIAL_PR_HEAD` as an ancestor: only add commits on top of the existing PR history. Never rebase, reset the branch onto another commit, amend published commits, delete the remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
-2. Stage only explicit paths with `git add <path>`. Never use `git add -A`, `git add .`, or `git commit -a` in this workflow. Before committing, inspect both `git diff --cached --name-status` and `git diff --cached --stat`. Every staged path must be explained by the requested fix or by a specific conflict resolution. Unstage unexpected paths and do not commit when the scope is unclear.
-3. Before pushing, fetch the remote PR branch again and require its current tip to be an ancestor of local `HEAD`:
-   ```bash
-   git fetch "$PUSH_REMOTE" "$HEAD_BRANCH"
-   REMOTE_HEAD=$(git rev-parse "$PUSH_REMOTE/$HEAD_BRANCH")
-   git merge-base --is-ancestor "$REMOTE_HEAD" HEAD
-   ```
-   If the check is nonzero, merge the remote branch normally or stop and report the lineage problem. Never replace its history.
-4. Inspect the complete proposed PR diff with `git diff --name-status "origin/$BASE_BRANCH"...HEAD` and `git diff --stat "origin/$BASE_BRANCH"...HEAD`, then compare both against the immutable checkout baseline:
-   ```bash
-   diff -u "$PR_BASELINE_DIR/name-status" <(git diff --name-status "origin/$BASE_BRANCH"...HEAD)
-   diff -u "$PR_BASELINE_DIR/stat" <(git diff --stat "origin/$BASE_BRANCH"...HEAD)
-   ```
-   Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
-
-After the gate succeeds, push with:
-
-```bash
-git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
+git push "$REMOTE_NAME" "$HEAD_BRANCH"
 ```
 
 Report the result and provide the PR URL.
@@ -349,7 +251,6 @@ Report the result and provide the PR URL.
 
 ## Notes
 
-- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable.
 - Do not use rebase or amend - always add new commits (per project conventions)
 - Do not push to the master branch
 - Each fix should be a separate, well-described commit

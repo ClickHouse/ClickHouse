@@ -130,8 +130,7 @@ private:
     std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
 
     /// Thread-local pointer to the EventQueue attached to the current scheduler thread.
-    /// Defined out of line: a definition in the header gives every shared object its own copy.
-    static thread_local EventQueue * current_thread_queue;
+    static inline thread_local EventQueue * current_thread_queue = nullptr;
     std::atomic<bool> stopped{false};
 
 public:

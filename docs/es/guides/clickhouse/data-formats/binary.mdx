@@ -7,7 +7,7 @@ keywords: ['formatos binarios', 'formato Native', 'rowbinary', 'rawblob', 'messa
 doc_type: 'guide'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ClickHouse admite múltiples formatos binarios, que ofrecen un mejor rendimiento y un uso más eficiente del espacio. Los formatos binarios también evitan problemas de codificación de caracteres, ya que los datos se guardan en formato binario.
 
@@ -174,7 +174,7 @@ Ten en cuenta que tuvimos que usar `LIMIT 1` porque exportar más de un valor cr
   ## MessagePack
 </div>
 
-ClickHouse admite la importación y exportación de [MessagePack](https://msgpack.org/) mediante [MsgPack](/es/reference/formats/MsgPack). Para exportar al formato MessagePack:
+ClickHouse admite la importación y exportación en [MessagePack](https://msgpack.org/) mediante [MsgPack](/es/reference/formats/MsgPack). Para exportar en formato MessagePack:
 
 ```sql
 SELECT *

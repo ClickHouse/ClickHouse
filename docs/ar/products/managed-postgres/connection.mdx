@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/connection
 sidebarTitle: 'الاتصال'
-title: 'الاتصال بـ ClickHouse Managed Postgres'
+title: 'الاتصال بـ Managed Postgres'
 description: 'سلاسل الاتصال، وتجميع الاتصالات باستخدام PgBouncer، وتهيئة TLS لـ ClickHouse Managed Postgres'
 keywords: ['اتصال بـ Postgres', 'سلسلة الاتصال', 'pgbouncer', 'tls', 'ssl']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
@@ -22,7 +22,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## الوصول إلى تفاصيل الاتصال
 </div>
 
-لتوصيل تطبيقاتك بـ ClickHouse Managed Postgres، انتقل إلى عرض **Connect** في الشريط الجانبي الأيسر للمثيل.
+لتوصيل تطبيقاتك بـ Managed Postgres، انتقل إلى عرض **Connect** في الشريط الجانبي الأيسر للمثيل.
 
 <Image img="/images/managed-postgres/connect-button.webp" alt="انقر على Connect في الشريط الجانبي الأيسر لعرض تفاصيل الاتصال" size="md" border />
 
@@ -34,10 +34,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 * **اسم المستخدم**: مستخدم قاعدة البيانات (الافتراضي: `postgres`)
 * **كلمة المرور**: كلمة مرور قاعدة البيانات (تكون مخفية افتراضيًا، انقر على أيقونة العين لإظهارها)
-* **الخادم**: اسم المضيف لمثيل ClickHouse Managed Postgres
+* **الخادم**: اسم المضيف لمثيل Managed Postgres
 * **المنفذ**: منفذ PostgreSQL (الافتراضي: `5432`)
 
-يوفّر ClickHouse Managed Postgres صلاحيات superuser على قاعدة البيانات. استخدم بيانات الاعتماد هذه للاتصال بصفة superuser، ما يتيح لك إنشاء مستخدمين إضافيين وإدارة كائنات قاعدة البيانات.
+يوفّر Managed Postgres صلاحيات superuser على قاعدة البيانات. استخدم بيانات الاعتماد هذه للاتصال بصفة superuser، ما يتيح لك إنشاء مستخدمين إضافيين وإدارة كائنات قاعدة البيانات.
 
 <div id="connection-string">
   ## تنسيقات سلسلة الاتصال
@@ -59,7 +59,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## تجميع الاتصالات عبر PgBouncer
 </div>
 
-يتضمن ClickHouse Managed Postgres مثيل [PgBouncer](https://www.pgbouncer.org/) مضمّنًا لتجميع الاتصالات على جانب الخادم. يساعد PgBouncer في تحسين إدارة الاتصالات والأداء واستغلال الموارد، خاصةً للتطبيقات التي:
+يتضمن Managed Postgres مثيل [PgBouncer](https://www.pgbouncer.org/) مضمّنًا لتجميع الاتصالات على جانب الخادم. يساعد PgBouncer في تحسين إدارة الاتصالات والأداء واستغلال الموارد، خاصةً للتطبيقات التي:
 
 * تفتح عددًا كبيرًا من الاتصالات المتزامنة
 * تنشئ الاتصالات وتغلقها بشكل متكرر
@@ -79,7 +79,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## تهيئة TLS
 </div>
 
-جميع مثيلات ClickHouse Managed Postgres مؤمّنة باستخدام TLS. وأدنى إصدار مدعوم هو **TLS 1.3**.
+جميع مثيلات Managed Postgres مؤمّنة باستخدام TLS. وأدنى إصدار مدعوم هو **TLS 1.3**.
 
 <div id="quick-connection">
   ### اتصال سريع (مشفّر باستخدام TLS)
@@ -99,7 +99,7 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 <Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="نزّل شهادة CA من علامة التبويب Settings" size="md" border />
 
-شهادة CA فريدة لمثيل ClickHouse Managed Postgres الخاص بك، ولن تعمل مع مثيلات أخرى.
+شهادة CA فريدة لمثيل Managed Postgres الخاص بك، ولن تعمل مع مثيلات أخرى.
 
 للاتصال عبر TLS مع التحقق، أضِف `sslmode=verify-full` ومسار الشهادة التي نزّلتها:
 

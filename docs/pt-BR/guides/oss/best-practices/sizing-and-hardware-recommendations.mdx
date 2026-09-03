@@ -92,7 +92,7 @@ O volume necessário de RAM geralmente depende de:
 * Da quantidade de dados processados nas consultas.
 
 No entanto, em geral, quanto mais memória você tiver, mais rápido suas consultas serão executadas.
-Se o seu caso de uso for sensível a custos, quantidades menores de memória também podem funcionar, pois é possível habilitar configurações ([`max_bytes_before_external_group_by`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) e [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) para permitir o spill de dados para disco, mas observe que isso pode afetar significativamente o desempenho das consultas.
+Se o seu caso de uso for sensível a custos, quantidades menores de memória também podem funcionar, pois é possível habilitar configurações ([`max_bytes_before_external_group_by`](/pt-BR/reference/settings/session-settings#max_bytes_before_external_group_by) e [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings#max_bytes_before_external_sort)) para permitir o spill de dados para disco, mas observe que isso pode afetar significativamente o desempenho das consultas.
 
 <div id="what-should-the-memory-to-storage-ratio-be">
   ### Qual deve ser a proporção entre memória e armazenamento?
@@ -281,7 +281,7 @@ Abaixo estão alguns posts de blog publicados sobre arquiteturas de empresas que
 
 * [Cloudflare](https://blog.cloudflare.com/http-analytics-for-6m-requests-per-second-using-clickhouse/?utm_source=linkedin\&utm_medium=social\&utm_campaign=blog)
 * [eBay](https://innovation.ebayinc.com/tech/engineering/ou-online-analytical-processing/)
-* [GitLab](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/clickhouse_usage/)
+* [GitLab](https://handbook.gitlab.com/handbook/engineering/development/ops/monitor/observability/#clickhouse-datastore)
 * [Lyft](https://eng.lyft.com/druid-deprecation-and-clickhouse-adoption-at-lyft-120af37651fd)
 * [MessageBird](https://clickhouse.com/blog/how-messagebird-uses-clickhouse-to-monitor-the-delivery-of-billions-of-messages)
 * [Microsoft](https://clickhouse.com/blog/self-service-data-analytics-for-microsofts-biggest-web-properties)

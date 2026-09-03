@@ -14,7 +14,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -65,7 +64,6 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ServerSetting
@@ -87,35 +85,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
-{
-    for (const auto & child : alter.command_list->children)
-    {
-        auto * command = child->as<ASTAlterCommand>();
-
-        /// Every slot that reaches table metadata, so that a reload re-derives the same spelling the
-        /// statement resolved. Mutation expressions (`predicate`, `update_assignments`, the
-        /// `IN PARTITION` value in `partition`) need it too: they are persisted in mutation entries
-        /// and resolved by the background executor and by replicas with the server default settings,
-        /// not with the settings of this session.
-        for (IAST * payload : {command->col_decl,
-                               command->order_by,
-                               command->sample_by,
-                               command->index_decl,
-                               command->constraint_decl,
-                               command->projection_decl,
-                               command->ttl,
-                               command->select,
-                               command->predicate,
-                               command->update_assignments,
-                               command->partition})
-        {
-            if (payload)
-                replaceLegacyToTime(*payload);
-        }
-    }
-}
 
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
@@ -418,8 +387,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextM
 BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
-    auto & alter = query_ptr->as<ASTAlterQuery &>();
-
+    const auto & alter = query_ptr->as<ASTAlterQuery &>();
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);
@@ -451,9 +419,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
-    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
-
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
@@ -467,18 +432,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
-
-        /// Substitute the database of the altered table into table functions that use the current database
-        /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
-        /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
-        /// which replaces `currentDatabase()` with the database of the session.
-        /// The table identifiers are not qualified here: they are qualified with the database
-        /// of the altered table when the query is interpreted on each host.
-        if (table_id)
-        {
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-            visitor.substituteDatabaseInTableFunctions(*alter.command_list);
-        }
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
@@ -683,10 +636,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS adds statistics like the dedicated ADD STATISTICS command does,
-            /// so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_COLUMN:
@@ -700,10 +649,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS replaces the explicit statistics of the column like the dedicated
-            /// MODIFY STATISTICS command does, so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::COMMENT_COLUMN:
@@ -788,11 +733,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_PROJECTION:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_PROJECTION, database, table);
-            break;
-        }
-        case ASTAlterCommand::MODIFY_PROJECTION:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_PROJECTION, database, table);
             break;
         }
         case ASTAlterCommand::DROP_PROJECTION:

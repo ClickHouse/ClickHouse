@@ -32,15 +32,15 @@ Les `Data`, `Totals` et `Extremes` peuvent être compressés.
 
 Réponse au [Hello du client](/fr/resources/develop-contribute/native-protocol/client#hello).
 
-| champ             | Type    | Valeur                       | description                   |
-| ----------------- | ------- | ---------------------------- | ----------------------------- |
-| name              | String  | `ClickHouse`                 | Nom du serveur                |
-| version&#95;major | UVarInt | `21`                         | Version majeure du serveur    |
-| version&#95;minor | UVarInt | `12`                         | Version mineure du serveur    |
-| revision          | UVarInt | `54452`                      | Révision du serveur           |
-| tz                | String  | `Europe/Moscow`              | Fuseau horaire du serveur     |
-| display&#95;name  | String  | `<display_name-or-hostname>` | Nom du serveur pour l&#39;UI  |
-| version&#95;patch | UVarInt | `3`                          | Version corrective du serveur |
+| champ             | Type    | Valeur          | description                   |
+| ----------------- | ------- | --------------- | ----------------------------- |
+| name              | String  | `Clickhouse`    | Nom du serveur                |
+| version&#95;major | UVarInt | `21`            | Version majeure du serveur    |
+| version&#95;minor | UVarInt | `12`            | Version mineure du serveur    |
+| revision          | UVarInt | `54452`         | Révision du serveur           |
+| tz                | String  | `Europe/Moscow` | Fuseau horaire du serveur     |
+| display&#95;name  | String  | `Clickhouse`    | Nom du serveur pour l&#39;UI  |
+| version&#95;patch | UVarInt | `3`             | Version corrective du serveur |
 
 <div id="exception">
   ## Exception
@@ -58,7 +58,7 @@ Exception du serveur pendant le traitement de la requête.
 
 Il peut s’agir d’une liste continue d’exceptions jusqu’à ce que `nested` soit `false`.
 
-[codes]: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp "Liste des codes d’erreur"
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "Liste des codes d’erreur"
 
 <div id="progress">
   ## Progress

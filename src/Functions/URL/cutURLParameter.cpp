@@ -203,8 +203,7 @@ REGISTER_FUNCTION(CutURLParameter)
 {
     /// cutURLParameter documentation
     FunctionDocumentation::Description description_cutURLParameter = R"(
-Removes the first `name=value` occurrence of each requested parameter from a URL.
-Only parameters spelled as `name=` are matched, so a value-less flag parameter is left intact, e.g. `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` returns the URL unchanged.
+Removes the `name` parameter from a URL, if present.
 This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
     )";
     FunctionDocumentation::Syntax syntax_cutURLParameter = "cutURLParameter(url, name)";
@@ -212,7 +211,7 @@ This function does not encode or decode characters in parameter names, e.g. `Cli
         {"url", "URL.", {"String"}},
         {"name", "Name of URL parameter.", {"String", "Array(String)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_cutURLParameter = {"URL with the first `name=value` occurrence of each requested parameter removed.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_cutURLParameter = {"URL with `name` URL parameter removed.", {"String"}};
     FunctionDocumentation::Examples examples_cutURLParameter = {
     {
         "Usage example",
@@ -222,9 +221,9 @@ SELECT
     cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) AS url_without_c_and_e;
         )",
         R"(
-┌─url_without_a────────────────┬─url_without_c_and_e───────┐
-│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b&#g │
-└──────────────────────────────┴───────────────────────────┘
+┌─url_without_a────────────────┬─url_without_c_and_e──────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
+└──────────────────────────────┴──────────────────────────┘
         )"
     }
     };

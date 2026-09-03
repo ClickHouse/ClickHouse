@@ -146,8 +146,6 @@ public:
         return false;
     }
 
-    bool hasOnlyTypeDefaults() const override { return false; }
-
     std::string_view getDataAt(size_t n) const override;
 
     void insertData(const char * pos, size_t length) override;

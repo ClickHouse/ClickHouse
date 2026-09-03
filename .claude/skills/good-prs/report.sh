@@ -11,9 +11,6 @@
 # For every PR we report:
 #   - the "CH Inc sync" state: GREEN (also passed), FAILED, INPROG (still running),
 #     or NOSYNC (no such check, e.g. release-branch backports)
-#   - whether it conflicts with its base branch in the public repository: the sync
-#     label is then suffixed with "+CONFLICT" (or "+UNKNOWN" when GitHub has not
-#     computed mergeability yet), because such a PR cannot be merged as it is
 #   - whether it was APPROVED by anyone at least once
 # Already-merged / closed PRs are excluded.
 #
@@ -34,58 +31,6 @@ if [ "$#" -gt 0 ]; then TRACK_AUTHORS=("$@"); fi
 ME=$(gh api user --jq .login)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-# The per-PR helpers below are separate scripts run by xargs, so they locate the
-# shared retry wrapper through the environment rather than a relative path.
-export GOOD_PRS_WORK="$WORK"
-
-# ---- retry wrapper shared by both per-PR helpers ----------------------------
-# A full report makes roughly two GraphQL calls per PR - several hundred per run -
-# so hitting at least one transient GitHub failure is close to certain: the API
-# regularly answers 502/503/504, and a wide fan-out can trip the secondary rate
-# limit. Aborting on the first one throws away all the quota already spent, so
-# those are retried with exponential backoff, and a primary rate-limit rejection
-# waits for the hourly window to roll over instead.
-#
-# This does not weaken the fail-loud design: errors that will never fix
-# themselves (auth, unknown PR, bad flag) still fail on the first attempt, and a
-# transient error that outlives every attempt is still fatal. A row is never
-# silently dropped either way.
-cat > "$WORK/ghretry.sh" <<'SH'
-GH_RETRIES=${GH_RETRIES:-5}
-GH_RETRY_DELAY=${GH_RETRY_DELAY:-2}
-
-# gh_retry <errfile> <cmd...>
-# On success sets GH_OUT to the command's stdout and returns 0. On failure returns
-# non-zero, leaving the last attempt's stderr in <errfile> for the caller to report.
-gh_retry() {
-  local errfile="$1"; shift
-  local attempt=1 delay="$GH_RETRY_DELAY" reset now wait_s
-  while :; do
-    if GH_OUT=$("$@" 2>"$errfile"); then return 0; fi
-    if [ "$attempt" -ge "$GH_RETRIES" ]; then return 1; fi
-    if grep -qiE 'secondary rate limit|submitted too quickly' "$errfile"; then
-      sleep "$delay"; delay=$(( delay * 2 + 1 ))
-    elif grep -qiE 'rate limit' "$errfile"; then
-      # Primary hourly limit: retrying before the window resets can only fail
-      # again, so wait it out. The rate_limit endpoint is itself unmetered, and
-      # the wait is capped so a run always terminates.
-      reset=$(gh api rate_limit --jq .resources.graphql.reset 2>/dev/null) || reset=""
-      case "$reset" in (*[!0-9]*|"") reset=0 ;; esac
-      now=$(date +%s)
-      wait_s=$(( reset - now + 5 ))
-      if [ "$wait_s" -lt "$GH_RETRY_DELAY" ]; then wait_s="$GH_RETRY_DELAY"; fi
-      if [ "$wait_s" -gt 900 ]; then wait_s=900; fi
-      echo "good-prs: GraphQL rate limit reached, waiting ${wait_s}s for the window to reset (attempt $attempt/$GH_RETRIES)" >&2
-      sleep "$wait_s"
-    elif grep -qiE 'HTTP (408|429|5[0-9][0-9])|Service Unavailable|Bad Gateway|Gateway Time-?out|couldn.t respond|timed out|connection reset|unexpected EOF|TLS handshake' "$errfile"; then
-      sleep "$delay"; delay=$(( delay * 2 ))
-    else
-      return 1   # permanent error: no point burning attempts on it
-    fi
-    attempt=$(( attempt + 1 ))
-  done
-}
-SH
 
 # ---- helper invoked per-PR by xargs: classify the checks --------------------
 # Output: "<num>\t<sync-label>\t<#other-non-green>" where <sync-label> is one of
@@ -101,17 +46,14 @@ SH
 # whenever it could read the checks (even if some are failing or pending). A
 # non-zero exit therefore means either "no checks reported" (a legitimate empty
 # result) or a real API / auth / rate-limit error. We treat the former as NO_CHECKS
-# and abort the whole run on the latter (once gh_retry has exhausted its attempts),
-# rather than silently dropping the row.
+# and abort the whole run on the latter, rather than silently dropping the row.
 cat > "$WORK/classify.sh" <<'SH'
 #!/usr/bin/env bash
 set -uo pipefail
-. "$GOOD_PRS_WORK/ghretry.sh"
 n="$1"
 err=$(mktemp)
 trap 'rm -f "$err"' EXIT
-if gh_retry "$err" gh pr checks "$n" --repo "$REPO" --json name,state,bucket; then
-  json="$GH_OUT"
+if json=$(gh pr checks "$n" --repo "$REPO" --json name,state,bucket 2>"$err"); then
   if [ -z "$json" ] || [ "$json" = "[]" ]; then
     printf '%s\tNO_CHECKS\t99\n' "$n"; exit 0
   fi
@@ -137,46 +79,23 @@ echo "$json" | jq -r --arg n "$n" '
 SH
 chmod +x "$WORK/classify.sh"
 
-# ---- helper invoked per-PR by xargs: state + ever-approved + mergeable ------
-# Output: "<num>\t<STATE>\t<true|false>\t<MERGEABLE|CONFLICTING|UNKNOWN>"
+# ---- helper invoked per-PR by xargs: state + ever-approved -----------------
+# Output: "<num>\t<STATE>\t<true|false>"
 # A valid PR always yields data here; an empty result means a real gh failure, so
 # we surface the diagnostic and abort rather than silently dropping the row.
-#
-# `mergeable` comes from the same call as the state and the reviews, so reporting
-# conflicts costs no extra quota - except when GitHub answers UNKNOWN, see below.
-GH_MERGEABLE_TRIES=${GH_MERGEABLE_TRIES:-3}
-GH_MERGEABLE_DELAY=${GH_MERGEABLE_DELAY:-2}
-export GH_MERGEABLE_TRIES GH_MERGEABLE_DELAY
 cat > "$WORK/approval.sh" <<'SH'
 #!/usr/bin/env bash
 set -uo pipefail
-. "$GOOD_PRS_WORK/ghretry.sh"
 n="$1"
 err=$(mktemp)
 trap 'rm -f "$err"' EXIT
-attempt=1
-while :; do
-  if gh_retry "$err" gh pr view "$n" --repo "$REPO" --json state,reviews,mergeable \
-    --jq '[.state, ([.reviews[].state] | any(. == "APPROVED")), .mergeable] | @tsv'; then
-    out="$GH_OUT"
-  else
-    echo "good-prs: 'gh pr view $n' failed: $(tr '\n' ' ' <"$err")" >&2
-    exit 255
-  fi
-  # GitHub computes mergeability lazily: for a PR nobody looked at recently the
-  # first query only schedules the test merge and answers UNKNOWN. Asking again
-  # shortly after returns the real verdict, so a conflicting PR is not reported
-  # as clean just because it was asked about first. Only an OPEN PR is worth
-  # re-asking - a closed or merged one is dropped from the report anyway.
-  case "$out" in
-    OPEN*UNKNOWN) ;;
-    *) break ;;
-  esac
-  [ "$attempt" -ge "$GH_MERGEABLE_TRIES" ] && break
-  sleep "$GH_MERGEABLE_DELAY"
-  attempt=$(( attempt + 1 ))
-done
-printf '%s\t%s\n' "$n" "$out"
+if res=$(gh pr view "$n" --repo "$REPO" --json state,reviews \
+  --jq '[.state, ([.reviews[].state] | any(. == "APPROVED"))] | @tsv' 2>"$err"); then
+  printf '%s\t%s\n' "$n" "$res"
+else
+  echo "good-prs: 'gh pr view $n' failed: $(tr '\n' ' ' <"$err")" >&2
+  exit 255
+fi
 SH
 chmod +x "$WORK/approval.sh"
 
@@ -218,9 +137,8 @@ emit() {
   awk -F'\t' '$3==0 && ($2=="GREEN"||$2=="FAILED"||$2=="INPROG"||$2=="NOSYNC"){print $1"\t"$2}' \
     "$WORK/checks.tsv" \
   | while IFS=$'\t' read -r n st; do
-      a=$(awk -F'\t' -v n="$n" '$1==n{print $2"\t"$3"\t"$4}' "$WORK/appr.tsv")
+      a=$(awk -F'\t' -v n="$n" '$1==n{print $2"\t"$3}' "$WORK/appr.tsv")
       state=$(echo "$a" | cut -f1); approved=$(echo "$a" | cut -f2)
-      mergeable=$(echo "$a" | cut -f3)
       [ "$state" != "OPEN" ] && continue
       line=$(grep -m1 "^$n	" "$meta") || continue
       [ -z "$line" ] && continue
@@ -231,18 +149,10 @@ emit() {
         FAILED) g=1; gl="FAILED";; INPROG) g=2; gl="INPROG";;
         GREEN)  g=3; gl="GREEN";;  NOSYNC) g=4; gl="NOSYNC";;
       esac
-      # A PR that conflicts with its base branch cannot be merged whatever CI
-      # says, so the conflict is shown in the same first column as the sync
-      # state, and such rows are sorted after the clean ones within a bucket.
-      case "$mergeable" in
-        CONFLICTING) c=2; gl="$gl+CONFLICT";;
-        MERGEABLE)   c=0;;
-        *)           c=1; gl="$gl+UNKNOWN";;   # UNKNOWN, or absent for any reason
-      esac
       [ "$approved" = "true" ] && av="yes" || av="-"
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$g" "$c" "$gl" "$n" "$av" "$auth" "$title"
-    done | sort -t$'\t' -k1,1n -k2,2n -k4,4n \
-  | while IFS=$'\t' read -r g c gl n av auth title; do
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$g" "$gl" "$n" "$av" "$auth" "$title"
+    done | sort -t$'\t' -k1,1n -k3,3n \
+  | while IFS=$'\t' read -r g gl n av auth title; do
       if [ "$showauth" = "1" ]; then
         printf '| %s | %s | [#%s](https://github.com/ClickHouse/ClickHouse/pull/%s) | %s | %s |\n' \
           "$gl" "$av" "$n" "$n" "$auth" "$title"
@@ -257,25 +167,25 @@ excl_csv=$(IFS=,; echo "${TRACK_AUTHORS[*]}")
 
 echo "# Good PRs — only \`CH Inc sync\` blocking (or fully green)"
 echo
-echo "_Legend: GREEN = fully green / merge-ready · FAILED = only \`CH Inc sync\` failed · INPROG = only \`CH Inc sync\` still running · NOSYNC = no \`CH Inc sync\` check, everything else green (e.g. release-branch backports). A \`+CONFLICT\` suffix means the PR conflicts with its base branch in the public repository and needs a merge before it can go in; \`+UNKNOWN\` means GitHub had not finished computing mergeability. Approved = approved by someone at least once. Merged/closed PRs excluded._"
+echo "_Legend: GREEN = fully green / merge-ready · FAILED = only \`CH Inc sync\` failed · INPROG = only \`CH Inc sync\` still running · NOSYNC = no \`CH Inc sync\` check, everything else green (e.g. release-branch backports). Approved = approved by someone at least once. Merged/closed PRs excluded._"
 echo
 echo "## 1. Your own PRs (authored by \`$ME\`)"
 echo
-echo "| sync / merge | approved | PR | title |"
-echo "|--------------|:--:|----|-------|"
+echo "| sync | approved | PR | title |"
+echo "|------|:--:|----|-------|"
 emit "$WORK/authored.meta" 0 ""
 echo
 echo "## 2. Assigned to you, authored by others (excluding: ${excl_csv})"
 echo
-echo "| sync / merge | approved | PR | author | title |"
-echo "|--------------|:--:|----|--------|-------|"
+echo "| sync | approved | PR | author | title |"
+echo "|------|:--:|----|--------|-------|"
 emit "$WORK/assigned.meta" 1 "$ME,$excl_csv"
 for a in "${TRACK_AUTHORS[@]}"; do
   echo
   echo "## 3. PRs by \`$a\` (regardless of assignee)"
   echo
-  echo "| sync / merge | approved | PR | title |"
-  echo "|--------------|:--:|----|-------|"
+  echo "| sync | approved | PR | title |"
+  echo "|------|:--:|----|-------|"
   grep -P "^\d+\t$a\t" "$WORK/tracked.meta" > "$WORK/one_author.meta" || true
   emit "$WORK/one_author.meta" 0 ""
 done

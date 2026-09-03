@@ -9,7 +9,7 @@
 -- Such values must instead be stored losslessly on the unpredictable path, so they round-trip exactly
 -- while finite values stay within the error bound.
 
-SET enable_sz3_codec = 1;
+SET allow_experimental_codecs = 1;
 
 DROP TABLE IF EXISTS tab_sz3_non_finite;
 

@@ -10,6 +10,6 @@ struct ConverterContext;
 
 /// Applies an aggregation operator.
 SQLQueryPiece applyAggregationOperator(
-    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

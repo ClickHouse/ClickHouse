@@ -78,31 +78,3 @@ Bootstrap サービス アカウントには、プロジェクト スコープ�
   * クラスター内で稼働する monitoring stack の対象 identity です。このデプロイメント専用の GCS bucket にある長期メトリクス ストレージの読み書きに使用されます。
 * **ClickHouse runtime management identity**
   * ClickHouse の runtime データプレーン管理コントローラーが使用します。これは、Private Service Connect endpoint の管理、bucket ライフサイクルの調整、サービスアカウントのローテーションなどの day-2 operations を処理します。
-
-<div id="azure-roles-and-identities">
-  ## Azure のロールと ID
-</div>
-
-<div id="onboarding-service-principal">
-  ### オンボーディング用サービス プリンシパル
-</div>
-
-[Azure 用 Terraform モジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)によるオンボーディングでは、クロステナント認証に関する Azure のガイダンスに従って、テナント内にマルチテナント アプリケーションをエンタープライズ アプリケーション (サービス プリンシパル) としてプロビジョニングします。サービス プリンシパルには、ターゲット サブスクリプションをスコープとする最小権限のカスタム ロールが割り当てられ、次の権限が付与されます。
-
-* **ネットワーク**: BYOC インフラストラクチャをホストする VNet、サブネット、パブリック IP、NAT ゲートウェイ、ネットワーク セキュリティ グループ、DNS ゾーンを管理します。
-* **クラスター**: AKS クラスターとノードプールを管理します。
-* **ストレージ**: ClickHouse データ、バックアップ、監視データに使用するストレージ アカウントとブロブ コンテナーを管理します。
-* **ID**: サブスクリプション内のユーザー割り当てマネージド ID と、そのフェデレーション ID 資格情報を管理します。
-* **認可**: カスタム ロール定義とロールの割り当てを管理します。すべての権限はターゲット サブスクリプションに限定されるため、このロールは他のサブスクリプションやテナントのリソースにアクセスできません。
-
-<div id="additional-managed-identities-created-by-the-controller">
-  ### コントローラーが作成する追加のマネージド identity
-</div>
-
-BYOC サービスをプロビジョニングすると、ClickHouse のコントロールプレーンによって、お客様のサブスクリプション内にユーザー割り当てマネージド identity が作成されます。各 identity は、権限を限定し、単一の目的にのみ使用する特定の Kubernetes サービスアカウント (Workload identity) にフェデレーションされます。
-
-* **サービスごとの identity**
-  * 各 ClickHouse サービスが、テーブルデータとバックアップ用のストレージアカウントにアクセスする際に使用します。アクセスには、そのストレージアカウントをスコープとするカスタム ブロブ ストレージロールを使用します。
-  * サービスをバックアップから復元する際には、ソースサービスのバックアップコンテナーに対する読み取り専用アクセスも追加で付与されます。
-* **共有インフラストラクチャ identity**
-  * プライベートリンク サービスの管理など、Day 2 運用において ClickHouse のruntimeデータプレーン管理コントローラーが使用します。

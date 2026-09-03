@@ -2,7 +2,6 @@
 
 #include <Formats/StructureToCapnProtoSchema.h>
 #include <Formats/StructureToProtobufSchema.h>
-#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Macros.h>
 
@@ -52,12 +51,11 @@ private:
     void verifySchemaFileName(const String & format_schema, bool require_message, fs::path & path);
     void handleSchemaContent(const String & content, const String & format, bool is_server, const String & format_schema_path);
     void handleSchemaSourceQuery(const String & format_schema, const String & format, bool is_server, const String & format_schema_path);
-    String querySchema(const String & query, const ContextPtr & query_context);
+    String querySchema(const String & query);
     void storeSchemaOnDisk(const fs::path & file_path, const String & content);
     void processSchemaFile(fs::path path, const String & default_file_extension, bool is_server, const String & format_schema_path);
 
-    /// `key_salt` participates in the hash but not in the readable part of the name.
-    static String generateSchemaFileName(const String & hashing_content, const String & file_extention, const String & key_salt = "");
+    static String generateSchemaFileName(const String & hashing_content, const String & file_extention);
 
     String schema_path;
     String schema_directory;

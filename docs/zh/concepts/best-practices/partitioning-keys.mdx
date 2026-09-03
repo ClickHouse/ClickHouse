@@ -32,7 +32,7 @@ ORDER BY (town, street)
 PARTITION BY toStartOfMonth(date)
 ```
 
-每当向表中插入一组行时，ClickHouse 不会像[这里](/zh/concepts/core-concepts/parts)描述的那样，创建 (至少 [一个](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)) 包含所有已插入行的单个数据分区片段，而是会针对这些插入行中每个唯一的分区键值各创建一个新的数据分区片段：
+每当向表中插入一组行时，ClickHouse 不会像[这里](/zh/concepts/core-concepts/parts)描述的那样，创建 (至少 [一个](/zh/reference/settings/session-settings#max_insert_block_size)) 包含所有已插入行的单个数据分区片段，而是会针对这些插入行中每个唯一的分区键值各创建一个新的数据分区片段：
 
 <Image img="/images/bestpractices/partitions.webp" size="lg" alt="分区" />
 
@@ -62,7 +62,7 @@ ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中
   ## 选择低基数分区键
 </div>
 
-需要特别注意的是，parts 数量越多，对查询性能的负面影响就越大。因此，如果 parts 数量超过指定限制——无论是[总数](/zh/reference/settings/merge-tree-settings/max-parts#max_parts_in_total)还是[每个分区](/zh/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)——ClickHouse 都会在插入时返回[“parts 过多”](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)错误。
+需要特别注意的是，parts 数量越多，对查询性能的负面影响就越大。因此，如果 parts 数量超过指定限制——无论是[总数](/zh/reference/settings/merge-tree-settings#max_parts_in_total)还是[每个分区](/zh/reference/settings/merge-tree-settings#parts_to_throw_insert)——ClickHouse 都会在插入时返回[“parts 过多”](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)错误。
 
 为分区键选择合适的**基数**至关重要。高基数分区键——也就是不同分区值很多——会导致数据分区片段大量增加。由于 ClickHouse 不会跨分区合并 parts，分区过多就会造成过多未合并的 parts，最终触发“parts 过多”错误。[合并操作至关重要](/zh/concepts/core-concepts/merges)，因为它有助于减少存储碎片并优化查询速度；但在高基数分区下，这种合并能力就无法发挥作用。
 

@@ -41,7 +41,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## PREWHERE가 쿼리 효율을 개선하는 방식
 </div>
 
-다음 애니메이션은 위의 쿼리에서 모든 쿌리 프레디케이트에 PREWHERE 절을 적용했을 때 쿼리가 어떻게 처리되는지 보여줍니다.
+다음 애니메이션은 위의 쿼리에서 모든 쿼리 프레디케이트에 PREWHERE 절을 적용했을 때 쿼리가 어떻게 처리되는지 보여줍니다.
 
 처음 세 단계는 앞서와 동일합니다:
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ③ 이어서 인덱스 엔트리를 스캔해 `town` 컬럼의 어떤 그래뉼에 프레디케이트와 일치하는 행이 있을 수 있는지 식별합니다.
 
-이제 PREWHERE 절 덕분에 다음 단계는 달라집니다. 관련된 모든 컬럼을 한 번에 읽는 대신, ClickHouse는 컬럼별로 데이터를 필터링하면서 실제로 필요한 데이터만 로드합니다. 이렇게 하면 특히 wide 테이블에서 I/O를 크게 줄일 수 있습니다.
+이제 PREWHERE 절 덕분에 다음 단계는 달라집니다. 관련된 모든 컬럼을 한 번에 읽는 대신, ClickHouse는 컬럼별로 데이터를 필터링하면서 실제로 필요한 데이터만 로드합니다. 이렇게 하면 특히 컬럼 수가 많은 테이블에서 I/O를 크게 줄일 수 있습니다.
 
 각 단계에서는 이전 필터를 통과한, 즉 일치하는 행이 하나 이상 들어 있는 그래뉼만 로드합니다. 따라서 각 필터에서 로드하고 평가해야 하는 그래뉼 수는 단계가 진행될수록 단조 감소합니다:
 
@@ -106,7 +106,7 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
   ## PREWHERE 최적화는 자동으로 적용됩니다
 </div>
 
-위 예시와 같이 PREWHERE 절은 수동으로 추가할 수 있습니다. 하지만 PREWHERE를 직접 작성할 필요는 없습니다. [`optimize_move_to_prewhere`](/ko/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 설정이 활성화되면(기본값은 true) ClickHouse는 WHERE의 필터 조건을 PREWHERE로 자동 이동하며, 읽기량을 가장 크게 줄일 수 있는 조건을 우선적으로 선택합니다.
+위 예시와 같이 PREWHERE 절은 수동으로 추가할 수 있습니다. 하지만 PREWHERE를 직접 작성할 필요는 없습니다. [`optimize_move_to_prewhere`](/ko/reference/settings/session-settings#optimize_move_to_prewhere) 설정이 활성화되면(기본값은 true) ClickHouse는 WHERE의 필터 조건을 PREWHERE로 자동 이동하며, 읽기량을 가장 크게 줄일 수 있는 조건을 우선적으로 선택합니다.
 
 핵심은 크기가 작은 컬럼일수록 더 빠르게 스캔할 수 있고, 크기가 큰 컬럼을 처리할 때쯤이면 대부분의 그래뉼이 이미 걸러져 있다는 점입니다. 모든 컬럼은 동일한 수의 행을 가지므로, 컬럼의 크기는 주로 데이터 타입에 따라 결정됩니다. 예를 들어 `UInt8` 컬럼은 일반적으로 `String` 컬럼보다 훨씬 작습니다.
 
