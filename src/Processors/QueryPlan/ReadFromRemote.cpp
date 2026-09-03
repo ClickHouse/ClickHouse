@@ -461,6 +461,48 @@ ASTPtr tryBuildAdditionalFilterAST(
     return node_to_ast[dag.getOutputs().front()];
 }
 
+/// The one table expression the shipped query reads, or null when its shape is not one a predicate can
+/// be spliced into: `PredicateRewriteVisitor` attributes the predicate to a single table, so a join
+/// tree with two of them has nowhere to put it. One level of subquery is followed through.
+///
+/// Split out of `addFilters` because it depends only on the query, not on the predicate. That lets
+/// plan optimization ask it before there is a predicate to push - `tryPushDownFilter` may only put a
+/// condition the replicas do not have into the initiator's local plan when that condition cannot
+/// change how the local fragment reads.
+static QueryTreeNodePtr findSingleShippedTableExpression(const QueryTreeNodePtr & query_tree)
+{
+    const auto * query_node = query_tree ? query_tree->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return nullptr;
+
+    const auto is_table = [](const QueryTreeNodePtr & expr)
+    { return expr->as<TableNode>() || expr->as<TableFunctionNode>(); };
+
+    auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
+    /// Case with JOIN is not supported so far.
+    if (table_expressions.size() != 1)
+        return nullptr;
+
+    if (is_table(table_expressions.front()))
+        return table_expressions.front();
+
+    const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
+    if (!inner_query_node)
+        return nullptr;
+
+    table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
+    /// Case with JOIN is not supported so far.
+    if (table_expressions.size() != 1)
+        return nullptr;
+
+    return is_table(table_expressions.front()) ? table_expressions.front() : nullptr;
+}
+
+bool canAddFiltersToShippedQuery(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+{
+    return query_tree && planner_context && findSingleShippedTableExpression(query_tree) != nullptr;
+}
+
 static void addFilters(
     Tables * external_tables,
     ContextMutablePtr & context,
@@ -480,6 +522,12 @@ static void addFilters(
     if (!query_node)
         return;
 
+    /// Ask the shape question before building the predicate: `tryBuildAdditionalFilterAST` can register
+    /// external tables, and there is no point doing that for a query the predicate cannot enter.
+    auto shipped_table_expression = findSingleShippedTableExpression(query_tree);
+    if (!shipped_table_expression)
+        return;
+
     /// We are building a set with projection names and a map with execution names here.
     /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
 
@@ -495,54 +543,27 @@ static void addFilters(
     if (!predicate)
         return;
 
-    auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
-    /// Case with JOIN is not supported so far.
-    if (table_expressions.size() != 1)
-        return;
-
-    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
-    /// Supported cases:
-    ///   - TableNode (a real table)
-    ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
-    ///   - QueryNode wrapping any of the above (one level of subquery)
+    /// Extract the storage snapshot, identifier (when available) and alias from the table expression
+    /// `findSingleShippedTableExpression` resolved to - a `TableNode` (a real table) or a
+    /// `TableFunctionNode` (e.g. `numbers(3)`, `remote(...)`).
     StorageSnapshotPtr table_snapshot;
     ASTPtr table_identifier_ast;
     String table_alias;
 
-    auto extract_from_expression = [&](const QueryTreeNodePtr & expr) -> bool
+    if (const auto * tn = shipped_table_expression->as<TableNode>())
     {
-        if (const auto * tn = expr->as<TableNode>())
-        {
-            table_snapshot = tn->getStorageSnapshot();
-            table_identifier_ast = tn->toASTIdentifier();
-            table_alias = tn->getAlias();
-            return true;
-        }
-        if (const auto * tfn = expr->as<TableFunctionNode>())
-        {
-            table_snapshot = tfn->getStorageSnapshot();
-            /// Table functions don't have a stable database/table identifier - we only
-            /// need the alias on the receiving side so `setColumnShortName` can strip it.
-            table_identifier_ast = nullptr;
-            table_alias = tfn->getAlias();
-            return true;
-        }
-        return false;
-    };
-
-    if (!extract_from_expression(table_expressions.front()))
+        table_snapshot = tn->getStorageSnapshot();
+        table_identifier_ast = tn->toASTIdentifier();
+        table_alias = tn->getAlias();
+    }
+    else
     {
-        const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
-        if (!inner_query_node)
-            return;
-
-        table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
-        /// Case with JOIN is not supported so far.
-        if (table_expressions.size() != 1)
-            return;
-
-        if (!extract_from_expression(table_expressions.front()))
-            return;
+        const auto & tfn = shipped_table_expression->as<TableFunctionNode &>();
+        table_snapshot = tfn.getStorageSnapshot();
+        /// Table functions don't have a stable database/table identifier - we only
+        /// need the alias on the receiving side so `setColumnShortName` can strip it.
+        table_identifier_ast = nullptr;
+        table_alias = tfn.getAlias();
     }
 
     TableWithColumnNamesAndTypes table_with_columns(

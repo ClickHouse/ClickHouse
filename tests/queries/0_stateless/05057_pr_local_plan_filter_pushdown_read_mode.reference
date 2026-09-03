@@ -53,3 +53,15 @@ Read type: Default
 242
 342
 442
+the shipped query reads two tables
+Sorting
+Filter column: tenant = 42
+Sorting
+Read type: Default
+Read type: Default
+Filter column: tenant = 42
+42
+142
+242
+342
+442

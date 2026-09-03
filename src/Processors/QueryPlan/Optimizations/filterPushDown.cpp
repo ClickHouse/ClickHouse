@@ -1477,8 +1477,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// `fixedColumnMayChangeReadMode`, so plenty of harmless conditions wait for the setting too.
         /// What must not wait for it is a join runtime filter, the one condition the setting could never
         /// mirror: `addFilters` drops non-deterministic functions.
-        if (settings.parallel_replicas_filter_pushdown_reaches_replicas
-            || !fixedColumnMayChangeReadMode(parallel_replicas_local_plan->getQueryPlan()))
+        ///
+        /// The setting alone is not a promise that the replicas end up with the condition: it is spliced
+        /// into their query, and a query whose join tree reads more than one table takes no predicate at
+        /// all. `shippedQueryCanCarryFilter` is that shape question, asked when the step was built.
+        const bool replicas_get_the_condition = settings.parallel_replicas_filter_pushdown_reaches_replicas
+            && parallel_replicas_local_plan->shippedQueryCanCarryFilter();
+
+        if (replicas_get_the_condition || !fixedColumnMayChangeReadMode(parallel_replicas_local_plan->getQueryPlan()))
         {
             // actual push down will be done when plan for local parallel replica will be optimized
             FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};

@@ -11,8 +11,9 @@
 -- fixes nothing, so the mode is unchanged.
 --
 -- `parallel_replicas_filter_pushdown` ships the predicate by rewriting the replicas' query, so it is
--- only as good as that rewrite: the last section turns off each of the two settings that make the
--- rewrite reach them, and the predicate has to stay out of the local plan again.
+-- only as good as that rewrite. The last section takes away, one at a time, the two settings the
+-- rewrite needs and then the query shape it needs; in each case the predicate has to stay out of the
+-- local plan again, setting or no setting.
 
 DROP TABLE IF EXISTS t_pr_read_mode;
 DROP VIEW IF EXISTS v_pr_read_mode;
@@ -136,6 +137,29 @@ FROM (EXPLAIN description = 0, actions = 1 SELECT ts FROM v_sorted_pr_read_mode 
 WHERE explain LIKE '%Read type%';
 SELECT ts FROM v_sorted_pr_read_mode WHERE tenant = 42 LIMIT 5;
 SET serialize_query_plan = 0;
+
+SELECT 'the shipped query reads two tables';
+-- The join is inside the fragment here, not above it, so the query shipped to the replicas is the join.
+-- `addFilters` rewrites a shipped query by attributing the predicate to the single table it reads, and
+-- with two of them it does nothing at all - the setting is on, and the replicas still never see
+-- `tenant = 42`. The `Filter` has to stay above the fragment's own `Sorting`; were it pushed below, it
+-- would reach the read as a `Prewhere` and the initiator alone would be filtering.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT ts FROM (
+        SELECT t.ts AS ts, t.tenant AS tenant
+        FROM t_pr_read_mode AS t JOIN b_pr_read_mode AS bb ON t.tenant = bb.tenant
+        ORDER BY t.ts
+    ) WHERE tenant = 42 LIMIT 5
+)
+WHERE explain LIKE '%Sorting%' OR explain LIKE '%Filter column%' OR explain LIKE '%Prewhere filter column%'
+   OR explain LIKE '%Read type%';
+SELECT ts FROM (
+    SELECT t.ts AS ts, t.tenant AS tenant
+    FROM t_pr_read_mode AS t JOIN b_pr_read_mode AS bb ON t.tenant = bb.tenant
+    ORDER BY t.ts
+) WHERE tenant = 42 LIMIT 5;
 
 DROP TABLE b_pr_read_mode;
 DROP VIEW v_sorted_pr_read_mode;

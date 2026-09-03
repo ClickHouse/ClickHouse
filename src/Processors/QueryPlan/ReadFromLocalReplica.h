@@ -11,7 +11,7 @@ namespace DB
 class ReadFromLocalParallelReplicaStep : public ISourceStep
 {
 public:
-    explicit ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_);
+    ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_, bool shipped_query_can_carry_filter_);
 
     String getName() const override { return "ReadFromLocalReplica"; }
 
@@ -28,11 +28,17 @@ public:
     /// SETTINGS that are shipped to remote replicas.
     ContextPtr getContext() const { return context; }
 
+    /// Whether the query shipped to the replicas has a shape a pushed-down predicate can be spliced
+    /// into, see `canAddFiltersToShippedQuery`. `parallel_replicas_filter_pushdown` being on is not on
+    /// its own a promise that the replicas end up with the condition.
+    bool shippedQueryCanCarryFilter() const { return shipped_query_can_carry_filter; }
+
     void addFilter(FilterDAGInfo filter);
 
 private:
     QueryPlanPtr query_plan;
     ContextPtr context;
+    bool shipped_query_can_carry_filter;
 };
 
 }

@@ -20,6 +20,17 @@ using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
+/// Whether a predicate could be spliced into the query shipped to remote replicas, judged from the
+/// query alone. `parallel_replicas_filter_pushdown` carries a predicate to the replicas by rewriting
+/// this query, and only a query reading a single table can take one: with a join tree of two table
+/// expressions the predicate has no side to be attributed to, and the rewrite is skipped.
+///
+/// Plan optimization asks this before there is a predicate, because a condition that ends up in the
+/// initiator's local plan without reaching the replicas may not change how the local fragment reads.
+/// Note that it answers only the question the query's shape decides; a particular predicate can still
+/// turn out not to be expressible against the shipped query's projection.
+bool canAddFiltersToShippedQuery(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
+
 /// Reading step from remote servers.
 /// Unite query results from several shards.
 class ReadFromRemote final : public SourceStepWithFilterBase

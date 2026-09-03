@@ -1104,7 +1104,13 @@ void executeQueryWithParallelReplicas(
         else if (const auto * union_node = query_tree->as<UnionNode>())
             local_context = union_node->getContext();
 
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan), std::move(local_context));
+        /// Whether `addFilters` will be able to carry a pushed-down predicate into the query above -
+        /// the local plan may only take a condition that could change how it reads if the replicas end
+        /// up with the same condition. Answered from the query's shape, before there is a predicate.
+        const bool shipped_query_can_carry_filter = canAddFiltersToShippedQuery(query_tree, planner_context);
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
+            std::move(local_plan), std::move(local_context), shipped_query_can_carry_filter);
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 
