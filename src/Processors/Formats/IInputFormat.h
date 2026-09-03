@@ -51,11 +51,50 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
-    virtual void serialize(WriteBuffer & buffer) = 0;
-    virtual void deserialize(ReadBuffer & buffer) = 0;
+    /// `protocol_version` is the negotiated cluster-processing protocol version (see
+    /// `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`). Implementations must gate any field added in a
+    /// newer version on it so the payload stays decodable across mixed-version clusters.
+    virtual void serialize(WriteBuffer & buffer, size_t protocol_version) = 0;
+    virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+    /// Returns a new bucket that keeps only `matching_row_groups`. `file_num_row_groups` is the total
+    /// number of row groups in the file as known by the caller (0 = unknown). When it is non-zero the
+    /// returned bucket carries it, so the read path keeps the fail-close
+    /// `checkFileMatchesBucketAssignment` guard against a concurrent overwrite; when it is zero the
+    /// bucket keeps whatever total this prototype already had. `file_metadata_digest` is the digest
+    /// of the file-level metadata (e.g. the Parquet footer) the matching row groups were computed
+    /// from, as stored with the query-condition-cache entry (see
+    /// `QueryConditionCache::Entry::file_metadata_digest`); when non-zero the returned bucket carries
+    /// it so the read fails close unless the file it actually opens has that exact metadata, and when
+    /// it is zero the bucket keeps whatever digest this prototype already had.
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(
+        const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups,
+        UInt64 file_metadata_digest) const = 0;
+
+    /// The minimum negotiated cluster-processing protocol version a worker must support to carry this
+    /// bucket without silently losing a fail-close guard. A worker below this version must not receive
+    /// the task: downgrading it would drop a field the read path relies on (see the override in
+    /// `ParquetFileBucketInfo`, which requires the row-group-count field once it is known). The default
+    /// is the version that introduced `file_bucket_info` itself.
+    virtual UInt64 getMinProtocolVersion() const;
+
+    /// Whether this bucket covers the whole file (a trivial split into a single bucket). For such a
+    /// bucket, dropping it from a task is semantically safe: a worker reading the plain path once
+    /// returns exactly the same rows, because there is no second bucket to duplicate or omit. Used to
+    /// avoid failing a task for an older worker (see `ClusterFunctionReadTaskResponse::serialize`)
+    /// when nothing semantics-affecting would be lost. The default is the safe answer.
+    virtual bool coversWholeFile() const { return false; }
+
+    /// Whether the row groups this assignment omits were *pruned* rather than handed to another
+    /// reader. It is false for a split bucket (a partition of the file among several sources: the
+    /// omitted row groups belong to the other buckets) and true for an assignment derived from the
+    /// query condition cache (`filterByMatchingRowGroups`), which restricts a single reader of the
+    /// whole file to the row groups a previous run found matching. Local-only: such an assignment is
+    /// always built on the node that reads the file, so the flag is never serialized. Read-path
+    /// profile events use it to decide what this reader is accountable for - the whole file, or only
+    /// its own bucket (see `Parquet::ReadManager::init`).
+    bool omitted_row_groups_are_pruned = false;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -67,6 +106,11 @@ struct IBucketSplitter
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
     virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+
+    /// Splits a file into approximately `target_count` buckets, each covering a roughly
+    /// equal slice of the file. Useful for parallelising one large file across N readers.
+    /// The result has at most `target_count` buckets and never drops any data.
+    virtual std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
 
     virtual ~IBucketSplitter() = default;
 };
@@ -131,6 +175,13 @@ public:
     void needOnlyCount() { need_only_count = true; }
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+
+    /// Digest of the file-level metadata (e.g. the Parquet footer) this read was driven by, or 0 if
+    /// unknown (not parsed yet, or the format does not support it). Stored with the query-condition
+    /// -cache entry written from `getMatchedBuckets`, so a later read may only apply the cached
+    /// marks to a file whose metadata produces the same digest (the marks name row groups of that
+    /// exact metadata). See `QueryConditionCache::Entry::file_metadata_digest`.
+    virtual UInt64 getFileMetadataDigest() const { return 0; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/Exception.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -85,6 +86,24 @@ namespace
         }
         return true;
     }
+
+    /// Minimal `FileBucketInfo` used only to exercise the serialization guards. On the fail-closed
+    /// downgrade path none of its methods are called, so trivial implementations are enough. The
+    /// minimum protocol version is configurable so a test can model a bucket that needs a newer
+    /// protocol than the plain `file_bucket_info` payload (e.g. a Parquet bucket carrying the
+    /// row-group count).
+    struct StubFileBucketInfo : public FileBucketInfo
+    {
+        explicit StubFileBucketInfo(UInt64 min_protocol_version_ = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
+            : min_protocol_version(min_protocol_version_) {}
+        void serialize(WriteBuffer &, size_t) override {}
+        void deserialize(ReadBuffer &, size_t) override {}
+        String getIdentifier() const override { return "stub"; }
+        String getFormatName() const override { return "Parquet"; }
+        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> &, size_t, UInt64) const override { return nullptr; }
+        UInt64 getMinProtocolVersion() const override { return min_protocol_version; }
+        UInt64 min_protocol_version;
+    };
 
     // Head of the list must contains all paths for files with numbers from file_nums
     bool checkHead(const std::vector<std::string> & paths, std::vector<size_t> file_nums)
@@ -315,4 +334,66 @@ TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
     auto object_info = deserialized.getObjectInfo();
     ASSERT_TRUE(object_info->relative_path_with_metadata.read_source_index.has_value());
     ASSERT_EQ(*object_info->relative_path_with_metadata.read_source_index, 42);
+}
+
+TEST(ClusterFunctionReadTaskResponse, FailsClosedWhenFileBucketInfoCannotBeCarried)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file";
+    response.file_bucket_info = std::make_shared<StubFileBucketInfo>();
+
+    /// A worker whose negotiated protocol predates `WITH_FILE_BUCKETS_INFO` cannot carry the bucket
+    /// assignment. Serializing must throw instead of silently downgrading to a path-only task, which
+    /// would make the worker read the whole file for every bucket and over-count rows.
+    ASSERT_LT(DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO);
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        EXPECT_THROW(
+            response.serialize(out, DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION),
+            DB::Exception);
+    }
+
+    /// At a protocol version that supports it, serialization succeeds.
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        EXPECT_NO_THROW(
+            response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO));
+    }
+}
+
+TEST(ClusterFunctionReadTaskResponse, FailsClosedWhenBucketNeedsNewerProtocolThanWorker)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file";
+    /// Model a Parquet bucket that knows the file's row-group count: it needs
+    /// `WITH_PARQUET_FILE_ROW_GROUP_COUNT` so the worker can run the `checkFileMatchesBucketAssignment`
+    /// fail-close guard against a concurrent overwrite.
+    response.file_bucket_info
+        = std::make_shared<StubFileBucketInfo>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT);
+
+    /// A worker that can carry `file_bucket_info` (>= `WITH_FILE_BUCKETS_INFO`) but not the row-group
+    /// count (< `WITH_PARQUET_FILE_ROW_GROUP_COUNT`) must fail closed. Otherwise the count is dropped on
+    /// the wire, deserialized as 0, and the overwrite guard is silently disabled - so the old worker can
+    /// under-read an object replaced between the split decision and the read instead of throwing.
+    ASSERT_LT(
+        DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO,
+        DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT);
+    for (auto worker_version :
+         {DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO,
+          DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX})
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        EXPECT_THROW(response.serialize(out, worker_version), DB::Exception);
+    }
+
+    /// At the protocol version that carries the row-group count, serialization succeeds.
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        EXPECT_NO_THROW(
+            response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT));
+    }
 }

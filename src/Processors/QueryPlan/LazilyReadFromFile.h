@@ -37,6 +37,11 @@ struct LazyFileRegistry
 
     std::mutex mutex;
     std::vector<FileEntry> files;
+    /// Maps `path + '\0' + version_token` to the index in `files`. A single file read in
+    /// parallel by several sources (the single-file bucket split of the Parquet format)
+    /// registers the same generation once from each source; sharing one entry keeps the
+    /// deferred pass rereading the file once instead of once per source.
+    std::unordered_map<String, UInt64> file_index_by_path_and_token;
 
     UInt64 registerFile(const String & path, const String & version_token);
 };

@@ -7,6 +7,8 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/SelectQueryInfo.h>
+
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <Interpreters/Context.h>
@@ -43,6 +45,10 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
+#if USE_PARQUET
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#endif
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -122,6 +128,9 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsUInt64 input_format_parquet_min_bytes_to_split;
+    extern const SettingsUInt64 input_format_parquet_bytes_per_split_bucket;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
@@ -149,15 +158,16 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
+    extern const int FILE_CHANGED_DURING_READ;
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
-    extern const int FILE_CHANGED_DURING_READ;
 }
 
 using String = std::string;
 
 namespace
 {
+
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
@@ -662,6 +672,28 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
         static_cast<Int64>(mtim_nsec),
         static_cast<Int64>(file_stat.st_ino),
         file_stat.st_size);
+}
+
+/// Whether the version token computed from `file_stat` is trustworthy for correctness decisions.
+/// The token proves a rewrite only after the file has settled: filesystem timestamps are coarser
+/// than the wall clock (one clock tick of ~1-10 ms on most Linux filesystems, a full second on
+/// ext3, two seconds on FAT), so a rewrite that keeps the inode and the byte size and lands in
+/// the same timestamp tick as the previous write produces an identical token. Once the last
+/// modification is comfortably in the past, its tick is over and any further write is guaranteed
+/// to change the token. For files modified more recently - or with an mtime in the future, e.g.
+/// due to clock skew on a network mount - a consumer that draws a correctness conclusion from the
+/// token must fail close and stay bypassed rather than risk a stale entry. The query condition
+/// cache is such a consumer: it skips whole row groups without reading them. The format metadata
+/// cache is not - it only reuses a parsed footer - and stays keyed on the token unconditionally.
+bool isFileCacheVersionSettled(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+#endif
+    static constexpr Int64 file_version_settle_seconds = 3;
+    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
 }
 
 /// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
@@ -1768,6 +1800,15 @@ Chunk StorageFileSource::generate()
                         }
                     }
                 }
+                else if (fixed_file_path.has_value())
+                {
+                    /// This source was assigned to one specific (file, bucket) pair.
+                    /// Consume it exactly once.
+                    if (fixed_file_consumed)
+                        return {};
+                    fixed_file_consumed = true;
+                    current_path = *fixed_file_path;
+                }
                 else
                 {
                     current_path = files_iterator->next();
@@ -1797,30 +1838,38 @@ Chunk StorageFileSource::generate()
                 /// second that keeps the file size unchanged would otherwise reuse a stale entry.
                 current_file_cache_version = computeFileCacheVersionToken(file_stat);
 
-                /// The version token above proves a rewrite only after the file has settled.
-                /// Filesystem timestamps are coarser than the wall clock (one clock tick of
-                /// ~1-10 ms on most Linux filesystems, a full second on ext3, two seconds on
-                /// FAT), so a rewrite that keeps the inode and the byte size and lands in the
-                /// same timestamp tick as the previous write produces an identical token. Once
-                /// the last modification is comfortably in the past, its tick is over and any
-                /// further write is guaranteed to change the token. The query condition cache
-                /// skips whole row groups based on this token, so for files modified more
-                /// recently - or with an mtime in the future, e.g. due to clock skew on a
-                /// network mount - it fails close and stays bypassed (see the gates below)
-                /// rather than risking stale results.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-                static constexpr Int64 file_version_settle_seconds = 3;
-                current_file_version_settled
-                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+                /// Fail-close for the single-file parallel split. The bucket (row-group)
+                /// assignment in `file_bucket_info` was computed at planning time from a
+                /// footer read of a specific file version (`expected_file_cache_version`).
+                /// `File` storage takes no lock spanning the split decision and these
+                /// per-bucket source reads, so a concurrent in-place rewrite (e.g. an
+                /// `INSERT ... engine_file_truncate_on_insert = 1` on the same table) could
+                /// leave us applying stale row-group indices to a different file — at best
+                /// an out-of-range error, at worst silently wrong results. If the file
+                /// version observed here differs from the one the split was computed on,
+                /// refuse to read rather than return inconsistent data.
+                if (file_bucket_info && expected_file_cache_version.has_value()
+                    && *expected_file_cache_version != *current_file_cache_version)
+                    throw Exception(
+                        ErrorCodes::FILE_CHANGED_DURING_READ,
+                        "File {} was modified concurrently while a parallel single-file read was in progress "
+                        "(version changed from {} to {})",
+                        current_path, *expected_file_cache_version, *current_file_cache_version);
+
+                /// The version token above proves a rewrite only after the file has settled
+                /// (see `isFileCacheVersionSettled`). The query condition cache skips whole row
+                /// groups based on this token, so for unsettled files it fails close and stays
+                /// bypassed (see the gate below) rather than risking stale results.
+                current_file_version_settled = isFileCacheVersionSettled(file_stat);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
 
-                if (need_only_count && tryGetCountFromCache(file_stat))
+                /// The count cache stores the file's total row count. When this source
+                /// only reads a subset of the file (file_bucket_info is set), the cache
+                /// is inapplicable — using it would have every source report the full
+                /// total and produce a count that's multiplied by the number of buckets.
+                if (need_only_count && !file_bucket_info && tryGetCountFromCache(file_stat))
                     continue;
 
                 if (is_one_format)
@@ -1833,15 +1882,57 @@ Chunk StorageFileSource::generate()
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
 
                     /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
-                    /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
+                    /// `current_file_cache_version`, so a writer - e.g. a second `File` table pointing at
                     /// the same path, which is guarded by its own independent `rwlock` and so isn't excluded
-                    /// by ours - could truncate and rewrite the file in that window. Re-stat right after
-                    /// opening: if the token no longer matches what we just opened, it cannot be trusted to
-                    /// pin this read's generation, so fail close (the gates below skip both the Query
-                    /// Condition Cache lookup and, per the bracketing check further down, its population).
-                    if (!storage->use_table_fd && current_file_version_settled
+                    /// by ours - could truncate and rewrite the file in that window, and the token would
+                    /// then describe a different generation than the bytes the buffer returns. The opened
+                    /// fd is not reachable here (the buffer may be an mmap, io_uring, or compression
+                    /// wrapper), so bracket the open with a second `stat` of the path instead: once the
+                    /// token has settled (`isFileCacheVersionSettled`), any write in the gap moves the
+                    /// mtime out of the settled tick and changes the token, so an unchanged token proves
+                    /// the opened bytes match it. For a not-yet-settled token the bracket is best-effort:
+                    /// a same-tick rewrite that keeps the inode and the byte size is indistinguishable,
+                    /// the same residual the format metadata cache accepts by design for fresh files.
+                    if (!storage->use_table_fd
                         && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                    {
+                        /// The bucket (row-group) assignment of a parallel single-file split was
+                        /// computed for `expected_file_cache_version`; applying it to a file that just
+                        /// changed under us could silently return wrong data, so fail close, mirroring
+                        /// the pre-open check above.
+                        if (file_bucket_info && expected_file_cache_version.has_value())
+                            throw Exception(
+                                ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "File {} was modified concurrently while a parallel single-file read was in progress "
+                                "(version {} did not hold after the file was opened)",
+                                current_path, *current_file_cache_version);
+
+                        /// Lazy materialization registers the file under the version token when the
+                        /// first chunk is produced, and its deferred pass rereads the file relying on
+                        /// that token to pin the generation. With the token unable to describe the
+                        /// opened bytes there is nothing valid to register, so fail close the same
+                        /// way the registration path does for a rewrite it detects itself.
+                        if (lazy_row_index_registry)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "Lazy materialization: file {} was modified while being opened. "
+                                "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_file setting",
+                                current_path);
+
+                        /// For a plain read, fail close on the caches instead: drop the token so neither
+                        /// the format metadata cache (`object_with_metadata` below) nor the Query
+                        /// Condition Cache keys this read's data under a version it may not describe.
+                        /// The footer is then parsed directly from the opened bytes.
+                        current_file_cache_version.reset();
                         current_file_version_settled = false;
+
+                        /// The size and mtime also come from the pre-open `stat`, and the `_size` /
+                        /// `_time` virtual columns would otherwise expose them alongside data read
+                        /// from a different file generation. No stat of the path can be attributed
+                        /// to the opened bytes anymore, so fail close here too: with the optionals
+                        /// empty the virtual columns are filled with NULL.
+                        current_file_size.reset();
+                        current_file_last_modified.reset();
+                    }
                 }
             }
 
@@ -1853,46 +1944,36 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            /// For real local files, build a synthetic RelativePathWithMetadata so the
-            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
-            /// "etag" is just any version identifier the cache compares for equality — for
-            /// local files we use the precomputed `current_file_cache_version` (sub-second
-            /// mtime + inode + size) so an in-place rewrite invalidates the cache even when
-            /// the new file has the same length and is written within the same wall-clock
-            /// second. Unlike the query condition cache below, the format metadata cache
-            /// must remain available immediately after a write.
-            std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
-                && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value())
-            {
-                ObjectMetadata md;
-                md.size_bytes = *current_file_size;
-                md.last_modified = *current_file_last_modified;
-                md.etag = *current_file_cache_version;
-                object_with_metadata.emplace(current_path, std::move(md));
-            }
-
             /// Consult the Query Condition Cache. If a previous query with the same predicate already
             /// determined that some row groups in this exact file version contain no matching rows,
             /// restrict the reader to the surviving row groups (or skip the whole file). This mirrors
             /// the object-storage read path (`StorageObjectStorageSource`). The file version token
-            /// (`current_file_cache_version`, part of `object_with_metadata`) is folded into the cache
+            /// (`current_file_cache_version`) is folded into the cache
             /// key so an in-place rewrite yields a cache miss rather than stale results; the cache is
             /// bypassed entirely while the token has not settled and cannot prove a rewrite. Only
             /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
-            /// formats miss.
+            /// formats miss. A source assigned one bucket of a parallel single-file split
+            /// (`file_bucket_info` is set) also bypasses the cache and reads exactly its planned
+            /// assignment, matching the object-storage path. The gate deliberately does not
+            /// depend on `object_with_metadata` (built below): that optional is additionally
+            /// gated on `use_parquet_metadata_cache`, and disabling the format metadata cache
+            /// must not disable the (independent) query condition cache, whose write path below
+            /// has no such dependency either.
             FileBucketInfoPtr buckets_to_read;
             QueryConditionCachePtr query_condition_cache;
-            if (object_with_metadata.has_value() && current_file_version_settled
-                && format_filter_info && format_filter_info->condition_hash)
+            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
+                && current_file_cache_version.has_value() && current_file_version_settled
+                && format_filter_info && format_filter_info->condition_hash
+                && !file_bucket_info)
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
             {
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                UInt64 cached_file_metadata_digest = 0;
                 auto matching_marks = query_condition_cache->read(
-                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
+                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash,
+                    /*increment_profile_events=*/true, &cached_file_metadata_digest);
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
@@ -1912,20 +1993,116 @@ Chunk StorageFileSource::generate()
                     if (matching_row_groups.empty())
                     {
                         /// The whole file is known not to match the condition — skip it entirely.
-                        read_buf.reset();
-                        continue;
-                    }
-
-                    if (auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(storage->format_name))
-                    {
-                        buckets_to_read = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
-                        if (!buckets_to_read)
+                        /// The marks describe the generation the (settled) version token names, so
+                        /// re-verify the token at the moment of the decision: if it still holds,
+                        /// that generation is the file's current content and skipping it returns
+                        /// exactly its (empty) result; a rewrite an instant later is a concurrent
+                        /// modification that even a full read may linearize before. If the token no
+                        /// longer holds, the file changed after it was opened: the marks describe a
+                        /// generation that is gone, so ignore them and fall through to a plain
+                        /// unrestricted read, failing close on the caches and the stat-derived
+                        /// `_size` / `_time` virtuals exactly like the post-open bracket above.
+                        if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
                         {
                             read_buf.reset();
                             continue;
                         }
+
+                        /// Same as the post-open bracket above: lazy materialization needs the
+                        /// version token to register the file, so a rewrite it cannot pin fails
+                        /// close instead of continuing without a token.
+                        if (lazy_row_index_registry)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "Lazy materialization: file {} was modified while being opened. "
+                                "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_file setting",
+                                current_path);
+
+                        current_file_cache_version.reset();
+                        current_file_version_settled = false;
+                        current_file_size.reset();
+                        current_file_last_modified.reset();
                     }
+                    else if (cached_file_metadata_digest != 0)
+                    {
+                        if (auto bucket_prototype = FormatFactory::instance().getFileBucketInfo(storage->format_name))
+                        {
+                            /// Pass the total row-group count (equal to the number of cached marks) and
+                            /// the digest of the footer the marks were computed from (stored with the
+                            /// cache entry), so the cache-derived restriction is only applied if the
+                            /// footer parsed from the bytes this reader actually opens produces the
+                            /// same digest - the marks name row groups of that exact footer. On a
+                            /// mismatch (the file was rewritten between the cache write and this read
+                            /// in a way the version token could not prove) the format drops the
+                            /// restriction and reads the whole file (see `validateBucketAssignment`).
+                            buckets_to_read = bucket_prototype->filterByMatchingRowGroups(
+                                matching_row_groups, marks.size(), cached_file_metadata_digest);
+                            if (!buckets_to_read)
+                            {
+                                read_buf.reset();
+                                continue;
+                            }
+                        }
+                    }
+                    /// `cached_file_metadata_digest == 0` means the entry carries no digest to tie the
+                    /// marks to a file generation (it was written by a format or code version that
+                    /// reported none). Applying such marks could prune row groups of a different
+                    /// generation than the one this reader opens, so fail close by not pruning at
+                    /// all - mirroring the unpinned object-storage path in
+                    /// `StorageObjectStorageSource::createReader`.
                 }
+            }
+
+            /// For real local files, build a synthetic RelativePathWithMetadata so the
+            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
+            /// "etag" is just any version identifier the cache compares for equality —
+            /// for local files we use the precomputed `current_file_cache_version`
+            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
+            /// the cache even when the new file has the same length and is written
+            /// within the same wall-clock second.
+            ///
+            /// Gated on `use_parquet_metadata_cache`: when it is disabled we leave the
+            /// metadata empty so `getInputWithMetadata` is not used, the plain input
+            /// creator is taken instead, and `ParquetV3BlockInputFormat` receives a null
+            /// cache — neither reading from nor populating `ParquetMetadataCache`. This
+            /// matches `StorageObjectStorageSource`.
+            ///
+            /// Deliberately NOT gated on `current_file_version_settled`. That gate belongs to the
+            /// query condition cache above, which draws a stronger conclusion from the token: it
+            /// skips whole row groups without reading them, so a token that cannot yet prove a
+            /// rewrite must fail close. The format metadata cache only reuses a parsed footer,
+            /// and reusing it for a file whose token has not settled is exactly the behaviour
+            /// master already has and pins in `04207_parquet_metadata_cache_local_file` - a
+            /// freshly written file is the common case, and bypassing the cache for it would
+            /// reparse the footer on every query. See the thread on this gate for the rationale.
+            ///
+            /// Gated on `!file_bucket_info` and `!buckets_to_read`: a source whose read is
+            /// restricted to a subset of the file's row groups - one bucket of a parallel
+            /// single-file split, or a query-condition-cache pruning restriction built above -
+            /// must parse the footer of the bytes it actually opened, not a cached one. While
+            /// the token has not settled it cannot prove which file generation a cache entry
+            /// describes (an in-place rewrite that keeps the inode and the byte size in the same
+            /// timestamp tick reuses the token), so a stale entry would let the fail-close guard
+            /// validate the restriction against the very footer it was computed from and
+            /// silently apply a previous generation's row-group layout to the file. Parsing the
+            /// opened bytes instead makes the footer-digest guard
+            /// (`ParquetFileBucketInfo::footer_digest`) compare the restriction against the real
+            /// file, and fail close on a mismatch - `FILE_CHANGED_DURING_READ` for a split
+            /// bucket, dropping the restriction for cache-derived pruning (see
+            /// `validateBucketAssignment`). The plain path keeps the cache: with no restriction
+            /// there is nothing to cross-validate, which is the master-pinned residual described
+            /// above.
+            std::optional<RelativePathWithMetadata> object_with_metadata;
+            if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache]
+                && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
+                && current_file_size.has_value() && current_file_last_modified.has_value()
+                && current_file_cache_version.has_value()
+                && !file_bucket_info && !buckets_to_read)
+            {
+                ObjectMetadata md;
+                md.size_bytes = *current_file_size;
+                md.last_modified = *current_file_last_modified;
+                md.etag = *current_file_cache_version;
+                object_with_metadata.emplace(current_path, std::move(md));
             }
 
             if (object_with_metadata.has_value())
@@ -1964,8 +2141,14 @@ Chunk StorageFileSource::generate()
                     need_only_count);
             }
 
-            input_format->setBucketsToRead(buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
+
+            /// If this source was assigned to read only a subset of the file's buckets
+            /// (used to read one large file with multiple parallel sources), pass the
+            /// bucket assignment to the format before it starts reading. A source without
+            /// an assignment gets the restriction derived from the Query Condition Cache,
+            /// if any (the two are mutually exclusive — bucketed sources bypass the cache).
+            input_format->setBucketsToRead(file_bucket_info ? file_bucket_info : buckets_to_read);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -2099,7 +2282,8 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter())
+            && !file_bucket_info)
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -2113,9 +2297,12 @@ Chunk StorageFileSource::generate()
         /// re-stat bracket closes the window opened right after `createReadBuffer`: a rewrite that
         /// happens while this file was being read would otherwise let a version token, still valid
         /// at open time, get written together with row groups derived from bytes it no longer
-        /// describes.
+        /// describes. Never write for a bucketed read (`file_bucket_info` is set): such a source
+        /// reads only its assigned subset of row groups, so `getMatchedBuckets` would report every
+        /// row group of the other buckets as unmatched, and storing that under the whole-file key
+        /// would make later queries skip row groups that do match. Matches the object-storage path.
         if (input_format && current_file_cache_version.has_value() && current_file_version_settled
-            && format_filter_info && format_filter_info->condition_hash
+            && format_filter_info && format_filter_info->condition_hash && !file_bucket_info
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
@@ -2144,6 +2331,11 @@ Chunk StorageFileSource::generate()
                         if (auto query_condition_cache = getContext()->getQueryConditionCache())
                         {
                             const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                            /// Store the digest of the footer the marks were computed from alongside
+                            /// them: the marks name row groups of that exact footer, so a later read
+                            /// may only apply them after verifying the footer of the bytes it
+                            /// actually opens produces the same digest (see the cache-read path
+                            /// above and `ParquetFileBucketInfo::footer_digest`).
                             query_condition_cache->write(
                                 storage->getStorageID().uuid,
                                 cache_file_key,
@@ -2151,7 +2343,8 @@ Chunk StorageFileSource::generate()
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
                                 total_groups,
-                                /*has_final_mark=*/false);
+                                /*has_final_mark=*/false,
+                                input_format->getFileMetadataDigest());
                         }
                     }
                 }
@@ -2418,10 +2611,205 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
 
+    auto ctx = getContext();
+
+    /// If we are reading exactly one local file in a splittable format (e.g. Parquet),
+    /// we can split it into multiple buckets (row group ranges) and create one source
+    /// per bucket. This recovers the parallelism we'd otherwise have only when reading
+    /// many files at once. Without this, a single big Parquet file feeds the whole
+    /// downstream pipeline through a single source/Resize(1->N) — leaving most of the
+    /// CPU idle on machines with many cores.
+    ///
+    /// We use the file list from `files_iterator` rather than `storage->paths`: the
+    /// iterator has already pruned files by `_path`/`_file` virtual-column predicates
+    /// (`createPathAndFileFilterDAG`), so the optimization respects that pruning. If
+    /// the predicate excludes the only path the file is not read at all. It also
+    /// means a query against many paths whose predicate prunes down to a single file
+    /// still benefits from the split.
+    ///
+    /// The split is also gated on `parallelize_output_from_storages`: if the user has
+    /// explicitly disabled output parallelism, we must not create multiple sources
+    /// for a single file either — the setting's contract is to allow / disallow
+    /// parallel reads of `file/url/s3/etc`, and the per-bucket sources are exactly
+    /// that. `need_only_count` queries are also excluded: they only consult the
+    /// file's metadata, so splitting them across N sources just multiplies the
+    /// metadata-parse cost N-fold without any read-side benefit.
+    std::vector<FileBucketInfoPtr> per_source_buckets;
+    String single_file_path;
+    String decision_file_version;
+    if (max_num_streams > 1
+        && !need_only_count
+        && ctx->getSettingsRef()[Setting::parallelize_output_from_storages]
+        && !storage->archive_info
+        && !storage->use_table_fd
+        && !storage->has_peekable_read_buffer_from_fd.load()
+        && !storage->distributed_processing
+        && FormatFactory::instance().checkFormatHasSplitter(storage->format_name)
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(storage->format_name, ctx)
+        && files_iterator->getFiles().size() == 1)
+    {
+        single_file_path = files_iterator->getFiles().front();
+
+        /// Only split when the file is read uncompressed. The split relies on the format's
+        /// native, seekable reader (e.g. the Parquet prefetcher reading individual row
+        /// groups); an externally-compressed file is instead wrapped in a
+        /// `CompressedReadBufferWrapper`, which cannot seek and would force every per-bucket
+        /// source to decompress the whole file from the start — turning one full-file read
+        /// into `N + 1` of them plus a large memory regression. Gate on the *resolved*
+        /// compression method, not on the raw `compression_method` hint: with the default
+        /// `auto`, the method is derived from the file extension, so `data.parquet.gz` /
+        /// `data.parquet.zst` resolve to an external codec even though the hint is `auto`.
+        const bool is_uncompressed
+            = chooseCompressionMethod(single_file_path, storage->compression_method) == CompressionMethod::None;
+
+        struct stat file_stat = getFileStat(single_file_path, false, -1, storage->getName());
+        if (file_stat.st_size > 0 && is_uncompressed)
+        {
+            /// File version observed at split-decision time. Threaded into each per-bucket
+            /// source so it can fail-close if the file is rewritten before it reads (see
+            /// `StorageFileSource::expected_file_cache_version`).
+            decision_file_version = computeFileCacheVersionToken(file_stat);
+            std::vector<FileBucketInfoPtr> buckets;
+
+#if USE_PARQUET
+            if (boost::iequals(storage->format_name, "Parquet"))
+            {
+                /// Use the same `(file_path, etag)` key the plain read path uses when it fetches
+                /// metadata via `ParquetMetadataCache`, so a footer parsed here warms the cache
+                /// for later queries (including their split decisions, via the cache-only fast
+                /// path below). The per-bucket sources themselves deliberately do NOT read this
+                /// entry: each parses the footer of the bytes it actually opened, so the
+                /// footer-digest guard (`ParquetFileBucketInfo::footer_digest`) can fail close if
+                /// the assignment computed here - possibly from a stale cached footer under an
+                /// unsettled token - does not match the real file. The etag is
+                /// `decision_file_version` (sub-second mtime + inode + size) for
+                /// in-place-rewrite safety.
+                const String & cache_etag = decision_file_version;
+
+                /// Honor `use_parquet_metadata_cache`: when it is disabled we must neither
+                /// make the split decision from a previously cached footer nor populate the
+                /// cache from this path. Passing a null cache makes both
+                /// `trySplitParquetFileFromCacheOnly` (returns empty) and
+                /// `splitParquetFileWithCache` (parses without caching) honor the setting,
+                /// matching `StorageObjectStorageSource`.
+                ///
+                /// Not additionally gated on `isFileCacheVersionSettled`: a split decision taken
+                /// from a stale cached footer is not silently wrong. The per-bucket sources parse
+                /// the footer of the bytes they actually open (they bypass this cache, see
+                /// `object_with_metadata` in `StorageFileSource::generate`) and verify the
+                /// assignment against it - the footer digest and row-group count in
+                /// `checkFileMatchesBucketAssignment` fail close with
+                /// `FILE_CHANGED_DURING_READ` when the file diverged from what the split was
+                /// computed on, and the re-stat bracket below already downgrades to an unsplit
+                /// read when the token visibly moved during the decision.
+                auto metadata_cache = ctx->getSettingsRef()[Setting::use_parquet_metadata_cache]
+                    ? ctx->tryGetParquetMetadataCache()
+                    : nullptr;
+
+                /// The leaf columns this query will actually read from the file. The split
+                /// decision uses their combined compressed size to avoid fanning a light/narrow
+                /// read out across many sources (whose per-source setup would not be amortized)
+                /// — see `computeBucketsByCountAndBytes`.
+                ///
+                /// `info.format_header` already holds exactly the leaves the Parquet reader
+                /// requests: `filterTupleColumnsToRead` keeps an addressable tuple element as its
+                /// own leaf (`t.x`) but collapses a non-addressable subcolumn (dynamic subcolumn,
+                /// null map) to the whole column, matching what the reader scans. Using it means a
+                /// narrow subcolumn read like `SELECT sum(t.x)` is not charged for its heavy
+                /// siblings (`t.s`) and correctly stays single-source below the floor.
+                ///
+                /// `format_header` drops columns used only as `PREWHERE` / row-policy filter
+                /// inputs, but the reader still has to scan them (e.g. `SELECT sum(k) FROM
+                /// file(...) PREWHERE length(big) > 0` reads `big`), so the required inputs of
+                /// both filter DAGs are added as well, mirroring the `needed_names` construction
+                /// on the object-storage path. A name that matches no footer chunk contributes
+                /// nothing to the estimate.
+                std::unordered_set<String> requested_columns;
+                for (const auto & column : info.format_header)
+                    requested_columns.insert(column.name);
+                if (info.row_level_filter)
+                {
+                    for (const auto & input : info.row_level_filter->actions.getRequiredColumns())
+                        requested_columns.insert(input.name);
+                }
+                if (info.prewhere_info)
+                {
+                    for (const auto & input : info.prewhere_info->prewhere_actions.getRequiredColumns())
+                        requested_columns.insert(input.name);
+                }
+
+                const size_t min_bytes_to_split = ctx->getSettingsRef()[Setting::input_format_parquet_min_bytes_to_split];
+                const size_t min_bytes_per_bucket = ctx->getSettingsRef()[Setting::input_format_parquet_bytes_per_split_bucket];
+
+                /// A free upper bound on the decision's own input, from the `stat` above. The
+                /// projected read is a sum of `total_compressed_size` over a subset of the file's
+                /// column chunks, so it cannot exceed the file size; when even the whole file is
+                /// below the floor, `computeBucketsByCountAndBytes` can only answer "do not split".
+                /// Skipping the decision then skips the footer parse, the projected-size walk and
+                /// all `FileMetaData` handling, which on a wide file with many row groups cost
+                /// milliseconds on a query that was never going to be split. `min_bytes_to_split`
+                /// of 0 disables the floor entirely, so it must not take this shortcut.
+                const bool below_split_floor
+                    = min_bytes_to_split > 0 && static_cast<size_t>(file_stat.st_size) < min_bytes_to_split;
+
+                if (!below_split_floor)
+                {
+                    /// Warm-cache fast path: avoid opening the file and constructing `FormatSettings`
+                    /// when the footer is already cached from a previous query against this file. The
+                    /// extra `createReadBuffer` + `Prefetcher::init` is ~0.3 ms — small absolute, but
+                    /// noticeable on "short" queries (see `tests/performance/clickbench_parquet_short`).
+                    buckets = trySplitParquetFileFromCacheOnly(
+                        max_num_streams, single_file_path, cache_etag, metadata_cache, requested_columns,
+                        min_bytes_to_split, min_bytes_per_bucket);
+                    if (buckets.empty())
+                    {
+                        auto buf = createReadBuffer(
+                            single_file_path, file_stat, false, -1, storage->compression_method, ctx);
+                        const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
+                        buckets = splitParquetFileWithCache(
+                            max_num_streams,
+                            single_file_path,
+                            cache_etag,
+                            *buf,
+                            format_settings,
+                            metadata_cache,
+                            requested_columns,
+                            min_bytes_to_split,
+                            min_bytes_per_bucket);
+                    }
+                }
+            }
+            else
+#endif
+            {
+                auto buf = createReadBuffer(
+                    single_file_path, file_stat, false, -1, storage->compression_method, ctx);
+                const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
+                auto splitter = FormatFactory::instance().getSplitter(storage->format_name);
+                buckets = splitter->splitToBucketsByCount(max_num_streams, *buf, format_settings);
+            }
+
+            /// Bracket the split decision the same way `StorageFileSource::generate` brackets its
+            /// open: the footer was read through a buffer opened by path strictly after the `stat`
+            /// above computed `decision_file_version`, so a rewrite in that gap would pair a
+            /// row-group assignment from the new footer with a token of the old file. If the token
+            /// no longer holds, do not split - fall back to a plain single-source read of the
+            /// current file (the per-bucket fail-close in `StorageFileSource::generate` would
+            /// otherwise deterministically throw `FILE_CHANGED_DURING_READ` on a race the plain
+            /// read handles fine).
+            if (!buckets.empty() && !fileCacheVersionTokenStillHolds(single_file_path, decision_file_version))
+                buckets.clear();
+
+            if (buckets.size() >= 2)
+            {
+                per_source_buckets = std::move(buckets);
+                num_streams = per_source_buckets.size();
+            }
+        }
+    }
+
     Pipes pipes;
     pipes.reserve(num_streams);
-
-    auto ctx = getContext();
 
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = ctx->getFileProgressCallback();
@@ -2454,13 +2842,20 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             format_filter_info,
             lazy_row_index_registry);
 
+        if (i < per_source_buckets.size())
+        {
+            source->fixed_file_path = single_file_path;
+            source->file_bucket_info = per_source_buckets[i];
+            source->expected_file_cache_version = decision_file_version;
+        }
+
         pipes.emplace_back(std::move(source));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports != max_num_streams)
         pipe.resize(max_num_streams);
 
     if (pipe.empty())
@@ -2533,15 +2928,19 @@ public:
                 if (!fileCacheVersionTokenStillHolds(path, file.file.version_token))
                     throwFileChanged(path);
 
-                /// Exactly the synthetic metadata the main pass builds - unconditionally, under the
-                /// same rules - so both passes read this file under one and the same format metadata
-                /// cache contract (e.g. the Parquet footer cache, keyed by path and this token).
+                /// Exactly the synthetic metadata the main pass builds, under the same rules - so
+                /// both passes read this file under one and the same format metadata cache contract
+                /// (e.g. the Parquet footer cache, keyed by path and this token).
                 /// Symmetry is what matters here: whatever footer the main pass interpreted the file
                 /// with when it picked the row numbers, this pass gets the very same one, so the two
                 /// passes cannot end up on different interpretations of the file. How strong the token
                 /// itself is (sub-second mtime + inode + size) is a property of every local `Parquet`
                 /// read, single-pass ones included, not something lazy materialization changes.
+                /// `use_parquet_metadata_cache` gates it exactly as it gates the main pass: with the
+                /// setting off neither pass consults or populates `ParquetMetadataCache`, so the
+                /// meaning of the setting does not depend on whether the plan is lazy.
                 std::optional<RelativePathWithMetadata> object_with_metadata;
+                if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
                 {
                     ObjectMetadata md;
                     md.size_bytes = file_stat.st_size;

@@ -46,12 +46,23 @@ private:
 #endif
 
         MatchingMarks matching_marks;
+
+        /// Digest of the file-level metadata (e.g. the Parquet footer) the marks were computed
+        /// from, for entries written by file-backed storages (`File`, object storage). The marks
+        /// name row groups of that exact footer, so a later read may only apply them to a file
+        /// whose footer produces the same digest - see `ParquetFileBucketInfo::footer_digest` for
+        /// the fail-close contract. 0 means "unknown" (MergeTree entries, or a format that does
+        /// not report a digest) and disables the guard. Set once at entry creation and immutable
+        /// afterwards: concurrent writers of the same key hold the same version token, so they
+        /// describe the same file generation and the same digest.
+        const UInt64 file_metadata_digest = 0;
+
         SharedMutex mutex; /// (*)
 
-        explicit Entry(size_t mark_count); /// (**)
+        explicit Entry(size_t mark_count, UInt64 file_metadata_digest_); /// (**)
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, UInt64 condition_hash_, const String & condition_);
+        Entry(size_t mark_count_, UInt64 file_metadata_digest_, const UUID & table_id_, const String & part_name_, UInt64 condition_hash_, const String & condition_);
 #endif
 
         /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already. The reason is that
@@ -89,15 +100,21 @@ public:
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
+    /// `file_metadata_digest` ties the marks to the exact file metadata they were computed from
+    /// (see `Entry::file_metadata_digest`); pass 0 when no such digest exists (MergeTree parts).
     void write(
         const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
-        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
+        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark, UInt64 file_metadata_digest = 0);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
     /// A single logical consultation may probe more than one key (e.g. the bare condition hash and
     /// a skip-index-profiled hash); pass increment_profile_events = false on the extra probes so the
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
+    /// On a hit, `file_metadata_digest` (when non-null) receives the digest stored with the entry
+    /// (see `Entry::file_metadata_digest`; 0 = unknown).
+    std::optional<MatchingMarks> read(
+        const UUID & table_id, const String & part_name, UInt64 condition_hash,
+        bool increment_profile_events = true, UInt64 * file_metadata_digest = nullptr);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;

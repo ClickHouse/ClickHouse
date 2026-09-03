@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"input_format_parquet_min_bytes_to_split", 0, 2ULL * 1024 * 1024 * 1024, "New setting: a single local Parquet file is only parallelized across multiple sources if the query reads at least this many compressed bytes, avoiding per-source overhead on short queries. The previous value `0` (no floor) reproduces the pre-26.9 behavior where the split was driven only by the row-group count, so `compatibility` set to an earlier version keeps parallelizing regardless of read size."},
+            {"input_format_parquet_bytes_per_split_bucket", 0, 64 * 1024 * 1024, "New setting: target minimum compressed bytes per bucket when a single local Parquet file is parallelized across multiple sources. The previous value `0` (do not bound the number of buckets by size) reproduces the pre-26.9 behavior where the bucket count was driven only by the row-group count, so `compatibility` set to an earlier version keeps the old split fan-out."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},

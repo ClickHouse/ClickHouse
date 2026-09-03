@@ -97,6 +97,16 @@ namespace CurrentMetrics
 
 namespace DB
 {
+bool canUseParquetMetadataCache(
+    const ObjectMetadata & metadata,
+    bool is_data_lake_configuration,
+    bool has_file_bucket_info,
+    bool read_is_pinned_to_etag)
+{
+    return (is_data_lake_configuration || metadata.isEtagUsableAsCacheKey())
+        && (!has_file_bucket_info || is_data_lake_configuration || read_is_pinned_to_etag);
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -881,7 +891,18 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        /// Do not write the query condition cache for a bucketed read: `getMatchedBuckets`
+        /// reports only this bucket's matching row groups while `total_groups` is the whole
+        /// file, so the row groups owned by other buckets (which this reader never examined)
+        /// would be stored as unmatched under the whole-object key `(uuid, file, condition_hash)`
+        /// and poison later non-bucketed reads. This mirrors the count-cache guard below and the
+        /// cache-read guard in `createReader`.
+        /// Marks are keyed by the listed object generation. Only store them when the read itself
+        /// was pinned to that generation; otherwise a concurrent overwrite could save marks for
+        /// different bytes under the listed generation's cache key.
+        else if (const bool marks_generation_is_pinned = configuration->isDataLakeConfiguration()
+                || (read_context->getSettingsRef()[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3);
+            format_filter_info->condition_hash && !reader.getObjectInfo()->file_bucket_info && marks_generation_is_pinned)
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
@@ -921,6 +942,9 @@ Chunk StorageObjectStorageSource::generate()
                         if (!unmatched_ranges.empty() && query_condition_cache_key)
                         {
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                            /// Store the digest of the footer the marks were computed from alongside
+                            /// them, so the cache-read path can tie a pruning restriction to the
+                            /// exact file generation (see `ParquetFileBucketInfo::footer_digest`).
                             query_condition_cache->write(
                                 storage_id.uuid,
                                 *query_condition_cache_key,
@@ -928,8 +952,8 @@ Chunk StorageObjectStorageSource::generate()
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
                                 total_groups,
-                                false
-                            );
+                                /*has_final_mark=*/false,
+                                input_format->getFileMetadataDigest());
                         }
                     }
                 }
@@ -940,9 +964,13 @@ Chunk StorageObjectStorageSource::generate()
             }
         }
 
+        /// Do not write the count cache for a bucketed read: `total_rows_in_file` then holds
+        /// only this bucket's rows, and the cache key ignores the bucket id, so the partial
+        /// count would be stored as the whole-object total and poison later count queries.
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->filter_actions_dag
             && !hasAttachedDeletes(*reader.getObjectInfo())
+            && !reader.getObjectInfo()->file_bucket_info
             && !reader.getObjectInfo()->rows_to_read)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
@@ -1018,6 +1046,23 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     if (format_filter_info && format_filter_info->condition_hash)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
+    /// Re-reads the object's metadata and tells whether it still carries the etag the listing
+    /// reported, i.e. whether the generation the query-condition-cache key names is still the
+    /// object's current content. Used only to linearize a decision that is taken without opening
+    /// the object; a decision that opens it is pinned by the read itself. Anything unexpected -
+    /// the object is gone, or either etag is unknown - fails close, i.e. reports "changed".
+    auto listed_object_generation_still_holds = [&](const ObjectInfo & object_to_check)
+    {
+        const auto listed_metadata = object_to_check.getObjectMetadata();
+        if (!listed_metadata || listed_metadata->etag.empty())
+            return false;
+
+        auto metadata_object = object_to_check.relative_path_with_metadata;
+        metadata_object.relative_path = object_to_check.isArchive() ? object_to_check.getPathToArchive() : object_to_check.getPath();
+        const auto current_metadata = object_storage->tryGetObjectMetadata(metadata_object, /*with_tags=*/false);
+        return current_metadata && !current_metadata->etag.empty() && current_metadata->etag == listed_metadata->etag;
+    };
+
     while (true)
     {
         object_info = file_iterator->next(processor);
@@ -1049,13 +1094,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && object_info->getObjectMetadata()->is_size_known)
             continue;
 
-        if (query_condition_cache && !object_info->file_bucket_info)
+        /// Applying cached matching marks skips row groups without reading them, so it is only
+        /// correct if the bytes the reader opens are the generation the marks were computed on.
+        /// The cache key carries the listed etag, but a plain `GET` is not pinned to it: only S3
+        /// with `s3_validate_etag_on_read` guarantees the opened bytes match the listed etag (see
+        /// `read_is_pinned_to_etag` below). Data-lake data files are immutable, so the path alone
+        /// pins the generation. In every other case the cache-derived bucket would carry no exact
+        /// generation token (`footer_digest` stays 0 - the marks describe row groups, not a
+        /// footer), and `checkFileMatchesBucketAssignment` could accept a same-row-group-count
+        /// rewrite; fail close by not pruning at all.
+        const bool marks_generation_is_pinned = configuration->isDataLakeConfiguration()
+            || (context_->getSettingsRef()[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3);
+        if (query_condition_cache && !object_info->file_bucket_info && marks_generation_is_pinned)
         {
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
+            UInt64 cached_file_metadata_digest = 0;
             if (query_condition_cache_key)
                 matching_marks = query_condition_cache->read(
-                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash);
+                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash,
+                    /*increment_profile_events=*/true, &cached_file_metadata_digest);
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;
@@ -1074,13 +1132,34 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     object_info->getFileName());
 
                 if (matching_row_groups.empty())
-                    continue;
-
-                auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(
-                    object_info->getFileFormat().value_or(configuration->format));
-                if (file_bucket_info)
                 {
-                    auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
+                    /// The whole object is known not to match the condition — skip it entirely.
+                    /// Unlike a pruning hit, this decision never opens the object, so the
+                    /// etag-validated read that normally pins the generation named by the cache key
+                    /// does not run: an object overwritten between the listing and this point would
+                    /// be silently reported as empty, where a plain read fails close on the stale
+                    /// etag. Data-lake data files are immutable, so the path already pins the
+                    /// generation; in every other case re-check the listed etag at the moment of the
+                    /// decision. If it still holds, that generation is the object's current content
+                    /// and skipping it returns exactly its (empty) result — a rewrite an instant
+                    /// later is a concurrent modification that even a full read may linearize
+                    /// before. Otherwise fall through to the normal open/read path, which handles
+                    /// the changed object exactly as it would without the cache.
+                    if (configuration->isDataLakeConfiguration() || listed_object_generation_still_holds(*object_info))
+                        continue;
+                }
+                else if (auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(
+                             object_info->getFileFormat().value_or(configuration->format)))
+                {
+                    /// Pass the total row-group count (equal to the number of cached marks) and the
+                    /// digest of the footer the marks were computed from (stored with the cache
+                    /// entry), so the cache-derived bucket fails close if the object is overwritten
+                    /// with a different number of row groups or a footer-visible rewrite, matching
+                    /// the splitter and cluster-task read paths. The pinned read (the gate above)
+                    /// already ties the opened bytes to the listed etag; the digest is an additional
+                    /// exact guard and 0 (an entry without one) keeps today's behaviour.
+                    auto filtered = file_bucket_info->filterByMatchingRowGroups(
+                        matching_row_groups, total_row_groups, cached_file_metadata_digest);
                     if (!filtered)
                         continue;
                     object_info->file_bucket_info = std::move(filtered);
@@ -1137,9 +1216,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
+    /// The count cache stores the object's total row count, keyed by path (the bucket id is
+    /// not part of the key). When this reader was assigned only a subset of the object's row
+    /// groups (file_bucket_info is set, e.g. for cluster table functions), the cache is
+    /// inapplicable: reading it would report the whole-object total for a single bucket and
+    /// over-count, so it must be skipped — mirroring `StorageFileSource`.
     std::optional<size_t> num_rows_from_cache
         = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
-        ? try_get_num_rows_from_cache() : std::nullopt;
+            && !object_info->file_bucket_info
+        ? try_get_num_rows_from_cache()
+        : std::nullopt;
 
     if (num_rows_from_cache)
     {
@@ -1382,12 +1468,42 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        /// A bucketed read (one reader per subset of the object's row groups) is only correct if every
+        /// reader of the object sees the same generation of it as the one the bucket assignment was
+        /// computed from. The footer the assignment carries a digest of is compared against the footer
+        /// read here, so that footer must come from the bytes this reader actually opened: a cached
+        /// footer would describe the generation the cache key names, which is the assignment's own
+        /// generation, and the comparison could not detect that the `GET` returned a different one.
+        /// The read is pinned to the listed etag - so the opened bytes are that generation by
+        /// construction - only on S3 with `s3_validate_etag_on_read` (see `createReadBuffer`). Data-lake
+        /// configurations also pin the listed file generation to immutable metadata. On any other backend,
+        /// or with the setting off, the metadata cache is bypassed for bucketed reads so the digest guard
+        /// can fail close on a concurrent in-place overwrite.
+        const bool read_is_pinned_to_etag = context_->getSettingsRef()[Setting::s3_validate_etag_on_read]
+            && object_storage->getType() == ObjectStorageType::S3;
+        const bool can_use_metadata_cache = canUseParquetMetadataCache(
+            *object_info->getObjectMetadata(),
+            configuration->isDataLakeConfiguration(),
+            static_cast<bool>(object_info->file_bucket_info),
+            read_is_pinned_to_etag);
+
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
+            && can_use_metadata_cache)
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
+            /// A data lake snapshot pins every listed file to immutable metadata. Its path is
+            /// therefore a stable cache identity even when the underlying object storage cannot
+            /// provide a strong content ETag, as with HDFS. Do not use HDFS's weak `(mtime, size)`
+            /// token here: it can collide for an in-place rewrite outside a data-lake snapshot.
+            /// The synthesized identity must be namespaced (`getUniqueStoragePathIdentifier` with the
+            /// connection info included): the cache key's path component is only the in-storage
+            /// relative path, so a bare `getPath()` token would alias one cache entry across two lake
+            /// tables that expose the same relative path on different backends or namespaces.
+            if (configuration->isDataLakeConfiguration() && !object_with_metadata->metadata->isEtagUsableAsCacheKey())
+                object_with_metadata->metadata->etag
+                    = "data-lake:" + getUniqueStoragePathIdentifier(*configuration, *object_info, /*include_connection_info=*/true);
             if (object_info->isArchive())
                 object_with_metadata->relative_path = object_info->getPath();
             input_format = FormatFactory::instance().getInputWithMetadata(
