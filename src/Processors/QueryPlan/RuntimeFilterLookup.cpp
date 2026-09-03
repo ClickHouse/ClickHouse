@@ -149,7 +149,7 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
 
     DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(type));
     WhichDataType which(inner);
-    return which.isInt() || which.isUInt() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
+    return which.isInteger() || which.isDateOrDate32OrDateTimeOrDateTime64();
 }
 
 void extendRange(bool & has_range, Field & range_min, Field & range_max, const Field & new_min, const Field & new_max)
