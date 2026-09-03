@@ -21,12 +21,12 @@ public:
     /// Validation happens in DataTypeFactory::createTupleFromAST().
     Strings element_names;
 
-    /// Storage codec annotations for tuple elements. They are deliberately not part of
-    /// the data type arguments and are ignored by `DataTypeFactory`.
+    /// Tuple-element codecs are storage metadata, not data type arguments.
+    /// DataTypeFactory ignores them.
     std::vector<ASTPtr> element_codecs;
 
-    /// ALTER-only operations which remove the declaration at the corresponding tuple element.
-    /// A false entry with a null `element_codecs` entry means that no codec operation was specified.
+    /// ALTER-only markers that remove codecs from matching tuple elements.
+    /// False with a null element codec means that no operation was specified.
     std::vector<bool> element_codec_removals;
 
     String getID(char delim) const override;

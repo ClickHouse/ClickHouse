@@ -154,13 +154,13 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
-        /// Some logical columns intentionally share a physical stream, most notably the offsets of
-        /// flattened Nested columns. Preserve the established rule: the first writer owns its codec.
+        /// Logical columns can share a physical stream, such as flattened Nested offsets.
+        /// The first writer chooses its codec.
         if (column_streams.contains(stream_name))
             return;
 
-        /// A vertical merge can write Nested elements in separate writer instances. The first
-        /// instance which writes their shared offsets similarly owns that stream's codec.
+        /// A vertical merge can use separate writers for Nested elements.
+        /// The first writer of their shared offsets chooses the codec.
         if (written_offset_substreams)
         {
             const bool is_offsets = substream_path.back().type == ISerialization::Substream::ArraySizes;
@@ -178,6 +178,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         const auto resolved = codec_policy.resolve(getCodecPathForStream(name_and_type, name_and_type.getTypeInStorage(), substream_path), default_codec_desc);
         const auto & subtype = substream_path.back().data.type;
         CompressionCodecPtr compression_codec;
+        /// Value streams may use type-dependent codecs. Structural streams use generic codecs only.
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
         {
             compression_codec = CompressionCodecFactory::instance().get(resolved.codec, subtype.get(), default_codec);
@@ -185,12 +186,6 @@ void MergeTreeDataPartWriterWide::addStreams(
         }
         else
             compression_codec = CompressionCodecFactory::instance().get(resolved.codec, nullptr, default_codec, true);
-
-        /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
-        /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
-        /// above (`isSpecialCompressionAllowed` == false), which drops it. So every stream that carries a
-        /// lossy codec is a genuine float data stream that must keep it - in particular each element of a
-        /// pure-float `Tuple`.
 
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);

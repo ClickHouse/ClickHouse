@@ -10,12 +10,11 @@
 #include <map>
 #include <vector>
 
-/** Compression codecs are storage metadata of an owning column, but one logical column can produce
-  * many serialization streams. In particular, elements of a `Tuple` can select codecs independently.
+/** Codecs are storage metadata for a column. One column can produce many storage streams,
+  * and Tuple elements can choose different codecs.
   *
-  * This file defines the column-level codec policy: an optional declaration for the whole column,
-  * and optional declarations for logical tuple-element paths. None of this state is part of
-  * `IDataType` identity or column values.
+  * This file defines codecs for the whole column and for tuple-element paths.
+  * This metadata is not part of IDataType identity or column values.
   */
 namespace DB
 {
@@ -25,26 +24,25 @@ class ASTColumnDeclaration;
 /// A logical path of `Tuple` element names relative to the owning top-level column.
 using CodecPath = std::vector<String>;
 
-/** The complete codec policy of one owning column.
+/** All codec declarations for one column.
   *
-  * A root declaration applies to the column as a whole. A declaration associated with a tuple path
-  * overrides the root or a less-specific ancestor for streams belonging to that element. A stream
-  * with no applicable declaration uses the part default codec.
+  * A tuple path overrides the root or a shorter path. If no declaration matches,
+  * the stream uses the part default codec.
   */
 class ColumnCodecDescription
 {
 public:
-    /// The codec source selected for one logical path after applying inheritance.
+    /// The codec selected for one logical path after applying inheritance.
     struct Resolved
     {
         ASTPtr codec;
-        /// Path on which the winning declaration is stored; empty for a root declaration or part default.
+        /// Path of the selected declaration. Empty means the root or the part default.
         CodecPath declaration_path;
-        /// True when the stream follows the part default, including an explicit `CODEC(Default)` declaration.
+        /// True for the part default, including an explicit CODEC(Default).
         bool codec_is_part_default = true;
     };
 
-    /// Explicit declarations belonging to this column. The empty path denotes the column-level codec.
+    /// Explicit declarations for this column. The empty path is the root codec.
     using CodecsByPath = std::map<CodecPath, ASTPtr>;
 
     ColumnCodecDescription() = default;
@@ -88,9 +86,8 @@ ColumnCodecDescription validateColumnCodecDescription(
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings);
 
-/// Validate the complete effective policy, but apply session admission settings only to declarations
-/// supplied or changed by the current ALTER. Other declarations are already accepted metadata, so
-/// they use trusted admission while still undergoing structural, path, and type-compatibility checks.
+/// Validate the complete policy. Apply session settings only to codecs changed by this ALTER.
+/// Validate retained codecs as trusted metadata, including their paths and data types.
 ColumnCodecDescription validateColumnCodecDescriptionForAlter(
     const ColumnCodecDescription & policy,
     const DataTypePtr & logical_type,

@@ -193,7 +193,7 @@ Insert the second deterministic block. Query physical codecs ordered by `part_na
 1. Run another typed `MODIFY COLUMN` which restates the identical logical type while omitting all codec operations. Existing declarations must survive, proving that omission means preserve rather than remove.
 2. Remove a literal declaration once and verify that the exact declaration disappears. Attempt the same `REMOVE CODEC` again and expect `BAD_ARGUMENTS`; inherited policy is not a removable declaration. The final physical assertion verifies the resulting effective policy.
 3. Attempt a type change which removes an element carrying an omitted retained declaration and expect `BAD_ARGUMENTS` rather than silently leaving a dangling path.
-4. Exercise a positional tuple rename combined with `REMOVE CODEC`; the removal must identify the old declaration by position rather than accidentally leaving it under the old name.
+4. Remove a codec under its current tuple-element name, then rename that element in a second typed `MODIFY COLUMN`. A combined rename and removal is intentionally unsupported because codec patch paths have name identity, not positional identity.
 5. Exercise the existing root-only forms `MODIFY COLUMN payload CODEC(...)` and `MODIFY COLUMN payload REMOVE CODEC`. Neither may alter sibling element declarations.
 6. Restart merges, run `OPTIMIZE TABLE ... FINAL`, and verify that the resulting part uses the current policy for every stream.
 

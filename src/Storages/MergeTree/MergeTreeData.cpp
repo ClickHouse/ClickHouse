@@ -1044,11 +1044,9 @@ void MergeTreeData::checkProperties(
             if (!owning_column || owning_column->codec.empty())
                 continue;
 
-            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
-            /// so lossiness is resolved per substream the way the part writer resolves it. For a key
-            /// subcolumn, enumerate only the serialization backing that subcolumn and resolve its paths
-            /// against the owning physical column. This avoids both skipping `x.k` and rejecting a lossy
-            /// codec on an unrelated sibling of `x.k`.
+            /// Check each value stream because a codec may apply below the outer type.
+            /// For a key subcolumn, check only its streams and resolve codecs from the owning column.
+            /// A lossy codec on another tuple element does not affect this key.
             bool is_lossy = false;
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {

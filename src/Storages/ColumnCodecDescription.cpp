@@ -94,6 +94,7 @@ bool ColumnCodecDescription::operator==(const ColumnCodecDescription & rhs) cons
 namespace
 {
 
+/// Normalize each path segment using the element name from the logical Tuple type.
 CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath & input)
 {
     DataTypePtr current = root_type;
@@ -155,6 +156,8 @@ CodecPath getCodecPathForStream(
 
 namespace
 {
+/// Collect codec declarations from direct Tuple nodes. Paths use names from the logical type.
+/// Declarations below other wrappers are detected separately and rejected.
 void collectTupleCodecs(
     const ASTPtr & type_ast,
     const DataTypePtr & logical_type,
@@ -187,6 +190,7 @@ void collectTupleCodecs(
     }
 }
 
+/// Count annotations through every AST child so unsupported wrappers cannot hide a declaration.
 size_t countTupleCodecAnnotations(const ASTPtr & type_ast)
 {
     if (!type_ast)
@@ -195,13 +199,12 @@ size_t countTupleCodecAnnotations(const ASTPtr & type_ast)
     size_t count = 0;
     if (const auto * tuple = type_ast->as<ASTTupleDataType>())
         count += std::count_if(tuple->element_codecs.begin(), tuple->element_codecs.end(), [](const auto & codec) { return codec != nullptr; });
-    /// Walk every AST child: Nested and typed JSON interpose ASTNameTypePair and
-    /// ASTObjectTypeArgument nodes, which must not hide tuple codec annotations.
     for (const auto & child : type_ast->children)
         count += countTupleCodecAnnotations(child);
     return count;
 }
 
+/// Count removals anywhere in the AST so persisted metadata can reject them.
 size_t countTupleCodecRemovals(const ASTPtr & type_ast)
 {
     if (!type_ast)
@@ -210,8 +213,6 @@ size_t countTupleCodecRemovals(const ASTPtr & type_ast)
     size_t count = 0;
     if (const auto * tuple = type_ast->as<ASTTupleDataType>())
         count += std::count(tuple->element_codec_removals.begin(), tuple->element_codec_removals.end(), true);
-    /// Walk every AST child: Nested and typed JSON interpose ASTNameTypePair and
-    /// ASTObjectTypeArgument nodes, which must not hide tuple codec operations.
     for (const auto & child : type_ast->children)
         count += countTupleCodecRemovals(child);
     return count;
@@ -219,6 +220,8 @@ size_t countTupleCodecRemovals(const ASTPtr & type_ast)
 
 using DeclarationTypes = std::map<CodecPath, std::vector<DataTypePtr>>;
 
+/// Record the leaf types that each declaration controls after child overrides are applied.
+/// A declaration is validated only against leaves where it is effective.
 void collectEffectiveDeclarationTypes(
     const DataTypePtr & type,
     CodecPath & path,
@@ -241,6 +244,8 @@ void collectEffectiveDeclarationTypes(
         declaration_types[resolved.declaration_path].push_back(type);
 }
 
+/// Normalize a complete policy. If a changed-codec map is provided, apply session settings only
+/// to those paths. Other paths are retained metadata and use trusted settings.
 ColumnCodecDescription validateEffectivePolicy(
     const ColumnCodecDescription & policy,
     const DataTypePtr & logical_type,
@@ -295,6 +300,8 @@ ColumnCodecDescription validateEffectivePolicy(
     return normalized;
 }
 
+/// Put tuple-element declarations back into a type AST for metadata and query formatting.
+/// The column-level declaration is installed on ASTColumnDeclaration by the caller.
 void installTupleCodecs(ASTPtr & type_ast, CodecPath & path, const ColumnCodecDescription & codec)
 {
     auto * tuple = type_ast ? type_ast->as<ASTTupleDataType>() : nullptr;

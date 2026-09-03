@@ -703,8 +703,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
         column.codec = codecDescriptionFromAST(col_decl, column.type, codec_validation_settings);
-        /// The setting gates new metadata only. ATTACH, startup, restore, and secondary CREATE must
-        /// remain able to materialize a policy that was already accepted and persisted elsewhere.
+        /// The setting controls new metadata only. Existing metadata must load without the setting.
         if (mode == LoadingStrictnessLevel::CREATE && column.codec.hasSubcolumns()
             && !context_->getSettingsRef()[Setting::enable_tuple_element_codecs])
             throw Exception(

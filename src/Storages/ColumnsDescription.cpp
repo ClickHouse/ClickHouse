@@ -176,7 +176,6 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         declaration->name = name;
         declaration->setType(dataTypeToAST(type));
         applyCodecDescriptionToAST(*declaration, codec);
-        // writeEscapedString(declaration->getType()->formatWithSecretsOneLine(), buf);
         writeEscapedString(formatASTStateAware(*declaration->getType(), state), buf);
     }
     else

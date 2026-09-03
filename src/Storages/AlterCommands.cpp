@@ -164,6 +164,8 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
             alter_name);
 }
 
+/// Count tuple codec operations, including operations below unsupported wrapper types.
+/// This lets us reject operations that were not converted to a codec path.
 size_t countTupleCodecPatchOperations(const ASTPtr & type_ast)
 {
     if (!type_ast)
@@ -176,13 +178,13 @@ size_t countTupleCodecPatchOperations(const ASTPtr & type_ast)
             tuple->element_codecs.begin(), tuple->element_codecs.end(), [](const auto & codec) { return codec != nullptr; });
         count += std::count(tuple->element_codec_removals.begin(), tuple->element_codec_removals.end(), true);
     }
-    /// Walk every AST child: Nested and typed JSON interpose ASTNameTypePair and
-    /// ASTObjectTypeArgument nodes, which must not hide tuple codec patch operations.
     for (const auto & child : type_ast->children)
         count += countTupleCodecPatchOperations(child);
     return count;
 }
 
+/// Read codec operations from direct Tuple nodes. Paths use names from the resulting Tuple type.
+/// This stops at other type wrappers. extractTupleCodecPatch rejects operations below them.
 void collectTupleCodecPatch(
     const ASTPtr & type_ast,
     const DataTypePtr & logical_type,
@@ -223,6 +225,7 @@ void collectTupleCodecPatch(
     }
 }
 
+/// Build the codec patch and reject operations outside supported Tuple nodes.
 void extractTupleCodecPatch(
     const ASTColumnDeclaration & declaration,
     const DataTypePtr & logical_type,
@@ -773,7 +776,7 @@ static String formatCodecPath(const CodecPath & path)
     return result;
 }
 
-/// Materialize sparse ADD/MODIFY syntax into the column-policy value used by storage metadata.
+/// Build a codec policy from path-based CODEC clauses.
 static ColumnCodecDescription makeCodecDescription(const std::map<CodecPath, ASTPtr> & codec_sets)
 {
     ColumnCodecDescription result;
@@ -782,8 +785,8 @@ static ColumnCodecDescription makeCodecDescription(const std::map<CodecPath, AST
     return result;
 }
 
-/// Apply the sparse codec operations from one ALTER to a complete stored policy.
-/// A removal addresses only an explicitly declared path; inherited codecs are not removable declarations.
+/// Apply CODEC and REMOVE CODEC operations to the stored policy.
+/// REMOVE CODEC requires a declaration at the exact path. An inherited codec does not count.
 static void applyCodecPatch(
     ColumnCodecDescription & policy,
     const std::map<CodecPath, ASTPtr> & codec_sets,
@@ -819,7 +822,8 @@ static void applyCodecPatch(
         policy.set(path, codec_ast);
 }
 
-/// Return only CODEC(...) operations whose normalized value differs from the stored declaration.
+/// Return CODEC operations whose normalized value differs from the stored value.
+/// Only these operations need checks based on the current session settings.
 static std::map<CodecPath, ASTPtr> getChangedCodecSets(
     const ColumnCodecDescription & current_policy,
     const std::map<CodecPath, ASTPtr> & codec_sets,
@@ -2297,10 +2301,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (!resulting_codec.empty())
             {
-                /// Normalize the complete candidate as trusted metadata before deciding whether an
-                /// explicitly written declaration changed. Stored declarations are already normalized,
-                /// so comparing them with raw syntax would misclassify equivalent forms such as
-                /// `Delta` and `Delta(8)` as a new codec.
+                /// Normalize before comparing with stored codecs. Raw forms such as Delta and Delta(8)
+                /// may describe the same codec and should not be treated as a change.
                 resulting_codec = validateColumnCodecDescription(
                     resulting_codec, resulting_type, CodecValidationSettings::trusted());
                 const auto changed_codec_sets = getChangedCodecSets(

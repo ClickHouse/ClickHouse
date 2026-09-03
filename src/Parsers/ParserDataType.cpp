@@ -267,12 +267,11 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         expected.add(pos, "type name");
         return false;
     }
-    /// Keywords that IParserColumnDeclaration recognizes before the type name. `REMOVE` is reserved
-    /// only in the ALTER tuple-element codec mode: this makes `Tuple(UInt64 REMOVE CODEC)` backtrack
-    /// from the false named-element parse (`UInt64` as a name, `REMOVE` as its type) to the intended
-    /// unnamed element parse, without changing ordinary data-type parsing.
-    /// E.g. reject CREATE TABLE a (x `Null`) because in "x Null" the Null would be parsed as
-    /// column attribute rather than type name.
+    /// Reject keywords used after a type. This lets the parser retry an unnamed tuple element
+    /// instead of reading the previous type as an element name. For example, in
+    /// `Tuple(UInt64 REMOVE CODEC)`, `REMOVE` cannot be the type of an element named `UInt64`.
+    /// `REMOVE` is included only when ALTER can remove tuple-element codecs.
+    /// Also reject CREATE TABLE a (x `Null`) because Null is a column modifier here.
     {
         String n = type_name;
         toUpperASCII(n);

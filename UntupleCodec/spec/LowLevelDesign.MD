@@ -222,33 +222,28 @@ Use `CodecValidationSettings::trusted` when reading already persisted column met
 
 ## `ALTER TABLE` application
 
-Keep the existing root `codec` field in `AlterCommand` and add tuple-element patch data extracted from the restated type declaration:
+Keep sparse syntax operations in `AlterCommand`, separate from the complete `ColumnCodecDescription` stored in metadata:
 
 ```cpp
-ColumnCodecDescription declared_codec;
-
-struct TupleCodecRemoval
-{
-    CodecPath path;
-    std::vector<size_t> positions;
-};
-
-std::vector<TupleCodecRemoval> codec_removals;
+std::map<CodecPath, ASTPtr> codec_sets;
+std::vector<CodecPath> codec_removals;
 ```
 
-`declared_codec` contains only element `CODEC(...)` operations from this statement. It is a patch, not a replacement policy. `codec_removals` contains explicit element `REMOVE CODEC` operations. Positional identity is retained so a typed ALTER which renames a tuple element can still identify the declaration being removed from the old type.
+The empty path represents the column-level operation in both containers. Non-empty paths represent tuple-element operations. For `ADD COLUMN`, `codec_sets` is the complete declared policy and removals are empty. For `MODIFY COLUMN`, both containers are a sparse patch: a path absent from both preserves the stored declaration.
 
 `AlterCommand::parse` walks the type AST and resulting logical `DataTypeTuple` together. It derives canonical paths from tuple nesting and rejects element operations reached through a non-`Tuple` wrapper. In `AlterCommand::apply`:
 
 - Fetch the owning top-level `ColumnDescription`.
 - Work on a clone of the complete policy.
-- Apply every explicit element removal, resolving positional identity against the old and resulting tuple types where necessary.
+- Apply every explicit removal by its canonical path.
 - Reject `REMOVE CODEC` if that exact old declaration does not exist; an inherited codec does not count.
-- Apply every element declaration from `declared_codec`, replacing only the matching paths.
+- Reject duplicate removals and a set plus removal of the same path.
+- Apply every declaration from `codec_sets`, replacing only the matching paths.
 - Preserve every omitted tuple-element declaration whose path is still valid in the resulting logical type.
-- Apply the existing root `CODEC(...)` or root `REMOVE CODEC` operation independently.
 - Run `validateAndNormalize` on the complete resulting policy.
 - Rebuild codec-driven custom serializations before installing the column.
+
+Paths have name identity, not positional identity. A tuple element with a declared codec cannot be renamed while removing that declaration in the same typed `MODIFY COLUMN`, because the new declaration contains only the new name. Remove the codec under the old name first, then rename the element in a subsequent command.
 
 The command target remains the owning column name. Neither `MODIFY SUBCOLUMN` nor `MODIFY COLUMN payload.element CODEC(...)` is introduced. A typed `MODIFY COLUMN` must revalidate every retained path against the new type and reject the command if a retained path disappears or a codec becomes incompatible. The sequential metadata snapshot in `AlterCommands::validate` must apply the same rules so multiple modifications in one statement observe preceding ones.
 

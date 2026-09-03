@@ -58,9 +58,6 @@ ASTPtr ASTTupleDataType::clone() const
     for (const auto & codec : element_codecs)
         res->element_codecs.push_back(codec ? codec->clone() : nullptr);
 
-    /// `element_codec_removals` is copied by the copy constructor.
-
-    /// element_names vector is copied by the copy constructor
     return res;
 }
 
