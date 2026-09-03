@@ -374,13 +374,15 @@ BlockIO InterpreterSystemQuery::execute()
     bool check_constraints = false;
     system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
-    /// Make canonical query for simpler processing
-    if (query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY)
+    auto dictionary_context = getContext();
+    if ((query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY) && query.database)
     {
-        if (query.database)
-            query.setTable(query.getDatabase() + "." + query.getTable());
+        dictionary_context = Context::createCopy(getContext());
+        dictionary_context->setCurrentDatabase(query.getDatabase());
     }
-    else if (query.table)
+
+    /// Make canonical query for simpler processing
+    if (query.type != Type::RELOAD_DICTIONARY && query.type != Type::UNLOAD_DICTIONARY && query.table)
     {
         StorageID id_in_query(query.getDatabase(), query.getTable());
         /// `IF EXISTS` (currently parsed for `SYSTEM SYNC REPLICA`) must suppress
@@ -778,7 +780,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.reloadDictionary(query.getTable(), getContext());
+            external_dictionaries_loader.reloadDictionary(query.getTable(), dictionary_context);
 
             ExternalDictionariesLoader::resetAll();
             break;
@@ -798,7 +800,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.unloadDictionary(query.getTable(), getContext());
+            external_dictionaries_loader.unloadDictionary(query.getTable(), dictionary_context);
             ExternalDictionariesLoader::resetAll();
             break;
         }
