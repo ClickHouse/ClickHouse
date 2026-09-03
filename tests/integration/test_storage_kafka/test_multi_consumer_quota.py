@@ -281,8 +281,8 @@ def test_multi_consumer_with_partition_affinity(kafka_cluster):
     into the P < R*N regime. 8 partitions, kafka_shard_count=2, two replicas per
     shard, kafka_num_consumers=4.
 
-      Each shard sees P_shard = 4 and R_shard = 2  ->  node_quota = max(4/2, 1) = 2
-      split over 4 consumers -> 1, 1, 0, 0         ->  2 locks per replica, 8 total.
+    Each shard sees P_shard = 4 and R_shard = 2  ->  node_quota = max(4/2, 1) = 2
+     split over 4 consumers -> 1, 1, 0, 0         ->  2 locks per replica, 8 total.
 
     Fails on master, where max(4/2, 1) = 2 per consumer x 4 consumers lets a single
     replica take an entire shard.
