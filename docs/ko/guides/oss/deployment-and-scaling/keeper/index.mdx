@@ -14,9 +14,7 @@ import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
 
 ClickHouse Keeper는 데이터 [복제](/ko/reference/engines/table-engines/mergetree-family/replication) 및 [분산 DDL](/ko/reference/statements/distributed-ddl) 쿼리 실행을 위한 조정 시스템입니다. ClickHouse Keeper는 ZooKeeper와 호환됩니다.
 
-<div id="implementation-details">
-  ### 구현 세부 정보
-</div>
+### 구현 세부 정보 {#implementation-details}
 
 ZooKeeper는 널리 알려진 초기 오픈소스 조정 시스템 중 하나입니다. Java로 구현되어 있으며, 단순하면서도 강력한 데이터 모델을 갖추고 있습니다. ZooKeeper의 조정 알고리즘인 ZooKeeper Atomic Broadcast(ZAB)는 각 ZooKeeper 노드가 읽기를 로컬에서 처리하므로 읽기에 대해 선형화 가능성 보장을 제공하지 않습니다. ZooKeeper와 달리 ClickHouse Keeper는 C++로 작성되었으며 [RAFT 알고리즘](https://raft.github.io/) [구현체](https://github.com/eBay/NuRaft)를 사용합니다. 이 알고리즘은 읽기와 쓰기 모두에 대해 선형화 가능성을 제공하며, 여러 언어로 작성된 다양한 오픈소스 구현체가 있습니다.
 
@@ -28,15 +26,11 @@ ClickHouse Keeper는 [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeep
   외부 통합은 지원되지 않습니다.
 </Note>
 
-<div id="configuration">
-  ### 구성
-</div>
+### 구성 {#configuration}
 
 ClickHouse Keeper는 독립형 ZooKeeper 대체재로 사용하거나 ClickHouse 서버의 내부 구성 요소로 사용할 수 있습니다. 두 경우 모두 구성은 거의 동일한 `.xml` 파일로 정의됩니다.
 
-<div id="keeper-configuration-settings">
-  #### Keeper 구성 설정
-</div>
+#### Keeper 구성 설정 {#keeper-configuration-settings}
 
 기본 ClickHouse Keeper 구성 태그는 `<keeper_server>`이며, 다음 매개변수를 사용합니다:
 
@@ -60,9 +54,7 @@ ClickHouse Keeper는 독립형 ZooKeeper 대체재로 사용하거나 ClickHouse
 
 그 밖의 일반적인 매개변수는 ClickHouse 서버 구성(`listen_host`, `logger` 등)에서 상속됩니다.
 
-<div id="internal-coordination-settings">
-  #### 내부 조정 설정
-</div>
+#### 내부 조정 설정 {#internal-coordination-settings}
 
 내부 조정 설정은 `<keeper_server>.<coordination_settings>` 섹션에 있으며, 다음 매개변수가 있습니다:
 
@@ -79,6 +71,8 @@ ClickHouse Keeper는 독립형 ZooKeeper 대체재로 사용하거나 ClickHouse
 | `reserved_log_items`                      | compaction 전에 보관할 조정 로그 레코드 수입니다.                                                                                                                                                                           | `100000`         |
 | `snapshot_distance`                       | ClickHouse Keeper가 새 스냅샷을 생성하는 주기입니다(로그의 레코드 수 기준).                                                                                                                                                         | `100000`         |
 | `snapshots_to_keep`                       | 유지할 스냅샷 수입니다.                                                                                                                                                                                               | `3`              |
+| `compress_snapshots_with_zstd_format`     | 사용자 지정 ClickHouse LZ4 블록 포맷 대신 ZSTD 포맷으로 스냅샷을 기록합니다.                                                                                                                                                        | `true`           |
+| `snapshot_zstd_compression_level`         | 스냅샷에 사용할 ZSTD 압축 수준입니다. 수준이 낮을수록 CPU를 덜 사용하지만 스냅샷 크기는 커집니다. 음수 값은 ZSTD fast 수준을 선택합니다. `compress_snapshots_with_zstd_format`가 활성화된 경우에만 사용됩니다.                                                              | `3`              |
 | `stale_log_gap`                           | 리더가 팔로워를 오래된 상태로 판단하고 로그 대신 스냅샷을 보내는 임계값입니다.                                                                                                                                                                | `10000`          |
 | `fresh_log_gap`                           | 노드가 최신 상태로 간주되는 기준입니다.                                                                                                                                                                                      | `200`            |
 | `max_requests_batch_size`                 | 요청 수 기준으로 RAFT에 전송되기 전 Batch의 최대 크기입니다.                                                                                                                                                                     | `100`            |
@@ -162,9 +156,7 @@ ClickHouse Keeper는 독립형 ZooKeeper 대체재로 사용하거나 ClickHouse
 </keeper_server>
 ```
 
-<div id="how-to-run">
-  ### 실행 방법
-</div>
+### 실행 방법 {#how-to-run}
 
 ClickHouse Keeper는 ClickHouse 서버 패키지에 포함되어 있으므로 `/etc/your_path_to_config/clickhouse-server/config.xml`에 `<keeper_server>` 구성을 추가한 다음 평소처럼 ClickHouse 서버를 시작하면 됩니다. standalone ClickHouse Keeper를 실행하려면 다음과 같이 비슷한 방식으로 시작할 수 있습니다:
 
@@ -178,9 +170,7 @@ clickhouse-keeper --config /etc/your_path_to_config/config.xml
 clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
-<div id="four-letter-word-commands">
-  ### 네 글자 명령어
-</div>
+### 네 글자 명령어 {#four-letter-word-commands}
 
 ClickHouse Keeper는 ZooKeeper와 거의 동일한 4lw 명령도 제공합니다. 각 명령은 `mntr`, `stat` 등과 같이 네 글자로 이루어집니다. 그중 몇 가지 유용한 명령은 다음과 같습니다. `stat`는 서버와 연결된 클라이언트에 대한 일반 정보를 제공하고, `srvr`는 서버에 대한 추가 상세 정보를 제공하며, `cons`는 연결에 대한 추가 상세 정보를 제공합니다.
 
@@ -300,6 +290,7 @@ quorum_reads=false
 force_sync=false
 compress_logs=true
 compress_snapshots_with_zstd_format=true
+snapshot_zstd_compression_level=3
 configuration_change_tries_count=20
 ```
 
@@ -439,9 +430,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ...
 ```
 
-<div id="http-control">
-  ### HTTP 제어
-</div>
+### HTTP 제어 {#http-control}
 
 ClickHouse Keeper는 레플리카가 트래픽을 수신할 준비가 되었는지 확인할 수 있도록 HTTP 인터페이스를 제공합니다. [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes)와 같은 Cloud 환경에서 사용할 수 있습니다.
 
@@ -460,9 +449,7 @@ ClickHouse Keeper는 레플리카가 트래픽을 수신할 준비가 되었는�
 </clickhouse>
 ```
 
-<div id="feature-flags">
-  ### 기능 플래그
-</div>
+### 기능 플래그 {#feature-flags}
 
 Keeper는 ZooKeeper 및 해당 클라이언트와 완전히 호환되지만, clickhouse client에서 사용할 수 있는 고유한 기능과 요청 유형도 일부 제공합니다.
 이러한 기능은 하위 호환되지 않는 변경 사항을 일으킬 수 있으므로, 대부분 기본적으로 비활성화되어 있으며 `keeper_server.feature_flags` 설정으로 활성화할 수 있습니다.
@@ -497,15 +484,11 @@ Keeper 클러스터에서 새 기능을 활성화하려는 경우, 먼저 클러
   Keeper를 25.7+로 업그레이드하는 권장 방법은 먼저 버전 24.9+로 업그레이드하는 것입니다.
 </Note>
 
-<div id="migration-from-zookeeper">
-  ### ZooKeeper에서 마이그레이션
-</div>
+### ZooKeeper에서 마이그레이션 {#migration-from-zookeeper}
 
 ZooKeeper에서 ClickHouse Keeper로 원활하게 마이그레이션하는 것은 불가능합니다. ZooKeeper 클러스터를 중지하고 데이터를 변환한 다음 ClickHouse Keeper를 시작해야 합니다. `clickhouse-keeper-converter` 도구는 ZooKeeper 로그와 스냅샷을 ClickHouse Keeper 스냅샷으로 변환합니다. 이 도구를 사용하려면 ZooKeeper 3.4 이상이 필요합니다.
 
-<div id="pre-migration-preparation">
-  #### 마이그레이션 전 준비
-</div>
+#### 마이그레이션 전 준비 {#pre-migration-preparation}
 
 마이그레이션을 진행하려면 데이터 수집을 중단해야 합니다. 시작하기 전에 유지 관리 기간을 계획하세요.
 
@@ -517,9 +500,7 @@ SYSTEM STOP MERGES;
 
 마이그레이션 전에 비교용 메트릭을 기록해 두어 이후에 일관성을 검증할 수 있도록 하십시오.
 
-<div id="migration-steps">
-  #### 마이그레이션 단계
-</div>
+#### 마이그레이션 단계 {#migration-steps}
 
 1. 모든 ClickHouse 노드로의 데이터 수집을 중지합니다.
 
@@ -548,9 +529,7 @@ clickhouse-keeper-converter \
 
 10. 백그라운드 작업을 재개하고 데이터 수집을 다시 시작합니다.
 
-<div id="consolidating-multiple-zookeeper-clusters">
-  #### 여러 ZooKeeper 클러스터 통합
-</div>
+#### 여러 ZooKeeper 클러스터 통합 {#consolidating-multiple-zookeeper-clusters}
 
 여러 ZooKeeper 클러스터를 운영 중인 경우(예: 세그먼트 그룹마다 하나씩), 이를 단일 ClickHouse Keeper 클러스터로 통합할 수 있습니다. 공식 `clickhouse-keeper-converter` 도구는 일대일 변환(하나의 ZooKeeper 클러스터를 하나의 Keeper 스냅샷으로 변환)만 지원하므로, 통합하려면 여러 스냅샷을 머지할 수 있도록 컨버터의 소스 코드를 수정해야 합니다.
 
@@ -558,18 +537,14 @@ clickhouse-keeper-converter \
 2. 스냅샷 파일을 순차적으로 역직렬화합니다. 머지할 때는 서로 다른 원본 클러스터의 네임스페이스 사이에서 노드 ID 충돌이 발생하지 않도록 `numChildren` 값을 다시 계산합니다.
 3. 머지된 출력을 대상 ClickHouse Keeper 스냅샷 디렉터리에 기록합니다.
 
-<div id="handling-encryption-and-acls">
-  #### 암호화 및 ACL 처리
-</div>
+#### 암호화 및 ACL 처리 {#handling-encryption-and-acls}
 
 ClickHouse Keeper는 ZooKeeper와 동일한 ACL 방식(`world`, `auth`, `digest`)을 지원합니다. 변환 과정에서 ACL을 처리하는 방법은 ZooKeeper 구성에 따라 달라집니다.
 
 * **완전히 암호화되었거나 전혀 암호화되지 않은 경우**: 직접 변환하십시오. 컨버터가 기존 ACL 정보를 그대로 유지합니다.
 * **부분적으로 암호화된 경우**: 변환하기 전에 슈퍼 관리자 계정을 설정하고, 영향을 받는 경로에서 `setAcl -R`로 ACL을 제거하십시오. 변환한 후 필요하면 ClickHouse Keeper에서 암호화를 다시 활성화하십시오.
 
-<div id="verifying-the-migration">
-  #### 마이그레이션 검증
-</div>
+#### 마이그레이션 검증 {#verifying-the-migration}
 
 ClickHouse Keeper를 시작하고 ClickHouse를 다시 시작한 후, 마이그레이션이 성공했는지 확인하기 위해 핵심 메트릭을 마이그레이션 전 기준값과 비교하십시오.
 
@@ -580,24 +555,21 @@ ClickHouse Keeper를 시작하고 ClickHouse를 다시 시작한 후, 마이그�
 
 비교를 위해 대규모 ZooKeeper 트리를 직접 순회하지 마십시오. 대신 변환 중에 변환된 모든 경로를 파일로 출력하십시오.
 
-<div id="post-migration-tuning">
-  #### 마이그레이션 후 튜닝
-</div>
+#### 마이그레이션 후 튜닝 {#post-migration-tuning}
 
 마이그레이션 후에는 더 큰 클러스터 또는 더 높은 처리량에 맞춰 다음 설정을 조정하는 것이 좋습니다.
 
-| 설정                                    | 기본값     | 권장값     | 참고                                      |
-| ------------------------------------- | ------- | ------- | --------------------------------------- |
-| `max_requests_batch_size`             | `100`   | `10000` | 파트 수가 많거나 세그먼트가 많은 클러스터에서는 값을 늘리십시오     |
-| `force_sync`                          | `true`  | `false` | 비동기 로그 쓰기는 처리량을 향상시킵니다                  |
-| `compress_logs`                       | `false` | `true`  | 디스크 I/O를 줄이기 위해 Raft 로그 파일을 압축합니다       |
-| `compress_snapshots_with_zstd_format` | `true`  | —       | 기본적으로 이미 활성화되어 있으며 zstd 포맷으로 스냅샷을 압축합니다 |
+| 설정                                    | 기본값     | 권장값     | 참고                                          |
+| ------------------------------------- | ------- | ------- | ------------------------------------------- |
+| `max_requests_batch_size`             | `100`   | `10000` | 파트 수가 많거나 세그먼트가 많은 클러스터에서는 값을 늘리십시오         |
+| `force_sync`                          | `true`  | `false` | 비동기 로그 쓰기는 처리량을 향상시킵니다                      |
+| `compress_logs`                       | `false` | `true`  | 디스크 I/O를 줄이기 위해 Raft 로그 파일을 압축합니다           |
+| `compress_snapshots_with_zstd_format` | `true`  | —       | 기본적으로 이미 활성화되어 있으며 zstd 포맷으로 스냅샷을 압축합니다     |
+| `snapshot_zstd_compression_level`     | `3`     | —       | 값을 낮추면 스냅샷 압축에 사용되는 CPU가 줄어들지만 스냅샷 크기는 커집니다 |
 
 이 설정은 [Keeper 구성](#internal-coordination-settings)의 `coordination_settings` 아래에서 설정합니다.
 
-<div id="recovering-after-losing-quorum">
-  ### 쿼럼을 잃은 후 복구하기
-</div>
+### 쿼럼을 잃은 후 복구하기 {#recovering-after-losing-quorum}
 
 ClickHouse Keeper는 Raft를 사용하므로 클러스터 크기에 따라 일정 수의 노드 장애를 허용할 수 있습니다.
 예를 들어 3개 노드 클러스터에서는 1개 노드에만 장애가 발생한 경우 계속 정상적으로 작동합니다.
@@ -624,9 +596,7 @@ Raft는 작동을 멈추고 일반적인 방식으로는 클러스터를 재구�
 6. 복구 모드에서는 리더 노드가 새 노드들과 쿼럼을 이룰 때까지 `mntr` 명령에 대해 오류 메시지를 반환하며, 클라이언트와 팔로워의 모든 요청을 거부합니다.
 7. 쿼럼이 형성되면 리더 노드는 정상 동작 모드로 돌아가 모든 요청을 수락합니다. `mntr`로 이를 확인하면 `zk_server_state`에 대해 `leader`를 반환해야 합니다.
 
-<div id="using-disks-with-keeper">
-  ## Keeper와 디스크 함께 사용하기
-</div>
+## Keeper와 디스크 함께 사용하기 {#using-disks-with-keeper}
 
 Keeper는 스냅샷, 로그 파일, 상태 파일 저장에 사용할 수 있는 [외부 디스크](/ko/concepts/features/configuration/server-config/storing-data)의 일부를 지원합니다.
 
@@ -705,9 +675,7 @@ Keeper 인스턴스에 사용할 수 있는 스토리지 구성 예시는 다음
 이 인스턴스는 최신 로그를 제외한 모든 로그를 `log_s3_plain` 디스크에 저장하며, 최신 로그는 `log_local` 디스크에 저장됩니다.
 스냅샷에도 동일한 방식이 적용됩니다. 최신 스냅샷을 제외한 모든 스냅샷은 `snapshot_s3_plain`에 저장되며, 최신 스냅샷은 `snapshot_local` 디스크에 저장됩니다.
 
-<div id="changing-disk-setup">
-  ### 디스크 설정 변경
-</div>
+### 디스크 설정 변경 {#changing-disk-setup}
 
 <Warning>
   새 디스크 설정을 적용하기 전에 모든 Keeper 로그와 스냅샷를 수동으로 백업하십시오.
@@ -738,9 +706,7 @@ Keeper 인스턴스에 사용할 수 있는 스토리지 구성 예시는 다음
 시작 시 모든 로그 file이 `log_local` 및 `log_s3_plain`에서 `log_local2` 디스크로 이동됩니다.
 또한 모든 스냅샷 file이 `snapshot_local` 및 `snapshot_s3_plain`에서 `snapshot_local2` 디스크로 이동됩니다.
 
-<div id="configuring-logs-cache">
-  ## 로그 캐시 구성
-</div>
+## 로그 캐시 구성 {#configuring-logs-cache}
 
 디스크에서 읽는 데이터 양을 최소화하기 위해 Keeper는 로그 항목을 메모리에 캐시합니다.
 요청이 많으면 로그 항목이 메모리를 과도하게 차지할 수 있으므로 캐시되는 로그의 양에 제한이 적용됩니다.
@@ -766,9 +732,7 @@ Keeper 인스턴스에 사용할 수 있는 스토리지 구성 예시는 다음
   Prometheus 엔드포인트의 메트릭을 사용하여 두 캐시의 현재 크기를 추적할 수도 있습니다.
 </Note>
 
-<div id="prometheus">
-  ## Prometheus
-</div>
+## Prometheus {#prometheus}
 
 Keeper는 [Prometheus](https://prometheus.io)에서 스크레이핑할 수 있도록 메트릭 데이터를 노출할 수 있습니다.
 
@@ -805,9 +769,7 @@ curl 127.0.0.1:9363/metrics
 
 ClickHouse Cloud의 [Prometheus 통합](/ko/products/cloud/features/monitoring/prometheus)도 함께 참조하십시오.
 
-<div id="clickhouse-keeper-user-guide">
-  ## ClickHouse Keeper 사용자 가이드
-</div>
+## ClickHouse Keeper 사용자 가이드 {#clickhouse-keeper-user-guide}
 
 이 가이드는 분산 작업을 테스트하는 방법에 대한 예시와 함께 ClickHouse Keeper를 구성하는 데 필요한 간단한 최소 설정을 제공합니다. 이 예시는 Linux에서 3개의 노드를 사용해 수행합니다.
 
@@ -1072,21 +1034,15 @@ ClickHouse Cloud의 [Prometheus 통합](/ko/products/cloud/features/monitoring/p
   </Step>
 </Steps>
 
-<div id="summary">
-  ### 요약
-</div>
+### 요약 {#summary}
 
 이 가이드에서는 ClickHouse Keeper를 사용해 클러스터를 설정하는 방법을 설명했습니다. ClickHouse Keeper를 사용하면 클러스터를 구성하고, 세그먼트 전반에 걸쳐 복제할 수 있는 분산 테이블을 정의할 수 있습니다.
 
-<div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## 고유한 경로를 사용하여 ClickHouse Keeper 구성하기
-</div>
+## 고유한 경로를 사용하여 ClickHouse Keeper 구성하기 {#configuring-clickhouse-keeper-with-unique-paths}
 
 <SelfManaged />
 
-<div id="description">
-  ### 설명
-</div>
+### 설명 {#description}
 
 이 문서에서는 내장 `{uuid}` 매크로 설정을 사용해
 ClickHouse Keeper 또는 ZooKeeper에 고유한 항목을 생성하는 방법을 설명합니다. 고유한
@@ -1095,9 +1051,7 @@ ClickHouse Keeper 또는 ZooKeeper에 고유한 항목을 생성하는 방법을
 Keeper 가비지 컬렉션이 경로 항목을 제거할 때까지 몇 분씩 기다릴 필요가 없기
 때문입니다. 경로는 절대 재사용되지 않습니다.
 
-<div id="example-environment">
-  ### 예시 환경
-</div>
+### 예시 환경 {#example-environment}
 
 3개 노드로 구성된 클러스터로, 세 노드 모두에 ClickHouse Keeper를
 구성하고 그중 두 노드에 ClickHouse를 구성합니다. 이렇게 하면
@@ -1135,9 +1089,7 @@ ClickHouse Keeper는 3개 노드(타이브레이커 노드 포함)로 구성되�
     </remote_servers>
 ```
 
-<div id="procedures-to-set-up-tables-to-use-uuid">
-  ### 테이블에서 `{uuid}`를 사용하도록 설정하는 절차
-</div>
+### 테이블에서 `{uuid}`를 사용하도록 설정하는 절차 {#procedures-to-set-up-tables-to-use-uuid}
 
 1. 각 서버에서 매크로를 설정합니다
    server 1의 예시:
@@ -1229,9 +1181,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 └───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
 ```
 
-<div id="testing">
-  ### 테스트
-</div>
+### 테스트 {#testing}
 
 1. 첫 번째 노드(예: `chnode1`)에 데이터를 삽입합니다.
 
@@ -1293,9 +1243,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 2 rows in set. Elapsed: 0.007 sec.
 ```
 
-<div id="alternatives">
-  ### 대안
-</div>
+### 대안 {#alternatives}
 
 매크로와 `{uuid}`를 사용해 기본 복제 경로를 미리 정의할 수 있습니다.
 
@@ -1361,9 +1309,7 @@ ORDER BY id
 1 row in set. Elapsed: 0.003 sec.
 ```
 
-<div id="troubleshooting">
-  ### 문제 해결
-</div>
+### 문제 해결 {#troubleshooting}
 
 테이블 정보와 UUID를 확인하는 예시 명령:
 
@@ -1408,15 +1354,11 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 1 row in set. Elapsed: 0.004 sec.
 ```
 
-<div id="reconfiguration">
-  ## ClickHouse Keeper 동적 구성 변경
-</div>
+## ClickHouse Keeper 동적 구성 변경 {#reconfiguration}
 
 <SelfManaged />
 
-<div id="description">
-  ### 설명
-</div>
+### 설명 {#description-1}
 
 `keeper_server.enable_reconfiguration`이 활성화되어 있으면 ClickHouse Keeper는 동적 클러스터 재구성을 위해 ZooKeeper의 [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
 명령을 부분적으로 지원합니다.
@@ -1506,9 +1448,7 @@ Keeper 재구성 구현에는 몇 가지 주의 사항이 있습니다:
 * `reconfig` 명령은 여러 이유로 실패할 수 있습니다. 클러스터 상태를 확인하여 업데이트가
   적용되었는지 확인할 수 있습니다.
 
-<div id="converting-a-single-node-keeper-into-a-cluster">
-  ## 단일 노드 Keeper를 클러스터로 변환하기
-</div>
+## 단일 노드 Keeper를 클러스터로 변환하기 {#converting-a-single-node-keeper-into-a-cluster}
 
 경우에 따라 실험적 Keeper 노드를 클러스터로 확장해야 할 수 있습니다. 다음은 3개 노드 클러스터에서 이를 단계별로 수행하는 방법입니다.
 
@@ -1522,9 +1462,7 @@ Keeper 재구성 구현에는 몇 가지 주의 사항이 있습니다:
 
 과정을 충분히 익히는 데 도움이 되도록 [sandbox 리포지토리](https://github.com/ClickHouse/keeper-extend-cluster)를 제공합니다.
 
-<div id="unsupported-features">
-  ## 지원되지 않는 기능
-</div>
+## 지원되지 않는 기능 {#unsupported-features}
 
 ClickHouse Keeper는 ZooKeeper와의 완전한 호환성을 목표로 하지만, 아직 구현되지 않은 기능이 일부 있습니다(현재도 개발이 진행 중입니다):
 

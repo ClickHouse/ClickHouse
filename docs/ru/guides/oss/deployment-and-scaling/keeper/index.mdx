@@ -14,9 +14,7 @@ import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 
 ClickHouse Keeper обеспечивает систему координации для [репликации](/ru/reference/engines/table-engines/mergetree-family/replication) данных и выполнения запросов [distributed DDL](/ru/reference/statements/distributed-ddl). ClickHouse Keeper совместим с ZooKeeper.
 
-<div id="implementation-details">
-  ### Подробности реализации
-</div>
+### Подробности реализации {#implementation-details}
 
 ZooKeeper — одна из первых широко известных систем координации с открытым исходным кодом. Она реализована на Java и использует простую, но мощную модель данных. Алгоритм координации ZooKeeper, ZooKeeper Atomic Broadcast (ZAB), не дает гарантий линеаризуемости для операций чтения, поскольку каждый узел ZooKeeper обрабатывает чтение локально. В отличие от ZooKeeper, ClickHouse Keeper написан на C++ и использует [реализацию](https://github.com/eBay/NuRaft) [алгоритма RAFT](https://raft.github.io/). Этот алгоритм обеспечивает линеаризуемость операций чтения и записи и имеет несколько реализаций с открытым исходным кодом на разных языках.
 
@@ -28,15 +26,11 @@ ClickHouse Keeper поддерживает списки контроля дос�
   Внешние интеграции не поддерживаются.
 </Note>
 
-<div id="configuration">
-  ### Конфигурация
-</div>
+### Конфигурация {#configuration}
 
 ClickHouse Keeper можно использовать как автономную замену ZooKeeper или как внутреннюю часть сервера ClickHouse. В обоих случаях используется практически один и тот же файл конфигурации `.xml`.
 
-<div id="keeper-configuration-settings">
-  #### Настройки конфигурации Keeper
-</div>
+#### Настройки конфигурации Keeper {#keeper-configuration-settings}
 
 Основной тег конфигурации ClickHouse Keeper — `<keeper_server>`. Он имеет следующие параметры:
 
@@ -60,9 +54,7 @@ ClickHouse Keeper можно использовать как автономну�
 
 Другие распространенные параметры наследуются из конфигурации ClickHouse server (`listen_host`, `logger` и так далее).
 
-<div id="internal-coordination-settings">
-  #### Внутренние настройки координации
-</div>
+#### Внутренние настройки координации {#internal-coordination-settings}
 
 Внутренние настройки координации находятся в разделе `<keeper_server>.<coordination_settings>` и включают следующие параметры:
 
@@ -79,6 +71,8 @@ ClickHouse Keeper можно использовать как автономну�
 | `reserved_log_items`                      | Сколько записей журнала координации хранить до компактизации.                                                                                                                                                                                                                                                                                                                                                                          | `100000`         |
 | `snapshot_distance`                       | Как часто ClickHouse Keeper создает новые снимки (по количеству записей в журналах).                                                                                                                                                                                                                                                                                                                                                   | `100000`         |
 | `snapshots_to_keep`                       | Сколько снимков хранить.                                                                                                                                                                                                                                                                                                                                                                                                               | `3`              |
+| `compress_snapshots_with_zstd_format`     | Записывать снимки в формате ZSTD вместо собственного блочного формата LZ4 ClickHouse.                                                                                                                                                                                                                                                                                                                                                  | `true`           |
+| `snapshot_zstd_compression_level`         | Уровень сжатия ZSTD для снимков. Более низкие уровни используют меньше CPU, но дают снимки большего размера. Отрицательные значения выбирают быстрые уровни ZSTD. Используется только при включенном `compress_snapshots_with_zstd_format`.                                                                                                                                                                                            | `3`              |
 | `stale_log_gap`                           | Порог, при котором лидер считает узел follower устаревшим и отправляет ему снимок вместо журналов.                                                                                                                                                                                                                                                                                                                                     | `10000`          |
 | `fresh_log_gap`                           | Когда узел считается актуальным.                                                                                                                                                                                                                                                                                                                                                                                                       | `200`            |
 | `max_requests_batch_size`                 | Максимальный размер батча по числу запросов перед его отправкой в RAFT.                                                                                                                                                                                                                                                                                                                                                                | `100`            |
@@ -162,9 +156,7 @@ ClickHouse Keeper можно использовать как автономну�
 </keeper_server>
 ```
 
-<div id="how-to-run">
-  ### Как запустить
-</div>
+### Как запустить {#how-to-run}
 
 ClickHouse Keeper входит в пакет ClickHouse server: просто добавьте конфигурацию `<keeper_server>` в `/etc/your_path_to_config/clickhouse-server/config.xml` и запустите ClickHouse server как обычно. Если вы хотите запустить автономный ClickHouse Keeper, это можно сделать аналогичным образом с помощью:
 
@@ -178,9 +170,7 @@ clickhouse-keeper --config /etc/your_path_to_config/config.xml
 clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
-<div id="four-letter-word-commands">
-  ### Команды из четырёх букв
-</div>
+### Команды из четырёх букв {#four-letter-word-commands}
 
 ClickHouse Keeper также поддерживает команды 4lw, которые почти не отличаются от команд ZooKeeper. Каждая команда состоит из четырёх букв, например `mntr`, `stat` и т. д. Есть и другие полезные команды: `stat` выдаёт общую информацию о сервере и подключённых клиентах, `srvr` выдаёт расширенную информацию о сервере, а `cons` — расширенную информацию о соединениях.
 
@@ -300,6 +290,7 @@ quorum_reads=false
 force_sync=false
 compress_logs=true
 compress_snapshots_with_zstd_format=true
+snapshot_zstd_compression_level=3
 configuration_change_tries_count=20
 ```
 
@@ -439,9 +430,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ...
 ```
 
-<div id="http-control">
-  ### Управление по HTTP
-</div>
+### Управление по HTTP {#http-control}
 
 ClickHouse Keeper предоставляет HTTP-интерфейс для проверки, готова ли реплика принимать трафик. Его можно использовать в облачных средах, таких как [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
 
@@ -460,9 +449,7 @@ ClickHouse Keeper предоставляет HTTP-интерфейс для пр
 </clickhouse>
 ```
 
-<div id="feature-flags">
-  ### Флаги возможностей
-</div>
+### Флаги возможностей {#feature-flags}
 
 Keeper полностью совместим с ZooKeeper и его клиентами, но также поддерживает некоторые уникальные возможности и типы запросов, которые могут использоваться клиентом ClickHouse.
 Поскольку эти возможности могут приводить к обратно несовместимым изменениям, большинство из них по умолчанию отключены и могут быть включены с помощью конфигурации `keeper_server.feature_flags`.
@@ -497,15 +484,11 @@ Keeper полностью совместим с ZooKeeper и его клиент
   Рекомендуемый способ обновить Keeper до 25.7+ — сначала обновиться до версии 24.9+.
 </Note>
 
-<div id="migration-from-zookeeper">
-  ### Миграция с ZooKeeper
-</div>
+### Миграция с ZooKeeper {#migration-from-zookeeper}
 
 Плавная миграция с ZooKeeper на ClickHouse Keeper невозможна. Необходимо остановить кластер ZooKeeper, преобразовать данные и запустить ClickHouse Keeper. Инструмент `clickhouse-keeper-converter` преобразует журналы и снимки ZooKeeper в снимок ClickHouse Keeper. Требуется ZooKeeper версии 3.4 или новее.
 
-<div id="pre-migration-preparation">
-  #### Подготовка к миграции
-</div>
+#### Подготовка к миграции {#pre-migration-preparation}
 
 На время миграции нужно остановить ингестию данных. Перед началом запланируйте окно обслуживания.
 
@@ -517,9 +500,7 @@ SYSTEM STOP MERGES;
 
 Зафиксируйте метрики для сравнения перед миграцией, чтобы затем проверить согласованность.
 
-<div id="migration-steps">
-  #### Этапы миграции
-</div>
+#### Этапы миграции {#migration-steps}
 
 1. Остановите ингестию данных на всех узлах ClickHouse.
 
@@ -548,9 +529,7 @@ clickhouse-keeper-converter \
 
 10. Возобновите фоновые задачи и перезапустите ингестию данных.
 
-<div id="consolidating-multiple-zookeeper-clusters">
-  #### Объединение нескольких кластеров ZooKeeper
-</div>
+#### Объединение нескольких кластеров ZooKeeper {#consolidating-multiple-zookeeper-clusters}
 
 Если вы используете несколько кластеров ZooKeeper — например, по одному на каждую группу сегментов, — их можно объединить в один кластер ClickHouse Keeper. Официальный инструмент `clickhouse-keeper-converter` поддерживает только конвертацию в формате «один к одному» (один кластер ZooKeeper в один снимок Keeper), поэтому для консолидации потребуется изменить исходный код конвертера, чтобы объединить несколько снимков:
 
@@ -558,18 +537,14 @@ clickhouse-keeper-converter \
 2. Последовательно десериализуйте файлы снимков. При слиянии пересчитайте значения `numChildren`, чтобы избежать конфликтов идентификаторов узлов между пространствами имен из разных исходных кластеров.
 3. Запишите объединенный результат в целевой каталог снимков ClickHouse Keeper.
 
-<div id="handling-encryption-and-acls">
-  #### Работа с шифрованием и ACL
-</div>
+#### Работа с шифрованием и ACL {#handling-encryption-and-acls}
 
 ClickHouse Keeper поддерживает те же схемы ACL, что и ZooKeeper (`world`, `auth`, `digest`). Способ обработки ACL при конвертации зависит от вашей конфигурации ZooKeeper:
 
 * **Полностью зашифровано или полностью незашифровано**: Конвертируйте напрямую. Конвертер сохранит существующую информацию об ACL.
 * **Частично зашифровано**: Перед конвертацией выдайте права учётной записи суперадминистратора и очистите ACL с помощью `setAcl -R` для затронутых путей. Выполните конвертацию, затем при необходимости снова включите шифрование в ClickHouse Keeper.
 
-<div id="verifying-the-migration">
-  #### Проверка миграции
-</div>
+#### Проверка миграции {#verifying-the-migration}
 
 После запуска ClickHouse Keeper и перезапуска ClickHouse сравните ключевые метрики с базовыми значениями, зафиксированными до миграции, чтобы убедиться, что миграция прошла успешно.
 
@@ -580,24 +555,21 @@ ClickHouse Keeper поддерживает те же схемы ACL, что и Z
 
 Не обходите большие деревья ZooKeeper напрямую для сравнения. Вместо этого в процессе преобразования выводите все преобразованные пути в файл.
 
-<div id="post-migration-tuning">
-  #### Тонкая настройка после миграции
-</div>
+#### Тонкая настройка после миграции {#post-migration-tuning}
 
 После миграции при необходимости настройте следующие параметры для более крупных кластеров или более высокой пропускной способности:
 
-| Setting                               | Default | Recommended | Notes                                                              |
-| ------------------------------------- | ------- | ----------- | ------------------------------------------------------------------ |
-| `max_requests_batch_size`             | `100`   | `10000`     | Увеличьте для кластеров с большим количеством частей или сегментов |
-| `force_sync`                          | `true`  | `false`     | Асинхронная запись в журнал повышает пропускную способность        |
-| `compress_logs`                       | `false` | `true`      | Сжимает файлы журнала Raft, уменьшая дисковый I/O                  |
-| `compress_snapshots_with_zstd_format` | `true`  | —           | Уже включен по умолчанию; сжимает снимки с помощью zstd            |
+| Setting                               | Default | Recommended | Notes                                                                                   |
+| ------------------------------------- | ------- | ----------- | --------------------------------------------------------------------------------------- |
+| `max_requests_batch_size`             | `100`   | `10000`     | Увеличьте для кластеров с большим количеством частей или сегментов                      |
+| `force_sync`                          | `true`  | `false`     | Асинхронная запись в журнал повышает пропускную способность                             |
+| `compress_logs`                       | `false` | `true`      | Сжимает файлы журнала Raft, уменьшая дисковый I/O                                       |
+| `compress_snapshots_with_zstd_format` | `true`  | —           | Уже включен по умолчанию; сжимает снимки с помощью zstd                                 |
+| `snapshot_zstd_compression_level`     | `3`     | —           | Меньшие значения снижают нагрузку на CPU при сжатии снимков ценой увеличения их размера |
 
 Эти параметры задаются в разделе `coordination_settings` вашей [конфигурации Keeper](#internal-coordination-settings).
 
-<div id="recovering-after-losing-quorum">
-  ### Восстановление после потери кворума
-</div>
+### Восстановление после потери кворума {#recovering-after-losing-quorum}
 
 Поскольку ClickHouse Keeper использует Raft, он может выдержать определенное количество отказов узлов в зависимости от размера кластера.
 Например, в кластере из 3 узлов он продолжит корректно работать, если выйдет из строя только 1 узел.
@@ -624,9 +596,7 @@ ClickHouse Keeper поддерживает те же схемы ACL, что и Z
 6. В режиме восстановления узел-лидер будет возвращать сообщение об ошибке для команды `mntr`, пока не достигнет кворума с новыми узлами, и будет отклонять любые запросы от клиента и последователей.
 7. После достижения кворума узел-лидер вернется в обычный режим работы и начнет принимать все запросы с проверкой через Raft — проверьте это с помощью `mntr`, который должен возвращать `leader` для `zk_server_state`.
 
-<div id="using-disks-with-keeper">
-  ## Использование дисков с Keeper
-</div>
+## Использование дисков с Keeper {#using-disks-with-keeper}
 
 Keeper поддерживает некоторые [внешние диски](/ru/concepts/features/configuration/server-config/storing-data) для хранения снимков, файлов журналов и файла состояния.
 
@@ -705,9 +675,7 @@ Keeper с `keeper_server.coordination_settings.force_sync`, установлен
 Этот инстанс будет хранить на диске `log_s3_plain` все журналы, кроме самого последнего, а последний журнал — на диске `log_local`.
 Та же логика применяется и к снимкам: на диске `snapshot_s3_plain` будут храниться все снимки, кроме самого последнего, а последний снимок — на диске `snapshot_local`.
 
-<div id="changing-disk-setup">
-  ### Изменение конфигурации дисков
-</div>
+### Изменение конфигурации дисков {#changing-disk-setup}
 
 <Warning>
   Перед применением новой конфигурации дисков вручную создайте резервные копии всех журналов и снимков Keeper.
@@ -738,9 +706,7 @@ Keeper с `keeper_server.coordination_settings.force_sync`, установлен
 При запуске все файлы журналов будут перемещены с дисков `log_local` и `log_s3_plain` на диск `log_local2`.
 Также все файлы снимков будут перемещены с дисков `snapshot_local` и `snapshot_s3_plain` на диск `snapshot_local2`.
 
-<div id="configuring-logs-cache">
-  ## Настройка кэша журналов
-</div>
+## Настройка кэша журналов {#configuring-logs-cache}
 
 Чтобы минимизировать объем данных, считываемых с диска, Keeper кэширует записи журнала в памяти.
 При больших запросах записи журнала могут занимать слишком много памяти, поэтому объем кэшируемых журналов ограничен.
@@ -765,9 +731,7 @@ Keeper с `keeper_server.coordination_settings.force_sync`, установлен
   Для отслеживания текущего размера обоих кэшей также можно использовать метрики из конечной точки Prometheus.
 </Note>
 
-<div id="prometheus">
-  ## Prometheus
-</div>
+## Prometheus {#prometheus}
 
 Keeper может предоставлять метрики для сбора [Prometheus](https://prometheus.io).
 
@@ -804,9 +768,7 @@ curl 127.0.0.1:9363/metrics
 
 См. также [интеграцию Prometheus](/ru/products/cloud/features/monitoring/prometheus) для ClickHouse Cloud.
 
-<div id="clickhouse-keeper-user-guide">
-  ## Руководство пользователя ClickHouse Keeper
-</div>
+## Руководство пользователя ClickHouse Keeper {#clickhouse-keeper-user-guide}
 
 В этом руководстве приведены простые и минимально необходимые настройки для конфигурации ClickHouse Keeper, а также пример проверки распределённых операций. В примере используются 3 узла Linux.
 
@@ -1071,21 +1033,15 @@ curl 127.0.0.1:9363/metrics
   </Step>
 </Steps>
 
-<div id="summary">
-  ### Краткое содержание
-</div>
+### Краткое содержание {#summary}
 
 В этом руководстве показано, как настроить кластер с помощью ClickHouse Keeper. С помощью ClickHouse Keeper можно настраивать кластеры и определять distributed таблицы, которые могут реплицироваться между сегментами.
 
-<div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## Настройка ClickHouse Keeper с уникальными путями
-</div>
+## Настройка ClickHouse Keeper с уникальными путями {#configuring-clickhouse-keeper-with-unique-paths}
 
 <SelfManaged />
 
-<div id="description">
-  ### Описание
-</div>
+### Описание {#description}
 
 В этой статье описано, как использовать встроенную настройку макроса `{uuid}`
 для создания уникальных записей в ClickHouse Keeper или ZooKeeper. Уникальные
@@ -1094,9 +1050,7 @@ curl 127.0.0.1:9363/metrics
 удалит записи путей: при каждом создании пути в нём используется новый `uuid`,
 поэтому пути никогда не используются повторно.
 
-<div id="example-environment">
-  ### Пример окружения
-</div>
+### Пример окружения {#example-environment}
 
 Кластер из трёх узлов будет настроен так, что ClickHouse Keeper
 будет работать на всех трёх узлах, а ClickHouse — на двух из них. Это обеспечивает
@@ -1134,9 +1088,7 @@ curl 127.0.0.1:9363/metrics
     </remote_servers>
 ```
 
-<div id="procedures-to-set-up-tables-to-use-uuid">
-  ### Настройка таблиц для использования `{uuid}`
-</div>
+### Настройка таблиц для использования `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
 
 1. Настройте макросы на каждом сервере
    пример для сервера 1:
@@ -1228,9 +1180,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 └───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
 ```
 
-<div id="testing">
-  ### Тестирование
-</div>
+### Тестирование {#testing}
 
 1. Вставьте данные в первый узел (например, `chnode1`)
 
@@ -1292,9 +1242,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 2 rows in set. Elapsed: 0.007 sec.
 ```
 
-<div id="alternatives">
-  ### Другие варианты
-</div>
+### Другие варианты {#alternatives}
 
 Путь репликации по умолчанию можно заранее задать с помощью макросов, в том числе с использованием `{uuid}`
 
@@ -1360,9 +1308,7 @@ ORDER BY id
 1 row in set. Elapsed: 0.003 sec.
 ```
 
-<div id="troubleshooting">
-  ### Устранение неполадок
-</div>
+### Устранение неполадок {#troubleshooting}
 
 Пример команды для получения сведений о таблице и её UUID:
 
@@ -1407,15 +1353,11 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 1 row in set. Elapsed: 0.004 sec.
 ```
 
-<div id="reconfiguration">
-  ## Динамическая реконфигурация ClickHouse Keeper
-</div>
+## Динамическая реконфигурация ClickHouse Keeper {#reconfiguration}
 
 <SelfManaged />
 
-<div id="description">
-  ### Описание
-</div>
+### Описание {#description-1}
 
 ClickHouse Keeper частично поддерживает команду ZooKeeper [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
 для динамической реконфигурации кластера, если включён параметр `keeper_server.enable_reconfiguration`.
@@ -1505,9 +1447,7 @@ reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
 * Команда `reconfig` может завершиться ошибкой по разным причинам. Вы можете проверить состояние кластера и посмотреть, было ли применено
   обновление.
 
-<div id="converting-a-single-node-keeper-into-a-cluster">
-  ## Преобразование одноузлового Keeper в кластер
-</div>
+## Преобразование одноузлового Keeper в кластер {#converting-a-single-node-keeper-into-a-cluster}
 
 Иногда возникает необходимость расширить экспериментальный узел Keeper до кластера. Ниже приведена пошаговая схема для кластера из 3 узлов:
 
@@ -1521,9 +1461,7 @@ reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
 
 Чтобы лучше понять процесс, вот [репозиторий-песочница](https://github.com/ClickHouse/keeper-extend-cluster).
 
-<div id="unsupported-features">
-  ## Неподдерживаемые возможности
-</div>
+## Неподдерживаемые возможности {#unsupported-features}
 
 Хотя ClickHouse Keeper стремится к полной совместимости с ZooKeeper, некоторые возможности пока не реализованы (разработка продолжается):
 

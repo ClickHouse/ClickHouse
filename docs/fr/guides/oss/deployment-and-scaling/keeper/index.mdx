@@ -15,7 +15,7 @@ import SelfManaged from '/snippets/fr/_self_managed_only_automated.mdx';
 ClickHouse Keeper fournit le système de coordination pour la [réplication](/fr/reference/engines/table-engines/mergetree-family/replication) des données et l’exécution des requêtes [distributed DDL](/fr/reference/statements/distributed-ddl). ClickHouse Keeper est compatible avec ZooKeeper.
 
 <div id="implementation-details">
-  ### Détails d’implémentation
+  ### Détails d’implémentation {#implementation-details}
 </div>
 
 ZooKeeper est l’un des premiers systèmes de coordination open source largement connus. Il est implémenté en Java et s’appuie sur un modèle de données simple et puissant. L’algorithme de coordination de ZooKeeper, ZooKeeper Atomic Broadcast (ZAB), n’offre pas de garanties de linéarisabilité pour les lectures, car chaque nœud ZooKeeper traite les lectures localement. Contrairement à ZooKeeper, ClickHouse Keeper est écrit en C++ et utilise l’[algorithme RAFT](https://raft.github.io/) et son [implémentation](https://github.com/eBay/NuRaft). Cet algorithme permet la linéarisabilité des lectures et des écritures, et possède plusieurs implémentations open source dans différents langages.
@@ -29,13 +29,13 @@ ClickHouse Keeper prend en charge les listes de contrôle d’accès (ACL) de la
 </Note>
 
 <div id="configuration">
-  ### Configuration
+  ### Configuration {#configuration}
 </div>
 
 ClickHouse Keeper peut être utilisé comme alternative autonome à ZooKeeper ou comme composant interne de serveur ClickHouse. Dans les deux cas, le fichier de configuration `.xml` est quasiment le même.
 
 <div id="keeper-configuration-settings">
-  #### Paramètres de configuration de Keeper
+  #### Paramètres de configuration de Keeper {#keeper-configuration-settings}
 </div>
 
 La balise principale de configuration de ClickHouse Keeper est `<keeper_server>` et comporte les paramètres suivants :
@@ -60,9 +60,7 @@ La balise principale de configuration de ClickHouse Keeper est `<keeper_server>`
 
 Les autres paramètres courants sont hérités de la config du serveur ClickHouse (`listen_host`, `logger`, etc.).
 
-<div id="internal-coordination-settings">
-  #### Paramètres de coordination interne
-</div>
+#### Paramètres de coordination interne {#internal-coordination-settings}
 
 Les paramètres de coordination interne se trouvent dans la section `<keeper_server>.<coordination_settings>` et comprennent les paramètres suivants :
 
@@ -79,6 +77,8 @@ Les paramètres de coordination interne se trouvent dans la section `<keeper_ser
 | `reserved_log_items`                      | Nombre d’enregistrements du log de coordination à conserver avant la compaction.                                                                                                                                                                                                                                                                                                             | `100000`                |
 | `snapshot_distance`                       | Fréquence à laquelle ClickHouse Keeper crée de nouveaux snapshots (en nombre d’enregistrements dans les logs).                                                                                                                                                                                                                                                                               | `100000`                |
 | `snapshots_to_keep`                       | Nombre de snapshots à conserver.                                                                                                                                                                                                                                                                                                                                                             | `3`                     |
+| `compress_snapshots_with_zstd_format`     | Écrire les snapshots au format ZSTD au lieu du format de blocs LZ4 personnalisé de ClickHouse.                                                                                                                                                                                                                                                                                               | `true`                  |
+| `snapshot_zstd_compression_level`         | Niveau de compression ZSTD pour les snapshots. Des niveaux plus faibles consomment moins de CPU mais produisent des snapshots plus volumineux. Les valeurs négatives sélectionnent les niveaux rapides de ZSTD. Utilisé uniquement lorsque `compress_snapshots_with_zstd_format` est activé.                                                                                                 | `3`                     |
 | `stale_log_gap`                           | Seuil à partir duquel le leader considère le follower comme stale et lui envoie le snapshot au lieu des logs.                                                                                                                                                                                                                                                                                | `10000`                 |
 | `fresh_log_gap`                           | Moment à partir duquel le nœud est considéré comme fresh.                                                                                                                                                                                                                                                                                                                                    | `200`                   |
 | `max_requests_batch_size`                 | Taille maximale du batch, en nombre de requests, avant son envoi à RAFT.                                                                                                                                                                                                                                                                                                                     | `100`                   |
@@ -100,7 +100,7 @@ Les paramètres de coordination interne se trouvent dans la section `<keeper_ser
 | `log_readahead_serve_wait_timeout_ms`     | Durée maximale d’attente du remplissage de lecture anticipée en arrière-plan avant de revenir à une lecture directe.                                                                                                                                                                                                                                                                         | `200`                   |
 | `log_readahead_chunk_size`                | Nombre d’entrées de log décodées par фрагмент dans la tâche de remplissage de lecture anticipée.                                                                                                                                                                                                                                                                                             | `16`                    |
 | `log_readahead_commit_window_bytes`       | Taille totale maximale des entrées de log décodées mises en mémoire tampon avant le thread de commit. `0` désactive la lecture anticipée du commit (le commit lit les entrées du disque une par une).                                                                                                                                                                                        | `500MiB`                |
-| `log_startup_read_max_streams`            | Nombre maximal de fichiers de changelog lus simultanément au démarrage de Keeper. `0` = utiliser automatiquement le nombre de cœurs CPU. `1` = utiliser la lecture de démarrage sérielle (pré-parallèle). Le parallélisme effectif est limité par le nombre de fichiers de changelog à lire ; envisagez de le réduire sur les stockages limités par les seek (HDD, volumes limités en IOPS). | `0`                     |
+| `log_startup_read_max_streams`            | Nombre maximal de fichiers de changelog lus simultanément au démarrage de Keeper. `0` = utiliser automatiquement le nombre de cœurs CPU. `1` = utiliser la lecture de démarrage sérielle (pré-parallèle). Le parallélisme effectif est limité par le nombre de fichiers de changelog à lire ; envisagez de le réduire sur les stockages limités par les seek (HDD, volumes limités en IOPS). | `0`                     |
 | `log_startup_read_buffer_size`            | Taille du read buffer par stream (octets) utilisée lors de la lecture des changelogs au démarrage de Keeper. Doit être supérieure à `0`. Le buffer est également limité à la taille du fichier.                                                                                                                                                                                              | `8MiB`                  |
 | `disk_move_retries_wait_ms`               | Durée d’attente entre les retries après un échec survenu lors du déplacement d’un fichier entre des disks                                                                                                                                                                                                                                                                                    | `1000`                  |
 | `disk_move_retries_during_init`           | Nombre de retries après un échec survenu lors du déplacement d’un fichier entre des disks pendant l’initialisation                                                                                                                                                                                                                                                                           | `100`                   |
@@ -163,7 +163,7 @@ Des exemples de configuration pour un quorum à trois nœuds sont disponibles da
 ```
 
 <div id="how-to-run">
-  ### Comment l’exécuter
+  ### Comment l’exécuter {#how-to-run}
 </div>
 
 ClickHouse Keeper est inclus dans le paquet du serveur ClickHouse ; il vous suffit d’ajouter la configuration de `<keeper_server>` à votre fichier `/etc/your_path_to_config/clickhouse-server/config.xml` et de démarrer le serveur ClickHouse comme d’habitude. Si vous souhaitez exécuter ClickHouse Keeper en mode standalone, vous pouvez le démarrer de manière similaire avec :
@@ -178,9 +178,7 @@ Si vous ne disposez pas du lien symbolique (`clickhouse-keeper`), vous pouvez le
 clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
-<div id="four-letter-word-commands">
-  ### Commandes à quatre lettres
-</div>
+### Commandes à quatre lettres {#four-letter-word-commands}
 
 ClickHouse Keeper fournit également des commandes 4lw, presque identiques à celles de ZooKeeper. Chaque commande se compose de quatre lettres, comme `mntr`, `stat`, etc. Parmi les commandes les plus utiles : `stat` fournit des informations générales sur le serveur et les clients connectés, `srvr` fournit des détails supplémentaires sur le serveur, et `cons` fournit des détails supplémentaires sur les connexions.
 
@@ -264,13 +262,13 @@ Mode: leader
 Node count: 4
 ```
 
-* `srst` : Réinitialise les statistiques du serveur. La commande affecte le résultat de `srvr`, `mntr` et `stat`.
+* `srst` : Réinitialise les statistiques du serveur. La commande affecte le résultat de `srvr`, `mntr` et `stat`.
 
 ```response
 Server stats reset.
 ```
 
-* `conf` : Affiche les détails de la configuration de service.
+* `conf` : Affiche les détails de la configuration de service.
 
 ```response
 server_id=1
@@ -300,17 +298,18 @@ quorum_reads=false
 force_sync=false
 compress_logs=true
 compress_snapshots_with_zstd_format=true
+snapshot_zstd_compression_level=3
 configuration_change_tries_count=20
 ```
 
-* `cons` : Répertorie les informations détaillées sur la connexion/session de tous les clients connectés à ce serveur. Inclut des informations sur le nombre de paquets reçus/envoyés, l’identifiant de session, les latences des opérations, la dernière opération effectuée, etc...
+* `cons` : Répertorie les informations détaillées sur la connexion/session de tous les clients connectés à ce serveur. Inclut des informations sur le nombre de paquets reçus/envoyés, l’identifiant de session, les latences des opérations, la dernière opération effectuée, etc...
 
 ```response
  192.168.1.1:52163(recved=0,sent=0,sid=0xffffffffffffffff,lop=NA,est=1636454787393,to=30000,lzxid=0xffffffffffffffff,lresp=0,llat=0,minlat=0,avglat=0,maxlat=0)
  192.168.1.1:52042(recved=9,sent=18,sid=0x0000000000000001,lop=List,est=1636454739887,to=30000,lcxid=0x0000000000000005,lzxid=0x0000000000000005,lresp=1636454739892,llat=0,minlat=0,avglat=0,maxlat=0)
 ```
 
-* `crst` : Réinitialise les statistiques de connexion et de session pour toutes les connexions.
+* `crst` : Réinitialise les statistiques de connexion et de session pour toutes les connexions.
 
 ```response
 Connection stats reset.
@@ -332,27 +331,27 @@ user.dir=/Users/JackyWoo/project/jd/clickhouse/cmake-build-debug/programs/
 user.tmp=/var/folders/b4/smbq5mfj7578f2jzwn602tt40000gn/T/
 ```
 
-* `dirs` : Affiche la taille totale des snapshots et des fichiers de log, en octets
+* `dirs` : Affiche la taille totale des snapshots et des fichiers de log, en octets
 
 ```response
 snapshot_dir_size: 0
 log_dir_size: 3875
 ```
 
-* `isro` : vérifie si le serveur est en mode lecture seule. Le serveur renvoie `ro` s’il est en mode lecture seule, ou `rw` dans le cas contraire.
+* `isro` : vérifie si le serveur est en mode lecture seule. Le serveur renvoie `ro` s’il est en mode lecture seule, ou `rw` dans le cas contraire.
 
 ```response
 rw
 ```
 
-* `wchs` : Affiche de brèves informations sur les watches du serveur.
+* `wchs` : Affiche de brèves informations sur les watches du serveur.
 
 ```response
 1 connections watching 1 paths
 Total watches:1
 ```
 
-* `wchc` : Liste les informations détaillées sur les watches du serveur, par session. Cette commande affiche une liste de sessions (connexions) avec les watches associées (chemins). Notez que, selon le nombre de watches, cette opération peut être coûteuse (et affecter les performances du serveur) ; utilisez-la avec précaution.
+* `wchc` : Liste les informations détaillées sur les watches du serveur, par session. Cette commande affiche une liste de sessions (connexions) avec les watches associées (chemins). Notez que, selon le nombre de watches, cette opération peut être coûteuse (et affecter les performances du serveur) ; utilisez-la avec précaution.
 
 ```response
 0x0000000000000001
@@ -440,7 +439,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="http-control">
-  ### Contrôle HTTP
+  ### Contrôle HTTP {#http-control}
 </div>
 
 ClickHouse Keeper fournit une interface HTTP permettant de vérifier si une réplique est prête à recevoir du trafic. Elle peut être utilisée dans des environnements cloud, comme [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
@@ -461,7 +460,7 @@ Exemple de configuration activant le point de terminaison `/ready` :
 ```
 
 <div id="feature-flags">
-  ### Feature flags
+  ### Feature flags {#feature-flags}
 </div>
 
 Keeper est entièrement compatible avec ZooKeeper et ses clients, mais il introduit également certaines fonctionnalités et certains types de requêtes spécifiques qui peuvent être utilisés par le client ClickHouse.
@@ -498,13 +497,13 @@ Les fonctionnalités suivantes sont disponibles :
 </Note>
 
 <div id="migration-from-zookeeper">
-  ### Migration depuis ZooKeeper
+  ### Migration depuis ZooKeeper {#migration-from-zookeeper}
 </div>
 
 Une migration fluide de ZooKeeper vers ClickHouse Keeper n&#39;est pas possible. Vous devez arrêter votre cluster ZooKeeper, convertir les données, puis démarrer ClickHouse Keeper. L&#39;outil `clickhouse-keeper-converter` convertit les logs et snapshots ZooKeeper en un snapshot ClickHouse Keeper. Il nécessite ZooKeeper 3.4 ou une version ultérieure.
 
 <div id="pre-migration-preparation">
-  #### Préparation avant la migration
+  #### Préparation avant la migration {#pre-migration-preparation}
 </div>
 
 La migration nécessite d’interrompre l’ingestion des données. Prévoyez une fenêtre de maintenance avant de commencer.
@@ -517,9 +516,7 @@ SYSTEM STOP MERGES;
 
 Consignez des métriques de comparaison avant la migration afin de pouvoir vérifier la cohérence ensuite.
 
-<div id="migration-steps">
-  #### Étapes de la migration
-</div>
+#### Étapes de la migration {#migration-steps}
 
 1. Arrêtez l’ingestion de données sur tous les nœuds ClickHouse.
 
@@ -549,7 +546,7 @@ clickhouse-keeper-converter \
 10. Reprenez les tâches en arrière-plan et redémarrez l’ingestion des données.
 
 <div id="consolidating-multiple-zookeeper-clusters">
-  #### Consolidation de plusieurs clusters ZooKeeper
+  #### Consolidation de plusieurs clusters ZooKeeper {#consolidating-multiple-zookeeper-clusters}
 </div>
 
 Si vous exécutez plusieurs clusters ZooKeeper — par exemple, un par groupe de shards — vous pouvez les consolider en un seul cluster ClickHouse Keeper. L’outil officiel `clickhouse-keeper-converter` ne prend en charge que les conversions un à un (un cluster ZooKeeper vers un snapshot Keeper) ; la consolidation exige donc de modifier le code source du convertisseur pour fusionner plusieurs snapshots :
@@ -559,7 +556,7 @@ Si vous exécutez plusieurs clusters ZooKeeper — par exemple, un par groupe de
 3. Écrivez la sortie fusionnée dans le répertoire cible des snapshots ClickHouse Keeper.
 
 <div id="handling-encryption-and-acls">
-  #### Gestion du chiffrement et des ACL
+  #### Gestion du chiffrement et des ACL {#handling-encryption-and-acls}
 </div>
 
 ClickHouse Keeper prend en charge les mêmes schémas d’ACL que ZooKeeper (`world`, `auth`, `digest`). La façon de gérer les ACL pendant la conversion dépend de votre configuration ZooKeeper :
@@ -568,7 +565,7 @@ ClickHouse Keeper prend en charge les mêmes schémas d’ACL que ZooKeeper (`wo
 * **Partiellement chiffré** : avant la conversion, accordez des privilèges de super-administrateur à un compte, puis supprimez les ACL avec `setAcl -R` sur les chemins concernés. Convertissez, puis réactivez le chiffrement dans ClickHouse Keeper si nécessaire.
 
 <div id="verifying-the-migration">
-  #### Vérification de la migration
+  #### Vérification de la migration {#verifying-the-migration}
 </div>
 
 Après avoir démarré ClickHouse Keeper et redémarré ClickHouse, comparez vos métriques clés au niveau de référence d’avant la migration pour confirmer que celle-ci a réussi.
@@ -581,22 +578,23 @@ Lors de la consolidation de plusieurs clusters ZooKeeper, faites la distinction 
 Évitez de parcourir directement de grands arbres ZooKeeper pour les comparer. À la place, écrivez tous les chemins convertis dans un fichier pendant la conversion.
 
 <div id="post-migration-tuning">
-  #### Ajustements après migration
+  #### Ajustements après migration {#post-migration-tuning}
 </div>
 
-Après la migration, pensez à ajuster ces paramètres pour les clusters de plus grande taille ou un débit plus élevé :
+Après la migration, pensez à ajuster ces paramètres pour les clusters de plus grande taille ou un débit plus élevé :
 
-| Paramètre                             | Par défaut | Recommandé | Notes                                                                                        |
-| ------------------------------------- | ---------- | ---------- | -------------------------------------------------------------------------------------------- |
-| `max_requests_batch_size`             | `100`      | `10000`    | Augmentez cette valeur pour les clusters avec un nombre élevé de parts ou de nombreux shards |
-| `force_sync`                          | `true`     | `false`    | Les écritures de logs asynchrones améliorent le débit                                        |
-| `compress_logs`                       | `false`    | `true`     | Compresse les fichiers de log Raft afin de réduire les E/S disque                            |
-| `compress_snapshots_with_zstd_format` | `true`     | —          | Déjà activé par défaut ; compresse les instantanés avec zstd                                 |
+| Paramètre                             | Par défaut | Recommandé | Notes                                                                                                                          |
+| ------------------------------------- | ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `max_requests_batch_size`             | `100`      | `10000`    | Augmentez cette valeur pour les clusters avec un nombre élevé de parts ou de nombreux shards                                   |
+| `force_sync`                          | `true`     | `false`    | Les écritures de logs asynchrones améliorent le débit                                                                          |
+| `compress_logs`                       | `false`    | `true`     | Compresse les fichiers de log Raft afin de réduire les E/S disque                                                              |
+| `compress_snapshots_with_zstd_format` | `true`     | —          | Déjà activé par défaut ; compresse les snapshots avec zstd                                                                     |
+| `snapshot_zstd_compression_level`     | `3`        | —          | Des valeurs plus faibles réduisent le CPU consacré à la compression des snapshots, au prix de snapshots plus volumineux       |
 
 Ces paramètres se configurent sous `coordination_settings` dans votre [configuration de Keeper](#internal-coordination-settings).
 
 <div id="recovering-after-losing-quorum">
-  ### Récupération après la perte du quorum
+  ### Récupération après la perte du quorum {#recovering-after-losing-quorum}
 </div>
 
 Comme ClickHouse Keeper utilise Raft, il peut tolérer un certain nombre de pannes de nœuds en fonction de la taille du cluster.
@@ -625,7 +623,7 @@ Une fois ces points vérifiés, vous devez procéder comme suit :
 7. Une fois le quorum atteint, le nœud leader reviendra à un fonctionnement normal et acceptera toutes les requêtes via Raft ; vérifiez-le avec `mntr`, qui doit renvoyer `leader` pour `zk_server_state`.
 
 <div id="using-disks-with-keeper">
-  ## Utiliser des disques avec Keeper
+  ## Utiliser des disques avec Keeper {#using-disks-with-keeper}
 </div>
 
 Keeper prend en charge un sous-ensemble des [disques externes](/fr/concepts/features/configuration/server-config/storing-data) pour stocker les snapshot, les fichier de log et le fichier d&#39;état.
@@ -706,7 +704,7 @@ Cette instance stockera tous les logs, sauf les plus récents, sur le disque `lo
 La même logique s&#39;applique aux snapshot : tous les snapshot, sauf les plus récents, seront stockés sur le disque `snapshot_s3_plain`, tandis que le snapshot le plus récent sera stocké sur le disque `snapshot_local`.
 
 <div id="changing-disk-setup">
-  ### Modifier la configuration des disques
+  ### Modifier la configuration des disques {#changing-disk-setup}
 </div>
 
 <Warning>
@@ -737,9 +735,7 @@ La configuration suivante montre comment passer de la précédente configuration
 Au démarrage, tous les fichiers de log seront déplacés depuis `log_local` et `log_s3_plain` vers le disque `log_local2`.
 De même, tous les fichiers d’instantané seront déplacés depuis `snapshot_local` et `snapshot_s3_plain` vers le disque `snapshot_local2`.
 
-<div id="configuring-logs-cache">
-  ## Configuration du cache des logs
-</div>
+## Configuration du cache des logs {#configuring-logs-cache}
 
 Afin de minimiser la quantité de données lues sur le disque, Keeper met les entrées de journal en cache en mémoire.
 Si les requêtes sont volumineuses, les entrées de journal consomment trop de mémoire ; le volume de logs mis en cache est donc plafonné.
@@ -766,7 +762,7 @@ côté pair.
 </Note>
 
 <div id="prometheus">
-  ## Prometheus
+  ## Prometheus {#prometheus}
 </div>
 
 Keeper peut exposer des métriques pour leur collecte par [Prometheus](https://prometheus.io).
@@ -805,7 +801,7 @@ curl 127.0.0.1:9363/metrics
 Voir aussi l’[intégration Prometheus de ClickHouse Cloud](/fr/products/cloud/features/monitoring/prometheus).
 
 <div id="clickhouse-keeper-user-guide">
-  ## Guide d’utilisation de ClickHouse Keeper
+  ## Guide d’utilisation de ClickHouse Keeper {#clickhouse-keeper-user-guide}
 </div>
 
 Ce guide présente une configuration simple et minimale de ClickHouse Keeper, ainsi qu’un exemple montrant comment tester des opérations distribuées. Cet exemple s’appuie sur 3 nœuds sous Linux.
@@ -1072,19 +1068,19 @@ Ce guide présente une configuration simple et minimale de ClickHouse Keeper, ai
 </Steps>
 
 <div id="summary">
-  ### Résumé
+  ### Résumé {#summary}
 </div>
 
 Ce guide a montré comment configurer un cluster à l’aide de ClickHouse Keeper. Avec ClickHouse Keeper, vous pouvez configurer des clusters et définir des tables distribuées qui peuvent être répliquées sur plusieurs shards.
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## Configuration de ClickHouse Keeper avec des chemins uniques
+  ## Configuration de ClickHouse Keeper avec des chemins uniques {#configuring-clickhouse-keeper-with-unique-paths}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Description
+  ### Description {#description}
 </div>
 
 Cet article explique comment utiliser la macro intégrée `{uuid}`
@@ -1095,7 +1091,7 @@ supprime les entrées de chemin, puisque chaque fois qu&#39;un chemin est créé
 dans ce chemin ; les chemins ne sont jamais réutilisés.
 
 <div id="example-environment">
-  ### Environnement d’exemple
+  ### Environnement d’exemple {#example-environment}
 </div>
 
 Un cluster à trois nœuds, configuré avec ClickHouse Keeper
@@ -1135,7 +1131,7 @@ Exemple de configuration du cluster :
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### Procédures pour configurer les tables afin d’utiliser `{uuid}`
+  ### Procédures pour configurer les tables afin d’utiliser `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
 </div>
 
 1. Configurez les macros sur chaque serveur
@@ -1229,7 +1225,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### Test
+  ### Test {#testing}
 </div>
 
 1. Insérez des données dans le premier nœud (par exemple `chnode1`)
@@ -1293,7 +1289,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### Alternatives
+  ### Alternatives {#alternatives}
 </div>
 
 Le chemin de réplication par défaut peut être défini à l’avance à l’aide de macros, en utilisant également `{uuid}`
@@ -1361,7 +1357,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### Dépannage
+  ### Dépannage {#troubleshooting}
 </div>
 
 Exemple de commande pour obtenir des informations sur la table et son UUID :
@@ -1408,13 +1404,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## Reconfiguration dynamique de ClickHouse Keeper
+  ## Reconfiguration dynamique de ClickHouse Keeper {#reconfiguration}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Description
+  ### Description {#description-1}
 </div>
 
 ClickHouse Keeper prend en charge partiellement la commande ZooKeeper [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
@@ -1505,7 +1501,7 @@ Il existe quelques points à connaître concernant l&#39;implémentation de la r
   a été appliquée.
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## Conversion d’un Keeper mono-nœud en cluster
+  ## Conversion d’un Keeper mono-nœud en cluster {#converting-a-single-node-keeper-into-a-cluster}
 </div>
 
 Il est parfois nécessaire d’étendre un nœud Keeper expérimental pour en faire un cluster. Voici la procédure à suivre, étape par étape, pour un cluster de 3 nœuds :
@@ -1521,7 +1517,7 @@ Il est parfois nécessaire d’étendre un nœud Keeper expérimental pour en fa
 Pour vous familiariser avec le processus, consultez ce [dépôt sandbox](https://github.com/ClickHouse/keeper-extend-cluster).
 
 <div id="unsupported-features">
-  ## Fonctionnalités non prises en charge
+  ## Fonctionnalités non prises en charge {#unsupported-features}
 </div>
 
 Bien que ClickHouse Keeper vise une compatibilité totale avec ZooKeeper, certaines fonctionnalités ne sont pas encore implémentées (même si leur développement est en cours) :
