@@ -101,7 +101,6 @@ public:
     Float64 getFloat64(size_t n) const final;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) final;
-    void skipSerializedInArena(ReadBuffer & in) const final;
     void updateHashWithValue(size_t n, SipHash & hash) const final;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const final;
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const final;
