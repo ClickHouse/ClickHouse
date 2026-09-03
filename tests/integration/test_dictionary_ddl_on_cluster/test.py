@@ -113,7 +113,7 @@ def test_dictionary_ddl_on_cluster(started_cluster):
     for num, node in enumerate([ch1, ch2, ch3, ch4]):
         node.query("ALTER TABLE sometbl UPDATE value = 'new_key' WHERE 1")
 
-    ch1.query("SYSTEM RELOAD DICTIONARY ON CLUSTER 'cluster' `default.somedict`")
+    ch1.query("SYSTEM RELOAD DICTIONARY ON CLUSTER 'cluster' default.somedict")
 
     for num, node in enumerate([ch1, ch2, ch3, ch4]):
         assert (
