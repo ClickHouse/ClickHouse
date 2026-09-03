@@ -168,8 +168,8 @@ Egress to the public internet leaves your BYOC network through a small, fixed se
 
 | Listener | Ports | Source | Purpose | Your controls |
 | --- | --- | --- | --- | --- |
-| Public client ingress load balancer (on by default) | TCP 8443 (HTTPS interface) and 9440 (native protocol over TLS); 443 also routes to the HTTPS interface | Your ClickHouse clients | Query traffic. TLS terminates at the Istio ingress gateway inside your own network | IP access list; can be disabled entirely once a private path is in place |
-| Private client ingress load balancer (optional) | Same ports as above | Networks you nominate | Query traffic from peered networks | Source-range allowlist you control |
+| Public client ingress load balancer (default with a ClickHouse-managed VPC) | TCP 8443 (HTTPS interface) and 9440 (native protocol over TLS); 443 also routes to the HTTPS interface | Your ClickHouse clients | Query traffic. TLS terminates at the Istio ingress gateway inside your own network | IP access list; can be disabled entirely once a private path is in place |
+| Private client ingress load balancer (default with a customer-managed VPC) | Same ports as above | Networks you nominate | Query traffic from peered networks | Source-range allowlist you control |
 | Private endpoint service (optional) | Same ports as above | Private endpoints you create in your own account, project, or subscription | Query traffic with no internet exposure | Each endpoint must be registered with ClickHouse by its endpoint ID before it can connect — see [Connect to your BYOC service](/products/bring-your-own-cloud/configuration/connect) |
 | Kubernetes API server | TCP 443 | ClickHouse management services | Cluster management | Differs per cloud — see [Kubernetes API server exposure](#kubernetes-api-server-exposure) |
 | Tailscale peer relay (optional, off by default) | UDP 40000 | ClickHouse tailnet peers | Improves NAT traversal for the management mesh | Accepts only mutually authenticated WireGuard peers; payloads stay end-to-end encrypted |
@@ -178,7 +178,9 @@ Two ports are sometimes visible on these load balancers but are not client-facin
 
 The ingress gateway's certificate is issued by cert-manager from a public ACME certificate authority (Let's Encrypt) using DNS-01 validation, and is stored as a Kubernetes secret inside your own cluster. Traffic between the ingress gateway and the ClickHouse pods stays inside your BYOC network — see [Intra-network traffic](#intra-network-traffic).
 
-By default, ingress is publicly reachable with IP allow list filtering. You can add a private path — see [Private networking setup](/products/bring-your-own-cloud/onboarding/network) — and then disable public access. We strongly recommend configuring an [IP filter](/products/cloud/guides/security/connectivity/setting-ip-filters) in every case.
+Which of the two load balancers is enabled by default depends on your networking model. With a ClickHouse-managed VPC, each service gets the public load balancer, protected by an IP access list, and the private load balancer can be enabled alongside it. With a customer-managed VPC the defaults invert: only the private load balancer is enabled, and your services have no public ingress surface unless you add one. See [Connect to your BYOC service](/products/bring-your-own-cloud/configuration/connect).
+
+Wherever the public path is enabled, we strongly recommend configuring an [IP filter](/products/cloud/guides/security/connectivity/setting-ip-filters), and you can add a private path — see [Private networking setup](/products/bring-your-own-cloud/onboarding/network) — and then disable public access entirely. Note that IP filtering is enforced at the ingress proxy layer, so the load balancer ports may appear open in a scan while connections from unlisted sources are rejected.
 
 <Note>
 There are no other inbound listeners. In particular there is no SSH, no bastion host, and no standing administrative credential. Query traffic never traverses ClickHouse-owned infrastructure in either direction: your clients connect straight to the ingress inside your own network.
@@ -233,7 +235,7 @@ _Outbound, Public_
 
 AlertManager is configured to send alerts to ClickHouse Cloud when your ClickHouse cluster is unhealthy. BYOC alert payloads are deliberately reduced to an alert name and a service identifier.
 
-Metrics and logs themselves stay inside your BYOC network on every cloud. Metrics use a Prometheus and Thanos stack running in your cluster, with optional long-term retention in a bucket in your own account. Logs are currently written to the node volumes attached to your ClickHouse nodes; in a future update they will be written to LogHouse, a ClickHouse-based log store that also runs inside your BYOC network. ClickHouse engineers query both in place over Tailscale during support; Prometheus remote-write to ClickHouse Cloud is disabled in BYOC builds.
+The full monitoring dataset stays inside your BYOC network on every cloud. The reduced usage and health telemetry described under [Billing scraper](#billing-scraper), plus these alert payloads, are the only observability data that crosses the boundary. Metrics use a Prometheus and Thanos stack running in your cluster, with optional long-term retention in a bucket in your own account. Logs are currently written to the node volumes attached to your ClickHouse nodes; in a future update they will be written to LogHouse, a ClickHouse-based log store that also runs inside your BYOC network. ClickHouse engineers query both in place over Tailscale during support; Prometheus remote-write to ClickHouse Cloud is disabled in BYOC builds.
 
 ### Service state {#service-state}
 
