@@ -47,4 +47,8 @@ WHERE explain LIKE '%vector_similarity%';
 
 SELECT count() FROM (SELECT id FROM tab ORDER BY L2Distance(vec, [0., 2.]) LIMIT 18446744073709551615 OFFSET 1);
 
+-- `_distance` is internal to the optimization, and skipping the optimization must not turn a rejected
+-- reference into a column of zeros.
+SELECT id, _distance FROM tab ORDER BY L2Distance(vec, [0., 2.]) LIMIT 18446744073709551615 OFFSET 1; -- { serverError ILLEGAL_COLUMN }
+
 DROP TABLE tab;
