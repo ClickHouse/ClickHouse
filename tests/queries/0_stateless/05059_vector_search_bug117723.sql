@@ -5,6 +5,11 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/117723
 -- A `LIMIT` + `OFFSET` that overflows `UInt64` must not be read as a request for zero neighbours.
 
+-- The test runner can inject a `compatibility` value below 25.1, which reverts
+-- `query_plan_try_use_vector_search` to false and turns the vector search optimization off, so the
+-- first assertion below would find no index on a healthy build. Session wide.
+SET query_plan_try_use_vector_search = 1;
+
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
