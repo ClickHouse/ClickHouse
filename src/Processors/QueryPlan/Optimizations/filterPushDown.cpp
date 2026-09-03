@@ -770,12 +770,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
             /// A float key can be join-equal while bit-different: `-0.0` and `+0.0` are equal to the comparison
             /// a merge-based algorithm joins on, so a bit-sensitive predicate disagrees between the two sides.
-            /// The supertype is what the JOIN compares in, and a nested float is no different.
-            bool supertype_has_float = false;
-            auto check_float = [&](const IDataType & type) { supertype_has_float |= isFloat(type); };
-            check_float(*supertype);
-            supertype->forEachChild(check_float);
-            if (supertype_has_float)
+            /// The supertype is what the JOIN compares in, and a nested float is no different. A float inside
+            /// `Dynamic` or `JSON` is not described by the static type at all, so those are declined outright.
+            bool supertype_is_unsafe = false;
+            auto check_type = [&](const IDataType & type)
+            { supertype_is_unsafe |= isFloat(type) || isDynamic(type) || isObject(type); };
+            check_type(*supertype);
+            supertype->forEachChild(check_type);
+            if (supertype_is_unsafe)
                 return;
 
             /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return

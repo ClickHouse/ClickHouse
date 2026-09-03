@@ -316,3 +316,21 @@ SETTINGS join_algorithm = 'full_sorting_merge';
 DROP TABLE inner_af64;
 DROP TABLE inner_af32;
 
+-- `Dynamic` does not describe its runtime alternatives in the static type, so a float inside one is invisible
+-- to a walk over the type and the type is declined outright. A `Dynamic` join key is rejected unless
+-- `allow_dynamic_type_in_join_keys` is set, so the arm sets it next to the algorithm at query level.
+
+DROP TABLE IF EXISTS inner_dyn;
+DROP TABLE IF EXISTS inner_dyn_f32;
+CREATE TABLE inner_dyn     (a Dynamic) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE inner_dyn_f32 (x Float32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO inner_dyn     VALUES (toFloat32(0.0)), (toFloat32(3.5));
+INSERT INTO inner_dyn_f32 VALUES (-0.0), (3.5);
+
+SELECT 'INNER JOIN ON, cross-type equi-key with a float inside a Dynamic: result';
+SELECT l.a, r.x FROM inner_dyn AS l INNER JOIN inner_dyn_f32 AS r ON l.a = r.x
+WHERE reinterpretAsUInt32(assumeNotNull(dynamicElement(l.a, 'Float32'))) = 0 ORDER BY r.x
+SETTINGS allow_dynamic_type_in_join_keys = 1, join_algorithm = 'full_sorting_merge';
+
+DROP TABLE inner_dyn;
+DROP TABLE inner_dyn_f32;

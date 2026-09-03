@@ -70,3 +70,5 @@ LEFT JOIN ON, cross-type float equi-key: result
 0	-0
 INNER JOIN ON, cross-type equi-key with a nested float: result
 [0]	[-0]
+INNER JOIN ON, cross-type equi-key with a float inside a Dynamic: result
+0	-0
