@@ -1,0 +1,4 @@
+single field	1	9	foo
+single field	2	8	bar
+setting disabled explicitly	1	9	foo
+single argument	1	9	42
