@@ -140,6 +140,9 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_var_disc WHERE (a 
 SELECT count() FROM t_var_disc WHERE (v = 1::UInt64::Variant(Date, UInt64)) OR (v = 5::UInt64::Variant(Date, UInt64)) OR (v = 7::UInt64::Variant(Date, UInt64));
 SELECT count() FROM t_var_disc WHERE (v = 1::UInt64::Variant(Date, UInt64)) OR (v = 5::UInt64::Variant(Date, UInt64)) OR (v = 7::UInt64::Variant(Date, UInt64))
 SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+-- ... and the rewrite fires for the top-level shape too, so the row above is the rewritten form's
+-- answer and not a silent decline:
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_var_disc WHERE (v = 1::UInt64::Variant(Date, UInt64)) OR (v = 5::UInt64::Variant(Date, UInt64)) OR (v = 7::UInt64::Variant(Date, UInt64))) WHERE explain ILIKE '%function_name: in%';
 
 -- The notEquals -> NOT IN seam, whose first conjunct is false, so no row may survive. Result only: a
 -- separate change screens a Variant comparison out of that merge, and the result is correct either way.
@@ -148,6 +151,9 @@ SELECT count() FROM t_var_disc WHERE (a != [1::UInt64]::Array(Variant(Date, UInt
 -- Across a connection the literal must name the alternative's type and the Variant type, or the receiver
 -- re-infers the element type and either re-selects an alternative or refuses the conversion outright.
 SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_var_disc) WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)));
+-- A predicate pushed down into a distributed subquery is the second consumer: a bare literal there makes the shard re-infer the element type and refuse.
+SELECT count() FROM (SELECT a FROM remote('127.0.0.1', currentDatabase(), t_var_disc))
+WHERE a = [1::UInt64]::Array(Variant(Date, UInt64)) SETTINGS prefer_localhost_replica = 0;
 
 DROP TABLE t_var_disc;
 
