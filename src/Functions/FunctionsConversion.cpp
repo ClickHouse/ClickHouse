@@ -2988,11 +2988,19 @@ ColumnPtr convertObjectColumns(
     if (!assert_cast<const ColumnArray &>(*dst_shared_data).getData().empty())
         effective_max_dynamic_paths = dst_dynamic_columns.size();
 
+    /// A limit that parsing settings put on the source instance rather than on the type travels
+    /// with the data (see ColumnObject::insertRangeFrom), so the conversion must not widen it back.
+    /// Paths already materialised cannot be taken back, so the bound cannot go below their number.
+    size_t dst_max_dynamic_paths_upper_bound
+        = std::max(std::min(dst_global_max_dynamic_paths, src.getMaxDynamicPathsUpperBound()), dst_dynamic_columns.size());
+    effective_max_dynamic_paths = std::min(effective_max_dynamic_paths, dst_max_dynamic_paths_upper_bound);
+
     return ColumnObject::create(
         dst_typed_columns,
         dst_dynamic_columns,
         dst_shared_data,
         effective_max_dynamic_paths,
+        dst_max_dynamic_paths_upper_bound,
         dst_global_max_dynamic_paths,
         dst_max_dynamic_types);
 }
