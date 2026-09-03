@@ -278,7 +278,7 @@ def test_permanent_lock_quota(
 def test_multi_consumer_with_partition_affinity(kafka_cluster):
     """
     Affinity shrinks P without shrinking N, which is exactly what drives a cluster
-    into the P < R*N regime.  8 partitions, kafka_shard_count=2, two replicas per
+    into the P < R*N regime. 8 partitions, kafka_shard_count=2, two replicas per
     shard, kafka_num_consumers=4.
 
       Each shard sees P_shard = 4 and R_shard = 2  ->  node_quota = max(4/2, 1) = 2
