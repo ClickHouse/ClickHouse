@@ -216,7 +216,9 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
         /// Ensure no planner-only filters remain in the actions of the step.
         chassert(!new_actions_dag.hasPlannerOnlyFilters());
 
-        node.step = std::make_unique<ExpressionStep>(input_header, std::move(new_actions_dag));
+        auto expression_step = std::make_unique<ExpressionStep>(input_header, std::move(new_actions_dag));
+        expression_step->setStepDescription(*filter);
+        node.step = std::move(expression_step);
         return;
     }
 
@@ -233,7 +235,9 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
     /// Ensure no planner-only filters remain in the actions of the step.
     chassert(!new_actions_dag.hasPlannerOnlyFilters());
 
-    node.step = std::make_unique<FilterStep>(input_header, std::move(new_actions_dag), new_filter->result_name, /*remove_filter=*/true);
+    auto filter_step = std::make_unique<FilterStep>(input_header, std::move(new_actions_dag), new_filter->result_name, /*remove_filter=*/true);
+    filter_step->setStepDescription(*filter);
+    node.step = std::move(filter_step);
 }
 
 }

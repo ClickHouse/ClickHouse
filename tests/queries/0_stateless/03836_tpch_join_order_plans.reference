@@ -22,7 +22,7 @@ Expression (Project names)
                     JoinLogical (Broadcast HashJoin  swapped)
                       Expression (Change column names to column identifiers)
                         ReadFromMergeTree (ParallelRead default.partsupp)
-                      Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
+                      Expression ((Derived NOT NULL filter from JOIN condition + (Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection)))))
                         BroadcastExchange
                           GatherExchange
                             Aggregating
