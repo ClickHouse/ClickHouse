@@ -12,6 +12,12 @@ SELECT arrayCount(x -> 1, [1, 2, 3]) AS count, toTypeName(count) SETTINGS array_
 SELECT arrayCount(x -> 0, [1, 2, 3]) AS count, toTypeName(count);
 SELECT arrayCount(x -> 0, [1, 2, 3]) AS count, toTypeName(count) SETTINGS array_count_legacy_uint32_result = 1;
 
+-- Before version 26.9, a predicate folding to a constant false produced a constant result column even for a
+-- non-constant array (unlike every other predicate); the compatibility setting restores that as well.
+SELECT isConstant(arrayCount(x -> 0, materialize([1, 2, 3]))), isConstant(arrayCount(x -> 1, materialize([1, 2, 3])));
+SELECT isConstant(arrayCount(x -> 0, materialize([1, 2, 3]))), isConstant(arrayCount(x -> 1, materialize([1, 2, 3]))) SETTINGS array_count_legacy_uint32_result = 1;
+SELECT isConstant(arrayCount(x -> 0, materialize([1, 2, 3]))), isConstant(arrayCount(x -> 1, materialize([1, 2, 3]))) SETTINGS compatibility = '26.8';
+
 -- The `compatibility` setting restores the legacy type.
 SELECT arrayCount(x -> (x % 2), materialize([1, 2, 3])) AS count, toTypeName(count) SETTINGS compatibility = '26.8';
 
