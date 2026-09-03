@@ -46,3 +46,6 @@ ACCESS_DENIED
 ACCESS_DENIED
 granted user can create
 granted user can drop
+--- a renamed table stops showing in system.hypothetical_projections ---
+visible:	1
+after rename:	0

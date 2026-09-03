@@ -150,4 +150,23 @@ $CLICKHOUSE_CLIENT --user "${user}" -q "CREATE HYPOTHETICAL PROJECTION p_priv ON
 $CLICKHOUSE_CLIENT --user "${user}" -q "DROP HYPOTHETICAL PROJECTION IF EXISTS p_priv ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_ddl; SELECT 'granted user can drop';" 2>&1 | grep -m1 -oE 'granted user can drop|ACCESS_DENIED'
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user};"
 
+# the entry outlives the grants it was made under, so the system table must re-check visibility
+echo "--- a renamed table stops showing in system.hypothetical_projections ---"
+vis_user="u2_05024_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_hypo_proj_vis;
+    CREATE TABLE t_hypo_proj_vis (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    DROP USER IF EXISTS ${vis_user};
+    CREATE USER ${vis_user} NOT IDENTIFIED;
+    GRANT ALTER ADD PROJECTION, SHOW TABLES ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_vis TO ${vis_user};
+    GRANT SELECT ON system.hypothetical_projections TO ${vis_user};
+"
+vis_url="${CLICKHOUSE_URL}&user=${vis_user}&session_id=${CLICKHOUSE_DATABASE}_vis&session_timeout=600"
+${CLICKHOUSE_CURL} -sS "${vis_url}" --data-binary "CREATE HYPOTHETICAL PROJECTION p_vis ON ${CLICKHOUSE_DATABASE}.t_hypo_proj_vis (SELECT a, b ORDER BY b)"
+${CLICKHOUSE_CURL} -sS "${vis_url}" --data-binary "SELECT 'visible:', count() FROM system.hypothetical_projections WHERE name = 'p_vis'"
+$CLICKHOUSE_CLIENT -q "RENAME TABLE t_hypo_proj_vis TO t_hypo_proj_vis_hidden;"
+${CLICKHOUSE_CURL} -sS "${vis_url}" --data-binary "SELECT 'after rename:', count() FROM system.hypothetical_projections WHERE name = 'p_vis'"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${vis_user}; DROP TABLE IF EXISTS t_hypo_proj_vis_hidden;"
+
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_ddl; DROP TABLE IF EXISTS t_hypo_proj_log; DROP TABLE IF EXISTS t_hypo_proj_drift; DROP TABLE IF EXISTS t_hypo_proj_co;"
