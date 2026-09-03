@@ -580,7 +580,6 @@ class CommitStatusCheck:
         return Result.from_file("/tmp/result_sync_pr.json")
 
 
-issues_created = 0
 ci_start_time = None
 create_infrastructure_issue = False
 
@@ -909,18 +908,13 @@ def main():
     global ci_start_time
     ci_start_time = workflow_result.start_time
 
-    known_failures, unknown_failures, not_finished_jobs, new_issues_count = (
-        process_workflow_failures(
-            workflow_result,
-            PUBLIC_REPO,
-            pr_number,
-            head_sha,
-            allow_infra_issues=create_infrastructure_issue,
-        )
+    known_failures, unknown_failures, not_finished_jobs, _ = process_workflow_failures(
+        workflow_result,
+        PUBLIC_REPO,
+        pr_number,
+        head_sha,
+        allow_infra_issues=create_infrastructure_issue,
     )
-    pre_existing_issues_count = len(known_failures) - new_issues_count
-    global issues_created
-    issues_created += new_issues_count
 
     print_failure_summary(known_failures, unknown_failures, not_finished_jobs)
 
@@ -999,8 +993,7 @@ def main():
     question = "CI status:\n"
     if (
         unknown_failures
-        or issues_created > 0
-        or pre_existing_issues_count > 0
+        or known_failures
         or sync_known_failures
         or sync_unknown_failures
     ):
