@@ -289,17 +289,7 @@ The ClickHouse workload is in public preview. The limitations below are the curr
 
 **Resolution:** Confirm you are a member of the workspace with the right role. Role changes take effect the next time you open a ClickHouse item.
 
-### A sync fails partway or will not start {#a-sync-fails-partway-or-will-not-start}
 
-**Cause:** In trial organizations, OneLake reads use a token tied to the signed-in user. If it expires mid-sync, the sync fails.
-
-**Resolution:** Re-authenticate and run the sync again.
-
-### Item is stuck on "Setting up ClickHouse" or errors after previously working {#item-is-stuck-or-errors-after-previously-working}
-
-**Cause:** The underlying service was deleted directly in the ClickHouse Cloud console, which orphans the Fabric item. As noted in [known limitations](#service-management), this is unrecoverable.
-
-**Resolution:** Manage the item's lifecycle from Fabric. If the service was already deleted, create a new ClickHouse item.
 
 ## Reference {#reference}
 
