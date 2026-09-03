@@ -267,7 +267,12 @@ static void incrementAllocationWithoutCheck(Int64 size) noexcept
     }
 }
 
-AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker, double _sample_probability)
+AllocationTrace MemoryTracker::allocImpl(
+    Int64 size,
+    bool enforce_memory_limit,
+    MemoryTracker * query_tracker,
+    double _sample_probability,
+    bool enable_profiler)
 {
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
@@ -296,7 +301,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         if (auto * loaded_next = parent.load(std::memory_order_acquire))
         {
             MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
-            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
+            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability, enable_profiler);
         }
 
         return AllocationTrace(_sample_probability);
@@ -482,7 +487,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
         try
         {
-            allocation_trace = loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
+            allocation_trace = loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability, enable_profiler);
         }
         catch (...)
         {
@@ -491,7 +496,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         }
     }
 
-    commitAllocation(size, will_be, memory_limit_exceeded_ignored, enforce_memory_limit);
+    commitAllocation(size, will_be, memory_limit_exceeded_ignored, enforce_memory_limit, enable_profiler);
     return allocation_trace;
 }
 
@@ -528,11 +533,16 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
     return accounted_size;
 }
 
-void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept
+void MemoryTracker::commitAllocation(
+    Int64 size,
+    Int64 will_be,
+    bool memory_limit_exceeded_ignored,
+    bool enforce_memory_limit,
+    bool enable_profiler) noexcept
 {
     const auto current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
     bool allocation_traced = false;
-    if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
+    if (enable_profiler && unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
         DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {
@@ -700,13 +710,17 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 
 OvercommitRatio MemoryTracker::getOvercommitRatio()
 {
-    return { amount.load(std::memory_order_relaxed), soft_limit.load(std::memory_order_relaxed) };
+    return
+    {
+        amount.load(std::memory_order_relaxed),
+        soft_limit.load(std::memory_order_relaxed)
+    };
 }
 
 
 OvercommitRatio MemoryTracker::getOvercommitRatio(Int64 limit)
 {
-    return { amount.load(std::memory_order_relaxed), limit };
+    return { amount.load(std::memory_order_relaxed) + speculative_reservations.load(std::memory_order_relaxed), limit };
 }
 
 
@@ -736,20 +750,29 @@ void MemoryTracker::reset()
 }
 
 
+std::atomic<Int64> MemoryTracker::global_speculative_reservations = 0;
+
 void MemoryTracker::updateRSS(Int64 rss_)
 {
-    total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
+    /// Live speculative reservations are not backed by allocations, so they are not part
+    /// of the measured resident memory; add them back to keep the counter an upper bound.
+    total_memory_tracker.rss.store(
+        rss_ + global_speculative_reservations.load(std::memory_order_relaxed), std::memory_order_relaxed);
 }
 
 void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
 {
-    Int64 new_amount = allocated_;
+    /// Live speculative reservations (`CurrentMemoryTracker::allocGlobal`) are not backed
+    /// by allocations, so they are not part of the externally measured `allocated_`.
+    /// Add them back, otherwise the paired `freeGlobal` would push the corrected amount
+    /// below the actual memory usage.
+    Int64 new_amount = allocated_ + global_speculative_reservations.load(std::memory_order_relaxed);
     if (log_change)
         LOG_INFO(
             getLogger("MemoryTracker"),
             "Correcting the value of global memory tracker from {} to {}",
             ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
-            ReadableSize(allocated_));
+            ReadableSize(new_amount));
 
     auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
     total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);

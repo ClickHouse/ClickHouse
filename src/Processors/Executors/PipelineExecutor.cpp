@@ -1,5 +1,7 @@
+#include <atomic>
 #include <memory>
 #include <IO/WriteBufferFromString.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
@@ -49,6 +51,89 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
+    /// Speculatively reserves `additional_memory_tracking_per_thread` on the server-wide
+    /// memory tracker for the lifetime of a pipeline worker. Each thread accumulates up to
+    /// `max_untracked_memory` of allocations before reporting them to its tracker chain,
+    /// so with many threads the server's tracked memory under-counts actual consumption;
+    /// the reservation restores a safe upper bound at the server level.
+    ///
+    /// The reservation is deliberately charged on the total (server-wide) tracker only and
+    /// not through the current thread's tracker chain: query-level and user-level accounting
+    /// must stay exact, because heuristics compare query memory deltas against byte
+    /// thresholds — e.g. the `Aggregator` conversion to two-level hash tables
+    /// (`group_by_two_level_threshold_bytes`) and spill-to-disk decisions. Phantom
+    /// reservations of `num_threads * 4 MiB` would trip those thresholds immediately and
+    /// were observed as slowdowns of small GROUP BY queries in performance tests.
+    ///
+    /// The constructor may throw `MEMORY_LIMIT_EXCEEDED` (the throwing path is intentional);
+    /// it must be invoked inside the worker's `try` block so the error propagates through
+    /// the pipeline like any other job failure.
+    ///
+    /// The reservation state is kept in the guard object rather than in the thread-local
+    /// block: a nested guard only needs the *depth* to know that an outer scope already
+    /// reserved, and the release may run on a different thread than the reservation (see
+    /// `CurrentMemoryTracker::allocGlobal`), in which case a destructor reading the
+    /// current thread's block would underflow that thread's depth and release a
+    /// reservation the thread never took. Each guard therefore remembers the depth
+    /// counter it incremented and decrements exactly that one; the counter is atomic
+    /// because it can be reached from more than one thread for the same reason.
+    struct SpeculativeMemoryReservationDepth
+    {
+        std::atomic<size_t> value{0};
+    };
+
+    thread_local SpeculativeMemoryReservationDepth speculative_memory_reservation_depth;
+
+    struct SpeculativeMemoryReservation
+    {
+        SpeculativeMemoryReservation()
+        {
+            auto & depth = speculative_memory_reservation_depth;
+
+            /// A nested executor driven on this thread shares the outermost reservation,
+            /// because it also shares that thread's single untracked-memory buffer.
+            if (depth.value.load(std::memory_order_relaxed) == 0)
+            {
+                const Int64 requested = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
+                if (requested > 0)
+                {
+                    /// May throw `MEMORY_LIMIT_EXCEEDED`. Nothing has been modified yet,
+                    /// so a throw leaves no state to unwind.
+                    credited_query_tracker = CurrentMemoryTracker::allocGlobal(requested);
+                    size = requested;
+                }
+            }
+
+            depth.value.fetch_add(1, std::memory_order_relaxed);
+            owner_depth = &depth;
+        }
+
+        ~SpeculativeMemoryReservation()
+        {
+            chassert(owner_depth->value.load(std::memory_order_relaxed) > 0);
+            owner_depth->value.fetch_sub(1, std::memory_order_relaxed);
+
+            if (size > 0)
+                CurrentMemoryTracker::freeGlobal(size, credited_query_tracker);
+        }
+
+        SpeculativeMemoryReservation(const SpeculativeMemoryReservation &) = delete;
+        SpeculativeMemoryReservation & operator=(const SpeculativeMemoryReservation &) = delete;
+
+        /// Only the guard that took the reservation, i.e. the outermost scope on its
+        /// thread, flushes the thread's untracked memory before releasing it.
+        bool shouldFlushUntrackedMemory() const { return size > 0; }
+
+    private:
+        Int64 size = 0;
+        MemoryTracker * credited_query_tracker = nullptr;
+        SpeculativeMemoryReservationDepth * owner_depth = nullptr;
+    };
+}
+
 // Class helping a thread to deal with acquired workload resources
 struct WorkloadResources
 {
@@ -252,6 +337,16 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
             return true;
     }
 
+    /// A step-driven executor runs this job on its caller. The per-thread guard shares one
+    /// reservation between nested executors on that caller, because they also share one
+    /// untracked-memory buffer. Flush it before releasing the outermost reservation,
+    /// including on an exception, so the server-wide tracker never loses both the
+    /// speculative charge and the caller's deferred allocations.
+    SpeculativeMemoryReservation speculative_memory_reservation;
+    SCOPE_EXIT({
+        if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+            CurrentThread::flushUntrackedMemory();
+    });
     executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
 
     if (!tasks.isFinished())
@@ -689,6 +784,15 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 
             try
             {
+                /// If the reservation does not fit the server memory limit, the surrounding
+                /// `catch` propagates `MEMORY_LIMIT_EXCEEDED` through the pipeline
+                /// (calling `finish()` so consumers unblock).
+                SpeculativeMemoryReservation speculative_memory_reservation;
+                SCOPE_EXIT({
+                    if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+                        CurrentThread::flushUntrackedMemory();
+                });
+
                 executeSingleThread(thread_num, WorkloadResources(my_slot.get(), process_list_element));
             }
             catch (...)
@@ -719,13 +823,39 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
                 // Start at least one thread, could block to acquire the first CPU slot
                 spawnThreads(cpu_slots->acquire());
             }
-            tasks.processAsyncTasks();
+
+            {
+                /// The calling thread is not idle while the spawned workers run: it executes
+                /// `IProcessor::onAsyncJobReady` callbacks (e.g. `RemoteSource` handling
+                /// parallel-replica control packets), so it accumulates its own
+                /// `max_untracked_memory` buffer and has to carry a reservation too.
+                SpeculativeMemoryReservation speculative_memory_reservation;
+                SCOPE_EXIT({
+                    if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+                        CurrentThread::flushUntrackedMemory();
+                });
+
+                tasks.processAsyncTasks();
+            }
+
             pool->wait();
         }
         else
         {
             auto slot = cpu_slots->acquire();
             tasks.upscale(slot->slot_id);
+
+            /// In single-threaded execution the calling thread is the only pipeline worker,
+            /// so it carries the speculative reservation itself. In multi-threaded execution
+            /// each spawned worker job carries its own (see `spawnThreads`) and the calling
+            /// thread carries one while it processes async-job callbacks. A throw lands in the
+            /// surrounding `catch`, which cancels the pipeline and rethrows to the caller.
+            SpeculativeMemoryReservation speculative_memory_reservation;
+            SCOPE_EXIT({
+                if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+                    CurrentThread::flushUntrackedMemory();
+            });
+
             executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
         }
     }

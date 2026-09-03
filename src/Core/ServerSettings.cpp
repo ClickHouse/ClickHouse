@@ -75,6 +75,11 @@ extern const Metric BackgroundStreamingSchedulePoolSize;
 extern const Metric PointInPolygonCacheSizeLimit;
 }
 
+/// Defined in Common/ThreadPool.cpp and hot-reloaded from the server configuration.
+/// Forward-declared here (instead of including Common/ThreadPool.h) to surface the live
+/// value in `system.server_settings` without pulling the heavy header into this translation unit.
+extern std::atomic<int64_t> additional_memory_tracking_per_thread;
+
 namespace DB
 {
 
@@ -455,6 +460,22 @@ The default `merges_mutations_memory_usage_soft_limit` value is calculated as `m
 
 - [max_memory_usage](/reference/settings/session-settings/max-memory-usage#max_memory_usage)
 - [merges_mutations_memory_usage_soft_limit](/reference/settings/server-settings/settings/merges-mutations#merges_mutations_memory_usage_soft_limit)
+)", 0) \
+    DECLARE(UInt64, additional_memory_tracking_per_thread, 4 * 1024 * 1024, R"(
+The amount of memory that is speculatively reserved on the server-wide `MemoryTracker` on behalf of every worker thread of a pipeline executor (`PipelineExecutor`).
+
+Each thread accumulates up to `max_untracked_memory` of allocations before reporting them to the server-wide `MemoryTracker`.
+With many query threads, this unreported memory can sum to a large amount, causing the server's tracked memory usage to under-count actual memory consumption and leading to OOM.
+
+By charging this amount to the server-wide `MemoryTracker` for each active pipeline worker, the server-wide tracked memory becomes a much tighter upper bound on the actual memory consumption of in-flight queries. If a reservation would exceed the server memory limit, the corresponding query or pipeline fails with `MEMORY_LIMIT_EXCEEDED` — the same behavior as if the worker itself had allocated this amount, including the global memory overcommit logic (a failing reservation may wait for or stop the query selected by the overcommit tracker before giving up, and the overcommit victim selection ranks each query inclusive of its live reservations, the same as if they were real allocations).
+
+Each spawned pipeline worker holds one reservation for the duration of its job. In multi-threaded execution the thread that started the pipeline holds a reservation as well while it processes asynchronous job callbacks (`IProcessor::onAsyncJobReady`), because it also runs pipeline work and accumulates its own untracked-memory buffer. For step-driven executors (`PullingPipelineExecutor`, `PushingPipelineExecutor`), the calling thread holds the reservation while it drives an executor step. This avoids charging more than one reservation when one thread keeps several step-driven executors alive.
+
+The reservation itself is charged to the server-wide tracker only. Every pipeline worker flushes its pending real allocation reports before releasing its outermost reservation. Therefore, when this setting is enabled, query-level and user-level memory accounting (including `max_memory_usage`, `memory_usage` in `system.processes`, and memory-based heuristics such as the conversion of aggregation hash tables to two-level or spilling to disk) can become visible sooner while a worker yields, downscales, or completes. Setting it to `0` does not add this flush.
+
+Note: currently the reservation is taken by every thread that drives a pipeline executor. It therefore covers query pipelines as well as the pipelines of background merges and mutations (they run through `PullingPipelineExecutor`) for the purpose of server-wide accounting and limit enforcement; the reservation is not reflected in the `peak_memory_usage` reported for a merge or a mutation, which is read from the merge entry's own memory tracker. Jobs that do not run a pipeline at all, such as part fetches or asynchronous I/O jobs, are not covered yet.
+
+The value should be equal to or slightly greater than `max_untracked_memory`. The server-wide upper-bound guarantee applies only while every pipeline worker's `max_untracked_memory` is no greater than this setting; query settings can raise `max_untracked_memory`, so operators must raise this setting to match the largest permitted value. Setting it to `0` disables the speculative accounting. A value larger than the total server memory is clamped to it, because a per-thread reservation can never sensibly exceed the total RAM.
 )", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, R"(Allows to use jemalloc memory.)", 0) \
     DECLARE(Bool, use_separate_cache_arena, true, R"(
@@ -3652,6 +3673,9 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
+
+            {"additional_memory_tracking_per_thread",
+             {std::to_string(additional_memory_tracking_per_thread.load(std::memory_order_relaxed)), ChangeableWithoutRestart::Yes}},
 
             {"dns_allow_resolve_names_to_ipv4", {std::to_string(DNSResolver::instance().getFilterIPv4()), ChangeableWithoutRestart::Yes}},
             {"dns_allow_resolve_names_to_ipv6", {std::to_string(DNSResolver::instance().getFilterIPv6()), ChangeableWithoutRestart::Yes}},

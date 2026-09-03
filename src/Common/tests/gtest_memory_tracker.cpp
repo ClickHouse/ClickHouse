@@ -129,6 +129,138 @@ TEST(MemoryTracker, ParentLimitFailureRollsBackHierarchy)
     expectUsage(hierarchy, 0);
 }
 
+TEST(MemoryTracker, SpeculativeReservationRanksQueryForGlobalOvercommit)
+{
+    MemoryTracker first;
+    MemoryTracker second;
+
+    constexpr Int64 soft_limit = 128 * MB;
+    constexpr Int64 reservation = 4 * MB;
+
+    first.adjustWithUntrackedMemory(100 * MB);
+    second.adjustWithUntrackedMemory(101 * MB);
+
+    EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+
+    first.addSpeculativeReservation(reservation);
+    EXPECT_LT(second.getOvercommitRatio(soft_limit), first.getOvercommitRatio(soft_limit));
+
+    first.subSpeculativeReservation(reservation);
+    EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+}
+
+TEST(MemoryTracker, SpeculativeReservationDoesNotAffectUserOvercommit)
+{
+    MemoryTracker first;
+    MemoryTracker second;
+
+    constexpr Int64 soft_limit = 128 * MB;
+    constexpr Int64 reservation = 4 * MB;
+
+    first.setSoftLimit(soft_limit);
+    second.setSoftLimit(soft_limit);
+    first.adjustWithUntrackedMemory(100 * MB);
+    second.adjustWithUntrackedMemory(101 * MB);
+
+    first.addSpeculativeReservation(reservation);
+
+    /// Speculative reservations are charged only to the total tracker, and must not
+    /// change the victim selected when a user-level limit is exceeded.
+    EXPECT_LT(first.getOvercommitRatio(), second.getOvercommitRatio());
+}
+
+TEST(MemoryTracker, GlobalReservationUsesOutermostProcessTracker)
+{
+    MemoryTracker outer_process(&total_memory_tracker, VariableContext::Process, false);
+    MemoryTracker inner_process(&outer_process, VariableContext::Process, false);
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&inner_process);
+        thread_status.untracked_memory_limit = 0;
+
+        constexpr Int64 reservation = MB;
+        auto * credited_tracker = CurrentMemoryTracker::allocGlobal(reservation);
+        EXPECT_EQ(credited_tracker, &outer_process);
+        CurrentMemoryTracker::freeGlobal(reservation, credited_tracker);
+    }).join();
+}
+
+TEST(MemoryTracker, SpeculativeReservationSurvivesExternalCorrection)
+{
+    /// `MemoryWorker` periodically replaces the total tracker's counters with externally
+    /// measured values (`updateAllocated` from jemalloc statistics, `updateRSS` from the
+    /// resident set size). A live speculative reservation is not backed by any allocation,
+    /// so the measurement does not see it; the correction must add it back, otherwise the
+    /// paired `freeGlobal` would push the counters below the actual memory usage and the
+    /// total tracker would stop being an upper bound.
+    constexpr Int64 reservation = 16 * MB;
+    constexpr Int64 measured_amount = 300 * MB;
+    constexpr Int64 measured_rss = 320 * MB;
+
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    SCOPE_EXIT({
+        MemoryTracker::updateAllocated(amount_before, /*log_change=*/ false);
+        MemoryTracker::updateRSS(rss_before);
+    });
+
+    /// The test thread has no thread group, so the reservation is credited to no query
+    /// tracker and lands on the total tracker only.
+    auto * credited_tracker = CurrentMemoryTracker::allocGlobal(reservation);
+    EXPECT_EQ(credited_tracker, nullptr);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - (amount_before + reservation)), GLOBAL_TOLERANCE);
+
+    /// A correction tick arrives while the reservation is live: the measured values must
+    /// be raised by the reservation, not installed verbatim.
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+    MemoryTracker::updateRSS(measured_rss);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - (measured_amount + reservation)), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - (measured_rss + reservation)), GLOBAL_TOLERANCE);
+
+    /// Releasing the reservation brings the counters back to exactly the measured values.
+    CurrentMemoryTracker::freeGlobal(reservation, credited_tracker);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - measured_rss), GLOBAL_TOLERANCE);
+
+    /// With no reservation live, a correction installs the measured values verbatim.
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+    MemoryTracker::updateRSS(measured_rss);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - measured_rss), GLOBAL_TOLERANCE);
+}
+
+TEST(MemoryTracker, FailedSpeculativeReservationLeavesCorrectionUntouched)
+{
+    /// A reservation rejected by the server-wide hard limit must not linger in the
+    /// reservations counter, or every later correction would inflate the total tracker.
+    constexpr Int64 measured_amount = 300 * MB;
+
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    const Int64 hard_limit_before = total_memory_tracker.getHardLimit();
+    SCOPE_EXIT({
+        total_memory_tracker.setHardLimit(hard_limit_before);
+        MemoryTracker::updateAllocated(amount_before, /*log_change=*/ false);
+        MemoryTracker::updateRSS(rss_before);
+    });
+
+    total_memory_tracker.setHardLimit(std::max(amount_before, rss_before) + LIMIT);
+    try
+    {
+        std::ignore = CurrentMemoryTracker::allocGlobal(OVER_LIMIT);
+        FAIL() << "Expected the total memory tracker to reject the reservation of " << OVER_LIMIT;
+    }
+    catch (const DB::Exception & exception)
+    {
+        EXPECT_EQ(exception.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+}
+
 TEST(MemoryTracker, GlobalLimitFailureRollsBackAmountAndRSS)
 {
     const Int64 amount_before = total_memory_tracker.get();

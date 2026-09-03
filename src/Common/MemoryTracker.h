@@ -125,6 +125,14 @@ private:
 
         UInt64 jemalloc_flush_profile_interval_bytes = 0;
         bool jemalloc_flush_profile_on_memory_exceeded = false;
+
+        /// Sum of live speculative reservations (see `additional_memory_tracking_per_thread`)
+        /// taken by threads of this query (only used on Process-level trackers). The
+        /// Reservations are charged on the total tracker, not on `amount`, so query-level
+        /// accounting and its byte-threshold heuristics stay exact. Global overcommit uses
+        /// this counter together with `amount` to select the reserving query, while user
+        /// overcommit deliberately uses only the user-accounted `amount`.
+        std::atomic<Int64> speculative_reservations {0};
         UInt64 jemalloc_flush_profile_on_memory_exceeded_interval_s = 0;
 
         std::atomic<std::chrono::microseconds> max_wait_time;
@@ -140,7 +148,7 @@ private:
     bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
     Int64 decrementLocalUsage(Int64 size) noexcept;
-    void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
+    void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit, bool enable_profiler) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
@@ -154,7 +162,12 @@ private:
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    [[nodiscard]] AllocationTrace allocImpl(
+        Int64 size,
+        bool enforce_memory_limit,
+        MemoryTracker * query_tracker = nullptr,
+        double _sample_probability = -1.0,
+        bool enable_profiler = true);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 
@@ -299,6 +312,18 @@ public:
     OvercommitRatio getOvercommitRatio();
     OvercommitRatio getOvercommitRatio(Int64 limit);
 
+    /// Credit/uncredit a live speculative reservation to this (Process-level) tracker
+    /// so it participates in global overcommit victim ranking; see `speculative_reservations`.
+    void addSpeculativeReservation(Int64 size) noexcept
+    {
+        speculative_reservations.fetch_add(size, std::memory_order_relaxed);
+    }
+
+    void subSpeculativeReservation(Int64 size) noexcept
+    {
+        speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
+    }
+
     std::chrono::microseconds getOvercommitWaitingTime()
     {
         return max_wait_time.load(std::memory_order_relaxed);
@@ -335,6 +360,15 @@ public:
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
     static void updateAllocated(Int64 allocated_, bool log_change);
+
+    /// Sum of live speculative reservations (see `additional_memory_tracking_per_thread`)
+    /// currently charged on the total tracker via `CurrentMemoryTracker::allocGlobal`.
+    /// No actual allocation backs them, so they are invisible to external measurements
+    /// (resident memory, jemalloc stats). `updateRSS`/`updateAllocated` add this sum back
+    /// when replacing the total tracker's counters with a measured value — otherwise the
+    /// paired `CurrentMemoryTracker::freeGlobal` would push the corrected counters below
+    /// the actual memory usage, breaking the upper-bound invariant the reservations provide.
+    static std::atomic<Int64> global_speculative_reservations;
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
