@@ -46,6 +46,7 @@ public:
         size_t queue_size_,
         size_t decode_concurrency_,
         IcebergDataSnapshotPtr data_snapshot_,
+        std::function<void()> prepare_,
         CreateManifestIterator create_manifest_iterator_);
 
     ~DataFileEntriesStream();
@@ -63,6 +64,8 @@ private:
 
     const size_t decode_concurrency;
     const IcebergDataSnapshotPtr data_snapshot;
+    /// Runs on the producer thread before any decode task is scheduled.
+    const std::function<void()> prepare;
     const CreateManifestIterator create_manifest_iterator;
     ConcurrentBoundedQueue<ProcessedManifestFileEntryPtr> queue;
     mutable std::mutex exception_mutex;

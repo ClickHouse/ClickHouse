@@ -36,6 +36,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
@@ -187,9 +188,11 @@ DataFileEntriesStream::DataFileEntriesStream(
     size_t queue_size_,
     size_t decode_concurrency_,
     IcebergDataSnapshotPtr data_snapshot_,
+    std::function<void()> prepare_,
     CreateManifestIterator create_manifest_iterator_)
     : decode_concurrency(decode_concurrency_)
     , data_snapshot(std::move(data_snapshot_))
+    , prepare(std::move(prepare_))
     , create_manifest_iterator(std::move(create_manifest_iterator_))
     , queue(queue_size_)
 {
@@ -242,6 +245,12 @@ void DataFileEntriesStream::run()
 {
     if (!data_snapshot)
         return;
+
+    /// Build the filter's subquery sets here, on the producer thread, so that no decode task
+    /// runs a nested query on the pool: a nested Iceberg read would schedule its own tasks on
+    /// this same pool and could wait forever behind the task that waits for it.
+    if (prepare)
+        prepare();
 
     /// Not the IO pool: a task here can block until the query consumes the entries it has
     /// produced, while the delete manifest decode waits for its tasks on the IO pool before any
@@ -319,6 +328,11 @@ IcebergIterator::IcebergIterator(
         local_context->getSettingsRef()[Setting::iceberg_file_entries_queue_size],
         local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
         data_snapshot,
+        [this]
+        {
+            if (manifest_filter_dag)
+                VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
+        },
         [this](const ManifestFileCacheKey & manifest_list_entry, std::function<bool()> stop_condition)
         { return createManifestIterator(manifest_list_entry, std::move(stop_condition)); });
 }
@@ -401,7 +415,7 @@ void IcebergIterator::decodeDeleteManifests()
     const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency];
 
     auto decode_runner
-        = threadPoolCallbackRunnerUnsafe<ManifestEntryBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
+        = threadPoolCallbackRunnerUnsafe<ManifestEntryBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_DELETE_DECODE);
 
     std::deque<std::future<ManifestEntryBatch>> in_flight;
     /// The tasks capture `this`, so none of them may still be running when this function is left.
