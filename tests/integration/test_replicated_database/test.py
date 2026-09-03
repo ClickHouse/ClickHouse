@@ -18,6 +18,16 @@ test_recover_staled_replica_run = 1
 
 cluster = ClickHouseCluster(__file__)
 
+# `bad_settings_node` runs with implicit_transaction=1, so every query on it starts a
+# transaction, and TransactionManager refuses to start unless Keeper advertises the three
+# transaction flags. The harness randomizes flags that a test does not pin.
+KEEPER_FEATURE_FLAGS = [
+    "multi_read",
+    "create_if_not_exists",
+    "list_with_stat_and_data",
+    "filtered_list",
+]
+
 main_node = cluster.add_instance(
     "main_node",
     main_configs=["configs/config.xml"],
@@ -27,7 +37,7 @@ main_node = cluster.add_instance(
     macros={"shard": 1, "replica": 1},
     # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
     with_remote_database_disk=False,
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -36,7 +46,7 @@ dummy_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 competing_node = cluster.add_instance(
     "competing_node",
@@ -45,7 +55,7 @@ competing_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 3},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 snapshotting_node = cluster.add_instance(
     "snapshotting_node",
@@ -53,14 +63,14 @@ snapshotting_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     macros={"shard": 2, "replica": 1},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 
 all_nodes = [
@@ -77,7 +87,7 @@ bad_settings_node = cluster.add_instance(
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

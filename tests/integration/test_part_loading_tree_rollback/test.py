@@ -4,10 +4,20 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 # ZooKeeper is required: classifying a part whose `txn_version.txt` carries a transactional TID
-# reaches `TransactionLog::instance`, whose constructor calls `loadLogFromZooKeeper`
+# reaches `TransactionManager::instance`, whose constructor calls `loadLogFromZooKeeper`
 # unconditionally. No `allow_experimental_transactions` config is needed - part loading never
 # goes through `Context::checkTransactionsAreAllowed`.
-node = cluster.add_instance("node", with_zookeeper=True)
+node = cluster.add_instance(
+    "node",
+    with_zookeeper=True,
+    # That constructor also refuses to start unless Keeper advertises these three flags, and
+    # the harness randomizes any flag a test does not pin.
+    keeper_required_feature_flags=[
+        "list_with_stat_and_data",
+        "filtered_list",
+        "multi_read",
+    ],
+)
 
 # On-disk transaction metadata of a rolled-back part, byte for byte (no trailing newline).
 # `storing_version` is required: without it the old-format fallback overrides `creation_csn` with
