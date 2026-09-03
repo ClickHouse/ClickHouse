@@ -1,17 +1,60 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "はじめに",
+  "item": "Get started",
   "pages": [
     {
-      "group": "はじめに",
+      "group": "Get started",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ja/get-started/index",
-        "ja/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "クイックスタート",
+          "pages": [
+            "ja/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "すべてのユースケース",
+              "pages": [
+                "ja/get-started/setup/cloud",
+                "ja/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "ja/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "ja/get-started/quickstarts/creating-tables",
+                "ja/get-started/quickstarts/writing-queries",
+                "ja/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "リアルタイム分析",
+              "pages": [
+                "ja/get-started/quickstarts/create-your-first-materialized-view",
+                "ja/get-started/quickstarts/create-your-first-projection",
+                "ja/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "データウェアハウジング",
+              "pages": [
+                "ja/get-started/quickstarts/connect-your-iceberg-catalog",
+                "ja/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "オブザーバビリティ",
+              "pages": [
+                "ja/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
-          "group": "はじめに",
+          "group": "Introduction",
           "pages": [
             "ja/get-started/about/intro",
             "ja/get-started/about/why-clickhouse-is-so-fast",
@@ -20,7 +63,7 @@
         },
         {
           "expanded": true,
-          "group": "ユースケース",
+          "group": "Use cases",
           "pages": [
             "ja/get-started/use-cases/overview",
             "ja/get-started/use-cases/real-time-analytics",
@@ -34,18 +77,18 @@
     },
     {
       "expanded": true,
-      "group": "セットアップ",
+      "group": "Setup",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
         "ja/get-started/setup/install",
         "ja/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "セルフマネージド",
+          "group": "Self-managed",
           "pages": [
             "ja/get-started/setup/self-managed/overview",
             {
-              "group": "ローカル開発",
+              "group": "Local development",
               "pages": [
                 "ja/get-started/setup/self-managed/quick-install",
                 "ja/get-started/setup/self-managed/clickhousectl",
@@ -54,7 +97,7 @@
               ]
             },
             {
-              "group": "本番サーバー",
+              "group": "Production server",
               "pages": [
                 "ja/get-started/setup/self-managed/debian-ubuntu",
                 "ja/get-started/setup/self-managed/redhat",
@@ -68,13 +111,13 @@
     },
     {
       "expanded": true,
-      "group": "サンプルデータセット",
+      "group": "Sample datasets",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "ja/get-started/sample-datasets/index",
         "ja/get-started/sample-datasets/playground",
         {
-          "group": "ベンチマーク",
+          "group": "Benchmarks",
           "pages": [
             "ja/get-started/sample-datasets/amplab-benchmark",
             "ja/get-started/sample-datasets/brown-benchmark",
@@ -86,7 +129,7 @@
           ]
         },
         {
-          "group": "ベクトル検索と埋め込み",
+          "group": "Vector search & embeddings",
           "pages": [
             "ja/get-started/sample-datasets/dbpedia",
             "ja/get-started/sample-datasets/hacker-news-vector-search",
@@ -95,7 +138,7 @@
           ]
         },
         {
-          "group": "Web・ソーシャルアナリティクス",
+          "group": "Web & social analytics",
           "pages": [
             "ja/get-started/sample-datasets/amazon-reviews",
             "ja/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -107,7 +150,7 @@
           ]
         },
         {
-          "group": "Geo と位置情報",
+          "group": "Geo & location",
           "pages": [
             "ja/get-started/sample-datasets/cell-towers",
             "ja/get-started/sample-datasets/foursquare-os-places",
@@ -115,7 +158,7 @@
           ]
         },
         {
-          "group": "時系列とセンサー",
+          "group": "Time series & sensors",
           "pages": [
             "ja/get-started/sample-datasets/environmental-sensors",
             "ja/get-started/sample-datasets/noaa",
@@ -124,7 +167,7 @@
           ]
         },
         {
-          "group": "公的記録とオープンデータ",
+          "group": "Public records & open data",
           "pages": [
             "ja/get-started/sample-datasets/covid19",
             "ja/get-started/sample-datasets/menus",
@@ -137,7 +180,7 @@
     },
     {
       "expanded": true,
-      "group": "移行",
+      "group": "Migrate",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "ja/get-started/migrate/overview",
@@ -146,7 +189,7 @@
           "pages": [
             "ja/get-started/migrate/postgres/overview",
             {
-              "group": "移行ガイド",
+              "group": "Migration guide",
               "pages": [
                 "ja/get-started/migrate/postgres/migration-guide/migration-guide-part1",
                 "ja/get-started/migrate/postgres/migration-guide/migration-guide-part2",
@@ -187,14 +230,14 @@
           ]
         },
         {
-          "group": "OSS から Cloud への移行",
+          "group": "OSS to Cloud",
           "pages": [
             "ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "ja/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
-          "group": "その他の方法",
+          "group": "Other methods",
           "pages": [
             "ja/get-started/migrate/other-methods/clickhouse-local-etl",
             "ja/get-started/migrate/other-methods/etl-tool-to-clickhouse",
