@@ -313,9 +313,9 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             data_stream = std::move(download_response.Value.BodyStream);
             reported_object_size = static_cast<size_t>(download_response.Value.BlobSize);
 
-            /// A successful response is not a guarantee that there is a body to read: the body
-            /// stream is optional in the SDK, and everything below dereferences it. Check it here,
-            /// before the first dereference, rather than after the retry loop.
+            /// Defence in depth: the body stream is optional in the SDK, and everything below
+            /// dereferences it, starting with `data_stream->Length()` in the log event. Check it
+            /// here, before the first dereference, rather than only after the retry loop.
             if (!data_stream)
                 throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA,
                     "Null data stream obtained while downloading file {} from Blob Storage", path);
@@ -476,8 +476,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
-            /// The body stream is optional in the SDK: a successful response from a broken or
-            /// hostile endpoint can carry none, and it must not be dereferenced blindly.
+            /// Defence in depth, the same as in `initialize`: the body stream is optional in the
+            /// SDK and must not be dereferenced blindly.
             if (!body_stream)
                 throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA,
                     "Null data stream obtained while downloading file {} from Blob Storage", path);

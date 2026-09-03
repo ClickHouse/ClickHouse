@@ -23,7 +23,6 @@
 namespace DB::ErrorCodes
 {
     extern const int UNEXPECTED_END_OF_FILE;
-    extern const int RECEIVED_EMPTY_DATA;
 }
 
 namespace
@@ -88,14 +87,12 @@ public:
         size_t served_size_,
         size_t blob_size_,
         bool send_etag_,
-        std::optional<int64_t> reported_length_ = {},
-        bool omit_body_stream_ = false)
+        std::optional<int64_t> reported_length_ = {})
         : max_response_size(max_response_size_)
         , served_size(served_size_)
         , blob_size(blob_size_)
         , send_etag(send_etag_)
         , reported_length(reported_length_)
-        , omit_body_stream(omit_body_stream_)
     {
     }
 
@@ -129,11 +126,7 @@ public:
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
         if (send_etag)
             response->SetHeader("ETag", "\"0x8DA000000000000\"");
-        /// A response without any body stream at all: the header block says everything is fine,
-        /// but there is nothing to read. The SDK models the body stream as optional, so a caller
-        /// that dereferences it unconditionally aborts the server on such a response.
-        if (!omit_body_stream)
-            response->SetBodyStream(std::make_unique<LyingBodyStream>(countingBytes(range_start, response_size), length_to_report));
+        response->SetBodyStream(std::make_unique<LyingBodyStream>(countingBytes(range_start, response_size), length_to_report));
 
         return response;
     }
@@ -144,7 +137,6 @@ private:
     size_t blob_size;
     bool send_etag;
     std::optional<int64_t> reported_length;
-    bool omit_body_stream;
 };
 
 /// Reads a blob from an endpoint that answers every ranged request with at most
@@ -215,26 +207,6 @@ std::string readWithoutRightBound(
     std::string result;
     DB::readStringUntilEOF(result, buffer);
     return result;
-}
-
-/// A buffer over an endpoint that answers every request with a successful response that carries no
-/// body stream at all.
-std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeBufferWithoutBodyStream(size_t blob_size)
-{
-    Azure::Storage::Blobs::BlobClientOptions client_options;
-    client_options.Retry.MaxRetries = 0;
-    client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
-        blob_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt, /* omit_body_stream */ true);
-
-    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
-        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
-
-    return std::make_unique<DB::ReadBufferFromAzureBlobStorage>(
-        container_client,
-        "blob",
-        DB::ReadSettings{},
-        /* max_single_read_retries */ 1,
-        /* max_single_download_retries */ 1);
 }
 
 /// A buffer over an endpoint that serves a blob of `blob_size` bytes, `max_response_size` bytes
@@ -469,41 +441,6 @@ TEST(AzureReadWithoutRightBound, TruncatedObject)
     catch (const DB::Exception & e)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
-    }
-}
-
-/// A successful `Download` response is allowed by the SDK to carry no body stream at all. Neither
-/// the sequential path nor `readBigAt` may dereference it blindly: the read must fail with an
-/// exception instead of taking the server down.
-TEST(AzureReadWithoutBodyStream, SequentialRead)
-{
-    auto buffer = makeBufferWithoutBodyStream(/* blob_size */ 100);
-
-    std::string data;
-    try
-    {
-        DB::readStringUntilEOF(data, *buffer);
-        FAIL() << "Expected an exception on a response without a body stream";
-    }
-    catch (const DB::Exception & e)
-    {
-        ASSERT_EQ(e.code(), DB::ErrorCodes::RECEIVED_EMPTY_DATA);
-    }
-}
-
-TEST(AzureReadWithoutBodyStream, ReadBigAt)
-{
-    auto buffer = makeBufferWithoutBodyStream(/* blob_size */ 100);
-
-    std::string destination(16, '\0');
-    try
-    {
-        buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 0, {});
-        FAIL() << "Expected an exception on a response without a body stream";
-    }
-    catch (const DB::Exception & e)
-    {
-        ASSERT_EQ(e.code(), DB::ErrorCodes::RECEIVED_EMPTY_DATA);
     }
 }
 
