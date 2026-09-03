@@ -1549,7 +1549,7 @@ The default server configuration file `config.xml` contains the following settin
 
 Requests the creation of `all_...` tables next to the system log tables (`system.all_query_log` for `system.query_log`, `system.all_text_log` for `system.text_log`, and so on). Such a table is a union of the corresponding log table, its rotated versions (`query_log_0`, `query_log_1`, ...) and/or the same tables across all replicas of a cluster, and allows querying them all at once without remembering constructs like `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
-The section is optional. If it is present, at least one of the following settings has to be specified:
+The section is optional. The default server configuration file `config.xml` contains this section with `merge_rotated_tables` enabled, so the `all_...` tables exist out of the box; the `cluster` setting has to be configured explicitly. If the section is present, at least one of the following settings has to be specified:
 
 | Setting                | Description                                                                                                                                     |
 |------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
