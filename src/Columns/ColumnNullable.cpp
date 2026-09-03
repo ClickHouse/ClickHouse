@@ -250,15 +250,6 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
         getNestedColumn().insertDefault();
 }
 
-void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 val = 0;
-    readBinaryLittleEndian<UInt8>(val, in);
-
-    if (val == 0)
-        getNestedColumn().skipSerializedInArena(in);
-}
-
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
