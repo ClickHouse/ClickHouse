@@ -24,6 +24,47 @@ def sanitize_test_result_line(line: str) -> str:
     return line.replace("\0", "\\0").replace("\r", "")
 
 
+_TSV_INFO_ESCAPES = {
+    "0": "\0",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "\\": "\\",
+    "'": "'",
+}
+
+
+def unescape_tsv_info(text: str) -> str:
+    """Decode the `info` cell: the exact inverse of ClickHouse's `Escaped` rule.
+
+    Both producers encode with that rule — `escape_tsv_info` in Python and
+    `escaped()` in `tests/docker_scripts/stress_tests.lib`, which also
+    escapes the single quote. The pass must be single: a chain of
+    `str.replace` calls re-scans its own output, so `\\\\n` would decode
+    twice and collapse to a real LF.
+    """
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        char = text[i]
+        if char == "\\" and i + 1 < n:
+            following = text[i + 1]
+            if following in _TSV_INFO_ESCAPES:
+                out.append(_TSV_INFO_ESCAPES[following])
+            else:
+                # Outside the emitted alphabet: keep both characters.
+                out.append(char)
+                out.append(following)
+            i += 2
+            continue
+        out.append(char)
+        i += 1
+    return "".join(out)
+
+
 def read_test_results(results_path: Path, with_raw_logs: bool = True):
     """Parse the stress-job `test_results.tsv` file.
 
@@ -53,9 +94,12 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
     with open(results_path, "rb") as descriptor:
         raw = descriptor.read().decode("utf-8", errors="replace")
     lines = raw.split("\n")
+    # `"` is an ordinary character in the `Escaped` rule, so csv must not
+    # treat it as structural.
     reader = csv.reader(
         (sanitize_test_result_line(line) for line in lines),
         delimiter="\t",
+        quoting=csv.QUOTE_NONE,
     )
     for line_number, line in enumerate(reader, start=1):
         # Blank lines (typically a trailing newline at end of file, or
@@ -95,17 +139,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
             # the 4th value is a pythonic list, e.g. ['file1', 'file2']
             if with_raw_logs:
                 # Python does not support TSV, so we unescape manually.
-                # The writer (`escape_tsv_info`) emits `\\r` for CR, so
-                # unescape it here too. Without this, dpkg/apt-get
-                # progress markers in the info field would leak the
-                # literal two-character `\r` sequence into the displayed
-                # log.
-                result.set_info(
-                    line[3]
-                    .replace("\\t", "\t")
-                    .replace("\\r", "\r")
-                    .replace("\\n", "\n")
-                )
+                result.set_info(unescape_tsv_info(line[3]))
             else:
                 result.set_info(line[3])
         results.append(result)

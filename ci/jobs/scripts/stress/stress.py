@@ -37,8 +37,11 @@ def escape_tsv_info(text: str) -> str:
     # turned back into LF by universal-newlines mode at read time and
     # fragment the row. Encoding them as `\r` keeps the diagnostic
     # detail intact for the unescape pass in `read_test_results`.
+    # The backslash must be escaped first, otherwise an on-disk `\n` is
+    # ambiguous between an encoded LF and the payload's own two characters.
     return (
-        text.replace("\0", "\\0")
+        text.replace("\\", "\\\\")
+        .replace("\0", "\\0")
         .replace("\t", "\\t")
         .replace("\r", "\\r")
         .replace("\n", "\\n")
