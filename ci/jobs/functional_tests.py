@@ -1059,6 +1059,10 @@ def main():
                         build_types[0] if is_bugfix_validation else args.options
                     ),
                     step_timeout=stateful_prep_step_timeout(info),
+                    # The flaky check is the only lane that arms ThreadFuzzer. Under a
+                    # sanitizer every signal delivery takes a per-thread slot, and the
+                    # fixture load runs more threads than there are slots.
+                    stop_thread_fuzzer=is_flaky_check,
                 ):
                     print(
                         "SETUP FAILURE: "
