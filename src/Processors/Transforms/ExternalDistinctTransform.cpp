@@ -2,13 +2,17 @@
 
 #include <algorithm>
 #include <functional>
+#include <numeric>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/sortBlock.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
+#include <Processors/Transforms/MergeSortingTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/SortingTransform.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/logger_useful.h>
@@ -34,6 +38,7 @@ namespace
 {
 
 constexpr auto FLAG_COLUMN_NAME = "__distinct_already_emitted";
+constexpr auto ARRIVAL_NUMBER_COLUMN_NAME = "__distinct_arrival_number";
 
 /// A run is written only when at least this much data was accumulated (but never more than the spill
 /// threshold itself, so that tiny thresholds still spill deterministically). Without a floor, when it is
@@ -107,23 +112,75 @@ ColumnNumbers mapKeysToSpillPositions(const ColumnNumbers & key_columns_pos, con
     return spill_positions;
 }
 
-SharedHeader buildSpillHeader(const Block & header, const ColumnNumbers & spill_columns_pos)
+/// A service column only needs a name that is unique within the spill header (everything addresses it
+/// by position); a user column may legitimately be named like it, so uniquify by prepending underscores
+/// instead of failing.
+String uniqueColumnName(const Block & header, String name)
 {
-    /// The flag column only needs a name that is unique within the spill header (everything addresses
-    /// it by position); a user column may legitimately be named like the flag, so uniquify by prepending
-    /// underscores instead of failing.
-    String flag_name = FLAG_COLUMN_NAME;
-    while (header.has(flag_name))
-        flag_name = "_" + flag_name;
+    while (header.has(name))
+        name = "_" + name;
+    return name;
+}
 
+/// The spilled columns, then the arrival number column (when the input order is preserved), then the
+/// flag column.
+SharedHeader buildSpillHeader(const Block & header, const ColumnNumbers & spill_columns_pos, bool with_arrival_numbers)
+{
     Block spill_header;
     for (const auto pos : spill_columns_pos)
         spill_header.insert(header.getByPosition(pos));
 
+    if (with_arrival_numbers)
+    {
+        auto arrival_number_type = std::make_shared<DataTypeUInt64>();
+        spill_header.insert({arrival_number_type->createColumn(), arrival_number_type, uniqueColumnName(header, ARRIVAL_NUMBER_COLUMN_NAME)});
+    }
+
     auto flag_type = std::make_shared<DataTypeUInt8>();
-    spill_header.insert({flag_type->createColumn(), flag_type, flag_name});
+    spill_header.insert({flag_type->createColumn(), flag_type, uniqueColumnName(header, FLAG_COLUMN_NAME)});
     return std::make_shared<const Block>(std::move(spill_header));
 }
+
+/// The spill header without its last column (the flag): the header of the merged and deduplicated stream
+/// of the runs.
+SharedHeader buildMergedHeader(const Block & spill_header)
+{
+    Block merged_header = spill_header;
+    merged_header.erase(merged_header.columns() - 1);
+    return std::make_shared<const Block>(std::move(merged_header));
+}
+
+/// Ascending sort over the last column of the merged header, the arrival numbers.
+SortDescription buildArrivalNumberDescription(const Block & merged_header)
+{
+    SortDescription description;
+    description.emplace_back(merged_header.getByPosition(merged_header.columns() - 1).name, 1, 1);
+    return description;
+}
+
+/// Deduplicates the merged stream of the runs (see DistinctSortedFilter) and strips the flag column.
+class MergedRunsDistinctTransform final : public ISimpleTransform
+{
+public:
+    MergedRunsDistinctTransform(
+        SharedHeader input_header,
+        SharedHeader output_header,
+        ColumnNumbers key_columns_pos,
+        SortDescription description,
+        size_t flag_column_pos)
+        : ISimpleTransform(std::move(input_header), std::move(output_header), /*skip_empty_chunks_=*/ true)
+        , filter(std::move(key_columns_pos), std::move(description), flag_column_pos)
+    {
+    }
+
+    String getName() const override { return "MergedRunsDistinctTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override { chunk = filter.filter(std::move(chunk), /*strip_flag=*/ true); }
+
+private:
+    DistinctSortedFilter filter;
+};
 
 }
 
@@ -227,7 +284,8 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     size_t max_bytes_before_external_distinct_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_,
-    size_t max_block_size_rows_)
+    size_t max_block_size_rows_,
+    bool preserve_input_order_)
     : IProcessor({header_}, {header_})
     , distinct_set(*header_, columns_, set_size_limits_)
     , non_key_columns_rebuildable(nonKeyColumnsAreRebuildable(*header_, distinct_set.getKeyColumnsPositions()))
@@ -237,12 +295,14 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_size_rows(max_block_size_rows_)
+    , preserve_input_order(preserve_input_order_)
     , description(buildSortDescription(*header_, distinct_set.getKeyColumnsPositions()))
     , spill_columns_pos(calculateSpillColumnsPositions(*header_))
     , spill_key_columns_pos(mapKeysToSpillPositions(distinct_set.getKeyColumnsPositions(), spill_columns_pos))
-    , spill_header(buildSpillHeader(*header_, spill_columns_pos))
-    , run_dedup(spill_key_columns_pos, description, spill_columns_pos.size())
-    , merge_dedup(spill_key_columns_pos, description, spill_columns_pos.size())
+    , spill_header(buildSpillHeader(*header_, spill_columns_pos, preserve_input_order))
+    , merged_header(buildMergedHeader(*spill_header))
+    , arrival_number_description(preserve_input_order ? buildArrivalNumberDescription(*merged_header) : SortDescription{})
+    , run_dedup(spill_key_columns_pos, description, spill_header->columns() - 1)
 {
     chassert(max_bytes_before_external_distinct > 0);
     /// DistinctStep never uses this transform when all the distinct columns are constant.
@@ -254,6 +314,11 @@ ExternalDistinctTransform::~ExternalDistinctTransform() = default;
 bool ExternalDistinctTransform::firstRunFromExtraction() const
 {
     return non_key_columns_rebuildable && distinct_set.supportsKeyExtraction();
+}
+
+size_t ExternalDistinctTransform::minBytesInRun() const
+{
+    return std::min(max_bytes_before_external_distinct, MIN_BYTES_IN_RUN);
 }
 
 Chunk ExternalDistinctTransform::buildChunkFromKeys(MutableColumns && key_columns) const
@@ -292,6 +357,17 @@ Chunk ExternalDistinctTransform::restoreConstantColumns(Chunk chunk) const
     return Chunk(std::move(columns), num_rows);
 }
 
+Chunk ExternalDistinctTransform::dropArrivalNumbers(Chunk chunk) const
+{
+    if (!preserve_input_order)
+        return chunk;
+
+    const size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    columns.pop_back();
+    return Chunk(std::move(columns), num_rows);
+}
+
 Chunk ExternalDistinctTransform::stripConstantColumns(Chunk chunk) const
 {
     const auto & header = inputs.front().getHeader();
@@ -311,7 +387,7 @@ Chunk ExternalDistinctTransform::stripConstantColumns(Chunk chunk) const
     return Chunk(std::move(columns), num_rows);
 }
 
-Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emitted) const
+Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const
 {
     chassert(chunk.getNumColumns() == spill_columns_pos.size());
     const size_t num_rows = chunk.getNumRows();
@@ -321,10 +397,16 @@ Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emi
     convertToFullIfConst(chunk);
 
     auto columns = chunk.detachColumns();
+    if (preserve_input_order)
+    {
+        auto arrival_numbers = ColumnUInt64::create(num_rows);
+        std::iota(arrival_numbers->getData().begin(), arrival_numbers->getData().end(), first_arrival_number);
+        columns.emplace_back(std::move(arrival_numbers));
+    }
     columns.emplace_back(ColumnUInt8::create(num_rows, static_cast<UInt8>(already_emitted)));
 
-    /// sortBlock needs a Block to resolve the sort description; the flag column (equal in every row of
-    /// the chunk) just follows the permutation. The sort must be stable: the deduplication of the merged
+    /// sortBlock needs a Block to resolve the sort description; the service columns (the arrival numbers,
+    /// the flag) just follow the permutation. The sort must be stable: the deduplication of the merged
     /// runs keeps the first row of each range of equal keys, and the first row must stay the
     /// first-received one - both for the non-key columns of a row (when the DISTINCT key is a subset of
     /// the columns) and for the choice among values that compare equal but differ in the binary
@@ -345,9 +427,10 @@ void ExternalDistinctTransform::startFirstSpill()
 
     Chunks run_chunks;
     size_t run_bytes = 0;
+    /// The rows of the first run are never emitted, so their arrival numbers do not matter.
     auto add_run_chunk = [&](Chunk chunk)
     {
-        auto prepared = prepareSpillChunk(std::move(chunk), /*already_emitted=*/ true);
+        auto prepared = prepareSpillChunk(std::move(chunk), /*already_emitted=*/ true, /*first_arrival_number=*/ 0);
         run_bytes += prepared.allocatedBytes();
         run_chunks.push_back(std::move(prepared));
     };
@@ -425,8 +508,36 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
             /*apply_virtual_row_conversions=*/ false,
             /*virtual_row_prefetch_window=*/ 0,
             /*have_all_inputs_=*/ false);
-
         processors.emplace_back(external_merging_sorted);
+
+        merged_stream_processors.emplace_back(std::make_shared<MergedRunsDistinctTransform>(
+            spill_header, merged_header, spill_key_columns_pos, description, spill_header->columns() - 1));
+
+        if (preserve_input_order)
+        {
+            /// The merge returns the rows in DISTINCT-key order; sort them back by their arrival numbers:
+            /// each chunk on its own first, then a merge of the sorted chunks, which spills under the same
+            /// conditions as the runs are written. The limit hint bounds the sort: the rows it cuts off
+            /// would not be emitted anyway.
+            merged_stream_processors.emplace_back(
+                std::make_shared<PartialSortingTransform>(merged_header, arrival_number_description, limit_hint));
+            merged_stream_processors.emplace_back(std::make_shared<MergeSortingTransform>(
+                merged_header,
+                arrival_number_description,
+                max_block_size_rows,
+                /*max_block_bytes=*/ 0,
+                limit_hint,
+                /*increase_sort_description_compile_attempts=*/ false,
+                /*max_bytes_before_remerge_=*/ 0,
+                /*remerge_lowered_memory_bytes_ratio_=*/ 0.,
+                minBytesInRun(),
+                max_bytes_before_external_distinct,
+                tmp_data,
+                min_free_disk_space));
+        }
+
+        for (const auto & processor : merged_stream_processors)
+            processors.emplace_back(processor);
     }
 
     stage = Stage::Serialize;
@@ -437,9 +548,17 @@ IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
 {
     if (processors.size() > 2)
     {
-        /// The first spill: add the port through which the merged stream comes back.
-        inputs.emplace_back(*spill_header, this);
-        connect(external_merging_sorted->getOutputs().front(), inputs.back());
+        /// The first spill: the merged stream of the runs passes through its stages (see
+        /// merged_stream_processors) and comes back through a new input port.
+        auto * output = &external_merging_sorted->getOutputs().front();
+        for (const auto & processor : merged_stream_processors)
+        {
+            connect(*output, processor->getInputs().front());
+            output = &processor->getOutputs().front();
+        }
+
+        inputs.emplace_back(*merged_header, this);
+        connect(*output, inputs.back());
     }
 
     auto & source = processors.front();
@@ -635,6 +754,9 @@ void ExternalDistinctTransform::consume(Chunk chunk)
     if (unlikely(!chunk.hasRows()))
         return;
 
+    const UInt64 first_arrival_number = consumed_rows;
+    consumed_rows += chunk.getNumRows();
+
     if (!spilled)
     {
         Chunk filtered = distinct_set.filter(std::move(chunk));
@@ -668,14 +790,13 @@ void ExternalDistinctTransform::consume(Chunk chunk)
     }
     else
     {
-        auto prepared = prepareSpillChunk(stripConstantColumns(std::move(chunk)), /*already_emitted=*/ false);
+        auto prepared = prepareSpillChunk(stripConstantColumns(std::move(chunk)), /*already_emitted=*/ false, first_arrival_number);
         sum_bytes_in_chunks += prepared.allocatedBytes();
         chunks.push_back(std::move(prepared));
 
         /// The floor on the run size prevents dumping every chunk as its own file when it is another
         /// operator that keeps the memory usage of the query above the threshold.
-        const size_t min_bytes_in_run = std::min(max_bytes_before_external_distinct, MIN_BYTES_IN_RUN);
-        if (sum_bytes_in_chunks >= min_bytes_in_run
+        if (sum_bytes_in_chunks >= minBytesInRun()
             && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))
         {
             auto run_chunks = std::move(chunks);
@@ -725,23 +846,20 @@ void ExternalDistinctTransform::generate()
             /// just as well.
             processors.emplace_back(std::make_shared<MergeSorterSource>(
                 spill_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0));
-
-            merge_dedup.reset();
         }
 
         return;
     }
 
-    if (!current_chunk)
+    if (!current_chunk || !current_chunk.hasRows())
         return;
 
-    Chunk filtered = merge_dedup.filter(std::move(current_chunk), /*strip_flag=*/ true);
-    if (!filtered.hasRows())
-        return;
+    /// The chunk is merged, deduplicated and, when the input order is preserved, sorted back by the
+    /// arrival numbers, which have done their job by now.
+    Chunk chunk = restoreConstantColumns(dropArrivalNumbers(std::move(current_chunk)));
 
-    filtered = restoreConstantColumns(std::move(filtered));
-    emitted_rows += filtered.getNumRows();
-    generated_chunk = std::move(filtered);
+    emitted_rows += chunk.getNumRows();
+    generated_chunk = std::move(chunk);
 
     /// Post-spill the hash set does not exist anymore. The rows limit stays exact: the number of the
     /// emitted rows is precisely the number of distinct values. The bytes limit restricts the in-memory

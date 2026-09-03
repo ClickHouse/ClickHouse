@@ -80,6 +80,12 @@ private:
 ///    a correctness requirement: the filter looks only at the first row of each equal range, so if an
 ///    unflagged row could come first, a value emitted before the spill would be emitted again as a
 ///    duplicate (see the note on SortCursorHelper in Core/SortCursor.h).
+///
+/// When the transform must preserve the input order (the final DISTINCT of a query with ORDER BY runs
+/// above the sort), the spilled rows additionally carry their arrival numbers, and after the merge and
+/// the deduplication the rows are sorted back by them (through a MergeSortingTransform, which can itself
+/// spill), so the output continues the order of the rows emitted before the spill. Without this
+/// requirement the merged rows are emitted in DISTINCT-key order.
 class ExternalDistinctTransform final : public IProcessor
 {
 public:
@@ -91,7 +97,8 @@ public:
         size_t max_bytes_before_external_distinct_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_,
-        size_t max_block_size_rows_);
+        size_t max_block_size_rows_,
+        bool preserve_input_order_);
 
     ~ExternalDistinctTransform() override;
 
@@ -119,9 +126,10 @@ private:
 
     /// Keeps only the spilled columns of an input-header chunk (drops the constant columns).
     Chunk stripConstantColumns(Chunk chunk) const;
-    /// Takes a spill-layout chunk (see stripConstantColumns, buildChunkFromKeys), appends the
-    /// "already emitted" flag column and sorts by the key columns.
-    Chunk prepareSpillChunk(Chunk chunk, bool already_emitted) const;
+    /// Takes a spill-layout chunk (see stripConstantColumns, buildChunkFromKeys), appends the arrival
+    /// numbers of its rows (when the input order is preserved) and the "already emitted" flag column, and
+    /// sorts by the key columns.
+    Chunk prepareSpillChunk(Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const;
 
     /// Whether the first run can be rebuilt from the set at spill time (then the emitted chunks do not
     /// have to be retained in memory). Meaningful once at least one chunk was filtered.
@@ -130,12 +138,17 @@ private:
     /// used when every non-key column is a rebuildable constant, so the spilled columns are exactly
     /// the keys.
     Chunk buildChunkFromKeys(MutableColumns && key_columns) const;
+    /// Removes the arrival number column (the last one) from a merged chunk when the input order is
+    /// preserved.
+    Chunk dropArrivalNumbers(Chunk chunk) const;
     /// Re-attaches the constant columns that are not written to the spilled runs, turning a merged
     /// spill-layout chunk back into an input-header chunk.
     Chunk restoreConstantColumns(Chunk chunk) const;
 
     void startFirstSpill();
     void startSpillRun(Chunks run_chunks, size_t run_bytes, bool is_first_run);
+    /// The floor on the size of a run (see MIN_BYTES_IN_RUN), also used by the order-restoring sort.
+    size_t minBytesInRun() const;
 
     /// The pre-spill deduplication, shared with DistinctTransform (freed when the first spill happens).
     DistinctSetFilter distinct_set;
@@ -148,6 +161,8 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     const size_t min_free_disk_space;
     const size_t max_block_size_rows;
+    /// The output must continue the input order after a spill (see the class comment).
+    const bool preserve_input_order;
 
     /// Ascending sort over the (non-constant) key columns; defines the order of the spilled runs.
     SortDescription description;
@@ -158,8 +173,17 @@ private:
     const ColumnNumbers spill_columns_pos;
     /// Positions of the key columns within the spill layout.
     const ColumnNumbers spill_key_columns_pos;
-    /// Header of the spilled runs: the spilled columns plus the flag column.
+    /// Header of the spilled runs: the spilled columns, the arrival number column (when the input order
+    /// is preserved) and the flag column.
     SharedHeader spill_header;
+    /// Header of the merged and deduplicated stream of the runs that comes back into the transform: the
+    /// spill header without the flag column.
+    SharedHeader merged_header;
+    /// Ascending sort over the arrival number column, restoring the input order after the merge.
+    SortDescription arrival_number_description;
+
+    /// Rows received so far, i.e. the arrival number of the next row.
+    UInt64 consumed_rows = 0;
 
     /// Copies of the emitted chunks, the future first run (freed when the first spill happens).
     Chunks emitted_buffer;
@@ -173,10 +197,11 @@ private:
     /// correctness; the first run is unique by construction and bypasses it).
     DistinctSortedFilter run_dedup;
     bool current_run_is_first = false;
-    /// Deduplication of the merged stream of runs in the Generate stage.
-    DistinctSortedFilter merge_dedup;
-
     ProcessorPtr external_merging_sorted;
+    /// The stages the merged stream of the runs passes through before it comes back into the transform:
+    /// the deduplication (see DistinctSortedFilter) and, when the input order is preserved, the sort by
+    /// the arrival numbers.
+    Processors merged_stream_processors;
     Processors processors;
 
     Stage stage = Stage::Consume;
