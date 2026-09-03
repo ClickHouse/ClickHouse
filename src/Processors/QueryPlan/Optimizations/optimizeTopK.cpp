@@ -261,13 +261,22 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (!read_from_mergetree_step || !read_from_mergetree_step->hasPendingTopKDynamicFilter())
         return;
 
+    /// Reading in sort order makes the threshold reject every row after the first `n`, so the LIMIT
+    /// can no longer cancel the pipeline early and the read degenerates into a full scan. The stamp
+    /// stays: it salts the query condition cache key and still selects skip-index marks.
+    if (read_from_mergetree_step->getInputOrder())
+    {
+        read_from_mergetree_step->clearPendingTopKDynamicFilter();
+        return;
+    }
+
     const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
     read_from_mergetree_step->clearPendingTopKDynamicFilter();
 
     NameAndTypePair sort_column_name_and_type(top_k_filter_info.column_name, top_k_filter_info.data_type);
     ActionsDAG filter_dag({sort_column_name_and_type});
 
-    /// Cannot use FunctionFactory::get() because the resolver needs the threshold tracker.
+    /// Cannot use FunctionFactory::get because the resolver needs the threshold tracker.
     auto filter_function = DB::createInternalFunctionTopKFilterResolver(top_k_filter_info.threshold_tracker);
     const auto * filter_node
         = &filter_dag.addFunction(filter_function, {filter_dag.getInputs().front()}, {});
@@ -334,7 +343,7 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         prewhere_info->prewhere_column_name = filter_column_name;
     }
     prewhere_info->remove_prewhere_column = true;
-    prewhere_info->need_filter = true;
+    prewhere_info->need_filter = !existing_prewhere_info || existing_prewhere_info->need_filter;
 
     auto initial_header = read_from_mergetree_step->getOutputHeader();
     read_from_mergetree_step->updatePrewhereInfo(prewhere_info);
