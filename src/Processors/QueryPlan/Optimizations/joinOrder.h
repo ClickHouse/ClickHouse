@@ -122,7 +122,9 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
 namespace QueryPlanOptimizations
 {
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+/// Callers that estimate before the plan is optimized must pass `keep_index_analysis = false`.
+/// See `ReadFromMergeTree::selectRangesToReadForEstimation`.
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool keep_index_analysis = true);
 
 /// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
 /// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
