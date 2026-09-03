@@ -112,11 +112,11 @@ ClickHouse будет непрерывно [сливать части](https://c
 Go to ①. 
 ```
 
-Количество таких параллельных потоков вставки можно настроить с помощью параметра [`max_insert_threads`](/ru/reference/settings/session-settings/max-insert#max_insert_threads). Значение по умолчанию — `1` для open-source ClickHouse и 4 для [ClickHouse Cloud](https://clickhouse.com/cloud).
+Количество таких параллельных потоков вставки можно настроить с помощью параметра [`max_insert_threads`](/ru/reference/settings/session-settings/max-insert#max_insert_threads). Для open-source ClickHouse начиная с версии 26.8 значение по умолчанию — `0` (авто: число ядер CPU, уменьшаемое при нехватке памяти). Для [ClickHouse Cloud](https://clickhouse.com/cloud) значение по умолчанию — `1` для узлов с 8 GiB памяти, `2` для узлов с 16 GiB и `4` для более крупных узлов.
 
 При большом количестве файлов параллельная обработка несколькими потоками вставки работает эффективно. Она может полностью загрузить как доступные ядра CPU, так и пропускную способность сети (при параллельной загрузке файлов). В сценариях, когда в таблицу загружается всего несколько крупных файлов, ClickHouse автоматически обеспечивает высокий уровень параллелизма обработки данных и оптимизирует использование пропускной способности сети, создавая дополнительные потоки чтения для каждого потока вставки, чтобы параллельно читать (загружать) разные диапазоны внутри крупных файлов.
 
-Для функции и таблицы s3 параллельная загрузка отдельного файла определяется значениями [max&#95;download&#95;threads](/ru/reference/settings/session-settings/max-download#max_download_threads) и [max&#95;download&#95;buffer&#95;size](/ru/reference/settings/session-settings/max-download#max_download_buffer_size). Файлы будут загружаться параллельно, только если их размер превышает `2 * max_download_buffer_size`. По умолчанию значение `max_download_buffer_size` равно 10 MiB. В некоторых случаях можно без риска увеличить размер этого буфера до 50 MB (`max_download_buffer_size=52428800`), чтобы каждый файл загружался одним потоком. Это может сократить время, которое каждый поток тратит на обращения к S3, и тем самым уменьшить время ожидания S3. Кроме того, для файлов, слишком маленьких для параллельного чтения, ClickHouse для повышения пропускной способности автоматически выполняет предзагрузку данных, асинхронно читая такие файлы заранее.
+Для функции и таблицы s3 параллельная загрузка отдельного файла определяется значениями [max&#95;download&#95;threads](/ru/reference/settings/session-settings/max-download#max_download_threads) и [max&#95;download&#95;buffer&#95;size](/ru/reference/settings/session-settings/max-download#max_download_buffer_size). Файлы будут загружаться параллельно, только если их размер превышает `2 * max_download_buffer_size`. По умолчанию значение `max_download_buffer_size` равно 10 MiB. В некоторых случаях можно без риска увеличить размер этого буфера до 50 MB (`max_download_buffer_size=52428800`), чтобы каждый файл загружался одним потоком. Это может сократить время, которое каждый поток тратит на вызовы S3, и тем самым уменьшить время ожидания S3. Кроме того, для файлов, слишком маленьких для параллельного чтения, ClickHouse для повышения пропускной способности автоматически выполняет предзагрузку данных, асинхронно читая такие файлы заранее.
 
 <div id="measuring-performance">
   ## Измерение производительности
@@ -169,11 +169,11 @@ ClickHouse может читать файлы, хранящиеся в баке�
 Без какой-либо дополнительной настройки мы покажем производительность вставки этого набора данных в таблицу на движке MergeTree, а также выполнения запроса для определения пользователей, задающих больше всего вопросов. Оба этих запроса намеренно требуют полного сканирования данных.
 
 ```sql
--- Топ пользователей по именам
+-- Top usernames
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -194,9 +194,9 @@ Peak memory usage: 603.64 MiB.
 ```
 
 ```sql
--- Загрузка в таблицу posts
+-- Load into posts table
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -228,7 +228,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -271,7 +271,7 @@ Peak memory usage: 639.99 MiB.
   ## Настройка потоков и размера блоков для вставки
 </div>
 
-Чтобы добиться максимальной производительности загрузки, необходимо выбрать (1) размер блока вставки и (2) подходящий уровень параллелизма вставки с учётом (3) количества доступных ядер CPU и объёма доступной RAM. Вкратце:
+Чтобы добиться максимальной производительности ингестии, необходимо выбрать (1) размер блока вставки и (2) подходящий уровень параллелизма вставки с учётом (3) количества доступных ядер CPU и объёма доступной RAM. Вкратце:
 
 * Чем больше [размер блока вставки](#insert-block-size), тем меньше частей ClickHouse приходится создавать и тем меньше требуется [дисковых операций ввода-вывода](https://en.wikipedia.org/wiki/Category:Disk_file_systems) и [фоновых слияний](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges).
 * Чем выше [число параллельных потоков вставки](#insert-parallelism), тем быстрее будут обрабатываться данные.
@@ -281,11 +281,11 @@ Peak memory usage: 639.99 MiB.
 Подробное описание того, как эти параметры влияют на производительность и потребление ресурсов, рекомендуем [прочитать в этом посте блога](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2). Как показано в этом посте, настройка может потребовать тщательного подбора баланса между этими двумя параметрами. Такое всестороннее тестирование часто оказывается непрактичным, поэтому в качестве краткой рекомендации мы советуем:
 
 ```bash
-• max_insert_threads: выберите ~ половину доступных ядер CPU для потоков вставки (чтобы оставить достаточно ядер для фоновых слияний)
+• max_insert_threads: choose ~ half of the available CPU cores for insert threads (to leave enough dedicated cores for background merges)
 
-• peak_memory_usage_in_bytes: выберите планируемый пиковый объём потребления памяти: либо весь доступный RAM (если загрузка данных выполняется изолированно), либо половину или меньше (чтобы оставить ресурсы для других параллельных задач)
+• peak_memory_usage_in_bytes: choose an intended peak memory usage; either all available RAM (if it is an isolated ingest) or half or less (to leave room for other concurrent tasks)
 
-Затем:
+Then:
 min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_threads)
 ```
 
@@ -299,7 +299,7 @@ min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_thre
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -322,7 +322,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -333,7 +333,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -363,13 +363,13 @@ SETTINGS max_threads = 92
 
 Повторим предыдущий запрос на чтение, распределив нагрузку между 3 узлами и изменив запрос так, чтобы использовать `s3Cluster`. В ClickHouse Cloud это делается автоматически — достаточно указать кластер `default`.
 
-Как отмечено в разделе [Использование кластеров](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters), эта работа распределяется на уровне файлов. Чтобы воспользоваться этой возможностью, потребуется достаточное количество файлов, то есть как минимум больше, чем число узлов.
+Как отмечено в разделе [Использование кластеров](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters), эта работа распределяется на уровне файлов. Чтобы воспользоваться этой возможностью, потребуется достаточное количество файлов, то есть как минимум &gt; числа узлов.
 
 ```sql
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -394,7 +394,7 @@ Peak memory usage: 176.74 MiB.
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -403,12 +403,12 @@ FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws
 
 Читатели заметят, что чтение файлов улучшило производительность запросов, но не вставки. По умолчанию, хотя операции чтения распределяются с помощью `s3Cluster`, вставка выполняется через узел-инициатор. Это означает, что, хотя чтение происходит на каждом узле, полученные строки для распределения направляются на узел-инициатор. В сценариях с высокой пропускной способностью это может стать узким местом. Чтобы решить эту проблему, задайте параметр `parallel_distributed_insert_select` для функции `s3cluster`.
 
-Значение `parallel_distributed_insert_select=2` гарантирует, что `SELECT` и `INSERT` будут выполняться на каждом шарде в базовую таблицу распределённого движка и из неё на каждом узле.
+Значение `parallel_distributed_insert_select=2` гарантирует, что `SELECT` и `INSERT` будут выполняться на каждом сегменте в базовую таблицу движка Distributed и из неё на каждом узле.
 
 ```sql
 INSERT INTO posts
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
@@ -435,7 +435,7 @@ Peak memory usage: 11.75 GiB.
 INSERT INTO posts
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 ```
 
@@ -454,7 +454,7 @@ Peak memory usage: 26.57 GiB.
 
 ```sql
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
 ```
 

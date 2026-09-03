@@ -1,0 +1,3 @@
+<clickhouse>
+    <asynchronous_metrics_key_values_mode>key_values</asynchronous_metrics_key_values_mode>
+</clickhouse>
