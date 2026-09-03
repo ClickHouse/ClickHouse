@@ -2,7 +2,7 @@
 -- no-random-merge-tree-settings: this test compares codec headers in distinct Wide parts.
 
 DROP TABLE IF EXISTS t_tuple_codec_alter;
-DROP TABLE IF EXISTS t_tuple_codec_alter_positional;
+DROP TABLE IF EXISTS t_tuple_codec_alter_rename;
 DROP TABLE IF EXISTS t_tuple_codec_alter_removed_path;
 
 SET enable_tuple_element_codecs = 1;
@@ -117,20 +117,26 @@ FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_alter)
 WHERE column = 'payload'
 ORDER BY substream;
 
--- Positional correspondence lets an element be renamed while removing its old declaration.
-CREATE TABLE t_tuple_codec_alter_positional
+-- Remove a declaration under its current name before renaming the tuple element.
+CREATE TABLE t_tuple_codec_alter_rename
 (
-    pair Tuple(UInt64 CODEC(T64, LZ4), String)
+    pair Tuple(old_first UInt64 CODEC(T64, LZ4), second String)
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 
-ALTER TABLE t_tuple_codec_alter_positional
-    MODIFY COLUMN pair Tuple(first UInt64 REMOVE CODEC, second String);
+ALTER TABLE t_tuple_codec_alter_rename
+    MODIFY COLUMN pair Tuple(first UInt64 REMOVE CODEC, second String); -- { serverError BAD_ARGUMENTS }
+
+ALTER TABLE t_tuple_codec_alter_rename
+    MODIFY COLUMN pair Tuple(old_first UInt64 REMOVE CODEC, second String);
+
+ALTER TABLE t_tuple_codec_alter_rename
+    MODIFY COLUMN pair Tuple(first UInt64, second String);
 
 SELECT type, compression_codec = ''
 FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_alter_positional' AND name = 'pair';
+WHERE database = currentDatabase() AND table = 't_tuple_codec_alter_rename' AND name = 'pair';
 
 -- A retained declaration cannot silently become a dangling path after a type edit.
 CREATE TABLE t_tuple_codec_alter_removed_path
@@ -144,5 +150,5 @@ ALTER TABLE t_tuple_codec_alter_removed_path
     MODIFY COLUMN payload Tuple(other String); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE t_tuple_codec_alter_removed_path;
-DROP TABLE t_tuple_codec_alter_positional;
+DROP TABLE t_tuple_codec_alter_rename;
 DROP TABLE t_tuple_codec_alter;

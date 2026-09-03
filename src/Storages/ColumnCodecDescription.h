@@ -94,7 +94,7 @@ ColumnCodecDescription validateColumnCodecDescription(
 ColumnCodecDescription validateColumnCodecDescriptionForAlter(
     const ColumnCodecDescription & policy,
     const DataTypePtr & logical_type,
-    const ColumnCodecDescription & declarations_to_admit,
+    const ColumnCodecDescription::CodecsByPath & declarations_to_admit,
     const CodecValidationSettings & settings);
 
 ColumnCodecDescription codecDescriptionFromAST(

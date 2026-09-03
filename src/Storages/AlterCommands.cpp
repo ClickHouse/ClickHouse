@@ -187,9 +187,8 @@ void collectTupleCodecPatch(
     const ASTPtr & type_ast,
     const DataTypePtr & logical_type,
     CodecPath & path,
-    std::vector<size_t> & positions,
-    ColumnCodecDescription & declarations,
-    std::vector<AlterCommand::TupleCodecRemoval> & removals)
+    std::map<CodecPath, ASTPtr> & codec_sets,
+    std::vector<CodecPath> & codec_removals)
 {
     const auto * tuple_ast = type_ast ? type_ast->as<ASTTupleDataType>() : nullptr;
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(logical_type.get());
@@ -203,7 +202,6 @@ void collectTupleCodecPatch(
     for (size_t i = 0; i < arguments->children.size(); ++i)
     {
         path.push_back(tuple_type->getNameByPosition(i + 1));
-        positions.push_back(i);
         const auto & subtype = tuple_type->getElements()[i];
         const bool remove = i < tuple_ast->element_codec_removals.size() && tuple_ast->element_codec_removals[i];
         if (i < tuple_ast->element_codecs.size() && tuple_ast->element_codecs[i])
@@ -214,13 +212,13 @@ void collectTupleCodecPatch(
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Quantized codec on tuple elements is not supported yet because its custom serialization must be path-aware");
-            declarations.set(path, tuple_ast->element_codecs[i]);
+            if (!codec_sets.emplace(path, tuple_ast->element_codecs[i]).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate CODEC operation for tuple element");
         }
         else if (remove)
-            removals.push_back({path, positions});
+            codec_removals.push_back(path);
 
-        collectTupleCodecPatch(arguments->children[i], subtype, path, positions, declarations, removals);
-        positions.pop_back();
+        collectTupleCodecPatch(arguments->children[i], subtype, path, codec_sets, codec_removals);
         path.pop_back();
     }
 }
@@ -228,13 +226,12 @@ void collectTupleCodecPatch(
 void extractTupleCodecPatch(
     const ASTColumnDeclaration & declaration,
     const DataTypePtr & logical_type,
-    ColumnCodecDescription & declarations,
-    std::vector<AlterCommand::TupleCodecRemoval> & removals)
+    std::map<CodecPath, ASTPtr> & codec_sets,
+    std::vector<CodecPath> & codec_removals)
 {
     CodecPath path;
-    std::vector<size_t> positions;
-    collectTupleCodecPatch(declaration.getType(), logical_type, path, positions, declarations, removals);
-    if (countTupleCodecPatchOperations(declaration.getType()) != declarations.getCodecs().size() + removals.size())
+    collectTupleCodecPatch(declaration.getType(), logical_type, path, codec_sets, codec_removals);
+    if (countTupleCodecPatchOperations(declaration.getType()) != codec_sets.size() + codec_removals.size())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Tuple element codec operations through non-Tuple wrapper types are not supported");
@@ -277,16 +274,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.comment = ast_comment.value.safeGet<String>();
         }
 
-        if (ast_col_decl.getCodec())
-        {
-            if (ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            command.codec = ast_col_decl.getCodec();
-        }
         if (command.data_type)
         {
-            command.declared_codec = codecDescriptionFromAST(ast_col_decl, command.data_type, CodecValidationSettings::trusted());
-            if (!command.declared_codec.empty() && ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
+            const auto declared_codec = codecDescriptionFromAST(
+                ast_col_decl, command.data_type, CodecValidationSettings::trusted());
+            for (const auto & [path, codec] : declared_codec.getCodecs())
+                command.codec_sets.emplace(path, codec);
+            if (!command.codec_sets.empty() && ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
         }
         if (command_ast->column)
@@ -362,11 +356,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getTTL())
             command.ttl = ast_col_decl.getTTL();
 
-        if (ast_col_decl.getCodec())
-            command.codec = ast_col_decl.getCodec();
-
         if (command.data_type)
-            extractTupleCodecPatch(ast_col_decl, command.data_type, command.declared_codec, command.codec_removals);
+            extractTupleCodecPatch(ast_col_decl, command.data_type, command.codec_sets, command.codec_removals);
+
+        if (ast_col_decl.getCodec())
+            command.codec_sets.emplace(CodecPath{}, ast_col_decl.getCodec());
+        if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
+            command.codec_removals.emplace_back();
 
         if (ast_col_decl.getSettings())
             command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
@@ -762,8 +758,11 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
     return columns_to_add;
 }
 
-static String formatTupleCodecPath(const CodecPath & path)
+static String formatCodecPath(const CodecPath & path)
 {
+    if (path.empty())
+        return "<column>";
+
     String result;
     for (size_t i = 0; i < path.size(); ++i)
     {
@@ -774,106 +773,72 @@ static String formatTupleCodecPath(const CodecPath & path)
     return result;
 }
 
-static std::optional<CodecPath> getPositionalCodecPredecessor(
-    const AlterCommand::TupleCodecRemoval & removal,
-    const DataTypePtr & old_type,
-    const DataTypePtr & new_type)
+/// Materialize sparse ADD/MODIFY syntax into the column-policy value used by storage metadata.
+static ColumnCodecDescription makeCodecDescription(const std::map<CodecPath, ASTPtr> & codec_sets)
 {
-    if (removal.path.size() != removal.positions.size())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed tuple element codec removal path");
-
-    DataTypePtr old_node = old_type;
-    DataTypePtr new_node = new_type;
-    CodecPath old_path;
-    for (size_t depth = 0; depth < removal.positions.size(); ++depth)
-    {
-        const auto * old_tuple = typeid_cast<const DataTypeTuple *>(old_node.get());
-        const auto * new_tuple = typeid_cast<const DataTypeTuple *>(new_node.get());
-        const size_t position = removal.positions[depth];
-        if (!old_tuple || !new_tuple
-            || position >= old_tuple->getElements().size()
-            || position >= new_tuple->getElements().size())
-            return std::nullopt;
-
-        const String old_name = old_tuple->getNameByPosition(position + 1);
-        const String new_name = new_tuple->getNameByPosition(position + 1);
-        if (new_name != removal.path[depth])
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed canonical tuple element codec removal path");
-
-        if (old_name != new_name)
-        {
-            /// Positional correspondence is a rename only when neither logical name survives at
-            /// another position. This deliberately rejects reorders instead of removing whichever
-            /// declaration happens to occupy the same numeric position.
-            if (old_tuple->tryGetPositionByName(new_name) || new_tuple->tryGetPositionByName(old_name))
-                return std::nullopt;
-        }
-
-        old_path.push_back(old_name);
-        old_node = old_tuple->getElements()[position];
-        new_node = new_tuple->getElements()[position];
-    }
-    return old_path;
+    ColumnCodecDescription result;
+    for (const auto & [path, codec] : codec_sets)
+        result.set(path, codec);
+    return result;
 }
 
-static void applyTupleCodecPatch(
+/// Apply the sparse codec operations from one ALTER to a complete stored policy.
+/// A removal addresses only an explicitly declared path; inherited codecs are not removable declarations.
+static void applyCodecPatch(
     ColumnCodecDescription & policy,
-    const ColumnCodecDescription & declarations,
-    const std::vector<AlterCommand::TupleCodecRemoval> & removals,
-    const DataTypePtr & old_type,
-    const DataTypePtr & new_type,
+    const std::map<CodecPath, ASTPtr> & codec_sets,
+    const std::vector<CodecPath> & codec_removals,
     const String & column_name)
 {
-    const auto original_policy = policy.clone();
-    std::set<CodecPath> translated_removals;
-    for (const auto & removal : removals)
+    std::set<CodecPath> unique_removals;
+    for (const auto & path : codec_removals)
     {
-        CodecPath declaration_path;
-        if (original_policy.getCodecs().contains(removal.path))
-            declaration_path = removal.path;
-        else if (auto positional_path = getPositionalCodecPredecessor(removal, old_type, new_type);
-                 positional_path && original_policy.getCodecs().contains(*positional_path))
-            declaration_path = std::move(*positional_path);
-        else
+        if (codec_sets.contains(path))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "No codec is declared at tuple element path {} of column {}",
-                formatTupleCodecPath(removal.path),
+                "Cannot set and remove CODEC at path {} of column {} in the same declaration",
+                formatCodecPath(path),
                 backQuote(column_name));
-
-        if (!translated_removals.emplace(declaration_path).second)
+        if (!unique_removals.emplace(path).second)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Multiple REMOVE CODEC operations target tuple element path {} of column {}",
-                formatTupleCodecPath(declaration_path),
+                "Multiple REMOVE CODEC operations target path {} of column {}",
+                formatCodecPath(path),
+                backQuote(column_name));
+        if (!policy.getCodecs().contains(path))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "No codec is declared at path {} of column {}",
+                formatCodecPath(path),
                 backQuote(column_name));
     }
 
-    for (const auto & path : translated_removals)
+    for (const auto & path : codec_removals)
         policy.erase(path);
-    for (const auto & [path, codec_ast] : declarations.getCodecs())
+    for (const auto & [path, codec_ast] : codec_sets)
         policy.set(path, codec_ast);
 }
 
-static ColumnCodecDescription getChangedTupleCodecDeclarations(
+/// Return only CODEC(...) operations whose normalized value differs from the stored declaration.
+static std::map<CodecPath, ASTPtr> getChangedCodecSets(
     const ColumnCodecDescription & current_policy,
-    const ColumnCodecDescription & declarations,
+    const std::map<CodecPath, ASTPtr> & codec_sets,
     const ColumnCodecDescription & normalized_resulting_policy)
 {
-    ColumnCodecDescription changed;
-    for (const auto & [path, _] : declarations.getCodecs())
+    std::map<CodecPath, ASTPtr> changed;
+    for (const auto & [path, _] : codec_sets)
     {
         const auto normalized = normalized_resulting_policy.getCodecs().find(path);
         if (normalized == normalized_resulting_policy.getCodecs().end())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Normalized codec policy has no explicitly declared tuple element path {}",
-                formatTupleCodecPath(path));
+                "Normalized codec policy has no explicitly declared path {}",
+                formatCodecPath(path));
 
         auto current = current_policy.getCodecs().find(path);
         if (current == current_policy.getCodecs().end()
             || current->second->formatWithSecretsOneLine() != normalized->second->formatWithSecretsOneLine())
-            changed.set(path, normalized->second);
+            changed.emplace(path, normalized->second);
     }
     return changed;
 }
@@ -896,10 +861,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         if (comment)
             column.comment = *comment;
 
-        if (codec)
-            column.codec = declared_codec;
-        else if (!declared_codec.empty())
-            column.codec = declared_codec;
+        column.codec = makeCodecDescription(codec_sets);
 
         column.ttl = ttl;
 
@@ -958,14 +920,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             {
                 column.default_desc = ColumnDefault{};
             }
-            else if (to_remove == RemoveProperty::CODEC)
-            {
-                auto candidate = column.codec.clone();
-                candidate.resetRoot();
-                column.codec = candidate.empty()
-                    ? std::move(candidate)
-                    : validateColumnCodecDescription(candidate, column.type, CodecValidationSettings::trusted());
-            }
             else if (to_remove == RemoveProperty::COMMENT)
             {
                 column.comment = String{};
@@ -982,12 +936,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             {
                 auto resulting_codec = column.codec.clone();
                 const auto & resulting_type = data_type ? data_type : column.type;
-                applyTupleCodecPatch(
-                    resulting_codec, declared_codec, codec_removals, column.type, resulting_type, column_name);
-                if (codec)
-                    resulting_codec.setRoot(codec);
+                applyCodecPatch(resulting_codec, codec_sets, codec_removals, column_name);
 
-                if ((codec || !declared_codec.empty() || !codec_removals.empty() || data_type) && !resulting_codec.empty())
+                if ((!codec_sets.empty() || !codec_removals.empty() || data_type) && !resulting_codec.empty())
                     resulting_codec = validateColumnCodecDescription(
                         resulting_codec, resulting_type, CodecValidationSettings::trusted());
 
@@ -1803,7 +1754,8 @@ bool AlterCommand::isCommentAlter() const
         /// Placement (FIRST/AFTER) and per-column SETTINGS change the replicated
         /// /columns (ColumnsDescription::operator== compares column order and
         /// settings, ignoring only the comment), so they are not comment-only.
-        return comment.has_value() && codec == nullptr && data_type == nullptr && default_expression == nullptr && ttl == nullptr
+        return comment.has_value() && codec_sets.empty() && codec_removals.empty()
+            && data_type == nullptr && default_expression == nullptr && ttl == nullptr
             && settings_changes.empty() && settings_resets.empty() && column_statistics_decl == nullptr && after_column.empty() && !first;
     }
     return false;
@@ -2296,21 +2248,22 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     "Cannot add ephemeral column {}: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
 
-            if (!command.declared_codec.empty())
+            if (!command.codec_sets.empty())
             {
-                if (command.declared_codec.hasSubcolumns()
+                const auto declared_codec = makeCodecDescription(command.codec_sets);
+                if (declared_codec.hasSubcolumns()
                     && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
-                validateColumnCodecDescription(command.declared_codec, command.data_type, codec_validation_settings);
+                validateColumnCodecDescription(declared_codec, command.data_type, codec_validation_settings);
             }
 
             /// Advance the working snapshot with the exact columns apply() would materialize
             /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
             ColumnDescription added_column(column_name, command.data_type);
-            added_column.codec = command.declared_codec;
+            added_column.codec = makeCodecDescription(command.codec_sets);
             for (auto & col : columnsAddedByAlter(all_columns, std::move(added_column),
                                                   context, command.if_not_exists, share_nested))
                 all_columns.add(std::move(col));
@@ -2340,18 +2293,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             const auto & current_owner = all_columns.get(column_name);
             const DataTypePtr resulting_type = command.data_type ? command.data_type : current_owner.type;
             auto resulting_codec = current_owner.codec.clone();
-            applyTupleCodecPatch(
-                resulting_codec,
-                command.declared_codec,
-                command.codec_removals,
-                current_owner.type,
-                resulting_type,
-                column_name);
-            if (command.codec)
-                resulting_codec.setRoot(command.codec);
-
-            if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
-                resulting_codec.resetRoot();
+            applyCodecPatch(resulting_codec, command.codec_sets, command.codec_removals, column_name);
 
             if (!resulting_codec.empty())
             {
@@ -2361,23 +2303,22 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 /// `Delta` and `Delta(8)` as a new codec.
                 resulting_codec = validateColumnCodecDescription(
                     resulting_codec, resulting_type, CodecValidationSettings::trusted());
-                const auto changed_tuple_codecs = getChangedTupleCodecDeclarations(
-                    current_owner.codec, command.declared_codec, resulting_codec);
-                if (!changed_tuple_codecs.empty()
+                const auto changed_codec_sets = getChangedCodecSets(
+                    current_owner.codec, command.codec_sets, resulting_codec);
+                const bool changes_tuple_element_codec = std::any_of(
+                    changed_codec_sets.begin(), changed_codec_sets.end(), [](const auto & entry) { return !entry.first.empty(); });
+                if (changes_tuple_element_codec
                     && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
 
-                auto declarations_to_admit = changed_tuple_codecs;
-                if (command.codec)
-                    declarations_to_admit.setRoot(command.codec);
-                if (!declarations_to_admit.empty())
+                if (!changed_codec_sets.empty())
                     resulting_codec = validateColumnCodecDescriptionForAlter(
-                        resulting_codec, resulting_type, declarations_to_admit, codec_validation_settings);
+                        resulting_codec, resulting_type, changed_codec_sets, codec_validation_settings);
             }
 
-            if (command.codec || !command.declared_codec.empty() || !command.codec_removals.empty())
+            if (!command.codec_sets.empty() || !command.codec_removals.empty())
             {
                 /// `default_kind` is what the parser set: `validate` runs before `prepare`, which back-fills it from the table.
                 const bool becomes_physical = command.default_expression

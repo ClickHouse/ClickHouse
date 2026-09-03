@@ -245,7 +245,7 @@ ColumnCodecDescription validateEffectivePolicy(
     const ColumnCodecDescription & policy,
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings,
-    const ColumnCodecDescription * declarations_to_admit = nullptr)
+    const ColumnCodecDescription::CodecsByPath * declarations_to_admit = nullptr)
 {
     ColumnCodecDescription canonical_policy;
     for (const auto & [declaration_path, codec] : policy.getCodecs())
@@ -265,7 +265,7 @@ ColumnCodecDescription validateEffectivePolicy(
     const auto validate_declaration = [&](const CodecPath & declaration_path, const ASTPtr & ast)
     {
         const bool use_session_settings = !declarations_to_admit
-            || declarations_to_admit->getCodecs().contains(declaration_path);
+            || declarations_to_admit->contains(declaration_path);
         const auto & declaration_settings = use_session_settings ? settings : trusted_settings;
         auto types_it = declaration_types.find(declaration_path);
         if (types_it == declaration_types.end() || types_it->second.empty())
@@ -328,7 +328,7 @@ ColumnCodecDescription validateColumnCodecDescription(
 ColumnCodecDescription validateColumnCodecDescriptionForAlter(
     const ColumnCodecDescription & policy,
     const DataTypePtr & logical_type,
-    const ColumnCodecDescription & declarations_to_admit,
+    const ColumnCodecDescription::CodecsByPath & declarations_to_admit,
     const CodecValidationSettings & settings)
 {
     return validateEffectivePolicy(policy, logical_type, settings, &declarations_to_admit);
