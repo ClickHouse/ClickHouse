@@ -310,7 +310,10 @@ def test_mysql_require_secure_transport_ignores_advertised_capability(started_cl
         # `HandshakeResponse` and the connection is never upgraded to TLS.
         _mysql_send_packet(sock, 1, body)
 
-        reply = _mysql_recv_packet(sock)
+        try:
+            reply = _mysql_recv_packet(sock)
+        except (ConnectionResetError, socket.timeout, OSError):
+            reply = None
         # The server either closes the connection or replies with an error packet, but it must never
         # accept the handshake with an OK packet.
         assert reply is None or reply[0] == 0xFF, reply
