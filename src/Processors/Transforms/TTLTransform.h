@@ -59,6 +59,19 @@ private:
         String default_column_name;
     };
     std::unordered_map<String, ExpiredColumnData> expired_columns_data;
+
+    /// A `MATERIALIZED` column whose expression reads a column that a column TTL resets to its default.
+    /// Its stored value describes the pre-expiry data, so it is recomputed after the TTL algorithms run.
+    struct DependentMaterializedColumn
+    {
+        String name;
+        DataTypePtr type;
+        ExpressionActionsPtr expression;
+        String result_column_name;
+        Names required_columns;
+    };
+    std::vector<DependentMaterializedColumn> dependent_materialized_columns;
+
     LoggerPtr log;
 };
 

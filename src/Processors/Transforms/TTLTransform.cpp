@@ -1,6 +1,7 @@
 #include <Processors/Transforms/TTLTransform.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -137,6 +138,57 @@ TTLTransform::TTLTransform(
         }
     }
 
+    /// A column TTL resets its column to the default, but the `MATERIALIZED` columns computed from it
+    /// keep the value they had before the expiry, which contradicts their own expression forever (no later
+    /// merge repairs it). `ALTER TABLE ... CLEAR COLUMN`, the other path that resets a column to its
+    /// default, recomputes them, so do the same here.
+    {
+        NameSet reset_columns;
+        for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
+            reset_columns.insert(name);
+        for (const auto & expired_column : expired_columns)
+            reset_columns.insert(expired_column.name);
+
+        if (!reset_columns.empty())
+        {
+            /// Recomputing a column that takes part in the sorting or the partitioning would invalidate the
+            /// order of the part being written, and one that has a TTL of its own has just been reset by it.
+            NameSet columns_to_skip = reset_columns;
+            for (const auto & name : metadata_snapshot_->getColumnsRequiredForSortingKey())
+                columns_to_skip.insert(name);
+            for (const auto & name : metadata_snapshot_->getColumnsRequiredForPrimaryKey())
+                columns_to_skip.insert(name);
+            for (const auto & name : metadata_snapshot_->getColumnsRequiredForPartitionKey())
+                columns_to_skip.insert(name);
+
+            for (const auto & column : storage_columns)
+            {
+                if (column.default_desc.kind != ColumnDefaultKind::Materialized || columns_to_skip.contains(column.name))
+                    continue;
+
+                auto expression_ast = addTypeConversionToAST(column.default_desc.expression->clone(), column.type->getName());
+                auto syntax_result = TreeRewriter(storage_.getContext()).analyze(expression_ast, storage_columns.getAll());
+                auto expression = ExpressionAnalyzer{expression_ast, syntax_result, storage_.getContext()}.getActions(true);
+
+                auto required_columns = expression->getRequiredColumns();
+                const bool depends_on_reset_column = std::any_of(
+                    required_columns.begin(),
+                    required_columns.end(),
+                    [&](const auto & required) { return reset_columns.contains(required); });
+
+                if (!depends_on_reset_column)
+                    continue;
+
+                /// A non-deterministic expression would also change the rows the TTL did not touch.
+                if (expression->getActionsDAG().hasNonDeterministic())
+                    continue;
+
+                dependent_materialized_columns.push_back(
+                    {column.name, column.type, expression, expression_ast->getColumnName(), std::move(required_columns)});
+            }
+        }
+    }
+
     for (const auto & move_ttl : metadata_snapshot_->getMoveTTLs())
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
             getExpressions(move_ttl, subqueries_for_sets, context), move_ttl,
@@ -192,6 +244,25 @@ void TTLTransform::consume(Chunk chunk)
 
     if (block.empty())
         return;
+
+    /// The columns the expressions read are the post-TTL ones, so this restores the invariant the
+    /// `MATERIALIZED` expression states. A mutation may read only a part of the columns, so a dependent
+    /// whose inputs (or the dependent itself) are not in the block is left to the merge that has them.
+    for (const auto & dependent : dependent_materialized_columns)
+    {
+        if (!block.has(dependent.name))
+            continue;
+
+        if (std::any_of(
+                dependent.required_columns.begin(),
+                dependent.required_columns.end(),
+                [&](const auto & required) { return !block.has(required); }))
+            continue;
+
+        auto recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name);
+        if (recomputed)
+            block.getByName(dependent.name).column = recomputed->convertToFullColumnIfConst();
+    }
 
     size_t num_rows = block.rows();
     setReadyChunk(Chunk(reorderColumns(std::move(block), getOutputPort().getHeader()).getColumns(), num_rows));
