@@ -25,6 +25,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
@@ -208,15 +209,24 @@ private:
         });
 
         /// Squash small chunks before writing them into the intermediate table. Each recursive
-        /// step appends one StorageMemory block per produced chunk, and the next step reads the
-        /// working table block by block, so without squashing deep recursions accumulate a lot
-        /// of tiny blocks and the per-step reads degrade.
+        /// step appends one block per produced chunk, and the next step reads the working table
+        /// block by block, so without squashing deep recursions accumulate a lot of tiny blocks
+        /// and the per-step reads degrade.
+        ///
+        /// The thresholds follow the same policy as a regular `INSERT` into the same storage: the
+        /// intermediate table is a `Memory` table, which prefers smaller blocks for cache locality,
+        /// so squashing must not coalesce beyond `max_block_size` rows there.
+        const bool prefers_large_blocks = intermediate_temporary_table_storage->prefersLargeBlocks();
+        const size_t squashing_min_block_size_rows = prefers_large_blocks
+            ? recursive_subquery_settings[Setting::min_insert_block_size_rows]
+            : recursive_subquery_settings[Setting::max_block_size];
+        const size_t squashing_min_block_size_bytes
+            = prefers_large_blocks ? recursive_subquery_settings[Setting::min_insert_block_size_bytes] : 0;
+
         pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
         {
             return std::make_shared<SimpleSquashingChunksTransform>(
-                in_header,
-                recursive_subquery_settings[Setting::min_insert_block_size_rows],
-                recursive_subquery_settings[Setting::min_insert_block_size_bytes]);
+                in_header, squashing_min_block_size_rows, squashing_min_block_size_bytes);
         });
 
         const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
