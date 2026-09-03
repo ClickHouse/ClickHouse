@@ -54,7 +54,7 @@ For step-by-step setup instructions, see the [Private Networking Setup guide](/p
 
 ## Kubernetes API Private Connection {#k8s-api-private-connection}
 
-By default, the Kubernetes API server endpoint for your BYOC cluster is accessible from the public internet, but access is restricted with IP filtering to allow only ClickHouse NAT Gateway IPs. For stronger security, you can restrict the Kubernetes API server so that it is accessible exclusively through private network connections.
+By default, the Kubernetes API server endpoint for your BYOC cluster is accessible from the public internet. On AWS, access is restricted with IP filtering to allow only ClickHouse NAT Gateway IPs; on GCP and Azure it is gated by cloud IAM instead (see [Kubernetes API server exposure](/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). For stronger security, you can restrict the Kubernetes API server so that it is accessible exclusively through private network connections.
 
 Two private connection options are available:
 
