@@ -26,6 +26,16 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 적응형 집계기가 스레드의 로컬 해시 테이블을 고정하는 키 수입니다(`enable_adaptive_aggregator` 참조). 값이 작을수록 고정된 테이블이 캐시에 상주하고, 값이 클수록 자주 사용되는 키를 더 많이 수용할 수 있습니다. 0으로 설정하면 가능한 첫 시점에 테이블을 고정하므로 알고리즘이 세그먼트 분할 집계기(`enable_sharding_aggregator`)와 유사하게 동작합니다. 즉, 모든 키는 해시에 따라 라우팅되어 단일 소유자가 집계하지만, 스캔 중 스레드 간에 교환하는 대신 머지 단계로 처리를 미룹니다.
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "적응형 집계기의 고정된 로컬 테이블을 바이트 단위로 제한하는 새로운 설정입니다. 이 값과 키 개수 임계값 중 먼저 도달하는 기준이 적용되며, 0은 바이트 제한을 비활성화합니다."}]}]} />
+
+적응형 집계기가 스레드의 로컬 해시 테이블을 고정하는 메모리 크기입니다(`enable_adaptive_aggregator` 참조). 이 값과 `adaptive_aggregator_freeze_threshold` 중 먼저 도달하는 기준에서 테이블이 고정됩니다. 크기는 블록 사이에서 확인하며, 로컬 테이블 자체에 할당된 바이트 수(해시 테이블 버퍼와 해당 아레나의 합)입니다. 키 또는 집계 상태의 폭이 넓을 때는 바이트 제한이 중요합니다. 키 개수 임계값만으로는 이러한 테이블이 CPU 캐시보다 커질 수 있기 때문입니다. 기본값에서는 일반적인 폭의 키와 상태를 사용하는 테이블이 계속 키 개수 기준으로 고정됩니다. 0은 바이트 제한을 비활성화하므로 키 개수 임계값만으로 결정됩니다.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -525,6 +535,20 @@ Cloud 기본값: `0`.
 
 `json = 1` 또는 `distributed = 1`을 사용하는 `EXPLAIN PLAN`은 이 설정과 관계없이 26.7 이전 기본값(`legacy`)을 유지합니다. 단, `actions`, `compact`, `pretty`를 명시적으로 설정한 경우는 예외입니다. pretty 출력은 JSON 결과나 세그먼트별 분산 계획을 표현할 수 없으므로, 이러한 모드는 `legacy` 형식으로만 올바르게 렌더링됩니다.
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "26.8부터 `EXPLAIN SYNTAX`는 줄마다 레코드 하나를 반환하는 대신, 형식이 지정된 쿼리를 단일 레코드(줄 바꿈 포함)로 반환합니다. 26.8 이전처럼 줄마다 레코드 하나를 출력하려면 이 값을 `false`로 설정하십시오."}]}]} />
+
+`EXPLAIN SYNTAX` 출력을 줄마다 레코드 하나가 아닌 단일 레코드(줄 바꿈 포함)로 반환합니다. 따라서 결과는 복구 가능한 단일 행이 됩니다(예: `SELECT count() FROM (EXPLAIN SYNTAX ...)`는 `1`을 반환합니다).
+
+`EXPLAIN SYNTAX` 문에서 `single_record` 옵션을 명시적으로 지정하면(예: `EXPLAIN SYNTAX single_record = 0 SELECT ...`) 항상 이 설정을 재정의합니다.
+
+26.8 이전처럼 줄마다 레코드 하나를 출력하려면 `false`로 설정하거나, `compatibility`를 `26.8`보다 이전 버전으로 설정하십시오.
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -568,7 +592,7 @@ ClickHouse는 테이블의 오래된 레플리카 중에서 가장 적합한 레
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "`partition_strategy`가 지정되지 않은 경우, 파일 계열 테이블 엔진(S3, AzureBlobStorage 등)의 기본 파티션 전략이 `wildcard`에서 `hive`로 변경됩니다."}]}]} />
 
-파일 계열 엔진의 기본 파티션 전략입니다. 경로에 `{_partition_id}` 자리 표시자가 없을 때만 적용됩니다. 이러한 경로는 `wildcard` 전략과만 호환되므로 항상 `wildcard`를 의미합니다.
+파일 계열 엔진의 기본 파티션 전략입니다. 글롭이나 `{_partition_id}` 자리 표시자가 없는 경로를 사용하는 `CREATE` 쿼리에만 적용됩니다. `{_partition_id}`가 있는 경로는 항상 `wildcard`를 사용합니다. 다른 글롭이 있는 경로에는 파티션 전략이 적용되지 않으며 `PARTITION BY`는 무시됩니다. 이 설정이 `wildcard`인데 경로에 `{_partition_id}`가 없으면 파티션 전략이 적용되지 않습니다. 이 결정을 엔진 인수에 유지할 수 없는 테이블 엔진(예: `HDFS`)은 이러한 `CREATE`를 거부합니다.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit
@@ -1486,6 +1510,20 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "재개 가능한 `BACKUP FROM SNAPSHOT`을 활성화하는 새로운 실험적 설정입니다."}]}]} />
+
+재개 가능한 `BACKUP FROM SNAPSHOT`을 활성화합니다. 실패한 시도는 이미 완료된 배치의
+항목을 다시 복사하지 않고 재실행할 수 있습니다. 디렉터리 형식의 `S3` 및 `AzureBlobStorage` 대상에서만 ClickHouse Cloud를 통해 사용할 수 있습니다. `BACKUP FROM SNAPSHOT` 자체를 사용할 수 없는 ClickHouse 오픈 소스 빌드에서
+이 설정을 활성화하면 `BACKUP`이 `WRONG_BACKUP_SETTINGS` 오류와 함께 실패합니다.
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1495,6 +1533,24 @@ FORMAT Null;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "rows_before_aggregation 통계의 정확한 값을 제공하며, 이는 집계 전에 읽은 행 수를 나타냅니다"}]}]} />
 
 활성화되면 ClickHouse는 rows&#95;before&#95;aggregation 통계의 정확한 값을 제공하며, 이는 집계 전에 읽은 행 수를 나타냅니
+
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "제출한 연결과 분리된 상태로 백그라운드에서 쿼리를 실행하고 결과는 버리는 새로운 설정입니다."}]}]} />
+
+활성화하면 서버는 쿼리를 백그라운드에서 예약하고 즉시 비어 있는 성공 결과를 반환합니다. 이후 연결 상태와 관계없이 쿼리는 완료될 때까지 실행됩니다.
+
+백그라운드 쿼리는 서버를 재시작하면 유지되지 않습니다. 서버 종료 시에는 포그라운드 쿼리와 동일한 서버 설정을 따릅니다. `shutdown_wait_unfinished_queries`는 쿼리를 취소할지 완료될 때까지 기다릴지를 결정하며(큐에 대기 중인 항목은 어느 경우든 `system.query_log` 항목을 남기지 않고 삭제됩니다), `shutdown_wait_unfinished`는 서버가 기다리는 시간을 제한합니다.
+
+`query_id`로 쿼리를 추적할 수 있습니다. 실행 중에는 `system.processes`에서, 완료 후 쿼리 로그 항목이 플러시되면 `system.query_log`에서 확인할 수 있습니다.
+
+네이티브 TCP 및 HTTP 프로토콜을 통해 수신된 쿼리에 적용됩니다. HTTP에서는 이 설정을 URL 매개변수로 전달하십시오. `SET`으로 변경할 수 없으므로 쿼리별로 활성화하거나 사용자 또는 profile 수준에서 활성화하십시오.
+
+주요 사용 사례는 클라이언트 연결이 끊어져도 손실되어서는 안 되는 장시간 실행 `INSERT ... SELECT`입니다.
 
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering
@@ -1746,6 +1802,16 @@ TCPHandler에서 쿼리를 수신한 후 대기하는 시간입니다.
 * `0` - 남은 문자열은 결과 배열의 마지막 요소에 포함되지 않습니다.
 * `1` - 남은 문자열이 결과 배열의 마지막 요소에 포함됩니다. 이는 Spark의 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 함수와 Python의 [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) 메서드의 동작과 같습니다.
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "대규모 Set이 포함된 `IN`의 선택도 추정 비용을 제한하는 새로운 설정입니다. 제한을 초과하면 추정기는 정확한 범위 대신 Set의 크기와 경계 범위를 사용합니다. 26.8 이전에는 추정에 제한이 없었으므로 이전 값은 0(제한 없음)이며, 이전 버전의 `compatibility`를 사용하면 크기에 관계없이 Set의 정확한 범위를 복원합니다."}]}]} />
+
+선택도 추정기가 Set이 포함하는 정확한 범위를 도출하는 `IN` 연산자 오른쪽 Set의 최대 크기입니다. 정확한 범위를 도출하려면 원소당 `Field` 하나, 정렬 1회, 원소당 통계 프로브 1회가 필요하므로 대규모 Set에서는 쿼리 계획 수립 비용의 대부분을 차지합니다. 이 제한을 초과하면 추정기는 정렬이나 원소별 통계 프로브 없이 Set을 한 번 선형으로 순회하여 Set의 크기와 경계 범위로 선택도를 도출합니다. 0은 제한이 없음을 의미합니다.
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1781,6 +1847,18 @@ TCP가 keepalive probe 전송을 시작하기 전에 연결이 유휴 상태로 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 빈 INSERT를 허용하거나 금지합니다. 기본적으로 활성화되어 있으며, 빈 삽입이 발생하면 오류를 반환합니다. [`clickhouse-client`](/ko/concepts/features/interfaces/cli) 또는 [gRPC 인터페이스](/ko/concepts/features/interfaces/grpc)를 사용하는 INSERT에만 적용됩니다.
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "요청된 시간 범위가 TimeSeries 테이블의 최근 samples table TTL 범위 내에 있을 때 이 테이블에서 읽는 새로운 설정입니다."}]}]} />
+
+요청된 전체 시간 범위가 최근 samples table의 TTL 범위 내에 있으면 기본 samples table 대신 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블의 최근 samples table에서 읽습니다(TimeSeries 테이블 엔진의 `recent_samples_ttl_seconds` 설정 참조).
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed
