@@ -11,9 +11,10 @@ SETTINGS max_bytes_before_external_distinct = 1, max_threads = 4, log_comment = 
 -- The plan indeed contains a preliminary DISTINCT (otherwise this test exercises nothing).
 SELECT count() > 0 FROM (EXPLAIN PLAN SELECT DISTINCT number % 100000 AS k FROM numbers_mt(1000000) SETTINGS max_threads = 4) WHERE explain LIKE '%Preliminary DISTINCT%';
 
--- The final DISTINCT did spill (proving the duplicates flowed through the pass-through and were resolved).
+-- The preliminary DISTINCT transforms did switch to pass-through, and the final DISTINCT did spill and
+-- resolve the duplicates that flowed through.
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['ExternalDistinctWritePart'] >= 1, ProfileEvents['ExternalDistinctMerge'] = 1
+SELECT ProfileEvents['DistinctTransformsSwitchedToPassThrough'] >= 1, ProfileEvents['ExternalDistinctWritePart'] >= 1, ProfileEvents['ExternalDistinctMerge'] = 1
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase() AND log_comment = '04496_external_distinct/pass_through';

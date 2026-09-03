@@ -8,6 +8,7 @@
 namespace ProfileEvents
 {
     extern const Event DistinctTransformsAbandonedDeduplication;
+    extern const Event DistinctTransformsSwitchedToPassThrough;
 }
 
 namespace DB
@@ -119,6 +120,7 @@ void DistinctTransform::transform(Chunk & chunk)
 
         distinct_set.clear();
         pass_through = true;
+        ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
         return;
     }
 
