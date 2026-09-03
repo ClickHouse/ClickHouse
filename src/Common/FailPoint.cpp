@@ -158,6 +158,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_select_sequential_consistency_after_keeper_get) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
     PAUSEABLE_ONCE(delta_lake_write_commit_pause) \
+    PAUSEABLE_ONCE(delta_lake_create_table_pause) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \

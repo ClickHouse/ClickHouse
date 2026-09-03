@@ -1,0 +1,8 @@
+pre-create: no _delta_log
+post-create: initial commit exists
+0	0
+1	1
+2	2
+3
+3
+second-create: initial commit untouched

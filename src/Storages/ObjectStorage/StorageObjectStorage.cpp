@@ -160,6 +160,14 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    /// A columnless CREATE in a catalog database must still reach `create(...)` for engines that can attach
+    /// and register an existing table (its schema read from storage); others keep requiring explicit columns.
+    const bool columnless_catalog_create = columns_in_table_or_function_definition.empty() && catalog
+        && configuration->supportsCreateFromExistingTableInCatalog();
+    const bool creating_new_storage = !is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
+        && (!columns_in_table_or_function_definition.empty() || columnless_catalog_create);
+
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
@@ -182,9 +190,12 @@ StorageObjectStorage::StorageObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
     }
 
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
+    configuration->check(context);
+
+    if (creating_new_storage)
     {
-        LOG_DEBUG(log, "Creating new storage with specified columns");
+        LOG_DEBUG(log, "Creating new storage{}", columns_in_table_or_function_definition.empty() ? "" : " with specified columns");
         configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
@@ -236,11 +247,6 @@ StorageObjectStorage::StorageObjectStorage(
 
         configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
     }
-
-    /// Validate the configuration before schema/format inference, so that e.g. the HTTP host/header
-    /// filters are enforced before any inference network request reads remote data. The `url` table
-    /// function does the same in `TableFunctionURL::getActualTableStructure`.
-    configuration->check(context);
 
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);

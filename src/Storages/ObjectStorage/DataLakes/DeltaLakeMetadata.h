@@ -28,7 +28,6 @@ struct DeltaLakePartitionColumn
 /// Data file -> partition columns
 using DeltaLakePartitionColumns = std::unordered_map<std::string, std::vector<DeltaLakePartitionColumn>>;
 
-
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
@@ -50,17 +49,15 @@ public:
     }
 
     static void createInitial(
-        const ObjectStoragePtr & /*object_storage*/,
-        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
-        const ContextPtr & /*local_context*/,
-        const std::optional<ColumnsDescription> & /*columns*/,
-        ASTPtr /*partition_by*/,
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by,
         ASTPtr /*order_by*/,
-        bool /*if_not_exists*/,
+        bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/)
-    {
-    }
+        const StorageID & /*table_id_*/);
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType);
 
@@ -73,6 +70,7 @@ public:
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);
+
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);
 

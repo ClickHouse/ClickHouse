@@ -51,6 +51,13 @@ public:
         return DB::DatabaseDataLakeCatalogType::UNITY;
     }
 
+    /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
+    void createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content) const override;
+
 private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
@@ -61,6 +68,10 @@ private:
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
+
+    /// Throw if the catalog `warehouse` has no schema `schema_name` (or the catalog itself does not exist), so
+    /// a misconfigured namespace stays an error instead of being reported as an absent table by `existsTable`.
+    void checkNamespaceExists(const std::string & schema_name) const;
 
     CatalogTables getTablesForSchema(const std::string & schema, size_t limit = 0) const;
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;

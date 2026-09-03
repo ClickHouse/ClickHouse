@@ -17,6 +17,7 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
+    extern const SettingsBool delta_lake_accurate_write_cast;
 }
 
 namespace FailPoints
@@ -38,8 +39,10 @@ DeltaLakeSink::DeltaLakeSink(
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , sample_block(sample_block_)
+    , write_header(DeltaLake::makeDeltaWriteHeader(*sample_block_, delta_transaction_->getWriteSchema()))
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
+    , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
     , write_format(format)
     , write_compression_method(compression_method)
 {
@@ -86,7 +89,7 @@ DeltaLakeSink::StorageSinkPtr DeltaLakeSink::createStorageSink() const
         DeltaLake::generateWritePath(delta_transaction->getDataPath(), write_format),
         object_storage,
         format_settings,
-        sample_block,
+        write_header,
         getContext(),
         write_format,
         write_compression_method);
@@ -97,6 +100,9 @@ void DeltaLakeSink::consume(Chunk & chunk)
     if (isCancelled())
         return;
 
+    /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
+    Chunk write_chunk = DeltaLake::castChunkToDeltaWriteSchema(chunk, *sample_block, *write_header, accurate_write_cast);
+
     if (data_files.empty()
         || data_files.back().written_bytes >= data_file_max_bytes
         || data_files.back().written_rows >= data_file_max_rows)
@@ -105,9 +111,9 @@ void DeltaLakeSink::consume(Chunk & chunk)
     }
 
     auto & data_file = data_files.back();
-    data_file.written_bytes += chunk.bytes();
-    data_file.written_rows += chunk.getNumRows();
-    data_file.sink->consume(chunk);
+    data_file.written_bytes += write_chunk.bytes();
+    data_file.written_rows += write_chunk.getNumRows();
+    data_file.sink->consume(write_chunk);
 }
 
 void DeltaLakeSink::onFinish()

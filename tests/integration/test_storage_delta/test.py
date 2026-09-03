@@ -174,6 +174,28 @@ def started_cluster():
             with_zookeeper=True,
         )
         cluster.add_instance(
+            # A released version old enough that this PR will certainly not be backported to it, so the
+            # comparison stays meaningful: it has Delta writes (>= 25.10) but no write-schema cast, so it
+            # demonstrates the old "write the value as-is" behaviour before `restart_with_latest_version`.
+            # Uses only `users.xml` (not `enable_writes.xml`, which carries the 26.9-only
+            # `allow_delta_lake_create_table` setting the old binary would reject at startup); write settings
+            # are passed per query instead.
+            "node_old_writes",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/remote_servers.xml",
+                "configs/config.d/metadata_log.xml",
+            ],
+            user_configs=["configs/users.d/users.xml"],
+            with_installed_binary=True,
+            image="clickhouse/clickhouse-server",
+            tag="26.6",
+            with_minio=True,
+            stay_alive=True,
+            with_zookeeper=True,
+        )
+        cluster.add_instance(
             "node_with_disabled_delta_kernel",
             main_configs=[
                 "configs/config.d/named_collections.xml",
@@ -487,6 +509,96 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+
+def test_delta_lake_engine_secret_masked(started_cluster):
+    # A `CREATE TABLE ... ENGINE = DeltaLake('<url>', '<key>', '<secret>')` must mask the S3 secret
+    # access key as `[HIDDEN]` in `SHOW CREATE TABLE` and `system.tables`. Masking is applied when the
+    # query is formatted (see `FunctionSecretArgumentsFinder`), so it is independent of query execution.
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_delta_secret_masked")
+
+    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(10)"
+    parquet_data_path = create_initial_data_file(
+        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
+    )
+    delta_path = f"/{TABLE_NAME}"
+    write_delta_from_file(spark, parquet_data_path, delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/"
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake('{url}', 'minio', '{minio_secret_key}')
+        """
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+
+    for query in (
+        f"SHOW CREATE TABLE {TABLE_NAME}",
+        f"SELECT create_table_query FROM system.tables WHERE name = '{TABLE_NAME}' AND database = currentDatabase()",
+    ):
+        result = instance.query(query)
+        assert "[HIDDEN]" in result, result
+        assert minio_secret_key not in result, result
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_write_cast_upgrade_compatibility(started_cluster):
+    node = started_cluster.instances["node_old_writes"]
+    table_name = randomize_table_name("test_write_cast_upgrade")
+
+    # Existing Delta table whose column is stored as int8 (Delta `byte`).
+    storage_options = {
+        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        "AWS_ACCESS_KEY_ID": minio_access_key,
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{table_name}"
+    schema = pa.schema([("a", pa.int8())])
+    table = pa.Table.from_arrays([pa.array([1, 2], type=pa.int8())], schema=schema)
+    write_deltalake_with_retry(path, table, storage_options=storage_options)
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
+    write = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+    }
+
+    try:
+        # Attach on the OLD version with a declared column (Int32) wider than the Delta type (int8). The old
+        # version has no write-schema cast, so the out-of-range INSERT writes the value as-is and succeeds.
+        node.query(
+            f"CREATE TABLE {table_name} (a Int32) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')",
+            settings=write,
+        )
+        node.query(f"INSERT INTO {table_name} VALUES (1000)", settings=write)
+
+        # Upgrade to the current build; the table definition (Int32 column) is reloaded from metadata.
+        node.restart_with_latest_version()
+
+        # New version, default (delta_lake_accurate_write_cast = 1): the write-schema cast Int32 -> int8 now
+        # throws on the out-of-range value instead of silently truncating.
+        error = node.query_and_get_error(
+            f"INSERT INTO {table_name} VALUES (1000)", settings=write
+        )
+        assert "cannot be safely converted" in error, error
+
+        # New version with the setting off (as `compatibility` below 26.9 selects): the plain cast is used, so
+        # the INSERT succeeds again, preserving the old permissive behaviour.
+        node.query(
+            f"INSERT INTO {table_name} VALUES (1000)",
+            settings={**write, "delta_lake_accurate_write_cast": 0},
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 
 def test_single_log_file_azure_connection_string(started_cluster):
@@ -6138,3 +6250,58 @@ def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster)
         f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
         f"found {retry_hits} hits — the stale-token retry path was not exercised."
     )
+
+
+def test_create_table_concurrent_race_attaches(started_cluster):
+    # Two CREATE TABLE statements for the SAME location race to write commit 0. Creator A pauses right
+    # after its `_delta_log` existence check via the delta_lake_create_table_pause failpoint; while it is
+    # paused, creator B (a different table name, so no DDL-guard serialization) creates the table and writes
+    # commit 0. When A resumes, its own commit loses the race, the kernel reports the conflict, and
+    # `DeltaLakeMetadataDeltaKernel::createTable` must attach to the now-existing table instead of failing.
+    # Regression for the lost-race attach path in createTable.
+    instance = started_cluster.instances["node1"]
+    failpoint = "delta_lake_create_table_pause"
+    table_path = f"/var/lib/clickhouse/user_files/{randomize_table_name('concurrent_create')}"
+    table_a = randomize_table_name("t_dl_race_a")
+    table_b = randomize_table_name("t_dl_race_b")
+
+    # PAUSEABLE_ONCE: only the first creator to reach the window (A) pauses; B passes straight through.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    # A thread assertion does not fail the test on its own, so hand any worker error back to the main thread.
+    create_error = []
+
+    def run_create_a():
+        try:
+            _, error = instance.query_and_get_answer_with_error(
+                f"CREATE TABLE {table_a} (id Int32, name String) ENGINE = DeltaLakeLocal('{table_path}')"
+            )
+            assert error == "", f"CREATE A should attach to the concurrently-created table, not fail: {error}"
+        except BaseException as e:  # noqa: BLE001
+            create_error.append(e)
+
+    thread = threading.Thread(target=run_create_a)
+    thread.start()
+    try:
+        # Bounded wait so a never-hit failpoint fails the test instead of hanging.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        # B wins the race and writes commit 0 while A is paused.
+        instance.query(
+            f"CREATE TABLE {table_b} (id Int32, name String) ENGINE = DeltaLakeLocal('{table_path}')"
+        )
+        # Resume A; its commit now loses the race and must fall back to attaching.
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        thread.join()
+
+    if create_error:
+        raise create_error[0]
+
+    # Both tables point at the same Delta table and read consistently.
+    instance.query(f"INSERT INTO {table_b} VALUES (1, 'a')")
+    assert instance.query(f"SELECT count() FROM {table_a}").strip() == "1"
+    assert instance.query(f"SELECT count() FROM {table_b}").strip() == "1"
+
+    instance.query(f"DROP TABLE {table_a}")
+    instance.query(f"DROP TABLE {table_b}")

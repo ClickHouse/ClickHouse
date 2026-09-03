@@ -3,6 +3,7 @@
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
@@ -11,7 +12,12 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeCatalogRegistration.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
@@ -19,6 +25,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
+#include <fmt/ranges.h>
 #include <Common/assert_cast.h>
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -38,17 +45,21 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
+    extern const int DELTA_KERNEL_ERROR;
 }
 
 namespace FailPoints
 {
     extern const char delta_lake_metadata_iterate_pause[];
+    extern const char delta_lake_create_table_pause[];
 }
 
 namespace Setting
 {
     extern const SettingsBool delta_lake_log_metadata;
     extern const SettingsBool allow_experimental_delta_lake_writes;
+    extern const SettingsBool allow_delta_lake_create_table;
     extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -643,8 +654,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
-    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    delta_transaction->create(partition_columns, snapshot->getTableSchema());
+    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, snapshot->getTableSchema());
+    delta_transaction->create(partition_columns);
 
     if (partition_columns.empty())
     {
@@ -667,6 +678,171 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
         format_settings,
         configuration->format,
         configuration->compression_method);
+}
+
+namespace
+{
+
+/// Whether a *valid* Delta table can be read at the location (forces a snapshot load, unlike `deltaLogExists`).
+bool validDeltaTableExists(const DeltaLake::KernelHelperPtr & kernel_helper, const ObjectStoragePtr & object_storage, LoggerPtr log)
+{
+    try
+    {
+        auto snapshot = std::make_shared<DeltaLake::TableSnapshot>(/* version */ std::nullopt, kernel_helper, object_storage, log);
+        snapshot->getVersion();
+        return true;
+    }
+    catch (...)
+    {
+        /// Ok: a failed snapshot load means there is no valid table to attach to; report that as `false`.
+        return false;
+    }
+}
+
+}
+
+bool DeltaLakeMetadataDeltaKernel::createTable(
+    const ObjectStoragePtr & object_storage_,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context,
+    const ColumnsDescription & columns,
+    ASTPtr partition_by,
+    bool delta_log_exists,
+    bool /* if_not_exists */)
+{
+    auto log = getLogger("DeltaLakeMetadataDeltaKernel");
+
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
+
+    /// If a `_delta_log` already exists, attach to the existing table instead of creating. The declared
+    /// columns are not required to match the table's schema: as with any DeltaLake read, ClickHouse adapts
+    /// them to the data (a genuinely wrong column surfaces as a catchable error at read time).
+    const auto data_path = configuration_ptr->getRawPath().path;
+    if (delta_log_exists)
+    {
+        LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
+        return false;
+    }
+
+    /// A fresh CREATE must write the initial commit, which requires delta lake writes; fail when they are off.
+    if (!local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Creating a new Delta Lake table requires allow_experimental_delta_lake_writes = 1");
+
+    /// PARTITION BY is rejected earlier by `StorageFactory` (the DeltaLake engine does not set
+    /// `supports_sort_order`), so `partition_by` cannot be non-null here.
+    chassert(!partition_by);
+
+    /// Qualify with `DB::`: a member `getKernelHelper()` shadows the free function here.
+    auto kernel_helper = DB::getKernelHelper(configuration_ptr, object_storage_);
+
+    /// Use `getAllPhysical()` so the Delta schema matches the physical columns the writer emits to Parquet.
+    auto schema_list = columns.getAllPhysical();
+
+    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list);
+
+    /// Test hook: pause after the existence check so a concurrent CREATE can write the `_delta_log`
+    /// first, exercising the lost-race attach path in the catch below.
+    FailPointInjection::pauseFailPoint(FailPoints::delta_lake_create_table_pause);
+
+    try
+    {
+        write_transaction->createTable();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::DELTA_KERNEL_ERROR || !validDeltaTableExists(kernel_helper, object_storage_, log))
+            throw;
+        LOG_DEBUG(log, "Delta table was created concurrently at `{}`; attaching to it instead", data_path);
+        return false;
+    }
+
+    LOG_DEBUG(log, "Initialized Delta table at `{}` with {} column(s)", data_path, schema_list.size());
+
+    return true;
+}
+
+void DeltaLakeMetadataDeltaKernel::createInitial(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context,
+    const std::optional<ColumnsDescription> & columns,
+    ASTPtr partition_by,
+    ASTPtr /*order_by*/,
+    bool if_not_exists,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const StorageID & table_id_)
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
+
+    /// Columnless CREATE is allowed only to register/attach an existing table (schema read from the
+    /// `_delta_log`); a new table needs an explicit schema.
+    const bool has_explicit_columns = columns.has_value() && !columns->empty();
+
+    /// Register with the catalog whenever one is present: an attach to an existing `_delta_log` must be registered even with writes off, and a fresh CREATE that needs writes is already rejected in `createTable`.
+    const bool register_with_catalog = catalog != nullptr;
+
+    /// Decide everything the setting governs before touching storage or rejecting the catalog type, so that
+    /// with the feature off 26.9 reproduces the pre-feature behaviour. Without a catalog, return silently, so a
+    /// plain `CREATE TABLE ... ENGINE = DeltaLake(...)` stays lazy and adds no round trip. With a catalog the
+    /// CREATE cannot do anything useful while the feature is off (the registration is the whole point), so fail
+    /// instead of reporting success with no catalog entry.
+    if (!local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
+    {
+        if (!register_with_catalog)
+            return;
+
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Creating a new DeltaLake table or registering an existing one into a catalog with CREATE TABLE "
+            "is experimental; set allow_delta_lake_create_table = 1 to enable it");
+    }
+
+    if (register_with_catalog && catalog->getCatalogType() != DatabaseDataLakeCatalogType::UNITY)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "CREATE TABLE with ENGINE = DeltaLake is only supported in a Unity catalog database");
+
+    const bool delta_log_exists = deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
+
+    if (has_explicit_columns)
+    {
+        /// Reject unsupported columns before the first commit, else `_delta_log` is written (and the catalog
+        /// entry created) before `StorageObjectStorage`'s later `validateSupportedColumns` rejects the DDL.
+        if (!columns->hasOnlyOrdinary())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for DeltaLake CREATE TABLE");
+
+        /// Reject columns with virtual-column names before the first commit for the same reason.
+        const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+        for (const auto & column : *columns)
+            if (reserved_virtual_columns.contains(column.name))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
+                    column.name);
+    }
+
+    /// With explicit columns, `createTable` writes commit 0 (fresh) or attaches (existing). Without columns
+    /// we can only attach, so a fresh location (no `_delta_log`) is rejected here.
+    bool created_fresh = false;
+    if (has_explicit_columns)
+        created_fresh = createTable(
+            object_storage, configuration, local_context, *columns, partition_by, delta_log_exists, if_not_exists);
+    else if (!delta_log_exists)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "CREATE TABLE for a new DeltaLake table requires explicit column definitions");
+
+    if (register_with_catalog)
+        registerDeltaTableInCatalog(
+            catalog, object_storage, configuration_ptr, columns, created_fresh, if_not_exists, table_id_);
 }
 
 void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const

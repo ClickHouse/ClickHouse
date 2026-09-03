@@ -123,6 +123,7 @@
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
     M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
+    M(DeltaLakeDeltaLogExistenceChecks, "Number of object-storage listings issued to check whether a DeltaLake `_delta_log` exists (e.g. during CREATE TABLE).", ValueType::Number) \
     M(OneLakeAccessTokenRequests, "Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.", ValueType::Number) \
     M(OneLakeAccessTokenRequestFailures, "Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).", ValueType::Number) \
     M(OneLakeAccessTokenRequestMicroseconds, "Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.", ValueType::Microseconds) \

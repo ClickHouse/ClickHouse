@@ -69,6 +69,19 @@ public:
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage_, configuration);
     }
 
+    /// CREATE TABLE entry point when the kernel is enabled: validate the declared columns, write commit 0
+    /// (fresh) or attach to an existing `_delta_log`, and register the table in the catalog when present.
+    static void createInitial(
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by,
+        ASTPtr order_by,
+        bool if_not_exists,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & table_id_);
+
     std::optional<size_t> totalRows(ContextPtr) const override;
 
     std::optional<size_t> totalBytes(ContextPtr) const override;
@@ -111,6 +124,17 @@ private:
     mutable std::optional<SnapshotVersion> latest_snapshot_version;
 
     void logMetadataFiles(ContextPtr context) const;
+
+    /// Initialize a new Delta table by writing commit 0, or attach to an existing `_delta_log`; returns true if successfully created.
+    /// `delta_log_exists` is the (already computed) result of `deltaLogExists` for the target path, passed in to avoid a redundant listing.
+    static bool createTable(
+        const ObjectStoragePtr & object_storage_,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context,
+        const ColumnsDescription & columns,
+        ASTPtr partition_by,
+        bool delta_log_exists,
+        bool /* if_not_exists */);
 
     /// No version means latest version.
     DeltaLake::TableSnapshotPtr getTableSnapshot(

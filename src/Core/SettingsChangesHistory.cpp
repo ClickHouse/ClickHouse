@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
+            {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},

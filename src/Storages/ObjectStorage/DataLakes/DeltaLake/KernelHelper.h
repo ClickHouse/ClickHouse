@@ -47,6 +47,9 @@ public:
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
 
+    /// Make the table location ready for a brand-new table; the local helper creates the root directory, object stores (S3/Azure) default to a no-op.
+    virtual void prepareForTableCreation() const {}
+
     /// Hash of current credentials; override for providers with rotating sessions.
     virtual DB::UInt128 getCredentialsFingerprint() const { return {}; }
 

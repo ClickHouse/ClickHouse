@@ -38,6 +38,7 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
+    extern const SettingsBool delta_lake_accurate_write_cast;
 }
 
 namespace FailPoints
@@ -162,8 +163,11 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , format_settings(format_settings_)
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
+    , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
+    , format_header(partition_strategy->getFormatHeader())
+    , write_format_header(DeltaLake::makeDeltaWriteHeader(format_header, delta_transaction_->getWriteSchema()))
     , write_format(write_format_)
     , write_compression_method(write_compression_method_)
 {
@@ -351,9 +355,11 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
             total_data_files_count += 1;
         }
         auto & data_file = data_files.back();
-        data_file.written_bytes += partition_chunk.bytes();
-        data_file.written_rows += partition_chunk.getNumRows();
-        data_file.sink->consume(partition_chunk);
+        /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
+        Chunk write_chunk = DeltaLake::castChunkToDeltaWriteSchema(partition_chunk, format_header, *write_format_header, accurate_write_cast);
+        data_file.written_bytes += write_chunk.bytes();
+        data_file.written_rows += write_chunk.getNumRows();
+        data_file.sink->consume(write_chunk);
     }
 }
 
@@ -380,7 +386,7 @@ DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
         DeltaLake::generateWritePath(std::move(data_prefix), write_format),
         object_storage,
         format_settings,
-        std::make_shared<Block>(partition_strategy->getFormatHeader()),
+        write_format_header,
         getContext(),
         write_format,
         write_compression_method);

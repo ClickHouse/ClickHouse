@@ -8088,6 +8088,9 @@ Defines a rows limit for a single inserted data file in delta lake.
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
 Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
+    DECLARE(Bool, delta_lake_accurate_write_cast, true, R"(
+When writing to a DeltaLake table, cast each value to the Delta write-schema type with an accurate cast that throws when a value does not fit the target type, instead of a plain cast that silently truncates it (e.g. `300` written into a Delta `byte` column). Set to `false`, or use a `compatibility` setting below 26.9, for the plain, non-throwing cast.
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
 )", BETA, allow_delta_lake_writes) \
@@ -8985,6 +8988,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
 Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
 )", BETA, allow_experimental_delta_kernel_rs) \
+    DECLARE(Bool, allow_delta_lake_create_table, false, R"(
+Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet. In a `DataLakeCatalog` database the table is registered with its Delta schema, so declared ClickHouse types that map to a wider Delta type (e.g. `UInt8` -> `short`, `FixedString(N)` -> `string`) are read back as the Delta-mapped type rather than the declared one.
+)", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \

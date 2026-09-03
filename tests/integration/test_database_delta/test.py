@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_access_key, minio_secret_key
 import pytest
 
 from helpers.test_tools import TSV
@@ -54,6 +55,11 @@ def started_cluster():
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
             tag=os.environ.get("DOCKER_BASE_WITH_UNITY_CATALOG_TAG", "latest"),
+            # MinIO is only used by `test_create_delta_table_writes_initial_log`
+            # to exercise the `ENGINE = DeltaLake('http://...', user, password)`
+            # path through the new create-table FFI. None of the Unity-Catalog
+            # tests depend on it.
+            with_minio=True,
         )
 
         logging.info("Starting cluster...")
@@ -1031,3 +1037,615 @@ SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false
         .strip()
     )
     assert row == "1\thello varchar\thello char"
+
+
+def test_create_delta_table_writes_initial_log(started_cluster):
+    """
+    Issue #103155, point 3 (kernel create-table FFI): CREATE TABLE against a
+    fresh location must drive the v0.23.0 create-table transaction in
+    delta-kernel-rs end-to-end, producing the
+    ``_delta_log/00000000000000000000.json`` commit on disk.
+
+    Catalog-free in the style of ``test_partition_columns`` -- we use the
+    S3-backed ``ENGINE = DeltaLake('http://...', user, password)`` against
+    the cluster's MinIO so the test doesn't depend on Unity Catalog or
+    Spark. The relevant call chain that this exercises:
+
+        InterpreterCreateQuery
+        -> StorageObjectStorage::ctor (mode=CREATE, is_datalake_query=false)
+        -> DataLakeConfiguration::create()
+        -> DeltaLakeMetadata::createInitial
+        -> DeltaLakeMetadataDeltaKernel::createTable  <-- the new entry point
+        -> WriteTransaction::createTable               <-- the new FFI driver
+        -> ffi::get_create_table_builder
+           ffi::create_table_builder_build
+           ffi::create_table_commit
+
+    The schema converter ``buildKernelEngineSchema`` (CH ``NamesAndTypesList``
+    -> kernel ``StructType`` via ``ffi::visit_field_*``) is implicitly covered
+    by the per-column assertions on the commit JSON below: a regression in
+    the visitor would either fail the create or drop a column from the
+    Metadata action.
+
+    The stateless test ``04277_create_table_deltalake_schema_types.sh`` covers
+    the same code path with a wider type matrix; this integration-test variant
+    proves the path also works inside the integration harness (clickhouse +
+    real disk, no special test runner).
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = uuid.uuid4().hex[:10]
+    bucket = started_cluster.minio_bucket
+    table_key = f"create_table_{test_uuid}"
+    table_url = (
+        f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{table_key}/"
+    )
+    initial_commit_object = f"{table_key}/_delta_log/00000000000000000000.json"
+
+    # Clean any leftover state from prior runs.
+    minio_client = started_cluster.minio_client
+    for obj in list(minio_client.list_objects(bucket, prefix=table_key + "/", recursive=True)):
+        minio_client.remove_object(bucket, obj.object_name)
+    node1.query("DROP TABLE IF EXISTS t_dl_initial_log")
+
+    # Sanity: no _delta_log present before the CREATE.
+    pre_objects = list(
+        minio_client.list_objects(bucket, prefix=f"{table_key}/_delta_log/", recursive=True)
+    )
+    assert not pre_objects, (
+        f"_delta_log unexpectedly present in s3://{bucket}/{table_key}/ before CREATE TABLE"
+    )
+
+    # `allow_delta_lake_create_table` gates the CREATE query; `allow_experimental_delta_lake_writes`
+    # is additionally required to write commit 0 (checked in `DeltaLakeMetadataDeltaKernel::createTable`).
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    try:
+        node1.query(
+            "CREATE TABLE t_dl_initial_log (id Int32, name String) "
+            f"ENGINE = DeltaLake('{table_url}', '{minio_access_key}', '{minio_secret_key}')",
+            settings=write_settings,
+        )
+
+        # The kernel create-table transaction must have written commit 0.
+        try:
+            stat = minio_client.stat_object(bucket, initial_commit_object)
+        except Exception as e:
+            raise AssertionError(
+                f"Expected initial Delta commit at s3://{bucket}/{initial_commit_object}; "
+                f"the create-table kernel FFI was not driven. ({e!r})"
+            )
+        size_before = stat.size
+
+        # Read the table back through the kernel reader to confirm the commit
+        # is well-formed and the schema round-trips.
+        row_count = int(
+            node1.query(
+                "SELECT count() FROM t_dl_initial_log",
+                settings=write_settings,
+            ).strip()
+        )
+        assert row_count == 0
+
+        describe = node1.query(
+            "SELECT name, type FROM system.columns WHERE database = currentDatabase() "
+            "AND table = 't_dl_initial_log' ORDER BY name",
+            settings=write_settings,
+        ).strip()
+        assert describe == "id\tInt32\nname\tString", describe
+
+        # Commit JSON must carry both the Metadata and Protocol actions plus
+        # every declared column name (proves `buildKernelEngineSchema` walked
+        # the schema correctly). The columns live in the metaData action's
+        # `schemaString` field, which is itself JSON-encoded, so the field
+        # names appear with backslash-escaped quotes -- match on that exact
+        # form to avoid coincidental hits against the metaData's own `"id"`
+        # / `"name"` keys.
+        commit_obj = minio_client.get_object(bucket, initial_commit_object)
+        try:
+            commit_text = commit_obj.read().decode("utf-8")
+        finally:
+            commit_obj.close()
+            commit_obj.release_conn()
+        assert '"metaData"' in commit_text, "metaData action missing from commit 0"
+        assert '"protocol"' in commit_text, "protocol action missing from commit 0"
+        for col in ("id", "name"):
+            expected = f'\\"name\\":\\"{col}\\"'
+            assert expected in commit_text, (
+                f"column `{col}` missing from commit 0 schemaString; "
+                f"expected substring {expected!r} in {commit_text!r}"
+            )
+
+        # CREATE TABLE IF NOT EXISTS on the same location must be a no-op: the
+        # original commit-0 file is preserved (matches the prior
+        # attach-against-existing behavior).
+        node1.query("DROP TABLE t_dl_initial_log")
+        node1.query(
+            "CREATE TABLE IF NOT EXISTS t_dl_initial_log (id Int32, name String) "
+            f"ENGINE = DeltaLake('{table_url}', '{minio_access_key}', '{minio_secret_key}')",
+            settings=write_settings,
+        )
+        size_after = minio_client.stat_object(bucket, initial_commit_object).size
+        assert size_before == size_after, (
+            f"Second CREATE TABLE rewrote commit 0 ({size_before} -> {size_after})"
+        )
+    finally:
+        node1.query("DROP TABLE IF EXISTS t_dl_initial_log")
+        for obj in list(minio_client.list_objects(bucket, prefix=table_key + "/", recursive=True)):
+            minio_client.remove_object(bucket, obj.object_name)
+
+
+def test_create_delta_table_in_unity_catalog(started_cluster):
+    """
+    Issue #103155, point 4 (catalog case): CREATE TABLE inside a Unity-backed
+    ``DataLakeCatalog`` database must both
+
+      (a) write the initial ``_delta_log`` via the kernel create-table FFI, and
+      (b) register the table with Unity via ``UnityCatalog::createTable``,
+
+    so the freshly created table becomes visible to ``SHOW TABLES`` and
+    queryable via ``SELECT`` (``DatabaseDataLake`` keeps no local table list --
+    it always asks the catalog). The path exercised:
+
+        InterpreterCreateQuery
+        -> StorageObjectStorage::ctor (mode=CREATE, is_datalake_query=false, catalog=Unity)
+        -> DataLakeConfiguration::create()
+        -> DeltaLakeMetadata::createInitial
+           -> DeltaLakeMetadataDeltaKernel::createTable   # writes _delta_log
+           -> catalog->createTable(...)                   # UnityCatalog REST POST /tables
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_create_{test_uuid}"
+    schema_name = f"create_schema_{test_uuid}"
+    table_name = f"created_table_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    # The target Unity schema must exist before ClickHouse can register a table in
+    # it (Unity rejects a table create into a missing schema). Create it via Spark.
+    execute_multiple_spark_queries(
+        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
+    )
+
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_database_unity_catalog": 1,
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    try:
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` (id Int32, name String) "
+            f"ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+
+        # (a) commit 0 must exist on disk.
+        commit_text = node1.exec_in_container(
+            ["bash", "-c", f"cat {location}/_delta_log/00000000000000000000.json"]
+        )
+        assert '"metaData"' in commit_text, commit_text
+        assert '"protocol"' in commit_text, commit_text
+
+        # (b) the table must be visible through the catalog (SHOW TABLES asks Unity).
+        tables = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'",
+            settings=write_settings,
+        ).strip()
+        assert f"{schema_name}.{table_name}" in tables, tables
+
+        # ... and queryable through the catalog (freshly created, so empty).
+        row_count = int(
+            node1.query(
+                f"SELECT count() FROM {db_name}.`{schema_name}.{table_name}`",
+                settings=write_settings,
+            ).strip()
+        )
+        assert row_count == 0
+
+        # A fresh database handle must also see the table (proves it lives in Unity,
+        # not in any per-connection ClickHouse state).
+        node1.query(f"DROP DATABASE {db_name}", settings=write_settings)
+        node1.query(
+            f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+            "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+            "allow_experimental_delta_kernel_rs=1",
+            settings={"allow_experimental_database_unity_catalog": "1"},
+        )
+        tables_after = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'",
+            settings=write_settings,
+        ).strip()
+        assert f"{schema_name}.{table_name}" in tables_after, tables_after
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+
+
+def test_register_existing_delta_table_in_unity_catalog(started_cluster):
+    """
+    Onboarding an *existing* Delta table (a `_delta_log` already on storage but not yet in the catalog) into
+    a Unity-backed `DataLakeCatalog` database must register it, for both:
+      - a columnless `CREATE` (schema inferred from the `_delta_log`), and
+      - an explicit-column `CREATE` with `allow_experimental_delta_lake_writes = 0` (attach, no commit written).
+    Regression for the registration gaps found in review: the columnless path never reached
+    `DeltaLakeMetadata::createInitial`, and the explicit-column attach path skipped catalog registration
+    whenever writes were disabled.
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_register_{test_uuid}"
+    schema_name = f"register_schema_{test_uuid}"
+    columnless_table = f"columnless_{test_uuid}"
+    attach_table = f"attach_{test_uuid}"
+    columnless_creator = f"creator_columnless_{test_uuid}"
+    attach_creator = f"creator_attach_{test_uuid}"
+    columnless_loc = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{columnless_table}"
+    attach_loc = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{attach_table}"
+
+    execute_multiple_spark_queries(
+        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
+    )
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    # Attach must not need writes: the `_delta_log` already exists, so no commit is written. Registering it
+    # in the catalog is still the create-table path, so it needs `allow_delta_lake_create_table`.
+    attach_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 0,
+        "allow_delta_lake_create_table": 1,
+    }
+
+    def make_unregistered_delta_table(creator, location):
+        # A plain (non-catalog) DeltaLakeLocal table writes commit 0 at `location` without registering it
+        # in Unity, giving us an existing Delta table to onboard.
+        node1.query(
+            f"CREATE TABLE default.{creator} (id Int32, name String) ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        node1.query(
+            f"INSERT INTO default.{creator} VALUES (1, 'a')", settings=write_settings
+        )
+
+    try:
+        # (1) columnless CREATE onboards the existing table (schema inferred from the `_delta_log`).
+        make_unregistered_delta_table(columnless_creator, columnless_loc)
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{columnless_table}` ENGINE = DeltaLakeLocal('{columnless_loc}')",
+            settings=write_settings,
+        )
+        tables = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'", settings=write_settings
+        ).strip()
+        assert f"{schema_name}.{columnless_table}" in tables, tables
+        assert (
+            int(
+                node1.query(
+                    f"SELECT count() FROM {db_name}.`{schema_name}.{columnless_table}`",
+                    settings=write_settings,
+                ).strip()
+            )
+            == 1
+        )
+
+        # (2) explicit-column CREATE with writes OFF onboards the existing table (attach, no commit written).
+        make_unregistered_delta_table(attach_creator, attach_loc)
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{attach_table}` (id Int32, name String) "
+            f"ENGINE = DeltaLakeLocal('{attach_loc}')",
+            settings=attach_settings,
+        )
+        tables = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'", settings=write_settings
+        ).strip()
+        assert f"{schema_name}.{attach_table}" in tables, tables
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+        node1.query(f"DROP TABLE IF EXISTS default.{columnless_creator}")
+        node1.query(f"DROP TABLE IF EXISTS default.{attach_creator}")
+
+
+def test_register_existing_delta_table_missing_namespace(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_missing_ns_{test_uuid}"
+    schema_name = f"present_schema_{test_uuid}"
+    missing_schema = f"missing_schema_{test_uuid}"
+    table_name = f"table_{test_uuid}"
+    creator = f"creator_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    execute_multiple_spark_queries(
+        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
+    )
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    try:
+        # An existing Delta table on storage, not yet registered in Unity.
+        node1.query(
+            f"CREATE TABLE default.{creator} (id Int32) ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+
+        # (1) Schema exists, table not registered -> `existsTable` returns false (no throw), so onboarding
+        # the existing table succeeds.
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        tables = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'", settings=write_settings
+        ).strip()
+        assert f"{schema_name}.{table_name}" in tables, tables
+
+        # (2) Schema does not exist -> the pre-create existence check throws a clear "no schema" error
+        # rather than reporting the table as absent (which would let CREATE write commit 0 and only then
+        # fail in catalog registration).
+        error = node1.query_and_get_error(
+            f"CREATE TABLE {db_name}.`{missing_schema}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        assert "has no schema" in error, error
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+        node1.query(f"DROP TABLE IF EXISTS default.{creator}")
+
+
+def test_register_existing_delta_table_preserves_raw_schema(started_cluster):
+    """
+    Attaching an existing Spark-created Delta table into a Unity `DataLakeCatalog` database must register the
+    raw Delta schema read from the `_delta_log`, preserving types that the ClickHouse round-trip collapses
+    (`binary` -> `String`, `timestamp_ntz` -> `DateTime64`). Regression for review #2/#3 in PR #106011:
+    registration previously went through `getTableSchema` (ClickHouse types + read-time snapshot/CDF settings).
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_rawschema_{test_uuid}"
+    schema_name = f"rawschema_schema_{test_uuid}"
+    table_name = f"rawschema_table_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    # A path-based Spark Delta table (`delta.`<path>``) is written to storage but NOT registered in Unity,
+    # so ClickHouse onboards it. Its `binary` and `timestamp_ntz` columns both collapse under the ClickHouse
+    # schema round-trip, so they exercise the raw-schema registration path. The target Unity schema must
+    # exist for ClickHouse to register the table into it.
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA IF NOT EXISTS {schema_name}",
+            f"CREATE TABLE delta.\\`{location}\\` (b BINARY, t TIMESTAMP_NTZ, s STRING) USING delta",
+        ],
+        retry_on_timeout=True,
+    )
+
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+        # A historical snapshot version must be ignored by registration (it always reads the latest schema).
+        "delta_lake_snapshot_version": 0,
+    }
+    try:
+        # Columnless attach: schema inferred from the `_delta_log`, and registered raw into Unity.
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+
+        # The Unity entry must carry the exact Delta types, not the collapsed ClickHouse ones. Before the fix
+        # these would be registered as `string` / `timestamp`.
+        registered = ""
+        for _ in range(10):
+            registered = node1.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"curl -s 'http://localhost:8080/api/2.1/unity-catalog/tables/unity.{schema_name}.{table_name}'",
+                ]
+            )
+            if "binary" in registered and "timestamp_ntz" in registered:
+                break
+            time.sleep(1)
+        assert "binary" in registered, registered
+        assert "timestamp_ntz" in registered, registered
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+
+
+def test_register_existing_delta_table_rejects_column_mapping(started_cluster):
+    """
+    A Spark Delta table with column mapping carries per-field `delta.columnMapping.physicalName` metadata
+    (consumed by the read path) that the raw-schema helper does not serialize, so registering it into Unity
+    would produce a schema differing from the `_delta_log`. Onboarding such a table must be rejected rather
+    than silently register a wrong schema. Regression for review #1 in PR #106011.
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_colmap_{test_uuid}"
+    schema_name = f"colmap_schema_{test_uuid}"
+    table_name = f"colmap_table_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA IF NOT EXISTS {schema_name}",
+            f"CREATE TABLE delta.\\`{location}\\` (id INT, name STRING) USING delta "
+            "TBLPROPERTIES ('delta.columnMapping.mode' = 'name')",
+        ],
+        retry_on_timeout=True,
+    )
+
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    try:
+        # Onboarding a column-mapped table into the catalog must be rejected, not silently registered.
+        error = node1.query_and_get_error(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        assert "column mapping" in error, error
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+
+
+def test_register_existing_delta_table_rejects_char_varchar(started_cluster):
+    """
+    A Spark Delta table with CHAR/VARCHAR columns stores them as `string` with a `__CHAR_VARCHAR_TYPE_STRING`
+    field-metadata annotation that the raw-schema helper cannot preserve, so onboarding such a table into a
+    Unity catalog must be rejected rather than register a schema differing from the `_delta_log`. Regression
+    for review #2 in PR #106011.
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_charvarchar_{test_uuid}"
+    schema_name = f"charvarchar_schema_{test_uuid}"
+    table_name = f"charvarchar_table_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA IF NOT EXISTS {schema_name}",
+            f"CREATE TABLE delta.\\`{location}\\` (id INT, name VARCHAR(10)) USING delta",
+        ],
+        retry_on_timeout=True,
+    )
+
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    try:
+        # Onboarding a CHAR/VARCHAR table into the catalog must be rejected, not silently registered as string.
+        error = node1.query_and_get_error(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        assert "CHAR/VARCHAR" in error, error
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+
+
+def test_register_existing_delta_table_requires_kernel(started_cluster):
+    """
+    Attaching an existing Delta table into a Unity `DataLakeCatalog` database reads its schema via the kernel
+    to register it, so with `allow_experimental_delta_kernel_rs = 0` the CREATE must fail explicitly rather
+    than report success while registering nothing in Unity (regression for the silent no-op in
+    `DeltaLakeMetadata::createInitial`).
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_nokernel_{test_uuid}"
+    schema_name = f"nokernel_schema_{test_uuid}"
+    table_name = f"nokernel_table_{test_uuid}"
+    creator = f"creator_nokernel_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    execute_multiple_spark_queries(
+        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
+    )
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+    try:
+        # An existing Delta table on storage, not registered in Unity.
+        node1.query(
+            f"CREATE TABLE default.{creator} (id Int32) ENGINE = DeltaLakeLocal('{location}')",
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "allow_experimental_delta_lake_writes": 1,
+                "allow_delta_lake_create_table": 1,
+            },
+        )
+
+        # Onboarding it into the catalog with the kernel disabled must fail explicitly. The create-table
+        # setting is enabled so the failure is the kernel requirement, not the experimental-feature gate.
+        error = node1.query_and_get_error(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings={
+                "allow_experimental_delta_kernel_rs": 0,
+                "allow_delta_lake_create_table": 1,
+            },
+        )
+        assert "allow_delta_kernel_rs" in error, error
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+        node1.query(f"DROP TABLE IF EXISTS default.{creator}")

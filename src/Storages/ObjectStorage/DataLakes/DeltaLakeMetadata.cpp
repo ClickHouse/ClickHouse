@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Context.h>
@@ -31,6 +32,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -63,11 +65,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
     extern const SettingsBool allow_delta_kernel_rs;
+    extern const SettingsBool allow_delta_lake_create_table;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -711,6 +715,63 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
     return isDeltaKernelEnabled(context, storage_type);
 }
 
+void DeltaLakeMetadata::createInitial(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    [[maybe_unused]] const ContextPtr & local_context,
+    [[maybe_unused]] const std::optional<ColumnsDescription> & columns,
+    [[maybe_unused]] ASTPtr partition_by,
+    [[maybe_unused]] ASTPtr order_by,
+    [[maybe_unused]] bool if_not_exists,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    [[maybe_unused]] const StorageID & table_id_)
+{
+    auto configuration_ptr = configuration.lock();
+    chassert(configuration_ptr);
+
+#if USE_DELTA_KERNEL_RS
+    const bool kernel_enabled = isDeltaKernelEnabled(local_context, configuration_ptr->getType());
+#else
+    const bool kernel_enabled = false;
+#endif
+
+    /// Without the kernel there is no Delta Lake writer, so a fresh CREATE (no `_delta_log`) must fail.
+    if (!kernel_enabled)
+    {
+        /// Gate on the create setting first, so with the feature off 26.9 reproduces the pre-feature
+        /// behaviour: a plain CREATE returns silently and a catalog CREATE fails with the setting error rather
+        /// than the kernel-requirement one.
+        if (!local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
+        {
+            if (!catalog)
+                return;
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Creating a new DeltaLake table or registering an existing one into a catalog with CREATE TABLE "
+                "is experimental; set allow_delta_lake_create_table = 1 to enable it");
+        }
+
+        if (!deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Creating a new Delta Lake table requires allow_delta_kernel_rs = 1 "
+                "(there is no non-kernel Delta Lake writer)");
+        /// Registering an existing table in a catalog reads its schema via the kernel, so without the kernel we
+        /// cannot register it -- fail explicitly rather than reporting success while the catalog gets no entry.
+        if (catalog)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Registering an existing Delta Lake table in a catalog requires allow_delta_kernel_rs = 1");
+        return;
+    }
+
+#if USE_DELTA_KERNEL_RS
+    /// The rest is delta-kernel-specific (writes commit 0 or attaches, and registers in the catalog).
+    DeltaLakeMetadataDeltaKernel::createInitial(
+        object_storage, configuration, local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
+#endif
+}
+
 DataLakeMetadataPtr DeltaLakeMetadata::create(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration,
@@ -802,7 +863,6 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
 }
-
 
 Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_type)
 {

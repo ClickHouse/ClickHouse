@@ -4,8 +4,16 @@
 #if USE_DELTA_KERNEL_RS
 #include <Core/Types.h>
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Block_fwd.h>
 #include <Common/Exception.h>
 #include "delta_kernel_ffi.hpp"
+
+namespace DB
+{
+class Block;
+class Chunk;
+}
 
 namespace DB::ErrorCodes
 {
@@ -16,6 +24,14 @@ namespace DeltaLake
 {
 
 std::string generateWritePath(const std::string & prefix, const std::string & format);
+
+/// Build a header from `sample` with each column's type replaced by the Delta write-schema type (matched by
+/// name), so the data files are written to match the Delta log (e.g. a declared `UInt8` column is stored as `short`).
+DB::SharedHeader makeDeltaWriteHeader(const DB::Block & sample, const DB::NamesAndTypesList & write_schema);
+
+/// Cast each column of `chunk` (typed by `in_header`) to the corresponding `out_header` type. With `accurate`,
+/// a value that does not fit the target type throws instead of being silently truncated.
+DB::Chunk castChunkToDeltaWriteSchema(const DB::Chunk & chunk, const DB::Block & in_header, const DB::Block & out_header, bool accurate);
 
 /**
  * Helper methods for use with delta-kernel-rs.

@@ -132,8 +132,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 
 static constexpr auto engine_info = "ClickHouse";
 
-WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_)
+WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_, DB::NamesAndTypesList table_schema_)
     : kernel_helper(kernel_helper_)
+    , table_schema(std::move(table_schema_))
     , log(getLogger("WriteTransaction"))
 {
 }
@@ -156,7 +157,7 @@ const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
     return write_schema;
 }
 
-void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
+void WriteTransaction::create(const DB::Names & partition_columns)
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -282,6 +283,61 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     auto version = ffi::committed_transaction_version(&committed_handle);
 
     LOG_TEST(log, "Commit version: {}", version);
+}
+
+void WriteTransaction::createTable()
+{
+    /// Reject non-round-tripping column types before the kernel FFI, so unsupported types raise a normal exception.
+    DeltaLake::validateSchemaForDeltaCreate(table_schema);
+
+    /// The kernel needs the table location's root directory to exist; create it up front. No-op for object stores (S3/Azure).
+    kernel_helper->prepareForTableCreation();
+
+    auto * engine_builder = kernel_helper->createBuilder();
+    engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+
+    DeltaLake::KernelCreateSchemaState schema_state;
+    schema_state.schema_list = &table_schema;
+    auto engine_schema = DeltaLake::buildKernelEngineSchema(schema_state);
+
+    using KernelCreateTableBuilder = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTableBuilder, ffi::free_create_table_builder>;
+    using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTransaction, ffi::create_table_free_transaction>;
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+
+    auto builder_result = ffi::get_create_table_builder(
+        DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
+        &engine_schema,
+        DeltaLake::KernelUtils::toDeltaString(engine_info),
+        engine.get());
+    /// Unwrap inside a `try` -- it must run either way, since it is what
+    /// consumes `builder_result` -- and prefer the visitor's exception when there is one.
+    KernelCreateTableBuilder builder;
+    try
+    {
+        builder = DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder");
+    }
+    catch (...)
+    {
+        if (schema_state.exception)
+            std::rethrow_exception(schema_state.exception);
+        throw;
+    }
+    if (schema_state.exception)
+        std::rethrow_exception(schema_state.exception);
+
+    /// `create_table_builder_build` consumes the builder on both success and failure, so release() is correct here.
+    KernelCreateTransaction create_txn(DeltaLake::KernelUtils::unwrapResult(
+        ffi::create_table_builder_build(builder.release(), engine.get()),
+        "create_table_builder_build"));
+
+    /// `create_table_commit` likewise consumes the transaction handle.
+    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
+        ffi::create_table_commit(create_txn.release(), engine.get()),
+        "create_table_commit"));
+    auto * committed_handle = committed.get();
+    auto version = ffi::committed_transaction_version(&committed_handle);
+
+    LOG_TRACE(log, "Created table at version {}", version);
 }
 
 }
