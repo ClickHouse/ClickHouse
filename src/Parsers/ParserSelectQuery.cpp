@@ -860,11 +860,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     return false;
             }
 
-            if (limit_length)
-                parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all);
-
             if (s_with_ties.ignore(pos, expected))
                 select_query->limit_with_ties = true;
+
+            parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all);
         }
     }
 
