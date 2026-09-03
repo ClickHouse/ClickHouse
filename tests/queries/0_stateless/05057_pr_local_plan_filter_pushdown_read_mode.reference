@@ -65,3 +65,14 @@ Filter column: tenant = 42
 242
 342
 442
+the shipped query selects a window function
+Sorting
+Sorting
+Filter column: tenant = 42
+Read type: Default
+Filter column: tenant = 42
+42	100
+142	100
+242	100
+342	100
+442	100

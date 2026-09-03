@@ -20,16 +20,25 @@ using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
-/// Whether a predicate could be spliced into the query shipped to remote replicas, judged from the
-/// query alone. `parallel_replicas_filter_pushdown` carries a predicate to the replicas by rewriting
-/// this query, and only a query reading a single table can take one: with a join tree of two table
-/// expressions the predicate has no side to be attributed to, and the rewrite is skipped.
+/// Whether `parallel_replicas_filter_pushdown` would really splice `pushed_down_filters` into the query
+/// shipped to the remote replicas - every reason it can decline, asked ahead of the splice itself:
+///  - the query must read a single table, or the predicate has no side to be attributed to;
+///  - it must be one `PredicateRewriteVisitor` rewrites at all, so no `FINAL`, no `LIMIT`, and no window
+///    function in the `SELECT` list;
+///  - the predicate must be expressible against that query's projection.
 ///
-/// Plan optimization asks this before there is a predicate, because a condition that ends up in the
-/// initiator's local plan without reaching the replicas may not change how the local fragment reads.
-/// Note that it answers only the question the query's shape decides; a particular predicate can still
-/// turn out not to be expressible against the shipped query's projection.
-bool canAddFiltersToShippedQuery(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
+/// Plan optimization asks it because a condition that ends up in the initiator's local plan without
+/// reaching the replicas may not change how the local fragment reads. Pass a null `pushed_down_filters`
+/// to ask only what the query itself decides, before there is a predicate to push.
+///
+/// An `IN` set's temporary table is not registered here, so a predicate needing one is answered no; that
+/// is the safe direction, and such a predicate reaches the local plan by the other route anyway.
+bool canAddFiltersToShippedQuery(
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    ContextMutablePtr context,
+    const ActionsDAG * pushed_down_filters);
 
 /// Reading step from remote servers.
 /// Unite query results from several shards.

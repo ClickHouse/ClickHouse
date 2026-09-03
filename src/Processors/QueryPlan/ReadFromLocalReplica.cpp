@@ -11,11 +11,11 @@ namespace ErrorCodes
 }
 
 ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(
-    QueryPlanPtr query_plan_, ContextPtr subquery_context_, bool shipped_query_can_carry_filter_)
+    QueryPlanPtr query_plan_, ContextPtr subquery_context_, std::function<bool(const ActionsDAG &)> can_ship_condition_)
     : ISourceStep(query_plan_->getCurrentHeader())
     , query_plan(std::move(query_plan_))
     , context(std::move(subquery_context_))
-    , shipped_query_can_carry_filter(shipped_query_can_carry_filter_)
+    , can_ship_condition(std::move(can_ship_condition_))
 {
 }
 

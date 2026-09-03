@@ -1479,10 +1479,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// mirror: `addFilters` drops non-deterministic functions.
         ///
         /// The setting alone is not a promise that the replicas end up with the condition: it is spliced
-        /// into their query, and a query whose join tree reads more than one table takes no predicate at
-        /// all. `shippedQueryCanCarryFilter` is that shape question, asked when the step was built.
+        /// into their query, and that splice declines for queries it cannot rewrite and for conditions it
+        /// cannot express. `shippedQueryCanCarry` puts this very condition to it and takes the answer.
         const bool replicas_get_the_condition = settings.parallel_replicas_filter_pushdown_reaches_replicas
-            && parallel_replicas_local_plan->shippedQueryCanCarryFilter();
+            && parallel_replicas_local_plan->shippedQueryCanCarry(filter->getExpression());
 
         if (replicas_get_the_condition || !fixedColumnMayChangeReadMode(parallel_replicas_local_plan->getQueryPlan()))
         {

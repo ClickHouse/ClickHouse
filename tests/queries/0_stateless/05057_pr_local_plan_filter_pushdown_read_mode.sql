@@ -11,9 +11,9 @@
 -- fixes nothing, so the mode is unchanged.
 --
 -- `parallel_replicas_filter_pushdown` ships the predicate by rewriting the replicas' query, so it is
--- only as good as that rewrite. The last section takes away, one at a time, the two settings the
--- rewrite needs and then the query shape it needs; in each case the predicate has to stay out of the
--- local plan again, setting or no setting.
+-- only as good as that rewrite. The last section takes away, one at a time, each thing the rewrite
+-- needs: the two settings, then a query it can attribute the predicate to, then a query it will rewrite
+-- at all. In each case the predicate has to stay out of the local plan again, setting or no setting.
 
 DROP TABLE IF EXISTS t_pr_read_mode;
 DROP VIEW IF EXISTS v_pr_read_mode;
@@ -159,6 +159,25 @@ SELECT ts FROM (
     SELECT t.ts AS ts, t.tenant AS tenant
     FROM t_pr_read_mode AS t JOIN b_pr_read_mode AS bb ON t.tenant = bb.tenant
     ORDER BY t.ts
+) WHERE tenant = 42 LIMIT 5;
+
+SELECT 'the shipped query selects a window function';
+-- The shape is fine here - one table - but `PredicateRewriteVisitor` refuses to rewrite a subquery whose
+-- `SELECT` list holds a window function, and it refuses for every predicate at once, this one included.
+-- So again the setting is on and the replicas do not get `tenant = 42`.
+-- `c` has to be selected by the outer query, or it is pruned away and the shipped query carries no
+-- window function at all.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT ts, c FROM (
+        SELECT tenant, ts, count() OVER (PARTITION BY tenant) AS c FROM t_pr_read_mode ORDER BY ts
+    ) WHERE tenant = 42 LIMIT 5
+)
+WHERE explain LIKE '%Sorting%' OR explain LIKE '%Filter column%' OR explain LIKE '%Prewhere filter column%'
+   OR explain LIKE '%Read type%';
+SELECT ts, c FROM (
+    SELECT tenant, ts, count() OVER (PARTITION BY tenant) AS c FROM t_pr_read_mode ORDER BY ts
 ) WHERE tenant = 42 LIMIT 5;
 
 DROP TABLE b_pr_read_mode;

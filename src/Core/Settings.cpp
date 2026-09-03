@@ -8241,7 +8241,11 @@ nothing to do with the sorting key, and waits for this setting.
 
 The condition is shipped by rewriting the replicas' query, so this setting has no effect unless
 `allow_push_predicate_ast_for_distributed_subqueries` is on, and none when the replicas run a
-serialized plan (`serialize_query_plan`) rather than that query.
+serialized plan (`serialize_query_plan`) rather than that query. The rewrite also declines for a
+query it cannot attribute the condition to (one reading more than a single table) or will not
+rewrite at all (`FINAL`, `LIMIT`, a window function in the `SELECT` list), and for a condition it
+cannot express against what that query selects. Where it declines, the condition is treated as
+though the setting were off.
 )", BETA) \
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.

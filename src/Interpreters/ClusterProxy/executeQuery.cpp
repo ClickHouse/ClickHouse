@@ -1104,13 +1104,17 @@ void executeQueryWithParallelReplicas(
         else if (const auto * union_node = query_tree->as<UnionNode>())
             local_context = union_node->getContext();
 
-        /// Whether `addFilters` will be able to carry a pushed-down predicate into the query above -
-        /// the local plan may only take a condition that could change how it reads if the replicas end
-        /// up with the same condition. Answered from the query's shape, before there is a predicate.
-        const bool shipped_query_can_carry_filter = canAddFiltersToShippedQuery(query_tree, planner_context);
+        /// The local plan may only take a condition that could change how it reads if the replicas end up
+        /// with that same condition, so let plan optimization ask `addFilters` in advance, about the
+        /// actual condition it is holding. Bound to this query, which is the one the replicas run.
+        std::function<bool(const ActionsDAG &)> can_ship_condition;
+        if (canAddFiltersToShippedQuery(forwarded_query_ast, query_tree, planner_context, new_context, nullptr))
+            can_ship_condition = [ast = forwarded_query_ast, query_tree, planner_context, ctx = new_context](
+                                     const ActionsDAG & condition)
+            { return canAddFiltersToShippedQuery(ast, query_tree, planner_context, ctx, &condition); };
 
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
-            std::move(local_plan), std::move(local_context), shipped_query_can_carry_filter);
+            std::move(local_plan), std::move(local_context), std::move(can_ship_condition));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 

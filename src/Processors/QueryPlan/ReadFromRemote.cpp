@@ -498,9 +498,78 @@ static QueryTreeNodePtr findSingleShippedTableExpression(const QueryTreeNodePtr 
     return is_table(table_expressions.front()) ? table_expressions.front() : nullptr;
 }
 
-bool canAddFiltersToShippedQuery(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+/// What the shipped query alone decides about taking a pushed-down predicate: the setting must allow the
+/// rewrite, the query must read a single table (`findSingleShippedTableExpression`), and it must be one
+/// `PredicateRewriteVisitor` will rewrite at all - a `FINAL`, a `LIMIT`, or a `SELECT` list carrying a
+/// window function bars every predicate alike (`canRewriteSubquery`).
+static bool shippedQueryCanTakeAPredicate(
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ContextPtr & context)
 {
-    return query_tree && planner_context && findSingleShippedTableExpression(query_tree) != nullptr;
+    if (!query_ast || !query_tree || !planner_context)
+        return false;
+
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
+        return false;
+
+    if (!query_tree->as<QueryNode>() || !findSingleShippedTableExpression(query_tree))
+        return false;
+
+    return canRewriteSubquery(
+        getSelectQuery(query_ast),
+        settings[Setting::enable_optimize_predicate_expression_to_final_subquery],
+        settings[Setting::allow_push_predicate_when_subquery_contains_with],
+        context);
+}
+
+/// The predicate to splice into the shipped query, or null when it cannot be spliced. `external_tables`
+/// is where an `IN` set's temporary table gets registered; a caller that only wants the answer passes
+/// null and gets a no for such a predicate, which is the safe direction.
+static ASTPtr tryBuildShippedQueryPredicate(
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    Tables * external_tables,
+    ContextMutablePtr & context,
+    const ActionsDAG & pushed_down_filters)
+{
+    /// Ask what the query decides first: `tryBuildAdditionalFilterAST` can register external tables, and
+    /// there is no point doing that for a query no predicate can enter.
+    if (!shippedQueryCanTakeAPredicate(query_ast, query_tree, planner_context, context))
+        return nullptr;
+
+    /// We are building a set with projection names and a map with execution names here.
+    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
+
+    const auto & query_node = query_tree->as<const QueryNode &>();
+
+    std::unordered_set<std::string> projection_names;
+    for (const auto & col : query_node.getProjectionColumns())
+        projection_names.insert(col.name);
+
+    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
+    for (const auto & node : query_node.getProjection())
+        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
+
+    return tryBuildAdditionalFilterAST(
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
+}
+
+bool canAddFiltersToShippedQuery(
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    ContextMutablePtr context,
+    const ActionsDAG * pushed_down_filters)
+{
+    if (!pushed_down_filters)
+        return shippedQueryCanTakeAPredicate(query_ast, query_tree, planner_context, context);
+
+    return tryBuildShippedQueryPredicate(query_ast, query_tree, planner_context, nullptr, context, *pushed_down_filters)
+        != nullptr;
 }
 
 static void addFilters(
@@ -511,37 +580,13 @@ static void addFilters(
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters)
 {
-    if (!query_tree || !planner_context)
+    ASTPtr predicate = tryBuildShippedQueryPredicate(
+        query_ast, query_tree, planner_context, external_tables, context, pushed_down_filters);
+    if (!predicate)
         return;
 
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
-        return;
-
-    const auto * query_node = query_tree->as<QueryNode>();
-    if (!query_node)
-        return;
-
-    /// Ask the shape question before building the predicate: `tryBuildAdditionalFilterAST` can register
-    /// external tables, and there is no point doing that for a query the predicate cannot enter.
     auto shipped_table_expression = findSingleShippedTableExpression(query_tree);
-    if (!shipped_table_expression)
-        return;
-
-    /// We are building a set with projection names and a map with execution names here.
-    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
-
-    std::unordered_set<std::string> projection_names;
-    for (const auto & col : query_node->getProjectionColumns())
-        projection_names.insert(col.name);
-
-    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
-    for (const auto & node : query_node->getProjection())
-        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
-
-    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
-    if (!predicate)
-        return;
 
     /// Extract the storage snapshot, identifier (when available) and alias from the table expression
     /// `findSingleShippedTableExpression` resolved to - a `TableNode` (a real table) or a

@@ -13,6 +13,11 @@ class ASTSelectIntersectExceptQuery;
 class ASTSelectQuery;
 class ASTSelectWithUnionQuery;
 
+/// Whether `PredicateRewriteVisitorData::rewriteSubquery` could add any predicate to this subquery.
+/// Depends only on the subquery - a `FINAL`, a `LIMIT`, or a `SELECT` list carrying a window function
+/// or an `untuple` bars every predicate alike - so it can be asked before there is a predicate to add.
+bool canRewriteSubquery(const ASTSelectQuery & subquery, bool optimize_final, bool optimize_with, ContextPtr context);
+
 class PredicateRewriteVisitorData : WithContext
 {
 public:
