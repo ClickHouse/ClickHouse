@@ -2594,9 +2594,8 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         }
     }
 
-    /// A readonly stage only reads unchanged columns so that indices, projections and TTL
-    /// expressions can be recalculated - writing them into the new part would rewrite data the
-    /// mutation does not change.
+    /// A readonly stage only reads unchanged columns, so that indices, projections and TTL
+    /// expressions can be recalculated; writing them would rewrite data the mutation does not touch.
     NameSet written_by_stages;
     NameSet readonly_stage_columns;
     bool rewrites_whole_part = settings.return_all_columns;
@@ -2617,9 +2616,8 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     Block header = builder.getHeader();
 
-    /// Once a stage rewrites the whole part - a DELETE filter does - every column is written
-    /// against the new row set, so a column left out here would keep hardlinked files with the
-    /// old row count. Only subtract when no stage claims the whole part.
+    /// Once a stage rewrites the whole part - a DELETE filter does - every column is written against
+    /// the new row set, so a column left out here would keep hardlinked files with the old row count.
     if (!rewrites_whole_part)
     {
         Block kept;
@@ -2679,12 +2677,8 @@ Block MutationsInterpreter::getUpdatedHeader() const
     if (mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION)
         return Block{};
 
-    /// `execute` is the only place that knows the final set of stages, so it is the only place that
-    /// assigns this. Reaching here before it is a caller ordering bug, and not one to paper over:
-    /// an empty header would make the mutation hardlink every column instead of writing the ones it
-    /// changed. Checked in every build rather than with `chassert`, which is a no-op outside a
-    /// debug build - the callers are background mutate tasks, where an exception fails and retries
-    /// one mutation while a null dereference takes the server down.
+    /// Not an empty header like the branch above: that would silently hardlink every column instead
+    /// of writing the ones the mutation changed.
     if (!updated_header)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "getUpdatedHeader called before execute. It is a bug");
 
