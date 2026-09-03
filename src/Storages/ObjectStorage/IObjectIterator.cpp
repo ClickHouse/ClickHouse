@@ -76,9 +76,10 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             const auto key = object->getPath();
             std::vector<std::string> keys({key});
 
-            /// Must be the formatter the `_path` column is produced with: this filter is
-            /// evaluated against that column's values.
-            const auto path = joinPathUnderPrefix(object_namespace, key);
+            auto path = key;
+            if (path.starts_with("/"))
+                path = path.substr(1);
+            path = std::filesystem::path(object_namespace) / path;
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,
@@ -148,10 +149,9 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
-                const auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
-                    query_condition_cache_key,
+                    last_object_info->getFileName(),
                     *format_filter_info->condition_hash);
                 if (matching_marks.has_value())
                 {
@@ -192,17 +192,10 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
     return result;
 }
 
-String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
+String ObjectInfo::getIdentifier() const
 {
-    return getIdentifierForPath(getPath(), include_file_bucket_info);
-}
-
-String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const
-{
-    String result = path;
-    if (relative_path_with_metadata.read_source_index)
-        result = std::to_string(*relative_path_with_metadata.read_source_index) + ":" + result;
-    if (include_file_bucket_info && file_bucket_info)
+    String result = getPath();
+    if (file_bucket_info)
         result += file_bucket_info->getIdentifier();
     return result;
 }

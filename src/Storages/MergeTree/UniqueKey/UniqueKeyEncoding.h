@@ -3,7 +3,9 @@
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Columns/IColumn.h>
-#include <Common/VectorWithMemoryTracking.h>
+
+#include <vector>
+#include <string>
 
 namespace DB::UniqueKeyEncoding
 {
@@ -36,6 +38,6 @@ void encodeBlock(
     const Columns & columns,
     const IColumn::Permutation * permutation,
     size_t max_size,
-    VectorWithMemoryTracking<String> & out);
+    std::vector<String> & out);
 
 }

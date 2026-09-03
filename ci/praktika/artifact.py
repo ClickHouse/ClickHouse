@@ -21,9 +21,6 @@ class Artifact:
         type: str
         path: Union[str, List[str]]
         compress_zst: bool = False
-        # When True, a providing job whose output file(s) are missing at upload
-        # time does not fail. The artifact is skipped with a warning instead.
-        optional: bool = False
         _provided_by: str = ""
         ext: Dict[str, Any] = field(default_factory=dict)
 

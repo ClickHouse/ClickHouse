@@ -234,7 +234,7 @@ public:
         }
     }
 
-    void mergeImpl(
+    void merge(
         AggregateDataPtr __restrict place,
         ConstAggregateDataPtr rhs,
         Arena * arena) const override

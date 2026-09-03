@@ -6,6 +6,8 @@
 #include <Core/Defines.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
 #include <base/getPageSize.h>
 
@@ -14,8 +16,19 @@
 #endif
 
 
+namespace ProfileEvents
+{
+    extern const Event ArenaAllocChunks;
+    extern const Event ArenaAllocBytes;
+}
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 
 /** Memory pool to append something. For example, short strings.
@@ -61,7 +74,17 @@ private:
             return *this;
         }
 
-        explicit MemoryChunk(size_t size_);
+        explicit MemoryChunk(size_t size_)
+        {
+            ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
+            ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
+
+            begin = reinterpret_cast<char *>(Allocator<false>::alloc(size_));
+            pos = begin;
+            end = begin + size_ - pad_right;
+
+            ASAN_POISON_MEMORY_REGION(begin, size_);
+        }
 
         ~MemoryChunk()
         {
@@ -129,7 +152,10 @@ private:
     }
 
     /// The size of an allocation can come from the data, so it is rejected instead of wrapping around.
-    [[noreturn]] static void throwTooLargeAllocation(size_t size);
+    [[noreturn]] static void throwTooLargeAllocation(size_t size)
+    {
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Too large allocation of {} bytes in Arena", size);
+    }
 
     /// Add next contiguous MemoryChunk of memory with size not less than specified.
     void NO_INLINE addMemoryChunk(size_t min_size, size_t alignment = 0)
