@@ -109,6 +109,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
+#include <Planner/checkAccessRightsForQueryTree.h>
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -380,37 +381,21 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
     return {};
 }
 
-/// Check access rights for all tables referenced in a subquery
+/// Check access rights for all tables referenced in a subquery.
+///
+/// This is the entire access pass for a subquery under `only_analyze` with `check_subquery_table_access`
+/// (`InterpreterCreateQuery::getSampleBlock` for `CREATE ... AS SELECT`): such subqueries are not planned
+/// recursively and no storage is ever read, so neither the planner's per-table check nor the checks the
+/// storages perform when the plan is built (`StorageView::readImpl` on the view's base tables,
+/// `StorageAlias::read` on the target table) would run for them. `checkAccessRightsForQueryTree` reproduces
+/// the whole read-time contract - the column-aware `SELECT` check of `prepareBuildQueryPlanForTableExpression`
+/// for every table and parameterized view in the subquery, plus the view and `Alias` follow-ups - so the
+/// statement is denied exactly when the real `SELECT` of the same subquery is. A view whose inner query the
+/// analyzer cannot resolve fails here with that resolution error, as a real read of it would.
 void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const ContextPtr & query_context)
 {
-    auto table_nodes = extractAllTableReferences(subquery_node, /*include_table_functions=*/ true);
-    for (const auto & table_node_ptr : table_nodes)
-    {
-        if (const auto * table_function_node = table_node_ptr->as<TableFunctionNode>())
-        {
-            /// A parameterized view is resolved as a `TableFunctionNode` wrapping the view's storage, and
-            /// no `ITableFunction::execute` ever checks it, so its `SELECT` grant has to be enforced here,
-            /// exactly as `prepareBuildQueryPlanForTableExpression` does when the view is the table
-            /// expression itself. Any other table function checks its own access in `ITableFunction::execute`.
-            const auto & storage = table_function_node->getStorage();
-            const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
-            if (storage_view && storage_view->isParameterizedView())
-            {
-                const auto & storage_id = table_function_node->getStorageID();
-                if (storage_id.hasDatabase())
-                    query_context->checkAccess(AccessType::SELECT, storage_id);
-            }
-            continue;
-        }
-
-        const auto & table_node = table_node_ptr->as<TableNode &>();
-        if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-            continue;
-
-        const auto & storage_id = table_node.getStorageID();
-        if (storage_id.hasDatabase())
-            query_context->checkAccess(AccessType::SELECT, storage_id);
-    }
+    auto subquery = subquery_node;
+    checkAccessRightsForQueryTree(subquery, query_context, /*skip_if_unresolvable=*/ false);
 }
 
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
@@ -846,6 +831,29 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         /// This is needed because in only_analyze mode, subqueries are not recursively planned,
         /// so their permission checks would otherwise be skipped.
         checkAccessRightsForSubquery(table_expression, query_context);
+    }
+
+    /// Under `only_analyze` the storage is never read (see below), so the checks a real read performs only
+    /// when the plan is built are skipped: `StorageView::readImpl` checks `SELECT` on the base tables of a
+    /// view, `StorageAlias::read` on the target table of an `Alias`. `CREATE ... AS SELECT` infers the
+    /// created object's structure from this analysis (`check_subquery_table_access`), so without them a
+    /// user with `SELECT` on the view or alias object but not on the underlying table would get the
+    /// columns and types of a query the real `SELECT` denies. Reproduce them here, exactly as the same
+    /// helper does for the tables inside subqueries above.
+    if (select_query_options.only_analyze && select_query_options.check_subquery_table_access && (table_node || table_function_node))
+    {
+        const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+        /// Only a parameterized view among table functions carries a storage whose read checks more; any other
+        /// table function has already checked its own access in `ITableFunction::execute`.
+        const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+        if (table_node || (storage_view && storage_view->isParameterizedView()))
+            checkReadTimeAccessForTableExpression(
+                storage,
+                storage_snapshot,
+                table_expression_data.getSelectedColumnsNames(),
+                query_context,
+                /*skip_if_unresolvable=*/ false);
     }
 
     if (columns_names.empty())

@@ -1,0 +1,42 @@
+-- SELECT on the view / alias object only: CREATE VIEW must be denied exactly as the real SELECT
+  SELECT INVOKER view: ACCESS_DENIED
+  CREATE VIEW INVOKER view: ACCESS_DENIED
+  CREATE VIEW INVOKER view in a subquery: ACCESS_DENIED
+  CREATE VIEW INVOKER view count(): ACCESS_DENIED
+  CREATE VIEW INVOKER view count() in a subquery: ACCESS_DENIED
+  SELECT Alias: ACCESS_DENIED
+  CREATE VIEW Alias: ACCESS_DENIED
+  CREATE VIEW Alias in a subquery: ACCESS_DENIED
+  CREATE VIEW Alias count(): ACCESS_DENIED
+  CREATE VIEW Alias count() in a subquery: ACCESS_DENIED
+-- Over-denial control: a DEFINER view reads its base table as the definer, so it stays allowed
+  SELECT DEFINER view: OK
+  CREATE VIEW DEFINER view: OK
+  CREATE VIEW DEFINER view in a subquery: OK
+  CREATE VIEW DEFINER view count(): OK
+  CREATE VIEW DEFINER view count() in a subquery: OK
+-- Column grant on the base table: only the granted column is readable, in every shape
+  SELECT granted column through the view: OK
+  CREATE VIEW granted column through the view: OK
+  CREATE VIEW granted column through the view in a subquery: OK
+  SELECT ungranted column through the view: ACCESS_DENIED
+  CREATE VIEW ungranted column through the view: ACCESS_DENIED
+  CREATE VIEW ungranted column through the view in a subquery: ACCESS_DENIED
+  SELECT granted column through the alias: OK
+  CREATE VIEW granted column through the alias: OK
+  CREATE VIEW granted column through the alias in a subquery: OK
+  SELECT ungranted column through the alias: ACCESS_DENIED
+  CREATE VIEW ungranted column through the alias: ACCESS_DENIED
+  CREATE VIEW ungranted column through the alias in a subquery: ACCESS_DENIED
+  CREATE VIEW count() through the alias: OK
+-- Full grant on the base table: everything is allowed
+  SELECT INVOKER view: OK
+  CREATE VIEW INVOKER view: OK
+  CREATE VIEW INVOKER view in a subquery: OK
+  CREATE VIEW INVOKER view count(): OK
+  CREATE VIEW INVOKER view count() in a subquery: OK
+  SELECT Alias: OK
+  CREATE VIEW Alias: OK
+  CREATE VIEW Alias in a subquery: OK
+  CREATE VIEW Alias count(): OK
+  CREATE VIEW Alias count() in a subquery: OK
