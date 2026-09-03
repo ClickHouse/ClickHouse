@@ -1240,6 +1240,7 @@ class CHServer:
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} \
                 --profile-seconds 10 \
+                --allow-settings-version-skew \
                 --pr-number {pr_number} \
                 {test_file}",
             verbose=True,

@@ -284,6 +284,17 @@ parser.add_argument(
     "purges to do asymmetric work during measured queries.",
 )
 parser.add_argument(
+    "--allow-settings-version-skew",
+    action="store_true",
+    help="Allow dropping a setting from the connections whose server does not know it, "
+    "instead of failing. Pass this only for comparison runs where the servers are "
+    "intentionally different builds (e.g. master HEAD vs the pull request), so one side "
+    "may not know a setting the other one added. Settings rejected by every server remain "
+    "a hard error. Without this flag an unknown setting fails immediately, so a typo in "
+    "the test XML cannot silently change what is benchmarked, and an ordinary run against "
+    "same-version servers can never end up benchmarking different settings on LEFT and RIGHT.",
+)
+parser.add_argument(
     "--pr-number",
     type=int,
     default=0,
@@ -754,6 +765,9 @@ if not args.use_existing_tables:
 # Inline settings override file settings.
 file_settings = load_settings_file(root, xml_dir)
 inline_settings = root.findall("settings/*")
+# Track per-connection settings that the server didn't recognize, so we can
+# still raise on settings that ALL servers reject (likely typos).
+dropped_per_connection = []
 for conn_index, c in enumerate(all_connections):
     for key, value in file_settings.items():
         c.settings[key] = str(value)
@@ -762,7 +776,56 @@ for conn_index, c in enumerate(all_connections):
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
-    c.execute("select 1")
+    #
+    # In a master-vs-PR comparison one of the two servers is master HEAD,
+    # which may not yet know about settings introduced by this PR. With
+    # `--allow-settings-version-skew` we drop only those specific unknown
+    # settings on that connection and retry, so a single new setting doesn't
+    # block the whole comparison. After every connection has been probed,
+    # settings that were dropped on ALL servers are reported as a hard error -
+    # that's the typo case. Without the flag an unknown setting is fatal: in a
+    # run whose servers are supposed to be interchangeable, silently dropping a
+    # setting on one side would benchmark different settings on LEFT and RIGHT
+    # and produce a bogus delta instead of failing fast.
+    dropped = set()
+    while True:
+        try:
+            c.execute("select 1")
+            break
+        except clickhouse_driver.errors.ServerException as e:
+            m = re.search(r"Unknown setting '?([A-Za-z_][A-Za-z0-9_]*)'?", str(e))
+            if m is None:
+                raise
+            unknown_setting = m.group(1)
+            if unknown_setting not in c.settings:
+                raise
+            if not args.allow_settings_version_skew:
+                raise RuntimeError(
+                    f"server #{conn_index} doesn't know setting '{unknown_setting}'. "
+                    "Both sides of a comparison must run with the same settings. Pass "
+                    "--allow-settings-version-skew if the servers are intentionally "
+                    "different builds and dropping the setting on the older side is "
+                    "acceptable."
+                ) from e
+            print(
+                f"perf-warn\tserver #{conn_index} doesn't know setting "
+                f"'{unknown_setting}', dropping from this connection"
+            )
+            del c.settings[unknown_setting]
+            dropped.add(unknown_setting)
+    dropped_per_connection.append(dropped)
+
+# A setting rejected by every server is almost certainly a typo, not a
+# version skew, so fail loudly to preserve the original safety property.
+# This must also fire for single-server runs (len == 1), otherwise a typo
+# in XML would silently disappear instead of failing the test.
+if dropped_per_connection:
+    rejected_everywhere = set.intersection(*dropped_per_connection)
+    if rejected_everywhere:
+        raise RuntimeError(
+            "Settings unknown to all servers (likely a typo): "
+            f"{sorted(rejected_everywhere)}"
+        )
 
 reportStageEnd("settings")
 

@@ -285,6 +285,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_uncompressed_cache;
+    extern const SettingsFloat read_in_order_max_primary_key_ratio;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
@@ -536,6 +537,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -2593,8 +2595,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
+    const auto parts_to_read = getParts();
     analyzed_result_ptr = selectRangesToRead(
-        getParts(),
+        parts_to_read,
         mutations_snapshot,
         vector_search_parameters,
         top_k_filter_info,
@@ -3120,6 +3123,12 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Record whether index analysis actually had a filter to work with, after deferred
+        /// filters were stripped above. `index_filter_dag` is null when every filter was
+        /// deferred (FINAL with `apply_prewhere_after_final` / `apply_row_policy_after_final`),
+        /// which the read-in-order PK-selectivity guard must treat as a full scan.
+        index_analysis_had_filter = index_filter_dag != nullptr;
+
         /// Build indexes before PREWHERE sets. KeyCondition (inside buildIndexes) calls
         /// buildOrderedSetInplace only for IN sets whose left argument maps to key columns,
         /// so ordered sets are built only when actually needed for primary key analysis.
@@ -3234,6 +3243,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     AnalysisResult result;
     RangesInDataParts res_parts;
     const auto & settings = context_->getSettingsRef();
+    result.row_limits_were_checked = check_row_limits
+        && !query_info_.input_order_info
+        && ((settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+            || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]));
 
     size_t total_parts = parts.size();
 
@@ -3744,7 +3757,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
         && context->canUseParallelReplicasOnFollower();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit, bool apply_pk_selectivity_check, bool check_only)
 {
     /// if direction is not set, use current one
     if (!direction)
@@ -3760,10 +3773,195 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// conversion-building request may legitimately be narrower than prefix_size (fixed middle key,
     /// e.g. WHERE b = 1 ORDER BY a, c on key (a, b, c)); dropping it there would defeat the
     /// optimization and, behind a join, re-enable the path the !uses_virtual_row guard blocks.
+    /// (Computed against the entry value of `input_order_info`, before any assignment below.)
     const bool widened_over_previous_request
         = query_info.input_order_info && query_info.input_order_info->used_prefix_of_sorting_key_size < prefix_size;
 
-    query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
+    const bool query_has_limit = query_limit != 0;
+
+    /// When the primary key index doesn't significantly reduce the number of granules to read
+    /// (e.g., because the WHERE clause uses a pattern like LIKE '%...' that can't use the index),
+    /// read-in-order kills parallelism: each part is read by a single stream instead of many.
+    /// In such cases, full parallel reading with sorting is much faster.
+    /// This guard only applies when `apply_pk_selectivity_check` is set, which is the case
+    /// for the query-plan `SortingStep` paths that use read-in-order purely to skip a separate
+    /// sort. For `optimizeAggregationInOrder` and `optimizeDistinctInOrder`,
+    /// read-in-order changes the underlying algorithm to a streaming one (memory bound),
+    /// so we never disable it based on PK selectivity.
+    /// Also skip for parallel replicas to avoid coordination mismatches, when reading from
+    /// a projection that still has more than one selected part (see
+    /// `analysis_result.readFromProjection()` below), and when the query has a
+    /// LIMIT that can let read-in-order finish early (with virtual row optimization, parts
+    /// can be skipped entirely).
+    /// Finally, only fire when the query actually has a filter the primary key might have
+    /// used: a full-scan `ORDER BY pk` has `selected_marks_pk == total_marks_pk` because
+    /// nothing was filtered, not because the index failed — switching that case to parallel
+    /// reading with global sort would replace a low-memory streaming plan with one that can
+    /// hit `MEMORY_LIMIT_EXCEEDED`. Deferred filters (FINAL with `apply_prewhere_after_final`
+    /// or `apply_row_policy_after_final`) are excluded from index analysis, so they never reduce
+    /// `selected_marks_pk`; treating them as a PK filter would misfire the guard on what is
+    /// effectively a full scan. We therefore use `index_analysis_had_filter`, which reflects the
+    /// deferred-stripped filter DAG actually passed to `buildIndexes`. Note that
+    /// `query_info.filter_actions_dag` still carries the deferred filters and must not be used here.
+    const bool has_filter_for_pk = index_analysis_had_filter;
+    if (apply_pk_selectivity_check && has_filter_for_pk && read_limit == 0 && !query_has_limit && !is_parallel_reading_from_replicas)
+    {
+        const double max_ratio = static_cast<double>(context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio]);
+
+        /// Track whether the analysis result was already computed before we touched it.
+        /// If it was (e.g. `optimizeUseNormalProjections` ran first and stored a result with
+        /// `parts_with_ranges` already filtered by `filterPartsByProjection`), we must not
+        /// reset it on rollback — discarding that state would let the main step re-read parts
+        /// already covered by the projection step, producing duplicated rows.
+        const bool analysis_was_cached = analyzed_result_ptr != nullptr;
+
+        /// In `check_only` mode the dry-run must leave the step exactly as it found it: some
+        /// `ReadFromMerge` children can already carry an `input_order_info` from the legacy
+        /// `query_info.order_optimizer` path in `ReadFromMerge::createChildrenPlans`. Capture
+        /// the previous order so every `check_only` return path restores it instead of
+        /// clobbering it with `nullptr`, which would leave sibling children inconsistent if a
+        /// later child rejects and the parent falls back to a full sort.
+        const InputOrderInfoPtr prev_input_order_info = query_info.input_order_info;
+
+        /// Set `input_order_info` before running index analysis, so that row-limit checks
+        /// (`max_rows_to_read` / `max_rows_to_read_leaf`) inside `MergeTreeDataSelectExecutor::getRowLimits`
+        /// are correctly skipped, and `read_type` is computed as `InOrder` / `InReverseOrder`.
+        /// If the PK-selectivity guard below rejects read-in-order, we roll both back.
+        query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
+        const auto & analysis_result = getAnalysisResult();
+        /// The parallelism the parallel-reading fallback can actually recover is the number of
+        /// *read* streams, i.e. `requested_num_streams` — not the output width. With asynchronous
+        /// reads (`allow_asynchronous_read_from_io_pool_for_merge_tree = 1`) the constructor
+        /// intentionally bumps `requested_num_streams` up to `max_streams_for_merge_tree_reading`
+        /// and only resizes the *output* down to `output_streams_limit` to bound memory. So a query
+        /// with `max_streams_for_merge_tree_reading = 1` and `max_threads > 1` still reads with
+        /// multiple streams, and rejecting read-in-order lets each of them sort in parallel while the
+        /// output is resized exactly as before. Using `output_streams_limit` here would see a width of
+        /// `1`, hide that read parallelism, and wrongly keep the slow single-stream in-order plan that
+        /// this guard exists to avoid. In every non-async case `output_streams_limit` is `0`, so
+        /// `requested_num_streams` is the same width the planner already chose and this is a no-op.
+        const size_t read_streams = requested_num_streams;
+        /// Only reject when there is actual parallelism to recover. When `read_streams <= 1`
+        /// (e.g. `max_threads = 1` or planner-chosen single-stream reads), disabling read-in-order
+        /// just adds a full `MergeSortingTransform` on top of the same single stream — extra
+        /// CPU/memory with no parallelism gain, and possibly `MEMORY_LIMIT_EXCEEDED` for queries
+        /// that previously streamed in PK order. The small-table threshold below (`total_marks_pk >
+        /// read_streams`) likewise compares against the read parallelism, so we only fire when there
+        /// are enough marks for the parallel read to distribute work across those streams.
+        ///
+        /// The rejection requires two ratios to exceed the threshold:
+        ///  - `selected_marks_pk / total_marks_pk`: the primary key failed to prune the read, which is
+        ///    the parallelism-loss case this guard targets (read-in-order serializes each part).
+        ///  - `selected_marks / total_marks_pk`: the *final* read (after skip indexes) is still large.
+        /// `selected_marks_pk` reflects only the primary-key step, while `selected_marks` is the mark
+        /// count after skip indexes too. For a table `ORDER BY ts` with a selective skip index on
+        /// `user_id`, `WHERE user_id = ... ORDER BY ts` has `selected_marks_pk == total_marks_pk` (the
+        /// PK cannot use `user_id`) yet a tiny `selected_marks` (the skip index pruned the read). There
+        /// the read is already small, so read-in-order streams it cheaply and in low memory; replacing
+        /// that with a global sort would regress it and risk `MEMORY_LIMIT_EXCEEDED`. Since
+        /// `selected_marks <= selected_marks_pk`, gating on `selected_marks` as well only ever makes the
+        /// guard fire less often, and it keeps read-in-order for skip-index-accelerated queries.
+        ///
+        /// That argument holds only while `selected_marks` really is the final mark count. When
+        /// `initializePipeline` installs a `MergeTreeSkipIndexReader` — the `use_skip_indexes_on_data_read`
+        /// path, the join-runtime-filter path, or a projection index registered for the read
+        /// (applied during reading regardless of `use_projection_index_in_read_pools`) — the
+        /// ranges are pruned during the read and
+        /// `selected_marks` is just the pre-pruning upper bound (that is why the reader, not this step,
+        /// accounts the `SelectedMarks` profile event there). A query whose primary key prunes nothing but
+        /// whose read-time skip index or runtime filter trims the read to a few granules would then look
+        /// like a full scan here and lose read-in-order, which is exactly the regression the
+        /// `selected_marks` check above prevents for analysis-time skip indexes. So the guard is exempt
+        /// whenever read-time pruning may happen (`mayPruneRangesOnDataRead`); a mark count that is known
+        /// to be an upper bound cannot justify replacing a streaming read with a global sort.
+        ///
+        /// Projection-backed reads with more than one selected part are exempt
+        /// (`readFromProjection`), and unlike the base-table case this is backed by measurement
+        /// rather than by the argument above. `optimizeUseNormalProjection` picks a normal
+        /// projection for a query whose `ORDER BY` it already satisfies, so the only alternative
+        /// plan is "read the same projection parts unordered, then sort globally" — the very sort
+        /// the projection was selected to remove. The in-order read's parallelism is the number of
+        /// selected parts (`ReadPoolInOrder` assigns each part to one stream and never splits a
+        /// part), so the exemption requires more than one part: once background merges collapse the
+        /// projection to a single part, the in-order read degenerates to one stream while the
+        /// fallback still parallelizes mark ranges inside the part, and the guard should fire as it
+        /// does for base tables. Measured on 60M rows, `max_threads = 32`, table `ORDER BY ts` with
+        /// a projection `ORDER BY path`, filtering with `path LIKE '%...'` so the primary key
+        /// prunes nothing, bulk output (all 60M rows), best of 3:
+        ///   - 1 part: read-in-order 1.59 s versus 0.88 s for the fallback — 1.8x slower, the
+        ///     single-stream case the guard exists for;
+        ///   - 2 parts: 1.03 s versus 1.05 s — parity already;
+        ///   - 4 parts: 0.92 s versus 1.00 s; 10 parts: 0.92 s versus 1.05 s — in-order wins, and
+        ///     rejecting it also cost 2.2x the peak memory in earlier 10-part measurements.
+        /// So the crossover sits between one and two parts, far below the read-stream count (32
+        /// here): even two in-order streams beat full-width parallel reading because the fallback
+        /// pays a global sort of the whole result. Note that the exemption is load-bearing on its
+        /// own: `optimizeUseNormalProjection` propagates `index_analysis_had_filter` to the
+        /// projection reading step, so without this check the guard would reach and reject those
+        /// plans.
+        if (read_streams > 1
+            && !(analysis_result.readFromProjection() && analysis_result.parts_with_ranges.size() > 1)
+            && !mayPruneRangesOnDataRead()
+            && analysis_result.total_marks_pk > read_streams
+            && static_cast<double>(analysis_result.selected_marks_pk)
+                > static_cast<double>(analysis_result.total_marks_pk) * max_ratio
+            && static_cast<double>(analysis_result.selected_marks)
+                > static_cast<double>(analysis_result.total_marks_pk) * max_ratio)
+        {
+            LOG_DEBUG(log, "Read-in-order optimization rejected: "
+                "primary key selected {}/{} marks, final selection {} marks "
+                "(both ratios exceed threshold {:.2f})",
+                analysis_result.selected_marks_pk, analysis_result.total_marks_pk,
+                analysis_result.selected_marks, max_ratio);
+            /// In `check_only` mode this is only a probe, so restore the previous order; in a real
+            /// call the guard fired, so commit the "no read-in-order" decision by clearing it.
+            query_info.input_order_info = check_only ? prev_input_order_info : InputOrderInfoPtr{};
+            if (!analysis_was_cached)
+            {
+                /// We created the analysis result ourselves above with `input_order_info` set,
+                /// which skipped the row-limit check. Drop it so the next `getAnalysisResult`
+                /// call recomputes it with `input_order_info == nullptr`, restoring the
+                /// row-limit semantics that apply when read-in-order is disabled.
+                analyzed_result_ptr.reset();
+            }
+            /// If the analysis was cached before we ran, it was computed with
+            /// `input_order_info == nullptr` and may carry projection-aware state
+            /// (`parts_with_ranges` filtered by `filterPartsByProjection`). Keep it as-is.
+            return false;
+        }
+
+        /// In `check_only` mode, the caller only wants to know whether the request would
+        /// succeed; do not commit any state. Restore the previous `input_order_info` (which may
+        /// be non-null for a legacy `ReadFromMerge` child) and drop the temporary analysis result
+        /// we created above. The caller is expected to call this function again without
+        /// `check_only` to actually apply, which will re-run the analysis with consistent semantics.
+        if (check_only)
+        {
+            query_info.input_order_info = prev_input_order_info;
+            if (!analysis_was_cached)
+                analyzed_result_ptr.reset();
+            return true;
+        }
+    }
+    else
+    {
+        /// Without the PK-selectivity guard the call cannot fail past this point;
+        /// in `check_only` mode just report success and leave state untouched.
+        if (check_only)
+            return true;
+
+        query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
+    }
+
+    /// A normal projection can run range analysis before `requestReadingInOrder` and cache a
+    /// projection-filtered result with row limits enabled. Once read-in-order is accepted, redo
+    /// that analysis with `input_order_info` set so `max_rows_to_read` and
+    /// `max_rows_to_read_leaf` follow the read-in-order semantics. `selectRangesToRead` keeps
+    /// the cached `parts_with_ranges` as its input, preserving the projection optimizer's
+    /// filtering while replacing only the analysis result.
+    if (analyzed_result_ptr && analyzed_result_ptr->row_limits_were_checked)
+        selectRangesToRead();
+
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
 
@@ -4340,6 +4538,25 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
+    /// `applyFilters` is run by `optimizePrimaryKeyConditionAndLimit` before `materializeQueryPlanReferences`
+    /// clones a subplan, and is not run again on the clone, so the state it derived must be propagated here
+    /// (the constructor leaves it at defaults):
+    /// - `indexes` and `skip_partition_pruning`: otherwise a later `selectRangesToRead` on the clone rebuilds
+    ///   index analysis from the raw `query_info.filter_actions_dag` with partition pruning re-enabled,
+    ///   letting filters that `deferFiltersAfterFinalIfNeeded` deliberately excluded participate in
+    ///   partition pruning and skip indexes, which could drop rows a `FINAL` still needs for deduplication;
+    /// - `deferred_row_level_filter` / `deferred_prewhere_info`: otherwise the clone applies a deferred row
+    ///   policy / PREWHERE during reading, before `FINAL`, changing which row wins deduplication;
+    /// - `index_analysis_had_filter`: otherwise the read-in-order PK-selectivity guard in
+    ///   `requestReadingInOrder` treats the cloned step as an unfiltered full scan;
+    /// - `filter_actions_dag`: keep the base-class DAG in sync with `query_info.filter_actions_dag`
+    ///   (both were set to the same DAG by `applyFilters`, and `query_info` is copied by the constructor).
+    cloned_step->indexes = indexes;
+    cloned_step->skip_partition_pruning = skip_partition_pruning;
+    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
+    cloned_step->deferred_prewhere_info = deferred_prewhere_info;
+    cloned_step->index_analysis_had_filter = index_analysis_had_filter;
+    cloned_step->filter_actions_dag = filter_actions_dag;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read
@@ -4347,10 +4564,6 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->distributed_read_buckets = distributed_read_buckets;
     cloned_step->distributed_read_lanes_per_task = distributed_read_lanes_per_task;
     cloned_step->distributed_read_param_name = distributed_read_param_name;
-    /// Filters deferred until after FINAL merging: losing them would apply the filter
-    /// before deduplication and return rows a newer version should have replaced.
-    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
-    cloned_step->deferred_prewhere_info = deferred_prewhere_info;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
     /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
@@ -4366,6 +4579,20 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    /// Carry over the join-runtime-filter descriptors registered by `tryAddJoinRuntimeFilter`. That
+    /// optimization runs in the second pass (`optimizeTree.cpp`) before `applyParallelReplicas`, which
+    /// clones the plan fragment (`cloneSubtree`, plus a second `QueryPlan::clone` for the initiator's
+    /// local fragment in `createParallelReplicasPlan`), and the local fragment is deliberately
+    /// re-optimized with `enable_join_runtime_filters = false` because the filters are expected to be
+    /// in the clone already. Losing the descriptors here therefore drops runtime-filter granule pruning
+    /// on the local fragment's non-coordinated (broadcast) reads - `initializePipeline` installs the
+    /// reader only when this vector is non-empty - and also hides that pruning from
+    /// `mayPruneRangesOnDataRead`, so the read-in-order PK-selectivity guard would judge a read whose
+    /// mark count is only a pre-pruning upper bound. The descriptors are a plain value list of
+    /// `(filter_id, column, type)` and the lookup is fail-open (`buildRuntimeRangePredicate` skips a
+    /// filter that was never published), so copying them is safe even when the clone ends up in a
+    /// pipeline where nothing builds the filter.
+    cloned_step->join_runtime_filters_for_index_analysis = join_runtime_filters_for_index_analysis;
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }
@@ -4565,6 +4792,39 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
         return false;
 
     return true;
+}
+
+bool ReadFromMergeTree::mayPruneRangesOnDataRead() const
+{
+    /// The `use_skip_indexes_on_data_read` path: the skip indexes that index analysis found useful
+    /// are deliberately not applied there, so `selected_marks` equals `selected_marks_pk` and the
+    /// actual pruning is done by the reader.
+    if (supportsSkipIndexesOnDataRead())
+        return true;
+
+    /// The projection-index path: the read ranges are registered by
+    /// `filterPartsAndCollectProjectionCandidates` during `optimizeUseNormalProjections`, which
+    /// finishes before the traversal that runs `optimizeReadInOrder`, so this is already populated
+    /// when the guard asks. Index analysis applies only the *part*-level effect of that projection
+    /// (`filterPartsByProjection`); the bitmap built from these ranges prunes the read later
+    /// regardless of `use_projection_index_in_read_pools` — `initializePipeline` installs a
+    /// `MergeTreeProjectionIndexReader` for any non-empty ranges and `MergeTreeReaderIndex` skips
+    /// the fully filtered granules during reading; the setting only moves the granule-level part of
+    /// that pruning earlier, to task-cut time in the read pool (`ProjectionIndexReadRangesRefiner`).
+    /// So `selected_marks` is again only a pre-pruning upper bound here.
+    if (!projection_index_read_desc.read_ranges.empty())
+        return true;
+
+    /// The join-runtime-filter path (`enable_join_runtime_filters_index_analysis`): a reader is
+    /// installed to prune left-side granules with the filter built by the build side, which is not
+    /// known during index analysis. The descriptors are registered by `tryAddJoinRuntimeFilter`,
+    /// which runs before `optimizeReadInOrder`, so this is already populated when the guard asks.
+    /// The remaining conditions of the reader-creation site (pending mutations, parallel replicas)
+    /// are intentionally not replicated: answering `true` too often only makes the guard fire less
+    /// often, which is always the safe direction for a performance heuristic.
+    return context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+        && !query_info.isFinal()
+        && !join_runtime_filters_for_index_analysis.empty();
 }
 
 
@@ -5153,8 +5413,27 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     else
         pipe = spreadMarkRanges(std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
 
+    auto storage_limits = query_info.storage_limits;
+    if (query_info.input_order_info && storage_limits)
+    {
+        /// The reader setting is the authoritative indication that this pipeline uses ordered
+        /// reading. Projection rewrites can replace the cached range analysis after an
+        /// in-order request, so its `read_type` may no longer describe the reader that was
+        /// created. `storage_limits` may have been prepared before that decision, so remove
+        /// row limits just as
+        /// `MergeTreeDataSelectExecutor::getRowLimits` does for an ordered read. Keep byte,
+        /// speed, and time limits intact.
+        auto in_order_storage_limits = std::make_shared<StorageLimitsList>(*storage_limits);
+        for (auto & limits : *in_order_storage_limits)
+        {
+            limits.local_limits.size_limits.max_rows = 0;
+            limits.leaf_limits.max_rows = 0;
+        }
+        storage_limits = std::move(in_order_storage_limits);
+    }
+
     for (const auto & processor : pipe.getProcessors())
-        processor->setStorageLimits(query_info.storage_limits);
+        processor->setStorageLimits(storage_limits);
 
     if (pipe.empty())
     {

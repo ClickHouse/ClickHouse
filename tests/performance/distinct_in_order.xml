@@ -1,4 +1,9 @@
 <test>
+    <settings>
+        <!-- This test relies on read-in-order for DISTINCT-in-order optimization -->
+        <read_in_order_max_primary_key_ratio>1.0</read_in_order_max_primary_key_ratio>
+    </settings>
+
     <!-- high cardinality -->
     <create_query>CREATE TABLE distinct_cardinality_high (high UInt64, medium UInt64, low UInt64) ENGINE MergeTree() ORDER BY (high, medium)</create_query>
     <fill_query>INSERT INTO distinct_cardinality_high SELECT number % 1e6, number % 1e4, number % 1e2 FROM numbers_mt(1e8)</fill_query>

@@ -4374,6 +4374,50 @@ When enabled together with `read_in_order_use_virtual_row`, emit a virtual row a
 This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
 Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0) \
+    DECLARE(Float, read_in_order_max_primary_key_ratio, 1.0, R"(
+Maximum ratio of selected to total primary key granules for `optimize_read_in_order` to stay enabled.
+When the primary key index selects more than this fraction of granules (i.e., filtering is poor),
+the read-in-order optimization is disabled at runtime and replaced with parallel reading plus
+per-stream sorting. This avoids the parallelism loss inherent in sequential in-order reading.
+The default of 1.0 keeps read-in-order always enabled (the previous behavior); the heuristic is
+opt-in until its threshold is tuned, because a blanket threshold trades sequential-read parallelism
+against re-sorting cost in a workload-dependent way. Lower the value (e.g. to 0.5) to enable the guard.
+
+The guard also accounts for skip indexes: it disables read-in-order only when the read is still large
+*after* skip-index pruning. Both the primary key granule ratio (`selected_marks_pk / total_marks_pk`)
+and the final granule ratio after skip indexes (`selected_marks / total_marks_pk`) must exceed this value.
+As a result, a query whose primary key is non-selective but whose skip index prunes most of the final read
+keeps read-in-order, even when `selected_marks_pk / total_marks_pk` is close to 1.0.
+
+This guard applies to the query-plan read-in-order path (`query_plan_read_in_order = 1`, the default).
+The legacy planner path (`query_plan_read_in_order = 0`) does not consult this setting and keeps the
+previous read-in-order behavior regardless of primary key selectivity.
+
+Even on the query-plan path the guard is deliberately exempt in the following cases, where it keeps
+read-in-order regardless of this setting:
+- reading from a projection with more than one selected part: a projection is selected precisely
+  because its own sorting key satisfies the `ORDER BY`, so the only alternative plan is to read the
+  same projection parts unordered and then sort globally — the sort the projection was chosen to
+  remove. The in-order read's parallelism is the number of selected parts (each part is read by one
+  stream), and measurements on 60M rows with `max_threads = 32` and a filter the primary key cannot
+  use put the crossover between one and two parts: with a single part the in-order read is one
+  stream and rejecting it is 1.8x faster, while already with two parts the plans are at parity and
+  from four parts up rejecting read-in-order is slower and uses more memory. A projection read whose
+  parts were merged into a single part therefore obeys the guard like a base-table read, and any
+  multi-part projection read keeps read-in-order regardless of this setting;
+- reads where range pruning happens during the read rather than during index analysis, namely the
+  `use_skip_indexes_on_data_read` path, join runtime filter granule pruning, and projection-index
+  pruning (whose bitmap is applied during reading regardless of `use_projection_index_in_read_pools`;
+  the setting only moves the granule-level pruning earlier, into the read pools): there the granule
+  counts available to the guard are only pre-pruning upper bounds, so they cannot tell a full scan
+  from a read that the reader will trim to a few granules;
+- `optimize_aggregation_in_order` and `optimize_distinct_in_order`: there read-in-order selects a
+  different, memory-bound streaming algorithm rather than merely avoiding a sort;
+- reading with parallel replicas, to avoid coordination mismatches;
+- queries with a `LIMIT` that lets in-order reading finish early;
+- queries without a filter that the primary key could have used, where a granule ratio of `1.0` means
+  nothing was filtered rather than that the index failed.
+)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
 

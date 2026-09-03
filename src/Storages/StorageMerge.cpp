@@ -101,6 +101,7 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
+    extern const SettingsFloat read_in_order_max_primary_key_ratio;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
 }
 
@@ -2270,7 +2271,7 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
-bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
+bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit, bool apply_pk_selectivity_check)
 {
     filterTablesAndCreateChildrenPlans();
 
@@ -2279,10 +2280,37 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
         return false;
 
-    auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
+    /// With an enabled PK-selectivity check, the per-child rejection in
+    /// `ReadFromMergeTree::requestReadingInOrder` can succeed for some underlying tables and
+    /// reject for others (different PK selectivity per table). Without a dry-run, the children
+    /// that succeeded are already switched to in-order — and have their `max_rows_to_read` /
+    /// `max_rows_to_read_leaf` checks skipped — while the parent falls back to full sort, leaving
+    /// mixed semantics across siblings. Verify all children would accept before committing.
+    const auto & settings = context->getSettingsRef();
+    const bool use_pk_selectivity_check = apply_pk_selectivity_check
+        && settings[Setting::read_in_order_max_primary_key_ratio] < 1.0f;
+    if (use_pk_selectivity_check)
+    {
+        auto check_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
+        {
+            return read_from_merge_tree.requestReadingInOrder(
+                order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, query_limit,
+                /* apply_pk_selectivity_check */ true, /* check_only */ true);
+        };
+
+        bool all_accept = true;
+        for (const auto & child_plan : *child_plans)
+            if (child_plan.plan.isInitialized())
+                all_accept &= recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), check_read_in_order);
+
+        if (!all_accept)
+            return false;
+    }
+
+    auto request_read_in_order = [order_info_, query_limit, apply_pk_selectivity_check](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, query_limit);
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, query_limit, apply_pk_selectivity_check);
     };
 
     bool ok = true;

@@ -1,0 +1,8 @@
+deferred_row_policy_on_both_reads
+2
+results
+2	bbb
+deferred_prewhere_on_both_reads
+2
+results_prewhere
+2	bbb

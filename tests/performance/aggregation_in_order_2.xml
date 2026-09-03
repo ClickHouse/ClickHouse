@@ -3,6 +3,8 @@
         <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
         <max_insert_block_size>10000000</max_insert_block_size>
         <max_threads>30</max_threads>
+        <!-- This test relies on read-in-order for aggregation in PK order -->
+        <read_in_order_max_primary_key_ratio>1.0</read_in_order_max_primary_key_ratio>
     </settings>
 
     <substitutions>
