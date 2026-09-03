@@ -1,6 +1,10 @@
 #include <Common/Base58.h>
 
+#include <base/unaligned.h>
+
+#include <algorithm>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 #if defined(__AVX2__)
@@ -660,6 +664,150 @@ size_t encodeBase58_64_fd(const uint8_t * src, uint8_t * dst)
 
 } // anonymous namespace
 
+namespace
+{
+
+constexpr UInt64 power58(size_t exponent)
+{
+    UInt64 result = 1;
+    for (size_t i = 0; i < exponent; ++i)
+        result *= 58;
+    return result;
+}
+
+/// The same 58^5 the fixed-size codecs above use as their intermediate radix (`R1div`).
+constexpr size_t BASE58_ENCODE_WORD_DIGITS = 5;
+constexpr UInt32 BASE58_ENCODE_WORD_RADIX = static_cast<UInt32>(power58(BASE58_ENCODE_WORD_DIGITS));
+
+/// Input elements per outer pass, `n` below. Encode takes 4 bytes, not 7: `word * 2^(8 * n) + carry` must
+/// fit `UInt64` and a radix-58^5 word is below 2^30, so `8 * n` must stay below 34. Decode takes 5
+/// characters, not 9: `word * 58^n + carry` must fit `UInt64`, and 58^5 < 2^30 does, 58^6 > 2^35 not.
+constexpr size_t BASE58_ENCODE_BYTES_PER_PASS = 4;
+constexpr size_t BASE58_DECODE_CHARS_PER_PASS = 5;
+constexpr UInt64 BASE58_DECODE_PASS_MULTIPLIER = power58(BASE58_DECODE_CHARS_PER_PASS);
+
+static_assert(BASE58_ENCODE_WORD_RADIX < (1ULL << 30));
+
+/// Upper bounds on the word count: 1366/1000 exceeds 8/log2(58) and 733/1000 exceeds log2(58)/8.
+constexpr size_t base58EncodeWords(size_t body)
+{
+    return (body * 1366 / 1000 + 2 + BASE58_ENCODE_WORD_DIGITS - 1) / BASE58_ENCODE_WORD_DIGITS;
+}
+
+constexpr size_t base58DecodeWords(size_t body)
+{
+    return (body * 733 / 1000 + 2 + sizeof(UInt32) - 1) / sizeof(UInt32);
+}
+
+/// The words live in the destination buffer when they fit its documented bound (2n+1 encode, n decode).
+/// The one body reaching here that does not is an 11-character decode that fell through the short path:
+/// it needs 12 word bytes where `dst` holds 11, so a separate array is required, not merely preferred.
+/// The cutoffs below are not that point; they are the largest bodies whose word count still fits 64.
+constexpr size_t BASE58_STACK_WORDS = 64;
+constexpr size_t BASE58_ENCODE_STACK_MAX_BODY = 233;
+constexpr size_t BASE58_DECODE_STACK_MAX_BODY = 347;
+
+static_assert(base58EncodeWords(BASE58_ENCODE_STACK_MAX_BODY) <= BASE58_STACK_WORDS);
+static_assert(base58EncodeWords(BASE58_ENCODE_STACK_MAX_BODY + 1) > BASE58_STACK_WORDS);
+static_assert(base58DecodeWords(BASE58_DECODE_STACK_MAX_BODY) <= BASE58_STACK_WORDS);
+static_assert(base58DecodeWords(BASE58_DECODE_STACK_MAX_BODY + 1) > BASE58_STACK_WORDS);
+
+/// The short-path bounds. Eight bytes is the largest body a `UInt64` holds; eleven characters is the
+/// encoded length of eight bytes, and the only length that can exceed one, since 58^10 <= 2^64 - 1 < 58^11.
+constexpr size_t BASE58_SHORT_ENCODE_MAX_BODY = sizeof(UInt64);
+constexpr size_t BASE58_SHORT_DECODE_MAX_BODY = 11;
+
+static_assert(power58(BASE58_SHORT_DECODE_MAX_BODY - 1) <= std::numeric_limits<UInt64>::max());
+static_assert(power58(BASE58_SHORT_DECODE_MAX_BODY - 1) > std::numeric_limits<UInt64>::max() / 58);
+
+/// `decodeBase58` hands the word array's bytes back as its own output, so the layout is part of the
+/// algorithm and is little-endian on every host, not just the ones where that is the native order.
+/// Unaligned because the words may live in a byte buffer.
+UInt32 loadWord(const UInt8 * words, size_t i)
+{
+    return unalignedLoadLittleEndian<UInt32>(words + i * sizeof(UInt32));
+}
+
+void storeWord(UInt8 * words, size_t i, UInt32 value)
+{
+    unalignedStoreLittleEndian<UInt32>(words + i * sizeof(UInt32), value);
+}
+
+
+/// A body that fits a `UInt64` needs none of the word apparatus above: the conversion is repeated divmod
+/// in a register. The digits are written least significant first and then reversed through the alphabet
+/// in place, exactly as the general path does, so at most 11 digits land inside the `2 * body + 1` bound.
+size_t encodeBase58Short(const UInt8 * src, size_t body_length, UInt8 * dst, const char * alphabet)
+{
+    UInt64 value = 0;
+    for (size_t i = 0; i < body_length; ++i)
+        value = (value << 8) | src[i];
+
+    size_t idx = 0;
+    while (value > 0)
+    {
+        const UInt64 quotient = value / 58;
+        dst[idx] = static_cast<UInt8>(value - quotient * 58);
+        ++idx;
+        value = quotient;
+    }
+
+    size_t c_idx = idx >> 1;
+    for (size_t i = 0; i < c_idx; ++i)
+    {
+        char s = alphabet[dst[i]];
+        dst[i] = alphabet[dst[idx - (i + 1)]];
+        dst[idx - (i + 1)] = s;
+    }
+
+    if ((idx & 1))
+        dst[c_idx] = alphabet[dst[c_idx]];
+
+    return idx;
+}
+
+/// The mirror of `encodeBase58Short`. An empty result means this path does not handle the input - an
+/// invalid character, or eleven characters above a `UInt64` - and nothing has been written to `dst`, so
+/// the caller falls through to the general path, which handles both.
+std::optional<size_t> decodeBase58Short(const UInt8 * src, size_t body_length, UInt8 * dst, const Int8 * map_digits)
+{
+    const size_t always_fits = body_length < BASE58_SHORT_DECODE_MAX_BODY ? body_length : BASE58_SHORT_DECODE_MAX_BODY - 1;
+    UInt64 value = 0;
+    for (size_t i = 0; i < always_fits; ++i)
+    {
+        const Int8 digit = map_digits[src[i]];
+        if (digit < 0)
+            return {};
+        value = value * 58 + static_cast<UInt64>(digit);
+    }
+
+    if (body_length == BASE58_SHORT_DECODE_MAX_BODY)
+    {
+        const Int8 digit = map_digits[src[BASE58_SHORT_DECODE_MAX_BODY - 1]];
+        if (digit < 0)
+            return {};
+        const UInt64 last = static_cast<UInt64>(digit);
+        if (value > (std::numeric_limits<UInt64>::max() - last) / 58)
+            return {};
+        value = value * 58 + last;
+    }
+
+    /// Least significant byte first, extracted arithmetically, so the result does not depend on how the
+    /// host stores a `UInt64`. The general path leaves its own output in that order too, hence the reversal.
+    size_t idx = 0;
+    while (value > 0)
+    {
+        dst[idx] = static_cast<UInt8>(value & 0xFF);
+        ++idx;
+        value >>= 8;
+    }
+
+    std::reverse(dst, dst + idx);
+    return idx;
+}
+
+} // anonymous namespace
+
 
 size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation)
 {
@@ -678,19 +826,45 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
         ++src;
     }
 
-    /// The inner loop below runs `idx` iterations and `idx` grows with the input, so the total work is
-    /// quadratic. Trigger the cancellation check based on the accumulated inner-loop work rather than the
-    /// number of outer iterations, so the time limit and `KILL QUERY` are honored promptly even when the
-    /// size limit is disabled and `idx` becomes very large. The check is kept at the top of the outer loop
-    /// (not inside the hot inner loop), so the worst-case latency between checks is one inner-loop pass.
+    const size_t body_length = src_length - processed;
+
+    if (body_length <= BASE58_SHORT_ENCODE_MAX_BODY)
+        return zeros + encodeBase58Short(src, body_length, dst, base58_encoding_alphabet);
+
+    /// The accumulator is the input so far as `UInt32` words of radix 58^5, least significant word first.
+    UInt32 stack_words[BASE58_STACK_WORDS];
+    UInt8 * words = body_length > BASE58_ENCODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_words);
+    size_t word_count = 0;
+
+    /// The total work is quadratic, so the cancellation check is driven by accumulated inner-loop work
+    /// rather than by outer iterations: the time limit and `KILL QUERY` stay prompt even with the size
+    /// limit disabled. The unit counted is one (input element, accumulator element) pair, and one
+    /// iteration covers `BASE58_ENCODE_BYTES_PER_PASS * BASE58_ENCODE_WORD_DIGITS` of them, hence the scaling.
     size_t work_since_check = 0;
     static constexpr size_t work_per_check = 1ULL << 20;
+
+    /// A short leading pass goes first, so every pass below reads exactly `BASE58_ENCODE_BYTES_PER_PASS` bytes.
+    if (size_t head = body_length % BASE58_ENCODE_BYTES_PER_PASS)
+    {
+        UInt64 carry = 0;
+        for (size_t i = 0; i < head; ++i)
+            carry = (carry << 8) | src[i];
+        src += head;
+        processed += head;
+
+        while (carry > 0)
+        {
+            storeWord(words, word_count, static_cast<UInt32>(carry % BASE58_ENCODE_WORD_RADIX));
+            ++word_count;
+            carry /= BASE58_ENCODE_WORD_RADIX;
+        }
+    }
 
     while (processed < src_length)
     {
         if (check_cancellation)
         {
-            work_since_check += idx;
+            work_since_check += word_count * BASE58_ENCODE_BYTES_PER_PASS * BASE58_ENCODE_WORD_DIGITS;
             if (work_since_check >= work_per_check)
             {
                 check_cancellation();
@@ -698,24 +872,56 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
             }
         }
 
-        UInt32 carry = *src;
+        UInt64 carry = 0;
+        for (size_t i = 0; i < BASE58_ENCODE_BYTES_PER_PASS; ++i)
+            carry = (carry << 8) | src[i];
+        src += BASE58_ENCODE_BYTES_PER_PASS;
+        processed += BASE58_ENCODE_BYTES_PER_PASS;
 
-        for (size_t j = 0; j < idx; ++j)
+        for (size_t j = 0; j < word_count; ++j)
         {
-            carry += static_cast<UInt32>(dst[j]) << 8;
-            dst[j] = static_cast<UInt8>(carry % 58);
-            carry /= 58;
+            const UInt64 cur = (static_cast<UInt64>(loadWord(words, j)) << (8 * BASE58_ENCODE_BYTES_PER_PASS)) + carry;
+            const UInt64 quotient = cur / BASE58_ENCODE_WORD_RADIX;
+            storeWord(words, j, static_cast<UInt32>(cur - quotient * BASE58_ENCODE_WORD_RADIX));
+            carry = quotient;
         }
 
         while (carry > 0)
         {
-            dst[idx] = static_cast<UInt8>(carry % 58);
-            ++idx;
-            carry /= 58;
+            storeWord(words, word_count, static_cast<UInt32>(carry % BASE58_ENCODE_WORD_RADIX));
+            ++word_count;
+            carry /= BASE58_ENCODE_WORD_RADIX;
         }
+    }
 
-        ++src;
-        ++processed;
+    /// The most significant word is never zero: multiplying a non-zero accumulator by 2^32 always carries
+    /// past one radix-58^5 word, so a pass that would zero the top word appends a non-zero one above it.
+    /// Expanding top-down, reading each word before writing over it, is what keeps this safe while the
+    /// words are IN `dst`: words 0 .. i-1 occupy `dst[0, 4 * i)` and word i's digits start at 5 * i.
+    if (word_count)
+    {
+        UInt32 top = loadWord(words, word_count - 1);
+        const size_t top_base = BASE58_ENCODE_WORD_DIGITS * (word_count - 1);
+        size_t top_digits = 0;
+        do
+        {
+            const UInt32 quotient = top / 58;
+            dst[top_base + top_digits] = static_cast<UInt8>(top - quotient * 58);
+            top = quotient;
+            ++top_digits;
+        } while (top > 0);
+        idx = top_base + top_digits;
+
+        for (size_t i = word_count - 1; i-- > 0;)
+        {
+            UInt32 word = loadWord(words, i);
+            for (size_t d = 0; d < BASE58_ENCODE_WORD_DIGITS; ++d)
+            {
+                const UInt32 quotient = word / 58;
+                dst[BASE58_ENCODE_WORD_DIGITS * i + d] = static_cast<UInt8>(word - quotient * 58);
+                word = quotient;
+            }
+        }
     }
 
     size_t c_idx = idx >> 1;
@@ -772,19 +978,52 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         ++src;
     }
 
-    /// The inner loop below runs `idx` iterations and `idx` grows with the input, so the total work is
-    /// quadratic. Trigger the cancellation check based on the accumulated inner-loop work rather than the
-    /// number of outer iterations, so the time limit and `KILL QUERY` are honored promptly even when the
-    /// size limit is disabled and `idx` becomes very large. The check is kept at the top of the outer loop
-    /// (not inside the hot inner loop), so the worst-case latency between checks is one inner-loop pass.
+    const size_t body_length = src_length - processed;
+
+    if (body_length <= BASE58_SHORT_DECODE_MAX_BODY)
+    {
+        if (const std::optional<size_t> bytes = decodeBase58Short(src, body_length, dst, map_digits))
+            return zeros + *bytes;
+    }
+
+    /// The accumulator is the characters so far as `UInt32` words of base 2^32, least significant first -
+    /// byte for byte the little-endian form the result needs, so only the byte reversal is left at the end.
+    UInt32 stack_words[BASE58_STACK_WORDS];
+    UInt8 * words = body_length > BASE58_DECODE_STACK_MAX_BODY ? dst : reinterpret_cast<UInt8 *>(stack_words);
+    size_t word_count = 0;
+
+    /// As in `encodeBase58`, the check is driven by accumulated inner-loop work, and one iteration
+    /// covers `BASE58_DECODE_CHARS_PER_PASS * sizeof(UInt32)` of the pairs that unit counts.
     size_t work_since_check = 0;
     static constexpr size_t work_per_check = 1ULL << 20;
+
+    /// A short leading pass goes first, so every pass below reads exactly `BASE58_DECODE_CHARS_PER_PASS` characters.
+    if (size_t head = body_length % BASE58_DECODE_CHARS_PER_PASS)
+    {
+        UInt64 carry = 0;
+        for (size_t i = 0; i < head; ++i)
+        {
+            const Int8 digit = map_digits[src[i]];
+            if (digit < 0)
+                return {};
+            carry = carry * 58 + static_cast<UInt64>(digit);
+        }
+        src += head;
+        processed += head;
+
+        while (carry > 0)
+        {
+            storeWord(words, word_count, static_cast<UInt32>(carry));
+            ++word_count;
+            carry >>= 32;
+        }
+    }
 
     while (processed < src_length)
     {
         if (check_cancellation)
         {
-            work_since_check += idx;
+            work_since_check += word_count * BASE58_DECODE_CHARS_PER_PASS * sizeof(UInt32);
             if (work_since_check >= work_per_check)
             {
                 check_cancellation();
@@ -792,26 +1031,43 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
             }
         }
 
-        Int8 digit = map_digits[*src];
-        UInt32 carry = digit == -1 ? 0xFFFFFFFFU : static_cast<UInt32>(digit);
-        if (carry == 0xFFFFFFFFU)
+        UInt64 carry = 0;
+        for (size_t i = 0; i < BASE58_DECODE_CHARS_PER_PASS; ++i)
         {
-            return {};
+            const Int8 digit = map_digits[src[i]];
+            if (digit < 0)
+                return {};
+            carry = carry * 58 + static_cast<UInt64>(digit);
         }
-        for (size_t j = 0; j < idx; ++j)
+        src += BASE58_DECODE_CHARS_PER_PASS;
+        processed += BASE58_DECODE_CHARS_PER_PASS;
+
+        for (size_t j = 0; j < word_count; ++j)
         {
-            carry += dst[j] * 58;
-            dst[j] = static_cast<UInt8>(carry & 0xFF);
-            carry >>= 8;
+            const UInt64 cur = static_cast<UInt64>(loadWord(words, j)) * BASE58_DECODE_PASS_MULTIPLIER + carry;
+            storeWord(words, j, static_cast<UInt32>(cur));
+            carry = cur >> 32;
         }
+
         while (carry > 0)
         {
-            dst[idx] = static_cast<UInt8>(carry & 0xFF);
-            ++idx;
-            carry >>= 8;
+            storeWord(words, word_count, static_cast<UInt32>(carry));
+            ++word_count;
+            carry >>= 32;
         }
-        ++src;
-        ++processed;
+    }
+
+    /// The most significant word is never zero: a pass rewrites a top word `t >= 1` as
+    /// `t * 58^n + carry >= 58^n`, so it either stays non-zero in place or carries, and the
+    /// last word the append loop above stores is the final non-zero `carry`.
+    if (word_count)
+    {
+        size_t top_bytes = 1;
+        for (UInt32 rest = loadWord(words, word_count - 1) >> 8; rest; rest >>= 8)
+            ++top_bytes;
+        idx = sizeof(UInt32) * (word_count - 1) + top_bytes;
+        if (words != dst)
+            memcpy(dst, words, idx);
     }
 
     size_t c_idx = idx >> 1;
