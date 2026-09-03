@@ -310,6 +310,23 @@ std::string HedgedConnections::dumpAddresses() const
     return addresses;
 }
 
+std::vector<IConnections::ReplicaAddress> HedgedConnections::getReplicaAddresses() const
+{
+    std::lock_guard lock(cancel_mutex);
+
+    std::vector<ReplicaAddress> addresses;
+    for (const OffsetState & offset_state : offset_states)
+    {
+        for (const ReplicaState & replica : offset_state.replicas)
+        {
+            if (replica.connection)
+                addresses.push_back({replica.connection->getHost(), replica.connection->getPort()});
+        }
+    }
+
+    return addresses;
+}
+
 void HedgedConnections::sendCancel()
 {
     std::lock_guard lock(cancel_mutex);

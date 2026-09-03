@@ -57,6 +57,8 @@ public:
 
     std::string dumpAddresses() const override;
 
+    std::vector<ReplicaAddress> getReplicaAddresses() const override;
+
     /// Without locking, because sendCancel() does not change this number.
     size_t size() const override { return replica_states.size(); }
 

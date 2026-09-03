@@ -514,6 +514,21 @@ The maximum number of simultaneous connections with remote servers for distribut
     DECLARE(UInt64, connections_with_failover_max_tries, 3, R"(
 The maximum number of connection attempts with each replica for the Distributed table engine.
 )", 0) \
+    DECLARE(UInt64, distributed_query_retries, 0, R"(
+The maximum number of times a distributed query (e.g. a query to a `Distributed` table or the `remote` table function) is retried after a network error (`NETWORK_ERROR`, `SOCKET_TIMEOUT`, `ATTEMPT_TO_READ_AFTER_EOF`, e.g. when the remote server is stopped while the query is running) while waiting for the result.
+
+The query is retried on another available replica (or on the same replica if there is no other) and only if neither result data nor the final statistics of the query (`Totals`, `Extremes`, `ProfileInfo`) have been received from the remote server yet, so the result and the reported statistics never account for a failed attempt. The replica that failed is penalized in the connection pool of the initiator (its failover error count is increased), so the retry prefers another available replica even under a deterministic `load_balancing` policy such as `in_order`. Queries executed with parallel replicas and queries of cluster table functions that distribute work between replicas dynamically are not retried.
+
+While a retry is still possible, the progress reported by the remote server is deferred until the first block of result data (or the completion of the query), so that the work replayed by a retry is not double-counted in the read limits (e.g. `max_rows_to_read`) and quotas on the initiator.
+
+Possible values:
+
+- 0 — Retries are disabled.
+- A positive integer — The maximum number of retries.
+)", 0) \
+    DECLARE(Milliseconds, distributed_query_retry_interval_ms, 1000, R"(
+The delay before a distributed query that failed with a network error is retried, see `distributed_query_retries`.
+)", 0) \
     DECLARE(UInt64, s3_strict_upload_part_size, S3::DEFAULT_STRICT_UPLOAD_PART_SIZE, R"(
 The exact size of part to upload during multipart upload to S3 (some implementations does not supports variable size parts).
 )", 0) \

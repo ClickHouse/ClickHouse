@@ -126,6 +126,8 @@ public:
 
     std::string dumpAddresses() const override;
 
+    std::vector<ReplicaAddress> getReplicaAddresses() const override;
+
     size_t size() const override { return offset_states.size(); }
 
     bool hasActiveConnections() const override { return active_connection_count > 0; }
