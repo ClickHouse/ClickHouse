@@ -185,11 +185,29 @@ claves utilizadas para rellenar los parámetros de la función de tabla S3:
 | aws&#95;access&#95;key&#95;id     | El ID de la clave de acceso de S3.                                                                                                                                                                                     |
 | aws&#95;secret&#95;access&#95;key | La clave secreta de S3.                                                                                                                                                                                                |
 | role&#95;arn                      | El ARN del rol de IAM creado para el acceso seguro a S3. Consulta esta [documentación](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para obtener más información.                                   |
+| external&#95;id                   | El ID externo que se pasará junto con `role_arn` al asumir el rol de IAM. Requiere que `role_arn` esté configurado. Disponible desde dbt-clickhouse 1.10.2.                                                            |
 | compression                       | El método de compresión utilizado con los objetos S3. Si no se proporciona, ClickHouse intentará determinar la compresión en función del nombre del archivo.                                                           |
 
-Consulta
-el [archivo de prueba de S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)
-para ver ejemplos de cómo usar esta macro.
+<div id="s3source-example">
+  #### Ejemplo
+</div>
+
+Define la configuración compartida en `dbt_project.yml` (el nombre del diccionario debe terminar en `s3`):
+
+```yaml
+vars:
+  taxi_s3:
+    bucket: 'datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi'
+    fmt: 'TabSeparatedWithNames'
+```
+
+Luego, llama a la macro en un modelo. También puedes pasar cualquiera de los argumentos anteriores directamente en la llamada; estos tendrán prioridad sobre los valores del diccionario:
+
+```sql
+select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
+```
+
+Consulta el [archivo de prueba de S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py) para ver más ejemplos.
 
 <div id="cross-database-macro-support">
   ### Compatibilidad con macros entre bases de datos
