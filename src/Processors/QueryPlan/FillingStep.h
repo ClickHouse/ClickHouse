@@ -10,10 +10,10 @@ namespace DB
 class FillingStep : public ITransformingStep
 {
 public:
+    /// `sort_description` is the whole `ORDER BY`; the columns to fill are its `WITH FILL` elements.
     FillingStep(
         SharedHeader input_header_,
         SortDescription sort_description_,
-        SortDescription fill_description_,
         InterpolateDescriptionPtr interpolate_description_,
         bool use_with_fill_by_sorting_prefix);
 
@@ -36,7 +36,6 @@ private:
     void updateOutputHeader() override;
 
     SortDescription sort_description;
-    SortDescription fill_description;
     InterpolateDescriptionPtr interpolate_description;
     const bool use_with_fill_by_sorting_prefix;
 };

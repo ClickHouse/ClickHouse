@@ -37,15 +37,28 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
+namespace
+{
+
+/// The columns to fill are exactly the `WITH FILL` elements of the `ORDER BY`, in the same order.
+SortDescription getFillDescription(const SortDescription & sort_description)
+{
+    SortDescription fill_description;
+    for (const auto & description : sort_description)
+        if (description.with_fill)
+            fill_description.push_back(description);
+    return fill_description;
+}
+
+}
+
 FillingStep::FillingStep(
     SharedHeader input_header_,
     SortDescription sort_description_,
-    SortDescription fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
     bool use_with_fill_by_sorting_prefix_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)), getTraits())
     , sort_description(std::move(sort_description_))
-    , fill_description(std::move(fill_description_))
     , interpolate_description(interpolate_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
@@ -55,6 +68,8 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 {
     if (pipeline.getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
+
+    const auto fill_description = getFillDescription(sort_description);
 
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
@@ -111,8 +126,8 @@ void FillingStep::serialize(Serialization & ctx) const
             "Serialization of FillingStep requires query plan serialization version >= {}; "
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
 
+    /// The fill columns are derived from the sort description, so only the latter travels.
     serializeSortDescription(sort_description, ctx.out, ctx.version);
-    serializeSortDescription(fill_description, ctx.out, ctx.version);
 
     UInt8 flags = 0;
     if (use_with_fill_by_sorting_prefix)
@@ -165,9 +180,6 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
     SortDescription sort_description;
     deserializeSortDescription(sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
 
-    SortDescription fill_description;
-    deserializeSortDescription(fill_description, ctx.in, ctx.version, ctx.max_type_complexity);
-
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
     /// Fail closed on a flag bit this version does not know, rather than desynchronizing the stream.
@@ -211,7 +223,6 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
     return std::make_unique<FillingStep>(
         ctx.input_headers.front(),
         std::move(sort_description),
-        std::move(fill_description),
         std::move(interpolate_description),
         (flags & 1) != 0);
 }
