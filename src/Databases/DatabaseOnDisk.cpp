@@ -263,8 +263,6 @@ void DatabaseOnDisk::createTable(
 
     waitDatabaseStarted();
 
-    checkTablesLimit();
-
     String table_metadata_path = getObjectMetadataPath(table_name);
 
     if (create.attach_short_syntax)
@@ -496,16 +494,16 @@ void DatabaseOnDisk::renameTable(
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
-    /// Do this before detaching the source table and moving its data. `createTable` checks the
-    /// limit too, but at that point a failed cross-database rename cannot be rolled back safely.
-    /// However, keep the check after the source table is resolved and validated, so that a full
-    /// destination does not mask `UNKNOWN_TABLE` and other source-side errors.
+    /// Check the destination `max_tables` quota before detaching the source table and moving its
+    /// data, because from that point on the rename cannot be undone safely. Keep the check after
+    /// the source table is resolved and validated, so that a full destination does not mask
+    /// `UNKNOWN_TABLE` and other source-side errors.
     if (this != &to_database)
     {
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
         {
             /// The destination may still be loading, in which case its table list is incomplete
-            /// and the limit check below would undercount.
+            /// and the check would undercount.
             target_db->waitDatabaseStarted();
             target_db->checkTablesLimit();
         }
@@ -516,7 +514,6 @@ void DatabaseOnDisk::renameTable(
     detachTable(local_context, table_name);
 
     UUID prev_uuid = UUIDHelpers::Nil;
-    StorageID original_table_id = StorageID::createEmpty();
     auto db_disk = getDisk();
     try
     {
@@ -546,7 +543,6 @@ void DatabaseOnDisk::renameTable(
         }
 
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
-        original_table_id = table->getStorageID();
         table->rename(to_database.getTableDataPath(create), StorageID(create));
     }
     catch (const Exception &)
@@ -563,55 +559,8 @@ void DatabaseOnDisk::renameTable(
         throw Exception{Exception::CreateFromPocoTag{}, e};
     }
 
-    /// Now table data are moved to new database, so we must add metadata and attach table to new database.
-    /// If this fails (e.g. a concurrent `CREATE TABLE` filled the destination database `max_tables`
-    /// quota after the preflight check above), roll the rename back: move the data to the old place
-    /// and re-attach the table to this database, so the table is not lost.
-    try
-    {
-        to_database.createTable(local_context, to_table_name, table, attach_query);
-    }
-    catch (...)
-    {
-        try
-        {
-            /// `createTable` can throw after it has already attached the table to the destination
-            /// database: `DatabaseOnDisk::commitCreateTable` attaches before committing the
-            /// metadata file, and `removeDetachedPermanentlyFlag` runs after the commit. Tear the
-            /// destination state down first, otherwise the same table would stay attached under
-            /// both names.
-            if (to_database.tryGetTable(to_table_name, local_context) == table)
-            {
-                to_database.detachTable(local_context, to_table_name);
-                /// `detachTable` records the table in the destination `system.detached_tables`
-                /// snapshot. The rollback removes the destination metadata altogether, so that
-                /// bookkeeping must go too - otherwise a failed rename leaves a phantom detached
-                /// table behind, which `DatabaseAtomic::renameDatabase` also keeps validating.
-                if (auto * to_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
-                    to_with_own_tables->forgetDetachedTableSnapshot(to_table_name);
-                if (from_ordinary_to_atomic)
-                {
-                    auto & to_atomic = dynamic_cast<DatabaseAtomic &>(to_database);
-                    if (table->storesDataOnDisk())
-                        to_atomic.tryRemoveSymlink(to_table_name);
-                    to_atomic.setDetachedTableNotInUseForce(attach_query->as<ASTCreateQuery &>().uuid);
-                }
-                to_database.getDisk()->removeFileIfExists(to_database.getObjectMetadataPath(to_table_name));
-            }
-            table->rename(table_data_relative_path, original_table_id);
-            if (from_ordinary_to_atomic)
-                DatabaseCatalog::instance().removeUUIDMappingFinally(attach_query->as<ASTCreateQuery &>().uuid);
-            setDetachedTableNotInUseForce(prev_uuid);
-            attachTable(local_context, table_name, table, table_data_relative_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Cannot rollback the rename of table {} to {} after a failed attach to the destination database",
-                original_table_id.getNameForLogs(), to_table_name));
-        }
-        throw;
-    }
+    /// Now table data are moved to new database, so we must add metadata and attach table to new database
+    to_database.createTable(local_context, to_table_name, table, attach_query);
 
     db_disk->removeFileIfExists(table_metadata_path);
 
@@ -1037,7 +986,9 @@ void DatabaseOnDisk::checkTablesLimitUnlocked(size_t tables_to_add) const
 
     /// Every table-like object of the database - a table, a view, a dictionary - lives in `tables`
     /// and counts toward the limit.
-    /// NOTE: The check is best-effort.
+    /// NOTE: The check is best-effort: it runs before the operation starts, so concurrent queries
+    /// can push the database slightly over the limit. This is the same as `max_table_num_to_throw`
+    /// and the other server-wide limits in `InterpreterCreateQuery::throwIfTooManyEntities`.
     /// NOTE: `getDatabaseName` would take `mutex` again and deadlock, so read the name directly.
     if (limit != 0 && tables.size() + tables_to_add > limit)
         throw Exception(

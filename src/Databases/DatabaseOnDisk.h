@@ -92,10 +92,11 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
-    /// Throws `TOO_MANY_TABLES` if adding `tables_to_add` more tables would exceed the
+    /// Throws `TOO_MANY_TABLES` if adding `tables_to_add` more table-like objects would exceed the
     /// `max_tables` limit. More than one slot is needed for the engines that create hidden inner
     /// tables (`MaterializedView`, `TimeSeries`): all of them must be accounted for at once,
-    /// otherwise the inner tables are created and the outer object is then rejected.
+    /// otherwise the inner tables are created and the outer object is then rejected. The check is
+    /// done before an operation starts, so it is best-effort under concurrency.
     void checkTablesLimit(size_t tables_to_add = 1) const;
     void checkTablesLimitUnlocked(size_t tables_to_add = 1) const TSA_REQUIRES(mutex);
 

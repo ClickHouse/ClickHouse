@@ -1475,7 +1475,6 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     database->waitDatabaseStarted();
 
     String latest_metadata_dropped_path;
-    String table_metadata_path;
     TableMarkedAsDropped dropped_table;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1512,7 +1511,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             database_on_disk->checkTablesLimit();
 
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
-        table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
+        String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
@@ -1552,70 +1551,13 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     ast_attach->setTable(dropped_table.table_id.table_name);
 
     auto query_context = Context::createCopy(getContext());
-    try
-    {
-        /// Attach table needs to acquire ddl guard, that has already been acquired in undrop table,
-        /// and cannot be acquired in the attach table again.
-        InterpreterCreateQuery interpreter(ast_attach, query_context);
-        interpreter.setForceAttach(true);
-        interpreter.setForceRestoreData(true);
-        interpreter.setDontNeedDDLGuard();  /// It's already locked by caller
-        interpreter.execute();
-    }
-    catch (...)
-    {
-        /// The attach can fail after the dropped-table record was already consumed above, e.g. when
-        /// a concurrent `CREATE TABLE` fills the database `max_tables` quota between the preflight
-        /// check and the attach. Return the table to the dropped-table queue, so nothing is lost
-        /// and `UNDROP` can be retried. If the table was attached despite the exception, leave it.
-        try
-        {
-            if (!database->isTableExist(dropped_table.table_id.table_name, getContext()))
-            {
-                db_disk->moveFile(table_metadata_path, latest_metadata_dropped_path);
-
-                /// Re-create the in-memory table instance the same way the queue is populated from disk
-                /// at startup. An entry without it would make a retried `UNDROP` wait forever.
-                StoragePtr table;
-                ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(
-                    log, getContext(), db_disk, latest_metadata_dropped_path, /*throw_on_error*/ false, /*remove_empty*/ false);
-                if (auto * create = typeid_cast<ASTCreateQuery *>(ast.get()))
-                {
-                    String data_path = getStoreDirPath(dropped_table.table_id.uuid);
-                    create->setDatabase(dropped_table.table_id.database_name);
-                    create->setTable(dropped_table.table_id.table_name);
-                    table = createTableFromAST(
-                        *create, dropped_table.table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE).second;
-                    table->is_dropped = true;
-                }
-                dropped_table.table = table;
-
-                /// The UUID mapping was not removed by the failed attach, so unlike
-                /// `enqueueDroppedTableCleanup` we must not add it again. The original `drop_time`
-                /// already includes the drop delay.
-                {
-                    std::lock_guard lock(tables_marked_dropped_mutex);
-                    tables_marked_dropped.push_back(dropped_table);
-                    if (first_async_drop_in_queue == tables_marked_dropped.end())
-                        --first_async_drop_in_queue;
-                    tables_marked_dropped_ids.insert(dropped_table.table_id.uuid);
-                    CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
-                }
-
-                /// The background drop task can fire and go back to sleep with no next wakeup
-                /// while the queue is empty between the erase above and this rollback, so the
-                /// restored entry needs an explicit reschedule.
-                rescheduleDropTableTask();
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Cannot return table {} to the queue of dropped tables after a failed UNDROP",
-                dropped_table.table_id.getNameForLogs()));
-        }
-        throw;
-    }
+    /// Attach table needs to acquire ddl guard, that has already been acquired in undrop table,
+    /// and cannot be acquired in the attach table again.
+    InterpreterCreateQuery interpreter(ast_attach, query_context);
+    interpreter.setForceAttach(true);
+    interpreter.setForceRestoreData(true);
+    interpreter.setDontNeedDDLGuard();  /// It's already locked by caller
+    interpreter.execute();
 
     LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());
 }

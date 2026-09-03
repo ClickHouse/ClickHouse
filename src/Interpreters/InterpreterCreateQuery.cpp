@@ -2500,9 +2500,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throwIfTooManyEntities(create);
 
     /// Check the per-database `max_tables` limit before constructing the storage: the storage
-    /// constructor can already create data on disk (and the hidden inner tables of a view), which
-    /// would be left behind if the quota rejected the table only inside `database->createTable`.
-    /// The check there still guards the race window between this preflight and the actual attach.
+    /// constructor can already create data on disk, as well as the hidden inner tables of a view,
+    /// and all of that would be left behind if the table were rejected later.
     if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
         database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
