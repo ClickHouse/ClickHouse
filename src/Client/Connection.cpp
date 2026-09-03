@@ -1440,6 +1440,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
         query_pipeline.setNumThreads(1);
         query_pipeline.setConcurrencyControl(false);
+        query_pipeline.disableReadProgress();
         CompletedPipelineExecutor completed_executor(query_pipeline);
         executor = &completed_executor;
         completed_executor.execute();
