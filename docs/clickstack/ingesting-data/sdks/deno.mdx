@@ -4,9 +4,12 @@ description: 'Deno SDK for ClickStack - The ClickHouse Observability Stack'
 title: 'Deno'
 doc_type: 'guide'
 keywords: ['Deno ClickStack SDK', 'Deno OpenTelemetry', 'ClickStack Deno integration', 'Deno observability', 'Deno logging SDK']
+sidebarTitle: 'Deno'
+clickstack_integrations:
+  - logs
 ---
 
-This guide Integrates the following:
+**This guide integrates:**
 
 - **Logs**
 
@@ -46,7 +49,7 @@ log.getLogger('my-otel-logger').info('Hello from Deno!');
 <Tab title="Managed ClickStack">
 
 ```shell
-OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTLP_HTTP_ENDPOINT> \
 OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
 deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
 ```
@@ -57,7 +60,7 @@ deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
 
 ```shell
 OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTLP_HTTP_ENDPOINT> \
 OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
 deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
 ```

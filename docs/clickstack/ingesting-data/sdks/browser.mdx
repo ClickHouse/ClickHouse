@@ -4,6 +4,10 @@ description: 'Browser SDK for ClickStack - The ClickHouse Observability Stack'
 title: 'Browser JS'
 doc_type: 'guide'
 keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
+sidebarTitle: 'Browser JS'
+clickstack_integrations:
+  - logs
+  - traces
 ---
 
 The ClickStack browser SDK allows you to instrument your frontend application to
@@ -14,7 +18,7 @@ Additionally, it'll automatically capture and correlate session replay data, so
 you can visually step through and debug what a user was seeing while using your
 application.
 
-This guide integrates the following:
+**This guide integrates:**
 
 - **Console Logs**
 - **Session Replays**
@@ -41,8 +45,8 @@ npm install @hyperdx/browser
 import HyperDX from '@hyperdx/browser';
 
 HyperDX.init({
-    url: 'http://your-otel-collector:4318',
-    apiKey: 'YOUR_INGESTION_API_KEY', //omit for Managed ClickStack
+    url: '<YOUR_OTLP_HTTP_ENDPOINT>',
+    apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
     service: 'my-frontend-app',
     tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
     consoleCapture: true, // Capture console logs (default false)
@@ -65,8 +69,8 @@ This is recommended if your site isn't currently built using a bundler.
 <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
 <script>
   window.HyperDX.init({
-    url: 'http://localhost:4318',
-    apiKey: 'YOUR_INGESTION_API_KEY', //omit for Managed ClickStack
+    url: '<YOUR_OTLP_HTTP_ENDPOINT>',
+    apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
     service: 'my-frontend-app',
     tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
   });

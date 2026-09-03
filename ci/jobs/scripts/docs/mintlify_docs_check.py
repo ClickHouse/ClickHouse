@@ -142,6 +142,16 @@ QUICKSTARTS_CHECK = (
     "python3 ../ci/jobs/scripts/docs/quickstarts_check.py .",
 )
 
+# ClickStack SDK-docs-only check, kept out of DEFAULT_CHECKS: the Praktika job
+# runs it only when a PR touches the SDK docs folder or the checker. Validates
+# the conventions in-app onboarding mirrors from these pages -- the
+# `clickstack_integrations` frontmatter, the standardized env-var placeholders,
+# and the exact deployment tab titles. See sdk_docs_check.py for the rules.
+SDK_DOCS_CHECK = (
+    "Check ClickStack SDK docs",
+    "python3 ../ci/jobs/scripts/docs/sdk_docs_check.py .",
+)
+
 
 def run(cmd, **kw):
     print("+ " + " ".join(shlex.quote(c) for c in cmd), flush=True)

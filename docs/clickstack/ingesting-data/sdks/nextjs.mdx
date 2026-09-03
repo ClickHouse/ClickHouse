@@ -4,13 +4,17 @@ description: 'Next.js SDK for ClickStack - The ClickHouse Observability Stack'
 title: 'Next.js'
 doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logging', 'integration', 'application monitoring']
+sidebarTitle: 'Next.js'
+clickstack_integrations:
+  - logs
+  - traces
 ---
 
 ClickStack can ingest native OpenTelemetry traces from your
 [Next.js serverless functions](https://nextjs.org/docs/pages/building-your-application/optimizing/open-telemetry#manual-opentelemetry-configuration)
 in Next 13.2+.
 
-This Guide Integrates:
+**This guide integrates:**
 
 - **Console Logs**
 - **Traces**
@@ -96,7 +100,7 @@ server with the following environment variables to point spans towards the OTel 
 
 ```sh copy
 OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTLP_HTTP_ENDPOINT>
 npm run dev
 ```
 
@@ -107,7 +111,7 @@ npm run dev
 ```sh copy
 HYPERDX_API_KEY=<YOUR_INGESTION_API_KEY> \
 OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTLP_HTTP_ENDPOINT>
 npm run dev
 ```
 </Tab>

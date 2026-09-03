@@ -4,13 +4,18 @@ description: 'Python for ClickStack - The ClickHouse Observability Stack'
 title: 'Python'
 doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logging', 'integration', 'application monitoring']
+sidebarTitle: 'Python'
+clickstack_integrations:
+  - logs
+  - metrics
+  - traces
 ---
 
 ClickStack uses the OpenTelemetry standard for collecting telemetry data (logs and
 traces). Traces are auto-generated with automatic instrumentation, so manual
 instrumentation isn't required to get value out of tracing.
 
-This guide integrates:
+**This guide integrates:**
 
 - **Logs**
 - **Metrics**
@@ -42,7 +47,7 @@ Afterwards you'll need to configure the following environment variables in your 
 
 ```shell
 OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTLP_HTTP_ENDPOINT> 
 ```
 
 </Tab>
@@ -52,7 +57,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```shell
 export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
 OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTLP_HTTP_ENDPOINT> 
 ```
 
 </Tab>

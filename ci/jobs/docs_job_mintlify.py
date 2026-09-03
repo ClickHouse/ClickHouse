@@ -9,6 +9,7 @@ from ci.jobs.scripts.docs.mintlify_docs_check import (
     DEFAULT_CHECKS,
     LOCALE_CHECKS,
     QUICKSTARTS_CHECK,
+    SDK_DOCS_CHECK,
 )
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -65,6 +66,16 @@ QUICKSTARTS_CHECK_TRIGGERS = (
     )
 )
 
+# The SDK docs check covers only the ClickStack SDK guides plus its own checker,
+# so it runs only when one of those changes -- ordinary docs edits don't pay for
+# it. In-app onboarding mirrors these pages, so the checker guards the
+# conventions it parses (frontmatter integrations, env-var placeholders, exact
+# deployment tab titles).
+SDK_DOCS_CHECK_TRIGGERS = (
+    "docs/clickstack/ingesting-data/sdks/",
+    "ci/jobs/scripts/docs/sdk_docs_check.py",
+)
+
 CLICKHOUSE_CONNECT_SYNC_BRANCH = "robot/docs-sync-clickhouse-connect"
 CLICKHOUSE_CONNECT_SYNC_HEAD_REPOSITORY = "ClickHouse/ClickHouse"
 CLICKHOUSE_CONNECT_SYNC_PR_AUTHOR = "workflow-authentication-public[bot]"
@@ -95,6 +106,15 @@ def _quickstarts_check_should_run():
     if changed_files is None:
         return True
     return any(f.startswith(QUICKSTARTS_CHECK_TRIGGERS) for f in changed_files)
+
+
+def _sdk_docs_check_should_run():
+    # Same gating idea: run only when the PR touches an SDK page or the checker;
+    # fail open toward coverage when the changed-file list is unavailable.
+    changed_files = Info().get_changed_files()
+    if changed_files is None:
+        return True
+    return any(f.startswith(SDK_DOCS_CHECK_TRIGGERS) for f in changed_files)
 
 
 def _is_trusted_clickhouse_connect_sync(info):
@@ -197,6 +217,18 @@ if __name__ == "__main__":
             results.append(
                 Result.from_commands_run(
                     name=qs_name, command=qs_command, workdir=docs_dir
+                )
+            )
+
+    # ClickStack SDK docs check: blocking, but only when the PR touches an SDK
+    # page or the checker. Enforces the conventions in-app onboarding mirrors
+    # from these pages.
+    if _sdk_docs_check_should_run():
+        sdk_name, sdk_command = SDK_DOCS_CHECK
+        if selected(sdk_name):
+            results.append(
+                Result.from_commands_run(
+                    name=sdk_name, command=sdk_command, workdir=docs_dir
                 )
             )
 
