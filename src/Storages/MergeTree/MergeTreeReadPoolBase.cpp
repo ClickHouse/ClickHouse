@@ -40,7 +40,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char merge_tree_read_pool_pause_after_cancel[];
-    extern const char merge_tree_read_pool_pause_after_refine_read_ranges[];
 }
 
 namespace
@@ -448,8 +447,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     auto extras = getExtras();
     MergeTreeReadTask::Readers task_readers;
 
-    checkIfNotCancelled();
-
     if (!previous_task)
     {
         task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges);
@@ -499,7 +496,6 @@ MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo &
 
     size_t marks_before = ranges.getNumberOfMarks();
     auto refined = ranges_refiner->refine(info, std::move(ranges));
-    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_read_pool_pause_after_refine_read_ranges);
     size_t marks_after = refined.getNumberOfMarks();
 
     if (marks_after > marks_before)

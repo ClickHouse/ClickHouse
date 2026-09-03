@@ -66,9 +66,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
-    extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -126,6 +124,13 @@ ReadBufferFromS3::ReadBufferFromS3(
     , blob_storage_log(std::move(blob_storage_log_))
 {
     file_size = file_size_;
+}
+
+void ReadBufferFromS3::checkIfNotCancelled() const
+{
+    CurrentThread::checkIfNotCancelled();
+    if (read_settings.isReadCancelled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "MergeTree read was cancelled by the client");
 }
 
 bool ReadBufferFromS3::nextImpl()
@@ -218,7 +223,7 @@ bool ReadBufferFromS3::nextImpl()
             }
 
             /// Try to read a next portion of data.
-            CurrentThread::checkIfNotCancelled();
+            checkIfNotCancelled();
             next_result = impl->next();
             break;
         }
@@ -227,7 +232,7 @@ bool ReadBufferFromS3::nextImpl()
             if (!processException(getPosition(), attempt))
                 throw;
 
-            CurrentThread::checkIfNotCancelled();
+            checkIfNotCancelled();
             if (last_attempt)
                 throw;
 
@@ -324,7 +329,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             std::istream & istr = result->GetBody();
 
             bool cancelled = false;
-            CurrentThread::checkIfNotCancelled();
+            checkIfNotCancelled();
             copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied, &cancelled);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
@@ -336,7 +341,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             }
 
             /// Read remaining bytes after the end of the payload
-            CurrentThread::checkIfNotCancelled();
+            checkIfNotCancelled();
             istr.ignore(INT64_MAX);
         }
         catch (...)
@@ -347,7 +352,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             if (!processException(range_begin, attempt))
                 throw;
 
-            CurrentThread::checkIfNotCancelled();
+            checkIfNotCancelled();
             if (last_attempt)
                 throw;
 
@@ -368,15 +373,12 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
     const auto exception = std::current_exception();
-    const auto exception_code = getExceptionErrorCode(exception);
-
     /// Explicit query cancellation is not an S3 read error and must not be retried. In particular,
     /// `sendRequest` can throw it before issuing a request, so do not report it in S3 error telemetry.
-    if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED
-        || exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-        || exception_code == ErrorCodes::TIMEOUT_EXCEEDED
-        || CurrentThread::isQueryCancellationException(exception))
+    if (CurrentThread::isQueryCancellationException(exception))
         return false;
+
+    const auto exception_code = getExceptionErrorCode(exception);
 
     /// Callers check mutable query cancellation state only after this function classifies the caught
     /// exception as retryable. This preserves a real non-retryable S3 error if cancellation races with unwinding.
@@ -615,9 +617,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_get_object);
-    CurrentThread::checkIfNotCancelled();
-    if (read_settings.isReadCancelled())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "MergeTree read was cancelled by the client");
+    checkIfNotCancelled();
 
     if (request_started)
         *request_started = true;

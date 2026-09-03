@@ -240,36 +240,35 @@ def test_transient_forbidden_compact_part_read_succeeds(started_cluster):
     assert not node.contains_in_log(BROKEN_PART_LOG)
 
 
-def test_non_retryable_error_still_marks_part_broken(started_cluster):
-    # Negative control: a non-retryable 400 must still reportBroken(), else real corruption is missed.
-    _create_table("t_negative")
-
-    node.query("SYSTEM ENABLE FAILPOINT azure_inject_bad_request")
-    try:
-        node.query_and_get_error("SELECT sum(k) FROM t_negative")
-        node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
-    finally:
-        node.query("SYSTEM DISABLE FAILPOINT azure_inject_bad_request")
-
-
-def test_non_retryable_error_still_marks_part_broken_after_cancellation(
-    started_cluster,
+@pytest.mark.parametrize(
+    "cancel_during_unwind", [False, True], ids=["plain", "cancellation-race"]
+)
+def test_non_retryable_error_still_marks_part_broken(
+    started_cluster, cancel_during_unwind
 ):
-    _create_table("t_negative_cancelled")
-    query_id = uuid.uuid4().hex
-    pause_failpoint = "merge_tree_reader_pause_before_report_broken"
+    # Negative control: a non-retryable 400 must still reportBroken(), else real corruption is missed.
+    table = f"t_negative_{int(cancel_during_unwind)}"
+    _create_table(table)
 
     node.query("SYSTEM ENABLE FAILPOINT azure_inject_bad_request")
-    node.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
-    executor = ThreadPoolExecutor(max_workers=1)
-    query_future = executor.submit(
-        node.query_and_get_error,
-        "SELECT sum(k) FROM t_negative_cancelled SETTINGS "
-        "max_execution_time=1, timeout_overflow_mode='throw'",
-        query_id=query_id,
-    )
+    pause_failpoint = "merge_tree_reader_pause_before_report_broken"
+    executor = None
 
     try:
+        if not cancel_during_unwind:
+            node.query_and_get_error(f"SELECT sum(k) FROM {table}")
+            node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
+            return
+
+        query_id = uuid.uuid4().hex
+        node.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+        executor = ThreadPoolExecutor(max_workers=1)
+        query_future = executor.submit(
+            node.query_and_get_error,
+            f"SELECT sum(k) FROM {table} SETTINGS "
+            "max_execution_time=1, timeout_overflow_mode='throw'",
+            query_id=query_id,
+        )
         node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE", timeout=60)
         assert_eq_with_retry(
             node,
@@ -285,10 +284,12 @@ def test_non_retryable_error_still_marks_part_broken_after_cancellation(
         assert "TIMEOUT_EXCEEDED" not in error, error
         node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
     finally:
-        node.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
-        node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+        if cancel_during_unwind:
+            node.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+            node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_bad_request")
-        executor.shutdown(wait=False, cancel_futures=True)
+        if executor:
+            executor.shutdown(wait=False, cancel_futures=True)
 
 
 def test_permanent_forbidden_on_write_fails(started_cluster):

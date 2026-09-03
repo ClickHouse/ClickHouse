@@ -58,9 +58,6 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
-    extern const int QUERY_WAS_CANCELLED;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace FailPoints
@@ -167,28 +164,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
 bool shouldReportBrokenPart(std::exception_ptr exception_ptr)
 {
     FailPointInjection::pauseFailPoint(FailPoints::merge_tree_reader_pause_before_report_broken);
-
-    if (isRetryableException(exception_ptr))
-        return false;
-
-    if (CurrentThread::isQueryCancellationException(exception_ptr))
-        return false;
-
-    try
-    {
-        rethrow_exception(exception_ptr);
-    }
-    catch (const Exception & e)
-    {
-        return e.code() != ErrorCodes::QUERY_WAS_CANCELLED
-            && e.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-            && e.code() != ErrorCodes::TIMEOUT_EXCEEDED;
-    }
-    catch (...)
-    {
-        /// Ok. Preserve the existing behavior: unknown exceptions should report the part as broken.
-        return true;
-    }
+    return !isRetryableException(exception_ptr) && !CurrentThread::isQueryCancellationException(exception_ptr);
 }
 
 static IMergeTreeDataPart::Checksums checkDataPart(

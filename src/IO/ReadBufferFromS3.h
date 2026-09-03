@@ -105,6 +105,8 @@ public:
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
 private:
+    void checkIfNotCancelled() const;
+
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.

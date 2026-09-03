@@ -462,16 +462,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 storage_id = task->getInfo().data_part_info->getDataPart()->storage.getStorageID();
                 prewhere_step_offset = task->getInfo().mutation_steps.size();
             }
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
-                break;
-            throw;
-        }
 
-        try
-        {
             auto result = readCurrentTask(*task, *algorithm);
 
             /// Emit a virtual row update after each block, carrying the next mark's PK boundary.

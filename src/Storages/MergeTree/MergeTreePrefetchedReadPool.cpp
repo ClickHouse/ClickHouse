@@ -41,19 +41,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-    extern const char merge_tree_prefetched_read_pool_pause_before_create_readers[];
     extern const char prefetched_reader_pool_failpoint[];
-}
-
-void MergeTreePrefetchedReadPool::checkIfNotCancelledBeforeCreatingReaders() const
-{
-    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_prefetched_read_pool_pause_before_create_readers);
-    checkIfNotCancelled();
-
-    fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefetched reader enabled");
-    });
 }
 
 bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other) const
@@ -120,10 +108,6 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
 
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
             task.read_info->data_part_info->getDataPart(), task.read_info->patch_parts, task.ranges);
-
-        /// Cancellation may arrive while `refineReadRanges` waits for index state. Do not create
-        /// readers after that point because their constructors start asynchronous mark loads.
-        read_prefetch.checkIfNotCancelledBeforeCreatingReaders();
 
         readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
 
@@ -235,7 +219,6 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     }
 
     auto extras = getExtras();
-    checkIfNotCancelledBeforeCreatingReaders();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);
     task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
 }
@@ -328,9 +311,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
             thread_task->patches_ranges = ranges_in_patch_parts.getRanges(
                 thread_task->read_info->data_part_info->getDataPart(), thread_task->read_info->patch_parts, thread_task->ranges);
         }
-
-        if (!thread_task->isValidReadersFuture())
-            checkIfNotCancelledBeforeCreatingReaders();
 
         return createTask(*thread_task, previous_task);
     }

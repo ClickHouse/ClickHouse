@@ -194,6 +194,16 @@ def test_custom_query_cancellation_does_not_report_broken_part(cluster):
         assert "FAULT_INJECTED" in error, error
         assert "Injected query cancellation exception" in error, error
 
+        node.query("SYSTEM FLUSH LOGS")
+        assert (
+            node.query(
+                "SELECT sum(ProfileEvents['S3GetObject']), "
+                "sum(ProfileEvents['ReadBufferFromS3RequestsErrors']) FROM system.query_log "
+                f"WHERE query_id='{query_id}' AND type!='QueryStart'"
+            ).strip()
+            == "0\t0"
+        )
+
         parts_to_check, part_checks_after = map(
             int,
             node.query(
