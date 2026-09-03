@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
 # Tag no-fasttest: needs the secure ports (`https_port`) and `nc`.
-# Tag no-parallel: `SYSTEM DROP CONNECTIONS CACHE` drops the server-wide connection pool.
+# Tag no-parallel: `SYSTEM DROP DNS CACHE` and `SYSTEM DROP CONNECTIONS CACHE` drop server-wide caches.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,11 +37,24 @@ function expect_increase()
     echo "$name did NOT increase, still $before"
 }
 
+# Dropping the DNS cache makes the host name be resolved for real instead of being served from the
+# cache, so a request is guaranteed to reach the resolver.
+function resolve_host()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DROP DNS CACHE"
+    $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('localhost', system.one) FORMAT Null"
+}
+
 # A host name that cannot resolve always reaches the resolver: a failure is not put into the DNS
-# cache, so unlike a resolvable name this cannot be served from the cache instead.
+# cache, so unlike a resolvable name this cannot be served from the cache instead. The name has a
+# label longer than the 63 bytes a DNS label may have, so `getaddrinfo` rejects it locally and
+# returns immediately; a name that is merely absent from the zone would instead cost a resolver
+# timeout on every attempt, which is tens of seconds on a machine without a reachable resolver.
+UNRESOLVABLE_HOST="$(printf 'a%.0s' {1..70}).invalid"
+
 function resolve_unresolvable_host()
 {
-    $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('ThisHostNameDoesNotExistSoItShouldFail05038', system.one)" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('${UNRESOLVABLE_HOST}', system.one)" 2>/dev/null
 }
 
 # The address is a literal, so this exercises TLS and not DNS. Dropping the connection cache makes
@@ -61,8 +74,9 @@ function malformed_http_request()
         | timeout 30 nc "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" > /dev/null
 }
 
-expect_increase DNSRequests resolve_unresolvable_host
-expect_increase DNSRequestMicroseconds resolve_unresolvable_host
+expect_increase DNSRequests resolve_host
+expect_increase DNSRequestMicroseconds resolve_host
+expect_increase DNSRequestError resolve_unresolvable_host
 
 expect_increase TLSHandshakes https_request_to_self
 expect_increase TLSHandshakeMicroseconds https_request_to_self

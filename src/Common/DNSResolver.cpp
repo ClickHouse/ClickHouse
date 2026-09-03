@@ -24,6 +24,7 @@ namespace ProfileEvents
     extern const Event DNSError;
     extern const Event DNSRequests;
     extern const Event DNSRequestMicroseconds;
+    extern const Event DNSRequestError;
     extern const Event DNSReverseRequests;
     extern const Event DNSReverseRequestMicroseconds;
     extern const Event DNSReverseError;
@@ -130,6 +131,10 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
 
     if (addresses.empty())
     {
+        /// The request that has just been made failed: either the resolver raised an error or it
+        /// answered with no addresses. Both are counted at the same boundary as `DNSRequests`,
+        /// unlike `DNSError`, which also counts failures that do not perform a request at all.
+        ProfileEvents::increment(ProfileEvents::DNSRequestError);
         ProfileEvents::increment(ProfileEvents::DNSError);
         throw DB::NetException(ErrorCodes::DNS_ERROR, "Not found address of host: {}", host);
     }

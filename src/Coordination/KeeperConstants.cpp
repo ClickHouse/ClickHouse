@@ -72,6 +72,7 @@
     M(DNSError) \
     M(DNSRequests) \
     M(DNSRequestMicroseconds) \
+    M(DNSRequestError) \
     M(DNSReverseRequests) \
     M(DNSReverseRequestMicroseconds) \
     M(DNSReverseError) \

@@ -1,5 +1,6 @@
 DNSRequests increased
 DNSRequestMicroseconds increased
+DNSRequestError increased
 TLSHandshakes increased
 TLSHandshakeMicroseconds increased
 TLSServerHandshakes increased
