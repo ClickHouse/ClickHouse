@@ -1,0 +1,5 @@
+re-add count	2	1	2
+re-add x	[7,7]
+read after	1	7
+read after	2	7
+dup-noop count	1

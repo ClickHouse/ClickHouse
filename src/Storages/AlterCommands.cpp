@@ -1869,6 +1869,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
+    /// Columns dropped earlier in this statement: a later `ADD COLUMN IF NOT EXISTS` on such a name is a
+    /// genuine re-add (by apply time the column is gone), not a no-op against the original schema.
+    std::unordered_set<String> columns_removed_in_statement;
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
     /// depend on whether the redundant parentheses were written on one side and not on the other.
@@ -2006,11 +2009,18 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
-            if (has_column && command.if_not_exists)
+            if (has_column && !columns_removed_in_statement.contains(command.column_name) && command.if_not_exists)
                 command.ignore = true;
         }
-        else if (command.type == AlterCommand::DROP_COLUMN
-                || command.type == AlterCommand::COMMENT_COLUMN
+        else if (command.type == AlterCommand::DROP_COLUMN)
+        {
+            if (!has_column && command.if_exists)
+                command.ignore = true;
+            else if (!command.clear && !command.partition)
+                /// CLEAR and per-partition DROP keep the column definition, so only a plain DROP un-exists it.
+                columns_removed_in_statement.insert(command.column_name);
+        }
+        else if (command.type == AlterCommand::COMMENT_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN)
         {
             if (!has_column && command.if_exists)
