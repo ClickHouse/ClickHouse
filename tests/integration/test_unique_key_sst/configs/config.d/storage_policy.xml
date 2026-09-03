@@ -11,20 +11,26 @@
             </s3_disk>
         </disks>
         <policies>
-            <!-- Compatible with the implicit `default` policy: keeps the `default`
-                 volume (with the `default` disk) and adds an S3 volume, so a table
-                 created on the default policy can ALTER MODIFY SETTING
-                 storage_policy to it. -->
-            <default_with_s3>
+            <!-- Extends the built-in `default` policy so a UNIQUE KEY table can
+                 be switched to S3 via `MODIFY SETTING storage_policy`. This is
+                 the only supported route: UK tables reject `ALTER ... PARTITION`
+                 (so no `MOVE PARTITION`), and `MODIFY SETTING disk` resolves to
+                 a single-disk temp policy that fails checkCompatibleWith.
+                 The policy therefore must (a) keep a `default` volume/disk so
+                 checkCompatibleWith accepts it, and (b) put the S3 volume first
+                 so *new* inserts land on S3. `move_factor = 0` disables
+                 background moves. -->
+            <s3_extending>
                 <volumes>
-                    <default>
-                        <disk>default</disk>
-                    </default>
                     <s3>
                         <disk>s3_disk</disk>
                     </s3>
+                    <default>
+                        <disk>default</disk>
+                    </default>
                 </volumes>
-            </default_with_s3>
+                <move_factor>0.0</move_factor>
+            </s3_extending>
         </policies>
     </storage_configuration>
 </clickhouse>

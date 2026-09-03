@@ -25,6 +25,7 @@
 #include <rocksdb/status.h>
 #include <rocksdb/table.h>
 
+
 namespace DB
 {
 
@@ -64,10 +65,15 @@ namespace
     class ReadBufferBasedRandomAccessFile : public rocksdb::FSRandomAccessFile
     {
     public:
-        explicit ReadBufferBasedRandomAccessFile(std::unique_ptr<SeekableReadBuffer> buffer_)
+        ReadBufferBasedRandomAccessFile(std::unique_ptr<SeekableReadBuffer> buffer_, uint64_t file_size_)
             : buffer(std::move(buffer_))
+            , file_size(file_size_)
         {
         }
+
+        /// No direct IO, so reads need no alignment. The `kDefaultPageSize`
+        /// default would inflate every read to a 4096-aligned window.
+        size_t GetRequiredBufferAlignment() const override { return 1; }
 
         rocksdb::IOStatus Read(
             uint64_t offset,
@@ -79,6 +85,14 @@ namespace
         {
             try
             {
+                if (offset >= file_size)
+                {
+                    *result = rocksdb::Slice(scratch, 0);
+                    return rocksdb::IOStatus::OK();
+                }
+                if (n > file_size - offset)
+                    n = file_size - offset;
+
                 size_t bytes_read = buffer->readBigAt(scratch, n, offset, {});
                 *result = rocksdb::Slice(scratch, bytes_read);
                 return rocksdb::IOStatus::OK();
@@ -91,6 +105,7 @@ namespace
 
     private:
         std::unique_ptr<SeekableReadBuffer> buffer;
+        uint64_t file_size;
     };
 
     /// Read-only `FileSystem` that opens files through `IDataPartStorage`, so
@@ -125,7 +140,8 @@ namespace
                         "UNIQUE KEY SST cannot be read from `{}`: the storage does not support "
                         "positional reads (readBigAt), required for concurrent index probing",
                         f);
-                *r = std::make_unique<ReadBufferBasedRandomAccessFile>(std::move(buffer));
+                const uint64_t file_size = storage->getFileSize(f);
+                *r = std::make_unique<ReadBufferBasedRandomAccessFile>(std::move(buffer), file_size);
                 return rocksdb::IOStatus::OK();
             }
             catch (...)
