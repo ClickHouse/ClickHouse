@@ -272,6 +272,11 @@ public:
     /// settings from Keeper.
     virtual TableSettings getTableSettings(ContextPtr context) const;
 
+    /// The settings the table's own `SETTINGS` clause names, for an override of
+    /// `getTableSettings` refining `origin`: a setting stated there came from the definition,
+    /// whatever else may also have set it, because the clause is applied last.
+    NameSet getSettingNamesStatedInDefinition(ContextPtr context) const;
+
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.

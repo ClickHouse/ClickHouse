@@ -2,6 +2,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Common/SettingsChanges.h>
 #include <Databases/IDatabase.h>
 
 #include <Disks/IStoragePolicy.h>
@@ -228,19 +229,20 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     setInMemoryMetadata(new_metadata);
 }
 
-TableSettings IStorage::getTableSettings(ContextPtr context) const
+namespace
 {
-    /// Only what the table's own `SETTINGS` clause states, read from the stored `CREATE` query -
-    /// the same source `SHOW CREATE TABLE` renders, and the only one every engine keeps.
-    ///
-    /// `StorageInMemoryMetadata::settings_changes` would be the tidier source, but only
-    /// `MergeTree`, `Memory` and `ALTER ... MODIFY SETTING` ever populate it, so reading it here
-    /// would report nothing for most engines. `ALTER` writes its changes back into the stored
-    /// `CREATE` query as well, so this stays current.
-    ///
-    /// Values come from the AST, so there is no settings accessor to give a type-faithful
-    /// rendering, nor a default, type, description or tier to report.
-    const auto table_id = getStorageID();
+
+/// The settings a table's stored `CREATE` query states, copied out.
+///
+/// Returned by value on purpose: the create query is produced on demand and does not outlive the
+/// call, so a pointer into it would dangle.
+///
+/// This is the source `SHOW CREATE TABLE` renders, and the only one every engine keeps:
+/// `StorageInMemoryMetadata::settings_changes` is populated by `MergeTree`, `Memory` and
+/// `ALTER ... MODIFY SETTING` alone, despite its comment naming `Kafka` and `RabbitMQ`. `ALTER`
+/// writes its changes back into the `CREATE` query too, so this stays current.
+SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context)
+{
     if (table_id.database_name.empty())
         return {};
 
@@ -256,14 +258,35 @@ TableSettings IStorage::getTableSettings(ContextPtr context) const
     if (!create.storage || !create.storage->settings)
         return {};
 
+    return create.storage->settings->as<const ASTSetQuery &>().changes;
+}
+
+}
+
+NameSet IStorage::getSettingNamesStatedInDefinition(ContextPtr context) const
+{
+    NameSet names;
+    for (const auto & change : getSettingsStatedInDefinition(getStorageID(), context))
+        names.insert(change.name);
+    return names;
+}
+
+TableSettings IStorage::getTableSettings(ContextPtr context) const
+{
+    /// Only what the table's own `SETTINGS` clause states. Values come from the AST, so unlike an
+    /// override backed by a settings struct there is no accessor to give a type-faithful rendering,
+    /// nor a default, type, description or tier to report.
+    const auto changes = getSettingsStatedInDefinition(getStorageID(), context);
+
     TableSettings result;
-    for (const auto & change : create.storage->settings->as<const ASTSetQuery &>().changes)
+    result.reserve(changes.size());
+    for (const auto & change : changes)
     {
-        TableSetting setting;
-        setting.name = change.name;
-        setting.value = convertFieldToString(change.value);
-        setting.origin = TableSettingOrigin::Definition;
-        result.push_back(std::move(setting));
+        TableSetting described;
+        described.name = change.name;
+        described.value = convertFieldToString(change.value);
+        described.origin = TableSettingOrigin::Definition;
+        result.push_back(std::move(described));
     }
     return result;
 }

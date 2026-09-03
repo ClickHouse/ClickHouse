@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/System/FillEngineSettingsColumns.h>
+#include <Storages/enumerateSettings.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -176,6 +177,11 @@ SettingsChanges KafkaSettings::getFormatSettings() const
 bool KafkaSettings::hasBuiltin(std::string_view name)
 {
     return KafkaSettingsImpl::hasBuiltin(name);
+}
+
+TableSettings KafkaSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
 }
 
 void KafkaSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)

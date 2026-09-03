@@ -229,6 +229,34 @@ StorageKafka::StorageKafka(
     });
 }
 
+TableSettings StorageKafka::getTableSettings(ContextPtr query_context) const
+{
+    auto settings = kafka_settings->enumerateSettings();
+
+    /// The settings struct records only that a value differs from its default, not what changed it,
+    /// and for a `Kafka` table three things can have: a named collection given in the engine
+    /// arguments, the table's own `SETTINGS` clause, and this storage's constructor, which pins a
+    /// few format settings. They are applied in that order, so the later source wins.
+    ///
+    /// Anything left as `Other` was set by the engine itself. Saying so is the point of that value -
+    /// guessing `named_collection` for it would be wrong, and there is no source to name.
+    const auto stated_in_definition = getSettingNamesStatedInDefinition(query_context);
+
+    NamedCollectionPtr collection;
+    if (!collection_name.empty())
+        collection = NamedCollectionFactory::instance().tryGet(collection_name);
+
+    for (auto & setting : settings)
+    {
+        if (stated_in_definition.contains(setting.name))
+            setting.origin = TableSettingOrigin::Definition;
+        else if (collection && collection->has(setting.name))
+            setting.origin = TableSettingOrigin::NamedCollection;
+    }
+
+    return settings;
+}
+
 StorageKafka::~StorageKafka()
 {
     if (!shutdown_called)
