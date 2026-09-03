@@ -56,19 +56,16 @@ private:
 ///
 /// While the memory usage of the query is below the threshold, it behaves like DistinctTransform: keeps a
 /// hash set of the seen keys and streams the first occurrence of each key downstream immediately. If a
-/// spill happens, the set of the already emitted rows must be recoverable: for most set methods the keys
-/// are extracted back from the hash table itself (DistinctSetFilter::extractKeyColumns) - no memory
-/// overhead before the spill, one transient copy of the keys at the spill moment. Only when the chosen
-/// method is irreversible (`hashed` keeps just a 128-bit hash per key) the transform retains the emitted
-/// chunks in a buffer instead (only column pointers are copied, but the emitted columns stay referenced
-/// in memory until the first spill).
+/// spill happens, the set of the already emitted rows is recovered by extracting the keys back from the
+/// hash table itself (DistinctSetFilter::extractKeyColumns; the filter is asked to use only set methods
+/// that store the keys) - no memory overhead before the spill, one transient copy of the keys at the
+/// spill moment.
 ///
 /// When the memory usage of the query exceeds the threshold, the transform switches to the external mode:
-///  - The already emitted rows (extracted from the set, or taken from the buffer when the extraction
-///    cannot rebuild them) are sorted by the key columns and written to a temporary file as the first
-///    "run", each row carrying an "already emitted" flag; the hash set (and the buffer) is freed. The
-///    runs contain only the non-constant columns - the constant columns are re-attached from the header
-///    after the merge.
+///  - The already emitted rows (extracted from the set) are sorted by the key columns and written to a
+///    temporary file as the first "run", each row carrying an "already emitted" flag; the hash set is
+///    freed. The runs contain only the non-constant columns - the constant columns are re-attached from
+///    the header after the merge.
 ///  - Nothing is emitted anymore until the input is exhausted. Incoming chunks are sorted and accumulated,
 ///    and written out as further runs (locally deduplicated, flag not set) each time the memory usage
 ///    exceeds the threshold again.
@@ -178,8 +175,6 @@ private:
     /// Rows received so far, i.e. the arrival number of the next row.
     UInt64 consumed_rows = 0;
 
-    /// Copies of the emitted chunks, the future first run (freed when the first spill happens).
-    Chunks emitted_buffer;
     /// External mode: sorted flagless chunks accumulated since the last run was written.
     Chunks chunks;
     size_t sum_bytes_in_chunks = 0;

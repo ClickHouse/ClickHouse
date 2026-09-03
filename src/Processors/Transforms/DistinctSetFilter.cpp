@@ -207,9 +207,10 @@ void buildDistinctFilter(
     IColumn::Filter & filter,
     const size_t rows,
     SetVariants & variants,
+    const ColumnsHashing::HashMethodContextPtr & context,
     const IColumn::Filter * mask)
 {
-    typename Method::State state(key_columns, key_sizes, nullptr);
+    typename Method::State state(key_columns, key_sizes, context);
 
     if (mask)
     {
@@ -272,12 +273,16 @@ void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Fi
 
 }
 
-DistinctSetFilter::DistinctSetFilter(const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_)
+DistinctSetFilter::DistinctSetFilter(
+    const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_, bool require_extractable_keys_)
     : key_columns_pos(calculateDistinctKeyColumnsPositions(header, columns))
     , data(std::make_unique<SetVariants>())
     , set_size_limits(set_size_limits_)
     , skip_null_keys(skip_null_keys_)
+    , require_extractable_keys(require_extractable_keys_)
 {
+    /// The skipping mode hashes the nested representations of the keys, which cannot be materialized back.
+    chassert(!(skip_null_keys && require_extractable_keys));
     key_types.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
         key_types.push_back(header.getByPosition(pos).type);
@@ -415,6 +420,9 @@ std::vector<MutableColumns> DistinctSetFilter::extractKeyColumns(size_t max_batc
         case SetVariants::Type::nullable_keys256:
             extract_fixed_keys(*data->nullable_keys256);
             break;
+        case SetVariants::Type::serialized:
+            extract(*data->serialized);
+            break;
         case SetVariants::Type::EMPTY:
         case SetVariants::Type::hashed:
             throw Exception(
@@ -504,7 +512,17 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
         mask = &keep;
 
     if (data->empty())
-        data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
+    {
+        auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
+        /// The generic method keeps only a hash per key; a consumer that materializes the keys back needs
+        /// them stored (see SetMethodSerialized).
+        if (require_extractable_keys && type == SetVariants::Type::hashed)
+        {
+            type = SetVariants::Type::serialized;
+            hash_method_context = decltype(data->serialized)::element_type::createContext();
+        }
+        data->init(type);
+    }
 
     const auto old_set_size = data->getTotalRowCount();
     IColumn::Filter filter_values(num_rows);
@@ -515,7 +533,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); \
+            buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, hash_method_context, mask); \
         break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M

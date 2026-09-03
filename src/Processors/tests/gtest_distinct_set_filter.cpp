@@ -39,9 +39,10 @@ RowsMultiset collectRows(const Columns & columns, size_t num_rows)
 
 /// Feeds the chunks through the filter and checks that the keys extracted from the set are exactly
 /// the emitted (distinct) rows.
-void checkExtractionRoundTrip(const Block & header, std::vector<Columns> chunks, size_t max_batch_rows = 1000)
+void checkExtractionRoundTrip(
+    const Block & header, std::vector<Columns> chunks, size_t max_batch_rows = 1000, bool require_extractable_keys = false)
 {
-    DistinctSetFilter filter(header, /*columns=*/ {}, SizeLimits{});
+    DistinctSetFilter filter(header, /*columns=*/ {}, SizeLimits{}, /*skip_null_keys_=*/ false, require_extractable_keys);
 
     RowsMultiset emitted;
     size_t emitted_count = 0;
@@ -431,4 +432,47 @@ TEST(DistinctSetFilterSemantics, ByteLimitSeesTheLowCardinalityBitmaps)
 
     DistinctSetFilter lc_filter(lc_header, {}, limits);
     EXPECT_ANY_THROW(lc_filter.filter(Chunk(Columns{makeLowCardinalityColumnWithLargeDictionary(lc_type, dictionary_size, 3)}, 3)));
+}
+
+TEST(DistinctSetFilterExtraction, SerializedKeysOnRequest)
+{
+    /// Two String keys fall to the generic `hashed` method, which cannot materialize the keys back; a
+    /// consumer that needs them gets the `serialized` method instead, which stores them.
+    const Block header
+        = {ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "a"), ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "b")};
+    checkExtractionRoundTrip(
+        header,
+        {{makeStringColumn({"a", "b", "a"}), makeStringColumn({"x", "y", "x"})}, {makeStringColumn({"a", "c"}), makeStringColumn({"y", "z"})}},
+        /*max_batch_rows=*/ 1000,
+        /*require_extractable_keys=*/ true);
+}
+
+TEST(DistinctSetFilterExtraction, SerializedLowCardinalityKey)
+{
+    auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const Block header = {ColumnWithTypeAndName(lc_type, "k")};
+
+    std::vector<Columns> chunks;
+    for (const auto & values : std::vector<std::vector<String>>{{"a", "b", "a"}, {"c", "a", "d"}})
+    {
+        auto column = lc_type->createColumn();
+        for (const auto & value : values)
+            column->insertData(value.data(), value.size());
+        chunks.push_back({std::move(column)});
+    }
+    checkExtractionRoundTrip(header, std::move(chunks), /*max_batch_rows=*/ 1000, /*require_extractable_keys=*/ true);
+}
+
+TEST(DistinctSetFilterExtraction, SerializedNullableStringKey)
+{
+    auto type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+    const Block header = {ColumnWithTypeAndName(type, "k")};
+
+    auto column = type->createColumn();
+    column->insert(Field("a"));
+    column->insertDefault(); /// NULL
+    column->insert(Field("b"));
+    column->insert(Field("a"));
+    column->insertDefault(); /// NULL
+    checkExtractionRoundTrip(header, {{std::move(column)}}, /*max_batch_rows=*/ 1000, /*require_extractable_keys=*/ true);
 }

@@ -261,7 +261,7 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     size_t max_block_size_rows_,
     bool preserve_input_order_)
     : IProcessor({header_}, {header_})
-    , distinct_set(*header_, columns_, set_size_limits_)
+    , distinct_set(*header_, columns_, set_size_limits_, /*skip_null_keys_=*/ false, /*require_extractable_keys_=*/ true)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
     , max_bytes_before_external_distinct(max_bytes_before_external_distinct_)
@@ -409,27 +409,14 @@ void ExternalDistinctTransform::startFirstSpill()
         run_chunks.push_back(std::move(prepared));
     };
 
-    if (distinct_set.supportsKeyExtraction())
-    {
-        /// The keys extracted from the set are all the first run needs (see buildChunkFromKeys). The set
-        /// is freed right after the extraction, before the sorting: this way the transient peak is the
-        /// set plus the raw keys, not plus the sorted copies.
-        auto key_batches = distinct_set.extractKeyColumns(max_block_size_rows);
-        distinct_set.clear();
+    /// The keys extracted from the set are all the first run needs (see buildChunkFromKeys). The set is
+    /// freed right after the extraction, before the sorting: this way the transient peak is the set plus
+    /// the raw keys, not plus the sorted copies.
+    auto key_batches = distinct_set.extractKeyColumns(max_block_size_rows);
+    distinct_set.clear();
 
-        for (auto & key_columns : key_batches)
-            add_run_chunk(buildChunkFromKeys(std::move(key_columns)));
-    }
-    else
-    {
-        /// The set is used only for lookups, and after the spill all the deduplication happens in the
-        /// final merge, so the memory can be freed right away.
-        distinct_set.clear();
-
-        for (auto & chunk : emitted_buffer)
-            add_run_chunk(stripConstantColumns(std::move(chunk)));
-        emitted_buffer.clear();
-    }
+    for (auto & key_columns : key_batches)
+        add_run_chunk(buildChunkFromKeys(std::move(key_columns)));
 
     startSpillRun(std::move(run_chunks), run_bytes, /*is_first_run=*/ true);
 }
@@ -736,12 +723,6 @@ void ExternalDistinctTransform::consume(Chunk chunk)
         if (filtered.hasRows())
         {
             emitted_rows += filtered.getNumRows();
-
-            /// Retain the emitted rows only when the first run cannot be rebuilt from the set at spill
-            /// time - the `hashed` method keeps just a hash per key (only the column pointers are copied
-            /// here, but the emitted columns stay referenced).
-            if (!distinct_set.supportsKeyExtraction())
-                emitted_buffer.push_back(filtered.clone());
             generated_chunk = std::move(filtered);
 
             if (limit_hint && emitted_rows >= limit_hint)

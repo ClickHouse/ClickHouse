@@ -104,7 +104,16 @@ public:
     /// Set class exposes). For real DISTINCT a NULL is a value, so the flag must only be enabled when
     /// the consumer drops such rows anyway. The remaining keys are then hashed by their nested,
     /// non-nullable columns, the same way the set fill hashes them.
-    DistinctSetFilter(const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_ = false);
+    /// `require_extractable_keys_` guarantees supportsKeyExtraction: the generic set method, which keeps
+    /// only a hash per key, is replaced by the one that stores the serialized keys (see
+    /// SetMethodSerialized), at the price of the memory for the keys. Only for a consumer that
+    /// materializes the keys back (ExternalDistinctTransform); incompatible with `skip_null_keys_`.
+    DistinctSetFilter(
+        const Block & header,
+        const Names & columns,
+        const SizeLimits & set_size_limits_,
+        bool skip_null_keys_ = false,
+        bool require_extractable_keys_ = false);
 
     const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
     bool hasKeyColumns() const { return !key_columns_pos.empty(); }
@@ -121,8 +130,9 @@ public:
 
     /// Whether the keys can be materialized back into columns from the set itself. True for every set
     /// method except `hashed`, which keeps only a 128-bit hash per key (chosen for multi-column keys
-    /// with variable-width or LowCardinality types). Meaningful once at least one chunk was filtered
-    /// (the method is chosen by the first one).
+    /// with variable-width or LowCardinality types) - and which is never chosen when the extractable
+    /// keys were required. Meaningful once at least one chunk was filtered (the method is chosen by the
+    /// first one).
     bool supportsKeyExtraction() const;
 
     /// Materializes all the keys of the set into columns, in batches of at most max_batch_rows. The
@@ -158,6 +168,8 @@ private:
     /// Behind a pointer so that it can be freed by clear() (SetVariants is not movable).
     std::unique_ptr<SetVariants> data;
     Sizes key_sizes;
+    /// The context of the hashing state of the set method; only the serialized method needs one.
+    ColumnsHashing::HashMethodContextPtr hash_method_context;
     DistinctLowCardinalityFilter lc_filter;
 
     /// Restrictions on the maximum size of the set.
@@ -165,6 +177,7 @@ private:
     bool limit_reached = false;
 
     const bool skip_null_keys;
+    const bool require_extractable_keys;
     bool has_const_null_key = false;
 };
 
