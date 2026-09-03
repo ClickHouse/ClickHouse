@@ -1664,7 +1664,7 @@ PartitionColumnValues getIdentityPartitionColumnValues(
 void checkStorageStillHoldsValidatedTable(
     const PersistentTableComponents & persistent_table_components,
     const ObjectStoragePtr & object_storage,
-    const DataLakeStorageSettings & data_lake_settings,
+    const DataLakeStorageSettings & /*data_lake_settings*/,
     const ContextPtr & context,
     std::optional<UInt64> validated_incarnation,
     std::string_view operation)
@@ -1672,129 +1672,52 @@ void checkStorageStillHoldsValidatedTable(
     if (!validated_incarnation.has_value())
         return;
 
+    /// The file the statement was validated against, which is what this check interrogates. It is
+    /// deliberately not a fresh listing of the table directory: which file a listing should select
+    /// is not decided by storage for every table - a table reached through a catalog has its
+    /// current metadata named by the catalog, and files left in its directory by the registration
+    /// belong to no version sequence a listing can rank. Reading the validated file needs no such
+    /// ranking.
+    ///
+    /// What this does not see is a replacement that left the validated file untouched and became
+    /// current under other file names. The read path still refuses to serve such a table through
+    /// `checkMetadataBelongsToValidatedTable` and the incarnation checks; at publish time no
+    /// catalog offers a compare-and-swap on table identity to close it.
+    const auto validated_file = persistent_table_components.trusted_table_uuid->getValidatedFile();
+    if (!validated_file.has_value())
+        return;
+
     auto log = getLogger("IcebergValidatedTableCheck");
 
-    /// The listing has to be scoped to the directory of this table. `table_path` is the path the
-    /// query named, and for a table reached through a catalog that is the warehouse root shared by
-    /// every table in it - listing it would select some other table's metadata file and report the
-    /// table as replaced by whichever table happens to sort last. The resolver holds the root that
-    /// was derived for this table, which is the directory its own metadata lives in.
-    const String & metadata_listing_path = persistent_table_components.table_root_was_derived
-        ? persistent_table_components.path_resolver.getTableRoot()
-        : persistent_table_components.table_path;
-
-    const auto [current_version, current_metadata_path, _compression, current_identity] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage,
-        metadata_listing_path,
-        data_lake_settings,
-        persistent_table_components.metadata_cache,
-        context,
-        log.get(),
-        persistent_table_components.getTableUuid(),
-        persistent_table_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ true);
-
-    /// Read it bypassing the UUID-keyed content cache. The whole point of this read is to learn
-    /// which table is in storage right now, and the cache is keyed by the trusted UUID and the
-    /// path: a replacement reusing the path would be answered with the validated table's own
-    /// cached JSON, which is exactly the answer that must not be trusted here.
-    auto current_metadata_object = getMetadataJSONObject(
-        current_metadata_path,
+    /// Read it bypassing the UUID-keyed content cache: the cache is keyed by the trusted UUID and
+    /// the path, so a replacement reusing the path would be answered with the validated table's
+    /// own cached JSON - exactly the answer that must not be trusted here.
+    auto metadata_object = getMetadataJSONObject(
+        validated_file->path,
         object_storage,
         persistent_table_components.metadata_cache,
         context,
         log,
-        getCompressionMethodFromMetadataFile(current_metadata_path),
+        getCompressionMethodFromMetadataFile(validated_file->path),
         /* table_uuid */ std::nullopt);
 
-    persistent_table_components.checkMetadataBelongsToValidatedTable(current_metadata_object, validated_incarnation, operation);
+    persistent_table_components.checkMetadataBelongsToValidatedTable(metadata_object, validated_incarnation, operation);
 
     /// A format-version 1 table may carry no `table-uuid` at all, and then the check above has
-    /// nothing to compare: it would let a statement validated against one table publish over the
-    /// table that replaced it at the same root. The metadata file that was just listed is the only
-    /// witness such a table has, so it is the one consulted here.
-    if (persistent_table_components.trusted_table_uuid->isReplacementOfValidatedFile(
-            current_version, current_metadata_path, current_identity))
+    /// nothing to compare. A metadata file is immutable - a commit writes a new file and never
+    /// rewrites an existing one - so the same path answering with different content is not this
+    /// table moving on, it is another table that took the path over. This also covers the storages
+    /// that report no strong object identity, such as HDFS with its synthesized etag.
+    if (validated_file->content_token.has_value()
+        && computeMetadataContentToken(metadata_object) != *validated_file->content_token)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The Iceberg table at {} was replaced while {} was running: the metadata now in storage is {} at version {}, which is not the "
-            "file the statement was validated against, and the table carries no `table-uuid` to tell the two apart. Retry the statement.",
+            "The Iceberg table at {} was replaced while {} was running: {}, the metadata file the statement was validated against, no "
+            "longer carries the content it was validated with, and the table carries no `table-uuid` to tell the two tables apart. "
+            "Retry the statement.",
             persistent_table_components.table_path,
             operation,
-            current_metadata_path,
-            current_version);
-
-    /// The check above only sees a replacement that did not get past the validated version yet.
-    /// A table recreated at this root and committed a few times of its own answers with a higher
-    /// version, so the listing alone cannot tell it from the validated table moving on. The file
-    /// the statement validated is the witness: an Iceberg metadata file is immutable, so that path
-    /// still answering with the content it was validated with means the incarnation behind it is
-    /// still the one in storage, and anything else - other content, or no file at all - means the
-    /// path was taken over.
-    if (!persistent_table_components.getTableUuid().has_value())
-    {
-        if (auto validated_file = persistent_table_components.trusted_table_uuid->getValidatedFileWithToken();
-            validated_file.has_value())
-        {
-            const auto & [validated_path, validated_token] = *validated_file;
-
-            /// The replacement can have rewritten the very path that was validated, and on a
-            /// storage that reports no strong identity for its objects - HDFS synthesizes a weak
-            /// etag, and `MetadataFileIdentity` is then absent - the listing cannot tell that the
-            /// file changed. The content of the file that is current answers it, and it was just
-            /// read here bypassing the cache.
-            if (validated_path == current_metadata_path)
-            {
-                if (computeMetadataContentToken(current_metadata_object) != validated_token)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The Iceberg table at {} was replaced while {} was running: {}, the metadata file the statement was validated "
-                        "against, no longer carries the content it was validated with, and the table carries no `table-uuid` to tell "
-                        "the two tables apart. Retry the statement.",
-                        persistent_table_components.table_path,
-                        operation,
-                        validated_path);
-
-                return;
-            }
-
-            auto validated_metadata_object = getMetadataJSONObject(
-                validated_path,
-                object_storage,
-                persistent_table_components.metadata_cache,
-                context,
-                log,
-                getCompressionMethodFromMetadataFile(validated_path),
-                /* table_uuid */ std::nullopt);
-
-            if (computeMetadataContentToken(validated_metadata_object) != validated_token)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The Iceberg table at {} was replaced while {} was running: {}, the metadata file the statement was validated "
-                    "against, no longer carries the content it was validated with, and the table carries no `table-uuid` to tell the "
-                    "two tables apart. Retry the statement.",
-                    persistent_table_components.table_path,
-                    operation,
-                    validated_path);
-
-            /// The validated file being intact proves only that it was not overwritten - the file
-            /// stays readable at its path after another table took the root over, because a commit
-            /// writes a new file and never removes the previous ones. What ties the file now
-            /// current to the validated one is its `metadata-log`: a commit of this table records
-            /// the file it supersedes, while a table created anew starts an empty log.
-            if (!metadataDescendsFromValidatedFile(current_metadata_object, current_metadata_path, validated_path))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The Iceberg table at {} was replaced while {} was running: the metadata now in storage is {}, which does not "
-                    "descend from {}, the file the statement was validated against, and the table carries no `table-uuid` to tell the "
-                    "two tables apart. Retry the statement.",
-                    persistent_table_components.table_path,
-                    operation,
-                    current_metadata_path,
-                    validated_path);
-        }
-    }
+            validated_file->path);
 }
 
 }

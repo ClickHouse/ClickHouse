@@ -129,29 +129,7 @@ public:
             || *identity != *last_validated->identity;
     }
 
-    /// Whether {`metadata_version`, `metadata_file_path`, `identity`}, just listed and read from
-    /// storage, is a different table than the one validated last, for a table that carries no
-    /// `table-uuid` of its own - possible only in format-version 1.
-    ///
-    /// Such a table has no identity to compare, so the metadata file is the only witness. A table
-    /// recreated at the same root rewrites `metadata.json` and restarts the version numbering, so
-    /// a version that does not advance past the last validated one, reached through a different
-    /// file or through the same path with a different identity, is the replacement. This is the
-    /// same rule `commitValidated` applies, asked as a question instead of as a commit, so that a
-    /// path validating what is in storage right now can fail close before any `update` has run.
-    ///
-    /// Nothing is known before the first validation, and a storage that cannot report the identity
-    /// of an unchanged path leaves nothing to compare.
-    bool isReplacementOfValidatedFile(
-        Int32 metadata_version, const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity) const
-    {
-        SharedLockGuard lock(mutex);
-        if (uuid.has_value() || !last_validated.has_value())
-            return false;
-        return metadata_version <= last_validated->version
-            && (metadata_file_path != last_validated->path || identity != last_validated->identity);
-    }
-
+    
     /// Record the metadata file whose own `table-uuid` is trusted, because it was just read from
     /// that file or because it is the unchanged file that was validated before.
     ///
@@ -167,18 +145,6 @@ public:
         last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity, content_token};
     }
 
-    /// The metadata file that was validated last and the fingerprint of the content it carried,
-    /// so that a path proving what is in storage right now can tell whether that very file is
-    /// still the file it validated. See `checkStorageStillHoldsValidatedTable`.
-    std::optional<std::pair<String, UInt64>> getValidatedFileWithToken() const
-    {
-        SharedLockGuard lock(mutex);
-        if (!last_validated.has_value() || !last_validated->content_token.has_value())
-            return std::nullopt;
-        return std::pair{last_validated->path, *last_validated->content_token};
-    }
-
-private:
     struct ValidatedMetadataFile
     {
         Int32 version;
@@ -187,6 +153,17 @@ private:
         /// See `computeMetadataContentToken`. Absent for a file whose content was never read here.
         std::optional<UInt64> content_token;
     };
+
+    /// The metadata file that was validated last, so that a statement about to publish can read
+    /// that very file again and see whether it still describes the table it validated.
+    /// See `checkStorageStillHoldsValidatedTable`.
+    std::optional<ValidatedMetadataFile> getValidatedFile() const
+    {
+        SharedLockGuard lock(mutex);
+        return last_validated;
+    }
+
+private:
 
     mutable SharedMutex mutex;
     std::optional<String> uuid TSA_GUARDED_BY(mutex);

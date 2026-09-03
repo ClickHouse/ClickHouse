@@ -158,56 +158,27 @@ TEST(IcebergTrustedTableUuid, PublishesTheRefreshedUuid)
     EXPECT_FALSE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-v1"), /*content_token=*/1));
 }
 
-/// A format-version 1 table that omits `table-uuid` has no identity to compare, so its
-/// replacement is seen in the metadata file: the numbering restarts and the file is not the one
-/// that was validated.
-TEST(IcebergTrustedTableUuid, DetectsAReplacementOfATableWithoutUuid)
-{
-    TrustedTableUuid uuid(std::nullopt);
-    uuid.markValidated(5, "metadata/v5.metadata.json", identity("etag-v5"));
-
-    /// The recreated table restarts at version 1.
-    EXPECT_TRUE(uuid.isReplacementOfValidatedFile(1, "metadata/v1.metadata.json", identity("etag-new-v1")));
-    /// It may also reuse the very same path, and then only the identity tells the two apart.
-    EXPECT_TRUE(uuid.isReplacementOfValidatedFile(5, "metadata/v5.metadata.json", identity("etag-rewritten")));
-
-    /// The unchanged file, and an ordinary append by the same table, are not replacements.
-    EXPECT_FALSE(uuid.isReplacementOfValidatedFile(5, "metadata/v5.metadata.json", identity("etag-v5")));
-    EXPECT_FALSE(uuid.isReplacementOfValidatedFile(6, "metadata/v6.metadata.json", identity("etag-v6")));
-}
-
-/// A table that does carry a `table-uuid` is settled by that UUID, and a storage that cannot
-/// report the identity of the listed file leaves nothing to compare. Neither may be reported as
-/// a replacement here, or an ordinary statement would be refused.
-TEST(IcebergTrustedTableUuid, DoesNotGuessAReplacementWithoutEvidence)
-{
-    TrustedTableUuid with_uuid("11111111-1111-1111-1111-111111111111");
-    with_uuid.markValidated(5, "metadata/v5.metadata.json", identity("etag-v5"));
-    EXPECT_FALSE(with_uuid.isReplacementOfValidatedFile(1, "metadata/v1.metadata.json", identity("etag-new-v1")));
-
-    TrustedTableUuid nothing_validated_yet(std::nullopt);
-    EXPECT_FALSE(nothing_validated_yet.isReplacementOfValidatedFile(1, "metadata/v1.metadata.json", identity("etag-v1")));
-}
-
 #endif
 
-/// The file token a statement validated against is published for the pre-publish reread, which is
-/// the only witness a table without `table-uuid` has once its replacement has committed past the
-/// validated version.
-TEST(IcebergTrustedTableUuid, PublishesTheValidatedFileToken)
+/// The file a statement validated against is published for the pre-publish reread, together with
+/// the fingerprint of the content it carried.
+TEST(IcebergTrustedTableUuid, PublishesTheValidatedFile)
 {
     TrustedTableUuid uuid(std::nullopt);
-    EXPECT_EQ(uuid.getValidatedFileWithToken(), std::nullopt);
+    EXPECT_FALSE(uuid.getValidatedFile().has_value());
 
     ASSERT_FALSE(uuid.commitValidated(std::nullopt, 1, "metadata/v1.metadata.json", identity("etag-v1"), /*content_token=*/42));
-    EXPECT_EQ(uuid.getValidatedFileWithToken(), (std::optional<std::pair<String, UInt64>>({"metadata/v1.metadata.json", 42})));
+    ASSERT_TRUE(uuid.getValidatedFile().has_value());
+    EXPECT_EQ(uuid.getValidatedFile()->path, "metadata/v1.metadata.json");
+    EXPECT_EQ(uuid.getValidatedFile()->content_token, std::optional<UInt64>(42));
 
     /// Recording the very same unchanged file again does not read its content, so the token that
     /// was recorded for it stays.
     uuid.markValidated(1, "metadata/v1.metadata.json", identity("etag-v1"));
-    EXPECT_EQ(uuid.getValidatedFileWithToken(), (std::optional<std::pair<String, UInt64>>({"metadata/v1.metadata.json", 42})));
+    EXPECT_EQ(uuid.getValidatedFile()->content_token, std::optional<UInt64>(42));
 
     /// A different file has no token until its content is read.
     uuid.markValidated(2, "metadata/v2.metadata.json", identity("etag-v2"));
-    EXPECT_EQ(uuid.getValidatedFileWithToken(), std::nullopt);
+    EXPECT_EQ(uuid.getValidatedFile()->path, "metadata/v2.metadata.json");
+    EXPECT_EQ(uuid.getValidatedFile()->content_token, std::nullopt);
 }

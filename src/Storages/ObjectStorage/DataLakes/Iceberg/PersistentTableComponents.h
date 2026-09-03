@@ -111,18 +111,6 @@ struct PersistentTableComponents
 /// pins the file and compared when the statement reopens it. See `checkMetadataMatchesPinnedState`.
 UInt64 computeMetadataContentToken(const Poco::JSON::Object::Ptr & metadata_object);
 
-/// Whether the metadata file `metadata_object`, read from `metadata_object_path`, is the file at
-/// `validated_path` or a successor of it - a file that lists `validated_path` in its `metadata-log`
-/// as one of the files this table went through.
-///
-/// This is what tells a table that moved on from a table that was recreated at the same root: a
-/// commit of the validated table appends the file it supersedes to the log, while a table created
-/// anew starts an empty log, whatever version numbers it then reaches. A log trimmed by
-/// `write.metadata.previous-versions-max` past the validated file answers `false` as well, and the
-/// caller has to treat that as a replacement: at that point nothing in storage ties the two files
-/// together any more.
-bool metadataDescendsFromValidatedFile(
-    const Poco::JSON::Object::Ptr & metadata_object, const String & metadata_object_path, const String & validated_path);
 
 }
 
