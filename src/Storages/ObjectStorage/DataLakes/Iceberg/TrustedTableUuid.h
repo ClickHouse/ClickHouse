@@ -89,11 +89,19 @@ public:
         /// restarts the version numbering and rewrites `metadata.json`, so a version that does not
         /// advance past the last validated one, reached through a different file or through the
         /// same path with a different identity, is the replacement token for these tables.
-        /// A storage that cannot report the identity of an unchanged path leaves nothing to
-        /// compare, and the replacement is only seen once the version moves.
+        /// A storage that cannot report the identity of an unchanged path - HDFS synthesizes a
+        /// weak etag, and the identity is then absent - leaves the content of the file as the only
+        /// proof, and the caller has just read it: a metadata file is immutable, so the same path
+        /// answering with a different content token is another table that took the path over.
         if (!changed && !uuid.has_value() && !new_uuid.has_value() && last_validated.has_value())
+        {
             changed = metadata_version <= last_validated->version
                 && (metadata_file_path != last_validated->path || identity != last_validated->identity);
+
+            if (!changed && metadata_file_path == last_validated->path && last_validated->content_token.has_value()
+                && content_token.has_value())
+                changed = *content_token != *last_validated->content_token;
+        }
         uuid = std::move(new_uuid);
         if (changed)
             ++incarnation;
@@ -129,7 +137,7 @@ public:
             || *identity != *last_validated->identity;
     }
 
-    
+
     /// Record the metadata file whose own `table-uuid` is trusted, because it was just read from
     /// that file or because it is the unchanged file that was validated before.
     ///

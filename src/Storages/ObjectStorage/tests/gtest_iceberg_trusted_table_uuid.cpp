@@ -158,8 +158,6 @@ TEST(IcebergTrustedTableUuid, PublishesTheRefreshedUuid)
     EXPECT_FALSE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-v1"), /*content_token=*/1));
 }
 
-#endif
-
 /// The file a statement validated against is published for the pre-publish reread, together with
 /// the fingerprint of the content it carried.
 TEST(IcebergTrustedTableUuid, PublishesTheValidatedFile)
@@ -182,3 +180,30 @@ TEST(IcebergTrustedTableUuid, PublishesTheValidatedFile)
     EXPECT_EQ(uuid.getValidatedFile()->path, "metadata/v2.metadata.json");
     EXPECT_EQ(uuid.getValidatedFile()->content_token, std::nullopt);
 }
+
+/// A table without `table-uuid` recreated in place over the same metadata file name, on a storage
+/// that reports no identity for the object: the content the file answers with is the only proof of
+/// the replacement, and `update` has already read it.
+TEST(IcebergTrustedTableUuid, DetectsARewrittenFileWithoutStrongIdentity)
+{
+    TrustedTableUuid uuid(std::nullopt);
+    ASSERT_FALSE(uuid.commitValidated(std::nullopt, 1, "metadata/v1.metadata.json", std::nullopt, /*content_token=*/1));
+    const auto pinned = uuid.getIncarnation();
+
+    EXPECT_TRUE(uuid.commitValidated(std::nullopt, 1, "metadata/v1.metadata.json", std::nullopt, /*content_token=*/2));
+    EXPECT_NE(uuid.getIncarnation(), pinned);
+}
+
+/// The same file answering with the same content is not a replacement, or every revalidation of an
+/// unchanged table would install a fresh schema processor.
+TEST(IcebergTrustedTableUuid, TheSameContentIsNotAReplacement)
+{
+    TrustedTableUuid uuid(std::nullopt);
+    ASSERT_FALSE(uuid.commitValidated(std::nullopt, 1, "metadata/v1.metadata.json", std::nullopt, /*content_token=*/1));
+    const auto pinned = uuid.getIncarnation();
+
+    EXPECT_FALSE(uuid.commitValidated(std::nullopt, 1, "metadata/v1.metadata.json", std::nullopt, /*content_token=*/1));
+    EXPECT_EQ(uuid.getIncarnation(), pinned);
+}
+
+#endif
