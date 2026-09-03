@@ -80,9 +80,6 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
             "Grant `displaySecretsInShowAndSelect` and enable `format_display_secrets_in_show_and_select` to see it."},
         {"description", std::make_shared<DataTypeString>(), "Setting description. Empty when the engine keeps no settings struct to describe it."},
         {"type", std::make_shared<DataTypeString>(), "Setting type. Empty when the engine keeps no settings struct."},
-        {"alterable", std::make_shared<DataTypeUInt8>(),
-            "Whether this setting can be changed with `ALTER TABLE ... MODIFY SETTING`, accounting for the engine's rules and the current "
-            "user's settings constraints. Says nothing about the user's `ALTER` privileges on the table."},
     };
 }
 
@@ -176,8 +173,6 @@ protected:
                     res_columns[res_index++]->insert(setting.description);
                 if (column_mask[src_index++])
                     res_columns[res_index++]->insert(setting.type);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(setting.alterable);
             }
         };
 
