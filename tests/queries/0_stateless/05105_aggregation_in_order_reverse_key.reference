@@ -1,0 +1,40 @@
+40
+40
+40
+0	0
+0	4
+0	7
+0	8
+0	11
+0	10	115
+1	10	125
+2	10	135
+3	10	145
+0	10	115
+1	10	125
+2	10	135
+3	10	145
+40
+40
+an all-ascending key is unaffected
+40
+40
+0	10
+1	10
+2	10
+3	10
+a fully descending key
+40
+40
+0	10
+1	10
+2	10
+3	10
+the optimization still engages, with the direction of each key column
+│  Order: a ASC, b DESC
+│  Order: a ASC
+reading in order over the same key stays correct
+0	16
+0	12
+0	8
+20

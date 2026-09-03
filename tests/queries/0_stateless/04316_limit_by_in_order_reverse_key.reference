@@ -59,6 +59,8 @@ SELECT (SELECT groupArray((a, b)) FROM (SELECT a, b FROM (SELECT a, b FROM test_
 1
 DROP TABLE test_reverse_mixed;
 -- Merge engine over children whose sort keys disagree on direction (one ascending, one reverse).
+-- There is no single input order to describe both children, so the in-order LIMIT BY is not
+-- applied - only the plain one, which still produces the right rows (#111901).
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_1;
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_2;
 DROP TABLE IF EXISTS test_merge_mixed_dir_wrap;
@@ -69,7 +71,6 @@ INSERT INTO test_merge_mixed_dir_part_2 SELECT number % 20, number+1000 FROM num
 CREATE TABLE test_merge_mixed_dir_wrap AS test_merge_mixed_dir_part_1 ENGINE = Merge(currentDatabase(), '^test_merge_mixed_dir_part_[12]$');
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a FROM test_merge_mixed_dir_wrap LIMIT 1 BY a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
 LimitByTransform
-LimitBySortedStreamTransform × 2
 SELECT count() = (SELECT uniqExact(a) FROM test_merge_mixed_dir_wrap) FROM (SELECT a FROM test_merge_mixed_dir_wrap LIMIT 1 BY a SETTINGS optimize_limit_by_in_order = 1);
 1
 DROP TABLE test_merge_mixed_dir_wrap;

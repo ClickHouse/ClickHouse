@@ -726,9 +726,11 @@ InputOrder buildInputOrderFromUnorderedKeys(
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys,
-    const ActionsDAG & sorting_key_dag,
-    const Names & sorting_key_columns)
+    const KeyDescription & sorting_key)
 {
+    const auto & sorting_key_dag = sorting_key.expression->getActionsDAG();
+    const auto & sorting_key_columns = sorting_key.column_names;
+
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
 
@@ -803,7 +805,14 @@ InputOrder buildInputOrderFromUnorderedKeys(
     {
         const auto & sorting_key_column = sorting_key_columns[next_sort_key];
 
-        /// Direction for current sort key.
+        /// A descending sorting key column (`ORDER BY (a, b DESC)`) means the value decreases as the
+        /// table is read forward, so the description must say `DESC` for it. Without this the
+        /// aggregation-in-order transform compared the keys in the wrong direction and merged every
+        /// row of a block into one group, returning one row per ascending prefix.
+        const int reverse_indicator
+            = (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[next_sort_key]) ? -1 : 1;
+
+        /// Direction for current sort key, relative to the table order.
         int current_direction = 0;
         bool strict_monotonic = true;
         std::unordered_set<std::string_view>::iterator group_by_key_it;
@@ -886,15 +895,16 @@ InputOrder buildInputOrderFromUnorderedKeys(
             /// Prefix sort description for reading will be (negate(y) DESC, negate(x) DESC),
             /// Sort description for GROUP BY will be (negate(y) DESC, negate(x) DESC, z).
             //std::cerr << "---- adding " << std::string(*group_by_key_it) << std::endl;
-            sort_description.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
-            order_key_prefix_descr.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
+            const int value_direction = current_direction * reverse_indicator;
+            sort_description.emplace_back(SortColumnDescription(std::string(*group_by_key_it), value_direction));
+            order_key_prefix_descr.emplace_back(SortColumnDescription(std::string(*group_by_key_it), value_direction));
             not_matched_keys.erase(group_by_key_it);
         }
         else
         {
             /// If column is fixed, will read it in table order as well.
             //std::cerr << "---- adding " << sorting_key_column << std::endl;
-            order_key_prefix_descr.emplace_back(SortColumnDescription(sorting_key_column, 1));
+            order_key_prefix_descr.emplace_back(SortColumnDescription(sorting_key_column, reverse_indicator));
         }
 
         if (current_direction && !strict_monotonic)
@@ -1072,12 +1082,11 @@ InputOrder buildInputOrderFromUnorderedKeys(
     const Names & unordered_keys)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-    const auto & sorting_key_columns = sorting_key.column_names;
 
     return buildInputOrderFromUnorderedKeys(
         fixed_columns,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+        sorting_key);
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
@@ -1087,12 +1096,11 @@ InputOrder buildInputOrderFromUnorderedKeys(
     const Names & unordered_keys)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-    const auto & sorting_key_columns = sorting_key.column_names;
 
     return buildInputOrderFromUnorderedKeys(
         fixed_columns,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+        sorting_key);
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
@@ -1126,7 +1134,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
         auto table_order_info = buildInputOrderFromUnorderedKeys(
             combined_fixed_columns,
             combined_dag, unordered_keys,
-            sorting_key.expression->getActionsDAG(), sorting_key_columns);
+            sorting_key);
 
         if (!table_order_info.input_order)
             return {};
