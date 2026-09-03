@@ -126,4 +126,81 @@ private:
     std::vector<Port::Data> abandoned_chunks;
 };
 
+/** Like ResizeProcessor, but limits effective parallelism for small datasets.
+  * Starts by routing data to only 1 output port. Once total_rows >= min_rows_per_output
+  * (or total_bytes >= min_bytes_per_output), activates all remaining output ports at once.
+  *
+  * The "jump to all" semantics avoid permanent imbalance in downstream aggregator hash tables:
+  * a gradual one-at-a-time ramp would push the first chunks disproportionately into early
+  * outputs, and the downstream merge would then have to combine N uneven partial states.
+  * For heavy aggregate states (`groupArraySorted`, `uniqExact`, ...) that hurts even at scale.
+  *
+  * All inputs are kept active at all times so upstream parallelism is never throttled.
+  * Data from inputs is collected and routed only to active output ports.
+  * Once all outputs are activated, behaves identically to ResizeProcessor with zero overhead.
+  */
+class GradualResizeProcessor : public IProcessor
+{
+public:
+    GradualResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs, size_t min_rows_per_output_, size_t min_bytes_per_output_);
+
+    String getName() const override { return "GradualResize"; }
+
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
+
+private:
+    size_t num_finished_inputs = 0;
+    size_t num_finished_outputs = 0;
+    bool initialized = false;
+    bool all_outputs_active = false;
+    bool is_reading_started = false;
+
+    size_t num_active_outputs = 1;
+    size_t total_rows_pushed = 0;
+    size_t total_bytes_pushed = 0;
+    size_t min_rows_per_output;
+    size_t min_bytes_per_output;
+
+    /// Active outputs waiting for data (index < num_active_outputs).
+    std::queue<UInt64> waiting_outputs;
+    /// Outputs that reported canPush() but are not yet activated (index >= num_active_outputs).
+    std::queue<UInt64> inactive_waiting_outputs;
+    /// Inputs that have data ready.
+    std::queue<UInt64> inputs_with_data;
+
+    enum class OutputStatus : uint8_t
+    {
+        NotActive,
+        NeedData,
+        Finished,
+    };
+
+    enum class InputStatus : uint8_t
+    {
+        NotActive,
+        HasData,
+        Finished,
+    };
+
+    struct InputPortWithStatus
+    {
+        InputPort * port;
+        InputStatus status;
+    };
+
+    struct OutputPortWithStatus
+    {
+        OutputPort * port;
+        OutputStatus status;
+    };
+
+    std::vector<InputPortWithStatus> input_ports;
+    std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, UInt64> input_port_index;
+    std::unordered_map<const OutputPort *, UInt64> output_port_index;
+
+    void maybeActivateMoreOutputs();
+    void promoteInactiveWaitingOutputs();
+};
+
 }

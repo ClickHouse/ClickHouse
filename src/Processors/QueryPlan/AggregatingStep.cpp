@@ -76,6 +76,58 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+/// Whether every `GROUP BY` key is a constant in the input header.
+/// The analyzer strips constant keys, but only on the initiator: a remote shard that analyzes the
+/// query itself keeps them (see `ExpressionAnalyzer::analyzeAggregation` and
+/// `PlannerExpressionAnalysis`, which both gate the removal), so `params.keys` can be non-empty
+/// while the aggregation still produces a single group. Such a query has one partial state per
+/// stream regardless of the data volume, exactly like a global aggregate.
+static bool allAggregationKeysAreConstant(const Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        const auto * column = header.findByName(key);
+        if (!column || !column->column || !isColumnConst(*column->column))
+            return false;
+    }
+
+    return true;
+}
+
+/// See the declaration for the contract. A node is semantically constant when it carries a folded
+/// constant column, or is `materialize` over a semantically constant argument: `materialize` is
+/// explicitly not constant-folded, so `GROUP BY materialize(1)` reaches the aggregation with a
+/// full (non-const) key column while still producing a single group.
+static bool isSemanticallyConstantNode(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+
+    if (node->column && isColumnConst(*node->column))
+        return true;
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+        && node->function_base->getName() == "materialize")
+        return isSemanticallyConstantNode(node->children.front());
+
+    return false;
+}
+
+bool allAggregationKeysAreSemanticallyConstant(const ActionsDAG & dag, const Names & keys)
+{
+    if (keys.empty())
+        return false;
+
+    for (const auto & key : keys)
+    {
+        const auto * node = dag.tryFindInOutputs(key);
+        if (!node || !isSemanticallyConstantNode(node))
+            return false;
+    }
+
+    return true;
+}
+
 static bool memoryBoundMergingWillBeUsed(
     bool should_produce_results_in_order_of_bucket_number,
     bool memory_bound_merging_of_aggregation_results_enabled,
@@ -449,6 +501,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
+    /// Note: `min_rows_per_stream_for_gradual_resize` / `min_bytes_per_stream_for_gradual_resize` are not applied here.
+    /// The `GROUPING SETS` pipeline copies every stream into one branch per grouping set and aggregates each branch
+    /// separately, so it keeps the strict resize and builds one partial state per stream per grouping set.
+    /// This no-op contract is documented in the descriptions of both settings.
     if (!grouping_sets_params.empty())
     {
         const size_t grouping_sets_size = grouping_sets_params.size();
@@ -677,7 +733,29 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// Add resize transform to uniformly distribute data between aggregating streams.
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
         if (!storage_has_evenly_distributed_read && !skip_merging)
-            pipeline.resize(pipeline.getNumStreams(), true, settings.min_outstreams_per_resize_after_split);
+        {
+            /// Use gradual resize only when there are GROUP BY keys.
+            /// For global aggregates (no keys) the number of partial states is one per stream
+            /// regardless of cardinality, so reducing parallelism would not save any merging work
+            /// proportional to the result; it would only serialize the upstream scan/filter and
+            /// lose parallel-scan throughput.
+            /// An aggregation whose keys are all constant has the same shape - a single group, and
+            /// therefore one partial state per stream - and is excluded for the same reason. The header
+            /// check misses keys whose constness was stripped by `materialize`; those are caught by the
+            /// callers via `markGroupByKeysSemanticallyConstant`.
+            bool use_gradual_resize = !params.keys.empty()
+                && !group_by_keys_semantically_constant
+                && !allAggregationKeysAreConstant(pipeline.getHeader(), params.keys)
+                && (settings.min_rows_per_stream_for_gradual_resize || settings.min_bytes_per_stream_for_gradual_resize);
+
+            if (use_gradual_resize)
+                pipeline.resizeGradual(pipeline.getNumStreams(),
+                    settings.min_rows_per_stream_for_gradual_resize,
+                    settings.min_bytes_per_stream_for_gradual_resize,
+                    settings.min_outstreams_per_resize_after_split);
+            else
+                pipeline.resize(pipeline.getNumStreams(), true, settings.min_outstreams_per_resize_after_split);
+        }
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         if (use_adaptive_aggregator)
@@ -1038,7 +1116,8 @@ void AggregatingStep::serialize(Serialization & ctx) const
 {
     /// Flags encode boolean properties that affect the data format or plan structure.
     /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
-    ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required.
+    ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required,
+    ///             128=group_by_keys_semantically_constant.
     UInt8 flags = 0;
     if (final && !ctx.for_cache_key)
         flags |= 1;
@@ -1054,6 +1133,12 @@ void AggregatingStep::serialize(Serialization & ctx) const
         flags |= 32;
     if (explicit_sorting_required_for_aggregation_in_order)
         flags |= 64;
+    /// Only picks between the strict and the gradual pre-aggregation resize, so it does not belong
+    /// to the hash table statistics cache key, and it needs no serialization version gate either:
+    /// a peer that does not know the bit ignores it and falls back to the header-based constness
+    /// check, which is exactly the behavior before this bit existed.
+    if (group_by_keys_semantically_constant && !ctx.for_cache_key)
+        flags |= 128;
 
     /// The in-order aggregation payload exists only since query plan serialization version 2.
     /// Throw rather than send bytes the other side would misread (deserialize checks the same).
@@ -1107,6 +1192,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool has_stats_key = bool(flags & 16);
     bool has_in_order = bool(flags & 32);
     bool explicit_sorting_required = bool(flags & 64);
+    bool group_by_keys_semantically_constant = bool(flags & 128);
 
     /// The in-order aggregation payload exists only since query plan serialization version 2;
     /// on an older stream these bits are garbage, so reject them (serialize checks the same).
@@ -1213,12 +1299,15 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging],
         explicit_sorting_required);
 
+    if (group_by_keys_semantically_constant)
+        aggregating_step->markGroupByKeysSemanticallyConstant();
+
     return aggregating_step;
 }
 
 QueryPlanStepPtr AggregatingStep::clone() const
 {
-    return std::make_unique<AggregatingStep>(
+    auto cloned = std::make_unique<AggregatingStep>(
         input_headers.front(),
         params,
         grouping_sets_params,
@@ -1235,6 +1324,13 @@ QueryPlanStepPtr AggregatingStep::clone() const
         memory_bound_merging_of_aggregation_results_enabled,
         explicit_sorting_required_for_aggregation_in_order
     );
+
+    /// Not a constructor argument: the planner derives it from the pre-aggregation actions DAG,
+    /// which a step consumer (the cascades optimizer, for one) no longer has at hand.
+    if (group_by_keys_semantically_constant)
+        cloned->markGroupByKeysSemanticallyConstant();
+
+    return cloned;
 }
 
 void AggregatingStep::setFinal(bool new_value)
