@@ -9,6 +9,7 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
+from ci.praktika.workflow import Workflow
 
 
 def only_docs(changed_files):
@@ -417,6 +418,10 @@ def should_skip_job(job_name):
             # The `excluded_from_llvm` jobs stay skipped even then - they run on a
             # plain build and produce no coverage data, and the tests they hold
             # are covered by the regular (non-coverage) test jobs of the PR.
+            # FILTER_HOOK_FORCE_JOB (rather than a plain neutral answer) also
+            # exempts the job from the later "filter not affected jobs" pass,
+            # which would otherwise drop it again when no changed file matches
+            # its digest_config (e.g. a docs-only PR).
             if Labels.CI_COVERAGE in _info_cache.pr_labels:
                 if "excluded_from_llvm" in job_name:
                     return (
@@ -424,7 +429,7 @@ def should_skip_job(job_name):
                         f"Skipped: '{Labels.CI_COVERAGE}' forces only the coverage jobs; this job produces no coverage data",
                     )
                 _add_pipeline_note(Labels.CI_COVERAGE)
-                return False, ""
+                return False, Workflow.FILTER_HOOK_FORCE_JOB
             return True, "Skipped: no build-affecting changes; coverage would be identical to master"
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
