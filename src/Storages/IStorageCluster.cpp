@@ -1,6 +1,8 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ConnectionTimeouts.h>
@@ -104,6 +106,34 @@ std::optional<ActionsDAG> remapListingFilterInputsToStorageColumns(
     return ActionsDAG::buildFilterActionsDAG({filter.getOutputs().at(0)}, replacements);
 }
 
+/// Independent filter DAGs (wrap `WHERE`, then a later pushed FilterStep) cannot
+/// be `merge`d: that wires the second DAG through the first's boolean output.
+/// `mergeNodes` keeps both predicates, then `and` is the listing condition.
+ActionsDAG andListingFilterDAGs(ActionsDAG first, ActionsDAG second)
+{
+    if (first.getOutputs().empty())
+        return second;
+    if (second.getOutputs().empty())
+        return first;
+
+    const auto * first_filter = first.getOutputs().front();
+    ActionsDAG::NodeRawConstPtrs second_outputs;
+    first.mergeNodes(std::move(second), &second_outputs);
+    if (second_outputs.empty())
+        return first;
+
+    const auto * second_filter = second_outputs.front();
+    if (first_filter == second_filter)
+        return first;
+
+    FunctionOverloadResolverPtr func_and
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    const auto & and_node = first.addFunction(func_and, {first_filter, second_filter}, {});
+    first.getOutputs() = {&and_node};
+    first.removeUnusedActions();
+    return first;
+}
+
 }
 
 IStorageCluster::IStorageCluster(
@@ -121,13 +151,36 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
     if (extension)
         return;
 
-    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
+    /// Wrap `WHERE` is in `query_info.filter_actions_dag`. A later optimizer
+    /// `applyFilters` replaces `filter_actions_dag` and must not drop the wrap
+    /// predicate; AND both when they differ. Empty later `applyFilters` leaves
+    /// `filter_actions_dag` null, so wrap `WHERE` is used alone.
+    const ActionsDAG * optimizer_filter = filter_actions_dag.get();
+    const ActionsDAG * wrap_filter = query_info.filter_actions_dag.get();
+
+    std::optional<ActionsDAG> combined;
+    const ActionsDAG * filter = nullptr;
+    if (optimizer_filter && wrap_filter && optimizer_filter->getHash() != wrap_filter->getHash())
+    {
+        combined = andListingFilterDAGs(wrap_filter->clone(), optimizer_filter->clone());
+        filter = &*combined;
+    }
+    else if (optimizer_filter)
+        filter = optimizer_filter;
+    else
+        filter = wrap_filter;
+
     listing_filter_dag.reset();
     if (filter)
     {
         if (auto remapped = remapListingFilterInputsToStorageColumns(*filter, storage_snapshot))
         {
             listing_filter_dag = std::move(*remapped);
+            filter = &*listing_filter_dag;
+        }
+        else if (combined)
+        {
+            listing_filter_dag = std::move(*combined);
             filter = &*listing_filter_dag;
         }
         if (!predicate)

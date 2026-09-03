@@ -132,8 +132,8 @@ def test_cluster_join_filter_minmax_pruning(started_cluster_iceberg_with_spark, 
     )
 
     # Inner `bid >= 3` is copied onto the cluster wrap during planning. The outer
-    # `datetime` predicate is pushed later; listing must be rebuilt or the extra
-    # file with bid=4 / datetime=2024-01-01 is not pruned.
+    # `datetime` predicate is pushed later; listing must AND it onto the wrap
+    # DAG or the extra file with bid=4 / datetime=2024-01-01 is not pruned.
     assert (
         check_validity_and_get_prunned_files(
             f"""
