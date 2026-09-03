@@ -28,6 +28,8 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -452,6 +454,32 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
     }
 }
 
+/// How many table-like objects a cross-database `RENAME` moves. Usually one, but a
+/// `MaterializedView` and a `TimeSeries` table own inner tables, and when one side of the rename is
+/// an `Ordinary` database the inner table names embed the outer table name, so `renameInMemory`
+/// moves the inner tables too, with nested `RENAME` queries. All of them have to be accounted for
+/// at once: otherwise the first inner tables are moved and a later one is rejected by the quota,
+/// leaving them behind in the destination.
+static size_t getNumberOfTablesToMove(const StoragePtr & table, const ContextPtr & local_context)
+{
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get()))
+        return (materialized_view->hasInnerTable() && materialized_view->tryGetTargetTable()) ? 2 : 1;
+
+    if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(table.get()))
+    {
+        size_t result = 1;
+        if (time_series->hasInnerTables())
+        {
+            for (auto target_kind : StorageTimeSeries::getTargetKinds())
+                if (time_series->isInnerTable(target_kind) && time_series->tryGetTargetTable(target_kind, local_context))
+                    ++result;
+        }
+        return result;
+    }
+
+    return 1;
+}
+
 void DatabaseOnDisk::renameTable(
         ContextPtr local_context,
         const String & table_name,
@@ -505,7 +533,7 @@ void DatabaseOnDisk::renameTable(
             /// The destination may still be loading, in which case its table list is incomplete
             /// and the check would undercount.
             target_db->waitDatabaseStarted();
-            target_db->checkTablesLimit();
+            target_db->checkTablesLimit(getNumberOfTablesToMove(table, local_context));
         }
     }
 
