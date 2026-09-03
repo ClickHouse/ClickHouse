@@ -88,9 +88,30 @@ public:
         /// must not be put in the backup, i.e. `EXCEPT DATA FROM TABLE <this element's object>` was written.
         bool except_data = false;
 
+        /// TABLE elements only, and only while `database_name` is still unresolved: the database name written
+        /// in the `EXCEPT DATA FROM TABLE` clause, which the parser could not yet compare with the element's
+        /// own database. An unqualified element takes its database from the current database, which the parser
+        /// does not know, so `BACKUP TABLE t EXCEPT DATA FROM TABLE db.t` cannot be decided at parse time.
+        /// `setCurrentDatabase` performs that comparison once the element's database is known, and clears this
+        /// field. Empty when the clause named no database, or named one the parser could already verify.
+        String except_data_database_name;
+
         std::set<String> except_databases;
 
+        /// Only member functions are declared below: `Element` is aggregate-initialized (see
+        /// `fromSnapshotQuery`), so it must keep no constructors and no non-public data members.
+
+        /// Resolves the element against the current database: fills in the database names it left out, and
+        /// then performs the `EXCEPT DATA FROM TABLE` comparison the parser had to defer. Throws
+        /// `SYNTAX_ERROR` if that comparison fails. Idempotent.
         void setCurrentDatabase(const String & current_database);
+
+        /// Substitutes `current_database` for every database name this element left out.
+        void fillEmptyDatabaseNames(const String & current_database);
+
+        /// Checks `except_data_database_name` against the element's own (now resolved) database name, and
+        /// clears it once checked. See the field's comment for why the check cannot happen at parse time.
+        void checkExceptDataDatabaseName();
     };
 
     using Elements = std::vector<Element>;

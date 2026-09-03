@@ -150,44 +150,79 @@ namespace
     }
 
     /// Parses `EXCEPT DATA FROM {TABLE|TABLES}` written on a single-object element (TABLE, DICTIONARY, VIEW,
-    /// TEMPORARY TABLE) and reduces it to a flag on that element.
+    /// TEMPORARY TABLE) and reduces it to the `except_data` flag on that element.
     ///
     /// Such an element selects exactly one object, so its own object is the only one the clause can refer to.
     /// Any other name is out of the element's scope: it cannot be excluded here, because a data exclusion is
     /// element-scoped and must not reach the tables selected by the other elements of the same query. Reject
     /// it instead of accepting a clause which would do nothing (or, worse, something the user didn't write).
-    bool parseExceptDataFromThisTable(
-        IParser::Pos & pos,
-        Expected & expected,
-        const std::optional<String> & database_name,
-        const String & table_name,
-        bool & except_data)
+    ///
+    /// The element's table name is always known here, so a foreign table name is rejected right away. Its
+    /// database name may not be: an unqualified element (`BACKUP TABLE t ...`) takes its database from the
+    /// current database, which the parser does not know. A database name the clause states explicitly in that
+    /// case is kept in `except_data_database_name`, for `Element::setCurrentDatabase` to compare once the
+    /// element is resolved - so `BACKUP TABLE t EXCEPT DATA FROM TABLE test.t` is accepted when the current
+    /// database is `test` and rejected when it is not, instead of being rejected outright.
+    ///
+    /// `element_has_database` is false for a TEMPORARY TABLE element, which has no database and never gets
+    /// one, so for it a stated database name is already known to be wrong and there is nothing to defer.
+    bool parseExceptDataFromThisTable(IParser::Pos & pos, Expected & expected, Element & element, bool element_has_database)
     {
+        /// Parse with no expected database name: the comparison against the element's own database is done
+        /// below, because it may have to be deferred - which `parseExceptDataTables` (shared with the DATABASE
+        /// and ALL elements, whose database is always known at parse time) cannot do.
         std::set<DatabaseAndTableName> except_data_tables;
-        if (!parseExceptDataTables(pos, expected, database_name, except_data_tables))
+        if (!parseExceptDataTables(pos, expected, /*database_name=*/ {}, except_data_tables))
             return false;
 
-        /// A temporary table has no database, so an empty database name is what its own name looks like.
-        const String & this_database_name = database_name.value_or("");
-        for (const auto & except_data_table : except_data_tables)
+        auto reject = [&](const DatabaseAndTableName & specified)
         {
-            if ((except_data_table.first == this_database_name) && (except_data_table.second == table_name))
-                continue;
-
             throw Exception(
                 ErrorCodes::SYNTAX_ERROR,
                 "EXCEPT DATA FROM TABLE clause of a single-object BACKUP element can only name that element's own "
                 "object {}, but {} was specified. To exclude the data of another table, back it up as its own element "
                 "with its own clause (BACKUP TABLE t1, TABLE t2 EXCEPT DATA FROM TABLE t2), or exclude it at the "
                 "database level (BACKUP DATABASE db EXCEPT DATA FROM TABLE db.t2)",
-                this_database_name.empty() ? backQuoteIfNeed(table_name)
-                                           : backQuoteIfNeed(this_database_name) + "." + backQuoteIfNeed(table_name),
-                except_data_table.first.empty()
-                    ? backQuoteIfNeed(except_data_table.second)
-                    : backQuoteIfNeed(except_data_table.first) + "." + backQuoteIfNeed(except_data_table.second));
+                element.database_name.empty()
+                    ? backQuoteIfNeed(element.table_name)
+                    : backQuoteIfNeed(element.database_name) + "." + backQuoteIfNeed(element.table_name),
+                specified.first.empty()
+                    ? backQuoteIfNeed(specified.second)
+                    : backQuoteIfNeed(specified.first) + "." + backQuoteIfNeed(specified.second));
+        };
+
+        for (const auto & except_data_table : except_data_tables)
+        {
+            const String & clause_database_name = except_data_table.first;
+            const String & clause_table_name = except_data_table.second;
+
+            if (clause_table_name != element.table_name)
+                reject(except_data_table);
+
+            /// An omitted database name means "this element's database", whatever it resolves to.
+            if (clause_database_name.empty())
+                continue;
+
+            /// A temporary table has no database, so no database name can be the right one.
+            if (!element_has_database)
+                reject(except_data_table);
+
+            if (!element.database_name.empty())
+            {
+                if (clause_database_name != element.database_name)
+                    reject(except_data_table);
+                continue;
+            }
+
+            /// The element is unqualified, so defer the comparison to `Element::setCurrentDatabase`. Two
+            /// different database names in one clause cannot both be the element's own one, whatever it
+            /// resolves to, so that much is still decided here.
+            if (!element.except_data_database_name.empty() && (element.except_data_database_name != clause_database_name))
+                reject(except_data_table);
+            element.except_data_database_name = clause_database_name;
         }
 
-        except_data = !except_data_tables.empty();
+        element.except_data = !except_data_tables.empty();
         return true;
     }
 
@@ -214,7 +249,7 @@ namespace
 
                 if (kind == Kind::BACKUP)
                 {
-                    parseExceptDataFromThisTable(pos, expected, element.database_name, element.table_name, element.except_data);
+                    parseExceptDataFromThisTable(pos, expected, element, /*element_has_database=*/ true);
                 }
                 else if (ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).checkWithoutMoving(pos, expected) ||
                          ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).checkWithoutMoving(pos, expected))
@@ -246,7 +281,7 @@ namespace
                 if (kind == Kind::BACKUP)
                 {
                     /// A temporary table has no database, so no database name may be given in the clause either.
-                    parseExceptDataFromThisTable(pos, expected, {}, element.table_name, element.except_data);
+                    parseExceptDataFromThisTable(pos, expected, element, /*element_has_database=*/ false);
                 }
                 else if (ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).checkWithoutMoving(pos, expected) ||
                          ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).checkWithoutMoving(pos, expected))

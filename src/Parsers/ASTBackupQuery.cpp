@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -104,8 +105,19 @@ namespace
             return;
 
         ostr << " EXCEPT DATA FROM TABLE ";
-        if (with_database_name && !element.database_name.empty())
-            ostr << backQuoteIfNeed(element.database_name) << ".";
+        if (with_database_name)
+        {
+            /// Normally the clause names the element's own database. Before `setCurrentDatabase` has run the
+            /// element's database can still be empty while the clause stated one, and that name must survive
+            /// formatting: a `BACKUP ... ON CLUSTER` query is formatted unresolved on the initiator and parsed
+            /// again on every host, and each host has to be able to re-run the comparison `setCurrentDatabase`
+            /// does against its own current database. Dropping it would turn a query that must be rejected
+            /// there into one that silently excludes a different table's data.
+            const String & clause_database_name
+                = element.database_name.empty() ? element.except_data_database_name : element.database_name;
+            if (!clause_database_name.empty())
+                ostr << backQuoteIfNeed(clause_database_name) << ".";
+        }
         ostr << backQuoteIfNeed(element.table_name);
     }
 
@@ -259,12 +271,53 @@ namespace
 
 void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database)
 {
-    if (current_database.empty())
+    if (!current_database.empty())
+        fillEmptyDatabaseNames(current_database);
+
+    /// `EXCEPT DATA FROM TABLE` on a single-object element refers to the element's own object, so the
+    /// `except_data` flag follows the element's database name wherever it is resolved and needs nothing done
+    /// here. What may still be pending is the comparison the parser could not make.
+    checkExceptDataDatabaseName();
+}
+
+
+/// Compares the database name written in a single-object element's `EXCEPT DATA FROM TABLE` clause with the
+/// element's own, now that the element's own name is resolved. The parser defers this comparison when the
+/// element is written unqualified, because only the current database decides it: `BACKUP TABLE t EXCEPT DATA
+/// FROM TABLE test.t` is a correct query when the current database is `test`, and a wrong one otherwise, and
+/// the parser knows neither.
+///
+/// This runs even for an empty current database: a clause naming a database can never match an element which
+/// has none, so skipping the comparison would accept the clause as if it had named the element's own object
+/// and silently exclude that object's data instead.
+void ASTBackupQuery::Element::checkExceptDataDatabaseName()
+{
+    if (except_data_database_name.empty())
         return;
 
-    /// TABLE and TEMPORARY TABLE elements need nothing done for `EXCEPT DATA FROM TABLE`: the clause is held
-    /// as the `except_data` flag, which refers to the element's own object and therefore follows the element's
-    /// database name wherever it is resolved.
+    if (except_data_database_name != database_name)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "EXCEPT DATA FROM TABLE clause of a single-object BACKUP element can only name that element's own "
+            "object, but it names a table of database {} while the element's object is {}. Write the element "
+            "with that database name if that is what was meant, or exclude the data at the database level "
+            "(BACKUP DATABASE {} EXCEPT DATA FROM TABLE {}.{})",
+            backQuoteIfNeed(except_data_database_name),
+            database_name.empty() ? backQuoteIfNeed(table_name)
+                                  : backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name),
+            backQuoteIfNeed(except_data_database_name),
+            backQuoteIfNeed(except_data_database_name),
+            backQuoteIfNeed(table_name));
+
+    /// Verified; the element's own database name now carries it (and `formatExceptDataFromThisTable` prefers
+    /// that one), so this field has served its purpose. Clearing it keeps `setCurrentDatabase` idempotent and
+    /// the invariant simple: non-empty means "not compared against the element's own database yet".
+    except_data_database_name.clear();
+}
+
+
+void ASTBackupQuery::Element::fillEmptyDatabaseNames(const String & current_database)
+{
     if (type == ASTBackupQuery::TABLE)
     {
         if (database_name.empty())
@@ -320,6 +373,7 @@ ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
             element.except_tables,
             /*except_data_tables*/ {},
             /*except_data*/ false,
+            /*except_data_database_name*/ {},
             element.except_databases});
     if (query.snapshot_destination)
         res->set(res->backup_name, query.snapshot_destination->clone());
@@ -489,6 +543,15 @@ namespace
         }
         if (e.except_data)
             out << ",\"except_data\":true";
+        if (!e.except_data_database_name.empty())
+        {
+            /// Only set while the element's own database is unresolved, and emitted for the same reason
+            /// `formatExceptDataFromThisTable` emits it: dropping it here would lose the comparison
+            /// `Element::setCurrentDatabase` still owes, turning a query that must be rejected into one that
+            /// silently excludes the data of a different table.
+            out << ",\"except_data_database\":";
+            writeJSONString(e.except_data_database_name, out, fs);
+        }
         if (!e.except_databases.empty())
         {
             out << ",\"except_databases\":[";
@@ -587,6 +650,7 @@ namespace
             }
         }
         e.except_data = elem_reader.getBool("except_data");
+        e.except_data_database_name = elem_reader.getString("except_data_database");
         if (elem_obj.has("except_databases"))
         {
             auto arr = elem_obj.getArray("except_databases");
@@ -619,7 +683,8 @@ namespace
         switch (e.type)
         {
             case ElementType::TABLE:
-                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions, except_data.
+                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions,
+                /// except_data, except_data_database (the only type for which the last one is meaningful).
                 /// `except_data_tables` is rejected: a single-object element can only exclude the data of its own
                 /// object, which is what `except_data` says. A list here would let `clickhouse_json` name a table
                 /// outside this element's scope - the shape the parser refuses and `formatElement` cannot produce.
@@ -638,6 +703,8 @@ namespace
                 reject_field("partitions", "TEMPORARY_TABLE");
                 reject_field("except_tables", "TEMPORARY_TABLE");
                 reject_field("except_data_tables", "TEMPORARY_TABLE");
+                /// A temporary table has no database, so its clause can never name one.
+                reject_field("except_data_database", "TEMPORARY_TABLE");
                 reject_field("except_databases", "TEMPORARY_TABLE");
                 break;
             case ElementType::DATABASE:
@@ -648,7 +715,29 @@ namespace
                 reject_field("new_table_name", "DATABASE");
                 reject_field("partitions", "DATABASE");
                 reject_field("except_data", "DATABASE");
+                reject_field("except_data_database", "DATABASE");
                 reject_field("except_databases", "DATABASE");
+                /// A DATABASE element selects the tables of exactly one database, so its EXCEPT DATA FROM
+                /// TABLE/TABLES clause can only name tables of that database - which is what
+                /// `parseExceptDataTables` enforces for the SQL form, filling in an omitted database name
+                /// from the element and rejecting any other. `clickhouse_json` has to enforce the same
+                /// invariant, because `BackupEntriesCollector::gatherDatabaseMetadata` looks only at entries
+                /// whose database is the one it is gathering: an entry naming another database - or naming
+                /// none, which matches no database at all - is silently dropped and excludes nothing. That is
+                /// the worst outcome for a data-exclusion clause, so reject it rather than accept a no-op.
+                for (const auto & [except_data_db, except_data_tbl] : e.except_data_tables)
+                {
+                    if (except_data_db != e.database_name)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Entry with database '{}' and table '{}' in 'except_data_tables' does not belong to database "
+                            "'{}' of the DATABASE BACKUP/RESTORE element at index {} during AST JSON deserialization: "
+                            "every entry must name that element's own database explicitly",
+                            except_data_db, except_data_tbl, e.database_name, element_index);
+                    if (except_data_tbl.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Empty table name in 'except_data_tables' of the BACKUP/RESTORE element at index {} during "
+                            "AST JSON deserialization", element_index);
+                }
                 break;
             case ElementType::ALL:
                 /// Valid: except_databases, except_tables, except_data_tables.
@@ -658,7 +747,37 @@ namespace
                 reject_field("new_database_name", "ALL");
                 reject_field("partitions", "ALL");
                 reject_field("except_data", "ALL");
+                reject_field("except_data_database", "ALL");
+                /// An ALL element may name a table of any database, and may leave the database name out for
+                /// `setCurrentDatabase` to fill in from the current database, so neither is checked here. An
+                /// empty table name matches no table at all, though, and is the same silent no-op as above.
+                for (const auto & except_data_table : e.except_data_tables)
+                {
+                    if (except_data_table.second.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Empty table name in 'except_data_tables' of the BACKUP/RESTORE element at index {} during "
+                            "AST JSON deserialization", element_index);
+                }
                 break;
+        }
+
+        /// `except_data_database` only records the database a single-object element's clause named while the
+        /// element's own database was still unresolved, so it is meaningless without the clause itself, and
+        /// once the element does state a database the two must already agree - that is the comparison
+        /// `parseExceptDataFromThisTable` makes at parse time and the one `Element::setCurrentDatabase` makes
+        /// afterwards. Enforce both here so `clickhouse_json` cannot build an element the parser would refuse.
+        if (!e.except_data_database_name.empty())
+        {
+            if (!e.except_data)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Field 'except_data_database' requires 'except_data' to be true for the BACKUP/RESTORE element at "
+                    "index {} during AST JSON deserialization", element_index);
+            if (!e.database_name.empty() && (e.except_data_database_name != e.database_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Field 'except_data_database' is '{}' but the BACKUP/RESTORE element at index {} names database "
+                    "'{}' during AST JSON deserialization: the EXCEPT DATA FROM TABLE clause of a single-object "
+                    "element can only name that element's own object",
+                    e.except_data_database_name, element_index, e.database_name);
         }
 
         return e;

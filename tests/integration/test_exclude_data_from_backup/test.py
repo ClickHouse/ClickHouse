@@ -529,10 +529,170 @@ def test_except_data_temporary_table_rejects_database_qualified_name():
     assert "own object" in str(exc_info.value), str(exc_info.value)
 
 
-# Note: JSON deserialization path (ASTBackupQuery::readJSON) validation is not
-# tested here because the integration test suite does not have infrastructure for
-# testing AST JSON deserialization directly. The SQL parser path test above
-# (test_restore_except_data_from_table_rejected) provides equivalent coverage
-# since both paths reject the same semantic error (EXCEPT DATA FROM TABLE in RESTORE).
-# For comprehensive testing of the JSON path, a unit test under src/Parsers/tests/
-# would be more appropriate, directly constructing JSON payloads and calling readJSON().
+def test_except_data_from_table_qualified_name_on_unqualified_element():
+    """The clause may state the database even when the element itself leaves it out.
+
+    `BACKUP TABLE t EXCEPT DATA FROM TABLE test.t` names the same object twice when the
+    current database is `test`, so it must be accepted. The parser cannot decide that on
+    its own - the element's database comes from the current database, which it doesn't
+    know - so it defers the comparison to `Element::setCurrentDatabase`. It used to
+    reject the query outright instead.
+    """
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.t")
+    instance.query("CREATE TABLE test.t (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("INSERT INTO test.t VALUES (1), (2), (3)")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE t EXCEPT DATA FROM TABLE test.t TO {backup_name}", database="test"
+    )
+
+    instance.query("DROP TABLE test.t")
+    instance.query(f"RESTORE TABLE test.t FROM {backup_name}")
+
+    # The structure came back, the data did not: the deferred comparison resolved to
+    # "the clause names this element's own object".
+    assert instance.query("SELECT count() FROM test.t") == "0\n"
+
+    instance.query("DROP DATABASE test")
+
+
+def test_except_data_from_table_qualified_name_mismatched_database_rejected():
+    """A clause naming a different database is still rejected, wherever it is detected.
+
+    The unqualified-element form can only be decided once the current database is known,
+    so it is caught by `Element::setCurrentDatabase`; the qualified form is caught by the
+    parser. Both must fail - accepting either would exclude the data of the element's own
+    object while the user asked for another table's.
+    """
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.t")
+    instance.query("CREATE TABLE test.t (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("INSERT INTO test.t VALUES (1)")
+
+    # Deferred: the element is unqualified, so only the current database (`test`) decides
+    # that `other` is wrong. `other` is never looked up, so this is our error, not a
+    # missing-database one.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE t EXCEPT DATA FROM TABLE other.t TO {new_backup_name()}",
+            database="test",
+        )
+    assert "own object" in str(exc_info.value), str(exc_info.value)
+
+    # Immediate: both database names are known at parse time.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE test.t EXCEPT DATA FROM TABLE other.t TO {new_backup_name()}"
+        )
+    assert "own object" in str(exc_info.value), str(exc_info.value)
+
+    # Two different databases in one clause cannot both be the element's own object,
+    # whatever it resolves to, so this is decided at parse time even when unqualified.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE t EXCEPT DATA FROM TABLES test.t, other.t TO {new_backup_name()}",
+            database="test",
+        )
+    assert "own object" in str(exc_info.value), str(exc_info.value)
+
+    instance.query("DROP DATABASE test")
+
+
+def test_except_data_from_table_deferred_database_survives_formatting():
+    """A clause database the parser could not yet check must survive formatting.
+
+    `BACKUP ... ON CLUSTER` is formatted on the initiator while the elements are still
+    unresolved and parsed again on every host, so a database name dropped here would turn
+    a query that each host must reject into one that silently excludes its own data.
+    """
+    formatted = instance.query(
+        "SELECT formatQuery($$BACKUP TABLE t EXCEPT DATA FROM TABLE other.t "
+        "TO Disk('backups', 'fmt/')$$)"
+    )
+    assert "EXCEPT DATA FROM TABLE other.t" in formatted, formatted
+
+    # When the element states its own database, that one is used (they are equal by then).
+    formatted = instance.query(
+        "SELECT formatQuery($$BACKUP TABLE test.t EXCEPT DATA FROM TABLE test.t "
+        "TO Disk('backups', 'fmt/')$$)"
+    )
+    assert "EXCEPT DATA FROM TABLE test.t" in formatted, formatted
+
+
+def test_except_data_tables_json_database_element_rejects_foreign_database():
+    """`clickhouse_json` must enforce the DATABASE element's own invariant too.
+
+    `parseExceptDataTables` makes every entry of a DATABASE element's clause name that
+    element's database, filling in an omitted one. `readJSON` accepted any database, and
+    `BackupEntriesCollector::gatherDatabaseMetadata` then dropped every entry whose
+    database is not the one being gathered - so the exclusion silently did nothing.
+
+    The JSON is derived from a valid query and then edited, so the test does not depend on
+    the exact serialization envelope. `"database":"db1"` only ever appears inside the
+    `except_data_tables` entry: the element itself uses `"database_name"`.
+    """
+    valid_json_sql = (
+        "parseQueryToJSON($$BACKUP DATABASE db1 EXCEPT DATA FROM TABLE db1.t "
+        "TO Disk('backups', 'json/')$$)"
+    )
+
+    # Sanity check: unedited, the round trip works and keeps the clause.
+    formatted = instance.query(f"SELECT formatQueryFromJSON({valid_json_sql})")
+    assert "EXCEPT DATA FROM TABLE t" in formatted, formatted
+
+    # An entry naming another database is a no-op, so it must be rejected.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"database\":\"db1\"', '\"database\":\"db2\"'))"
+        )
+    assert "does not belong to database" in str(exc_info.value), str(exc_info.value)
+
+    # An entry naming no database matches no database at all - the same no-op.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"database\":\"db1\"', '\"database\":\"\"'))"
+        )
+    assert "does not belong to database" in str(exc_info.value), str(exc_info.value)
+
+    # An entry naming no table matches no table at all.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"table\":\"t\"', '\"table\":\"\"'))"
+        )
+    assert "Empty table name" in str(exc_info.value), str(exc_info.value)
+
+
+def test_except_data_json_table_element_rejects_inconsistent_clause_database():
+    """`except_data_database` is the deferred clause database, and must stay consistent.
+
+    It only exists while a single-object element's own database is unresolved, so it is
+    meaningless without `except_data` and cannot disagree with a database the element does
+    state - the two comparisons the parser and `setCurrentDatabase` make. `clickhouse_json`
+    must not be able to build an element the parser would have refused.
+    """
+    valid_json_sql = (
+        "parseQueryToJSON($$BACKUP TABLE db1.t EXCEPT DATA FROM TABLE db1.t "
+        "TO Disk('backups', 'json/')$$)"
+    )
+
+    # Disagrees with the element's own database.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"except_data\":true', "
+            "'\"except_data\":true,\"except_data_database\":\"db2\"'))"
+        )
+    assert "except_data_database" in str(exc_info.value), str(exc_info.value)
+
+    # Present without the clause it belongs to.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"except_data\":true', '\"except_data_database\":\"db1\"'))"
+        )
+    assert "requires 'except_data'" in str(exc_info.value), str(exc_info.value)
