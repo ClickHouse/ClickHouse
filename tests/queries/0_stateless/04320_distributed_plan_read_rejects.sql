@@ -11,20 +11,19 @@ INSERT INTO t_read_rejects_final SELECT number, 1 FROM numbers(100000);
 INSERT INTO t_read_rejects_final SELECT number, 2 FROM numbers(100000);
 
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0 (randomized
--- settings set it nonzero, which would make make_distributed_plan reject the count/sum below).
+-- settings set it nonzero, which would make every aggregation below fall back to local execution
+-- instead of exercising the distributed read).
 SET max_rows_to_group_by = 0;
 
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0;
--- This test pins the rejections themselves, so keep the exception instead of the local-execution fallback.
-SET distributed_plan_fallback_to_local_execution = 0;
+
+-- This test pins the rejections themselves, so the queries that must be rejected disable the
+-- local-execution fallback to get the exception instead.
 
 -- A distributed read cannot reproduce the coordinator's part ordering, so the part-order virtual
 -- columns are rejected at planning time (rather than silently returning worker-local values).
--- Strict mode is pinned per query, not session-wide: a session-wide `SET` would also apply to the
--- queries below that must succeed, and `SELECT count()` there becomes a `ReadFromPreparedSource`
--- (not distributable) whenever randomized settings enable implicit projections.
 SELECT _part_index FROM t_read_rejects
 SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 SELECT _part_starting_offset FROM t_read_rejects
@@ -32,6 +31,7 @@ SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPP
 
 -- Bucket counts size the exchange fan-out, so they are capped to limit memory consumption: an
 -- oversized value is rejected at planning time instead of allocating that many tasks and ports.
+-- The cap is a settings error, not a fallback reason, so it throws with the fallback enabled too.
 SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_shuffle_join_bucket_count = 257; -- { serverError INVALID_SETTING_VALUE }
 SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_reader_bucket_count = 257; -- { serverError INVALID_SETTING_VALUE }
 -- The validation runs before the tryMakeDistributedRead pass sizes any vector, so a value near the type
@@ -50,20 +50,25 @@ SELECT count() FROM t_read_rejects SETTINGS enable_cascades_optimizer = 1, distr
 SET param__internal_cascades_cluster_node_count = 0;
 -- FINAL derives a larger layer budget from the count before slicing, so it is capped by the same check.
 SELECT sum(v) FROM t_read_rejects_final FINAL SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 9223372036854775807; -- { serverError INVALID_SETTING_VALUE }
--- The cap is inclusive: 256 is accepted, on both read paths. An over-strict cap raises here rather
--- than falling back to a serial read, so these answering at all is the boundary assertion.
-SELECT count() FROM t_read_rejects SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 256;
-SELECT sum(v) FROM t_read_rejects_final FINAL SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 256;
+-- The cap is inclusive: 256 is accepted, on both read paths. Strict mode asserts that these really
+-- distribute (an over-strict cap would raise here rather than fall back to a serial read).
+SELECT count() FROM t_read_rejects
+SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 256, distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(v) FROM t_read_rejects_final FINAL
+SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 256, distributed_plan_fallback_to_local_execution = 0;
 -- Without Cascades the count never becomes a bucket count, so it is not capped: the rule-based
--- distributed plan takes its bucket counts from the settings validated above.
+-- distributed plan takes its bucket counts from the settings validated above. This is the trivial
+-- count from the comment above, so it runs locally and must not be pinned to strict mode.
 SELECT count() FROM t_read_rejects SETTINGS enable_cascades_optimizer = 0, distributed_plan_workers_num = 9223372036854775807;
 
--- _part_offset alone is per-part and order-independent, so it stays supported.
-SELECT sum(_part_offset) FROM t_read_rejects;
+-- _part_offset alone is per-part and order-independent, so it stays supported: strict mode asserts
+-- the read is distributed rather than run locally.
+SELECT sum(_part_offset) FROM t_read_rejects SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- A per-block function must keep its global numbering: the GatherExchange is not pushed below it,
 -- so the row numbers stay a single 0..N-1 sequence (sum is order-independent).
-SELECT sum(rn) FROM (SELECT rowNumberInAllBlocks() AS rn FROM t_read_rejects);
+SELECT sum(rn) FROM (SELECT rowNumberInAllBlocks() AS rn FROM t_read_rejects)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_read_rejects;
 DROP TABLE t_read_rejects_final;

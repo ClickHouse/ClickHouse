@@ -68,9 +68,9 @@ SELECT count() FROM (EXPLAIN PLAN SELECT 1)
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
--- A distributed read is bucketed and cannot be served from a projection, so projections are
--- turned off under `make_distributed_plan`; a forced projection is ignored and the query still works.
-SELECT '-- 8. A forced projection is ignored (still correct)';
+-- A distributed read is bucketed and cannot be served from a projection, so a forced projection is a
+-- contract the distributed plan cannot honor: the query falls back to local execution and still works.
+SELECT '-- 8. A forced projection falls back to local execution (still correct)';
 DROP TABLE IF EXISTS t_gating_proj;
 CREATE TABLE t_gating_proj (a UInt64, b UInt64, PROJECTION p_agg (SELECT b, sum(a) GROUP BY b))
 ENGINE = MergeTree ORDER BY a;
