@@ -22,6 +22,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -29,6 +30,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
+#include <Parsers/FunctionSecretArgumentsFinderAST.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -38,6 +40,16 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/ObjectFilterStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -77,7 +89,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool explain_syntax_single_record;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool make_distributed_plan;
@@ -323,6 +334,78 @@ namespace
             }
         }
     };
+
+    bool hasSecretsInActionsDAG(const ActionsDAG & dag)
+    {
+        for (const auto & node : dag.getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION
+                && FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets())
+                return true;
+        return false;
+    }
+
+    bool hasSecretsInStep(const IQueryPlanStep & step)
+    {
+        if (const auto * expression_step = dynamic_cast<const ExpressionStep *>(&step))
+            return hasSecretsInActionsDAG(expression_step->getExpression());
+        if (const auto * filter_step = dynamic_cast<const FilterStep *>(&step))
+            return hasSecretsInActionsDAG(filter_step->getExpression());
+        if (const auto * object_filter_step = dynamic_cast<const ObjectFilterStep *>(&step))
+            return hasSecretsInActionsDAG(object_filter_step->getExpression());
+        if (const auto * totals_having_step = dynamic_cast<const TotalsHavingStep *>(&step))
+            return totals_having_step->getActions() && hasSecretsInActionsDAG(*totals_having_step->getActions());
+        if (const auto * array_join_step = dynamic_cast<const ArrayJoinStep *>(&step))
+            return array_join_step->getElementFilter() && hasSecretsInActionsDAG(*array_join_step->getElementFilter());
+        if (const auto * filling_step = dynamic_cast<const FillingStep *>(&step))
+            return filling_step->getInterpolateDescription()
+                && hasSecretsInActionsDAG(filling_step->getInterpolateDescription()->actions);
+        if (const auto * join_step = dynamic_cast<const JoinStepLogical *>(&step))
+            return hasSecretsInActionsDAG(join_step->getActionsDAG());
+        if (const auto * source_step = dynamic_cast<const SourceStepWithFilterBase *>(&step))
+        {
+            if (source_step->getFilterActionsDAG() && hasSecretsInActionsDAG(*source_step->getFilterActionsDAG()))
+                return true;
+            if (const auto prewhere_info = source_step->getPrewhereInfo();
+                prewhere_info && hasSecretsInActionsDAG(prewhere_info->prewhere_actions))
+                return true;
+            if (const auto row_level_filter = source_step->getRowLevelFilter();
+                row_level_filter && hasSecretsInActionsDAG(row_level_filter->actions))
+                return true;
+            return false;
+        }
+        return false;
+    }
+
+    /// The old analyzer builds the `ActionsDAG` without masking secret constants (the node names come
+    /// from `IAST::getColumnName`, which embeds literal values), so a plan dump cannot hide them.
+    /// Fail closed: refuse to dump a plan that carries secrets.
+    void throwIfPlanHasSecrets(const QueryPlan & plan)
+    {
+        if (!plan.isInitialized())
+            return;
+
+        std::vector<const QueryPlan::Node *> stack = {plan.getRootNode()};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+
+            if (node->step)
+            {
+                if (hasSecretsInStep(*node->step))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "EXPLAIN of a query with secret function arguments is only supported with the analyzer, "
+                        "because otherwise the secrets cannot be hidden in the output. SET enable_analyzer = 1.");
+
+                for (const auto * child_plan : node->step->getChildPlans())
+                    if (child_plan && child_plan->isInitialized())
+                        stack.push_back(child_plan->getRootNode());
+            }
+
+            for (const auto * child : node->children)
+                stack.push_back(child);
+        }
+    }
 
 }
 
@@ -574,7 +657,7 @@ struct ExplainSettings : public Settings
         }
 
         return res;
-    }
+}
 };
 
 struct QuerySyntaxSettings
@@ -688,7 +771,7 @@ bool explainQueryTree(
     /// Mask secrets only after the passes: the masked tree is used solely for the dump below, so
     /// redaction (which may replace a non-constant secret value with a hidden constant) can never
     /// change how the query is analyzed. With run_passes = 0 the tree is dumped without analysis.
-    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    if (!query_context->canDisplaySecretsInShowAndSelect())
     {
         SecretArgumentsDumpVisitor visitor;
         visitor.visit(query_tree);
@@ -709,7 +792,7 @@ bool explainQueryTree(
             buf << "\n\n";
 
         IAST::FormatSettings format_settings(settings.ast_one_line);
-        format_settings.show_secrets = query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+        format_settings.show_secrets = query_context->canDisplaySecretsInShowAndSelect();
 
         ConvertToASTOptions ast_options;
         /// `EXPLAIN SYNTAX` shows the query in a canonical, close-to-syntax form, so constants are
@@ -948,6 +1031,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
             IAST::FormatSettings format_settings(settings.oneline);
+            format_settings.show_secrets = query_context->canDisplaySecretsInShowAndSelect();
             IAST::FormatState format_state;
             IAST::FormatStateStacked format_frame;
             format_frame.allow_operators = false;
@@ -1015,6 +1099,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 plan.optimize(optimization_settings);
             }
 
+            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+                && !query_context->canDisplaySecretsInShowAndSelect())
+                throwIfPlanHasSecrets(plan);
+
             if (settings.json)
             {
                 if (settings.query_plan_options.distributed)
@@ -1059,6 +1147,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
                     interpreter.buildQueryPlan(plan);
                     context = interpreter.getContext();
+
+                    /// Without `header = 1` the pipeline dump shows no column names, so nothing can leak.
+                    if (settings.query_pipeline_options.header && !query_context->canDisplaySecretsInShowAndSelect())
+                        throwIfPlanHasSecrets(plan);
                 }
 
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
@@ -1213,6 +1305,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             watch.restart();
             plan.optimize(optimization_settings);
             planning_ns += watch.elapsed();
+
+            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+                && !query_context->canDisplaySecretsInShowAndSelect())
+                throwIfPlanHasSecrets(plan);
 
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.

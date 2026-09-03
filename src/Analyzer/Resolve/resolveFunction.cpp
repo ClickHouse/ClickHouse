@@ -85,7 +85,6 @@ namespace Setting
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsBool validate_enum_literals_in_operators;
@@ -2237,7 +2236,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         allow_niladic_functions);
 
     /// Mask arguments if needed
-    if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    if (!scope.context->canDisplaySecretsInShowAndSelect())
     {
         if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
         {

@@ -1,6 +1,5 @@
 #include <Databases/RenderedCreateQuery.h>
 
-#include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
@@ -12,7 +11,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool print_pretty_type_names;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsIdentifierQuotingRule show_create_query_identifier_quoting_rule;
@@ -40,9 +38,7 @@ RenderOptions resolveRenderOptions(const ContextPtr & context)
     const auto & settings = context->getSettingsRef();
 
     RenderOptions options;
-    options.show_secrets = context->displaySecretsInShowAndSelect()
-        && settings[Setting::format_display_secrets_in_show_and_select]
-        && context->getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
+    options.show_secrets = context->canDisplaySecretsInShowAndSelect();
     options.print_pretty_type_names = settings[Setting::print_pretty_type_names];
     options.quoting_rule = settings[Setting::show_create_query_identifier_quoting_rule];
     options.quoting_style = settings[Setting::show_create_query_identifier_quoting_style];
