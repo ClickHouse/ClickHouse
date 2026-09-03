@@ -1,0 +1,9 @@
+CREATE TABLE sql_insert_schema_quote_names_05045
+(
+    `a b` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO sql_insert_schema_quote_names_05045 (`a b`) VALUES (1);
+a b	UInt8
+1
