@@ -123,8 +123,9 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (limit_step->withTies())
         return no_layers_updated;
 
+    /// `getLimitForSorting` returns 0 when `limit + offset` overflows, i.e. the sorting limit is unbounded, not zero.
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
-    if (n > settings.max_limit_for_vector_search_queries)
+    if (n == 0 || n > settings.max_limit_for_vector_search_queries)
         return no_layers_updated;
 
     /// Not 100% sure but other sort types are likely not what we want
