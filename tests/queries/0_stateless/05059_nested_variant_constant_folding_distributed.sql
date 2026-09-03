@@ -2,7 +2,7 @@
 -- server. https://github.com/ClickHouse/ClickHouse/issues/74366 was fixed for a scalar `Variant` constant by
 -- https://github.com/ClickHouse/ClickHouse/pull/111136, which scoped out the compound case covered here.
 
--- The exact serialization lives in the analyzer (ConstantNode::toASTImpl), so force the analyzer.
+-- The exact serialization lives in the analyzer (`ConstantNode::toASTImpl`), so force the analyzer.
 SET enable_analyzer = 1;
 
 -- The member type has to be named per element, not once for the whole constant.
@@ -57,3 +57,18 @@ FROM
 );
 
 DROP TABLE t_variant_const_pushdown;
+
+-- The `OR`-to-`IN` rewrite builds a constant with its enclosing cast suppressed, so each leaf has to name
+-- its own type: the row below is matched on a single node and missed through a secondary server otherwise.
+DROP TABLE IF EXISTS t_variant_const_or_in;
+CREATE TABLE t_variant_const_or_in (x Tuple(DateTime('Europe/Berlin'), Variant(UInt64))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_variant_const_or_in VALUES ((1698541800, 42)), ((1698538200, 41));
+
+SELECT count()
+FROM remote('127.0.0.1', currentDatabase(), t_variant_const_or_in)
+WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), 42::UInt64::Variant(UInt64))
+   OR x = (toDateTime(1000000000, 'Europe/Berlin'), 1::UInt64::Variant(UInt64))
+   OR x = (toDateTime(1100000000, 'Europe/Berlin'), 2::UInt64::Variant(UInt64))
+SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3;
+
+DROP TABLE t_variant_const_or_in;
