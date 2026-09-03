@@ -96,9 +96,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
-#include <Common/formatReadable.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
@@ -245,6 +243,30 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 
     if (result.code != 0)
         throw Exception::createDeprecated(result.message, result.code);
+}
+
+
+/// The form of `SYSTEM DROP REPLICA` / `SYSTEM DROP DATABASE REPLICA` without a database or a table
+/// affects every database on the server, so it requires `SYSTEM DROP REPLICA` for all of them.
+/// Instead of silently skipping the databases the user has no access to (and possibly doing nothing at all),
+/// check the permissions in advance and tell the user which databases they are missing the privilege for.
+void checkAccessForDropWholeReplica(const ContextPtr & context, const Databases & databases, std::string_view query_name)
+{
+    auto access = context->getAccess();
+    if (access->isGranted(AccessType::SYSTEM_DROP_REPLICA))
+        return;
+
+    std::vector<String> databases_without_access;
+    for (const auto & elem : databases)
+        if (!access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
+            databases_without_access.emplace_back(elem.first);
+
+    if (!databases_without_access.empty())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Access denied for {}. Not enough permissions to drop these databases: {}",
+            query_name,
+            fmt::join(databases_without_access, ", "));
 }
 
 
@@ -1462,11 +1484,6 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     table->is_being_restarted = true;
     table->flushAndShutdown();
 
-    /// The definition re-attached below was read back from this server's own metadata, so it must be
-    /// accepted as it is. `system_context` is shared by every branch of `execute`, hence the copy.
-    auto attach_context = Context::createCopy(system_context);
-    attach_context->setRecoveryFromStoredMetadata(true);
-
     /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
     /// The table is removed from the in-memory tables map between detach and attach, making it
     /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
@@ -1526,7 +1543,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
                 new_table = StorageFactory::instance().get(create,
                     data_path,
-                    attach_context,
+                    system_context,
                     system_context->getGlobalContext(),
                     columns,
                     constraints,
@@ -1676,28 +1693,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        auto access = getContext()->getAccess();
-        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
-
-        /// Instead of silently failing, check the permissions to delete all databases in advance.
-        /// Throw an exception to user if the user doesn't have enough privileges to drop the replica.
-        /// Include the databases that the user needs privileges for in the exception
-        std::vector<String> required_access;
-        for (auto & elem : databases)
-        {
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                required_access.emplace_back(elem.first);
-                LOG_INFO(log, "? Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-            }
-        }
-
-        if (!required_access.empty())
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Access denied for {}. Not enough permissions to drop these databases: {}",
-                "SYSTEM DROP REPLICA",
-                fmt::join(required_access, ", "));
+        checkAccessForDropWholeReplica(getContext(), databases, "SYSTEM DROP REPLICA");
 
         /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
@@ -1902,10 +1898,6 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
         query_context->setCurrentDatabase(restoring_database_name);
         query_context->setCurrentQueryId("");
 
-        /// The CREATE queries below come from metadata a Replicated database stored in Keeper, so they
-        /// must be accepted as they are: they re-derive tables that exist elsewhere.
-        query_context->setRecoveryFromStoredMetadata(true);
-
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         enableAllExperimentalSettings(query_context);
@@ -2101,20 +2093,15 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        auto access = getContext()->getAccess();
-        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
+        checkAccessForDropWholeReplica(getContext(), databases, "SYSTEM DROP DATABASE REPLICA");
 
+        /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
             auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get());
             if (!replicated)
                 continue;
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                LOG_INFO(log, "Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-                continue;
-            }
 
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
             if (query.with_tables)
@@ -2363,20 +2350,11 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto start = std::chrono::steady_clock::now();
-    const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
-    /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
-    /// `now + max_execution_time` is not representable for the largest values `max_execution_time`
-    /// accepts, and both capping the deadline at the end of the clock's range and clamping the
-    /// timeout with `saturatedMilliseconds` (a one-year bound meant for a `wait_for` slice) would
-    /// time the command out long before the configured limit.
-    while (true)
+    const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+    const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+    while (std::chrono::steady_clock::now() < deadline)
     {
-        if (max_execution_time_us != 0
-            && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count()
-                >= max_execution_time_us)
-            break;
-
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
