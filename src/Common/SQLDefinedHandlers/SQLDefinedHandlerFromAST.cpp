@@ -8,7 +8,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
-#include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
 
@@ -154,11 +153,6 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
 bool statementRequiresMutatingMethod(const IAST & statement)
 {
     if (const auto * create = statement.as<ASTCreateQuery>(); create && create->isTemporary())
-        return false;
-    /// `ASTWatchQuery` reports `QueryKind::Create`, but WATCH is a read-only streaming query:
-    /// `InterpreterWatchQuery` checks only `SELECT` access, so it is runnable under `readonly = 2`
-    /// (the mode a safe HTTP method such as `GET` sets) and must not require a mutating method.
-    if (statement.as<ASTWatchQuery>())
         return false;
     /// `EXECUTE AS <user>` - bare or wrapping a statement - checks the `IMPERSONATE` privilege, which belongs
     /// to `ACCESS_MANAGEMENT` and is therefore denied under any `readonly` (see `ContextAccess`,
@@ -315,8 +309,7 @@ bool queryMayMutateTemporaryTable(const IAST & query)
 /// `CREATE TEMPORARY VIEW` need only the `CREATE_TEMPORARY_TABLE` access flag, which `ContextAccess` still
 /// allows under `readonly = 2` (the mode a safe HTTP method such as `GET` sets), and the created object lives
 /// in the session - with `session_id` it persists across requests, so a `GET` (or the implicitly served `HEAD`)
-/// would invisibly mutate session state. `WATCH` also reports `QueryKind::Create` but is a read-only streaming
-/// query without such effects; it is not an `ASTCreateQuery`, so it does not enter the branch.
+/// would invisibly mutate session state.
 /// It also covers queries that can mutate an *existing* session temporary table, which `readonly = 2`
 /// does not block either - see `queryMayMutateTemporaryTable`.
 bool statementHasSideEffectsUnderReadonly(const IAST & statement)
