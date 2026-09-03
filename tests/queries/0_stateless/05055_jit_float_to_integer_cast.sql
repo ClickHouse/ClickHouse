@@ -61,6 +61,10 @@ SELECT CAST(toFloat64(number) AS UInt8) FROM numbers(2)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_declined' FORMAT Null;
 SELECT toFloat64(number) + 1 FROM numbers(2)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_control' FORMAT Null;
+-- The reported shape: a comparison whose right side is a declined conversion. The conversion becomes
+-- an input to the compiled expression, so the comparison around it must still compile.
+SELECT toFloat64(number) / 10 <= CAST(toFloat64(number) AS UInt8) FROM numbers(2)
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_parent' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -76,6 +80,8 @@ WITH shapes AS
 SELECT
     (SELECT compiled FROM shapes WHERE log_comment = '05055_bool')
         = (SELECT compiled FROM shapes WHERE log_comment = '05055_control'),
-    (SELECT compiled FROM shapes WHERE log_comment = '05055_declined') = 0;
+    (SELECT compiled FROM shapes WHERE log_comment = '05055_declined') = 0,
+    (SELECT compiled FROM shapes WHERE log_comment = '05055_parent')
+        = (SELECT compiled FROM shapes WHERE log_comment = '05055_control');
 
 DROP TABLE t_jit_float_cast;
