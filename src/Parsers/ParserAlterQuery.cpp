@@ -1322,6 +1322,7 @@ Most `ALTER TABLE` queries modify table settings or data:
 | [UPDATE](/reference/statements/alter/update)                         |
 | [ORDER BY](/reference/statements/alter/order-by)                     |
 | [SAMPLE BY](/reference/statements/alter/sample-by)                   |
+| [ENGINE](/reference/statements/alter/engine)                         |
 | [INDEX](/reference/statements/alter/skipping-index)                  |
 | [PROJECTION](/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/reference/statements/alter/constraint)                 |
