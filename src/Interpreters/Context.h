@@ -373,6 +373,9 @@ protected:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<std::vector<UUID>> external_roles;
+    /// The subset of `external_roles` attached by the authentication that created this context
+    /// (see `setUserFromAuthentication`); empty for identities set or replayed through `setUser`.
+    std::shared_ptr<std::vector<UUID>> authentication_external_roles;
     /// If not null, the access rights are limited to the intersection with these elements.
     /// This comes from the GRANTS clause of the authentication method the user logged in with.
     std::shared_ptr<const AccessRightsElements> authentication_grants;
@@ -978,6 +981,10 @@ public:
     /// the `QueryRunner` invoker) must carry these over and re-apply them via `setUser`, otherwise a
     /// role that exists only as an external role fails revalidation with `SET_NON_GRANTED_ROLE`.
     std::vector<UUID> getExternalRoles() const;
+    /// External roles attached by the authentication itself, as opposed to roles propagated by an
+    /// initiator or replayed from another context. Non-empty only for a context created through
+    /// `setUserFromAuthentication` whose authentication returned roles.
+    std::vector<UUID> getAuthenticationExternalRoles() const;
     std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 

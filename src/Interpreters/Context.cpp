@@ -1418,6 +1418,7 @@ ContextData::ContextData(const ContextData &o) :
     user_id(o.user_id),
     current_roles(o.current_roles),
     external_roles(o.external_roles),
+    authentication_external_roles(o.authentication_external_roles),
     authentication_grants(o.authentication_grants),
     authentication_valid_until(o.authentication_valid_until),
     settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
@@ -2267,6 +2268,11 @@ void Context::setUserImpl(
 
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(effective_external_roles_, lock);
+    /// Retained so consumers can distinguish authentication-scoped roles from propagated ones
+    /// (e.g. the `SQL SECURITY DEFINER` guard); replaced unconditionally, like `external_roles`.
+    authentication_external_roles = profile_initialization_roles_.empty()
+        ? nullptr
+        : std::make_shared<std::vector<UUID>>(profile_initialization_roles_);
     setAuthenticationGrantsWithLock(authentication_grants_, lock);
     setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
 
@@ -2433,6 +2439,14 @@ std::vector<UUID> Context::getExternalRoles() const
     SharedLockGuard lock(mutex);
     if (external_roles)
         return *external_roles;
+    return {};
+}
+
+std::vector<UUID> Context::getAuthenticationExternalRoles() const
+{
+    SharedLockGuard lock(mutex);
+    if (authentication_external_roles)
+        return *authentication_external_roles;
     return {};
 }
 

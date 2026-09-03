@@ -3710,8 +3710,12 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
                 /// part of the stored entity, and two simultaneous authentications of the same
                 /// username may carry different role sets, so no single shadow can represent them:
                 /// copying them would let a later creation by the same username silently change
-                /// the authorization of earlier views. Fail closed instead.
-                if (user->getName() == current_user_name && !context_->getExternalRoles().empty())
+                /// the authorization of earlier views. Fail closed instead. Only roles attached by
+                /// the authentication count: roles propagated by an initiator (e.g. the `ON CLUSTER`
+                /// worker replaying the initiator's roles) are not evidence of such an authentication,
+                /// and refusing on them would break ephemeral users whose authentication returns no
+                /// roles at all.
+                if (user->getName() == current_user_name && !context_->getAuthenticationExternalRoles().empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "SQL SECURITY DEFINER is not supported for user {}: its access rights come from "
                         "authentication-scoped roles, which cannot be snapshotted into a persistent definer. "

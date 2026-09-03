@@ -175,6 +175,8 @@ TEST(ContextExternalRoles, OnlyAuthenticationTimeExternalRolesInitializeProfiles
         replay_context->setUser(user_id, /*external_roles=*/ {role_id});
         EXPECT_TRUE(contains(replay_context->getCurrentRoles(), role_id));
         EXPECT_EQ(replay_context->getExternalRoles(), std::vector<UUID>{role_id});
+        /// A replayed role is not an authentication-scoped one (the `SQL SECURITY DEFINER` guard keys on this).
+        EXPECT_TRUE(replay_context->getAuthenticationExternalRoles().empty());
         EXPECT_NE(replay_context->getSettingsRef().get("max_result_rows").safeGet<UInt64>(), 555u);
         EXPECT_NO_THROW(replay_context->checkSettingsConstraints(over_the_cap, SettingSource::QUERY));
     }
@@ -187,6 +189,12 @@ TEST(ContextExternalRoles, OnlyAuthenticationTimeExternalRolesInitializeProfiles
         login_context->setUserFromAuthentication(user_id, {.external_roles = {role_id}, .grants = nullptr, .valid_until = 0});
         EXPECT_TRUE(contains(login_context->getCurrentRoles(), role_id));
         EXPECT_EQ(login_context->getExternalRoles(), std::vector<UUID>{role_id});
+        EXPECT_EQ(login_context->getAuthenticationExternalRoles(), std::vector<UUID>{role_id});
+        /// The distinction survives copying into query contexts, and a generic `setUser` clears it.
+        auto copied = Context::createCopy(login_context);
+        EXPECT_EQ(copied->getAuthenticationExternalRoles(), std::vector<UUID>{role_id});
+        copied->setUser(user_id, /*external_roles=*/ {role_id});
+        EXPECT_TRUE(copied->getAuthenticationExternalRoles().empty());
         EXPECT_EQ(login_context->getSettingsRef().get("max_result_rows").safeGet<UInt64>(), 555u);
         bool threw_constraint_violation = false;
         try
