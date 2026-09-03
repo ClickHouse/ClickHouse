@@ -151,6 +151,9 @@ ${CLICKHOUSE_CLIENT} -q "GRANT INSERT ON $db.ts_samples TO $user"
 ${CLIENT_USER} -q "INSERT INTO FUNCTION timeSeriesSamples($db.ts) SELECT toUInt64(2), toDateTime64('2026-01-01 00:00:02.000', 3), toFloat64(7)"
 echo 'rows after the insert'
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM $db.ts_samples"
+# and symmetrically for the TimeSeries table: holding INSERT on the target alone does not write either.
+${CLICKHOUSE_CLIENT} -q "REVOKE INSERT ON $db.ts FROM $user"
+${CLIENT_USER} -q "INSERT INTO FUNCTION timeSeriesSamples($db.ts) SELECT toUInt64(3), toDateTime64('2026-01-01 00:00:03.000', 3), toFloat64(9); -- { serverError ACCESS_DENIED }"
 
 # These three functions hand back a pre-existing table that stores data on disk, which cannot back a
 # persistent table.
