@@ -411,7 +411,7 @@ Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emi
     /// first-received one - both for the non-key columns of a row (when the DISTINCT key is a subset of
     /// the columns) and for the choice among values that compare equal but differ in the binary
     /// representation (0. and -0., NaN payloads).
-    Block block = spill_header->cloneWithColumns(std::move(columns));
+    Block block = spill_header->cloneWithColumns(columns);
     sortBlock(block, description, /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
 
     return Chunk(block.getColumns(), num_rows);
