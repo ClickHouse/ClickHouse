@@ -65,7 +65,7 @@
                 </handler>
             </my_rule_8>
             <my_rule_9>
-                <url>/api/v1/label/*/values</url>
+                <url>regex:/api/v1/label/[^/]+/values</url>
                 <handler>
                     <type>query</type>
                     <table>default.prometheus</table>
@@ -112,6 +112,14 @@
                     <database>default</database>
                 </handler>
             </my_rule_11>
+
+            <!-- The format_query endpoint only parses the PromQL expression, so its handler needs no table. -->
+            <my_rule_16>
+                <url>/api/v1/format_query</url>
+                <handler>
+                    <type>query</type>
+                </handler>
+            </my_rule_16>
 
             <!-- Table without min_time/max_time columns: /api/v1/series must ignore the time range for it. -->
             <my_rule_12>

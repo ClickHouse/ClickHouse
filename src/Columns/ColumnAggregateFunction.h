@@ -146,6 +146,8 @@ public:
         return false;
     }
 
+    bool hasOnlyTypeDefaults() const override { return false; }
+
     std::string_view getDataAt(size_t n) const override;
 
     void insertData(const char * pos, size_t length) override;
@@ -178,8 +180,6 @@ public:
     serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-
-    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
