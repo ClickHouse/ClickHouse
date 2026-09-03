@@ -92,6 +92,7 @@ private:
     bool isDemanded(const Lane & lane) const;
     bool mayRead(size_t lane_num) const;
     ssize_t frontierFor(size_t lane_num) const;
+    bool passedFrontier(size_t lane_num) const;
 
     void enqueue(size_t lane_num);
     void runLanes();
@@ -101,6 +102,7 @@ private:
     void pushFromBuffer(Lane & lane);
     void consume(size_t lane_num, Chunk chunk);
     void setBound(size_t lane_num, Columns key, bool from_virtual_row);
+    void noteBoundChanged(size_t lane_num);
     void noteDemand(size_t lane_num);
     void grantWarmup(size_t lane_num);
     void finishLane(size_t lane_num);

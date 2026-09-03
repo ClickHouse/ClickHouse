@@ -128,6 +128,13 @@ ssize_t VirtualRowReadAheadTransform::frontierFor(size_t lane_num) const
     return frontier_lanes[0];
 }
 
+bool VirtualRowReadAheadTransform::passedFrontier(size_t lane_num) const
+{
+    const Lane & lane = lanes[lane_num];
+    ssize_t frontier = frontierFor(lane_num);
+    return lane.ranked && frontier >= 0 && BoundLess{this}(static_cast<size_t>(frontier), lane_num);
+}
+
 bool VirtualRowReadAheadTransform::mayRead(size_t lane_num) const
 {
     const Lane & lane = lanes[lane_num];
@@ -151,8 +158,7 @@ bool VirtualRowReadAheadTransform::mayRead(size_t lane_num) const
     if (!underCaps(lane))
         return false;
 
-    ssize_t frontier = frontierFor(lane_num);
-    if (lane.ranked && frontier >= 0 && BoundLess{this}(static_cast<size_t>(frontier), lane_num))
+    if (passedFrontier(lane_num))
         return false;
 
     return true;
@@ -252,8 +258,9 @@ void VirtualRowReadAheadTransform::pushFromBuffer(Lane & lane)
         {
             lane.buffered_rows -= chunk.getNumRows();
             lane.buffered_bytes -= chunk.bytes();
-            /// The lane may be under its caps again.
-            recompute_needed = true;
+            /// A lane parked at its caps may be under them again.
+            if (!lane.in_set)
+                recompute_needed = true;
         }
 
         lane.output->push(std::move(chunk));
@@ -363,6 +370,7 @@ void VirtualRowReadAheadTransform::consume(size_t lane_num, Chunk chunk)
         lane.announced = true;
         lane.rows_since_announcement = 0;
         setBound(lane_num, virtualRowKey(chunk), /* from_virtual_row */ true);
+        noteBoundChanged(lane_num);
 
         if (lane.pending_virtual_row)
         {
@@ -392,7 +400,10 @@ void VirtualRowReadAheadTransform::consume(size_t lane_num, Chunk chunk)
     setBound(lane_num, lastRowKey(chunk), /* from_virtual_row */ false);
     lane.rows_pulled += rows;
     lane.rows_since_announcement += rows;
+    bool budget_was_left = !limit || budget_rows < limit;
     budget_rows += rows;
+    if (budget_was_left && limit && budget_rows >= limit)
+        recompute_needed = true;
 
     if (lane.pending_virtual_row)
     {
@@ -403,10 +414,22 @@ void VirtualRowReadAheadTransform::consume(size_t lane_num, Chunk chunk)
     lane.buffered_rows += rows;
     lane.buffered_bytes += chunk.bytes();
     lane.buffer.push_back(std::move(chunk));
+    noteBoundChanged(lane_num);
+    if (!underCaps(lane))
+        recompute_needed = true;
 
     /// A merge never needs more than `limit` rows from one source.
     if (limit && lane.rows_pulled >= limit)
         lane.input->close();
+}
+
+void VirtualRowReadAheadTransform::noteBoundChanged(size_t lane_num)
+{
+    /// A set member that stays below the frontier keeps the set and the frontier as they are;
+    /// anything else (a lane outside the set, hence possibly the frontier itself, or a member
+    /// passing it) may change who reads.
+    if (!lanes[lane_num].in_set || passedFrontier(lane_num))
+        recompute_needed = true;
 }
 
 void VirtualRowReadAheadTransform::setBound(size_t lane_num, Columns key, bool from_virtual_row)
@@ -420,7 +443,6 @@ void VirtualRowReadAheadTransform::setBound(size_t lane_num, Columns key, bool f
 
     lane.bound = std::move(key);
     lane.bound_from_virtual_row = from_virtual_row;
-    recompute_needed = true;
 
     if (!lane.output_finished)
     {
