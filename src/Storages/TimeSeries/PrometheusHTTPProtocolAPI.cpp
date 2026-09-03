@@ -1,5 +1,9 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#include <cmath>
+#include <limits>
+#include <tuple>
+#include <vector>
 #include <base/hex.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -26,6 +30,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
@@ -34,12 +39,14 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Core/Types.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
@@ -53,6 +60,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace Setting
@@ -199,6 +207,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
         = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    evaluation_settings.storage_has_native_histograms = time_series_storage->hasTarget(ViewTarget::Histograms);
     UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
 
     if (!params.lookback_delta_param.empty())
@@ -240,9 +249,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
-    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    /// The generated SQL relies on `AS MATERIALIZED` (see SQLSubqueryType::MATERIALIZED_TABLE), which takes effect only with `enable_materialized_cte`.
+    /// Enable it unless the user set it explicitly.
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         getContext()->setSetting("enable_materialized_cte", true);
 
@@ -255,7 +263,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     {
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
-        /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
+        /// Mind using the `getResultType` method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
         writeQueryResponse(response, executor, converter.getResultType());
 
         /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
@@ -276,9 +284,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
     WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
 {
-    /// Pull until the first non-empty block is ready before writing the header
-    /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
-    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryImpl.
+    /// Pull until the first non-empty block before writing the header, because `pull` can throw and it's better to catch it early
+    /// and write the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryImpl.
     bool has_output = false;
     Block block;
     while (pulling_executor.pull(block))
@@ -294,12 +301,19 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
 
     if (has_output)
     {
-        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+        /// `first_result` tracks whether any element was actually emitted: a block may emit zero elements (e.g. all rows are
+        /// stale-marker histograms, which are skipped), and a comma written for such a block would produce malformed JSON.
+        bool first_result = true;
+        if (writeQueryResponseBlock(response, result_type, block, /*first=*/ first_result))
+            first_result = false;
 
         while (pulling_executor.pull(block))
         {
             if (block.rows() > 0)
-                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
+            {
+                if (writeQueryResponseBlock(response, result_type, block, /*first=*/ first_result))
+                    first_result = false;
+            }
         }
     }
 
@@ -335,7 +349,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response)
     writeString("]}}", response);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first)
+bool PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first)
 {
     LOG_TRACE(log, "Prometheus: Writing {} result ({} rows)", result_type, result_block.rows());
 
@@ -343,29 +357,25 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, 
     {
         case PrometheusQueryTree::ResultType::SCALAR:
         {
-            writeQueryResponseScalarBlock(response, result_block, first);
-            return;
+            return writeQueryResponseScalarBlock(response, result_block, first);
         }
         case PrometheusQueryTree::ResultType::STRING:
         {
-            writeQueryResponseStringBlock(response, result_block, first);
-            return;
+            return writeQueryResponseStringBlock(response, result_block, first);
         }
         case PrometheusQueryTree::ResultType::INSTANT_VECTOR:
         {
-            writeQueryResponseInstantVectorBlock(response, result_block, first);
-            return;
+            return writeQueryResponseInstantVectorBlock(response, result_block, first);
         }
         case PrometheusQueryTree::ResultType::RANGE_VECTOR:
         {
-            writeQueryResponseRangeVectorBlock(response, result_block, first);
-            return;
+            return writeQueryResponseRangeVectorBlock(response, result_block, first);
         }
     }
     UNREACHABLE();
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first)
+bool PrometheusHTTPProtocolAPI::writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
     if (!first || (result_block.rows() > 1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prometheus query outputs multiple rows but expected to return a scalar");
@@ -385,9 +395,11 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseScalarBlock(WriteBuffer & resp
     writeString("\"", response);
     writeScalar(response, value);
     writeString("\"", response);
+
+    return true;
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first)
+bool PrometheusHTTPProtocolAPI::writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
     if (!first || (result_block.rows() > 1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prometheus query outputs multiple rows but expected to return a string");
@@ -405,16 +417,25 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseStringBlock(WriteBuffer & resp
     const auto & string_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
     auto value = string_column->getDataAt(0);
     writeJSONString(value, response, format_settings);
+
+    return true;
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
+bool PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
+    if (const auto * histogram_column = result_block.findByName(String(TimeSeriesColumnNames::Histogram));
+        histogram_column && isTimeSeriesHistogramTupleType(histogram_column->type))
+    {
+        return writeQueryResponseInstantVectorBlockWithHistograms(response, result_block, first);
+    }
+
     const auto & timestamp_column = result_block.getByName(TimeSeriesColumnNames::Timestamp).column;
     auto timestamp_data_type = result_block.getByName(TimeSeriesColumnNames::Timestamp).type;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
     const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
 
     bool need_comma = !first;
+    bool emitted_any = false;
 
     for (size_t i = 0; i < result_block.rows(); ++i)
     {
@@ -446,11 +467,19 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
 
         writeString("]}", response);
         need_comma = true;
+        emitted_any = true;
     }
+
+    return emitted_any;
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
+bool PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
+    if (result_block.findByName(String(TimeSeriesColumnNames::HistogramSeries)))
+    {
+        return writeQueryResponseRangeVectorBlockWithHistograms(response, result_block, first);
+    }
+
     const auto & time_series_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
     const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
     const auto & offsets = array_column.getOffsets();
@@ -466,6 +495,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
     bool need_comma = !first;
+    bool emitted_any = false;
 
     for (size_t i = 0; i < result_block.rows(); ++i)
     {
@@ -501,7 +531,377 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
         writeString("]}", response);
         need_comma = true;
+        emitted_any = true;
     }
+
+    return emitted_any;
+}
+
+struct PrometheusHTTPProtocolAPI::HistogramPayloadColumns
+{
+    const IColumn * flags;
+    const IColumn * schema;
+    const IColumn * zero_threshold;
+    const IColumn * count;
+    const IColumn * sum;
+    const IColumn * zero_count;
+    const IColumn * positive_spans;
+    const IColumn * positive_values;
+    const IColumn * negative_spans;
+    const IColumn * negative_values;
+    const IColumn * custom_values;
+};
+
+PrometheusHTTPProtocolAPI::HistogramPayloadColumns PrometheusHTTPProtocolAPI::resolveHistogramPayloadColumns(
+    const DataTypePtr & payload_tuple_type, const IColumn & payload_tuple_column)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(payload_tuple_type.get());
+    const auto * tuple_column = typeid_cast<const ColumnTuple *>(&payload_tuple_column);
+    if (!tuple_type || !tuple_column)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected a histogram payload tuple but got type `{}` and column `{}`",
+            payload_tuple_type->getName(), payload_tuple_column.getName());
+
+    const auto payload_tuple = std::static_pointer_cast<const DataTypeTuple>(getTimeSeriesHistogramPayloadTupleType());
+    const auto & canonical_names = payload_tuple->getElementNames();
+
+    /// A named tuple (produced by the `timeSeriesHistogram*ToGrid` aggregates) is resolved by name at any positions; an unnamed one
+    /// (`tuple(...)` without `enable_named_columns_in_function_tuple`, e.g. StoreMethod::HISTOGRAM_RAW_DATA) carries the payload in the canonical order of `getTimeSeriesHistogramPayloadColumns`.
+    if (!tuple_type->hasExplicitNames() && tuple_type->getElements().size() < TimeSeriesHistogramPayloadTupleIndex::Size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Histogram payload tuple of type `{}` has {} elements but at least {} are required",
+            payload_tuple_type->getName(), tuple_type->getElements().size(), TimeSeriesHistogramPayloadTupleIndex::Size);
+
+    const IColumn * element_columns[TimeSeriesHistogramPayloadTupleIndex::Size];
+
+    for (size_t i = 0; i < TimeSeriesHistogramPayloadTupleIndex::Size; ++i)
+    {
+        size_t pos = i;
+        if (tuple_type->hasExplicitNames())
+        {
+            const auto found = tuple_type->tryGetPositionByName(canonical_names[i]);
+            if (!found)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Histogram payload tuple of type `{}` has no element `{}`", payload_tuple_type->getName(), canonical_names[i]);
+            pos = *found;
+        }
+        if (!tuple_type->getElement(pos)->equals(*payload_tuple->getElement(i)))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Histogram payload tuple of type `{}` has element `{}` of type `{}` but `{}` is required",
+                payload_tuple_type->getName(), canonical_names[i], tuple_type->getElement(pos)->getName(), payload_tuple->getElement(i)->getName());
+
+        element_columns[i] = &tuple_column->getColumn(pos);
+    }
+
+    return HistogramPayloadColumns{
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::Flags],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::Schema],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::ZeroThreshold],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::Count],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::Sum],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::ZeroCount],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::PositiveSpans],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::PositiveValues],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::NegativeSpans],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::NegativeValues],
+        element_columns[TimeSeriesHistogramPayloadTupleIndex::CustomValues],
+    };
+}
+
+void PrometheusHTTPProtocolAPI::writeHistogram(WriteBuffer & response, const HistogramPayloadColumns & payload, size_t row_index)
+{
+    const Int32 schema = static_cast<Int32>(payload.schema->getInt(row_index));
+    const bool custom_buckets = (schema == HISTOGRAM_CUSTOM_BUCKETS_SCHEMA);
+    if (!custom_buckets && (schema < HISTOGRAM_EXPONENTIAL_SCHEMA_MIN || schema > HISTOGRAM_EXPONENTIAL_SCHEMA_MAX))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has an invalid bucket schema: {}", schema);
+
+    const Float64 zero_threshold = payload.zero_threshold->getFloat64(row_index);
+    const Float64 zero_count = payload.zero_count->getFloat64(row_index);
+
+    /// The buckets to emit: (boundary rule, lower bound, upper bound, count). Boundary rules (Prometheus util/jsonutil/marshal.go):
+    /// 0 = upper bound inclusive (positive exponential), 1 = lower bound inclusive (negative exponential), 3 = both (zero bucket and first custom bucket).
+    std::vector<std::tuple<int, Float64, Float64, Float64>> buckets;
+
+    auto add_bucket = [&](int rule, Float64 lower, Float64 upper, Float64 bucket_count)
+    {
+        /// No need to expose empty buckets in JSON.
+        if (bucket_count == 0)
+            return;
+        /// A boundary overlapping the zero bucket is clamped to the zero threshold
+        /// (mirrors `allFloatBucketIterator` in Prometheus model/histogram/float_histogram.go).
+        if (upper < 0 && upper > -zero_threshold)
+            upper = -zero_threshold;
+        if (lower > 0 && lower < zero_threshold)
+            lower = zero_threshold;
+        buckets.emplace_back(rule, lower, upper, bucket_count);
+    };
+
+    if (custom_buckets)
+    {
+        /// Custom buckets exist on the positive side only; boundaries come from `custom_values` (mirrors `getBound` in Prometheus:
+        /// -Inf below the first bound, +Inf above the last one, out-of-range bucket indices are rejected).
+        const auto & custom_values_array = typeid_cast<const ColumnArray &>(*payload.custom_values);
+        const auto & custom_values_offsets = custom_values_array.getOffsets();
+        const size_t custom_values_begin = (row_index == 0) ? 0 : custom_values_offsets[row_index - 1];
+        const size_t num_custom_values = custom_values_offsets[row_index] - custom_values_begin;
+        const auto & custom_values_data = custom_values_array.getData();
+
+        auto custom_bound = [&](Int64 idx) -> Float64
+        {
+            if (idx < 0)
+                return -std::numeric_limits<Float64>::infinity();
+            const auto uidx = static_cast<UInt64>(idx);
+            if (uidx >= num_custom_values)
+            {
+                if (uidx == num_custom_values)
+                    return std::numeric_limits<Float64>::infinity();
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Native histogram bucket index {} is out of bounds for {} custom bucket bounds",
+                    idx, num_custom_values);
+            }
+            return custom_values_data.getFloat64(custom_values_begin + uidx);
+        };
+
+        const auto positive_buckets = expandHistogramSpans(*payload.positive_spans, *payload.positive_values, row_index);
+        for (const auto & bucket : positive_buckets)
+            add_bucket(bucket.index == 0 ? 3 : 0, custom_bound(bucket.index - 1), custom_bound(bucket.index), bucket.count);
+    }
+    else
+    {
+        /// Negative buckets go first, from the most negative one up towards the zero bucket
+        /// (the reverse of the span expansion order).
+        const auto negative_buckets = expandHistogramSpans(*payload.negative_spans, *payload.negative_values, row_index);
+        for (auto it = negative_buckets.rbegin(); it != negative_buckets.rend(); ++it)
+            add_bucket(1, -getHistogramBoundExponential(it->index, schema), -getHistogramBoundExponential(it->index - 1, schema), it->count);
+
+        if (zero_count > 0)
+            add_bucket(3, -zero_threshold, zero_threshold, zero_count);
+
+        const auto positive_buckets = expandHistogramSpans(*payload.positive_spans, *payload.positive_values, row_index);
+        for (const auto & bucket : positive_buckets)
+            add_bucket(0, getHistogramBoundExponential(bucket.index - 1, schema), getHistogramBoundExponential(bucket.index, schema), bucket.count);
+    }
+
+    writeString(R"({"count":")", response);
+    writeScalar(response, payload.count->getFloat64(row_index));
+    writeString(R"(","sum":")", response);
+    writeScalar(response, payload.sum->getFloat64(row_index));
+    writeString("\"", response);
+
+    if (!buckets.empty())
+    {
+        writeString(R"(,"buckets":[)", response);
+        bool first_bucket = true;
+        for (const auto & [rule, lower, upper, bucket_count] : buckets)
+        {
+            if (!first_bucket)
+                writeString(",", response);
+            first_bucket = false;
+
+            writeString("[", response);
+            writeText(rule, response);
+            writeString(",\"", response);
+            writeScalar(response, lower);
+            writeString("\",\"", response);
+            writeScalar(response, upper);
+            writeString("\",\"", response);
+            writeScalar(response, bucket_count);
+            writeString("\"]", response);
+        }
+        writeString("]", response);
+    }
+
+    writeString("}", response);
+}
+
+bool PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlockWithHistograms(
+    WriteBuffer & response, const Block & result_block, bool first)
+{
+    const auto & timestamp_column = result_block.getByName(TimeSeriesColumnNames::Timestamp).column;
+    auto timestamp_data_type = result_block.getByName(TimeSeriesColumnNames::Timestamp).type;
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+    const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
+
+    /// The `histogram` column is Nullable(<payload tuple>); its type was validated by the caller.
+    const auto & histogram_column_with_type = result_block.getByName(TimeSeriesColumnNames::Histogram);
+    const auto & nullable_histogram_column = typeid_cast<const ColumnNullable &>(*histogram_column_with_type.column);
+    const auto payload_columns
+        = resolveHistogramPayloadColumns(removeNullable(histogram_column_with_type.type), nullable_histogram_column.getNestedColumn());
+
+    bool need_comma = !first;
+    bool emitted_any = false;
+
+    for (size_t i = 0; i < result_block.rows(); ++i)
+    {
+        const bool is_histogram = !nullable_histogram_column.isNullAt(i);
+
+        /// A result row carries exactly one sample: the newest of either type per series at the evaluation time
+        /// (precedence resolved in `finalizeSQL`, see StoreMethod::HISTOGRAM_GRID); both being NULL is impossible.
+        if (!is_histogram && value_column->isNullAt(i))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Prometheus query returned a row where both `value` and `histogram` are NULL");
+
+        /// Defensively skip stale-marker samples.
+        if (is_histogram && (payload_columns.flags->getUInt(i) & TimeSeriesHistogramFlags::StaleMarker))
+            continue;
+
+        if (need_comma)
+            writeString(",", response);
+        need_comma = true;
+        emitted_any = true;
+
+        writeString("{", response);
+
+        // Write metric labels
+        writeString(R"("metric":)", response);
+        writeTags(response, result_block, i);
+
+        writeString(",", response);
+
+        // Write timestamp
+        DateTime64 timestamp = timestamp_column->getInt(i);
+
+        if (is_histogram)
+        {
+            // Write histogram [timestamp, {<histogram object>}]
+            writeString(R"("histogram":[)", response);
+            writeTimestamp(response, timestamp, timestamp_scale);
+            writeString(",", response);
+            writeHistogram(response, payload_columns, i);
+            writeString("]}", response);
+        }
+        else
+        {
+            // Write value [timestamp, "value"]
+            writeString("\"value\":[", response);
+            writeTimestamp(response, timestamp, timestamp_scale);
+            writeString(",\"", response);
+            writeScalar(response, value_column->getFloat64(i));
+            writeString("\"]}", response);
+        }
+    }
+
+    return emitted_any;
+}
+
+bool PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlockWithHistograms(
+    WriteBuffer & response, const Block & result_block, bool first)
+{
+    const auto & time_series_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
+    const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
+    const auto & offsets = array_column.getOffsets();
+    const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+    const auto & timestamp_column = tuple_column.getColumn(0);
+    const auto & value_column = tuple_column.getColumn(1);
+
+    auto timestamp_data_type
+        = typeid_cast<const DataTypeTuple &>(
+              *typeid_cast<const DataTypeArray &>(*result_block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+              .getElement(0);
+
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+
+    /// The `histogram_series` column is Array(Tuple(timestamp, <payload tuple>)); the tuple is positional.
+    const auto & histogram_series_column_with_type = result_block.getByName(TimeSeriesColumnNames::HistogramSeries);
+    const auto & histogram_array_column = typeid_cast<const ColumnArray &>(*histogram_series_column_with_type.column);
+    const auto & histogram_offsets = histogram_array_column.getOffsets();
+    const auto & histogram_tuple_column = typeid_cast<const ColumnTuple &>(histogram_array_column.getData());
+    const auto & histogram_timestamp_column = histogram_tuple_column.getColumn(0);
+    const auto payload_columns = resolveHistogramPayloadColumns(
+        typeid_cast<const DataTypeTuple &>(
+            *typeid_cast<const DataTypeArray &>(*histogram_series_column_with_type.type).getNestedType())
+            .getElement(1),
+        histogram_tuple_column.getColumn(1));
+
+    bool need_comma = !first;
+    bool emitted_any = false;
+
+    for (size_t i = 0; i < result_block.rows(); ++i)
+    {
+        size_t start = (i == 0) ? 0 : offsets[i - 1];
+        size_t end = offsets[i];
+        size_t histogram_start = (i == 0) ? 0 : histogram_offsets[i - 1];
+        size_t histogram_end = histogram_offsets[i];
+
+        /// Stale markers are skipped below, so a series left with nothing but them has no samples
+        /// to report. Drop the whole series, as the instant-vector path does: emitting it would
+        /// produce a matrix element with neither "values" nor "histograms".
+        bool has_histogram_samples = false;
+        for (size_t j = histogram_start; j < histogram_end && !has_histogram_samples; ++j)
+            has_histogram_samples = !(payload_columns.flags->getUInt(j) & TimeSeriesHistogramFlags::StaleMarker);
+        if (start == end && !has_histogram_samples)
+            continue;
+
+        if (need_comma)
+            writeString(",", response);
+
+        writeString("{", response);
+
+        // Write labels
+        writeString(R"("metric":)", response);
+        writeTags(response, result_block, i);
+
+        // Write float samples, if any
+        if (start < end)
+        {
+            writeString(R"(,"values":[)", response);
+
+            for (size_t j = start; j < end; ++j)
+            {
+                if (j > start)
+                    writeString(",", response);
+
+                writeString("[", response);
+                DateTime64 timestamp = timestamp_column.getInt(j);
+                writeTimestamp(response, timestamp, timestamp_scale);
+                writeString(",\"", response);
+                Float64 value = value_column.getFloat64(j);
+                writeScalar(response, value);
+                writeString("\"]", response);
+            }
+
+            writeString("]", response);
+        }
+
+        // Write histogram samples, if any
+        bool wrote_histograms_key = false;
+
+        for (size_t j = histogram_start; j < histogram_end; ++j)
+        {
+            /// Defensively skip stale-marker samples.
+            if (payload_columns.flags->getUInt(j) & TimeSeriesHistogramFlags::StaleMarker)
+                continue;
+
+            if (!wrote_histograms_key)
+            {
+                writeString(R"(,"histograms":[)", response);
+                wrote_histograms_key = true;
+            }
+            else
+            {
+                writeString(",", response);
+            }
+
+            writeString("[", response);
+            DateTime64 timestamp = histogram_timestamp_column.getInt(j);
+            writeTimestamp(response, timestamp, timestamp_scale);
+            writeString(",", response);
+            writeHistogram(response, payload_columns, j);
+            writeString("]", response);
+        }
+
+        if (wrote_histograms_key)
+            writeString("]", response);
+
+        writeString("}", response);
+        need_comma = true;
+        emitted_any = true;
+    }
+
+    return emitted_any;
 }
 
 
