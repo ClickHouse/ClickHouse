@@ -9,7 +9,6 @@
 #include <Common/iota.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <climits>
@@ -325,18 +324,13 @@ struct BlockMyersEditDistance
     struct PatternMasksASCII
     {
         static constexpr size_t W = sizeof(Word) * 8;
-        // Needles up to stack_blocks * W chars keep the pattern table in inline storage,
-        // avoiding a per-row heap allocation in the hot edit-distance loop. Longer needles
-        // spill to a tracked allocation.
-        static constexpr size_t stack_blocks = 8;
         UInt32 num_blocks = 0;
-        // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
-        PODArrayWithStackMemory<Word, 256 * stack_blocks * sizeof(Word)> tbl;
+        std::vector<Word> tbl; // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
 
         void build(const UInt8 * needle, UInt32 m)
         {
             num_blocks = (m + W - 1) / W;
-            tbl.assign(static_cast<size_t>(num_blocks) * 256, Word(0));
+            tbl.assign(256 * num_blocks, Word(0));
             for (UInt32 i = 0; i < m; ++i)
                 tbl[needle[i] * num_blocks + i / W] |= Word(1) << (i % W);
         }
@@ -350,7 +344,7 @@ struct BlockMyersEditDistance
         UInt32 num_blocks = 0;
         using Map = HashMapWithStackMemory<UInt32, UInt32, DefaultHash<UInt32>, 6>;
         Map offset_map;
-        VectorWithMemoryTracking<Word> arena; // flat: arena[offset_map[c] + k] = bitmask of positions of char c in block k
+        std::vector<Word> arena; // flat: arena[offset_map[c] + k] = bitmask of positions of char c in block k
 
         void build(const UInt32 * needle, UInt32 m)
         {
@@ -360,8 +354,8 @@ struct BlockMyersEditDistance
             UInt32 num_unique = 0;
             for (UInt32 i = 0; i < m; ++i)
             {
-                Map::LookupResult it = nullptr;
-                bool inserted = false;
+                Map::LookupResult it;
+                bool inserted;
                 offset_map.emplace(needle[i], it, inserted);
                 if (inserted)
                 {
@@ -407,38 +401,53 @@ struct BlockMyersEditDistance
         PatternMasks PM_tbl;
         PM_tbl.build(needle, needle_len);
 
-        // Inline storage for needles up to stack_limit * W = 8192 chars keeps these
-        // per-row buffers off the heap, avoiding a per-row allocation and memory-tracker
-        // atomics in the hot loop. Longer needles spill to a tracked allocation.
-        constexpr size_t stack_limit = 128;
-        using StackVec = PODArrayWithStackMemory<Word, stack_limit * sizeof(Word)>;
-
         // As in the non-blocked version, but this time per block:
         // VP all ones, VN all zeros encodes that the first column's edit distances equal the row index (0,1,2,...,m).
-        StackVec VP;
-        StackVec VN;
-        VP.assign(static_cast<size_t>(num_blocks), ~Word(0));
-        VN.assign(static_cast<size_t>(num_blocks), Word(0));
+        std::vector<Word> VP(num_blocks, ~Word(0));
+        std::vector<Word> VN(num_blocks, Word(0));
         UInt32 score = needle_len;
 
-        // HP/HN/D0 per-block scratch, allocated once and reused across columns.
-        StackVec hp_arr;
-        StackVec hn_arr;
-        StackVec d0_arr;
-        hp_arr.resize(num_blocks);
-        hn_arr.resize(num_blocks);
-        d0_arr.resize(num_blocks);
+        // 3 * 128 * sizeof(Word) bytes of stack (3 KB for Word=UInt64).
+        // Covers needles up to 128*64 = 8192 chars
+        constexpr size_t stack_limit = 128;
+
+        std::vector<Word> hp_heap;
+        std::vector<Word> hn_heap;
+        std::vector<Word> d0_heap;
+        if (num_blocks > stack_limit)
+        {
+            hp_heap.resize(num_blocks);
+            hn_heap.resize(num_blocks);
+            d0_heap.resize(num_blocks);
+        }
 
         for (UInt32 col = 0; col < haystack_len; ++col)
         {
             const SymbolT ch = haystack[col];
             const Word *  pm = PM_tbl[ch]; // may be nullptr (no match anywhere)
 
-            // Pass 1: compute D0, HP, HN per block (cannot update VP/VN until we have HP/HN for all blocks).
-            // We store HP/HN/D0 in scratch arrays because we cannot overwrite VP/VN yet (we still need their old values).
+            // Pass 1: compute D0, HP, HN per block (cannot update VP/VN until we have HP/HN for all blocks)
             // Carry from the addition within block k propagates to block k+1.
             // carry = 0 initially (there is no carry into block 0).
             Word add_carry = 0;
+
+            // Store HP and HN in temporary arrays for now.
+            // We cannot overwrite VP/VN yet because we still need their old values.
+            // Small needle - use stack scratch:
+            Word hp_scratch[stack_limit]; // max 128 x block_size needle
+            Word hn_scratch[stack_limit];
+            Word d0_scratch[stack_limit];
+            // Large needle - use vector if needed
+
+            Word * hp_arr = hp_scratch;
+            Word * hn_arr = hn_scratch;
+            Word * d0_arr = d0_scratch;
+            if (num_blocks > stack_limit)
+            {
+                hp_arr = hp_heap.data();
+                hn_arr = hn_heap.data();
+                d0_arr = d0_heap.data();
+            }
 
             for (UInt32 k = 0; k < num_blocks; ++k)
             {
@@ -710,8 +719,8 @@ struct ByteDamerauLevenshteinDistanceImpl
 
         /// Dynamically allocate memory for the 2D array
         /// Allocating a 2D array, for convenience starts is an array of pointers to the start of the rows.
-        VectorWithMemoryTracking<int> d((needle_size + 1) * (haystack_size + 1));
-        VectorWithMemoryTracking<int *> starts(haystack_size + 1);
+        std::vector<int> d((needle_size + 1) * (haystack_size + 1));
+        std::vector<int *> starts(haystack_size + 1);
 
         /// Setting the pointers in starts to the beginning of (needle_size + 1)-long intervals.
         /// Also initialize the row values based on the mentioned algorithm.
@@ -774,8 +783,8 @@ struct ByteJaroSimilarityImpl
 
         /// Window size to search for matches in the other string
         const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
-        VectorWithMemoryTracking<int> s1_matching(s1len, -1);
-        VectorWithMemoryTracking<int> s2_matching(s2len, -1);
+        std::vector<int> s1_matching(s1len, -1);
+        std::vector<int> s2_matching(s2len, -1);
 
         /// Calculate matching characters
         size_t matching_characters = 0;
@@ -965,11 +974,11 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
     FunctionDocumentation::Examples examples_edit_utf8 = {
     {
         "Usage example",
-        "SELECT editDistanceUTF8('我是谁', '我是我') AS distance",
+        "SELECT editDistanceUTF8('我是谁', '我是我')",
         R"(
-┌─distance─┐
-│        1 │
-└──────────┘
+┌─editDistanceUTF8('我是谁', '我是我')──┐
+│                                   1 │
+└─────────────────────────────────────┘
         )"
     }
     };
@@ -1034,11 +1043,11 @@ Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
     FunctionDocumentation::Examples examples_jaccard_utf8 = {
     {
         "Usage example",
-        "SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index",
+        "SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')",
         R"(
-┌─jaccard_index─┐
-│          0.75 │
-└───────────────┘
+┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
+│                                       0.75 │
+└─────────────────────────────────────────────┘
         )"
     }
     };

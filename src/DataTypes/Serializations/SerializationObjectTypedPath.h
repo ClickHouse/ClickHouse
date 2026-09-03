@@ -10,17 +10,12 @@ namespace DB
 /// will be used to read paths 'a.b' and 'b.c' as subcolumns.
 class SerializationObjectTypedPath final : public SerializationWrapper
 {
-private:
+public:
     SerializationObjectTypedPath(const SerializationPtr & nested_, const String & path_)
         : SerializationWrapper(nested_)
         , path(path_)
     {
     }
-
-public:
-    static UInt128 getHash(const SerializationPtr & nested_, const String & path_);
-    static SerializationPtr create(const SerializationPtr & nested_, const String & path_);
-    size_t allocatedBytes() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -49,7 +44,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

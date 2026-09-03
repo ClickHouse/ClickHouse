@@ -11,7 +11,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Storages/IStorage.h>
-#include <Core/UUID.h>
 
 namespace DB
 {
@@ -39,7 +38,6 @@ void DatabaseMemory::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    ensurePopulated();
     std::lock_guard lock{mutex};
     attachTableUnlocked(table_name, table);
 
@@ -62,7 +60,6 @@ void DatabaseMemory::dropTable(
     const String & table_name,
     bool /*sync*/)
 {
-    ensurePopulated();
     StoragePtr table;
     {
         std::lock_guard lock{mutex};
@@ -114,7 +111,6 @@ ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 
 ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
-    ensurePopulated();
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
     if (it == create_queries.end() || !it->second)
@@ -157,7 +153,6 @@ void DatabaseMemory::drop(ContextPtr local_context)
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
-    ensurePopulated();
     ASTPtr create_query;
     {
         std::lock_guard lock{mutex};
@@ -241,7 +236,6 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     return res;
 }
 
-void registerDatabaseMemory(DatabaseFactory & factory);
 void registerDatabaseMemory(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -250,10 +244,7 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Memory", create_fn, {}, Documentation{
-        .description = "An in-memory database whose metadata is not persisted and is lost on restart; tables and data live only for the duration of the server session.",
-        .syntax = "ENGINE = Memory",
-        .related = {"Atomic"}});
+    factory.registerDatabase("Memory", create_fn);
 }
 
 }
