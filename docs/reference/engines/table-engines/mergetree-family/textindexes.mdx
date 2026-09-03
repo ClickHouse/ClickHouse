@@ -551,8 +551,8 @@ The preprocessor, if present, must be `lower` or `upper`; postprocessors are not
 
 ³ `hasPhrase` on a `splitByRegexp` text index does **not** support a postprocessor: the combination is rejected with an exception, because the postprocessor row-level rewrite assumes whitespace-splitting `splitByNonAlpha`-style tokens. Without a postprocessor, `splitByRegexp` is fully supported by `hasPhrase`.
 
-⁴ `startsWith` and `endsWith` normally use the complete tokens of the needle, so a needle that lies inside a single token (e.g. `startsWith(col, 'ClickHouse')`) yields no tokens and the index is not used.
-Such a needle is instead evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer, no preprocessor or postprocessor), which is also the path taken by `col LIKE 'ClickHouse%'` because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) rewrites it into `startsWith`.
+⁴ `startsWith` and `endsWith` search the complete tokens of the needle, and the token at the open end of the needle is incomplete because the value continues there: `startsWith(col, 'ClickHouse is')` searches the token `ClickHouse`, while `startsWith(col, 'ClickHouse')` has no complete token to search.
+The latter is instead evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer, no preprocessor or postprocessor), which is also the path taken by `col LIKE 'ClickHouse%'` because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) rewrites it into `startsWith`.
 See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 **Experimental: Support phrase search argument (optional)**.
@@ -1401,16 +1401,16 @@ This ordering enables skipping even more data granules than the granules skipped
 When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` or `%<alpha-numeric-characters-without-spaces>` and the text index tokenizer is `splitByNonAlpha` or `array`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
 
 How the result of the dictionary scan is used depends on where the needle is anchored:
-- `%value%` is decided by the index alone (a *direct read (without hint)*): a row matches the pattern if and only if one of its tokens matches it, so the original predicate is removed from the query.
-- `value%` and `%value` anchor the needle at the beginning or the end of the whole value, whereas the dictionary scan can only anchor it at the beginning or the end of a token. The scan therefore returns a superset of the matching rows and is used as a *hint*: the original predicate is kept and verifies every surviving row. Hints are controlled by [query_plan_text_index_add_hint](/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint); when it is disabled, the dictionary scan is still used to skip granules but no additional filter is added.
+- `%value%` matches a row if and only if it matches one of the row's tokens, so the index decides the query on its own: a [direct read (without hint)](#direct-read) that removes the original predicate.
+- `value%` and `%value` anchor the needle at the whole value, whereas the dictionary scan can only anchor it at a token, so the scan returns a superset of the matching rows and is used as a [direct read as a hint](#direct-read).
 
-The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'value')` with a needle that lies inside a single token.
+The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'value')` when the needle has no complete token to search.
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
 Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
 
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
 
-The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. A needle whose tokens are owned by rows in every granule prunes nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
+The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. Needles that match rows in every granule prune nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
 
 The optimization is controlled by a setting:
 - [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
