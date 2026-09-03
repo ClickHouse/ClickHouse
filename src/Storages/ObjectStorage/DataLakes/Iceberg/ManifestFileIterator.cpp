@@ -526,10 +526,10 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                 {
-                    /// A bound the column's type cannot hold, or with no widened form inside it, yields no
-                    /// usable range border. Neither does an absent bound, so only this warning tells a
-                    /// manifest that declares something unusable from one that declares nothing.
-                    LOG_WARNING(
+                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
+                    /// form can still be a value the column holds, so this is not on its own a malformed
+                    /// manifest and stays out of the warning log.
+                    LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "
                         "for column id {} of data file '{}'; skipping min/max pruning for this column",
