@@ -103,6 +103,8 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             std::optional<String> row_group_index_cache_key;
             if (object_with_metadata.has_value() && object_with_metadata->metadata.has_value()
                 && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+                /// Key embeds `path.size()` as a length prefix, so the concatenation is unambiguous:
+                /// `size` determines where `path` ends and `etag` begins.
                 row_group_index_cache_key = fmt::format(
                     "{}:{}{}",
                     object_with_metadata->getPath().size(),

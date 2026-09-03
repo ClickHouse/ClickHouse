@@ -37,5 +37,17 @@ $CLICKHOUSE_CLIENT --query "
            ProfileEvents['ParquetPrunedRowGroups'],
            ProfileEvents['ParquetOrderedRowGroupIndexCacheHits']
     FROM system.query_log
-    WHERE type='QueryFinish' AND startsWith(query_id, '05024_')
+    WHERE type='QueryFinish' AND startsWith(query_id, '05024_') AND query_id != '05024_cleared'
     ORDER BY query_id"
+
+# Clearing the Parquet metadata cache must also drop the fence index: the next
+# point lookup rebuilds it (miss, no hit).
+$CLICKHOUSE_CLIENT --query "SYSTEM CLEAR PARQUET METADATA CACHE"
+$CLICKHOUSE_CLIENT --query_id=05024_cleared --query "SELECT count() FROM file('$sorted', Parquet, 'key UInt64, residual UInt64') WHERE key=2502 $settings"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT ProfileEvents['ParquetOrderedRowGroupIndexCacheMisses'],
+           ProfileEvents['ParquetOrderedRowGroupIndexCacheHits']
+    FROM system.query_log
+    WHERE type='QueryFinish' AND query_id='05024_cleared'"

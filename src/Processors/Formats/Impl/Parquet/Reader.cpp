@@ -21,6 +21,7 @@
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Processors/Formats/Impl/Parquet/ParquetOrderedRowGroupIndexCache.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/scope_guard.h>
@@ -28,7 +29,6 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <mutex>
-#include <list>
 #include <fmt/ranges.h>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
@@ -60,85 +60,16 @@ namespace ProfileEvents
 
 namespace DB::Parquet
 {
-
-namespace
+OrderedRowGroupIndexCachePtr getGlobalOrderedRowGroupIndexCache()
 {
-enum class OrderedRowGroupDirection : UInt8
-{
-    Unknown,
-    Ascending,
-    Descending,
-};
-
-struct OrderedRowGroupBound
-{
-    size_t row_group_idx;
-    Range range;
-};
-
-struct OrderedRowGroupIndex
-{
-    bool proven = false;
-    OrderedRowGroupDirection direction = OrderedRowGroupDirection::Unknown;
-    std::vector<OrderedRowGroupBound> bounds;
-};
-
-class OrderedRowGroupIndexCache
-{
-public:
-    std::shared_ptr<const OrderedRowGroupIndex> get(const String & key)
-    {
-        std::lock_guard lock(mutex);
-        auto it = entries.find(key);
-        if (it == entries.end())
-            return {};
-        lru.splice(lru.begin(), lru, it->second.lru_position);
-        return it->second.index;
-    }
-
-    std::shared_ptr<const OrderedRowGroupIndex> set(
-        const String & key, std::shared_ptr<const OrderedRowGroupIndex> index)
-    {
-        std::lock_guard lock(mutex);
-        if (auto it = entries.find(key); it != entries.end())
-            return it->second.index;
-
-        const size_t weight = 128 + index->bounds.size() * 128;
-        if (weight > max_size_bytes)
-            return index;
-        while (!lru.empty() && size_bytes + weight > max_size_bytes)
-        {
-            const String & victim = lru.back();
-            auto victim_it = entries.find(victim);
-            size_bytes -= victim_it->second.weight;
-            entries.erase(victim_it);
-            lru.pop_back();
-        }
-        lru.push_front(key);
-        entries.emplace(key, Entry{index, weight, lru.begin()});
-        size_bytes += weight;
-        return index;
-    }
-
-private:
-    struct Entry
-    {
-        std::shared_ptr<const OrderedRowGroupIndex> index;
-        size_t weight;
-        std::list<String>::iterator lru_position;
-    };
-
-    static constexpr size_t max_size_bytes = 64 * 1024 * 1024;
-    std::mutex mutex;
-    std::list<String> lru;
-    std::unordered_map<String, Entry> entries;
-    size_t size_bytes = 0;
-};
-
-OrderedRowGroupIndexCache & getOrderedRowGroupIndexCache()
-{
-    static OrderedRowGroupIndexCache cache;
+    static auto cache = std::make_shared<OrderedRowGroupIndexCache>("SLRU", 64 * 1024 * 1024, 10000, 0.5);
     return cache;
+}
+
+void clearGlobalOrderedRowGroupIndexCache()
+{
+    if (auto cache = getGlobalOrderedRowGroupIndexCache())
+        cache->clear();
 }
 }
 
@@ -546,7 +477,7 @@ Reader::OrderedRowGroupLookup Reader::findOrderedRowGroupForPoint(const PointPro
             extended_sample_block_data_types.at(column_info.idx_in_output_block)->getName(),
             options.format.null_as_default,
             column_info.output_nullable);
-        index = getOrderedRowGroupIndexCache().get(cache_key);
+        index = getGlobalOrderedRowGroupIndexCache()->get(cache_key);
         if (index)
             ProfileEvents::increment(ProfileEvents::ParquetOrderedRowGroupIndexCacheHits);
         else
@@ -599,9 +530,13 @@ Reader::OrderedRowGroupLookup Reader::findOrderedRowGroupForPoint(const PointPro
         built->proven = built->bounds.size()
             == static_cast<size_t>(std::count_if(file_metadata.row_groups.begin(), file_metadata.row_groups.end(),
                 [](const auto & row_group) { return row_group.num_rows != 0; }));
-        index = cache_key.empty()
-            ? std::shared_ptr<const OrderedRowGroupIndex>(std::move(built))
-            : getOrderedRowGroupIndexCache().set(cache_key, std::move(built));
+        if (cache_key.empty())
+            index = std::move(built);
+        else
+        {
+            getGlobalOrderedRowGroupIndexCache()->set(cache_key, built);
+            index = std::move(built);
+        }
     }
 
     if (!index->proven)
