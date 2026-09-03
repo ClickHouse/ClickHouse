@@ -6,10 +6,11 @@
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPUMemoryThreadState.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/MemorySpillScheduler.h>
+#include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -17,6 +18,7 @@
 #include <functional>
 #include <mutex>
 #include <unordered_set>
+#include <vector>
 
 
 template <class T>
@@ -53,6 +55,8 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
+/// Throws the real cancellation cause if the query has been cancelled and its process-list element is available.
+using ThrowIfQueryCanceledPredicate = std::function<void()>;
 
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
@@ -65,13 +69,21 @@ using QueryIsCanceledPredicate = std::function<bool()>;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
+class MemorySpillScheduler;
+using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
+
 class ThreadGroup
 {
+    /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
+    /// - createForMaterializedView()
+    /// - createForFlushAsyncInsertQueue()
+    /// - createForExplainAnalyze()
+    /// Required for raw pointers to memory_tracker/performance_counters
+    ThreadGroupPtr parent;
+
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
-    explicit ThreadGroup(ThreadGroupPtr parent);
-    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -84,7 +96,7 @@ public:
 
     const Int32 os_threads_nice_value;
 
-    MemorySpillScheduler::Ptr memory_spill_scheduler;
+    MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -104,6 +116,7 @@ public:
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
+        ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
 
     SharedData getSharedData()
@@ -126,7 +139,8 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
-    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
+    static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -154,6 +168,9 @@ private:
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
+
+    explicit ThreadGroup(ThreadGroupPtr parent_thread_group);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
 };
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
@@ -165,8 +182,9 @@ private:
 class ThreadStatus : public boost::noncopyable
 {
 public:
-    /// Linux's PID (or TGID) (the same id is shown by ps util)
-    const UInt64 thread_id = 0;
+    static constexpr UInt64 NO_OS_THREAD = 0;
+
+    const UInt64 thread_id = NO_OS_THREAD;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -176,11 +194,13 @@ public:
 
     MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
-    Int64 untracked_memory = 0;
+    UntrackedMemoryCounter untracked_memory;
     /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Per-CPU untracked memory
+    PerCPUMemoryThreadState per_cpu_untracked_memory;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -248,8 +268,17 @@ protected:
 
     LoggerPtr log = nullptr;
 
+private:
+    explicit ThreadStatus(UInt64 thread_id_);
+
+    /// Whether this ThreadStatus owns a dedicated OS thread (as opposed to a fiber).
+    bool boundToOSThread() const { return thread_id != NO_OS_THREAD; }
+
 public:
-    explicit ThreadStatus();
+    struct NoOSThreadTag {};
+
+    ThreadStatus();
+    explicit ThreadStatus(NoOSThreadTag);
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
@@ -284,6 +313,9 @@ public:
 
     bool isQueryCanceled() const;
 
+    /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.
+    void throwIfQueryCanceled() const;
+
     /// Proper cal for fatal_error_callback
     void onFatalError();
 
@@ -300,6 +332,7 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+    void publishUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 
@@ -316,6 +349,18 @@ public:
             return 0;
         return sample_probability;
     }
+
+    /// getEffectiveSampleProbability reads only this cache on the per-allocation path, so it must be
+    /// re-resolved from the tracker chain whenever the effective parent changes (attach, switcher),
+    /// otherwise threads parented to total_memory_tracker miss total_memory_tracker_sample_probability.
+    MemoryTracker::SampleConfig getMemorySampleConfig() const { return {sample_probability, sample_min_allocation_size, sample_max_allocation_size}; }
+    void setMemorySampleConfig(const MemoryTracker::SampleConfig & c)
+    {
+        sample_probability = c.probability;
+        sample_min_allocation_size = c.min_allocation_size;
+        sample_max_allocation_size = c.max_allocation_size;
+    }
+    void resolveMemorySampleConfig() { setMemorySampleConfig(memory_tracker.getResolvedSampleConfig()); }
 
 private:
     void applyGlobalSettings();

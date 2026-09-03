@@ -4,6 +4,8 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/MapToRange.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -28,6 +30,13 @@ ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, si
     hash_input_types.reserve(key_columns.size());
     for (const auto & column_number : key_columns)
         hash_input_types.push_back(header->getByPosition(column_number).type);
+}
+
+std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket)
+{
+    auto transform = std::make_shared<ScatterByPartitionTransform>(std::move(header), output_size_, ColumnNumbers{});
+    transform->round_robin_bucket = start_bucket % output_size_;
+    return transform;
 }
 
 IProcessor::Status ScatterByPartitionTransform::prepare()
@@ -55,10 +64,20 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
     {
         auto output_it = outputs.begin();
         bool can_push = false;
+        /// A finished output never becomes pushable again, so waiting for one would wedge the
+        /// pipeline forever. `work` already skips them; `prepare` must agree.
+        bool has_pending_output = false;
         for (size_t i = 0; i < output_size; ++i, ++output_it)
-            if (!was_output_processed[i] && output_it->canPush())
+        {
+            if (was_output_processed[i] || output_it->isFinished())
+                continue;
+
+            if (output_it->canPush())
                 can_push = true;
-        if (!can_push)
+            else
+                has_pending_output = true;
+        }
+        if (!can_push && has_pending_output)
             return Status::PortFull;
         return Status::Ready;
     }
@@ -133,6 +152,14 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     output_chunks.resize(output_size);
 
+    if (round_robin_bucket)
+    {
+        /// The chunk is moved whole so its ChunkInfo (e.g. aggregation metadata) survives.
+        output_chunks[*round_robin_bucket] = std::move(chunk);
+        *round_robin_bucket = (*round_robin_bucket + 1) % output_size;
+        return;
+    }
+
     /// Special case for 0 key columns. It is an unlikely but still valid case.
     if (key_columns.empty())
     {
@@ -152,7 +179,10 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     chassert(!columns.empty());
 
-    hash.reset(num_rows);
+    /// Cast to size_t to select the (count, value) overload of `assign`: on Darwin `UInt64` is
+    /// `unsigned long long` while `size_t` is `unsigned long`, so without the cast the iterator-pair
+    /// overload would be deduced and fail to compile.
+    hash.assign(static_cast<size_t>(num_rows), WEAK_HASH32_INITIAL_VALUE);
 
     for (size_t i = 0; i < key_columns.size(); ++i)
     {
@@ -161,17 +191,14 @@ void ScatterByPartitionTransform::generateOutputChunks()
         if (cast_type && !cast_type->equals(*hash_input_types[i]))
         {
             auto casted = castColumn({column, hash_input_types[i], ""}, cast_type);
-            hash.update(casted->getWeakHash32());
+            casted->computeHashInto(0, num_rows, hash.data(), false);
         }
         else
-            hash.update(column->getWeakHash32());
+            column->computeHashInto(0, num_rows, hash.data(), false);
     }
 
-    const PaddedPODArray<UInt32> & hash_data = hash.getData();
-    IColumn::Selector selector(num_rows);
-
-    for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = (static_cast<UInt64>(hash_data[row]) * output_size) >> 32; /// The "fastrange" method from Daniel Lemire
+    selector.resize(num_rows);
+    mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), selector.data());
 
     for (const auto & column : columns)
     {

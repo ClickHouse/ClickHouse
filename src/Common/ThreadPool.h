@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <thread>
 #include <mutex>
@@ -18,6 +19,7 @@
 #include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadWithStackSize.h>
 #include <Common/Priority.h>
 #include <base/scope_guard.h>
 
@@ -42,6 +44,10 @@ public:
     // see https://docs.kernel.org/admin-guide/sysctl/kernel.html#threads-max
     static constexpr int MAX_THEORETICAL_THREAD_COUNT = 0x3fffffff; // ~1 billion
 
+    // Upper bound on the number of jobs we pre-reserve memory for. The queue can still grow
+    // up to queue_size on demand; this only bounds the initial reservation.
+    static constexpr size_t MAX_JOBS_TO_RESERVE = 1'000'000;
+
     using Job = std::function<void()>;
     using Metric = CurrentMetrics::Metric;
 
@@ -63,6 +69,9 @@ public:
         ~ThreadFromThreadPool();
 
     private:
+        /// Allow enclosing ThreadPoolImpl to access per-thread idle notification members.
+        friend ThreadPoolImpl;
+
         ThreadPoolImpl& parent_pool;
         Thread thread;
 
@@ -78,6 +87,27 @@ public:
 
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
+
+        /// Per-thread condition variable for LIFO idle scheduling.
+        /// Each idle thread waits on its own CV, so the scheduler can wake the
+        /// LIFO-selected thread directly without disturbing other idle threads.
+        /// This avoids the thundering herd that a shared CV with `notify_all` creates.
+        std::condition_variable cv;
+
+        /// LIFO idle thread scheduling flag.
+        /// When a new job is scheduled, the most recently idle thread is popped
+        /// from the LIFO stack, this flag is set to true, and only that thread's
+        /// CV is notified. The worker wait predicate also re-checks the real
+        /// pool state (queued jobs, shutdown, excess threads) as a safety net
+        /// against missed wake-ups, so a worker that wakes either directly or
+        /// through a spurious CV signal will still pick up pending work.
+        bool idle_wakeup_flag = false;
+
+        /// Intrusive links in the parent pool idle stack. They avoid allocations
+        /// in the worker idle path, which runs under `DENY_ALLOCATIONS_IN_SCOPE`.
+        ThreadFromThreadPool * idle_prev = nullptr;
+        ThreadFromThreadPool * idle_next = nullptr;
+        bool in_idle_stack = false;
 
         // Remove itself from the parent pool
         void removeSelfFromPoolNoPoolLock();
@@ -130,6 +160,15 @@ public:
     /// and the exception will be cleared.
     void wait();
 
+    /// Same as 'wait', but gives up and returns false when the deadline is reached.
+    /// Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
+    [[nodiscard]] bool waitUntil(std::chrono::steady_clock::time_point deadline);
+
+    /// Stop accepting new jobs: further scheduling produces CANNOT_SCHEDULE_TASK, and the jobs that are
+    /// already queued but have not started yet are discarded instead of being run.
+    /// Jobs that are already running are neither interrupted nor waited for, call 'wait' to join them.
+    void finish();
+
     /// Waits for all threads. Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
     /// You should not destroy the object while calling schedule or wait methods from other threads.
     ~ThreadPoolImpl();
@@ -139,7 +178,7 @@ public:
 
     /// Returns true if the pool already terminated
     /// (and any further scheduling will produce CANNOT_SCHEDULE_TASK exception)
-    [[nodiscard]] bool finished() const;
+    [[nodiscard]] bool isFinished() const;
 
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
@@ -163,7 +202,6 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable job_finished;
-    std::condition_variable new_job_or_shutdown;
 
     Metric metric_threads;
     Metric metric_active_threads;
@@ -189,7 +227,7 @@ private:
     // If negative, it means that we have more jobs than threads.
     std::atomic<int64_t> available_threads;
 
-    bool shutdown = false;
+    bool finished = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
@@ -198,18 +236,56 @@ private:
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
+    /// Intrusive LIFO stack of idle threads for wake-up scheduling.
+    /// When a new job is scheduled, the most recently idle thread is woken first.
+    /// This concentrates work on fewer OS threads, improving CPU cache locality
+    /// and reducing memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/10818
+    ThreadFromThreadPool * idle_thread_head = nullptr; /// Oldest idle thread.
+    ThreadFromThreadPool * idle_thread_tail = nullptr; /// Most recently idle thread.
+    size_t idle_thread_count = 0;
+
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
 
+    /// Idle stack operations. Must be called with mutex held.
+    void pushIdleThreadNoLock(ThreadFromThreadPool * thread);
+    void removeIdleThreadNoLock(ThreadFromThreadPool * thread);
+    ThreadFromThreadPool * popNewestIdleThreadNoLock();
+    ThreadFromThreadPool * popOldestIdleThreadNoLock();
+    void wakeIdleThreadNoLock(ThreadFromThreadPool * thread);
+
+    /// Wake all threads in the idle stack and set their wakeup flags (for shutdown).
+    /// Must be called with mutex held.
+    void wakeUpAllIdleThreadsNoLock();
+
+    /// Wake just enough idle threads to bring `threads.size()` down to the current
+    /// limit. Preserves LIFO order for the rest of the stack. Must be called with
+    /// mutex held. Used when `max_threads`/`max_free_threads` shrink: we wake the
+    /// excess threads from the bottom of the stack (oldest-idle first) so the
+    /// recently-active workers stay in the LIFO position they earned.
+    void wakeUpExcessIdleThreadsNoLock();
+
+    void finishNoLock(const std::lock_guard<std::mutex> & lock);
     void finalize();
     void onDestroy();
 };
 
-/// ThreadPool with std::thread for threads.
-using FreeThreadPool = ThreadPoolImpl<std::thread>;
+/// The OS-thread type backing the global pool. On macOS we use a wrapper that requests a larger
+/// stack than the small 512 KiB default (see ThreadStackSize.h); elsewhere plain std::thread, whose
+/// default stack already follows RLIMIT_STACK. `std::is_same_v<Thread, GlobalThreadType>` is used
+/// across ThreadPoolImpl to tell the global pool apart from local (ThreadFromGlobalPool) pools.
+#if defined(OS_DARWIN)
+using GlobalThreadType = DB::ThreadWithStackSize;
+#else
+using GlobalThreadType = std::thread;
+#endif
+
+/// ThreadPool with OS threads.
+using FreeThreadPool = ThreadPoolImpl<GlobalThreadType>;
 
 
 /** Global ThreadPool that can be used as a singleton.

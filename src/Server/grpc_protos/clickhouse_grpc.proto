@@ -38,7 +38,8 @@ message ExternalTable {
    string format = 4;
 
    // Compression type used to compress `data`.
-   // Supported values: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // Supported values: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2, snappy.
+   // For snappy, the wire format is selected by the `snappy_mode` setting (see `settings` below).
    string compression_type = 6;
 
    // Settings for executing that insertion, applied after QueryInfo.settings.
@@ -105,12 +106,14 @@ message QueryInfo {
    bool next_query_info = 16;
 
    // Compression type for `input_data`.
-   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2, snappy.
+   // For snappy, the wire format is selected by the `snappy_mode` setting (see `settings` above).
    // The client is responsible to compress data before putting it into `input_data`.
    string input_compression_type = 20;
 
    // Compression type for `output_data`, `totals` and `extremes`.
-   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2, snappy.
+   // For snappy, the wire format is selected by the `snappy_mode` setting (see `settings` above).
    // The client receives compressed data and should decompress it by itself.
    // Consider also setting `output_compression_level`.
    string output_compression_type = 21;
@@ -119,7 +122,7 @@ message QueryInfo {
    // WARNING: If it's not specified the compression level is set to zero by default which might be not the best choice for some compression types (see below).
    // The compression level should be in the following range (the higher the number, the better the compression):
    // none: compression level isn't used
-   // gzip: 0..9; 0 means no compression, 6 is recommended by default (compression level -1 also means 6)
+   // gzip: 0..12 (0..9 in a build without libdeflate); 0 means no compression, 6 is recommended by default (compression level -1 also means 6)
    // brotli: 0..11
    // lzma: 0..9; 6 is recommended by default
    // zstd: 1..22; 3 is recommended by default (compression level 0 also means 3)
@@ -154,6 +157,7 @@ enum LogsLevel {
    LOG_INFORMATION = 6;
    LOG_DEBUG = 7;
    LOG_TRACE = 8;
+   LOG_TEST = 9;
 }
 
 message LogEntry {

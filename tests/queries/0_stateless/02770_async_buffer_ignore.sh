@@ -10,7 +10,9 @@ DROP TABLE IF EXISTS test_s3;
 
 CREATE TABLE test_s3 (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0;
+-- auto_statistics_types = '': otherwise the new materialize_statistics_on_insert default writes a
+-- statistics.packed file per part, which adds S3 reads and changes the profile events this test counts.
+SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 
 INSERT INTO test_s3 SELECT number, number FROM numbers(1000000);
 "

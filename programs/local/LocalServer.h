@@ -6,29 +6,45 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Loggers/Loggers.h>
+#include <Server/IServer.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Common/MemoryWorker.h>
 #include <Common/StatusFile.h>
 
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 
+
+namespace Poco { class ThreadPool; }
 
 namespace DB
 {
 
-/// Lightweight Application for clickhouse-local
-/// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
+class AsynchronousMetrics;
+class ServerType;
+
+/// Lightweight Application for clickhouse-local.
+/// No networking by default; TCP/HTTP listeners can be started explicitly via `SYSTEM START LISTEN`.
+/// No extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public ClientApplicationBase, public Loggers
+class LocalServer : public ClientApplicationBase, public Loggers, public IServer
 {
 public:
     LocalServer() = default;
+    ~LocalServer() override;
 
     void initialize(Poco::Util::Application & self) override;
 
     int main(const std::vector<String> & /*args*/) override;
     bool supportsLocalMetaCommands() const override { return true; }
+
+    /// IServer interface
+    Poco::Util::LayeredConfiguration & config() const override { return ClientApplicationBase::config(); }
+    Poco::Logger & logger() const override { return ClientApplicationBase::logger(); }
+    ContextMutablePtr context() const override { return global_context; }
+    bool isCancelled() const override { return is_cancelled; }
 
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
@@ -38,6 +54,10 @@ protected:
     void processError(std::string_view query) const override;
 
     String getName() const override { return "local"; }
+
+    /// In `clickhouse-local`, `--format` keeps its historical meaning of both the default input
+    /// and the default output format, so it maps to the bidirectional `format` setting.
+    std::string_view mappedFormatOptionSetting() const override { return "format"; }
 
     void printHelpMessage(const OptionsDescription & options_description) override;
 
@@ -68,9 +88,33 @@ private:
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
 
+    /// Sets the fallback `default_format` for the sessions of the embedded protocol listeners,
+    /// unless a real user default (command line or profile) is already in place.
+    void seedListenerDefaultFormat();
+
+    /// Removes the client's own format options from the global context, leaving them on
+    /// `client_context`, so they do not leak into the sessions of the embedded protocol listeners.
+    void makeFormatOptionsPrivateToTheClient();
+
     void createClientContext();
 
+    void startServers(const ServerType & server_type);
+    void stopServers(const ServerType & server_type);
+
     ServerSettings server_settings;
+
+    /// Whether `seedListenerDefaultFormat` had to seed a synthetic `default_format` on
+    /// `global_context` for the sessions of the embedded protocol listeners. It does so only when
+    /// neither the command line nor the default profile provided one, so this flag tells the
+    /// synthetic seed apart from a real user default regardless of the value, and
+    /// `makeFormatOptionsPrivateToTheClient` resets only the seed on `client_context`.
+    bool listener_default_format_is_seeded = false;
+
+    /// Host passed explicitly via the `--listen_host` command-line option, if any. Stored separately
+    /// from the configuration because it must act as a hard override: `config.setString("listen_host", ...)`
+    /// would only replace the first `listen_host` key, leaving lower-priority repeated `listen_host[...]`
+    /// entries from a loaded config file visible to `getMultipleValuesFromConfig` in `startServers`.
+    std::optional<String> cli_listen_host;
 
     /// Path of the config file actually loaded in `initialize`. Empty if no config file was loaded.
     /// Tracks loads from all sources: `--config-file` flag, `./config.xml`, and `getLocalConfigPath`
@@ -87,6 +131,12 @@ private:
     /// MemoryWorker periodically updates RSS and resizes the userspace page cache.
     /// Without it the page cache stays stuck at `page_cache_min_size`.
     std::optional<MemoryWorker> memory_worker;
+
+    std::atomic<bool> is_cancelled{false};
+    std::vector<ProtocolServerAdapter> servers;
+    std::mutex servers_lock;
+    std::unique_ptr<Poco::ThreadPool> server_pool;
+    std::unique_ptr<AsynchronousMetrics> async_metrics;
 };
 
 }

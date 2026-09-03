@@ -59,12 +59,23 @@ enum PollPidResult
     #define SYS_pidfd_open __NR_pidfd_open
 #endif
 
+#if !defined(__NR_pidfd_send_signal)
+    #define SYS_pidfd_send_signal 424
+#else
+    #define SYS_pidfd_send_signal __NR_pidfd_send_signal
+#endif
+
 namespace DB
 {
 
-static int syscall_pidfd_open(pid_t pid)
+int syscall_pidfd_open(pid_t pid)
 {
     return static_cast<int>(syscall(SYS_pidfd_open, pid, 0));
+}
+
+int syscall_pidfd_send_signal(int pidfd, int sig)
+{
+    return static_cast<int>(syscall(SYS_pidfd_send_signal, pidfd, sig, nullptr, 0));
 }
 
 static bool supportsPidFdOpen()
@@ -218,6 +229,16 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
 
     Pfree(hdl);
     return result;
+}
+#elif defined(OS_WASM)
+
+namespace DB
+{
+
+/// WebAssembly has no child processes: there is no `fork` and no `exec`, so nothing to wait for.
+static PollPidResult pollPid(pid_t /*pid*/, int /*timeout_in_ms*/)
+{
+    return PollPidResult::FAILED;
 }
 #else
     #error "Unsupported OS type"

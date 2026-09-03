@@ -47,6 +47,8 @@
 #include <boost/iterator/zip_iterator.hpp>
 #include <boost/tuple/tuple.hpp>
 
+#include <limits>
+
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(Int8, arrow::Int8Builder) \
         M(UInt16, arrow::UInt16Builder) \
@@ -73,7 +75,9 @@
         M(BINARY, arrow::BinaryType) \
         M(STRING, arrow::StringType) \
         M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType) \
-        M(DATE32, arrow::Date32Type)
+        M(DATE32, arrow::Date32Type) \
+        M(TIME32, arrow::Time32Type) \
+        M(DURATION, arrow::DurationType)
 
 namespace DB
 {
@@ -84,6 +88,7 @@ namespace DB
         extern const int DECIMAL_OVERFLOW;
         extern const int ILLEGAL_COLUMN;
         extern const int UNKNOWN_TYPE;
+        extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     }
 
     class ArrowUUIDExtensionType : public arrow::ExtensionType
@@ -131,6 +136,7 @@ namespace DB
         {"Date", arrow::date32()},
         {"DateTime", arrow::uint32()},  /// uint32 is used instead of date64, because we don't need milliseconds.
         {"Date32", arrow::date32()},
+        {"Time", arrow::time32(arrow::TimeUnit::type::SECOND)},
 
         {"String", arrow::binary()},
         {"FixedString", arrow::binary()},
@@ -145,7 +151,7 @@ namespace DB
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
     {
         if (!status.ok())
-            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString());
+            throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column \"{}\"", format_name, column_name);
     }
 
     template <typename ResultType>
@@ -320,6 +326,118 @@ namespace DB
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
                 status = builder.Append(value);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+    }
+
+    /// Number of Arrow time units in one day for a given Arrow time unit. Arrow time32/time64 values
+    /// are a time of day and must lie in [0, units_per_day).
+    static Int64 arrowTimeUnitsPerDay(arrow::TimeUnit::type unit)
+    {
+        switch (unit)
+        {
+            case arrow::TimeUnit::SECOND: return 86400LL;
+            case arrow::TimeUnit::MILLI:  return 86400LL * 1000;
+            case arrow::TimeUnit::MICRO:  return 86400LL * 1000000;
+            case arrow::TimeUnit::NANO:   return 86400LL * 1000000000;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Arrow time unit {}", static_cast<int>(unit));
+    }
+
+    [[noreturn]] static void throwArrowTimeOutOfRange(Int64 value, const String & column_name, Int64 units_per_day, const char * arrow_type)
+    {
+        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "Cannot convert value {} of column {} to Arrow {}: it is outside the valid time-of-day range [0, {}). "
+            "Arrow time types represent a time of day, so negative or >= 24h ClickHouse Time/Time64 values cannot be represented.",
+            value, column_name, arrow_type, units_per_day);
+    }
+
+    static void fillArrowArrayWithTime64ColumnData(
+        const DataTypePtr & type,
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder * array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto * time64_type = assert_cast<const DataTypeTime64 *>(type.get());
+        const auto & column = assert_cast<const ColumnDecimal<Time64> &>(*write_column);
+        arrow::Status status;
+
+        auto scale = time64_type->getScale();
+        bool need_rescale = scale % 3;
+        auto rescale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(3 - scale % 3);
+
+        /// Validate the raw value (in the column's own scale) against the valid time-of-day range
+        /// [0, 86400 * 10^scale) BEFORE rescaling. Checking the raw value means out-of-range inputs
+        /// always report VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE instead of a misleading DECIMAL_OVERFLOW
+        /// from the rescale multiply. An in-range raw value cannot overflow the subsequent rescale:
+        /// it is below 86400 * 10^scale, and multiplying by 10^(3 - scale%3) keeps it below
+        /// 86400 * 10^9, well within Int64.
+        const Int64 source_units_per_day = 86400LL * DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
+
+        bool to_arrow_time32 = (scale <= 3);
+        if (to_arrow_time32)
+        {
+            auto & builder = assert_cast<arrow::Time32Builder &>(*array_builder);
+
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if (null_bytemap && (*null_bytemap)[value_i])
+                {
+                    status = builder.AppendNull();
+                }
+                else
+                {
+                    auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                    if (value < 0 || value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(value, write_column->getName(), source_units_per_day, "time32");
+                    if (need_rescale)
+                        value *= rescale_multiplier;
+                    status = builder.Append(static_cast<Int32>(value));
+                }
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            auto & builder = assert_cast<arrow::Time64Builder &>(*array_builder);
+            if (null_bytemap || need_rescale)
+            {
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    if (null_bytemap && (*null_bytemap)[value_i])
+                    {
+                        status = builder.AppendNull();
+                    }
+                    else
+                    {
+                        auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                        if (value < 0 || value >= source_units_per_day)
+                            throwArrowTimeOutOfRange(value, write_column->getName(), source_units_per_day, "time64");
+                        if (need_rescale)
+                            value *= rescale_multiplier;
+                        status = builder.Append(value);
+                    }
+                    checkStatus(status, write_column->getName(), format_name);
+                }
+            }
+            else
+            {
+                PaddedPODArray<Int64> values;
+                values.reserve(end - start);
+
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                    if (value < 0 || value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(value, write_column->getName(), source_units_per_day, "time64");
+                    values.emplace_back(value);
+                }
+
+                status = builder.AppendValues(values.data(), values.size());
                 checkStatus(status, write_column->getName(), format_name);
             }
         }
@@ -1103,6 +1221,46 @@ namespace DB
         }
     }
 
+    static void fillArrowArrayWithTimeColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const PaddedPODArray<Int32> & internal_data = assert_cast<const ColumnVector<Int32> &>(*write_column).getData();
+        arrow::Time32Builder & builder = assert_cast<arrow::Time32Builder &>(*array_builder);
+        arrow::Status status;
+        const Int64 units_per_day = arrowTimeUnitsPerDay(std::static_pointer_cast<arrow::Time32Type>(builder.type())->unit());
+
+        if (null_bytemap)
+        {
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if ((*null_bytemap)[value_i])
+                {
+                    status = builder.AppendNull();
+                }
+                else
+                {
+                    if (internal_data[value_i] < 0 || internal_data[value_i] >= units_per_day)
+                        throwArrowTimeOutOfRange(internal_data[value_i], write_column->getName(), units_per_day, "time32");
+                    status = builder.Append(internal_data[value_i]);
+                }
+                checkStatus(status, write_column->getName(), format_name);
+            }
+        }
+        else
+        {
+            for (size_t value_i = start; value_i < end; ++value_i)
+                if (internal_data[value_i] < 0 || internal_data[value_i] >= units_per_day)
+                    throwArrowTimeOutOfRange(internal_data[value_i], write_column->getName(), units_per_day, "time32");
+            status = builder.AppendValues(internal_data.data() + start, end - start);
+            checkStatus(status, write_column->getName(), format_name);
+        }
+    }
+
     template <typename DataType, typename FieldType, typename ArrowDecimalType, typename ArrowBuilder>
     static void fillArrowArrayWithDecimalColumnData(
         ColumnPtr write_column,
@@ -1226,6 +1384,9 @@ namespace DB
             case TypeIndex::Date32:
                 fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
+            case TypeIndex::Time:
+                fillArrowArrayWithTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
             case TypeIndex::Array:
                 arrow_array = buildArrowListArrayWithArrayColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
                 break;
@@ -1269,6 +1430,9 @@ namespace DB
                 break;
             case TypeIndex::DateTime64:
                 fillArrowArrayWithDateTime64ColumnData(column_type, column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::Time64:
+                fillArrowArrayWithTime64ColumnData(column_type, column, null_bytemap, format_name, array_builder, start, end);
                 break;
             case TypeIndex::UInt8:
             {
@@ -1368,7 +1532,13 @@ namespace DB
         }
     }
 
-    static arrow::TimeUnit::type getArrowTimeUnit(const DataTypeDateTime64 * type)
+    template <class T>
+    concept is_decimal_time =
+        std::is_same_v<T, DateTime64> ||
+        std::is_same_v<T, Time64>;
+
+    template <is_decimal_time CHDataType>
+    static arrow::TimeUnit::type getArrowTimeUnit(const DataTypeDecimalBase<CHDataType> * type)
     {
         UInt32 scale = type->getScale();
         if (scale == 0)
@@ -1412,7 +1582,14 @@ namespace DB
                     || std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>)
                 {
                     const auto & decimal_type = assert_cast<const ToDataType *>(column_type.get());
-                    arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());
+                    const auto precision = decimal_type->getPrecision();
+                    /// Reproduces what the removed `arrow::decimal` did: `Decimal256` above precision 38,
+                    /// `Decimal128` otherwise. `arrow::smallest_decimal` is deliberately not used here -
+                    /// Arrow gained `Decimal32` and `Decimal64`, so it would narrow small decimals and
+                    /// change the schema we write.
+                    arrow_type = precision > 38
+                        ? arrow::decimal256(precision, decimal_type->getScale())
+                        : arrow::decimal128(precision, decimal_type->getScale());
                     return true;
                 }
 
@@ -1498,6 +1675,15 @@ namespace DB
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
             return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
+        }
+
+        if (isTime64(column_type))
+        {
+            const auto * time64_type = assert_cast<const DataTypeTime64 *>(column_type.get());
+            auto arrow_time_unit = getArrowTimeUnit(time64_type);
+            if (arrow_time_unit == arrow::TimeUnit::SECOND || arrow_time_unit == arrow::TimeUnit::MILLI)
+                return arrow::time32(arrow_time_unit);
+            return arrow::time64(arrow_time_unit);
         }
 
         if (isFixedString(column_type) && settings.output_fixed_string_as_fixed_byte_array)

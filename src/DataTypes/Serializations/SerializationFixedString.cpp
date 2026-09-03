@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -104,15 +105,9 @@ void SerializationFixedString::serializeBinaryBulk(const IColumn & column, Write
 }
 
 
-void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
-
-    size_t skipped_bytes = 0;
-
-    if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
-    istr.ignore(skipped_bytes);
 
     size_t initial_size = data.size();
     size_t max_bytes = 0;
@@ -206,11 +201,17 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     size_t prev_size = data.size();
     try
     {
-        return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
+        if (reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size))
+            return true;
+        /// A failed parse must leave the column byte-identical (reader may append partial bytes before returning false).
+        data.resize_assume_reserved(prev_size);
+        return false;
     }
     catch (...) // Ok: tryRead is a try-pattern
     {
         data.resize_assume_reserved(prev_size);
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
         return false;
     }
 }

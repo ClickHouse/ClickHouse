@@ -1,0 +1,38 @@
+---
+title: 'Suporte à propagação de alterações de schema'
+slug: /integrations/clickpipes/postgres/schema-changes
+description: 'Página que descreve os tipos de alteração de schema detectáveis pelo ClickPipes nas tabelas de origem'
+doc_type: 'reference'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for Postgres pode detectar alterações de schema nas tabelas de origem e, em alguns casos, propagar automaticamente essas alterações para as tabelas de destino. A forma como cada operação DDL é tratada está documentada abaixo:
+
+[//]: # "TODO Estender esta página com o comportamento para renomeação, alterações de tipo de dados e truncate + orientações sobre como lidar com alterações de schema incompatíveis."
+
+| Tipo de alteração de schema                                                              | Comportamento                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adição de uma nova coluna (`ALTER TABLE ADD COLUMN ...`)                                 | Propagada automaticamente assim que a tabela receber uma operação de insert/update/delete. As novas colunas serão preenchidas para todas as linhas replicadas após a alteração de schema                                                                                                                                   |
+| Adição de uma nova coluna com um valor padrão (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Propagada automaticamente assim que a tabela receber uma operação de insert/update/delete. Os [valores padrão compatíveis](#default-values-for-added-columns) também são adicionados à coluna do ClickHouse, portanto, aplicam-se às linhas já existentes no ClickHouse e às linhas replicadas após a alteração de schema. |
+| Remoção de uma coluna existente (`ALTER TABLE DROP COLUMN ...`)                          | Detectada, mas **não** propagada. As colunas removidas serão preenchidas com `NULL` para todas as linhas replicadas após a alteração de schema                                                                                                                                                                             |
+
+Observe que a adição de colunas será propagada ao fim da sincronização de um lote, o que pode ocorrer depois que o intervalo de sincronização ou o tamanho do lote de pull for atingido. Mais informações sobre como controlar sincronizações [aqui](/pt-BR/integrations/clickpipes/postgres/controlling-sync)
+
+<div id="default-values-for-added-columns">
+  ## Valores padrão para colunas adicionadas
+</div>
+
+Para uma coluna adicionada, o ClickPipes propaga um valor padrão somente quando consegue converter o valor com segurança para o ClickHouse. Quando um valor padrão é propagado, o ClickHouse o utiliza ao ler partes de dados anteriores à nova coluna. Como resultado, as linhas já presentes no ClickHouse exibem o mesmo valor que o PostgreSQL usa para linhas anteriores a `ADD COLUMN`; não é necessária uma atualização completa da tabela.
+
+No PostgreSQL, o ClickPipes lê o valor que o PostgreSQL armazenou para as linhas preexistentes, em vez da expressão padrão atual da coluna. Isso é importante quando o valor padrão é uma expressão: uma expressão não volátil, como `now()`, é avaliada pelo PostgreSQL quando a coluna é adicionada, e o ClickPipes propaga o valor resultante, não a expressão. Operações posteriores de `SET DEFAULT` ou `DROP DEFAULT` não alteram o valor padrão usado para linhas existentes e não são propagadas para o ClickHouse.
+
+Os seguintes valores são propagados:
+
+* Valores booleanos e numéricos finitos.
+* Valores de texto, incluindo `varchar`, `char`, enums, UUIDs, JSON/JSONB, `hstore`, endereços de rede e datas.
+* Timestamps. Timestamps com fuso horário são normalizados para UTC.
+
+Os valores padrão são omitidos quando sua representação não pode ser portada com segurança para o ClickHouse, incluindo `NULL`, valores numéricos não finitos, `bytea`, arrays, intervalos, valores de hora do dia e tipos geométricos. A coluna ainda é adicionada, mas o ClickHouse usa o valor padrão normal do tipo para partes anteriores à coluna. É necessária uma atualização completa da tabela se essas linhas existentes precisarem conter o valor padrão da origem.

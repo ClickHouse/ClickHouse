@@ -32,6 +32,7 @@ private:
     Regexps::RegexpPtr re;
     OptimizedRegularExpression::MatchVec matches;
 
+    Pos begin{};
     Pos pos{};
     Pos end{};
 
@@ -72,6 +73,7 @@ public:
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
+        begin = pos_;
         pos = pos_;
         end = end_;
         splits = 0;
@@ -130,14 +132,16 @@ public:
                         return false;
             }
 
-            if (!re->match(pos, end - pos, matches) || !matches[0].length)
+            /// Match over the whole string starting at `pos`, so that the characters before `pos` are seen as context
+            /// for zero-width assertions such as `\b` and `^`. The returned offsets are relative to `begin`.
+            if (!re->match(begin, end - begin, pos - begin, matches) || !matches[0].length)
             {
                 token_end = end;
                 pos = end + 1;
             }
             else
             {
-                token_end = pos + matches[0].offset;
+                token_end = begin + matches[0].offset;
                 pos = token_end + matches[0].length;
                 ++splits;
             }
@@ -223,7 +227,7 @@ Empty substrings may be selected when:
 - the original string string is empty while the regular expression is not empty.
 
 :::note
-Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 :::
 )";
     FunctionDocumentation::Syntax syntax = "splitByRegexp(regexp, s[, max_substrings])";
@@ -238,9 +242,9 @@ Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/se
         "Usage example",
         "SELECT splitByRegexp('\\\\d+', 'a12bc23de345f');",
         R"(
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
         )"
     },
     {

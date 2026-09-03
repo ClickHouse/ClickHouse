@@ -1,3 +1,4 @@
+#include <Columns/ColumnReplicated.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/ISink.h>
@@ -99,6 +100,9 @@ public:
 
     String getName() const override { return "BufferingFromFileSource"; }
 
+    /// These rows were already counted when they were read from the original source.
+    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
+
     Chunk generate() override
     {
         if (!tmp_read_stream)
@@ -194,6 +198,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
+    compactReplicatedColumns(chunk);
 
     sum_rows_in_blocks += chunk.getNumRows();
     sum_bytes_in_blocks += chunk.allocatedBytes();
@@ -268,6 +273,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                         /*filter_column_name=*/ std::nullopt,
                         use_average_block_sizes,
                         apply_virtual_row,
+                        /*virtual_row_prefetch_window=*/ 0,
                         have_all_inputs);
 
                 processors.emplace_back(external_merging_sorted);
@@ -352,7 +358,12 @@ void MergeSortingTransform::remerge()
     if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
     {
         Field value;
-        chunks[0].getColumns()[0]->get(limit - 1, value);
+        /// Chunk columns follow `header_without_constants` order; the first sort column
+        /// is not necessarily at position 0 (e.g. lazy materialization can place a
+        /// WHERE-only column before it). Resolve its actual position by name.
+        chassert(!description.empty());
+        size_t sort_column_position = header_without_constants.getPositionByName(description.front().column_name);
+        chunks[0].getColumns()[sort_column_position]->get(limit - 1, value);
         threshold_tracker->testAndSet(value);
         LOG_DEBUG(log, "TopK threshold tracker is updated");
     }
