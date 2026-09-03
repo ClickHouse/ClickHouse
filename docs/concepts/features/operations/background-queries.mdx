@@ -12,8 +12,8 @@ Background queries allow clients to submit queries that execute independently of
 By decoupling query execution from the client network connection, background tasks are fully resilient to client-side disconnects or transient network failures.
 
 Background queries are mainly intended for long-running operations such as `INSERT ... SELECT`,
-`CREATE TABLE ... AS SELECT`, or `CREATE MATERIALIZED VIEW ... POPULATE` that must not stop if the
-client connection drops.
+`CREATE TABLE ... AS SELECT`, `CREATE MATERIALIZED VIEW ... POPULATE`, or `OPTIMIZE TABLE ... FINAL`
+that must not stop if the client connection drops.
 
 Not every query can be detached from its connection. See [Unsupported query forms](#unsupported-query-forms)
 for the requests that are rejected instead.
@@ -85,11 +85,13 @@ clickhouse-client --echo-query-id \
 ```
 
 The native protocol carries query settings separately from the SQL text. 
-`clickhouse-client` parses most inline query settings and sends them in this settings section. Native-protocol drivers can instead pass
-`run_query_in_background` in their per-query settings map, keeping the SQL text unchanged.
+`clickhouse-client` parses most inline query settings and sends them in this settings section. 
 
-The native protocol does not return a server-generated `query_id`. Native clients should generate a unique ID and
-send it with the query. `clickhouse-client --echo-query-id` does this and prints the ID before submitting the query:
+Native-protocol drivers can instead pass `run_query_in_background` in their per-query settings map, keeping the SQL text unchanged.
+
+The native protocol does not return a server-generated `query_id`. Native clients should generate a unique ID and send it with the query. 
+
+`clickhouse-client --echo-query-id` does this and prints the ID before submitting the query:
 
 ```response
 Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
@@ -111,9 +113,9 @@ The response includes the generated query ID in the `X-ClickHouse-Query-Id` head
 X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
 ```
 
-That header only reaches a client that reads the response. When you need a handle on the query that does not
-depend on the response arriving, send your own `query_id` as a URL parameter instead. The client then knows the ID
-before it makes the request, and can monitor or `KILL` the query even if it never sees the response:
+That header only reaches a client that reads the response. When you need a handle on the query that does not depend on the response arriving, send your own `query_id` as a URL parameter instead. 
+
+The client then knows the ID before it makes the request, and can monitor or `KILL` the query even if it never sees the response:
 
 ```bash
 curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
@@ -127,8 +129,9 @@ curl 'http://localhost:8123/' \
   --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
 ```
 
-This request returns a `BAD_ARGUMENTS` exception. The HTTP handler must decide whether to create a detached query
-context before the request body is parsed. Pass the setting in the URL, or configure it at the user or profile level.
+This request returns a `BAD_ARGUMENTS` exception. The HTTP handler must decide whether to create a detached query context before the request body is parsed. 
+
+Pass the setting in the URL, or configure it at the user or profile level.
 
 ## Monitor execution {#monitor-execution}
 
@@ -165,10 +168,19 @@ in `system.query_log` rather than returned over the original connection.
 
 Entries are buffered before they appear in `system.query_log`. 
 For self-managed ClickHouse, the example server configuration sets `query_log.flush_interval_milliseconds` to `7500`. 
+
 ClickHouse Cloud entries can take up to 30 seconds to appear. Account for this delay when monitoring short-running background queries.
 
-On a self-managed server, users with sufficient privileges can force system logs to flush:
+On a self-managed server, users with sufficient privileges can force the query log to flush. Name the log explicitly so that the other system logs are left alone:
 
 ```sql
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
+```
+
+The flush happens on the server that receives the statement. 
+
+A background query is tracked by the server that accepted it, which is not necessarily the one your current session is connected to, so on a cluster flush everywhere before looking the query up:
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
 ```
