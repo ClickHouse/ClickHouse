@@ -16,6 +16,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/ErrorCodes.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
@@ -33,7 +34,6 @@
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
-#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
@@ -139,6 +139,7 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/KeeperHTTPHandlerFactory.h>
@@ -161,6 +162,7 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
+#    include <glibc-rseq/rseq.h>
 #endif
 
 #if USE_SSL
@@ -488,6 +490,10 @@ namespace ServerSetting
     extern const ServerSettingsString logger_shutdown_level;
     extern const ServerSettingsString openssl_server_certificate_file;
     extern const ServerSettingsString openssl_server_private_key_file;
+    extern const ServerSettingsString openssl_server_ca_config;
+    extern const ServerSettingsString openssl_client_certificate_file;
+    extern const ServerSettingsString openssl_client_private_key_file;
+    extern const ServerSettingsString openssl_client_ca_config;
     extern const ServerSettingsString distributed_ddl_path;
     extern const ServerSettingsString distributed_ddl_replicas_path;
     extern const ServerSettingsInt32 distributed_ddl_pool_size;
@@ -912,7 +918,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
-    if (!PerCPU::haveRSeq())
+    if (rseq_cpu_id() < 0)
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
             PreformattedMessage::create(
@@ -1051,6 +1057,23 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
+    }
+#endif
+
+#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_DARWIN))
+    {
+        /// Whether disabled at runtime by jemalloc itself or overridden by the operator, per-CPU
+        /// arenas are worth recommending on platforms with a working current-CPU query.
+        const char * effective_mode = nullptr;
+        if (Jemalloc::tryGetValue("opt.percpu_arena", effective_mode) && effective_mode == std::string_view("disabled"))
+        {
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::JEMALLOC_PERCPU_ARENA_DISABLED,
+                PreformattedMessage::create(
+                    "jemalloc per-CPU arenas are disabled, either via configuration or automatically by jemalloc itself "
+                    "(it disables them at startup when it cannot query the current CPU). They reduce memory usage by "
+                    "capping the arena count at the number of CPUs"));
+        }
     }
 #endif
 
@@ -1249,6 +1272,14 @@ void initializeAzureSDKLogger(
 #endif
 }
 
+}
+
+namespace
+{
+/// Defined next to `resolveHTTPHandlersKey` below, which they walk the `impl` chain with; declared here
+/// because the configuration reload callback of `Server::main` validates a configuration with them.
+Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config);
+bool hasPrometheusListener(const Poco::Util::AbstractConfiguration & config);
 }
 
 #if defined(SANITIZER)
@@ -2641,26 +2672,25 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    std::string cert_path = server_settings[ServerSetting::openssl_server_certificate_file];
-    std::string key_path = server_settings[ServerSetting::openssl_server_private_key_file];
-
+    /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty())
-        extra_paths.emplace_back(cert_path);
-    if (!key_path.empty())
-        extra_paths.emplace_back(key_path);
+    auto watch_path = [&](const std::string & file_path)
+    {
+        if (!file_path.empty())
+            extra_paths.emplace_back(file_path);
+    };
+    watch_path(server_settings[ServerSetting::openssl_server_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_ca_config]);
+    watch_path(server_settings[ServerSetting::openssl_client_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_ca_config]);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config().keys("protocols", protocols);
     for (const auto & protocol : protocols)
-    {
-        cert_path = config().getString("protocols." + protocol + ".certificateFile", "");
-        key_path = config().getString("protocols." + protocol + ".privateKeyFile", "");
-        if (!cert_path.empty())
-            extra_paths.emplace_back(cert_path);
-        if (!key_path.empty())
-            extra_paths.emplace_back(key_path);
-    }
+        for (const auto * key : {"certificateFile", "privateKeyFile", "caConfig"})
+            watch_path(config().getString("protocols." + protocol + "." + key, ""));
 
     DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
@@ -2737,6 +2767,17 @@ try
                 incoming_server_settings.loadSettingsFromConfig(*loaded_config);
                 validate_insert_deduplication_version(incoming_server_settings);
             }
+
+            /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
+            /// itself. `asynchronous_metrics_key_values_mode` takes part in this check, because it decides
+            /// whether the key of a key-value asynchronous metric is written as a label (`device="sda"`),
+            /// so the same set of constant labels can be unambiguous under one form and not under another.
+            /// Validate the incoming config BEFORE config().replace below, for the same reason as above:
+            /// the form is read from the live configuration on every update of the asynchronous metrics,
+            /// so validating afterwards would leave a rejected reload publishing the new form while the
+            /// endpoints keep serving with the labels of the old one.
+            validatePrometheusConstantLabels(
+                *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
@@ -3504,23 +3545,10 @@ try
 
     /// Check sanity of MergeTreeSettings on server startup
     {
-        /// All settings can be changed in the global config
-        bool allowed_experimental = true;
-        bool allowed_private_preview = true;
-        bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(
-            background_pool_tasks,
-            allowed_experimental,
-            allowed_private_preview,
-            allowed_beta,
-            global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, global_context->wasBackgroundPoolAutoLowered());
         global_context->getReplicatedMergeTreeSettings().sanityCheck(
-            background_pool_tasks,
-            allowed_experimental,
-            allowed_private_preview,
-            allowed_beta,
-            global_context->wasBackgroundPoolAutoLowered());
+            background_pool_tasks, global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -4112,6 +4140,70 @@ std::optional<String> resolveHTTPHandlersKey(const Poco::Util::AbstractConfigura
         if (!pset.insert(conf_name).second)
             return {};
     }
+}
+
+/// The `<http_handlers>`-style sections the HTTP listeners of a configuration serve: the default
+/// `http_handlers` for `http_port` and `https_port`, and the section each composable `http` endpoint
+/// references. A section no listener serves is left out, so that validating a configuration accepts
+/// exactly what starting the server with it would.
+Strings servedHTTPHandlersKeys(const Poco::Util::AbstractConfiguration & config)
+{
+    std::unordered_set<String> keys;
+
+    if (config.has("http_port") || config.has("https_port"))
+        keys.insert("http_handlers");
+
+    if (config.has("protocols"))
+    {
+        Poco::Util::AbstractConfiguration::Keys protocols;
+        config.keys("protocols", protocols);
+        for (const auto & protocol : protocols)
+        {
+            if (auto handlers_key = resolveHTTPHandlersKey(config, "protocols." + protocol))
+                keys.insert(*handlers_key);
+        }
+    }
+
+    return {keys.begin(), keys.end()};
+}
+
+/// Whether a listener of this configuration serves the `prometheus` section on a port of its own: the
+/// standalone `prometheus.port` listener, or a composable `type = prometheus` endpoint (whose type is
+/// found by walking the `impl` chain, as in `buildProtocolStackFromConfig`).
+bool hasPrometheusListener(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.getInt("prometheus.port", 0))
+        return true;
+
+    if (!config.has("protocols"))
+        return false;
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+
+    for (const auto & protocol : protocols)
+    {
+        std::string conf_name = "protocols." + protocol;
+        std::string prefix = conf_name + ".";
+        std::unordered_set<std::string> pset {conf_name};
+        while (true)
+        {
+            if (config.getString(prefix + "type", "") == "prometheus")
+                return true;
+
+            if (!config.has(prefix + "impl"))
+                break;
+
+            conf_name = "protocols." + config.getString(prefix + "impl");
+            prefix = conf_name + ".";
+
+            /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+            if (!pset.insert(conf_name).second)
+                break;
+        }
+    }
+
+    return false;
 }
 
 /// Whether a non-keeper `prometheus` endpoint (serving the global `prometheus` section)
@@ -4933,6 +5025,25 @@ void Server::updateServers(
             {
                 force_restart = true;
                 LOG_TRACE(log, "<prometheus.keeper_metrics_only> had been changed, will reload {}", server->getDescription());
+            }
+            /// `asynchronous_metrics_key_values_mode` decides whether the keys of the key-value asynchronous
+            /// metrics are written as Prometheus labels (`device="sda"`) or mangled into the metric name. A
+            /// listener that exposes metrics is built with the constant labels and the form of its
+            /// configuration, and neither is re-read while it runs, so it has to be rebuilt for the new form
+            /// to be published with a label set that matches it. Only listeners that can actually serve the
+            /// metrics protocol are rebuilt: a keeper-metrics-only `prometheus` listener exposes no
+            /// asynchronous metrics at all, and an HTTP listener does so only through a rule with a
+            /// `prometheus` handler type or through the default `/metrics` route - a change of the mode must
+            /// not stop the HTTP interface of a server that only answers queries over it. The old and the new
+            /// handler set are both consulted, because a rule may have just been added or removed.
+            if (getAsynchronousMetricsKeyValuesMode(previous_config) != getAsynchronousMetricsKeyValuesMode(config)
+                && (is_non_keeper_prometheus
+                    || (is_http
+                        && (httpHandlersCanExposePrometheusMetrics(previous_config, previous_handlers_key)
+                            || httpHandlersCanExposePrometheusMetrics(config, handlers_key)))))
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<asynchronous_metrics_key_values_mode> had been changed, will reload {}", server->getDescription());
             }
             if (default_session_user_changed)
             {
