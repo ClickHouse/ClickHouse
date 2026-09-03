@@ -97,4 +97,38 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsTokenSpecialCharsInName)
     EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
 }
 
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsWhitespaceInName)
+{
+    /// The raw name is validated, so an internal space is rejected rather than silently
+    /// stripped (a caller that keeps its own copy would otherwise send the original bytes).
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X-A B", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsControlCharInName)
+{
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X-A\tB", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturnInName)
+{
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X-Foo\r", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsEmptyName)
+{
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
 }

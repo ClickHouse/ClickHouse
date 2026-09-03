@@ -4,8 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
 #include <Poco/String.h>
-#include <algorithm>
-#include <cctype>
 
 namespace DB
 {
@@ -36,30 +34,26 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
 
     for (auto & entry : entries)
     {
-        /// A bare CR or LF in a header name or value terminates the header line, so a header
-        /// carrying one could smuggle a second header into the request (request/response splitting).
-        if (entry.name.contains('\n') || entry.value.contains('\n')
-            || entry.name.contains('\r') || entry.value.contains('\r'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
-        /// Strip whitespace and control characters from header name for validation
-        std::string & normalized_name = entry.name;
-        normalized_name.erase(
-            std::remove_if(
-                normalized_name.begin(),
-                normalized_name.end(),
-                [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
-            normalized_name.end());
-
-        /// A header name must be a valid token (RFC 9110 5.6.2). A non-token character such
-        /// as ':' is rejected here because it does not equal any <http_forbid_headers> entry,
-        /// yet a peer still parses a forbidden header from a name like "Cookie:x".
-        for (char c : normalized_name)
+        /// A header name must be a non-empty RFC 9110 (5.6.2) token. The original bytes are
+        /// validated, so a caller that sends its own copy of the entries cannot emit a name this
+        /// filter did not accept. This rejects control characters (including CR and LF),
+        /// whitespace and delimiters such as ':' — a name like "Cookie:x" would otherwise pass
+        /// the filter yet let a peer parse a forbidden "Cookie" header from it, because a field
+        /// name ends at the first ':'.
+        if (entry.name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header name cannot be empty");
+        for (char c : entry.name)
             if (!isHTTPTokenChar(c))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character in name", entry.name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has an invalid character in its name", entry.name);
+
+        /// A bare CR or LF in a value terminates the header line, so a value carrying one could
+        /// smuggle a second header into the request (request/response splitting).
+        if (entry.value.contains('\n') || entry.value.contains('\r'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has an invalid character in its value", entry.name);
 
         /// HTTP header names are case-insensitive (RFC 7230 3.2). The exact-set
         /// entries are stored lower-cased, so lower-case the name for that lookup.
-        const std::string lower_name = Poco::toLower(normalized_name);
+        const std::string lower_name = Poco::toLower(entry.name);
 
         if (forbidden_headers.contains(lower_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
@@ -69,7 +63,7 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
         /// case-insensitive by default, but an inline (?-i) scope must see the real
         /// case (lower-casing here would stop existing (?-i) configs from matching).
         for (const auto & header_regex : forbidden_headers_regexp)
-            if (re2::RE2::FullMatch(normalized_name, *header_regex))
+            if (re2::RE2::FullMatch(entry.name, *header_regex))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                         "see <http_forbid_headers>", entry.name);
     }
