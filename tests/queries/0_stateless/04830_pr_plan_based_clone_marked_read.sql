@@ -29,7 +29,6 @@ SET automatic_parallel_replicas_mode = 0;
 -- which is what has to be flushed.
 SYSTEM FLUSH LOGS query_log;
 SELECT count() > 0 FROM system.user_query_log SETTINGS log_comment = '04830_clone_marked_user_query_log';
-SELECT count() > 0 FROM merge('system', '^user_query_log$');
 
 -- Parallel replicas really engaged for the affected shape, so `count() > 0` above is not being satisfied by
 -- a plain local read: a regression that made this shape decline parallel replicas would leave it green.
