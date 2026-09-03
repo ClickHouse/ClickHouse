@@ -38,17 +38,15 @@ namespace
 }
 
 /// Each bit in `x` is converted to the parity a bit and all bits to its right.
-[[nodiscard]] constexpr unsigned long long bitwiseInclusiveRightParity64(unsigned long long x) noexcept
+[[nodiscard]] constexpr UInt64 bitwiseInclusiveRightParity64(UInt64 x) noexcept
 {
-    using T = unsigned long long;
-
 #ifdef __PCLMUL__
     const __m128i x_128 = _mm_set_epi64x(0, x);
     const __m128i neg1_128 = _mm_set_epi64x(0, -1);
     const __m128i result_128 = _mm_clmulepi64_si128(x_128, neg1_128, 0);
-    return static_cast<T>(_mm_extract_epi64(result_128, 0));
+    return static_cast<UInt64>(_mm_extract_epi64(result_128, 0));
 #else
-    constexpr int N = std::numeric_limits<T>::digits;
+    constexpr int N = std::numeric_limits<UInt64>::digits;
     for (int i = 1; i < N; i <<= 1)
         x ^= x << i;
     return x;
@@ -57,28 +55,27 @@ namespace
 
 #endif
 
-[[nodiscard]] constexpr unsigned long long bitCompress64(unsigned long long x, unsigned long long m) noexcept
+[[nodiscard]] constexpr UInt64 bitCompress64(UInt64 x, UInt64 m) noexcept
 {
 #if defined(__BMI2__)
     return _pext_u64(x, m);
 #elif defined(__ARM_FEATURE_SVE2)
     auto sv_result = svbext_u64(svdup_u64(x), svdup_u64(m));
-    return static_cast<unsigned long long>(svorv_u64(svptrue_b64(), sv_result));
+    return static_cast<UInt64>(svorv_u64(svptrue_b64(), sv_result));
 #else
-    using T = unsigned long long;
-    constexpr int N = std::numeric_limits<T>::digits;
+    constexpr int N = std::numeric_limits<UInt64>::digits;
 
     x &= m;
-    T mk = ~m << 1;
+    UInt64 mk = ~m << 1;
 
     for (int i = 1; i < N; i <<= 1)
     {
-        const T mk_parity = bitwiseInclusiveRightParity64(mk);
+        const UInt64 mk_parity = bitwiseInclusiveRightParity64(mk);
 
-        const T move = mk_parity & m;
+        const UInt64 move = mk_parity & m;
         m = (m ^ move) | (move >> i);
 
-        const T t = x & move;
+        const UInt64 t = x & move;
         x = (x ^ t) | (t >> i);
 
         mk &= ~mk_parity;
@@ -87,27 +84,26 @@ namespace
 #endif
 }
 
-[[nodiscard]] constexpr unsigned long long bitExpand64(unsigned long long x, unsigned long long m) noexcept
+[[nodiscard]] constexpr UInt64 bitExpand64(UInt64 x, UInt64 m) noexcept
 {
 #if defined(__BMI2__)
     return _pdep_u64(x, m);
 #elif defined(__ARM_FEATURE_SVE2)
     auto sv_result = svbdep_u64(svdup_u64(x), svdup_u64(m));
-    return static_cast<unsigned long long>(svorv_u64(svptrue_b64(), sv_result));
+    return static_cast<UInt64>(svorv_u64(svptrue_b64(), sv_result));
 #else
-    using T = unsigned long long;
-    constexpr int N = std::numeric_limits<T>::digits;
+    constexpr int N = std::numeric_limits<UInt64>::digits;
     constexpr int log_N = log2Floor(std::bit_ceil<unsigned>(N));
 
-    const T initial_m = m;
+    const UInt64 initial_m = m;
 
-    T array[log_N];
-    T mk = ~m << 1;
+    UInt64 array[log_N];
+    UInt64 mk = ~m << 1;
 
     for (int i = 0; i < log_N; ++i)
     {
-        const T mk_parity = bitwiseInclusiveRightParity64(mk);
-        const T move = mk_parity & m;
+        const UInt64 mk_parity = bitwiseInclusiveRightParity64(mk);
+        const UInt64 move = mk_parity & m;
         m = (m ^ move) | (move >> (1 << i));
         array[i] = move;
         mk &= ~mk_parity;
@@ -115,8 +111,8 @@ namespace
 
     for (int i = log_N - 1; i >= 0; --i)
     {
-        const T move = array[i];
-        const T t = x << (1 << i);
+        const UInt64 move = array[i];
+        const UInt64 t = x << (1 << i);
         x = (x & ~move) | (t & move);
     }
 
