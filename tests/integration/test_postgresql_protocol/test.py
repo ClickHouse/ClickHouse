@@ -919,8 +919,10 @@ def test_bind_error_keeps_connection_alive(started_cluster):
     ch.close()
 
 
-def _pg_raw_extended_query_session(node):
+def _pg_raw_extended_query_session(node, backend_key=None):
     # Minimal raw client for protocol messages hidden by libpq and psycopg.
+    # `backend_key`, when given, receives the `BackendKeyData` pair as {"pid": .., "key": ..};
+    # libpq keeps the cancellation secret private, so only a raw client can read it.
     sock = socket.create_connection((node.ip_address, server_port), timeout=10)
 
     def read_until_ready(timeout=10.0):
@@ -939,6 +941,9 @@ def _pg_raw_extended_query_session(node):
                 (mlen,) = struct.unpack("!I", buf[1:5])
                 if len(buf) < 1 + mlen:
                     break
+                if mtype == "K" and backend_key is not None:
+                    pid, key = struct.unpack("!iI", buf[5 : 1 + mlen])
+                    backend_key.update({"pid": pid, "key": key})
                 types.append(mtype)
                 buf = buf[1 + mlen :]
             if types and types[-1] == "Z":
@@ -1531,6 +1536,16 @@ def test_copy_no_sql_injection(started_cluster):
     setup_cur.execute("SELECT count() FROM copy_load WHERE s = 'TOP_SECRET';")
     assert int(setup_cur.fetchone()[0]) == 0
 
+    # A quoted injection remains one `COPY FROM` table name. The rendered identifier is backquoted,
+    # so the payload carries a backquote of its own to attack the escaping rather than the quoting.
+    with connect() as c, pytest.raises(Exception):
+        c.cursor().copy_expert(
+            "COPY \"copy_load` (s) SELECT s FROM copy_secret_str -- \" FROM STDIN",
+            StringIO("x\n"),
+        )
+    setup_cur.execute("SELECT count() FROM copy_load WHERE s = 'TOP_SECRET';")
+    assert int(setup_cur.fetchone()[0]) == 0
+
     # A benign COPY FROM with a legitimate column still works.
     with connect() as c:
         c.cursor().copy_expert("COPY copy_load (s) FROM STDIN", StringIO("hello\n"))
@@ -1820,33 +1835,38 @@ def _assert_cancel_request_does_not_cancel_http_query(node, query_id, pid, key):
 
 def test_cancel_request_does_not_cancel_foreign_query(started_cluster):
     """An unauthenticated PostgreSQL CancelRequest may only cancel queries that actually run on the
-    PostgreSQL interface. The query id string alone is not a credential: any other interface lets a
-    client pick an arbitrary query id, so a query that imitates the `postgres:<connection id>:<secret
-    key>` shape must not be cancellable this way."""
+    PostgreSQL interface. Any other interface lets a client choose its own query id, so a query that
+    takes the query id of a live PostgreSQL connection must not be cancellable this way, not even by
+    that connection's genuine `BackendKeyData` pair."""
     node = started_cluster.instances["node"]
-    _assert_cancel_request_does_not_cancel_http_query(node, "postgres:1:2", 1, 2)
+
+    # An idle PostgreSQL connection: its credential is valid, but no query of its own is running.
+    backend_key = {}
+    sock, _ = _pg_raw_extended_query_session(node, backend_key)
+    with sock:
+        assert backend_key, "the server did not send BackendKeyData"
+        _assert_cancel_request_does_not_cancel_http_query(
+            node,
+            f"postgres:{backend_key['pid']}",
+            backend_key["pid"],
+            backend_key["key"],
+        )
 
 
 def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
-    """Once a PostgreSQL connection is gone, its `postgres:<connection id>:<secret key>` query ids
-    are free for any client to pick on another interface. A CancelRequest carrying that once-valid
-    (process id, secret key) pair must not cancel the later query: the cancel must be bound to the
-    exact query that was verified to run on the PostgreSQL interface, not to whatever currently
-    holds the id."""
+    """Once a PostgreSQL connection is gone, its query id is free for any client to pick on another
+    interface, and its `BackendKeyData` pair stops being a credential. A CancelRequest carrying that
+    once-valid pair must not cancel the later query: the cancel must be bound to the exact query
+    that was verified to run on the PostgreSQL interface, not to whatever currently holds the id."""
     node = started_cluster.instances["node"]
 
-    # Obtain a server-assigned PostgreSQL query ID, then free it.
-    ch = py_psql.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        database="",
-    )
-    cur = ch.cursor()
-    cur.execute("SELECT 20250807")
-    assert cur.fetchall() == [(20250807,)]
-    ch.close()
+    # Obtain a server-assigned PostgreSQL query ID together with its credential, then free both.
+    backend_key = {}
+    sock, read_until_ready = _pg_raw_extended_query_session(node, backend_key)
+    with sock:
+        sock.sendall(_fe("Q", b"SELECT 20250807\x00"))
+        assert "Z" in read_until_ready()
+    assert backend_key, "the server did not send BackendKeyData"
 
     node.query("SYSTEM FLUSH LOGS query_log", password="123")
     query_id = node.query(
@@ -1855,8 +1875,76 @@ def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
         " ORDER BY event_time_microseconds DESC LIMIT 1",
         password="123",
     ).strip()
-    _, pid, key = query_id.split(":")
-    _assert_cancel_request_does_not_cancel_http_query(node, query_id, int(pid), int(key))
+    # The credential is not part of the query id, so `system.query_log` does not publish it.
+    assert query_id == f"postgres:{backend_key['pid']}"
+
+    _assert_cancel_request_does_not_cancel_http_query(
+        node, query_id, backend_key["pid"], backend_key["key"]
+    )
+
+
+def test_cancel_request_with_wrong_secret_key_does_not_cancel(started_cluster):
+    """The `BackendKeyData` secret is the whole credential a CancelRequest carries, so a request
+    naming a live PostgreSQL query with the right process id and a wrong secret must not cancel it.
+    Otherwise cancellation would be authenticated by the connection id alone, which is a small
+    counter any client can enumerate."""
+    node = started_cluster.instances["node"]
+
+    backend_key = {}
+    sock, read_until_ready = _pg_raw_extended_query_session(node, backend_key)
+    with sock:
+        assert backend_key, "the server did not send BackendKeyData"
+        query_id = f"postgres:{backend_key['pid']}"
+
+        def running():
+            return node.http_query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
+                user="default",
+                password="123",
+            ).strip()
+
+        def cancel(secret_key):
+            with socket.create_connection((node.ip_address, server_port)) as cancel_sock:
+                cancel_sock.sendall(
+                    struct.pack("!iiII", 16, 80877102, backend_key["pid"], secret_key)
+                )
+
+        # Consume `sleepEachRow` so optimization cannot remove the delay. The statement sleeps for
+        # 18 seconds of wall clock on every build, so it cannot end on its own within the checks.
+        sock.sendall(
+            _fe(
+                "Q",
+                b"SELECT sum(sleepEachRow(0.3) + number) FROM numbers(60)"
+                b" SETTINGS max_block_size = 1, max_threads = 1\x00",
+            )
+        )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if running() == "1":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("the PostgreSQL statement did not start running")
+
+        # One bit off the genuine secret is not the genuine secret.
+        cancel(backend_key["key"] ^ 1)
+        time.sleep(2)
+        assert running() == "1"
+
+        # Control: the same request with the genuine secret does cancel, so the check above can fail.
+        cancel(backend_key["key"])
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if running() == "0":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("the genuine secret did not cancel the statement")
+
+        try:
+            read_until_ready(timeout=5.0)
+        except Exception:
+            pass
 
 
 def test_bind_portal_snapshots_statement(started_cluster):

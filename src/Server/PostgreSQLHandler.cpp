@@ -394,6 +394,12 @@ void PostgreSQLHandler::run()
 
     session->setClientConnectionId(connection_id);
 
+    /// A `CancelRequest` for this connection arrives on a different connection, so the secret has
+    /// to be reachable from the whole server for as long as this one is open.
+    const String cancellation_query_id = currentQueryId();
+    server.context()->getProcessList().registerPostgreSQLCancellationKey(cancellation_query_id, secret_key);
+    SCOPE_EXIT({ server.context()->getProcessList().unregisterPostgreSQLCancellationKey(cancellation_query_id); });
+
     try
     {
         if (!startup())
@@ -659,14 +665,16 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
     message_transport->flush();
 }
 
-String PostgreSQLHandler::queryIdFor(Int32 connection_id_, UInt32 secret_key_)
+String PostgreSQLHandler::queryIdFor(Int32 connection_id_)
 {
-    return fmt::format("postgres:{:d}:{:d}", connection_id_, secret_key_);
+    /// The secret from `BackendKeyData` is deliberately not part of the ID: it authenticates
+    /// `CancelRequest`, and `system.processes` and `system.query_log` expose query IDs verbatim.
+    return fmt::format("postgres:{:d}", connection_id_);
 }
 
 String PostgreSQLHandler::currentQueryId() const
 {
-    return queryIdFor(connection_id, secret_key);
+    return queryIdFor(connection_id);
 }
 
 void PostgreSQLHandler::cancelRequest()
@@ -676,8 +684,8 @@ void PostgreSQLHandler::cancelRequest()
 
     /// The process ID and secret key authenticate this otherwise unauthenticated request.
     /// PostgreSQL exposes no response, so report the outcome only to the log.
-    String query_id = queryIdFor(msg->process_id, msg->secret_key);
-    CancellationCode code = server.context()->getProcessList().sendCancelToPostgreSQLQuery(query_id);
+    String query_id = queryIdFor(msg->process_id);
+    CancellationCode code = server.context()->getProcessList().sendCancelToPostgreSQLQuery(query_id, msg->secret_key);
     LOG_DEBUG(log, "Cancellation of query {}: {}", query_id, code == CancellationCode::CancelSent ? "sent" : "not sent");
 }
 

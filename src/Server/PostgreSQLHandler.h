@@ -105,7 +105,7 @@ private:
 
     /// The query id every statement of this connection runs under, which a cancel request resolves to.
     String currentQueryId() const;
-    static String queryIdFor(Int32 connection_id_, UInt32 secret_key_);
+    static String queryIdFor(Int32 connection_id_);
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 

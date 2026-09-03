@@ -814,12 +814,33 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 }
 
 
-CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current_query_id)
+void ProcessList::registerPostgreSQLCancellationKey(const String & query_id, UInt32 secret_key)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys[query_id] = secret_key;
+}
+
+
+void ProcessList::unregisterPostgreSQLCancellationKey(const String & query_id)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys.erase(query_id);
+}
+
+
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current_query_id, UInt32 secret_key)
 {
     QueryStatusPtr elem;
 
     {
         LockAndBlocker lock(mutex);
+
+        /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
+        /// unknown connection.
+        auto cancellation_key = postgresql_cancellation_keys.find(current_query_id);
+        if (cancellation_key == postgresql_cancellation_keys.end() || cancellation_key->second != secret_key)
+            return CancellationCode::NotFound;
+
         auto query_user = queries_to_user.find(current_query_id);
         if (query_user == queries_to_user.end())
             return CancellationCode::NotFound;
