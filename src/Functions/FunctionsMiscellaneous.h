@@ -292,6 +292,18 @@ public:
         return true;
     }
 
+    /// Expensive if any function in the inner DAG is, so a higher-order function carrying an
+    /// expensive call in its lambda body is not mistaken for a cheap condition.
+    bool isExpensive() const override
+    {
+        for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
+        {
+            if (inner_node.type == ActionsDAG::ActionType::FUNCTION && inner_node.function_base->isExpensive())
+                return true;
+        }
+        return false;
+    }
+
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
