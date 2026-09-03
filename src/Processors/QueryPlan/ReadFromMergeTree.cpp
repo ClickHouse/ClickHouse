@@ -4243,6 +4243,8 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         /// A Summing merge decides whether to remove a row by looking at all aggregated columns,
         /// so the read has to fetch all of them even when the query needs only a subset of them.
         NameSet columns_required_by_the_summing_merge;
+        /// The subset of the above that is read as a column of its own (not through a tuple ancestor).
+        NameSet aggregated_columns_in_the_read_set;
         if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
         {
             const auto aggregated_columns = getColumnsAggregatedForSummingFinal(storage_snapshot->metadata, data.merging_params);
@@ -4285,12 +4287,36 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
                     else
                     {
                         columns_required_by_the_summing_merge.insert(column.name);
+                        aggregated_columns_in_the_read_set.insert(column.name);
                         if (names.emplace(column.name).second)
                             column_names_to_read.push_back(column.name);
                     }
                 }
                 ++position;
             }
+
+            /// Appending in merge-header order is not enough: a column the query selects itself keeps
+            /// the position the query gave it, which can be ahead of the columns appended here.
+            /// `SummingSortedAlgorithm::defineColumns` reads a `...Map` group positionally - the first
+            /// array of the group is a key column - so `SELECT GoodMap.V FROM t FINAL` would hand the
+            /// merge `GoodMap.V` before `GoodMap.ID` and turn a valid one-key map into the
+            /// composite-key `mergeMap` path. Normalize the whole aggregated read set to the merge
+            /// header order, leaving the other columns where they are.
+            std::vector<size_t> aggregated_positions;
+            for (size_t position = 0; position < column_names_to_read.size(); ++position)
+                if (aggregated_columns_in_the_read_set.contains(column_names_to_read[position]))
+                    aggregated_positions.push_back(position);
+
+            size_t slot = 0;
+            for (const auto & column : header)
+            {
+                if (!aggregated_columns_in_the_read_set.contains(column.name))
+                    continue;
+                chassert(slot < aggregated_positions.size());
+                column_names_to_read[aggregated_positions[slot]] = column.name;
+                ++slot;
+            }
+            chassert(slot == aggregated_positions.size());
         }
 
         return spreadMarkRangesAmongStreamsFinal(

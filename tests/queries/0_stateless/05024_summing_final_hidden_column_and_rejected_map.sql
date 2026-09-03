@@ -59,6 +59,16 @@ SELECT count() > 0 FROM (EXPLAIN PIPELINE header = 1 SELECT k FROM summing_final
 SELECT count() > 0 FROM (EXPLAIN PIPELINE header = 1 SELECT k FROM summing_final_valid_map FINAL) WHERE explain LIKE '%GoodMap.V%';
 SELECT count() FROM summing_final_valid_map FINAL;
 
+-- Projecting only the value array of a valid map group must not change how the merge classifies
+-- that group: the read set is normalized to the merge-header order, so `GoodMap.ID` still comes
+-- first and stays the key column, and the values are summed with `sumMapWithOverflow`.
+SELECT GoodMap.V FROM summing_final_valid_map FINAL;
+SELECT GoodMap.ID, GoodMap.V FROM summing_final_valid_map FINAL;
+
+SYSTEM START MERGES summing_final_valid_map;
+OPTIMIZE TABLE summing_final_valid_map FINAL;
+SELECT GoodMap.ID, GoodMap.V FROM summing_final_valid_map;
+
 DROP TABLE summing_final_rejected_map;
 DROP TABLE summing_final_valid_map;
 
