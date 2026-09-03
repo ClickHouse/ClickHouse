@@ -327,17 +327,34 @@ public:
     /// time the last finisher assembles the merge.
     void flushPendingChunks(AdaptiveAggregationProducer & adaptive) const;
 
-    /// The production-time memory valve: claims a bounded batch of staged chunks under the
-    /// sweep lock, drains it into a producer-local table outside the lock, and writes that
-    /// table through the ordinary external machinery; a sub-floor tail accumulates in the
-    /// session's shared table instead. Producers over the trigger block on the claim
-    /// deliberately - pausing production is the backpressure that makes the bound hold.
+    /// The production-time memory valve: claims a batch of staged chunks bounded in records
+    /// and in bytes under the sweep lock, drains it into a producer-local table outside the
+    /// lock, and writes that table through the ordinary external machinery; a tail too small
+    /// for a part accumulates in the session's shared table instead. Producers over the
+    /// trigger block on the claim deliberately - pausing production is the backpressure that
+    /// makes the bound hold.
     void drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
 
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
-    /// merge goes external, spilling at the part floor as it goes, and throws if anything
+    /// merge goes external, spilling at the part bound as it goes, and throws if anything
     /// would be left behind.
     void drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) const;
+
+    /// How large a pressure-drained part may grow, how many records fill one on the states
+    /// alone, and how many detached bytes may be in flight to the writer at once. The sweeps
+    /// are the valve that holds the query under `max_bytes_before_external_group_by`, so their
+    /// own working set - the batch a sweep claims, the table it drains that batch into, the
+    /// residue the tails share and the writes in flight - is sized from that threshold instead
+    /// of from an absolute constant, or the valve costs more memory than it sheds. Without a
+    /// threshold to size against, the part bound is unlimited and the absolute ceilings stand.
+    size_t adaptivePressurePartBytes() const;
+    size_t adaptivePressurePartRecords() const;
+    size_t adaptivePressureDetachedBytesBudget() const;
+
+    /// The bytes a claimed batch is expected to occupy once drained: the per-record
+    /// bookkeeping and aggregate states, plus the staged key bytes. Saturating, because an
+    /// absurd product only means "ask for the whole budget".
+    size_t estimateAdaptiveDrainBytes(size_t records, size_t key_bytes) const;
 
     /** This array serves two purposes.
       *

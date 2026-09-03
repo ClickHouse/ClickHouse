@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <limits>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
@@ -1430,6 +1431,53 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         use_compiled_functions);
 }
 
+size_t Aggregator::adaptivePressurePartBytes() const
+{
+    if (!params.max_bytes_before_external_group_by)
+        return std::numeric_limits<size_t>::max();
+
+    /// An eighth of the threshold, so that the residue, the batch a sweep claims, the table it
+    /// drains that batch into and the writes in flight all fit inside it several times over.
+    /// The floor keeps a part worth a file when the threshold itself is small.
+    return std::max(params.max_bytes_before_external_group_by / 8, adaptive_pressure_min_part_bytes);
+}
+
+size_t Aggregator::adaptivePressurePartRecords() const
+{
+    const size_t part_bytes = adaptivePressurePartBytes();
+    if (part_bytes == std::numeric_limits<size_t>::max())
+        return adaptive_pressure_spill_min_keys;
+
+    /// The records whose bookkeeping and states alone fill a part. Their key bytes are not
+    /// known where this is used, so for wide keys this overestimates and the detach's reading
+    /// of the built table's real `allocatedBytes` is what stops the overshoot. Never below one
+    /// record per bucket, so that a batch stays worth its bucket-major pass however wide the
+    /// states are.
+    const size_t per_record_bytes = sizeof(UInt64) * 4 + total_size_of_aggregate_states;
+    return std::clamp(part_bytes / per_record_bytes, ADAPTIVE_AGGREGATION_NUM_BUCKETS, adaptive_pressure_spill_min_keys);
+}
+
+size_t Aggregator::adaptivePressureDetachedBytesBudget() const
+{
+    const size_t part_bytes = adaptivePressurePartBytes();
+    if (part_bytes == std::numeric_limits<size_t>::max())
+        return adaptive_pressure_detached_bytes_budget;
+
+    /// Room for a couple of parts in flight, never more than the absolute ceiling: a query that
+    /// asked to spill at the threshold cannot afford to hold multiples of it undrained.
+    return std::min(adaptive_pressure_detached_bytes_budget, std::max(params.max_bytes_before_external_group_by / 2, 2 * part_bytes));
+}
+
+size_t Aggregator::estimateAdaptiveDrainBytes(size_t records, size_t key_bytes) const
+{
+    const size_t per_record_bytes = sizeof(UInt64) * 4 + total_size_of_aggregate_states;
+    size_t estimated_bytes = 0;
+    if (common::mulOverflow(records, per_record_bytes, estimated_bytes)
+        || common::addOverflow(estimated_bytes, key_bytes, estimated_bytes))
+        return std::numeric_limits<size_t>::max();
+    return estimated_bytes;
+}
+
 AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVariants::Type type) const
 {
     auto table = std::make_shared<AggregatedDataVariants>();
@@ -1519,6 +1567,9 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
 
     PaddedPODArray<AggregateDataPtr> places_scratch;
 
+    const size_t part_bytes = adaptivePressurePartBytes();
+    const size_t part_records = adaptivePressurePartRecords();
+
     size_t drained_records = 0;
     size_t begin = 0;
     /// A cancelled query stops at the next batch; the leftover chunks drop with this vector.
@@ -1530,18 +1581,19 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
         /// at a time. The current memory reading is deliberately not consulted: the query is
         /// external already, and skipping the spill during a dip would only let the remainder
         /// grow into one arbitrarily large table.
-        if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys)
+        if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys
+            || shared.early_drain_variants->allocatedBytes() >= part_bytes)
         {
             auto full = std::move(shared.early_drain_variants);
             shared.early_drain_variants = createAdaptiveDrainTable(full->type);
             spillDetachedAdaptiveTable(shared, *full);
         }
 
-        /// The batch is capped at the table's remaining capacity to the floor, with a
-        /// quarter-floor minimum so a batch stays worth its bucket-major pass; a part
-        /// therefore overshoots the floor by at most a quarter instead of a whole batch.
+        /// The batch is capped at the table's remaining capacity to the part bound, with a
+        /// quarter of it as the minimum so a batch stays worth its bucket-major pass; a part
+        /// therefore overshoots by at most a quarter instead of a whole batch.
         const size_t batch_target = std::max(
-            adaptive_pressure_spill_min_keys - shared.early_drain_variants->size(), adaptive_pressure_spill_min_keys / 4);
+            part_records - std::min(part_records, shared.early_drain_variants->size()), part_records / 4 + 1);
 
         size_t batch_records = 0;
         size_t end = begin;
@@ -1565,12 +1617,14 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 {
     PaddedPODArray<AggregateDataPtr> places_scratch;
 
+    const size_t part_bytes = adaptivePressurePartBytes();
+
     /// The coordinator lock is held only to claim work: a batch of chunks carrying about one
-    /// spill floor of records. Floor-sized batches are drained into a producer-local table
-    /// and written entirely outside the lock, so the transformation and the writes of
-    /// successive batches run in parallel across the producers that hit the trigger; only a
-    /// sub-floor tail is drained into the shared table under the lock, where its residue
-    /// keeps accumulating toward the floor instead of fragmenting per producer.
+    /// part's worth of records. Full batches are drained into a producer-local table and
+    /// written entirely outside the lock, so the transformation and the writes of successive
+    /// batches run in parallel across the producers that hit the trigger; only a tail too
+    /// small for a part is drained into the shared table under the lock, where its residue
+    /// keeps accumulating toward a part instead of fragmenting per producer.
     std::vector<StagedChunkPtr> batch;
     size_t batch_records = 0;
     size_t estimated_bytes = 0;
@@ -1586,18 +1640,31 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
 
+        /// The claim is bounded in records and in the bytes the drain of those records is
+        /// expected to take, so a batch of wide keys or wide states is cut short before the
+        /// drain builds a table the threshold cannot hold. A batch that reached either bound
+        /// is a part of its own, which is what tells the two regimes below apart; a batch that
+        /// merely ran out of chunks is the tail.
+        bool batch_is_full = false;
         size_t batch_key_bytes = 0;
         size_t split = 0;
-        for (; split < chunks.size() && batch_records < adaptive_pressure_spill_min_keys; ++split)
+        for (; split < chunks.size(); ++split)
         {
             batch_records += chunks[split]->keys.size();
             batch_key_bytes += chunks[split]->keys.key_bytes.size();
+            if (batch_records >= adaptive_pressure_spill_min_keys
+                || estimateAdaptiveDrainBytes(batch_records, batch_key_bytes) >= part_bytes)
+            {
+                batch_is_full = true;
+                ++split;
+                break;
+            }
         }
         batch.assign(std::make_move_iterator(chunks.begin()), std::make_move_iterator(chunks.begin() + split));
         for (size_t i = split; i < chunks.size(); ++i)
             shared.backlog.requeue(chunks[i]);
 
-        if (batch_records < adaptive_pressure_spill_min_keys)
+        if (!batch_is_full)
         {
             /// The tail regime: too little for a part of reasonable size.
             while (shared.early_drain_variants->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
@@ -1619,8 +1686,9 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             /// alone. Only cancellation declines.
             AggregatedDataVariantsPtr detached_shared;
             AdaptiveAggregationSession::SpillReservation reservation;
-            if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys
-                && reservation.reserveOrWait(shared, shared.early_drain_variants->allocatedBytes()))
+            const size_t residue_bytes = shared.early_drain_variants->allocatedBytes();
+            if ((shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys || residue_bytes >= part_bytes)
+                && reservation.reserveOrWait(shared, residue_bytes, adaptivePressureDetachedBytesBudget()))
             {
                 detached_shared = std::move(shared.early_drain_variants);
                 shared.early_drain_variants = createAdaptiveDrainTable(detached_shared->type);
@@ -1634,12 +1702,9 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
         routing_type = shared.early_drain_variants->type;
 
-        /// The estimate saturates instead of wrapping: an absurd product only means "ask for
-        /// the whole budget", which the empty-budget grant still admits alone.
-        size_t per_record_bytes = sizeof(UInt64) * 4 + total_size_of_aggregate_states;
-        if (common::mulOverflow(batch_records, per_record_bytes, estimated_bytes)
-            || common::addOverflow(estimated_bytes, batch_key_bytes, estimated_bytes))
-            estimated_bytes = std::numeric_limits<size_t>::max();
+        /// Saturating rather than wrapping, and a request larger than the whole budget is
+        /// granted when it is alone, so an absurd estimate cannot deadlock the valve.
+        estimated_bytes = estimateAdaptiveDrainBytes(batch_records, batch_key_bytes);
     }
 
     /// The budget is claimed with the coordinator lock released, so a producer that must wait
@@ -1647,7 +1712,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
     /// which is the backpressure that keeps the backlog bounded under slow storage. The wait
     /// ends only with a grant or with cancellation.
     AdaptiveAggregationSession::SpillReservation reservation;
-    if (!reservation.reserveOrWait(shared, estimated_bytes))
+    if (!reservation.reserveOrWait(shared, estimated_bytes, adaptivePressureDetachedBytesBudget()))
     {
         for (auto & chunk : batch)
             shared.backlog.requeue(chunk);
