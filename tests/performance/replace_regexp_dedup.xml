@@ -70,6 +70,12 @@
          value must bring it back for the cycle instead of running the regexp on every remaining row. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 2000 &lt; 256, concat('https://example.com/path/', toString(number)), concat('https://example.com/path/', toString(number % 4))), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 2000</query>
 
+    <!-- A distinct prefix followed by one repeated haystack, in blocks that end before the next
+         distinct-ratio boundary (256 distinct rows, then 244 rows of one value in a 500-row block): the
+         recurring sample must bring the cache back within the block, or the whole repetitive suffix
+         would run the regexp once per row. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 500 &lt; 256, concat('https://example.com/path/', toString(number)), 'https://example.com/path/repeated'), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 500</query>
+
     <!-- The same shape with a nine-value cycle: probes spaced at a fixed stride of 32 rows would visit
          only the cycle positions 32 * k mod 9 and never the sampled one, so the rows following the
          sample must be compared consecutively for the cache to come back. -->

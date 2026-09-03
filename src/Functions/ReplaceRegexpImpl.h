@@ -421,20 +421,19 @@ struct ReplaceRegexpImpl
         CachedResult prev_result{0, 0, false};
 
         /// While the cache is off, one haystack per distinct-ratio window is kept as a sample and the
-        /// rows equal to it are counted, so that a block whose remainder turns repetitive after a
-        /// mostly-distinct window is not stuck on the plain path for the rest of the block. Only the
-        /// rows right after the sample are compared against it: a compare of distinct values runs to
-        /// the first differing byte, which for equal-length values sharing a long prefix (URLs that
-        /// differ only in the tail) is about the cost of the copy every row pays anyway, so comparing
-        /// every row would slow the mostly-distinct blocks the guard exists to protect. Comparing the
-        /// consecutive rows that follow the sample rather than one row per ratio window catches every
-        /// cycle of up to `sample_probe_rows` values regardless of its length: probes spaced at a fixed
-        /// stride only ever land on the cycle positions the stride happens to reach (a stride of 32 never
-        /// meets a cycle of 9). An all-distinct block never re-enables the cache at all, and a value
-        /// that recurs only after more rows than the probes cover escapes the sample just as a value
-        /// that recurs after more than a window escapes the distinct ratio.
+        /// cache comes back on the spot as soon as a row equal to it arrives, so that a block whose
+        /// remainder turns repetitive after a mostly-distinct window is not stuck on the plain path for
+        /// the rest of the block. Only the rows right after the sample are compared against it: a compare
+        /// of distinct values runs to the first differing byte, which for equal-length values sharing a
+        /// long prefix (URLs that differ only in the tail) is about the cost of the copy every row pays
+        /// anyway, so comparing every row would slow the mostly-distinct blocks the guard exists to
+        /// protect. Comparing the consecutive rows that follow the sample rather than one row per ratio
+        /// window catches every cycle of up to `sample_probe_rows` values regardless of its length: probes
+        /// spaced at a fixed stride only ever land on the cycle positions the stride happens to reach (a
+        /// stride of 32 never meets a cycle of 9). An all-distinct block never re-enables the cache at
+        /// all, and a value that recurs only after more rows than the probes cover escapes the sample
+        /// just as a value that recurs after more than a window escapes the distinct ratio.
         std::string_view sample_haystack;
-        size_t sample_hits = 0;
 
         /// `haystack_bytes_read` is the size of the haystack the compare or lookup scanned to find the
         /// entry. Charging only the copied result would let a run of repeated multi-megabyte haystacks
@@ -483,17 +482,9 @@ struct ReplaceRegexpImpl
                         }
                         cache_size_at_distinct_check = results_cache.size();
                     }
-                    /// A recurring sample proves the last window was not all-distinct. The distinct
-                    /// ratio of the next window then judges the rebuilt cache, so a wrong re-enable
-                    /// costs one window of lookups, while a cycle of a few values keeps it for good.
-                    else if (sample_hits > 0)
-                        map_enabled = true;
 
                     if (!map_enabled)
-                    {
                         sample_haystack = haystack;
-                        sample_hits = 0;
-                    }
                 }
                 rows_in_window = 0;
                 matched_in_window = 0;
@@ -502,10 +493,15 @@ struct ReplaceRegexpImpl
 
             /// The sample is taken on the first row of a distinct-ratio window, so the probed rows are
             /// the ones right after it and the sampled row never counts as a repeat of itself.
+            /// The recurrence proves the rows are not all-distinct, so the cache is rebuilt from this row
+            /// on rather than at the next distinct-ratio boundary: a block shorter than a boundary apart
+            /// would otherwise end before the recurrence could be acted on. The distinct ratio of the
+            /// window the rebuilt cache runs into judges it again, so a wrong re-enable costs a window of
+            /// lookups, while a cycle of a few values keeps the cache for good.
             const size_t offset_in_distinct_window = i % distinct_ratio_window;
             if (!map_enabled && offset_in_distinct_window != 0 && offset_in_distinct_window <= sample_probe_rows
                 && haystack == sample_haystack)
-                ++sample_hits;
+                map_enabled = true;
 
             const UInt64 result_start = res_offset;
             bool row_matched = false;
