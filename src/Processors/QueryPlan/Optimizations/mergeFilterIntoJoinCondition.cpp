@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
@@ -8,6 +9,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -144,6 +146,20 @@ const ActionsDAG::Node & createResultPredicate(
 };
 
 
+/// The body of a lambda is a separate `ActionsDAG`, not reachable from the outer one: a
+/// non-deterministic call that depends on a lambda argument stays inside it, and only a nullary one
+/// is hoisted out. Return that inner DAG so that the walk below can descend into it.
+const ActionsDAG * getLambdaBody(const IFunctionBase & function)
+{
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        return &expression->getAcionsDAG();
+
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        return &capture->getAcionsDAG();
+
+    return nullptr;
+}
+
 /// Whether the subtree rooted at `node` contains a function that can give different results for two
 /// rows with equal inputs. Such a conjunct has to stay in the filter: the join condition is evaluated
 /// once per join input row rather than once per output row, and with `enable_join_runtime_filters`
@@ -163,9 +179,33 @@ bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
         if (!visited.insert(current).second)
             continue;
 
-        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
-            && !current->function_base->isDeterministicInScopeOfQuery())
-            return true;
+        const IFunctionBase * function = nullptr;
+
+        if (current->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            function = current->function_base.get();
+        }
+        else if (current->type == ActionsDAG::ActionType::COLUMN && current->column)
+        {
+            /// A lambda that captures nothing takes no arguments, so it is folded into a `COLUMN`
+            /// node holding a `ColumnFunction` and the `FUNCTION` branch above never sees it.
+            const IColumn * column = current->column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+                function = column_function->getFunction().get();
+        }
+
+        if (function)
+        {
+            if (!function->isDeterministicInScopeOfQuery())
+                return true;
+
+            if (const auto * body = getLambdaBody(*function))
+                for (const auto & inner : body->getNodes())
+                    stack.push_back(&inner);
+        }
 
         for (const auto * child : current->children)
             stack.push_back(child);

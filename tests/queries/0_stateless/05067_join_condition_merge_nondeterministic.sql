@@ -24,7 +24,25 @@ SELECT count() FROM (
     SELECT count() FROM (SELECT number % 2 AS a FROM numbers(1000000)) t1
     CROSS JOIN (SELECT DISTINCT number AS b FROM numbers(2)) t2
     WHERE t1.a = t2.b + rand() % 2
+    SETTINGS query_plan_merge_filter_into_join_condition = 1
 ) WHERE explain LIKE '%Join conditions:%rand%';
+
+-- The same, when the non-deterministic call hides in the body of a lambda: it is invisible in the
+-- outer `ActionsDAG`, because the lambda body is a DAG of its own.
+SELECT 'lambda';
+SELECT count() BETWEEN 730000 AND 770000
+FROM (SELECT number % 2 AS a FROM numbers(1000000)) t1
+CROSS JOIN (SELECT DISTINCT number AS b FROM numbers(2)) t2
+WHERE t1.a = t2.b + arrayExists(x -> (rand(x) % 2) = 0, materialize([1]))
+SETTINGS query_plan_merge_filter_into_join_condition = 1;
+
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM (SELECT number % 2 AS a FROM numbers(1000000)) t1
+    CROSS JOIN (SELECT DISTINCT number AS b FROM numbers(2)) t2
+    WHERE t1.a = t2.b + arrayExists(x -> (rand(x) % 2) = 0, materialize([1]))
+    SETTINGS query_plan_merge_filter_into_join_condition = 1
+) WHERE explain LIKE '%Join conditions:%arrayExists%';
 
 -- A deterministic equality is still merged.
 SELECT 'deterministic';
@@ -33,4 +51,14 @@ SELECT count() FROM (
     SELECT count() FROM (SELECT number % 2 AS a FROM numbers(1000)) t1
     CROSS JOIN (SELECT DISTINCT number AS b FROM numbers(2)) t2
     WHERE t1.a = t2.b + 1
+    SETTINGS query_plan_merge_filter_into_join_condition = 1
+) WHERE explain LIKE '%Join conditions:%';
+
+-- A deterministic lambda does not block the merge.
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM (SELECT number % 2 AS a FROM numbers(1000)) t1
+    CROSS JOIN (SELECT DISTINCT number AS b FROM numbers(2)) t2
+    WHERE t1.a = t2.b + arrayExists(x -> (x % 2) = 0, materialize([1]))
+    SETTINGS query_plan_merge_filter_into_join_condition = 1
 ) WHERE explain LIKE '%Join conditions:%';
