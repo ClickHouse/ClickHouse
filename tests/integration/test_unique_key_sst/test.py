@@ -114,11 +114,15 @@ def test_unique_key_on_s3_survives_restart(started_cluster):
     node.query("DROP TABLE uk_s3")
 
 
-def test_unique_key_extend_policy_with_s3(started_cluster):
-    # A local UNIQUE KEY table widened onto a policy that also contains an
-    # S3 volume. `default_with_s3` keeps the `default` volume/disk of the old
-    # policy, so the generic compatibility check passes.
-    node.query("DROP TABLE IF EXISTS uk_local")
+def test_unique_key_switch_policy_to_s3(started_cluster):
+    # Route a UNIQUE KEY table's parts to remote storage after creation. UK
+    # tables reject `ALTER ... PARTITION` (so no `MOVE PARTITION`) and
+    # `MODIFY SETTING disk` can't switch a local table to S3 (its single-disk
+    # temp policy fails checkCompatibleWith), so the only supported path is
+    # `MODIFY SETTING storage_policy` to `s3_extending` - a policy that keeps
+    # the old `default` volume/disk (for checkCompatibleWith) and puts S3 first,
+    # so new inserts (and their `unique_key_index.sst`) land on S3.
+    node.query("DROP TABLE IF EXISTS uk_local SYNC")
     node.query(
         """
         CREATE TABLE uk_local (id UInt64, v String)
@@ -135,19 +139,29 @@ def test_unique_key_extend_policy_with_s3(started_cluster):
     )
 
     node.query(
-        "ALTER TABLE uk_local MODIFY SETTING storage_policy = 'default_with_s3'",
+        "ALTER TABLE uk_local MODIFY SETTING storage_policy = 's3_extending'",
         settings=UK_SETTINGS,
     )
 
-    # Existing data stays readable after the policy change.
+    # The pre-ALTER part stays on the local disk and remains readable.
     assert node.query("SELECT id, v FROM uk_local ORDER BY id") == EXPECTED_ROWS
 
-    # New inserts keep working under the widened policy (parts go to the
-    # first volume, which is still the local `default` disk).
+    # A new insert writes its part (and `unique_key_index.sst`) onto the S3 disk.
     node.query("INSERT INTO uk_local VALUES (40, 'd')", settings=UK_SETTINGS)
-    assert node.query("SELECT count() FROM uk_local") == "4\n"
 
-    node.query("DROP TABLE uk_local")
+    # Locate the new part by the row it holds (`_part`) rather than counting S3
+    # parts: a background merge could fold both parts into one at any time, and
+    # that merged part is reserved from volume 0 (S3) too - so this assertion
+    # holds whether or not a merge has happened.
+    assert node.query(
+        "SELECT disk_name FROM system.parts WHERE database = 'default' AND table = 'uk_local'"
+        " AND active AND name = (SELECT _part FROM uk_local WHERE id = 40)"
+    ).strip() == "s3_disk"
+
+    # And it reads back through the S3-backed SST.
+    assert node.query("SELECT id, v FROM uk_local ORDER BY id") == "10\ta\n20\tb\n30\tc\n40\td\n"
+
+    node.query("DROP TABLE uk_local SYNC")
 
 
 def test_unique_key_sst_checksums(started_cluster):
@@ -197,7 +211,7 @@ def test_unique_key_sst_checksums(started_cluster):
     assert file_exists(node, part_path + "unique_key_index.sst")
 
     # sst_in_checksums
-    assert bash(node, f"grep -qa unique_key_index.sst {part_path}checksums.txt && echo yes || echo no").strip() == "yes"
+    assert bash(node, f"grep -qa unique_key_index.sst {shlex.quote(part_path + 'checksums.txt')} && echo yes || echo no").strip() == "yes"
 
     node.query("DETACH TABLE uk_sst_checksums")
     node.query("ATTACH TABLE uk_sst_checksums", settings={"send_logs_level": "error"})
@@ -211,8 +225,9 @@ def test_unique_key_sst_checksums(started_cluster):
     # the damage and rebuilds the file.
     part_path = get_active_part_path(node, "uk_sst_checksums")
     full_size = file_size(node, part_path + "unique_key_index.sst")
+    sst_path = shlex.quote(part_path + "unique_key_index.sst")
     node.query("DETACH TABLE uk_sst_checksums")
-    bash(node, f"printf 'XXXXXXXXXXXXXXXX' | dd of={part_path}unique_key_index.sst bs=1 seek={full_size // 2} conv=notrunc status=none")
+    bash(node, f"printf 'XXXXXXXXXXXXXXXX' | dd of={sst_path} bs=1 seek={full_size // 2} conv=notrunc status=none")
 
     # sst_size_unchanged_after_damage
     assert file_size(node, part_path + "unique_key_index.sst") == full_size
@@ -225,9 +240,12 @@ def test_unique_key_sst_checksums(started_cluster):
 
     # --- Missing SST: the checksum entry turns it into a plain consistency failure.
     part_path = get_active_part_path(node, "uk_sst_checksums")
+    sst_path = shlex.quote(part_path + "unique_key_index.sst")
     node.query("DETACH TABLE uk_sst_checksums")
-    bash(node, f"rm -f {part_path}unique_key_index.sst")
-    node.query("ATTACH TABLE uk_sst_checksums", settings={"send_logs_level": "error"})
+    bash(node, f"rm -f {sst_path}")
+    # `none` (not `error`): the load logs <Error> "Part is broken" while moving
+    # the part to detached, and that level would be shipped to the client.
+    node.query("ATTACH TABLE uk_sst_checksums", settings={"send_logs_level": "none"})
 
     # active_parts_after_missing_sst / detached_parts_after_missing_sst
     assert node.query("SELECT count() FROM system.parts WHERE database = 'default' AND table = 'uk_sst_checksums' AND active") == "0\n"
@@ -252,9 +270,11 @@ def test_unique_key_sst_checksums(started_cluster):
 
     ro_path = get_active_part_path(node, "uk_sst_ro")
     ro_full_size = file_size(node, ro_path + "unique_key_index.sst")
+    ro_sst = shlex.quote(ro_path + "unique_key_index.sst")
+    ro_sst_keep = shlex.quote(ro_path + "unique_key_index.sst.keep")
     node.query("DETACH TABLE uk_sst_ro")
-    bash(node, f"cp {ro_path}unique_key_index.sst {ro_path}unique_key_index.sst.keep")
-    bash(node, f"printf 'XXXXXXXXXXXXXXXX' | dd of={ro_path}unique_key_index.sst bs=1 seek={ro_full_size // 2} conv=notrunc status=none")
+    bash(node, f"cp {ro_sst} {ro_sst_keep}")
+    bash(node, f"printf 'XXXXXXXXXXXXXXXX' | dd of={ro_sst} bs=1 seek={ro_full_size // 2} conv=notrunc status=none")
 
     # readonly_attach_with_corrupt_sst_fails
     assert "UNIQUE_KEY_DENSE_INDEX_UNREADABLE" in node.query_and_get_error("ATTACH TABLE uk_sst_ro")
@@ -262,7 +282,7 @@ def test_unique_key_sst_checksums(started_cluster):
     # corrupt_sst_left_in_place
     assert file_size(node, ro_path + "unique_key_index.sst") == ro_full_size
 
-    bash(node, f"mv {ro_path}unique_key_index.sst.keep {ro_path}unique_key_index.sst")
+    bash(node, f"mv {ro_sst_keep} {ro_sst}")
     node.query("ATTACH TABLE uk_sst_ro", settings={"send_logs_level": "error"})
 
     # readonly_attach_after_restore
