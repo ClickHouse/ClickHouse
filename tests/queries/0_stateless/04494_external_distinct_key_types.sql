@@ -33,7 +33,7 @@ SETTINGS max_block_size = 2;
 SELECT DISTINCT 1, '1' FROM numbers(5);
 SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2;
 
--- Types that support only equality (no comparison) fall back to the in-memory DISTINCT and still work.
+-- A key type that supports only equality (no comparison) spills too: its values are compared as bytes.
 SELECT count() FROM (SELECT DISTINCT s FROM (SELECT number % 3 AS g, uniqExactState(number) AS s FROM numbers(100) GROUP BY g));
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT s FROM (SELECT number % 3 AS g, uniqExactState(number) AS s FROM numbers(100) GROUP BY g)) WHERE explain LIKE '%ExternalDistinctTransform%';
 
@@ -44,10 +44,10 @@ SELECT count() FROM (SELECT DISTINCT number % 100 AS __distinct_already_emitted 
 -- A constant non-key column alongside a real key: the first run rebuilds the constant from the header.
 SELECT count(), sum(c) FROM (SELECT DISTINCT 7 AS c, number % 1000 AS k FROM numbers(10000));
 
--- The queries above must actually take the external path (all of them except the AggregateFunction
--- one and the EXPLAIN introspection spill under the one-byte threshold).
+-- The queries above must actually take the external path (all of them except the EXPLAIN introspection
+-- spill under the one-byte threshold).
 SYSTEM FLUSH LOGS query_log;
-SELECT countIf(ProfileEvents['ExternalDistinctWritePart'] >= 1) >= 11
+SELECT countIf(ProfileEvents['ExternalDistinctWritePart'] >= 1) >= 12
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase() AND log_comment = '04494_external_distinct_key_types'

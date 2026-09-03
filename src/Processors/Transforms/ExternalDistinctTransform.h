@@ -65,7 +65,8 @@ private:
 ///  - The already emitted rows (extracted from the set) are sorted by the key columns and written to a
 ///    temporary file as the first "run", each row carrying an "already emitted" flag; the hash set is
 ///    freed. The runs contain only the non-constant columns - the constant columns are re-attached from
-///    the header after the merge.
+///    the header after the merge. A key column whose type is not comparable (e.g. `AggregateFunction`)
+///    is written as its serialized values and compared as bytes, and deserialized back after the merge.
 ///  - Nothing is emitted anymore until the input is exhausted. Incoming chunks are sorted and accumulated,
 ///    and written out as further runs (locally deduplicated, flag not set) each time the memory usage
 ///    exceeds the threshold again.
@@ -122,9 +123,10 @@ private:
 
     /// Keeps only the spilled columns of an input-header chunk (drops the constant columns).
     Chunk stripConstantColumns(Chunk chunk) const;
-    /// Takes a spill-layout chunk (see stripConstantColumns, buildChunkFromKeys), appends the arrival
-    /// numbers of its rows (when the input order is preserved) and the "already emitted" flag column, and
-    /// sorts by the key columns.
+    /// Takes a spill-layout chunk (see stripConstantColumns, buildChunkFromKeys), replaces the
+    /// non-comparable key columns by their serialized values (see spill_serialized_key_columns_pos),
+    /// appends the arrival numbers of its rows (when the input order is preserved) and the "already
+    /// emitted" flag column, and sorts by the key columns.
     Chunk prepareSpillChunk(Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const;
 
     /// Assembles a spill-layout chunk (without the flag column) of the first run from the extracted key
@@ -133,6 +135,9 @@ private:
     /// Removes the arrival number column (the last one) from a merged chunk when the input order is
     /// preserved.
     Chunk dropArrivalNumbers(Chunk chunk) const;
+    /// Turns the serialized key columns of a merged chunk back into their types (the inverse of the
+    /// serialization in prepareSpillChunk).
+    Chunk deserializeKeyColumns(Chunk chunk) const;
     /// Re-attaches the constant columns that are not written to the spilled runs, turning a merged
     /// spill-layout chunk back into an input-header chunk.
     Chunk restoreConstantColumns(Chunk chunk) const;
@@ -163,6 +168,12 @@ private:
     const ColumnNumbers spill_columns_pos;
     /// Positions of the key columns within the spill layout.
     const ColumnNumbers spill_key_columns_pos;
+    /// Positions within the spill layout of the key columns whose type is not comparable (e.g.
+    /// `AggregateFunction`). The runs are sorted and merged by comparing the key columns, which such a
+    /// type cannot do, so these columns are spilled as their serialized values (a String column of the
+    /// same name) and compared as bytes - equal values have equal serializations - and deserialized back
+    /// after the merge.
+    const ColumnNumbers spill_serialized_key_columns_pos;
     /// Header of the spilled runs: the spilled columns, the arrival number column (when the input order
     /// is preserved) and the flag column.
     SharedHeader spill_header;

@@ -160,23 +160,6 @@ void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings &
     plan_settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
 
-/// External DISTINCT writes sorted runs to disk, so all the key columns must support comparison
-/// (a few types support only equality, which is enough for the hash-based DISTINCT). Constant columns
-/// are not part of the DISTINCT key; if there are only constant columns, the result is a single row and
-/// spilling makes no sense.
-static bool canUseExternalDistinct(const Block & header, const Names & columns)
-{
-    const auto key_columns_pos = calculateDistinctKeyColumnsPositions(header, columns);
-    if (key_columns_pos.empty())
-        return false;
-
-    for (const auto pos : key_columns_pos)
-        if (!header.getByPosition(pos).type->isComparable())
-            return false;
-
-    return true;
-}
-
 static ITransformingStep::Traits getTraits(bool pre_distinct)
 {
     const bool preserves_number_of_streams = pre_distinct;
@@ -253,10 +236,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// on the same conditions).
     const size_t external_threshold = getMaxBytesBeforeExternalDistinct(
         settings.max_bytes_before_external_distinct, settings.max_bytes_ratio_before_external_distinct);
-    const bool columns_support_spilling = canUseExternalDistinct(*pipeline.getSharedHeader(), columns);
+    /// Constant columns are not part of the DISTINCT key; if there are only constant columns, the result is
+    /// a single row and spilling makes no sense.
+    const bool has_key_columns = !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
     const auto shared_tmp_data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk();
-    const bool final_distinct_spills
-        = external_threshold != 0 && columns_support_spilling && shared_tmp_data != nullptr;
+    const bool final_distinct_spills = external_threshold != 0 && has_key_columns && shared_tmp_data != nullptr;
 
     if (!pre_distinct && final_distinct_spills)
     {
@@ -290,11 +274,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
     if (!pre_distinct && settings.max_bytes_before_external_distinct != 0 && external_threshold != 0)
     {
-        if (!columns_support_spilling)
-            LOG_DEBUG(
-                getLogger("DistinctStep"),
-                "External DISTINCT is not used: the DISTINCT columns do not support it "
-                "(all key columns must be comparable and at least one must be non-constant)");
+        if (!has_key_columns)
+            LOG_DEBUG(getLogger("DistinctStep"), "External DISTINCT is not used: all the DISTINCT columns are constant");
         else
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external DISTINCT is not provided");

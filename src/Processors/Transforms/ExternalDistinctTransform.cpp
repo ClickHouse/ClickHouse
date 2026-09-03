@@ -4,9 +4,12 @@
 #include <functional>
 #include <numeric>
 
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/SortCursor.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -14,6 +17,7 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/SortingTransform.h>
+#include <Common/Arena.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -86,6 +90,53 @@ ColumnNumbers mapKeysToSpillPositions(const ColumnNumbers & key_columns_pos, con
     return spill_positions;
 }
 
+/// Positions within the spill layout of the key columns whose type is not comparable: they are spilled as
+/// their serialized values (see serializeValues) so that the sorting and the merge of the runs can compare
+/// them as bytes.
+ColumnNumbers calculateSerializedKeyColumnsPositions(
+    const Block & header, const ColumnNumbers & key_columns_pos, const ColumnNumbers & spill_key_columns_pos)
+{
+    ColumnNumbers positions;
+    for (size_t i = 0; i < key_columns_pos.size(); ++i)
+    {
+        if (!header.getByPosition(key_columns_pos[i]).type->isComparable())
+            positions.push_back(spill_key_columns_pos[i]);
+    }
+    return positions;
+}
+
+/// The serialization of every value of the column (IColumn::serializeValueIntoArena) as a String column.
+ColumnPtr serializeValues(const IColumn & column)
+{
+    const size_t num_rows = column.size();
+    auto serialized = ColumnString::create();
+    serialized->reserve(num_rows);
+
+    Arena arena;
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        const char * begin = nullptr;
+        const auto value = column.serializeValueIntoArena(row, arena, begin, /*settings=*/ nullptr);
+        serialized->insertData(value.data(), value.size());
+    }
+    return serialized;
+}
+
+/// The inverse of serializeValues: a column of the given type holding the deserialized values.
+ColumnPtr deserializeValues(const IColumn & serialized, const IDataType & type)
+{
+    const size_t num_rows = serialized.size();
+    auto column = type.createColumn();
+    column->reserve(num_rows);
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        ReadBufferFromString in(serialized.getDataAt(row));
+        column->deserializeAndInsertFromArena(in, /*settings=*/ nullptr);
+    }
+    return column;
+}
+
 /// A service column only needs a name that is unique within the spill header (everything addresses it
 /// by position); a user column may legitimately be named like it, so uniquify by prepending underscores
 /// instead of failing.
@@ -96,13 +147,25 @@ String uniqueColumnName(const Block & header, String name)
     return name;
 }
 
-/// The spilled columns, then the arrival number column (when the input order is preserved), then the
-/// flag column.
-SharedHeader buildSpillHeader(const Block & header, const ColumnNumbers & spill_columns_pos, bool with_arrival_numbers)
+/// The spilled columns (the serialized key columns as String, under their own names), then the arrival
+/// number column (when the input order is preserved), then the flag column.
+SharedHeader buildSpillHeader(
+    const Block & header,
+    const ColumnNumbers & spill_columns_pos,
+    const ColumnNumbers & spill_serialized_key_columns_pos,
+    bool with_arrival_numbers)
 {
     Block spill_header;
     for (const auto pos : spill_columns_pos)
         spill_header.insert(header.getByPosition(pos));
+
+    auto string_type = std::make_shared<DataTypeString>();
+    for (const auto pos : spill_serialized_key_columns_pos)
+    {
+        auto & column = spill_header.getByPosition(pos);
+        column.type = string_type;
+        column.column = string_type->createColumn();
+    }
 
     if (with_arrival_numbers)
     {
@@ -272,7 +335,9 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , description(buildSortDescription(*header_, distinct_set.getKeyColumnsPositions()))
     , spill_columns_pos(calculateSpillColumnsPositions(*header_))
     , spill_key_columns_pos(mapKeysToSpillPositions(distinct_set.getKeyColumnsPositions(), spill_columns_pos))
-    , spill_header(buildSpillHeader(*header_, spill_columns_pos, preserve_input_order))
+    , spill_serialized_key_columns_pos(
+          calculateSerializedKeyColumnsPositions(*header_, distinct_set.getKeyColumnsPositions(), spill_key_columns_pos))
+    , spill_header(buildSpillHeader(*header_, spill_columns_pos, spill_serialized_key_columns_pos, preserve_input_order))
     , merged_header(buildMergedHeader(*spill_header))
     , arrival_number_description(preserve_input_order ? buildArrivalNumberDescription(*merged_header) : SortDescription{})
     , run_dedup(spill_key_columns_pos, description, spill_header->columns() - 1)
@@ -342,6 +407,20 @@ Chunk ExternalDistinctTransform::dropArrivalNumbers(Chunk chunk) const
     return Chunk(std::move(columns), num_rows);
 }
 
+Chunk ExternalDistinctTransform::deserializeKeyColumns(Chunk chunk) const
+{
+    if (spill_serialized_key_columns_pos.empty())
+        return chunk;
+
+    const auto & header = inputs.front().getHeader();
+    const size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (const auto pos : spill_serialized_key_columns_pos)
+        columns[pos] = deserializeValues(*columns[pos], *header.getByPosition(spill_columns_pos[pos]).type);
+
+    return Chunk(std::move(columns), num_rows);
+}
+
 Chunk ExternalDistinctTransform::stripConstantColumns(Chunk chunk) const
 {
     const auto & header = inputs.front().getHeader();
@@ -371,6 +450,9 @@ Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emi
     convertToFullIfConst(chunk);
 
     auto columns = chunk.detachColumns();
+    for (const auto pos : spill_serialized_key_columns_pos)
+        columns[pos] = serializeValues(*columns[pos]);
+
     if (preserve_input_order)
     {
         auto arrival_numbers = ColumnUInt64::create(num_rows);
@@ -811,7 +893,7 @@ void ExternalDistinctTransform::generate()
 
     /// The chunk is merged, deduplicated and, when the input order is preserved, sorted back by the
     /// arrival numbers, which have done their job by now.
-    Chunk chunk = restoreConstantColumns(dropArrivalNumbers(std::move(current_chunk)));
+    Chunk chunk = restoreConstantColumns(deserializeKeyColumns(dropArrivalNumbers(std::move(current_chunk))));
 
     emitted_rows += chunk.getNumRows();
     generated_chunk = std::move(chunk);
