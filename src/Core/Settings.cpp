@@ -6693,6 +6693,14 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
 )", 0) \
+    DECLARE(Bool, query_plan_lower_array_join_function, false, R"(
+Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+)", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -8796,9 +8804,6 @@ implementation.
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_codecs, false, R"(
-If it is set to true, allow to specify any experimental compression codec.
-)", EXPERIMENTAL) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA) \
@@ -9231,6 +9236,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
     MAKE_OBSOLETE(M, Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, false) \
     MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_codecs, false) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
