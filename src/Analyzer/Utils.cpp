@@ -1554,16 +1554,16 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
     return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false, false);
 }
 
-/// True if a value of this type has no exact literal syntax: a decimal-backed leaf anywhere
-/// (`Decimal`/`DateTime64`/`Time64`), a `Dynamic` whose runtime value can be a decimal not visible in
-/// the type, or a `Variant`, whose active alternative a literal does not record.
-bool typeNeedsExactLiteralSerialization(const IDataType & type)
+/// True if a value of this type may contain a decimal-backed leaf that needs exact serialization:
+/// a static Decimal/DateTime64/Time64 anywhere (all scaled decimals), or a Dynamic whose runtime
+/// value can be a decimal not visible in the type.
+bool typeMayContainDecimal(const IDataType & type)
 {
     bool result = false;
     auto check = [&](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isDynamic() || which.isVariant();
+        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isDynamic();
     };
     check(type);
     type.forEachChild(check);
@@ -1645,8 +1645,8 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
 
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type)
 {
-    /// Subtrees with an exact literal syntax are serialized by the default literal path, unchanged.
-    if (!typeNeedsExactLiteralSerialization(*type))
+    /// Decimal-free subtrees are serialized exactly by the default literal path, unchanged.
+    if (!typeMayContainDecimal(*type))
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type));
 
     if (isColumnConst(*column))
@@ -1729,12 +1729,10 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
                 variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type);
             /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
             /// literal does not keep the member type (a `Point` is inferred back as `Tuple(Float64, Float64)`,
-            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. The wrapping is
+            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. This mirrors the
+            /// `Variant` branch of `ConstantNode::toASTImpl`, which the exact path bypasses. The wrapping is
             /// skipped for a scalar decimal member, which already casts itself to its own type.
-            member_ast = makeCastToTypeNameAST(std::move(member_ast), member_type->getName());
-            /// Name the `Variant` type too: naming the member only lets the receiver resolve a conversion
-            /// to it, and where the surrounding cast is suppressed (an `IN` right-hand side) nothing does.
-            return makeCastToTypeNameAST(std::move(member_ast), type->getName());
+            return makeCastToTypeNameAST(std::move(member_ast), member_type->getName());
         }
         case TypeIndex::Dynamic:
         {

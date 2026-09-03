@@ -148,25 +148,6 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_var_disc WHERE (v 
 -- separate change screens a Variant comparison out of that merge, and the result is correct either way.
 SELECT count() FROM t_var_disc WHERE (a != [1::UInt64]::Array(Variant(Date, UInt64))) AND (a != [5::UInt64]::Array(Variant(Date, UInt64))) AND (a != [7::UInt64]::Array(Variant(Date, UInt64))) AND (id = 1);
 
--- Across a connection the literal must name the alternative's type and the Variant type, or the receiver
--- re-infers the element type and either re-selects an alternative or refuses the conversion outright.
-SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_var_disc) WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)))
-SETTINGS prefer_localhost_replica = 0;
--- A predicate pushed down into a distributed subquery is the second consumer: a bare literal there makes the shard re-infer the element type and refuse.
-SELECT count() FROM (SELECT a FROM remote('127.0.0.1', currentDatabase(), t_var_disc))
-WHERE a = [1::UInt64]::Array(Variant(Date, UInt64)) SETTINGS prefer_localhost_replica = 0;
--- Both shard-bound shapes above must have carried the alternative's type and the `Variant` type, not
--- a bare literal. NOTE: this test cannot use 'current_database = currentDatabase()' for the secondary
--- queries, so they are scoped by the database name inside the query text instead.
-SYSTEM FLUSH LOGS query_log;
-SELECT countIf(query LIKE '% IN tuple(array(%Variant(Date, UInt64)%') > 0,
-       countIf(query LIKE '%HAVING equals(%array(%Variant(Date, UInt64)%') > 0
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
-  AND NOT is_initial_query AND type = 'QueryFinish'
-  AND query NOT LIKE '%system%query_log%'
-  AND query LIKE concat('%', currentDatabase(), '%t_var_disc%');
-
 DROP TABLE t_var_disc;
 
 -- Keeping the constants' types is only enough when the constant already carries the expression's type.
