@@ -10,6 +10,8 @@ The selected SQL model is specified in `SQLNoModifySubcolumnNoDots.MD`. Element 
 
 The initial syntax is limited to an owning `Tuple` column and elements reached through a direct chain of nested `Tuple` declarations. A `Tuple` used only in an expression has no storage codec policy. An annotation reached through `Array`, `Map`, or another non-`Tuple` wrapper is rejected rather than ignored.
 
+In the parser AST, the codec operation belongs to the tuple element's `ASTDataType`. Its existing argument-list child remains unchanged, and an optional codec is an additional AST child. `REMOVE CODEC` uses one bit in the existing AST flag storage. `ASTTupleDataType` therefore needs no parallel codec/removal vectors, and ordinary AST visitors can reach codec expressions. This representation is also suitable for later support of transparent wrappers such as `Array(Tuple(...))` without changing the AST again.
+
 ## Codec Metadata Model
 
 Generalize the single `ColumnDescription::codec` value into a codec-policy abstraction, tentatively called `ColumnCodecDescription`.

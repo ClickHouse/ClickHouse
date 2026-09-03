@@ -21,14 +21,6 @@ public:
     /// Validation happens in DataTypeFactory::createTupleFromAST().
     Strings element_names;
 
-    /// Tuple-element codecs are storage metadata, not data type arguments.
-    /// DataTypeFactory ignores them.
-    std::vector<ASTPtr> element_codecs;
-
-    /// ALTER-only markers that remove codecs from matching tuple elements.
-    /// False with a null element codec means that no operation was specified.
-    std::vector<bool> element_codec_removals;
-
     String getID(char delim) const override;
     ASTPtr clone() const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
@@ -42,10 +34,6 @@ protected:
     /// Outputs: Tuple(name1 Type1, name2 Type2, ...) for named
     ///          Tuple(Type1, Type2, ...) for unnamed
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
-
-private:
-    void validateCodecOperations() const;
 };
 
 }

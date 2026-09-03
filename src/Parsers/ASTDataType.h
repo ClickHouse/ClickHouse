@@ -7,9 +7,21 @@ namespace Poco::JSON { class Object; }
 namespace DB
 {
 
+class JSONObjectReader;
+class JSONObjectWriter;
+
 /// AST for data types, e.g. UInt8 or Tuple(x UInt8, y Enum(a = 1))
 class ASTDataType : public IAST
 {
+    struct ASTDataTypeFlags
+    {
+        using ParentFlags = void;
+        static constexpr UInt32 RESERVED_BITS = 1;
+
+        UInt32 remove_codec : 1;
+        UInt32 unused : 31;
+    };
+
 public:
     String name;
 
@@ -22,7 +34,25 @@ public:
     ASTPtr getArguments() const;
     void resetArguments();
 
+    /// Codec operation attached to this type when it is used as a Tuple element.
+    ASTPtr getCodec() const;
+    bool hasCodec() const { return static_cast<bool>(getCodec()); }
+    bool hasCodecRemoval() const { return flags<ASTDataTypeFlags>().remove_codec; }
+    void setCodec(ASTPtr codec);
+    void setCodecRemoval(bool value = true);
+    void resetCodecOperation();
+
 protected:
+    void cloneDataTypeChildrenTo(ASTDataType & target) const;
+    void writeCodecJSON(JSONObjectWriter & writer) const;
+    void readCodecJSON(JSONObjectReader & reader);
+    void updateCodecHash(SipHash & hash_state) const;
+    void formatCodecOperation(
+        WriteBuffer & ostr,
+        const FormatSettings & settings,
+        FormatState & state,
+        FormatStateStacked frame) const;
+
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 

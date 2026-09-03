@@ -172,12 +172,8 @@ size_t countTupleCodecPatchOperations(const ASTPtr & type_ast)
         return 0;
 
     size_t count = 0;
-    if (const auto * tuple = type_ast->as<ASTTupleDataType>())
-    {
-        count += std::count_if(
-            tuple->element_codecs.begin(), tuple->element_codecs.end(), [](const auto & codec) { return codec != nullptr; });
-        count += std::count(tuple->element_codec_removals.begin(), tuple->element_codec_removals.end(), true);
-    }
+    if (const auto * data_type = type_ast->as<ASTDataType>())
+        count += data_type->hasCodec() + data_type->hasCodecRemoval();
     for (const auto & child : type_ast->children)
         count += countTupleCodecPatchOperations(child);
     return count;
@@ -205,16 +201,19 @@ void collectTupleCodecPatch(
     {
         path.push_back(tuple_type->getNameByPosition(i + 1));
         const auto & subtype = tuple_type->getElements()[i];
-        const bool remove = i < tuple_ast->element_codec_removals.size() && tuple_ast->element_codec_removals[i];
-        if (i < tuple_ast->element_codecs.size() && tuple_ast->element_codecs[i])
+        const auto * element_type = arguments->children[i]->as<ASTDataType>();
+        if (!element_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple element is not a data type AST");
+        const bool remove = element_type->hasCodecRemoval();
+        if (const auto element_codec = element_type->getCodec())
         {
             if (remove)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple element cannot set and remove CODEC");
-            if (tryExtractQuantizedCodecParams(tuple_ast->element_codecs[i]))
+            if (tryExtractQuantizedCodecParams(element_codec))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Quantized codec on tuple elements is not supported yet because its custom serialization must be path-aware");
-            if (!codec_sets.emplace(path, tuple_ast->element_codecs[i]).second)
+            if (!codec_sets.emplace(path, element_codec).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate CODEC operation for tuple element");
         }
         else if (remove)

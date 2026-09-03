@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -175,15 +176,18 @@ void collectTupleCodecs(
     {
         path.push_back(tuple_type->getNameByPosition(i + 1));
         const auto & subtype = tuple_type->getElements()[i];
-        if (i < tuple_ast->element_codecs.size() && tuple_ast->element_codecs[i])
+        auto * element_type = arguments->children[i]->as<ASTDataType>();
+        if (!element_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple element is not a data type AST");
+        if (const auto element_codec = element_type->getCodec())
         {
-            if (tryExtractQuantizedCodecParams(tuple_ast->element_codecs[i]))
+            if (tryExtractQuantizedCodecParams(element_codec))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Quantized codec on tuple subcolumns is not supported yet because its custom serialization must be path-aware");
             if (result.getCodecs().contains(path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate codec declaration for tuple subcolumn");
-            result.set(path, tuple_ast->element_codecs[i]);
+            result.set(path, element_codec);
         }
         collectTupleCodecs(arguments->children[i], subtype, path, result);
         path.pop_back();
@@ -197,8 +201,8 @@ size_t countTupleCodecAnnotations(const ASTPtr & type_ast)
         return 0;
 
     size_t count = 0;
-    if (const auto * tuple = type_ast->as<ASTTupleDataType>())
-        count += std::count_if(tuple->element_codecs.begin(), tuple->element_codecs.end(), [](const auto & codec) { return codec != nullptr; });
+    if (const auto * data_type = type_ast->as<ASTDataType>(); data_type && data_type->hasCodec())
+        ++count;
     for (const auto & child : type_ast->children)
         count += countTupleCodecAnnotations(child);
     return count;
@@ -211,8 +215,8 @@ size_t countTupleCodecRemovals(const ASTPtr & type_ast)
         return 0;
 
     size_t count = 0;
-    if (const auto * tuple = type_ast->as<ASTTupleDataType>())
-        count += std::count(tuple->element_codec_removals.begin(), tuple->element_codec_removals.end(), true);
+    if (const auto * data_type = type_ast->as<ASTDataType>(); data_type && data_type->hasCodecRemoval())
+        ++count;
     for (const auto & child : type_ast->children)
         count += countTupleCodecRemovals(child);
     return count;
@@ -310,14 +314,16 @@ void installTupleCodecs(ASTPtr & type_ast, CodecPath & path, const ColumnCodecDe
     auto arguments = tuple->getArguments();
     if (!arguments)
         return;
-    tuple->element_codecs.assign(arguments->children.size(), nullptr);
-    tuple->element_codec_removals.clear();
     for (size_t i = 0; i < arguments->children.size(); ++i)
     {
+        auto * element_type = arguments->children[i]->as<ASTDataType>();
+        if (!element_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple element is not a data type AST");
+        element_type->resetCodecOperation();
         const String segment = tuple->element_names.empty() ? std::to_string(i + 1) : tuple->element_names[i];
         path.push_back(segment);
         if (auto it = codec.getCodecs().find(path); it != codec.getCodecs().end())
-            tuple->element_codecs[i] = it->second->clone();
+            element_type->setCodec(it->second->clone());
         installTupleCodecs(arguments->children[i], path, codec);
         path.pop_back();
     }

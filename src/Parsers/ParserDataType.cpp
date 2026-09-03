@@ -406,8 +406,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         bool has_named_elements = false;
         Strings element_names_tmp;
-        std::vector<ASTPtr> element_codecs;
-        std::vector<bool> element_codec_removals;
         bool first_element = true;
 
         while (true)
@@ -470,8 +468,13 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     return false;
                 remove_codec = true;
             }
-            element_codecs.push_back(std::move(codec_node));
-            element_codec_removals.push_back(remove_codec);
+            auto * element_type = type_node->as<ASTDataType>();
+            if (!element_type)
+                return false;
+            if (codec_node)
+                element_type->setCodec(std::move(codec_node));
+            else if (remove_codec)
+                element_type->setCodecRemoval();
         }
 
         if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
@@ -484,13 +487,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 tuple_node->element_names = std::move(element_names_tmp);
             }
             arguments->children.shrink_to_fit();
-            element_codecs.shrink_to_fit();
-            tuple_node->element_codecs = std::move(element_codecs);
-            if (std::find(element_codec_removals.begin(), element_codec_removals.end(), true) != element_codec_removals.end())
-            {
-                element_codec_removals.shrink_to_fit();
-                tuple_node->element_codec_removals = std::move(element_codec_removals);
-            }
             node = tuple_node;
             return true;
         }

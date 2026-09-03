@@ -20,7 +20,8 @@ The initial suite consists of these files:
 | `05028_tuple_element_codecs_shared_nested_offsets.sql` | Legacy flattened-`Nested` sibling codecs and canonical shared offsets in Wide and Compact parts |
 | `05028_tuple_element_codecs_wrapped_ast_nodes.sql` | Explicit rejection below `Nested` name/type and typed-`JSON` object-argument AST wrappers |
 | `05028_tuple_element_codecs_lossy_key.sql` | Sorting/partition-key rejection for lossy element codecs and an unrelated-sibling control |
-| `05028_tuple_element_codecs_ast_json_counts.sh` | Early validation of tuple codec/removal vector counts in untrusted AST JSON |
+| `05028_tuple_element_codecs_ast_json_counts.sh` | AST JSON round trip and rejection of conflicting set/remove state |
+| `05028_tuple_element_codecs_ast_children.sh` | Generic AST traversal of a query parameter inside an element codec |
 
 All tests use unique table names, begin with `DROP TABLE IF EXISTS` cleanup, and drop successfully created tables at the end. Output queries select only stable fields and use an explicit `ORDER BY` wherever row order is relevant.
 
@@ -334,6 +335,14 @@ Create Wide and Compact `MergeTree` tables with `n Nested(a UInt64, b String)`, 
 For each part format, stop merges, insert two parts, verify their type and contents, restart merges, and run `OPTIMIZE FINAL`. Inserts and merges must succeed. Force the Wide merge to use the vertical algorithm so the test also covers ownership across separate column writers. In the Wide result, inspect `n.size0` with `mergeTreeCodecBlockCounts` and assert `ZSTD(3)`: schema order makes `n.a` the deterministic first owner. Compact parts cannot attribute blocks to physical substreams, so successful creation and merge plus content checks cover that writer path.
 
 This verifies the established writer rule for duplicate physical streams: the first-created stream owns its codec and later callbacks reuse it without resolving a conflicting codec. Flattened `Nested` offsets are the concrete compatibility case; the value streams of `n.a` and `n.b` remain distinct and keep their respective codecs.
+
+## AST representation tests
+
+`05028_tuple_element_codecs_ast_json_counts.sh` generates AST JSON for a declaration with an element codec and executes that JSON successfully. It then adds `remove_codec = true` to the same data-type node and checks that deserialization rejects the conflicting state. The historical filename remains unchanged, although there are no parallel vector counts in the current representation.
+
+`05028_tuple_element_codecs_ast_children.sh` creates a Tuple element codec containing a client query parameter. Successful substitution and normalized metadata containing `CODEC(ZSTD(3))` show that the codec is an ordinary child of its `ASTDataType` and is reached by generic AST traversal.
+
+The `ColumnCodecDescription` unit tests also check that the codec is the final child of the element type, that cloning deep-clones it while preserving the tree hash, and that extraction followed by installation preserves the complete policy. A parser-only wrapper case checks that `Array(Tuple(... CODEC ...))` retains the operation on the inner element node while `DataTypeFactory` still builds an undecorated logical type. It does not enable that schema semantically; wrapper-aware policy traversal remains follow-up work.
 
 ## Follow-up Coverage Outside the Initial Stateless Set
 
