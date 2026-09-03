@@ -25,6 +25,10 @@ intact
 --- and neither is a fileCluster read without the setting
 7
 intact
+--- a distributed INSERT SELECT is refused too, and inserts nothing
+WRITE ON FILE
+intact
+0
 --- a Filesystem database does not cache the rename rule for later queries
 7
 intact
@@ -46,3 +50,6 @@ renamed
 --- and the fileCluster workers still perform it once the initiator is authorized
 7
 renamed
+--- as does a distributed INSERT SELECT, which also delivers its rows
+renamed
+1
