@@ -158,7 +158,7 @@ ColumnPtr convertColumnToTypeOrNull(
     /// Callers usually pass a `ColumnConst` (e.g. from `evaluateConstantExpressionAsColumn`); operate
     /// on the underlying full column so the fast path's CAST returns a plain (non-const) column and the
     /// `Field` fallback reads the value directly.
-    const ColumnPtr full = value.convertToFullColumnIfConst();
+    ColumnPtr full = value.convertToFullColumnIfConst();
 
     /// An identity conversion of a `Variant`-carrying type must not round-trip through a `Field`: a
     /// `Field` cannot record which alternative a value occupies, so rebuilding the column re-selects one.
