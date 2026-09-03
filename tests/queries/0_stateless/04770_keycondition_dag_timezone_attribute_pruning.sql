@@ -71,6 +71,8 @@ DROP TABLE IF EXISTS k_lc_key;
 DROP TABLE IF EXISTS k_arr_nul_key;
 DROP TABLE IF EXISTS k_nul_prune;
 DROP TABLE IF EXISTS k_point;
+DROP TABLE IF EXISTS oracle_saf_outer;
+DROP TABLE IF EXISTS k_saf_outer;
 
 -- The oracle: identical data and predicate, no key transform to get wrong.
 CREATE TABLE oracle_utc (ts DateTime('UTC')) ENGINE = Memory;
@@ -397,6 +399,24 @@ SELECT 'partition_array_simpleaggregatefunction', count() FROM (SELECT a FROM k_
 SELECT 'control_simpleaggregatefunction_element_carries_key_timezone', count() FROM (SELECT ts FROM k_saf WHERE ts IN (SELECT toDateTime(1675195200, 'UTC')));
 SELECT 'control_array_simpleaggregatefunction_other_month', count() FROM (SELECT a FROM k_saf_arr WHERE a IN (SELECT [toDateTime(1677614400, 'UTC')]));
 
+-- Carrier 31: the custom name wrapped AROUND the composite that holds the moved leaf, not on the leaf.
+-- `SimpleAggregateFunction` renames its argument type verbatim, so the names differ while the pair stays
+-- `equals`-equal, and rebuilding the `Array` would drop the name the transform was built against.
+-- Declining the atom answers the count correctly too, so the last row asserts the plan: the partition key
+-- expression is printed only when the atom became a key condition, a declined one reads `Condition: true`.
+CREATE TABLE oracle_saf_outer (a Array(DateTime('UTC'))) ENGINE = Memory;
+INSERT INTO oracle_saf_outer SELECT [toDateTime(1675195200, 'UTC')];
+INSERT INTO oracle_saf_outer SELECT [toDateTime(1677614400, 'UTC')];
+CREATE TABLE k_saf_outer (a SimpleAggregateFunction(anyLast, Array(DateTime('UTC')))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> toYYYYMM(x), a)) ORDER BY tuple();
+INSERT INTO k_saf_outer SELECT [toDateTime(1675195200, 'UTC')];
+INSERT INTO k_saf_outer SELECT [toDateTime(1677614400, 'UTC')];
+SELECT 'oracle_outer_simpleaggregatefunction', count() FROM (SELECT a FROM oracle_saf_outer WHERE a IN (SELECT [toDateTime(1675195200)]));
+SELECT 'partition_outer_simpleaggregatefunction', count() FROM (SELECT a FROM k_saf_outer WHERE a IN (SELECT [toDateTime(1675195200)]));
+SELECT 'control_outer_simpleaggregatefunction_other_month', count() FROM (SELECT a FROM k_saf_outer WHERE a IN (SELECT [toDateTime(1673000000)]));
+SELECT 'control_outer_simpleaggregatefunction_pruning_used', countIf(explain LIKE '%arraySum%') > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM k_saf_outer WHERE a IN (SELECT [toDateTime(1675195200)]));
+
 -- Controls. Each was measured correct before the fix, so they are what proves the carriers above
 -- discriminate rather than the whole file simply reading 1.
 CREATE TABLE k_unixts (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toUnixTimestamp(ts) ORDER BY tuple();
@@ -546,3 +566,5 @@ DROP TABLE k_lc_key;
 DROP TABLE k_arr_nul_key;
 DROP TABLE k_nul_prune;
 DROP TABLE k_point;
+DROP TABLE oracle_saf_outer;
+DROP TABLE k_saf_outer;

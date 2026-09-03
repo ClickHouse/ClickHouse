@@ -2132,7 +2132,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 
 /// Returns a copy of `elem_type` with every `DateTime`/`DateTime64` leaf replaced by the corresponding
 /// leaf of `dag_type`, or nullptr if the two do not describe the same shape. Keeps `elem_type`'s own
-/// structure, so only timezones move: `equals` ignores those, but the DAG reads them off what it is handed.
+/// structure, so only what `equals` ignores moves: the DAG reads those off the type it is handed.
 static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, const DataTypePtr & dag_type)
 {
     const WhichDataType elem_which(elem_type);
@@ -2150,10 +2150,10 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
     if (elem_which.isDateTimeOrDateTime64())
         return dag_type->equals(*elem_type) ? dag_type : nullptr;
 
-    /// A custom name over the same representation is a different type (`DataTypeVariant::equals`),
-    /// and `equals` cannot see it either. Refuse rather than relabel across that boundary.
+    /// A custom name `equals` cannot see changes what the transform computes on a leaf (`Bool` renders every
+    /// nonzero `UInt8` as `true`) but only renames a composite, where `dag_type` also keeps the moved leaves.
     if ((elem_type->hasCustomName() || dag_type->hasCustomName()) && elem_type->getName() != dag_type->getName())
-        return nullptr;
+        return elem_type->haveSubtypes() && elem_type->equals(*dag_type) ? dag_type : nullptr;
 
     /// Recurse through the types that delegate `equals` to their children, so a timezone one or more
     /// wrappers down is as invisible as a bare one. Rebuilding a composite drops its customizations
