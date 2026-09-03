@@ -1674,9 +1674,18 @@ void checkStorageStillHoldsValidatedTable(
 
     auto log = getLogger("IcebergValidatedTableCheck");
 
+    /// The listing has to be scoped to the directory of this table. `table_path` is the path the
+    /// query named, and for a table reached through a catalog that is the warehouse root shared by
+    /// every table in it - listing it would select some other table's metadata file and report the
+    /// table as replaced by whichever table happens to sort last. The resolver holds the root that
+    /// was derived for this table, which is the directory its own metadata lives in.
+    const String & metadata_listing_path = persistent_table_components.table_root_was_derived
+        ? persistent_table_components.path_resolver.getTableRoot()
+        : persistent_table_components.table_path;
+
     const auto [current_version, current_metadata_path, _compression, current_identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
-        persistent_table_components.table_path,
+        metadata_listing_path,
         data_lake_settings,
         persistent_table_components.metadata_cache,
         context,
@@ -1726,9 +1735,30 @@ void checkStorageStillHoldsValidatedTable(
     if (!persistent_table_components.getTableUuid().has_value())
     {
         if (auto validated_file = persistent_table_components.trusted_table_uuid->getValidatedFileWithToken();
-            validated_file.has_value() && validated_file->first != current_metadata_path)
+            validated_file.has_value())
         {
             const auto & [validated_path, validated_token] = *validated_file;
+
+            /// The replacement can have rewritten the very path that was validated, and on a
+            /// storage that reports no strong identity for its objects - HDFS synthesizes a weak
+            /// etag, and `MetadataFileIdentity` is then absent - the listing cannot tell that the
+            /// file changed. The content of the file that is current answers it, and it was just
+            /// read here bypassing the cache.
+            if (validated_path == current_metadata_path)
+            {
+                if (computeMetadataContentToken(current_metadata_object) != validated_token)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The Iceberg table at {} was replaced while {} was running: {}, the metadata file the statement was validated "
+                        "against, no longer carries the content it was validated with, and the table carries no `table-uuid` to tell "
+                        "the two tables apart. Retry the statement.",
+                        persistent_table_components.table_path,
+                        operation,
+                        validated_path);
+
+                return;
+            }
+
             auto validated_metadata_object = getMetadataJSONObject(
                 validated_path,
                 object_storage,
