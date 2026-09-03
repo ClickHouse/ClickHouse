@@ -497,15 +497,10 @@ ReadFromMergeTree::ReadFromMergeTree(
 {
     if (is_parallel_reading_from_replicas)
     {
-        if (all_ranges_callback_.has_value())
-            all_ranges_callback = all_ranges_callback_.value();
-        else
-            all_ranges_callback = context->getMergeTreeAllRangesCallback();
-
-        if (read_task_callback_.has_value())
-            read_task_callback = read_task_callback_.value();
-        else
-            read_task_callback = context->getMergeTreeReadTaskCallback();
+        /// Taken exactly as given: a read marked by `enableParallelReadingFromReplicasForSerialization`
+        /// is coordinated but carries no callbacks, because it is executed on the replicas, not here.
+        all_ranges_callback = std::move(all_ranges_callback_);
+        read_task_callback = std::move(read_task_callback_);
     }
 
     const auto & settings = context->getSettingsRef();
@@ -4335,16 +4330,10 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         max_block_numbers_to_read,
         log,
         std::move(analysis_result_copy),
-        /*enable_parallel_reading=*/false,
-        /*all_ranges_callback_=*/std::nullopt,
-        /*read_task_callback_=*/std::nullopt,
+        is_parallel_reading_from_replicas,
+        all_ranges_callback,
+        read_task_callback,
         number_of_current_replica);
-    /// Copy the parallel-reading state instead of passing it to the ctor, which resolves a callback it was
-    /// not given from the context: a read marked by `enableParallelReadingFromReplicasForSerialization` has
-    /// none. All three fields move together, otherwise `getParallelReadingExtension` asserts.
-    cloned_step->is_parallel_reading_from_replicas = is_parallel_reading_from_replicas;
-    cloned_step->all_ranges_callback = all_ranges_callback;
-    cloned_step->read_task_callback = read_task_callback;
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
@@ -6574,11 +6563,10 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         num_streams,
         /*max_block_numbers_to_read*/ nullptr,
         /*merge_tree_select_result_ptr*/ nullptr,
-        /// On a replica this rebuilds the read in parallel-reading mode: the ReadFromMergeTree ctor
-        /// resolves the coordinator callbacks from ctx.context (set by TCPHandler) and the replica number
-        /// from client_info. Passing no extension keeps those resolved from the context. This path is
-        /// only reached for a plan that will actually be executed (see the ctx.skipping short-circuit
-        /// above), so the callbacks are always present.
+        /// On a replica this rebuilds the read in parallel-reading mode. Passing no extension makes
+        /// `readFromParts` take the coordinator callbacks from ctx.context (set by TCPHandler) and the
+        /// replica number from client_info. This path is only reached for a plan that will actually be
+        /// executed (see the ctx.skipping short-circuit above), so the callbacks are always present.
         enable_parallel_reading,
         /*extension*/ nullptr);
 

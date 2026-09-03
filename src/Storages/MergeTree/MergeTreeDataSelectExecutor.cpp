@@ -1867,6 +1867,21 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     else if (parts->empty() && !query_info.isStream())
         return {};
 
+    std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
+    std::optional<MergeTreeReadTaskCallback> read_task_callback;
+    if (extension_)
+    {
+        all_ranges_callback = extension_->getAllRangesCallback();
+        read_task_callback = extension_->getReadTaskCallback();
+    }
+    else if (enable_parallel_reading)
+    {
+        /// A coordinated read reaching here without an extension is one this replica executes itself, so
+        /// the coordinator callbacks are the ones the protocol handler put in the query context.
+        all_ranges_callback = context->getMergeTreeAllRangesCallback();
+        read_task_callback = context->getMergeTreeReadTaskCallback();
+    }
+
     return std::make_unique<ReadFromMergeTree>(
         parts,
         std::move(mutations_snapshot),
@@ -1882,8 +1897,8 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         log,
         merge_tree_select_result_ptr,
         enable_parallel_reading,
-        extension_ ? std::optional(extension_->getAllRangesCallback()) : std::nullopt,
-        extension_ ? std::optional(extension_->getReadTaskCallback()) : std::nullopt,
+        std::move(all_ranges_callback),
+        std::move(read_task_callback),
         extension_ ? std::optional(extension_->getNumberOfCurrentReplica()) : std::nullopt);
 }
 
