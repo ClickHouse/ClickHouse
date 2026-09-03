@@ -48,5 +48,13 @@ WITH RECURSIVE notrec USING KEY (x) AS (SELECT 1 AS x UNION ALL SELECT 2 AS x) S
 -- 5. Key columns must exist in the projection.
 WITH RECURSIVE r USING KEY (nope) AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM r WHERE x < 3) SELECT * FROM r; -- { serverError BAD_ARGUMENTS }
 
+-- 6. USING KEY on a CTE that is not a UNION at all.
+WITH RECURSIVE plain USING KEY (x) AS (SELECT 1 AS x) SELECT * FROM plain; -- { serverError UNSUPPORTED_METHOD }
+
+-- 7. The key columns survive formatting and AST JSON round-trips: they are not children of
+-- `ASTWithElement`, so they have to be cloned, formatted, hashed and serialized explicitly.
+SELECT formatQuery('WITH RECURSIVE r USING KEY (a, b) AS (SELECT 1 AS a, 2 AS b UNION ALL SELECT a, b FROM r) SELECT * FROM r');
+SELECT formatQueryFromJSON(parseQueryToJSON('WITH RECURSIVE r USING KEY (a, b) AS (SELECT 1 AS a, 2 AS b UNION ALL SELECT a, b FROM r) SELECT * FROM r'));
+
 DROP TABLE cyc_edges;
 DROP TABLE w_edges;

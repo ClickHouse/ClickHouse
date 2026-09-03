@@ -1,4 +1,7 @@
 SET enable_analyzer = 1;
+-- Without `enable_materialized_cte` the `MATERIALIZED` keyword is only a hint and the CTE is
+-- still inlined, so the setting is needed to actually exercise the materialized CTE path.
+SET enable_materialized_cte = 1;
 
 -- A MATERIALIZED helper CTE referenced from a recursive member: materialized once,
 -- the recursive steps read the snapshot instead of re-evaluating the subquery per step.
