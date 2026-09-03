@@ -36,6 +36,7 @@ The following global settings are currently defined:
 | `naive_datetime_binding` | `"wall"` | `"wall"`, `"legacy"` | Controls binding for naive `datetime` query parameters. `wall` formats naive datetimes verbatim. `legacy` restores the older host-local conversion behavior. Attach `tzinfo` to preserve an instant. |
 | `naive_datetime_insert` | `"local"` | `"local"`, `"server"` | Controls Python object inserts of naive `datetime` values and naive ISO strings accepted by `DateTime64`. `local` uses the process timezone for compatibility. `server` uses the declared column timezone, then the server timezone. `datetime64`-dtype NumPy and Pandas columns are unchanged. |
 | `max_connection_age` | `600` | Any number of seconds | Maximum age for a reused HTTP keep-alive connection. Rotation helps distribute connections across nodes behind a load balancer. |
+| `native_codec` | `"python"` | `"python"`, `"rust"`, `"rust_strict"` | Default codec for client-managed Native format traffic, overridable per client. The `CLICKHOUSE_CONNECT_NATIVE_CODEC` environment variable seeds this setting at import. See [Rust codec](/integrations/language-clients/python/rust-codec). |
 | `product_name` | `""` | Any string | Product identifier added to client information. Use a value such as `"my-product/1.0"`. |
 | `readonly` | `0` | `0`, `1` | Deprecated no-op retained for 1.x compatibility. The client reads the server's `readonly` setting directly. |
 | `send_os_user` | `True` | `True`, `False` | Include the detected operating system user in client information. |
@@ -76,5 +77,7 @@ ClickHouse Connect supports the current ClickHouse `Variant`, `Dynamic`, and `JS
 - `Dynamic` values are read as the matching Python type. Inserts are currently sent through the String representation.
 - `JSON` values can be inserted as Python dictionaries or JSON object strings. The default read format returns dictionaries; use the `"string"` read format to return JSON strings.
 - Queries that select a `Variant`, `Dynamic`, or `JSON` subcolumn return the subcolumn's concrete type.
+
+Parsed `Variant`, `Dynamic`, and `JSON` type names use ClickHouse's canonical argument order. `Variant` members are sorted and deduplicated by canonical type name, including when a `Variant` is nested inside another type. `Dynamic` type names keep the `max_types` argument, so a `Dynamic(max_types=5)` column reports as `Dynamic(max_types=5)` rather than `Dynamic`. `JSON` typed paths and skip rules are sorted, duplicate plain skip paths are removed, regular expression duplicates are preserved, and explicit default limits are omitted. A parsed `JSON` type exposes decoded rules through `skip_paths` and `skip_regexps`. Its `skips` attribute contains the corresponding canonical ClickHouse expressions.
 
 Some values stored in the shared-data area of `JSON` or `Dynamic` columns use types that the client cannot yet decode. Those values are returned as raw bytes. These complex types also use the pure Python conversion path, so they can be slower than established scalar types.
