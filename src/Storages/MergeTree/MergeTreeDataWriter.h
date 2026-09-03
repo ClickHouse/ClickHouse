@@ -151,7 +151,8 @@ private:
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
         bool merge_is_needed,
-        bool try_adaptive_codec);
+        bool try_adaptive_codec,
+        std::optional<UInt64> block_number);
 
     MergeTreeData & data;
     LoggerPtr log;

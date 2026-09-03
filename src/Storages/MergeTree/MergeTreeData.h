@@ -477,6 +477,9 @@ public:
         /// For Graphite mode.
         Graphite::Params graphite_params;
 
+        /// MergeTreeQueue engine: commit-order sorting.
+        bool is_queue = false;
+
         /// For Summing, Coalescing and Aggregating modes.
         bool allow_tuple_element_aggregation = false;
 

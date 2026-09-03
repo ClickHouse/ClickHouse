@@ -1,4 +1,5 @@
 #include <memory>
+#include <numeric>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -52,6 +53,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
+#include <base/defines.h>
 #include <fmt/ranges.h>
 
 namespace ProfileEvents
@@ -378,6 +380,51 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
     }
 }
 
+void materializeVirtualColumns(Block & block, const Names & columns, const IColumnPermutation * perm_ptr = nullptr)
+{
+    for (const auto & column_name : columns)
+    {
+        if (block.has(column_name))
+            continue;
+
+        if (column_name == BlockNumberColumn::name)
+        {
+            block.insert(ColumnWithTypeAndName{BlockNumberColumn::type->createColumnConst(block.rows(), MergeTreePartInfo::MAX_BLOCK_NUMBER)->convertToFullColumnIfConst(), BlockNumberColumn::type, column_name});
+        }
+        else if (column_name == BlockOffsetColumn::name)
+        {
+            auto mutable_column = BlockOffsetColumn::type->createColumn();
+            auto & data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
+            data.resize_exact(block.rows());
+            for (size_t i = 0; i < block.rows(); ++i)
+                data[perm_ptr ? (*perm_ptr)[i] : i] = i;
+
+            block.insert(ColumnWithTypeAndName{std::move(mutable_column), BlockOffsetColumn::type, column_name});
+        }
+    }
+}
+
+/// The primary index is built from the primary key columns. Virtual columns are materialized on the
+/// write path with placeholder values (the real block number is only assigned at commit), so a part
+/// whose primary key contains them cannot have its index initialized eagerly - it is built later in
+/// `IMergeTreeDataPart::setIndex`, which replaces the placeholders with the committed values.
+///
+/// Note that this is derived from the part's own primary key rather than from the written block:
+/// the block may additionally carry virtual columns materialized for a projection, which says
+/// nothing about the primary key of the part being written.
+bool hasVirtualColumnsInPrimaryKey(const StorageMetadataPtr & metadata_snapshot)
+{
+    if (!metadata_snapshot->hasPrimaryKey())
+        return false;
+
+    const auto & virtuals = metadata_snapshot->virtuals;
+    for (const auto & column_name : metadata_snapshot->getPrimaryKey().expression->getRequiredColumns())
+        if (virtuals.has(column_name))
+            return true;
+
+    return false;
+}
+
 MergeTreeIndices collectSkipIndicesToMaterialize(
     const StorageMetadataPtr & metadata_snapshot,
     bool materialize_skip_indexes,
@@ -423,7 +470,6 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
 
     return indices;
 }
-
 
 }
 
@@ -852,6 +898,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
+        materializeVirtualColumns(block, expr->getRequiredColumns());
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);
     }
@@ -1125,10 +1172,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         for (const auto & projection : metadata_snapshot->getProjections())
         {
-            /// Commit-order projections use `_block_number` which is only finalized at commit time.
-            /// Skip during insert; they will be built correctly during the first merge.
-            if (projection.with_block_number)
-                continue;
+            materializeVirtualColumns(block, projection.required_columns, perm_ptr);
 
             Block projection_block;
             {
@@ -1168,7 +1212,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         gathered_data,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+        /*sync=*/(*data_settings)[MergeTreeSetting::fsync_after_insert],
+        /*init_index=*/!hasVirtualColumnsInPrimaryKey(metadata_snapshot));
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -1189,7 +1234,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    std::optional<UInt64> block_number)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1209,6 +1255,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         projection_part_storage->beginTransaction();
 
     new_data_part->is_temp = is_temp;
+    new_data_part->temp_projection_block_number = std::move(block_number);
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     SerializationInfo::Settings settings
@@ -1233,6 +1280,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
+        materializeVirtualColumns(block, expr->getRequiredColumns());
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);
     }
@@ -1313,7 +1361,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
-    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
+    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, /*sync=*/false, /*init_index=*/!hasVirtualColumnsInPrimaryKey(metadata_snapshot));
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
@@ -1349,7 +1397,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection,
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        /*block_number=*/ std::nullopt);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1380,9 +1429,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ true,
+        /*block_number=*/ block_num);
 
-    new_part->part->temp_projection_block_number = block_num;
     return new_part;
 }
 

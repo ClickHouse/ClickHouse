@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -75,11 +76,12 @@
 
 #include <base/defines.h>
 #include <atomic>
+#include <concepts>
 #include <exception>
 #include <mutex>
 #include <optional>
-#include <string_view>
 #include <ranges>
+#include <string_view>
 
 
 namespace CurrentMetrics
@@ -755,7 +757,10 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     /// This covers every caller (insert / merge write finalize and the mutation path) in one place.
     MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-    optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
+
+    auto marks_count = index_granularity->getMarksCount();
+    index_columns = correctVirtualColumnsInIndex(marks_count, std::move(index_columns));
+    index_columns = optimizeIndexColumns(marks_count, std::move(index_columns));
     index = std::make_shared<Index>(std::move(index_columns));
 }
 
@@ -1700,20 +1705,19 @@ void IMergeTreeDataPart::loadIndexGranularity()
                     "Method 'loadIndexGranularity' is not implemented for part with type {}", getType().toString());
 }
 
-
-template <typename Columns>
-void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & index_columns) const
+template <typename ColumnsT>
+ColumnsT IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, ColumnsT index_columns) const
 {
     if (marks_count == 0)
     {
         chassert(isEmpty());
-        return;
+        return index_columns;
     }
 
     /// Do not optimize index for patch parts because patch parts
     /// use manual index analysis which requires all index columns.
     if (info.isPatch())
-        return;
+        return index_columns;
 
     size_t key_size = index_columns.size();
     Float64 ratio_to_drop_suffix_columns = static_cast<double>((*storage.getSettings())[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns]);
@@ -1733,13 +1737,43 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & inde
             if (static_cast<Float64>(num_changes) / static_cast<Float64>(marks_count) >= ratio_to_drop_suffix_columns)
             {
                 key_size = j + 1;
-                index_columns.resize(key_size);
                 break;
             }
         }
 
         LOG_TEST(storage.log, "Loaded primary key index for part {}, {} columns are kept in memory", name, key_size);
     }
+
+    return index_columns | std::views::take(key_size) | std::views::as_rvalue | std::ranges::to<ColumnsT>();
+}
+
+template <typename ColumnsT>
+ColumnsT IMergeTreeDataPart::correctVirtualColumnsInIndex(size_t marks_count, ColumnsT index_columns) const
+{
+    const auto & part_info = isProjectionPart() ? getParentPart()->info : info;
+    if (marks_count == 0 || part_info.getBlocksCount() > 1 || part_info.isPatch())
+        return index_columns;
+
+    ColumnsT corrected;
+    auto add_column = [&corrected] <class ColumnPtr> (ColumnPtr col)
+    {
+        if constexpr (std::same_as<ColumnsT, MutableColumns>)
+            corrected.push_back(std::move(col->assumeMutable()));
+        else
+            corrected.push_back(std::move(col));
+    };
+
+    const auto metadata_snapshot = getMetadataSnapshot();
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    for (size_t j = 0; j < index_columns.size(); ++j)
+    {
+        if (primary_key.column_names[j] == BlockNumberColumn::name)
+            add_column(primary_key.data_types[j]->createColumnConst(marks_count, getFieldForConstVirtualColumn(BlockNumberColumn::name, *this))->convertToFullColumnIfConst());
+        else
+            add_column(std::move(index_columns.at(j)));
+    }
+
+    return corrected;
 }
 
 std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
@@ -1786,7 +1820,8 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
             key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, format_settings);
     }
 
-    optimizeIndexColumns(marks_count, loaded_index);
+    loaded_index = correctVirtualColumnsInIndex(marks_count, std::move(loaded_index));
+    loaded_index = optimizeIndexColumns(marks_count, std::move(loaded_index));
     size_t total_bytes = 0;
 
     for (const auto & column : loaded_index)

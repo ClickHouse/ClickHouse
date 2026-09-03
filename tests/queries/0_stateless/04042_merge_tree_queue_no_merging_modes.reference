@@ -1,0 +1,15 @@
+the engines are experimental
+SummingMergeTreeQueue
+ReplacingMergeTreeQueue
+CollapsingMergeTreeQueue
+AggregatingMergeTreeQueue
+ORDER BY is forbidden
+PRIMARY KEY is forbidden
+PARTITION BY is forbidden
+ALTER MODIFY ORDER BY is forbidden
+disabling the block number and block offset columns is forbidden
+no explicit key is required
+_block_number, _block_offset
+existing tables are attached without the experimental setting
+0
+deprecated syntax is forbidden

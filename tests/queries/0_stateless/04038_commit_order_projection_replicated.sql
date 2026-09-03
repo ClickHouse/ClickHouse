@@ -20,7 +20,7 @@ insert into rmt_commit_order(a) values (8) (5) (2);
 insert into rmt_commit_order(a) values (10) (7) (9);
 insert into rmt_commit_order(a) values (6) (3) (4);
 
--- Level-0 parts should NOT have the projection
+-- Level-0 parts already have the projection (it is materialized on insert)
 select 'before merge: projection parts';
 select count() from system.projection_parts
     where database = currentDatabase() and table = 'rmt_commit_order' and active;

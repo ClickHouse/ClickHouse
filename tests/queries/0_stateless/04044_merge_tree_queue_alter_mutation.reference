@@ -1,0 +1,165 @@
+== 1. Empty table ==
+empty table
+0
+
+empty table sorting key
+_block_number, _block_offset
+
+empty table sorting key
+_block_number, _block_offset
+
+== 2. ALTER ADD/DROP COLUMN ==
+before alter add column
+10	1	0
+20	1	1
+30	1	2
+
+after alter add column
+10	x	1	0
+20	x	1	1
+30	x	1	2
+40	y	2	0
+50	z	2	1
+
+sorting key after alter
+_block_number, _block_offset
+
+index lookup after alter
+40	y
+
+index lookup after alter explain
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.mtq_alter)
+    Indexes:
+      PrimaryKey
+        Keys:
+          _block_number
+          _block_offset
+        Condition: and((_block_offset in [0, 0]), (_block_number in [2, 2]))
+        Parts: 1/2
+        Granules: 1/5
+        Search Algorithm: binary search
+      Ranges: 1
+
+after drop column
+10	1	0
+20	1	1
+30	1	2
+40	2	0
+50	2	1
+
+after alter merge
+10	1	0
+20	1	1
+30	1	2
+40	2	0
+50	2	1
+
+after drop column on merged
+10	1	0
+20	1	1
+30	1	2
+40	2	0
+50	2	1
+
+after detach/attach
+10	1	0
+20	1	1
+30	1	2
+40	2	0
+50	2	1
+
+sorting key after detach/attach
+_block_number, _block_offset
+
+== 3. DELETE mutation ==
+after delete
+10	1	0
+30	1	2
+40	2	0
+50	2	1
+60	2	2
+
+after delete index lookup
+50
+
+after delete index explain
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.mtq_delete)
+    Indexes:
+      PrimaryKey
+        Keys:
+          _block_number
+          _block_offset
+        Condition: and((_block_offset in [1, 1]), (_block_number in [2, 2]))
+        Parts: 1/2
+        Granules: 2/5
+        Search Algorithm: binary search
+      Ranges: 1
+
+after detach/attach then merge then delete
+10	1	0
+30	1	2
+50	2	1
+60	2	2
+
+== 4. UPDATE mutation ==
+after update
+10	1	0
+20	1	1
+130	1	2
+140	2	0
+150	2	1
+160	2	2
+
+after update index lookup
+150
+
+after update index explain
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.mtq_update)
+    Indexes:
+      PrimaryKey
+        Keys:
+          _block_number
+          _block_offset
+        Condition: and((_block_offset in [1, 1]), (_block_number in [2, 2]))
+        Parts: 1/2
+        Granules: 2/6
+        Search Algorithm: binary search
+      Ranges: 1
+
+after update by index
+999	1	0
+555	1	1
+130	1	2
+140	2	0
+150	2	1
+160	2	2
+
+after merge then update
+1999	1	0
+1555	1	1
+130	1	2
+140	2	0
+150	2	1
+160	2	2
+
+after merge then update by index
+1999	1	0
+1555	1	1
+130	1	2
+7777	2	0
+150	2	1
+160	2	2
+
+after detach/attach then update
+1999	1	0
+1555	1	1
+10130	1	2
+7777	2	0
+150	2	1
+160	2	2

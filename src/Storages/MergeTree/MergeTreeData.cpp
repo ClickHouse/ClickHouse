@@ -5387,6 +5387,49 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
 
+    /// A sorting key over `_block_number` / `_block_offset` (the queue engines always have one, and a
+    /// regular MergeTree may declare one explicitly) requires these columns to stay materialized for
+    /// the lifetime of the table: merges materialize them only while the corresponding settings are
+    /// enabled (`MergeTask::enabledBlockNumberColumn` / `enabledBlockOffsetColumn`), so disabling a
+    /// setting the sorting key depends on would leave the next merge unable to compute the key.
+    /// `CREATE` validates the pairing; forbid breaking it later, the same way `ALTER MODIFY ORDER BY`
+    /// is forbidden for the queue engines. A `RESET SETTING` is rejected as well, because the default
+    /// value of both settings is `0`.
+    {
+        NameSet sorting_key_required_columns;
+        if (const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false); metadata_snapshot->hasSortingKey())
+            for (const auto & column_name : metadata_snapshot->getSortingKey().expression->getRequiredColumns())
+                sorting_key_required_columns.insert(column_name);
+
+        const std::initializer_list<std::pair<const char *, const String &>> block_column_settings
+            = {{"enable_block_number_column", BlockNumberColumn::name}, {"enable_block_offset_column", BlockOffsetColumn::name}};
+
+        for (const auto & command : commands)
+        {
+            for (const auto & [setting_name, column_name] : block_column_settings)
+            {
+                if (!merging_params.is_queue && !sorting_key_required_columns.contains(column_name))
+                    continue;
+
+                if (command.type == AlterCommand::MODIFY_SETTING)
+                {
+                    Field value;
+                    UInt64 enabled = 1;
+                    if (command.settings_changes.tryGet(setting_name, value) && value.tryGet<UInt64>(enabled) && enabled == 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting '{}' cannot be disabled, "
+                            "because it is required by the sorting key of the table", setting_name);
+                }
+                else if (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains(setting_name))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting '{}' cannot be reset, "
+                        "because it is required by the sorting key of the table", setting_name);
+                }
+            }
+        }
+    }
+
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
     /// the gate for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
@@ -5537,6 +5580,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax");
+        }
+        if (command.type == AlterCommand::MODIFY_ORDER_BY && merging_params.is_queue)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "ALTER MODIFY ORDER BY is not supported for MergeTreeQueue engine");
         }
         if (command.type == AlterCommand::MODIFY_TTL && !is_custom_partitioned)
         {
@@ -13553,7 +13601,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     out.write(block);
     /// Here is no projections as no data inside
     out.finalizeIndexGranularity();
-    out.finalizePart(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync_on_insert);
+    out.finalizePart(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync_on_insert, /*init_index=*/true);
 
     new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));
