@@ -7,3 +7,4 @@ F datafile  file:///+data
 G readback  2	30
 H oldform   2	30
 I setting-at-insert no-scheme
+J relative  /rel/ file:///rel/

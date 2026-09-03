@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Reproduces https://github.com/ClickHouse/ClickHouse/issues/102321
+# Reproduces the IcebergLocal report in https://github.com/ClickHouse/ClickHouse/issues/102321
 # With write_full_path_in_iceberg_metadata, an IcebergLocal table was stamped with a
 # `local://` location and an empty authority in front of an already absolute path, so every
 # path in its metadata read `local:////abs/path` and no external Iceberg reader resolved it.
@@ -105,4 +105,31 @@ python3 -c "
 import json
 loc = json.load(open('${TEST_DIR}/t0/metadata/v3.metadata.json'))['location']
 print('I setting-at-insert ' + ('no-scheme' if '://' not in loc else 'UNEXPECTED ' + loc))
+"
+
+# J: a relative engine argument. Its data sits under the process directory, while the location is
+# made absolute by the storage-relative normalization that runs whatever the setting is, so the
+# stamped path names a directory the table does not occupy. Both spellings are read here, so the
+# arm pins the setting contributing the scheme and nothing else, and reddens if either side moves.
+# A server resolves a relative argument against `user_files_path` and rejects it, so this runs
+# under `clickhouse-local`, whose object storage is rooted at `/`.
+mkdir -p "${TEST_DIR}/rel0" "${TEST_DIR}/rel1"
+(
+    cd "${TEST_DIR}" || exit 1
+    ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg 1 -q "
+        CREATE TABLE r0 (id UInt64, v Int64) ENGINE = IcebergLocal('rel0/');
+        INSERT INTO r0 VALUES (1, 10), (2, 20);
+    " < /dev/null
+    ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg 1 --write_full_path_in_iceberg_metadata 1 -q "
+        CREATE TABLE r1 (id UInt64, v Int64) ENGINE = IcebergLocal('rel1/');
+        INSERT INTO r1 VALUES (1, 10), (2, 20);
+    " < /dev/null
+)
+python3 -c "
+import json
+off = json.load(open('${TEST_DIR}/rel0/metadata/v2.metadata.json'))['location']
+on = json.load(open('${TEST_DIR}/rel1/metadata/v2.metadata.json'))['location']
+scheme_only = on == 'file://' + off.replace('rel0', 'rel1')
+print('J relative  ' + (off.replace('rel0', 'rel') + ' ' + on.replace('rel1', 'rel')
+                        if scheme_only else 'UNEXPECTED ' + off + ' ' + on))
 "
