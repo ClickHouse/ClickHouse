@@ -44,6 +44,33 @@ FROM
 )
 SETTINGS log_comment = '05059_aggregation_merge_two_level';
 
+-- Keep one UNION ALL branch above the two-level threshold and the other below it.
+SELECT sum(c)
+FROM
+(
+    SELECT k, count() AS c
+    FROM
+    (
+        SELECT number AS k FROM numbers(100000)
+        UNION ALL
+        SELECT number % 1 AS k FROM numbers(100000)
+    )
+    GROUP BY k
+    SETTINGS
+        max_threads = 2,
+        max_threads_min_free_memory_per_thread = 0,
+        max_block_size = 8192,
+        group_by_two_level_threshold = 1000,
+        group_by_two_level_threshold_bytes = 0,
+        max_bytes_before_external_group_by = 0,
+        max_bytes_ratio_before_external_group_by = 0,
+        collect_hash_table_stats_during_aggregation = 0,
+        enable_adaptive_aggregator = 0
+)
+SETTINGS
+    collect_hash_table_stats_during_aggregation = 0,
+    log_comment = '05059_aggregation_merge_mixed_level';
+
 -- Converting one producer's table to two-level is not an in-memory fan-in merge.
 SELECT sum(c)
 FROM
@@ -63,6 +90,15 @@ FROM
         enable_adaptive_aggregator = 0
 )
 SETTINGS log_comment = '05059_aggregation_merge_single_variant';
+
+-- The variadic wrapper should report both its parallel conversion and merge waves.
+SELECT uniqExact(number, number + 1)
+FROM numbers_mt(80000)
+SETTINGS
+    max_threads = 4,
+    max_threads_min_free_memory_per_thread = 0,
+    max_block_size = 8192,
+    log_comment = '05059_uniq_exact_variadic_merge_waves';
 
 -- A no-key uniqExact with several large partial states takes stock master's existing parallel
 -- two-level merge wave.
@@ -113,6 +149,19 @@ WHERE
     AND log_comment = '05059_aggregation_merge_two_level';
 
 SELECT
+    argMax(ProfileEvents['AggregationInMemoryMergeInputVariants'], event_time_microseconds) > 1,
+    argMax(ProfileEvents['AggregationInMemoryMergeInputTwoLevelVariants'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['AggregationInMemoryMergeInputTwoLevelVariants'], event_time_microseconds)
+        < argMax(ProfileEvents['AggregationInMemoryMergeInputVariants'], event_time_microseconds),
+    argMax(ProfileEvents['AggregationInMemoryMergePathTwoLevel'], event_time_microseconds) = 1
+FROM system.query_log
+WHERE
+    event_date >= yesterday()
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment = '05059_aggregation_merge_mixed_level';
+
+SELECT
     argMax(
         ProfileEvents['AggregationInMemoryMergeInputVariants']
             + ProfileEvents['AggregationInMemoryMergeInputTwoLevelVariants']
@@ -132,6 +181,21 @@ WHERE
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND log_comment = '05059_aggregation_merge_single_variant';
+
+SELECT
+    argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds) = 2,
+    argMax(ProfileEvents['UniqExactMergeWaveInputStates'], event_time_microseconds) > 1,
+    argMax(ProfileEvents['UniqExactMergeWaveElapsedMicroseconds'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['UniqExactMergeWaveCPUTimeMicroseconds'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['UniqExactMergeWaveWorkers'], event_time_microseconds)
+        BETWEEN argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds)
+        AND 4 * argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds)
+FROM system.query_log
+WHERE
+    event_date >= yesterday()
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment = '05059_uniq_exact_variadic_merge_waves';
 
 SELECT
     argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds) > 0,

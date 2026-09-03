@@ -671,8 +671,10 @@ class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<
 {
 private:
     using T = typename Data::Set::value_type;
+    using DataSet = typename Data::Set;
 
     static constexpr size_t is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
+    static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr size_t argument_is_tuple = Data::argument_is_tuple;
 
     size_t num_args = 0;
@@ -723,6 +725,23 @@ public:
         detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
+    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
+
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    {
+        if constexpr (is_parallelize_merge_prepare_needed)
+        {
+            DataSet::parallelizeMergePrepare(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "parallelizeMergePrepare() is only implemented when is_parallelize_merge_prepare_needed is true for {} ",
+                getName());
+        }
+    }
+
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
@@ -743,7 +762,6 @@ public:
     {
         if constexpr (is_able_to_parallelize_merge)
         {
-            using DataSet = typename Data::Set;
             DataSet::parallelizeMergeMulti(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
         }
         else
