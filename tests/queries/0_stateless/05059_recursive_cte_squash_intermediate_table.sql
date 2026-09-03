@@ -55,6 +55,16 @@ WITH RECURSIVE t AS
 )
 SELECT max(bs) < 400 FROM t WHERE step = 3;
 
+-- A recursive member with `WITH TOTALS` has a totals stream, which the intermediate table sink drops;
+-- the squashing must not be attached to it (found by the AST fuzzer).
+WITH RECURSIVE t AS
+(
+    SELECT 65537 AS n
+    UNION ALL
+    SELECT intDivOrZero(toInt128(1024), n) FROM t WHERE toLowCardinality(9223372036854775806) >= n AND n > 0 GROUP BY ALL WITH TOTALS
+)
+SELECT count() FROM t;
+
 -- The result of the recursion does not depend on the block layout.
 SET max_block_size = DEFAULT;
 

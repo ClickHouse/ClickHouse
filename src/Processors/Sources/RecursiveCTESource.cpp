@@ -231,8 +231,13 @@ private:
         /// squash on a single stream too: otherwise each of the parallel streams reading the working
         /// table would squash its own chunks and leave its own under-filled tail block behind.
         pipeline_builder.resize(1);
-        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
+            /// The totals and extremes streams are dropped by the sink below; `SquashingTransform` does not
+            /// tolerate a finished output port, so it must not be attached to them.
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+
             return std::make_shared<SquashingTransform>(
                 in_header,
                 squashing_min_block_size_rows,
