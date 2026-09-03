@@ -6,7 +6,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
 #include <Core/ProtocolDefines.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -143,10 +142,26 @@ void FillingStep::serialize(Serialization & ctx) const
 
     interpolate_description->actions.serialize(ctx.out, ctx.registry);
 
-    /// `required_columns_map` keys come from the query's aliases, which are not part of the plan, so the
-    /// map travels as data. Sorted, because the map itself has no stable order and the serialized bytes
-    /// are also used as a plan cache key. `result_columns_set` is the membership view of
-    /// `result_columns_order` and is rebuilt from it.
+    /// The reader rebuilds `result_columns_order` from the DAG's outputs, which is exactly how
+    /// `InterpolateDescription` built it - unless the query's aliases renamed an output. Only the analyzer
+    /// path is ever serialized and it builds the description with no aliases, so the two agree; refuse to
+    /// ship a renamed description rather than let the reader rebuild a different one.
+    const auto result_columns = interpolate_description->actions.getResultColumns();
+    const auto & result_columns_order = interpolate_description->result_columns_order;
+    bool derivable_from_actions = result_columns.size() == result_columns_order.size();
+    for (size_t i = 0; derivable_from_actions && i < result_columns.size(); ++i)
+        derivable_from_actions = result_columns[i].name == result_columns_order[i];
+
+    if (!derivable_from_actions)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serialization of an INTERPOLATE description whose result columns do not match its expression "
+            "outputs (for example renamed by query aliases) is not supported");
+
+    /// Only what the reader cannot derive from the DAG travels: the `required_columns_map` keys, which are
+    /// the query's aliases (not part of the plan) that `FillingTransform` matches against header columns.
+    /// Everything else - each entry's type, and `result_columns_order`/`result_columns_set` - is rebuilt
+    /// from `actions` on the other side, so a stream cannot describe a fill that disagrees with its own DAG.
+    /// The keys are sorted because the map has no stable order and these bytes are also a plan cache key.
     std::vector<std::string_view> required_column_keys;
     required_column_keys.reserve(interpolate_description->required_columns_map.size());
     for (const auto & [key, _] : interpolate_description->required_columns_map)
@@ -159,12 +174,7 @@ void FillingStep::serialize(Serialization & ctx) const
         const auto & name_and_type = interpolate_description->required_columns_map.at(std::string(key));
         writeStringBinary(key, ctx.out);
         writeStringBinary(name_and_type.name, ctx.out);
-        encodeDataType(name_and_type.type, ctx.out);
     }
-
-    writeVarUInt(interpolate_description->result_columns_order.size(), ctx.out);
-    for (const auto & name : interpolate_description->result_columns_order)
-        writeStringBinary(name, ctx.out);
 }
 
 QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
@@ -194,6 +204,14 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
     {
         auto actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
+        /// The plan may come from an untrusted client (`TCPHandler::receiveQueryPlan`), so the description
+        /// is rebuilt from the DAG rather than taken from the wire. `FillingTransform` pairs the executed
+        /// DAG's output columns with `result_columns_order` by position and stages each required column in
+        /// a column of the type stored here, so a description that disagrees with its DAG would index past
+        /// `interpolate_column_positions` or insert into a column of another type.
+        const auto & input_header = *ctx.input_headers.front();
+        const auto dag_required_columns = actions.getRequiredColumns();
+
         UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map;
         size_t num_required_columns = 0;
         readVarUInt(num_required_columns, ctx.in);
@@ -203,19 +221,36 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
             String name;
             readStringBinary(key, ctx.in);
             readStringBinary(name, ctx.in);
-            auto type = decodeDataType(ctx.in, ctx.max_type_complexity);
-            required_columns_map[key] = NameAndTypePair(name, type);
+
+            /// The key is the alias under which the transform looks the column up in its input header.
+            if (!input_header.has(key))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE source column '{}' is not present in the input header", key);
+
+            auto name_and_type = dag_required_columns.tryGetByName(name);
+            if (!name_and_type)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE source column '{}' is not required by the interpolate expression", name);
+
+            /// The type comes from the DAG, never from the wire: it decides the column the transform
+            /// stages the value in before executing the expression.
+            required_columns_map[key] = *name_and_type;
         }
 
+        if (required_columns_map.size() != dag_required_columns.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "FillingStep: INTERPOLATE expects {} source columns, got {}",
+                dag_required_columns.size(), required_columns_map.size());
+
+        /// One entry per DAG output, in output order - the pairing `FillingTransform` relies on.
         VectorWithMemoryTracking<std::string> result_columns_order;
-        size_t num_result_columns = 0;
-        readVarUInt(num_result_columns, ctx.in);
-        result_columns_order.reserve(num_result_columns);
-        for (size_t i = 0; i < num_result_columns; ++i)
+        for (const auto & column : actions.getResultColumns())
         {
-            String name;
-            readStringBinary(name, ctx.in);
-            result_columns_order.push_back(name);
+            if (!input_header.has(column.name))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE column '{}' is not present in the input header", column.name);
+
+            result_columns_order.push_back(column.name);
         }
 
         interpolate_description = std::make_shared<InterpolateDescription>(
