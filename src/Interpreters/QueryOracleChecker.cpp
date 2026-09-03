@@ -1011,6 +1011,10 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
         return false;
     if (select.limitBy())
         return false;
+    /// A `LIMIT AFTER`/`UNTIL` range selects rows by their position in the ordered result, so it is
+    /// order-sensitive in the same way as `LIMIT`.
+    if (select.limitAfter() || select.limitUntil())
+        return false;
     /// Bare `OFFSET` (without `LIMIT`) is order-sensitive: `stripOrderAndLimit`
     /// deletes it for the reference/rewrite runs, so if a rewrite changes rows
     /// only inside the skipped prefix the stripped bags differ and we raise a
@@ -1079,11 +1083,14 @@ void QueryOracleChecker::stripOrderAndLimit(ASTSelectQuery & select)
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, {});
     select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
     select.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
     select.order_by_all = false;
     select.limit_with_ties = false;
     select.limit_by_all = false;
+    select.limit_after_all = false;
 }
 
 
@@ -1538,7 +1545,8 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
         return false;
     if (hasArrayJoinFunction(select.clone()))
         return false;
-    if (select.limitLength() || select.limitBy() || select.limitOffset() || select.prewhere() || select.qualify())
+    if (select.limitLength() || select.limitBy() || select.limitOffset() || select.limitAfter() || select.limitUntil()
+        || select.prewhere() || select.qualify())
         return false;
     if (!select.tables())
         return false;
@@ -2201,6 +2209,10 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     /// equivalent predicates can legitimately pick different rows among ties.
     if (select.limitBy())
         return false;
+    /// A `LIMIT AFTER`/`UNTIL` range selects rows by their position among ordered rows, so ties
+    /// make it just as order-sensitive.
+    if (select.limitAfter() || select.limitUntil())
+        return false;
     /// `OFFSET` (without `LIMIT`) skips a prefix of the result. For non-unique
     /// `ORDER BY` keys, the rewritten WHERE may legitimately reorder tied rows,
     /// so the same `OFFSET` skips a different prefix and the comparison fails
@@ -2316,7 +2328,7 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     /// LIMIT handling and, worse, comparing different semantics than the seed.
     /// Even LIMIT with ORDER BY is unsafe: on non-unique sort keys the engine
     /// may legitimately pick different rows among ties on each side.
-    if (select.limitLength() || select.limitBy() || select.limitOffset())
+    if (select.limitLength() || select.limitBy() || select.limitOffset() || select.limitAfter() || select.limitUntil())
         return false;
 
     /// Skip WITH TOTALS / ROLLUP / CUBE / GROUPING SETS — the wrapping changes
