@@ -245,6 +245,80 @@ bool nextClauseCannotFollowQueryLevelOffset(IParser::Pos & pos, Expected & expec
     return false;
 }
 
+/// Parses the boundaries of a `LIMIT` range: `AFTER start_expr [ALL] [UNTIL end_expr]` or `UNTIL end_expr`.
+/// `AFTER` and `UNTIL` are contextual keywords, because an identifier with one of these names is still
+/// a valid row count (`WITH 2 AS after ... LIMIT after`). The word is read as a keyword only when a
+/// boundary expression follows it; since the expression parser accepts keywords as identifiers, a word
+/// that may follow a count (`LIMIT after BY x`, `LIMIT after SETTINGS ...`) selects the count reading as
+/// well. When both readings remain possible the keyword wins, so `LIMIT after(2)` is the range
+/// `LIMIT AFTER (2)`. Nothing is consumed when the count reading is selected.
+bool parseLimitRange(IParser::Pos & pos, Expected & expected, ASTPtr & limit_after, ASTPtr & limit_until, bool & limit_after_all)
+{
+    ParserKeyword s_after(Keyword::AFTER);
+    ParserKeyword s_until(Keyword::UNTIL);
+    ParserKeyword s_all(Keyword::ALL);
+    ParserExpression expression_p;
+
+    /// Words that may follow a `LIMIT` count.
+    static const Keyword count_followers[] = {
+        Keyword::BY,
+        Keyword::OFFSET,
+        Keyword::WITH_TIES,
+        Keyword::AFTER,
+        Keyword::UNTIL,
+        Keyword::SETTINGS,
+        Keyword::FORMAT,
+        Keyword::INTO_OUTFILE,
+        Keyword::UNION,
+        Keyword::EXCEPT,
+        Keyword::INTERSECT,
+        Keyword::PARALLEL_WITH,
+    };
+
+    auto begin = pos;
+    bool has_after = s_after.ignore(pos, expected);
+    if (!has_after && !s_until.ignore(pos, expected))
+        return false;
+
+    for (auto keyword : count_followers)
+    {
+        if (ParserKeyword(keyword).checkWithoutMoving(pos, expected))
+        {
+            pos = begin;
+            return false;
+        }
+    }
+
+    ASTPtr start_expr;
+    ASTPtr end_expr;
+    bool start_all = false;
+
+    bool parsed = false;
+    if (has_after)
+    {
+        parsed = expression_p.parse(pos, start_expr, expected);
+        if (parsed)
+        {
+            start_all = s_all.ignore(pos, expected);
+            if (s_until.ignore(pos, expected))
+                parsed = expression_p.parse(pos, end_expr, expected);
+        }
+    }
+    else
+        parsed = expression_p.parse(pos, end_expr, expected);
+
+    if (!parsed)
+    {
+        pos = begin;
+        return false;
+    }
+
+    limit_after = std::move(start_expr);
+    limit_until = std::move(end_expr);
+    limit_after_all = start_all;
+    return true;
+}
+
 }
 
 
@@ -289,7 +363,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
     ParserAliasesExpressionList exp_list_for_aliases;
     ParserExpressionWithOptionalAlias exp_elem(false);
-    ParserExpression expression_p;
     ParserGroupingSetsExpressionList grouping_sets_list;
 
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
@@ -606,28 +679,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_limit.ignore(pos, expected))
     {
         ParserToken s_comma(TokenType::Comma);
-        ParserKeyword s_after(Keyword::AFTER);
-        ParserKeyword s_until(Keyword::UNTIL);
 
-        if (s_after.ignore(pos, expected))
-        {
-            if (!expression_p.parse(pos, limit_after, expected))
-                return false;
-
-            select_query->limit_after_all = s_all.ignore(pos, expected);
-
-            if (s_until.ignore(pos, expected))
-            {
-                if (!expression_p.parse(pos, limit_until, expected))
-                    return false;
-            }
-        }
-        else if (s_until.ignore(pos, expected))
-        {
-            if (!expression_p.parse(pos, limit_until, expected))
-                return false;
-        }
-        else
+        if (!parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all))
         {
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
@@ -694,26 +747,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
             }
 
-            /// `LIMIT [n] AFTER expr [UNTIL expr]` or `LIMIT [n] UNTIL expr` after plain `LIMIT` (not `LIMIT BY`).
+            /// A range may follow the count (`LIMIT n AFTER ...`), but not a `LIMIT BY`.
             if (limit_length)
-            {
-                if (s_after.ignore(pos, expected))
-                {
-                    if (!expression_p.parse(pos, limit_after, expected))
-                        return false;
-                    select_query->limit_after_all = s_all.ignore(pos, expected);
-                    if (s_until.ignore(pos, expected))
-                    {
-                        if (!expression_p.parse(pos, limit_until, expected))
-                            return false;
-                    }
-                }
-                else if (s_until.ignore(pos, expected))
-                {
-                    if (!expression_p.parse(pos, limit_until, expected))
-                        return false;
-                }
-            }
+                parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all);
         }
 
         if (top_length && (limit_length || limit_after || limit_until))
@@ -806,26 +842,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
-        ParserKeyword s_after(Keyword::AFTER);
-        ParserKeyword s_until(Keyword::UNTIL);
 
-        if (s_after.ignore(pos, expected))
-        {
-            if (!expression_p.parse(pos, limit_after, expected))
-                return false;
-            select_query->limit_after_all = s_all.ignore(pos, expected);
-            if (s_until.ignore(pos, expected))
-            {
-                if (!expression_p.parse(pos, limit_until, expected))
-                    return false;
-            }
-        }
-        else if (s_until.ignore(pos, expected))
-        {
-            if (!expression_p.parse(pos, limit_until, expected))
-                return false;
-        }
-        else
+        if (!parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all))
         {
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
@@ -843,24 +861,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
 
             if (limit_length)
-            {
-                if (s_after.ignore(pos, expected))
-                {
-                    if (!expression_p.parse(pos, limit_after, expected))
-                        return false;
-                    select_query->limit_after_all = s_all.ignore(pos, expected);
-                    if (s_until.ignore(pos, expected))
-                    {
-                        if (!expression_p.parse(pos, limit_until, expected))
-                            return false;
-                    }
-                }
-                else if (s_until.ignore(pos, expected))
-                {
-                    if (!expression_p.parse(pos, limit_until, expected))
-                        return false;
-                }
-            }
+                parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all);
 
             if (s_with_ties.ignore(pos, expected))
                 select_query->limit_with_ties = true;
@@ -3276,6 +3277,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6)
 :::note
 - `WITH TIES`, fractional/negative `LIMIT`/`OFFSET`, and `OFFSET` are not supported together with `AFTER`/`UNTIL`.
 - Preliminary `LIMIT` pushdown is disabled when `AFTER`/`UNTIL` is used.
+- `AFTER` and `UNTIL` are recognized as keywords only when a boundary expression follows them, so an identifier named `after` or `until` still works as a row count (`LIMIT after`, `LIMIT after BY x`). When both readings are possible the keyword wins: `LIMIT after(2)` is the range `LIMIT AFTER (2)`; write `LIMIT (after(2))` to call a function named `after`.
 :::
 
 ## Considerations {#considerations}
