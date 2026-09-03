@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/parseGlobs.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -44,9 +45,44 @@ namespace FailPoints
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 {
+    const auto path = configuration->getRawPath();
+
+    /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
+    /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
+    /// known. A glob in the member name requires opening the archive to enumerate its entries, but the sample
+    /// path is needed only to infer hive partitioning, and `parseHivePartitioningKeysAndValues` looks only at
+    /// the directory part of the path - which is fully contained in the outer archive path. So a globbed member
+    /// name is simply omitted from the sample instead of disabling the fast path.
+    const bool is_archive = configuration->isArchive();
+    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
+    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration->getPathInArchive() : "";
+
+    /// For non-glob paths, return directly without any object storage API calls.
+    /// Besides saving a request, this keeps hive partition inference working for an explicitly
+    /// specified key that does not exist (or is filtered out before reading): the path string
+    /// itself carries the partition columns, so it must not depend on the object being present.
+    if (!path.hasGlobs())
+        return path.path + archive_suffix;
+
+    /// For pure brace expansions, one of the expanded path strings is sufficient to infer
+    /// hive partition columns. Avoid probing object metadata, because all explicit keys may
+    /// be absent or later filtered out.
+    if (containsOnlyEnumGlobs(path.path))
+    {
+        auto expanded = expandSelectionGlob(path.path);
+        if (!expanded.empty())
+            return expanded.front() + archive_suffix;
+    }
+
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
+    /// For an explicitly specified key, `throw_on_zero_files_match` is not enough: `KeysIterator` probes
+    /// the object metadata, and that probe throws for a key that does not exist. Sampling a path is only
+    /// needed to infer hive partitioning, so a missing key must leave the sample empty instead of failing
+    /// the query during analysis. A key that is really needed for reading is probed again by the reader,
+    /// which does report the error.
+    query_settings.ignore_non_existent_file = true;
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
@@ -331,4 +367,3 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 }
 
 }
-
