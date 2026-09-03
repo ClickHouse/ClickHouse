@@ -34,6 +34,15 @@ CREATE NAMED COLLECTION ai_vec_creds AS
     endpoint = 'http://localhost:1/v1/embeddings',
     api_key = 'test-key';
 
+-- The assertions describe the outcome of the WHERE-to-PREWHERE move, so the settings that
+-- decide whether it runs at all are pinned rather than left to test randomization. On the
+-- legacy analyzer the move happens in `InterpreterSelectQuery` instead, where the condition
+-- carries no resolved function to ask, and the AI function is still moved.
+SET optimize_move_to_prewhere = 1;
+SET query_plan_enable_optimizations = 1;
+SET query_plan_optimize_prewhere = 1;
+SET enable_analyzer = 1;
+
 SELECT 'aiGenerate' AS fn, countIf(explain ILIKE '%prewhere%' AND explain ILIKE '%aigenerate%') AS in_prewhere, countIf(explain ILIKE '%prewhere%') > 0 AS cheap_in_prewhere
 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE flag = 1 AND aiGenerate(text, map('credentials', 'ai_creds')) != '');
 
