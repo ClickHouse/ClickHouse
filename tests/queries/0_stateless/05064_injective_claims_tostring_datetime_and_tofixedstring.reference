@@ -27,3 +27,15 @@ independent window partitions
 a fixed-offset time zone is still injective
 1
 1
+an explicit time zone argument
+1
+1
+1
+1
+an out-of-range Date32
+1
+1
+1
+1
+a too narrow target width still throws
+1

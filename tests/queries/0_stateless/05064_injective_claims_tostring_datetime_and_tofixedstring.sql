@@ -56,9 +56,37 @@ SELECT DISTINCT count() OVER (PARTITION BY toFixedString(s, 16)) FROM t_window_p
 SELECT DISTINCT count() OVER (PARTITION BY toFixedString(s, 16)) FROM t_window_pad SETTINGS max_threads = 16, allow_window_partitions_independently = 0;
 
 SELECT 'a fixed-offset time zone is still injective';
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toString(toDateTime(number, 'UTC'))) FROM numbers(2)) WHERE explain LIKE '%uniqExact%' AND explain NOT LIKE '%toString%';
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toString(toDateTime(number, 'Europe/Amsterdam'))) FROM numbers(2)) WHERE explain LIKE '%toString%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toString(toDateTime(number, 'UTC'))) FROM numbers(2)) WHERE explain LIKE '%uniqExact%' AND explain NOT LIKE '%toString%' SETTINGS enable_analyzer = 1;
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toString(toDateTime(number, 'Europe/Amsterdam'))) FROM numbers(2)) WHERE explain LIKE '%toString%' SETTINGS enable_analyzer = 1;
+
+SELECT 'an explicit time zone argument';
+-- The rendering zone comes from the second argument, so a fixed-offset `DateTime('UTC')` folds all
+-- the same, and `toString(x, NULL)` maps every row onto `NULL`.
+DROP TABLE IF EXISTS t_tz_arg;
+CREATE TABLE t_tz_arg (dt DateTime('UTC')) ENGINE = Memory;
+INSERT INTO t_tz_arg VALUES (1540686600), (1540690200);
+SELECT count() FROM (SELECT 1 FROM t_tz_arg GROUP BY toString(dt, 'Europe/Amsterdam'));
+SELECT count() FROM (SELECT 1 FROM t_tz_arg GROUP BY toString(dt, 'Europe/Amsterdam')) SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT count() FROM (SELECT 1 FROM t_tz_arg GROUP BY toString(dt, NULL));
+SELECT count() FROM (SELECT 1 FROM t_tz_arg GROUP BY toString(dt, NULL)) SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT 'an out-of-range Date32';
+-- 2000000000 and 1999999999 are both out of the `Date32` range and are saturated to `9999-12-31`
+-- when formatted. `RowBinary` is the way to get such day numbers into a column at all.
+SELECT count() FROM (SELECT 1 FROM format(RowBinary, 'd Date32', unhex('00943577FF933577')) GROUP BY toString(d));
+SELECT count() FROM (SELECT 1 FROM format(RowBinary, 'd Date32', unhex('00943577FF933577')) GROUP BY toString(d)) SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT uniqExact(toString(d)) FROM format(RowBinary, 'd Date32', unhex('00943577FF933577'));
+SELECT uniqExact(toString(d)) FROM format(RowBinary, 'd Date32', unhex('00943577FF933577')) SETTINGS optimize_injective_functions_inside_uniq = 0;
+
+SELECT 'a too narrow target width still throws';
+-- `toFixedString(FixedString(3), 2)` must not be eliminated: it has to raise the exception.
+SELECT count() FROM (SELECT 1 FROM (SELECT materialize(toFixedString('abc', 3)) AS f) GROUP BY toFixedString(f, 2)); -- { serverError TOO_LARGE_STRING_SIZE }
+SELECT count() FROM (SELECT materialize(toFixedString('abc', 3)) AS f LIMIT 1 BY toFixedString(f, 2)); -- { serverError TOO_LARGE_STRING_SIZE }
+SELECT uniqExact(toFixedString(f, 2)) FROM (SELECT materialize(toFixedString('abc', 3)) AS f); -- { serverError TOO_LARGE_STRING_SIZE }
+-- A fitting target width stays injective.
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toFixedString(materialize(toFixedString('abc', 3)), 4))) WHERE explain LIKE '%uniqExact%' AND explain NOT LIKE '%toFixedString%' SETTINGS enable_analyzer = 1;
 
 DROP TABLE t_tz_fold;
 DROP TABLE t_window_fold;
 DROP TABLE t_window_pad;
+DROP TABLE t_tz_arg;

@@ -12,6 +12,7 @@
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
+#include <Interpreters/getASTFunctionArgumentColumns.h>
 #include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
@@ -98,7 +99,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
-void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
+void optimizeGroupBy(ASTSelectQuery * select_query, const NamesAndTypesList & source_columns, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
@@ -183,7 +184,10 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
 
-                if (!function_builder->isInjective({}))
+                /// The claim can depend on the arguments, so resolve as many of them as the AST
+                /// allows. An argument that stays unresolved leaves the function unclaimed.
+                auto argument_columns = tryGetASTFunctionArgumentColumns(*function, source_columns);
+                if (!argument_columns || !function_builder->isInjective(*argument_columns))
                 {
                     ++i;
                     continue;
@@ -555,9 +559,9 @@ void optimizeMultiIfToIf(ASTPtr & query)
     OptimizeMultiIfToIfVisitor(data).visit(query);
 }
 
-void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
+void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const NamesAndTypesList & source_columns, ContextPtr context)
 {
-    RemoveInjectiveFunctionsVisitor::Data data(context);
+    RemoveInjectiveFunctionsVisitor::Data data(context, source_columns);
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
@@ -695,7 +699,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
-    optimizeGroupBy(select_query, context);
+    optimizeGroupBy(select_query, result.source_columns, context);
 
     /// GROUP BY functions of other keys elimination.
     if (settings[Setting::optimize_group_by_function_keys])
@@ -706,7 +710,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove injective functions inside uniq
     if (settings[Setting::optimize_injective_functions_inside_uniq])
-        optimizeInjectiveFunctionsInsideUniq(query, context);
+        optimizeInjectiveFunctionsInsideUniq(query, result.source_columns, context);
 
     /// Eliminate min/max/any aggregators of functions of GROUP BY keys.
     /// GROUPING SETS with a single set is classified as an ordinary GROUP BY by ExpressionAnalyzer
