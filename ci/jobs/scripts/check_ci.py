@@ -924,6 +924,8 @@ def main():
     # Process the sync PR result regardless of the "CH Inc sync" commit status as stress test failures are ignored by it.
     sync_known_failures = []
     sync_unknown_failures = []
+    sync_not_finished = []
+    sync_checked = False
     sync_status_text = (
         f"{sync_status.state} - {sync_status.description}" if sync_status else "unknown"
     )
@@ -978,6 +980,7 @@ def main():
                     sync_sha,
                     allow_infra_issues=create_infrastructure_issue,
                 )
+                sync_checked = True
                 print_failure_summary(
                     sync_known_failures,
                     sync_unknown_failures,
@@ -991,7 +994,7 @@ def main():
 
     public_failed = known_failures or unknown_failures
     sync_failed = sync_known_failures or sync_unknown_failures
-    if public_failed or sync_failed:
+    if public_failed or sync_failed or not_finished_jobs or sync_not_finished:
         summary = "CI status:\n"
         if not_finished_jobs:
             summary += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
@@ -1001,10 +1004,14 @@ def main():
             summary += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
         summary += " - all other public checks passed\n"
         summary += f" - Sync status: {sync_status_text}\n"
+        if sync_not_finished:
+            summary += f" - Sync not finished: {len(sync_not_finished)} job{'s' if len(sync_not_finished) != 1 else ''}\n"
         if sync_failed:
             summary += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
-    else:
+    elif sync_checked:
         summary = "All checks passed! Congratulations!\n"
+    else:
+        summary = "All public checks passed, sync PR was not checked\n"
     print(f"\n{summary}")
 
     if public_failed:
