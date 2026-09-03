@@ -162,26 +162,38 @@ public:
 
         auto tmp_path = getPath(file_name + ".tmp");
         auto write_data = writeHook(data);
-        WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(write_data, out);
 
-        out.next();
-        if (fsync)
-            out.sync();
-        out.close();
+        /// The temporary file is opened with O_EXCL, so one left behind by a failed attempt would
+        /// make every later attempt fail too.
+        try
+        {
+            WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
+            writeString(write_data, out);
 
-        /// Opened before the rename, so a directory that cannot be opened does not leave the
-        /// rename committed, and synced after it, so the collection is not reported as created
-        /// until its new directory entry is durable.
-        const auto final_path = getPath(file_name);
-        std::optional<CheckedDirectorySync> dir_sync;
-        if (fsync)
-            dir_sync.emplace(fs::path(final_path).parent_path().string());
+            out.next();
+            if (fsync)
+                out.sync();
+            out.close();
 
-        fs::rename(tmp_path, final_path);
+            /// Opened before the rename, so a directory that cannot be opened does not leave the
+            /// rename committed, and synced after it, so the collection is not reported as created
+            /// until its new directory entry is durable.
+            const auto final_path = getPath(file_name);
+            std::optional<CheckedDirectorySync> dir_sync;
+            if (fsync)
+                dir_sync.emplace(fs::path(final_path).parent_path().string());
 
-        if (dir_sync)
-            dir_sync->sync();
+            fs::rename(tmp_path, final_path);
+
+            if (dir_sync)
+                dir_sync->sync();
+        }
+        catch (...)
+        {
+            std::error_code remove_ec;
+            fs::remove(tmp_path, remove_ec);
+            throw;
+        }
     }
 
     virtual std::string writeHook(const std::string & data) const
