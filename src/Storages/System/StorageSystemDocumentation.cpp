@@ -1182,11 +1182,7 @@ SystemTableCommentSections parseSystemTableComment(const String & comment)
 }
 
 /// Render every attached system table with the same page-level structure.
-String renderSystemTableDoc(
-    const String & table_name,
-    const String & comment,
-    const ColumnsDescription & columns,
-    ContextPtr context)
+String renderSystemTableDoc(const String & table_name, const String & comment, const ColumnsDescription & columns)
 {
     const auto documentation = parseSystemTableComment(comment);
     String result;
@@ -1226,18 +1222,9 @@ String renderSystemTableDoc(
     if (result.contains("{{ASYNCHRONOUS_METRICS}}"))
     {
         std::vector<std::pair<String, String>> asynchronous_metrics;
-        if (const auto * values = context->getAsynchronousMetrics())
-        {
-            const auto metric_values = values->getValues();
-            asynchronous_metrics.reserve(metric_values.size());
-            for (const auto & [name, value] : metric_values)
-                asynchronous_metrics.emplace_back(name, value.documentation ? value.documentation : "");
-        }
-        else
-        {
-            for (const auto & [name, description] : ASYNCHRONOUS_METRIC_DOCUMENTATION)
-                asynchronous_metrics.emplace_back(String(name), String(description));
-        }
+        asynchronous_metrics.reserve(std::size(ASYNCHRONOUS_METRIC_DOCUMENTATION));
+        for (const auto & [name, description] : ASYNCHRONOUS_METRIC_DOCUMENTATION)
+            asynchronous_metrics.emplace_back(String(name), String(description));
         replaceDocumentationPlaceholder(result, "{{ASYNCHRONOUS_METRICS}}", renderDescriptionCatalog(std::move(asynchronous_metrics)));
     }
 
@@ -1370,7 +1357,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                         res_columns,
                         EntityType::SystemTable,
                         table_name,
-                        renderSystemTableDoc(table_name, metadata_snapshot->comment, metadata_snapshot->getColumns(), context),
+                        renderSystemTableDoc(table_name, metadata_snapshot->comment, metadata_snapshot->getColumns()),
                         makeRepoRelative(getSystemTableDocumentationSource(table_name)));
                 }
             }
@@ -1387,10 +1374,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
             EntityType::SystemTable,
             "asynchronous_metrics",
             renderSystemTableDoc(
-                "asynchronous_metrics",
-                ASYNCHRONOUS_METRICS_DOCUMENTATION,
-                StorageSystemAsynchronousMetrics::getColumnsDescription(),
-                context),
+                "asynchronous_metrics", ASYNCHRONOUS_METRICS_DOCUMENTATION, StorageSystemAsynchronousMetrics::getColumnsDescription()),
             makeRepoRelative(ASYNCHRONOUS_METRICS_DOCUMENTATION_SOURCE));
 }
 
