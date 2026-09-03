@@ -76,7 +76,11 @@ printf '\x01' > "$BAD_BINARY_FILE"
 printf '\x05\x0a\x03\x08\x05\x10' > "$PARTIAL_FIELD_BINARY_FILE"
 printf '\x04\x0a\x02\x10\x07' > "$C1_ONLY_BINARY_FILE"
 
-url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_max_ms=300000&async_insert_busy_timeout_min_ms=300000&async_insert_use_adaptive_busy_timeout=0&format_schema=$SERVER_SCHEMA&query=INSERT+INTO+${CLICKHOUSE_DATABASE}.t_04249_dst+FORMAT+ProtobufList"
+# `async_insert_parse_threads=1` keeps the whole batch in one parsing slice, so that a single
+# `ProtobufListInputFormat` instance is reused across the queued entries - which is exactly what
+# this test is about. It is set explicitly because the setting is randomized by `clickhouse-test`,
+# and a value greater than one would split the entries across independent format instances.
+url="${CLICKHOUSE_URL}&async_insert_parse_threads=1&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_max_ms=300000&async_insert_busy_timeout_min_ms=300000&async_insert_use_adaptive_busy_timeout=0&format_schema=$SERVER_SCHEMA&query=INSERT+INTO+${CLICKHOUSE_DATABASE}.t_04249_dst+FORMAT+ProtobufList"
 
 # Send one bad envelope followed by the same valid envelope as three separate
 # async-insert HTTP requests with a long busy-timeout so they accumulate in the

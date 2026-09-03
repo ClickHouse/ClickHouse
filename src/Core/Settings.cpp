@@ -7198,6 +7198,21 @@ The exponential growth rate at which the adaptive asynchronous insert timeout in
     DECLARE(Double, async_insert_busy_timeout_decrease_rate, 0.2, R"(
 The exponential growth rate at which the adaptive asynchronous insert timeout decreases
 )", 0) \
+    DECLARE(UInt64, async_insert_parse_threads, 0, R"(
+Maximum number of threads used to parse the data of one batch of asynchronous inserts when the batch is flushed.
+
+The entries of a batch are split into that many contiguous ranges, each parsed by its own thread of a
+thread pool bounded server-wide by [`max_async_insert_parsing_thread_pool_size`](/operations/server-configuration-parameters/settings#max_async_insert_parsing_thread_pool_size),
+and the results are concatenated back into a single block. Only parsing is parallelized: the flush
+still inserts one block, so the number of parts written is not affected.
+
+This reduces the latency of `INSERT`s that wait for the flush ([`wait_for_async_insert`](#wait_for_async_insert) `= 1`)
+at the cost of using more CPU per flush. `0` (the default) and `1` mean the data is parsed by the
+thread that performs the flush, which is the behaviour of earlier versions.
+
+Note that inserts differing in this setting are collected into different batches, like for any other
+setting.
+)", 0) \
     \
     DECLARE(UInt64, remote_fs_read_max_backoff_ms, 10000, R"(
 Max wait time when trying to read data for remote disk

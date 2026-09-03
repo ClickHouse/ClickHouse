@@ -19,6 +19,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 #include <IO/copyData.h>
 #include <Interpreters/ExpressionActions.h>
@@ -48,6 +49,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 #include <Parsers/ASTExpressionList.h>
@@ -84,6 +86,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_busy_timeout_max_ms;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsUInt64 async_insert_max_query_number;
+    extern const SettingsUInt64 async_insert_parse_threads;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool async_insert_use_adaptive_busy_timeout;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -1432,72 +1435,198 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
-    size_t total_rows = 0;
-    InsertData::EntryPtr current_entry;
-    String current_exception;
-
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
-    std::shared_ptr<ISimpleTransform> adding_defaults_transform;
-
-    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
+    /// One contiguous range of the batch's entries, parsed independently of the other ranges.
+    /// A single range is parsed by the calling thread, exactly as it was before
+    /// `async_insert_parse_threads` existed.
+    struct ParsingSlice
     {
-        const auto & columns = *insert_context->getInsertionTableColumnsDescription();
-        if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
-    }
+        /// What parsing one entry produced. Collected here instead of being reported right away,
+        /// so that the asynchronous insert log and the deduplication info are still built by a
+        /// single thread, in the original order of the entries.
+        struct EntryResult
+        {
+            InsertData::EntryPtr entry;
+            String exception;
+            size_t num_rows = 0;
+            size_t num_bytes = 0;
+        };
 
-    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
-    {
-        current_exception = e.displayText();
-        LOG_ERROR(logger, "Failed parsing for insert query id {}. {}",
-            current_entry->query_id, current_exception);
+        std::list<InsertData::EntryPtr>::const_iterator begin;
+        std::list<InsertData::EntryPtr>::const_iterator end;
+        size_t num_entries = 0;
+        size_t num_bytes = 0;
 
-        for (size_t i = 0; i < result_columns.size(); ++i)
-            result_columns[i]->rollback(*checkpoints[i]);
-
-        current_entry->finish(std::current_exception());
-        return 0;
+        MutableColumns columns;
+        size_t num_rows = 0;
+        std::vector<EntryResult> entry_results;
     };
 
-    StreamingFormatExecutor executor(
-        header,
-        format,
-        std::move(on_error),
-        data->size_in_bytes,
-        data->entries.size(),
-        std::move(adding_defaults_transform),
-        [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); });
+    const size_t num_entries = data->entries.size();
+    chassert(num_entries != 0);
 
-    auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
-
-    for (const auto & entry : data->entries)
+    /// `async_insert_parse_threads` is an upper bound for one batch: there is nothing to gain from
+    /// more slices than entries, and one slice means the parsing thread pool is not used at all.
+    size_t num_slices = std::min<size_t>(num_entries, insert_context->getSettingsRef()[Setting::async_insert_parse_threads]);
+    if (num_slices > 1)
     {
-        current_entry = entry;
+        /// The calling thread parses one of the slices itself, so more slices than the pool can run
+        /// at once would only queue them behind each other, with an extra input format each.
+        num_slices = std::min(num_slices, getAsyncInsertParsingThreadPool().get().getMaxThreads() + 1);
+    }
+    num_slices = std::max<size_t>(1, num_slices);
 
-        const auto * bytes = entry->chunk.asString();
-        if (!bytes)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
+    /// Everything the slices share is read from the context here, on one thread.
+    const bool add_defaults = insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields]
+        && insert_context->hasInsertionTableColumnsDescription()
+        && insert_context->getInsertionTableColumnsDescription()->hasDefaults();
+    const auto shared_header = std::make_shared<const Block>(header);
+    auto is_cancelled = [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); };
 
-        auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
-        executor.setQueryParameters(entry->query_parameters);
-
-        size_t num_bytes = bytes->size();
-        size_t num_rows = executor.execute(*buffer, num_bytes);
-
-        total_rows += num_rows;
-
-        /// it is ok if total_rows is 0 here or async_dedup_token is empty
-        deduplication_info->setUserToken(entry->async_dedup_token, num_rows);
-
-        add_to_async_insert_log(entry, current_exception, num_rows, num_bytes);
-        current_exception.clear();
-        entry->resetChunk();
+    std::vector<ParsingSlice> slices(num_slices);
+    {
+        auto entry_it = data->entries.begin();
+        for (size_t i = 0; i < num_slices; ++i)
+        {
+            /// Spread the remainder over the first slices, so their sizes differ by at most one.
+            auto & slice = slices[i];
+            slice.num_entries = num_entries / num_slices + (i < num_entries % num_slices ? 1 : 0);
+            slice.begin = entry_it;
+            for (size_t j = 0; j < slice.num_entries; ++j, ++entry_it)
+                slice.num_bytes += (*entry_it)->chunk.byteSize();
+            slice.end = entry_it;
+        }
+        chassert(entry_it == data->entries.end());
     }
 
-    LOG_DEBUG(logger, "Processed {} rows with parsing them for {} entries", total_rows, data->entries.size());
+    auto parse_slice = [&](ParsingSlice & slice)
+    {
+        /// The input format holds mutable parsing state, so it cannot be shared between slices.
+        auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
+        std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
-    Chunk chunk(executor.getResultColumns(), total_rows);
+        if (add_defaults)
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(
+                shared_header, *insert_context->getInsertionTableColumnsDescription(), *format, insert_context);
+
+        InsertData::EntryPtr current_entry;
+        String current_exception;
+
+        auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+        {
+            current_exception = e.displayText();
+            LOG_ERROR(logger, "Failed parsing for insert query id {}. {}",
+                current_entry->query_id, current_exception);
+
+            for (size_t i = 0; i < result_columns.size(); ++i)
+                result_columns[i]->rollback(*checkpoints[i]);
+
+            current_entry->finish(std::current_exception());
+            return 0;
+        };
+
+        StreamingFormatExecutor executor(
+            header,
+            format,
+            std::move(on_error),
+            slice.num_bytes,
+            slice.num_entries,
+            std::move(adding_defaults_transform),
+            is_cancelled);
+
+        slice.entry_results.reserve(slice.num_entries);
+
+        for (auto entry_it = slice.begin; entry_it != slice.end; ++entry_it)
+        {
+            current_entry = *entry_it;
+
+            const auto * bytes = current_entry->chunk.asString();
+            if (!bytes)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expected entry with data kind Parsed. Got: {}", current_entry->chunk.getDataKind());
+
+            /// `on_error` may finish the entry, which releases its data, so read the size upfront.
+            const size_t num_bytes = bytes->size();
+
+            auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
+            executor.setQueryParameters(current_entry->query_parameters);
+
+            const size_t num_rows = executor.execute(*buffer, num_bytes);
+
+            slice.num_rows += num_rows;
+            slice.entry_results.push_back({current_entry, current_exception, num_rows, num_bytes});
+            current_exception.clear();
+        }
+
+        slice.columns = executor.getResultColumns();
+    };
+
+    if (num_slices == 1)
+    {
+        parse_slice(slices[0]);
+    }
+    else
+    {
+        /// Declared after `slices` and `parse_slice` on purpose: the runner's destructor cancels
+        /// the tasks that have not started yet and waits for the running ones, so no task can
+        /// outlive the state it refers to, including when scheduling or parsing below throws.
+        /// The runner also attaches every task to the thread group of the flush query, so that
+        /// profile events, memory and CPU accounting of the parsing are not lost.
+        ///
+        /// The pool is dedicated to this and is not the format parsing pool: some input formats
+        /// (`Parquet`, `ArrowStream`, ...) parallelize their own work on the format parsing pool,
+        /// and a slice waiting for such a nested task while occupying a thread of the very same
+        /// pool could deadlock once all its threads are held by slices.
+        ThreadPoolCallbackRunnerLocal<void> runner(getAsyncInsertParsingThreadPool().get(), ThreadName::ASYNC_INSERT_PARSE);
+
+        for (size_t i = 1; i < num_slices; ++i)
+            runner.enqueueAndKeepTrack([&parse_slice, &slice = slices[i]] { parse_slice(slice); });
+
+        /// The calling thread takes one slice instead of only waiting for the pool.
+        parse_slice(slices[0]);
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
+    /// Concatenate the slices into a single chunk and replay the per-entry bookkeeping in the
+    /// original order of the entries. The insert pipeline sees exactly what it saw before:
+    /// one chunk with one `DeduplicationInfo`, hence one part per flush.
+    auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
+    MutableColumns result_columns;
+    size_t total_rows = 0;
+
+    for (size_t i = 0; i < num_slices; ++i)
+    {
+        auto & slice = slices[i];
+
+        for (const auto & result : slice.entry_results)
+        {
+            /// it is ok if num_rows is 0 here or async_dedup_token is empty
+            deduplication_info->setUserToken(result.entry->async_dedup_token, result.num_rows);
+            /// `add_to_async_insert_log` reads `entry->chunk`, so the data is released only after it.
+            /// With more than one slice that is later than it used to be, which keeps the raw data of
+            /// the whole batch (at most `async_insert_max_data_size`) alive while the batch is parsed.
+            add_to_async_insert_log(result.entry, result.exception, result.num_rows, result.num_bytes);
+            result.entry->resetChunk();
+        }
+
+        total_rows += slice.num_rows;
+
+        if (i == 0)
+        {
+            result_columns = std::move(slice.columns);
+        }
+        else
+        {
+            chassert(slice.columns.size() == result_columns.size());
+            for (size_t column = 0; column < result_columns.size(); ++column)
+                result_columns[column]->insertRangeFrom(*slice.columns[column], 0, slice.columns[column]->size());
+        }
+    }
+
+    chassert(result_columns.empty() || result_columns.front()->size() == total_rows);
+
+    LOG_DEBUG(logger, "Processed {} rows with parsing them for {} entries in {} slices", total_rows, num_entries, num_slices);
+
+    Chunk chunk(std::move(result_columns), total_rows);
     chunk.getChunkInfos().add(std::move(deduplication_info));
     return chunk;
 }
